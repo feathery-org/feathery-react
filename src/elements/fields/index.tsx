@@ -1,81 +1,130 @@
-import { lazy, memo, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
 
-const AddressLine1 = lazy(
-  () => import(/* webpackChunkName: "AddressField" */ './AddressLine1Field')
-);
-const ButtonGroupField = lazy(
-  () => import(/* webpackChunkName: "ButtonGroupField" */ './ButtonGroupField')
-);
-const CheckboxField = lazy(
-  () => import(/* webpackChunkName: "CheckboxField" */ './CheckboxField')
-);
-const CheckboxGroupField = lazy(
-  () =>
-    import(/* webpackChunkName: "CheckboxGroupField" */ './CheckboxGroupField')
-);
-const ColorPickerField = lazy(
-  () => import(/* webpackChunkName: "ColorPickerField" */ './ColorPickerField')
-);
-const CustomField = lazy(
-  () => import(/* webpackChunkName: "CustomField" */ './CustomField')
-);
-const DateSelectorField = lazy(
-  () =>
-    import(/* webpackChunkName: "DateSelectorField" */ './DateSelectorField')
-);
-const DropdownField = lazy(
-  () => import(/* webpackChunkName: "DropdownField" */ './DropdownField')
-);
-const DropdownMultiField = lazy(
-  () =>
-    import(/* webpackChunkName: "DropdownMultiField" */ './DropdownMultiField')
-);
-const FileUploadField = lazy(
-  () => import(/* webpackChunkName: "FileUploadField" */ './FileUploadField')
-);
-const MatrixField = lazy(
-  () => import(/* webpackChunkName: "MatrixField" */ './MatrixField')
-);
-const PasswordField = lazy(
-  () => import(/* webpackChunkName: "PasswordField" */ './PasswordField')
-);
-const PaymentMethodField = lazy(
-  () =>
-    import(/* webpackChunkName: "PaymentMethodField" */ './PaymentMethodField')
-);
-const PhoneField = lazy(
-  () => import(/* webpackChunkName: "PhoneField" */ './PhoneField')
-);
-const PinInputField = lazy(
-  () => import(/* webpackChunkName: "PinInputField" */ './PinInputField')
-);
-const QRScanner = lazy(
-  () => import(/* webpackChunkName: "QRScanner" */ './QRScanner')
-);
-const RadioButtonGroupField = lazy(
-  () =>
+type VisiblePositions = Record<string, boolean[]>;
+
+const fieldLoaders = {
+  AddressLine1: () =>
+    import(/* webpackChunkName: "AddressField" */ './AddressLine1Field'),
+  ButtonGroupField: () =>
+    import(/* webpackChunkName: "ButtonGroupField" */ './ButtonGroupField'),
+  CheckboxField: () =>
+    import(/* webpackChunkName: "CheckboxField" */ './CheckboxField'),
+  CheckboxGroupField: () =>
+    import(/* webpackChunkName: "CheckboxGroupField" */ './CheckboxGroupField'),
+  ColorPickerField: () =>
+    import(/* webpackChunkName: "ColorPickerField" */ './ColorPickerField'),
+  CustomField: () =>
+    import(/* webpackChunkName: "CustomField" */ './CustomField'),
+  DateSelectorField: () =>
+    import(/* webpackChunkName: "DateSelectorField" */ './DateSelectorField'),
+  DropdownField: () =>
+    import(/* webpackChunkName: "DropdownField" */ './DropdownField'),
+  DropdownMultiField: () =>
+    import(/* webpackChunkName: "DropdownMultiField" */ './DropdownMultiField'),
+  FileUploadField: () =>
+    import(/* webpackChunkName: "FileUploadField" */ './FileUploadField'),
+  MatrixField: () =>
+    import(/* webpackChunkName: "MatrixField" */ './MatrixField'),
+  PasswordField: () =>
+    import(/* webpackChunkName: "PasswordField" */ './PasswordField'),
+  PaymentMethodField: () =>
+    import(/* webpackChunkName: "PaymentMethodField" */ './PaymentMethodField'),
+  PhoneField: () => import(/* webpackChunkName: "PhoneField" */ './PhoneField'),
+  PinInputField: () =>
+    import(/* webpackChunkName: "PinInputField" */ './PinInputField'),
+  QRScanner: () => import(/* webpackChunkName: "QRScanner" */ './QRScanner'),
+  RadioButtonGroupField: () =>
     import(
       /* webpackChunkName: "RadioButtonGroupField" */ './RadioButtonGroupField'
-    )
-);
-const RatingField = lazy(
-  () => import(/* webpackChunkName: "RatingField" */ './RatingField')
-);
-const SignatureField = lazy(
-  () => import(/* webpackChunkName: "SignatureField" */ './SignatureField')
-);
-const SliderField = lazy(
-  () => import(/* webpackChunkName: "SliderField" */ './SliderField')
-);
-const TextField = lazy(
-  () => import(/* webpackChunkName: "TextField" */ './TextField')
-);
-const TextArea = lazy(
-  () => import(/* webpackChunkName: "TextArea" */ './TextArea')
-);
+    ),
+  RatingField: () =>
+    import(/* webpackChunkName: "RatingField" */ './RatingField'),
+  SignatureField: () =>
+    import(/* webpackChunkName: "SignatureField" */ './SignatureField'),
+  SliderField: () =>
+    import(/* webpackChunkName: "SliderField" */ './SliderField'),
+  TextField: () => import(/* webpackChunkName: "TextField" */ './TextField'),
+  TextArea: () => import(/* webpackChunkName: "TextArea" */ './TextArea')
+};
 
-const Fields = {
+type FieldComponentKey = keyof typeof fieldLoaders;
+
+const getPositionKey = (element: any) => element.position?.join(',') || 'root';
+
+type PreloadableField = React.ComponentType<any> & {
+  preload: () => Promise<any>;
+};
+
+// Share the resolved component between preload and render. A separate
+// React.lazy wrapper can still suspend on its first render even after an
+// external import() preload has resolved.
+const createPreloadableField = (load: () => Promise<any>): PreloadableField => {
+  let Component: React.ComponentType<any> | null = null;
+  let preloadPromise: Promise<any> | null = null;
+  let loadError: any = null;
+
+  const preload = () => {
+    if (!preloadPromise) {
+      loadError = null;
+      preloadPromise = load()
+        .then((module) => {
+          Component = module.default;
+          return module;
+        })
+        .catch((error) => {
+          preloadPromise = null;
+          loadError = error;
+          throw error;
+        });
+    }
+    return preloadPromise;
+  };
+
+  const Field = (props: any) => {
+    if (Component) return React.createElement(Component, props);
+    if (loadError) throw loadError;
+    throw preload();
+  };
+  Field.preload = preload;
+
+  return Field;
+};
+
+const AddressLine1 = createPreloadableField(fieldLoaders.AddressLine1);
+const ButtonGroupField = createPreloadableField(fieldLoaders.ButtonGroupField);
+const CheckboxField = createPreloadableField(fieldLoaders.CheckboxField);
+const CheckboxGroupField = createPreloadableField(
+  fieldLoaders.CheckboxGroupField
+);
+const ColorPickerField = createPreloadableField(fieldLoaders.ColorPickerField);
+const CustomField = createPreloadableField(fieldLoaders.CustomField);
+const DateSelectorField = createPreloadableField(
+  fieldLoaders.DateSelectorField
+);
+const DropdownField = createPreloadableField(fieldLoaders.DropdownField);
+const DropdownMultiField = createPreloadableField(
+  fieldLoaders.DropdownMultiField
+);
+const FileUploadField = createPreloadableField(fieldLoaders.FileUploadField);
+const MatrixField = createPreloadableField(fieldLoaders.MatrixField);
+const PasswordField = createPreloadableField(fieldLoaders.PasswordField);
+const PaymentMethodField = createPreloadableField(
+  fieldLoaders.PaymentMethodField
+);
+const PhoneField = createPreloadableField(fieldLoaders.PhoneField);
+const PinInputField = createPreloadableField(fieldLoaders.PinInputField);
+const QRScanner = createPreloadableField(fieldLoaders.QRScanner);
+const RadioButtonGroupField = createPreloadableField(
+  fieldLoaders.RadioButtonGroupField
+);
+const RatingField = createPreloadableField(fieldLoaders.RatingField);
+const SignatureField = createPreloadableField(fieldLoaders.SignatureField);
+const SliderField = createPreloadableField(fieldLoaders.SliderField);
+const TextField = createPreloadableField(fieldLoaders.TextField);
+const TextArea = createPreloadableField(fieldLoaders.TextArea);
+
+const preloadableFields = {
   AddressLine1,
   ButtonGroupField,
   CheckboxField,
@@ -99,6 +148,79 @@ const Fields = {
   TextField,
   TextArea
 };
+
+const getFieldComponentKey = (servarType?: string): FieldComponentKey => {
+  switch (servarType) {
+    case 'matrix':
+      return 'MatrixField';
+    case 'date_selector':
+      return 'DateSelectorField';
+    case 'signature':
+      return 'SignatureField';
+    case 'qr_scanner':
+      return 'QRScanner';
+    case 'custom':
+      return 'CustomField';
+    case 'file_upload':
+      return 'FileUploadField';
+    case 'button_group':
+      return 'ButtonGroupField';
+    case 'checkbox':
+      return 'CheckboxField';
+    case 'dropdown':
+    case 'gmap_state':
+    case 'gmap_country':
+      return 'DropdownField';
+    case 'dropdown_multi':
+      return 'DropdownMultiField';
+    case 'pin_input':
+      return 'PinInputField';
+    case 'multiselect':
+      return 'CheckboxGroupField';
+    case 'select':
+      return 'RadioButtonGroupField';
+    case 'hex_color':
+      return 'ColorPickerField';
+    case 'slider':
+      return 'SliderField';
+    case 'rating':
+      return 'RatingField';
+    case 'password':
+      return 'PasswordField';
+    case 'text_area':
+      return 'TextArea';
+    case 'phone_number':
+      return 'PhoneField';
+    case 'gmap_line_1':
+    case 'gmap_city':
+      return 'AddressLine1';
+    case 'payment_method':
+      return 'PaymentMethodField';
+    default:
+      return 'TextField';
+  }
+};
+
+export const preloadStepFields = (
+  step: any,
+  visiblePositions: VisiblePositions
+) => {
+  const fieldComponentKeys = new Set<FieldComponentKey>();
+  step.servar_fields.forEach((element: any) => {
+    const visibleFlags = visiblePositions[getPositionKey(element)];
+    if (visibleFlags?.some(Boolean)) {
+      fieldComponentKeys.add(getFieldComponentKey(element.servar?.type));
+    }
+  });
+
+  return Promise.all(
+    Array.from(fieldComponentKeys).map((key) =>
+      preloadableFields[key].preload()
+    )
+  );
+};
+
+const Fields = { ...preloadableFields };
 
 const justifyContentTextAlignMap = {
   'flex-start': 'left',
