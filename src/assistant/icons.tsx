@@ -46,11 +46,9 @@ export const SendIcon = (props: ComponentProps<'svg'>) => (
 
 export const SpinnerIcon = (props: ComponentProps<'svg'>) => (
   <svg
-    style={{
-      width: '16px',
-      height: '16px',
-      borderRadius: '50%'
-    }}
+    width='16'
+    height='16'
+    style={{ borderRadius: '50%' }}
     viewBox='0 0 50 50'
     {...props}
   >
@@ -108,6 +106,153 @@ export const CheckIcon = (props: ComponentProps<'svg'>) => (
     <polyline
       points='20 6 9 17 4 12'
       stroke='#10b981'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+export const ChevronDownIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <path
+      d='m6 9 6 6 6-6'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+export const FloatingIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <rect
+      x='3'
+      y='3'
+      width='18'
+      height='18'
+      rx='2'
+      stroke='currentColor'
+      strokeWidth='2'
+    />
+    <rect
+      x='12'
+      y='12'
+      width='7'
+      height='7'
+      rx='1'
+      stroke='currentColor'
+      strokeWidth='2'
+    />
+  </svg>
+);
+
+export const SidebarLeftIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <rect
+      x='3'
+      y='3'
+      width='18'
+      height='18'
+      rx='2'
+      stroke='currentColor'
+      strokeWidth='2'
+    />
+    <path d='M9 3v18' stroke='currentColor' strokeWidth='2' />
+  </svg>
+);
+
+export const SidebarRightIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <rect
+      x='3'
+      y='3'
+      width='18'
+      height='18'
+      rx='2'
+      stroke='currentColor'
+      strokeWidth='2'
+    />
+    <path d='M15 3v18' stroke='currentColor' strokeWidth='2' />
+  </svg>
+);
+
+export const FullscreenIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <path
+      d='M4 9V5a1 1 0 0 1 1-1h4'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+    <path
+      d='M20 9V5a1 1 0 0 0-1-1h-4'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+    <path
+      d='M4 15v4a1 1 0 0 0 1 1h4'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+    <path
+      d='M20 15v4a1 1 0 0 1-1 1h-4'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+export const MinusIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <path
+      d='M5 12h14'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+    />
+  </svg>
+);
+
+export const ChevronsLeftIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <path
+      d='m11 17-5-5 5-5'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+    <path
+      d='m18 17-5-5 5-5'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+export const ChevronsRightIcon = (props: ComponentProps<'svg'>) => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' {...props}>
+    <path
+      d='m6 17 5-5-5-5'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+    <path
+      d='m13 17 5-5-5-5'
+      stroke='currentColor'
       strokeWidth='2'
       strokeLinecap='round'
       strokeLinejoin='round'

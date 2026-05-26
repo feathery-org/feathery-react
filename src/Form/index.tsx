@@ -1,8 +1,6 @@
 import { RouterProvider, useLocation, useNavigate } from '../hooks/router';
 import React, {
-  lazy,
   ReactNode,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -79,7 +77,7 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import FeatheryClient from '../utils/featheryClient';
+import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
 import {
@@ -229,10 +227,9 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-
-const AssistantChat = lazy(
-  () => import(/* webpackChunkName: "AssistantChat" */ '../assistant')
-);
+import { AssistantChat } from '../assistant';
+import type { AssistantLayoutState } from '../assistant/AssistantChat';
+import AssistantClient from '../assistant/AssistantClient';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -476,6 +473,45 @@ function Form({
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
+
+  const [assistantLayout, setAssistantLayout] = useState<AssistantLayoutState>({
+    mode: 'current',
+    isOpen: false,
+    side: null,
+    width: 0,
+    isResizing: false
+  });
+  const handleAssistantLayoutChange = useCallback(
+    (state: AssistantLayoutState) => setAssistantLayout(state),
+    []
+  );
+  const assistantOffsetCSS = useMemo(() => {
+    const { side, width, isResizing } = assistantLayout;
+    const root = activeStep?.subgrids?.find(
+      (g: any) => g.position?.length === 0
+    );
+    const isFillWidth = root?.width === 'fill' || root?.mobile_width === 'fill';
+    const transition = isResizing
+      ? 'none'
+      : 'max-width 0.25s ease, min-width 0.25s ease, margin 0.25s ease';
+    const left = side === 'left' ? width : 0;
+    const right = side === 'right' ? width : 0;
+    if (isFillWidth) {
+      const calc = `calc(100% - ${left + right}px)`;
+      return {
+        minWidth: calc,
+        maxWidth: calc,
+        marginLeft: `${left}px`,
+        marginRight: `${right}px`,
+        transition
+      };
+    }
+    if (!side || !width) return {};
+    return {
+      marginLeft: side === 'left' ? `${width}px` : 'auto',
+      marginRight: side === 'right' ? `${width}px` : 'auto'
+    };
+  }, [assistantLayout, activeStep]);
   const globalCSS = useMemo(
     () => calculateGlobalCSS(formSettings.globalStyles),
     [formSettings.globalStyles]
@@ -797,6 +833,13 @@ function Form({
     [setRender, render]
   );
 
+  const getAssistantTargets = useCallback(() => {
+    const targets: { type: string; id: string }[] = [];
+    if (formId) targets.push({ type: 'panel', id: formId });
+    if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
+    return targets;
+  }, [formId]);
+
   useEffect(() => {
     return () => {
       debouncedValidate.cancel();
@@ -996,6 +1039,7 @@ function Form({
   if (internalState[_internalId]) {
     internalState[_internalId].setInlineErrors = setInlineErrors;
     internalState[_internalId].inlineErrors = inlineErrors;
+    internalState[_internalId].logicRules = logicRules;
   }
 
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
@@ -2900,6 +2944,13 @@ function Form({
     featheryContext: getFormContext(_internalId)
   };
 
+  if (internalState[_internalId]) {
+    internalState[_internalId].assistantClient = new AssistantClient({
+      buttonOnClick,
+      runElementActions
+    });
+  }
+
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished
   const anyFinished =
@@ -2959,6 +3010,7 @@ function Form({
           ...globalCSS.getTarget('form'),
           ...stepCSS,
           ...style,
+          ...assistantOffsetCSS,
           position: 'relative',
           display: 'flex',
           ...(popupOptions ? { borderRadius: '10px' } : {})
@@ -3021,19 +3073,20 @@ function Form({
           }
         />
         {formSettings.assistantEnabled && (
-          <Suspense fallback={null}>
-            <AssistantChat
-              formId={formId}
-              bottom={
-                (formSettings.showBrand &&
-                formSettings.brandPosition === 'bottom_right'
-                  ? 67
-                  : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
-              }
-              color={formSettings.assistantColor}
-              workflowActions={formSettings.assistantWorkflowActions}
-            />
-          </Suspense>
+          <AssistantChat
+            instanceId={_internalId}
+            baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
+            getTargets={getAssistantTargets}
+            bottom={
+              (formSettings.showBrand &&
+              formSettings.brandPosition === 'bottom_right'
+                ? 67
+                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+            }
+            color={formSettings.assistantColor}
+            workflowActions={formSettings.assistantWorkflowActions}
+            onLayoutChange={handleAssistantLayoutChange}
+          />
         )}
       </form>
     </ReactPortal>

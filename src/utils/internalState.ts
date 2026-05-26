@@ -8,6 +8,8 @@ import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
 import FeatheryClient from './featheryClient';
+import { LogicRule } from '../types/Form';
+import AssistantClient from '../assistant/AssistantClient';
 import {
   ExtractionActionOptions,
   FillQuikParams,
@@ -48,6 +50,8 @@ export interface FormInternalState {
   currentStep: any;
   previousStepName: string;
   visiblePositions: any;
+  logicRules?: LogicRule[];
+  assistantClient?: AssistantClient;
   client: FeatheryClient;
   formName: string;
   formId: string;
