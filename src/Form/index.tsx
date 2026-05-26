@@ -244,9 +244,6 @@ export interface Props {
   onError?: null | ((context: ContextOnError) => Promise<any> | void);
   onView?: null | ((context: ContextOnView) => Promise<any> | void);
   onAction?: null | ((context: ContextOnAction) => Promise<any> | void);
-  onAssistantLayoutChange?:
-    | null
-    | ((state: AssistantLayoutState) => Promise<any> | void);
   onViewElements?: string[];
   saveUrlParams?: boolean;
   initialValues?: FieldValues;
@@ -327,7 +324,6 @@ function Form({
   onError = null,
   onView = null,
   onAction = null,
-  onAssistantLayoutChange = null,
   onViewElements = [],
   saveUrlParams = false,
   hideTestUI = false,
@@ -477,6 +473,45 @@ function Form({
 
   // When the active step changes, recalculate the dimensions of the new step
   const stepCSS = useMemo(() => calculateStepCSS(activeStep), [activeStep]);
+
+  const [assistantLayout, setAssistantLayout] = useState<AssistantLayoutState>({
+    mode: 'current',
+    isOpen: false,
+    side: null,
+    width: 0,
+    isResizing: false
+  });
+  const handleAssistantLayoutChange = useCallback(
+    (state: AssistantLayoutState) => setAssistantLayout(state),
+    []
+  );
+  const assistantOffsetCSS = useMemo(() => {
+    const { side, width, isResizing } = assistantLayout;
+    const root = activeStep?.subgrids?.find(
+      (g: any) => g.position?.length === 0
+    );
+    const isFillWidth = root?.width === 'fill' || root?.mobile_width === 'fill';
+    const transition = isResizing
+      ? 'none'
+      : 'max-width 0.25s ease, min-width 0.25s ease, margin 0.25s ease';
+    const left = side === 'left' ? width : 0;
+    const right = side === 'right' ? width : 0;
+    if (isFillWidth) {
+      const calc = `calc(100% - ${left + right}px)`;
+      return {
+        minWidth: calc,
+        maxWidth: calc,
+        marginLeft: `${left}px`,
+        marginRight: `${right}px`,
+        transition
+      };
+    }
+    if (!side || !width) return {};
+    return {
+      marginLeft: side === 'left' ? `${width}px` : 'auto',
+      marginRight: side === 'right' ? `${width}px` : 'auto'
+    };
+  }, [assistantLayout, activeStep]);
   const globalCSS = useMemo(
     () => calculateGlobalCSS(formSettings.globalStyles),
     [formSettings.globalStyles]
@@ -2975,6 +3010,7 @@ function Form({
           ...globalCSS.getTarget('form'),
           ...stepCSS,
           ...style,
+          ...assistantOffsetCSS,
           position: 'relative',
           display: 'flex',
           ...(popupOptions ? { borderRadius: '10px' } : {})
@@ -3049,7 +3085,7 @@ function Form({
             }
             color={formSettings.assistantColor}
             workflowActions={formSettings.assistantWorkflowActions}
-            onLayoutChange={onAssistantLayoutChange}
+            onLayoutChange={handleAssistantLayoutChange}
           />
         )}
       </form>

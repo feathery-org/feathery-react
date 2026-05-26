@@ -765,7 +765,9 @@ const AssistantChat = ({
       ? FullscreenIcon
       : FloatingIcon;
 
-  // Collapsed state - show chat bubble
+  const fabOnLeft = mode === 'sidebar-left';
+  const fabSide = fabOnLeft ? { left: '20px' } : { right: '20px' };
+  const fabBottom = fabOnLeft ? 20 : bottom;
   if (!isOpen) {
     return (
       <button
@@ -773,8 +775,8 @@ const AssistantChat = ({
         onClick={() => setIsOpen(true)}
         css={{
           position: 'fixed',
-          bottom: `${bottom}px`,
-          right: '20px',
+          bottom: `${fabBottom}px`,
+          ...fabSide,
           width: `${FAB_SIZE}px`,
           height: `${FAB_SIZE}px`,
           borderRadius: '50%',
