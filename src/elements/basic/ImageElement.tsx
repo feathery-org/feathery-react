@@ -13,6 +13,20 @@ function applyImageStyles(element: any, responsiveStyles: any) {
   return responsiveStyles;
 }
 
+function getInitialDocumentUrl({
+  editMode,
+  imageFieldSource,
+  sourceImage
+}: {
+  editMode?: boolean;
+  imageFieldSource: any;
+  sourceImage?: string;
+}) {
+  if (typeof imageFieldSource === 'string') return imageFieldSource;
+  if (!imageFieldSource) return sourceImage || PLACEHOLDER_IMAGE;
+  return editMode ? PLACEHOLDER_IMAGE : '';
+}
+
 function ImageElement({
   element,
   responsiveStyles,
@@ -27,10 +41,12 @@ function ImageElement({
     imageFieldSource = imageFieldSource[element.repeat ?? 0];
   }
 
-  const hasSourceImage = !!element.properties.source_image && !imageFieldSource;
-
   const [documentUrl, setDocumentUrl] = useState(
-    editMode && !hasSourceImage ? PLACEHOLDER_IMAGE : ''
+    getInitialDocumentUrl({
+      editMode,
+      imageFieldSource,
+      sourceImage: element.properties.source_image
+    })
   );
   const [documentType, setDocumentType] = useState<string | undefined>('');
   const [applyWidth, setApplyWidth] = useState(true);

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { getRenderData } from '../../../utils/image';
 import { fieldValues } from '../../../utils/init';
 import { PLACEHOLDER_IMAGE } from '../ImageElement';
@@ -364,6 +365,30 @@ describe('ImageElement', () => {
   });
 
   // SOURCE IMAGE
+  it('renders source image src before effects run', async () => {
+    const sourceImg = 'https://example.com/image.png';
+
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        aria_label: 'Render image',
+        source_image: sourceImg
+      },
+      repeat: 0
+    };
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    const html = renderToString(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    expect(html).toContain(`src="${sourceImg}"`);
+  });
+
   it('renders source image in edit mode', async () => {
     const sourceImg = 'https://example.com/image.png';
 
