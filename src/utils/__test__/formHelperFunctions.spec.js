@@ -156,13 +156,13 @@ describe('formHelperFunctions', () => {
           },
           body: JSON.stringify({
             fuser_key: userId,
-            form_key: formKey,
             name: undefined,
             method: 'GET',
             url: 'https://api.example.com/data',
             user_data: { key: 'value' },
             headers: { 'X-Custom-Header': 'test' },
-            field_values: { feathery_user_id: '' }
+            field_values: { feathery_user_id: '' },
+            form_key: formKey
           }),
           cache: 'no-store',
           keepalive: false
@@ -207,13 +207,13 @@ describe('formHelperFunctions', () => {
           },
           body: JSON.stringify({
             fuser_key: userId,
-            form_key: formKey,
             name: undefined,
             method: 'POST',
             url: 'https://api.example.com/items',
             user_data: { name: 'test' },
             headers: { Authorization: 'Bearer token' },
-            field_values: { feathery_user_id: '' }
+            field_values: { feathery_user_id: '' },
+            form_key: formKey
           }),
           cache: 'no-store',
           keepalive: false
@@ -260,13 +260,13 @@ describe('formHelperFunctions', () => {
           },
           body: JSON.stringify({
             fuser_key: userId,
-            form_key: formKey,
             name: 'my-connector',
             method: undefined,
             url: undefined,
             user_data: { input: 'data' },
             headers: { Authorization: 'Bearer token' },
-            field_values: { feathery_user_id: '' }
+            field_values: { feathery_user_id: '' },
+            form_key: formKey
           }),
           cache: 'no-store',
           keepalive: false
