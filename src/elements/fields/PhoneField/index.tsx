@@ -74,7 +74,14 @@ function PhoneField({
 
   useEffect(() => {
     try {
-      polyfillCountryFlagEmojis();
+      // Serve the flag font from our own bundle rather than the polyfill's
+      // default jsDelivr CDN, so all resources load from Feathery-controlled
+      // origins. The .woff2 is vendored from country-flag-emoji-polyfill and
+      // emitted as a sibling asset by webpack/rollup; `new URL(...,
+      // import.meta.url)` resolves it relative to wherever the bundle is served.
+      const fontUrl = new URL('./TwemojiCountryFlags.woff2', import.meta.url)
+        .href;
+      polyfillCountryFlagEmojis('Twemoji Country Flags', fontUrl);
     } catch {
       // Gracefully degrade if polyfill fails (e.g. in test environments)
     }
