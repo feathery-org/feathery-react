@@ -13,6 +13,22 @@ function applyImageStyles(element: any, responsiveStyles: any) {
   return responsiveStyles;
 }
 
+function getImmediateDocumentUrl({
+  editMode,
+  imageFieldSource,
+  sourceImage
+}: {
+  editMode?: boolean;
+  imageFieldSource: any;
+  sourceImage?: string;
+}) {
+  if (imageFieldSource && typeof imageFieldSource === 'string') {
+    return imageFieldSource;
+  }
+  if (!imageFieldSource) return sourceImage || PLACEHOLDER_IMAGE;
+  return editMode ? PLACEHOLDER_IMAGE : '';
+}
+
 function ImageElement({
   element,
   responsiveStyles,
@@ -27,12 +43,18 @@ function ImageElement({
     imageFieldSource = imageFieldSource[element.repeat ?? 0];
   }
 
-  const hasSourceImage = !!element.properties.source_image && !imageFieldSource;
-
-  const [documentUrl, setDocumentUrl] = useState(
-    editMode && !hasSourceImage ? PLACEHOLDER_IMAGE : ''
+  const shouldResolveImageSource = Boolean(
+    imageFieldSource && typeof imageFieldSource !== 'string'
   );
-  const [documentType, setDocumentType] = useState<string | undefined>('');
+  const immediateDocumentUrl = getImmediateDocumentUrl({
+    editMode,
+    imageFieldSource,
+    sourceImage: element.properties.source_image
+  });
+  const [resolvedDocumentData, setResolvedDocumentData] = useState<{
+    type?: string;
+    url: string;
+  } | null>(null);
   const [applyWidth, setApplyWidth] = useState(true);
   const styles = useMemo(
     () => applyImageStyles(element, responsiveStyles),
@@ -40,21 +62,19 @@ function ImageElement({
   );
 
   useEffect(() => {
-    if (imageFieldSource) {
-      if (typeof imageFieldSource === 'string') {
-        setDocumentType('');
-        setDocumentUrl(imageFieldSource);
-      } else {
-        getRenderData(imageFieldSource as any).then((data) => {
-          setDocumentType(data.type);
-          setDocumentUrl(data.url);
-        });
-      }
-    } else {
-      setDocumentUrl(element.properties.source_image || PLACEHOLDER_IMAGE);
-      setDocumentType('');
-    }
-  }, [imageFieldSource, element.properties.source_image]);
+    if (!shouldResolveImageSource) return;
+
+    getRenderData(imageFieldSource as any).then(setResolvedDocumentData);
+  }, [imageFieldSource, shouldResolveImageSource]);
+
+  const documentUrl =
+    shouldResolveImageSource && resolvedDocumentData
+      ? resolvedDocumentData.url
+      : immediateDocumentUrl;
+  const documentType =
+    shouldResolveImageSource && resolvedDocumentData
+      ? resolvedDocumentData.type
+      : '';
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
 

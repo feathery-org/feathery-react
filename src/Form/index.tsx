@@ -113,6 +113,7 @@ import FormOff, {
 import Lottie from '../elements/components/Lottie';
 import Watermark from '../elements/components/Watermark';
 import Grid from './grid';
+import { preloadStepFields } from '../elements/fields';
 import { DEFAULT_MOBILE_BREAKPOINT, getViewport } from '../elements/styles';
 import {
   ContextOnAction,
@@ -1095,13 +1096,16 @@ function Form({
         getAllFields(fieldKeys, Object.keys(hiddenFields), _internalId)
       );
 
+    const newVisiblePositions = getVisiblePositions(newStep, _internalId);
+    preloadStepFields(newStep, newVisiblePositions).catch(() => {});
+
     setFormInternalState(
       _internalId,
       {
         language: language ?? initState.language,
         currentStep: newStep,
         previousStepName: activeStep?.key ?? '',
-        visiblePositions: getVisiblePositions(newStep, _internalId),
+        visiblePositions: newVisiblePositions,
         client,
         fields,
         products: Object.seal(
