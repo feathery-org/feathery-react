@@ -39,12 +39,15 @@ function ProgressBarElement({
     [responsiveStyles]
   );
 
+  const vertical = element.styles.bar_direction === 'vertical';
+
   const containerProps = {
     css: {
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',
       width: '100%',
+      ...(vertical && { height: '100%' }),
       ...styles.getTarget('barContainer')
     },
     ...elementProps
@@ -60,6 +63,8 @@ function ProgressBarElement({
           stepKey={stepKey}
           textPlacement={element.styles.percent_text_layout}
           onStepClick={changeStep}
+          vertical={vertical}
+          style={vertical ? { flex: 1 } : undefined}
         />
       </div>
     );
@@ -79,6 +84,9 @@ function ProgressBarElement({
     ? userProgress
     : Math.round((100 * (curDepth + 1)) / ((maxDepth || 1) + 1));
 
+  const textPlacement = element.styles.percent_text_layout;
+  const showText = textPlacement && textPlacement !== 'none';
+
   const BarComponent = userSegments ? SegmentBar : SmoothBar;
   const progressBarElements: React.ReactNode[] = [
     <BarComponent
@@ -86,9 +94,22 @@ function ProgressBarElement({
       styles={styles}
       percent={percent}
       numSegments={userSegments}
+      vertical={vertical}
     />
   ];
-  const completionPercentage = (
+  const completionPercentage = vertical ? (
+    <div
+      key='completionPercentage'
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 8px',
+        whiteSpace: 'nowrap'
+      }}
+    >
+      {`${percent}% completed`}
+    </div>
+  ) : (
     <div
       key='completionPercentage'
       style={{ width: '100%', textAlign: 'center' }}
@@ -96,14 +117,24 @@ function ProgressBarElement({
       {`${percent}% completed`}
     </div>
   );
-  if (element.styles.percent_text_layout === 'top') {
+  if (textPlacement === 'top') {
     progressBarElements.unshift(completionPercentage);
-  } else if (element.styles.percent_text_layout === 'bottom') {
+  } else if (textPlacement === 'bottom') {
     progressBarElements.push(completionPercentage);
   }
 
+  // When vertical with text beside the bar, switch to row layout
+  const flexDirection =
+    vertical && showText ? ('row' as const) : ('column' as const);
+
   return (
-    <div {...containerProps}>
+    <div
+      {...containerProps}
+      css={{
+        ...containerProps.css,
+        flexDirection
+      }}
+    >
       {children}
       {progressBarElements}
     </div>

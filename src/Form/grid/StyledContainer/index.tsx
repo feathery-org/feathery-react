@@ -38,6 +38,10 @@ export type StyledContainerProps = PropsWithChildren & {
  * around elements and other "Containers". This component is used by both hosted forms
  * and the editor to render "Containers".
  */
+type StyledContainerComponent = (
+  props: Omit<StyledContainerProps, 'ref'> & React.RefAttributes<HTMLDivElement>
+) => React.ReactElement | null;
+
 export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
   (
     {
@@ -188,6 +192,6 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       </>
     );
   }
-);
+) as StyledContainerComponent;
 
 export { getCellStyle };
