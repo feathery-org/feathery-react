@@ -87,6 +87,8 @@ const Element = ({ node: el, form }: any) => {
         progress={userProgress}
         curDepth={curDepth}
         maxDepth={maxDepth}
+        stepKey={activeStep?.key}
+        changeStep={form.changeStep}
       />
     );
   else if (type === 'image') return <Elements.ImageElement {...basicProps} />;

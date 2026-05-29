@@ -2,22 +2,25 @@ import React, { useEffect, useState } from 'react';
 
 let formerProgress: number | undefined;
 
-function SmoothBar({ styles, percent }: any) {
+function SmoothBar({ styles, percent, vertical = false }: any) {
   const [curProgress, setCurProgress] = useState(formerProgress);
 
   useEffect(() => {
-    // This allows the user to see a smooth progress bar animation from former progress amount to current amount
     if (percent !== curProgress) {
       setCurProgress(percent);
       formerProgress = percent;
     }
   }, [percent]);
 
+  const mainDim = vertical ? 'height' : 'width';
+  const crossDim = vertical ? 'width' : 'height';
+
   return (
     <div
       css={{
-        height: '0.4rem',
-        width: '100%',
+        [crossDim]: '0.4rem',
+        [mainDim]: '100%',
+        flexDirection: vertical ? 'column-reverse' : undefined,
         borderRadius: 0,
         display: 'flex',
         backgroundColor: '#e9ecef',
@@ -25,9 +28,9 @@ function SmoothBar({ styles, percent }: any) {
       }}
     >
       <div
-        style={{ width: `${curProgress}%` }}
+        style={{ [mainDim]: `${curProgress}%` }}
         css={{
-          transition: 'width 0.6s ease',
+          transition: `${mainDim} 0.6s ease`,
           // TODO: hack to not override bar mobile styles for now
           ...styles.getTarget('barWrapper', true),
           ...styles.getTarget('bar')
