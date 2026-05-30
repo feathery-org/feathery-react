@@ -12,7 +12,11 @@ import * as validation from '../../../utils/validation';
 import CountryDropdown from './CountryDropdown';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
-import { isValidPhoneLength } from './validation';
+import {
+  getBrowserCountry,
+  isValidPhoneLength,
+  resolvePhoneNumber
+} from './validation';
 import Overlay from '../../components/Overlay';
 import useElementSize from '../../../hooks/useElementSize';
 
@@ -134,13 +138,20 @@ function PhoneField({
     validation.phoneLibPromise.then((LPN: any) => {
       if (!LPN) return;
 
-      const ayt = new LPN.AsYouType();
-      ayt.input(`+${fullNumber}`);
-      const numberObj = ayt.getNumber() ?? '';
-      setCurFullNumber(fullNumber);
-      setRawNumber(fullNumber);
-      if (numberObj) {
-        setCurCountryCode(numberObj.country ?? curCountryCode);
+      const resolved = resolvePhoneNumber(
+        LPN,
+        fullNumber,
+        defaultCountry,
+        getBrowserCountry()
+      );
+
+      setCurFullNumber(resolved.fullNumber);
+      setRawNumber(resolved.fullNumber);
+      if (resolved.countryCode in countryMap) {
+        setCurCountryCode(resolved.countryCode);
+      }
+      if (resolved.changed) {
+        onComplete(resolved.fullNumber);
       }
     });
   }, [fullNumber]);
@@ -349,6 +360,47 @@ function PhoneField({
                 handleOnComplete(rawNumber);
                 onEnter(e);
               } else if (e.key === '+') setShow(true);
+            }}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData('text');
+              if (!pasted || !/\d/.test(pasted)) return;
+              const LPN = validation.phoneLib;
+              if (!LPN) return;
+
+              const resolved = resolvePhoneNumber(
+                LPN,
+                pasted,
+                defaultCountry,
+                getBrowserCountry(),
+                curCountryCode
+              );
+              const resolvedCountryCode =
+                countriesEnabled && resolved.countryCode in countryMap
+                  ? resolved.countryCode
+                  : curCountryCode;
+
+              if (
+                !countriesEnabled &&
+                !resolved.fullNumber.startsWith(phoneCode)
+              )
+                return;
+
+              const lengthValidation = LPN.validatePhoneNumberLength(
+                resolved.fullNumber,
+                resolvedCountryCode
+              );
+              if (
+                lengthValidation ||
+                !isValidPhoneLength(resolved.fullNumber, resolvedCountryCode)
+              )
+                return;
+
+              e.preventDefault();
+              setRawNumber(resolved.fullNumber);
+              if (countriesEnabled && resolved.countryCode in countryMap) {
+                setCurCountryCode(resolvedCountryCode);
+              }
+              handleOnComplete(resolved.fullNumber);
             }}
             onChange={(e) => {
               let start = e.target.selectionStart;
