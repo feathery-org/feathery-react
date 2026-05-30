@@ -1,10 +1,10 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { fieldValues } from './init';
-import { getDefaultFieldValue } from './fieldHelperFunctions';
 import {
   getRepeatedContainer,
   getRepeatedContainers,
+  getServarRepeatNum,
   inRepeat
 } from './repeat';
 
@@ -127,23 +127,12 @@ const repeatCountByFields = (step: any, repeatKey: string | undefined) => {
   );
   let count = 0;
   repeatableServars.forEach((servar) => {
-    count = Math.max(count, getServarRepeatNum(servar));
+    count = Math.max(
+      count,
+      getServarRepeatNum(servar, fieldValues[servar.servar?.key ?? ''])
+    );
   });
   return count;
-};
-
-// If the final value is still default, do not render another repeat
-const getServarRepeatNum = (node: any) => {
-  const servar = node.servar ?? {};
-  const fieldValue = fieldValues[servar.key ?? ''];
-  if (!Array.isArray(fieldValue)) return 0;
-
-  const defaultValue = getDefaultFieldValue(node);
-  const hasDefaultLastValue =
-    fieldValue[fieldValue.length - 1] === defaultValue;
-  return servar.repeat_trigger === 'set_value' && !hasDefaultLastValue
-    ? fieldValue.length + 1
-    : fieldValue.length;
 };
 
 const stepElementTypes = [

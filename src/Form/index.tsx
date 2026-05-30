@@ -1038,13 +1038,6 @@ function Form({
         ...props2
       }));
 
-  // keep internalState fresh
-  if (internalState[_internalId]) {
-    internalState[_internalId].setInlineErrors = setInlineErrors;
-    internalState[_internalId].inlineErrors = inlineErrors;
-    internalState[_internalId].logicRules = logicRules;
-  }
-
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
     const changed = changeStep(
       newKey,
@@ -1391,6 +1384,16 @@ function Form({
     return visiblePositions;
   }, [activeStep, render, formSettings]);
 
+  // keep internalState fresh
+  if (internalState[_internalId]) {
+    internalState[_internalId].setInlineErrors = setInlineErrors;
+    internalState[_internalId].inlineErrors = inlineErrors;
+    internalState[_internalId].logicRules = logicRules;
+    if (visiblePositions) {
+      internalState[_internalId].visiblePositions = visiblePositions;
+    }
+  }
+
   useEffect(() => {
     if (clientRef.current) return;
 
@@ -1563,7 +1566,7 @@ function Form({
   const changeValue = (
     value: any,
     field: any,
-    index = null,
+    index: number | null = null,
     rerender = true,
     triggerErrors = true
   ) => {
@@ -2959,7 +2962,8 @@ function Form({
   if (internalState[_internalId]) {
     internalState[_internalId].assistantClient = new AssistantClient({
       buttonOnClick,
-      runElementActions
+      runElementActions,
+      changeValue
     });
   }
 

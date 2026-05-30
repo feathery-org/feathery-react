@@ -1,5 +1,6 @@
 import { PositionedElement, Subgrid } from '../types/Form';
 import { getPositionKey } from './hideAndRepeats';
+import { getDefaultFieldValue } from './fieldHelperFunctions';
 
 interface Step {
   subgrids: Subgrid[];
@@ -69,4 +70,19 @@ export function getContainerById(
   id: string
 ): Subgrid | undefined {
   return step.subgrids.find((subgrid) => subgrid.id === id);
+}
+
+/**
+ * Number of rendered rows for a repeated field. If the trigger is 'set_value'
+ * and the last row is not at default, the renderer shows an extra empty row.
+ */
+export function getServarRepeatNum(field: any, fieldValue: unknown): number {
+  if (!Array.isArray(fieldValue)) return 0;
+  const servar = field?.servar ?? {};
+  const hasDefaultLastValue =
+    fieldValue.length > 0 &&
+    fieldValue[fieldValue.length - 1] === getDefaultFieldValue(field);
+  return servar.repeat_trigger === 'set_value' && !hasDefaultLastValue
+    ? fieldValue.length + 1
+    : fieldValue.length;
 }

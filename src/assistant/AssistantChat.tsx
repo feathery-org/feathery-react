@@ -57,11 +57,7 @@ import {
   getCurrentStepKey,
   getPanelRuntimeSnapshot
 } from './tools/panelRuntime';
-import {
-  applyServarValues,
-  validateSetFieldValue,
-  type ErrorType
-} from './tools/setFieldValue';
+import { dispatchSetFieldValue } from './tools/setFieldValue';
 import { dispatchClickElement } from './tools/clickElement';
 
 const FAB_SIZE = 56;
@@ -435,93 +431,32 @@ const AssistantChat = ({
         if (toolCall.dynamic) return;
 
         if (toolCall.toolName === 'setFieldValue') {
-          type FieldResult =
-            | {
-                fieldKey: string;
-                ok: true;
-                value: unknown;
-                priorValue: unknown;
-              }
-            | {
-                fieldKey: string;
-                ok: false;
-                error: string;
-                errorType: ErrorType | 'apply_failed';
-              };
           const input = (toolCall.input ?? {}) as {
-            fields?: Array<{ fieldKey?: unknown; value?: unknown }>;
+            fields?: Array<{
+              fieldKey?: unknown;
+              value?: unknown;
+              repeatIndex?: unknown;
+            }>;
           };
           const fields = Array.isArray(input.fields) ? input.fields : [];
-          const snap = instanceId ? getPanelRuntimeSnapshot(instanceId) : null;
-          const toCloneable = (v: unknown): unknown =>
-            v == null ? null : JSON.parse(JSON.stringify(v));
-          const priorValues = new Map<string, unknown>(
-            (snap?.currentStepFields ?? []).map((f) => [
-              f.key,
-              toCloneable(f.value)
-            ])
-          );
-          const results: FieldResult[] = [];
-          const toApply: Array<{ fieldKey: string; value: unknown }> = [];
-          for (const item of fields) {
-            const fieldKey =
-              typeof item?.fieldKey === 'string' ? item.fieldKey : '';
-            if (!fieldKey) {
-              results.push({
-                fieldKey,
-                ok: false,
-                errorType: 'shape_mismatch',
-                error: 'fieldKey is required.'
-              });
-              continue;
-            }
-            const validation = validateSetFieldValue(
-              fieldKey,
-              item.value,
-              snap
-            );
-            if (!validation.ok) {
-              results.push({
-                fieldKey,
-                ok: false,
-                error: validation.error,
-                errorType: validation.errorType
-              });
-              continue;
-            }
-            toApply.push({ fieldKey, value: validation.value });
-          }
-          try {
-            await applyServarValues(instanceId, toApply);
-            for (const { fieldKey, value } of toApply) {
-              results.push({
-                fieldKey,
-                ok: true,
-                value,
-                priorValue: priorValues.get(fieldKey) ?? null
-              });
-            }
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            for (const { fieldKey } of toApply) {
-              results.push({
-                fieldKey,
-                ok: false,
-                errorType: 'apply_failed',
-                error: message
-              });
-            }
-          }
+          const output = await dispatchSetFieldValue(instanceId, fields);
           chat.addToolOutput({
             tool: 'setFieldValue',
             toolCallId: toolCall.toolCallId,
-            output: { results }
+            output
           });
         } else if (toolCall.toolName === 'clickElement') {
-          const input = (toolCall.input ?? {}) as { elementId?: unknown };
+          const input = (toolCall.input ?? {}) as {
+            elementId?: unknown;
+            repeatIndex?: unknown;
+          };
           const elementId =
             typeof input.elementId === 'string' ? input.elementId : '';
-          const output = await dispatchClickElement(instanceId, elementId);
+          const output = await dispatchClickElement(
+            instanceId,
+            elementId,
+            input.repeatIndex
+          );
           chat.addToolOutput({
             tool: 'clickElement',
             toolCallId: toolCall.toolCallId,
