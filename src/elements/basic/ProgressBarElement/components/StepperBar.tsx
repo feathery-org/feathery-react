@@ -1,9 +1,28 @@
 import React from 'react';
+import { getFieldValues } from '../../../../utils/init';
 
 const CIRCLE_SIZE = 28;
 const CONNECTOR_GAP = 6;
 
-type StepConfig = { label: string; step_key: string };
+type StepConfig = {
+  label: string;
+  step_key: string;
+  visibility_field?: string;
+  visibility_condition?: '' | 'show' | 'hide';
+};
+
+function isFieldTruthy(fieldKey: string): boolean {
+  const val = getFieldValues()[fieldKey];
+  if (Array.isArray(val)) return val.length > 0;
+  return !!val;
+}
+
+function isStepVisible(step: StepConfig): boolean {
+  const cond = step.visibility_condition;
+  if (!cond || !step.visibility_field) return true;
+  const truthy = isFieldTruthy(step.visibility_field);
+  return cond === 'show' ? truthy : !truthy;
+}
 
 function StepperBar({
   styles,
@@ -24,11 +43,12 @@ function StepperBar({
 }) {
   const barStyles = styles.getTarget('bar');
   const showLabels = textPlacement !== 'none';
-  const steps = stepConfigs.map((s) => s.label);
+  const visibleStepConfigs = stepConfigs.filter(isStepVisible);
+  const steps = visibleStepConfigs.map((s) => s.label);
   const activeStep = stepKey
     ? Math.max(
         0,
-        stepConfigs.findIndex((s) => s.step_key === stepKey)
+        visibleStepConfigs.findIndex((s) => s.step_key === stepKey)
       )
     : 0;
 
@@ -63,7 +83,7 @@ function StepperBar({
       const isCompleted = index < activeStep;
       const isActive = index === activeStep;
       const isLast = index === steps.length - 1;
-      const sKey = stepConfigs?.[index]?.step_key;
+      const sKey = visibleStepConfigs?.[index]?.step_key;
       const isClickable = isCompleted && !!onStepClick && !!sKey;
 
       const connectorStyle = vertical
