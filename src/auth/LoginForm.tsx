@@ -14,6 +14,7 @@ import {
   rerenderAllForms
 } from '../utils/formHelperFunctions';
 import Auth from './internal/AuthIntegrationInterface';
+import { isAuthStytch } from './internal/utils';
 import { clearStytchDomainCookie } from '../integrations/stytch';
 /** TODO: These next 2 should maybe be dynamically imported, but having trouble with that
  * combined 6.9k gzipped, so OK for now
@@ -120,12 +121,10 @@ const LoginForm = ({
     authState.onLogout = onLogout;
     authState.setAuthId = (newId: string) => {
       if (newId === '') {
-        // [Hosted Login] Cleanup if user is logged out. Necessary if user was
-        // logged out on another domain, but appropriate logic to run in any
-        // case.
         authState.redirectAfterLogin = false;
         setShowLoader(false);
-        clearStytchDomainCookie();
+        if (isAuthStytch() && authState._featheryHosted)
+          clearStytchDomainCookie();
       }
 
       authState.authId = newId;
