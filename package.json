@@ -72,6 +72,7 @@
     "@typescript-eslint/eslint-plugin": "^5.28.0",
     "@typescript-eslint/parser": "^5.28.0",
     "babel-loader": "^8.2.2",
+    "babel-plugin-transform-import-meta": "^2.3.3",
     "clean-webpack-plugin": "^3.0.0",
     "declaration-bundler-webpack-plugin": "^1.0.3",
     "eslint": "^8.20.0",
@@ -95,6 +96,7 @@
     "react-dom": "18.2.0",
     "react-test-renderer": "^17.0.2",
     "rollup": "^4.53.2",
+    "rollup-plugin-copy": "^3.5.0",
     "rollup-plugin-delete": "^3.0.1",
     "rollup-plugin-typescript2": "^0.36.0",
     "standard-version": "^9.5.0",
@@ -185,6 +187,13 @@
           "regenerator": true
         }
       ]
-    ]
+    ],
+    "env": {
+      "test": {
+        "plugins": [
+          "babel-plugin-transform-import-meta"
+        ]
+      }
+    }
   }
 }

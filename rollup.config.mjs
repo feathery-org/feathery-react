@@ -2,6 +2,7 @@ import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import typescript from 'rollup-plugin-typescript2';
 import del from 'rollup-plugin-delete';
+import copy from 'rollup-plugin-copy';
 import replace from '@rollup/plugin-replace';
 import { readFileSync } from 'fs';
 
@@ -34,6 +35,21 @@ export default {
   ],
   plugins: [
     del({ targets: ['dist/*', 'cjs/*'] }),
+    // Ship the vendored country-flag font beside the bundle. Unlike webpack,
+    // rollup leaves `new URL('./TwemojiCountryFlags.woff2', import.meta.url)`
+    // as a literal relative reference without emitting the file, so we copy it
+    // into each output dir. This keeps the flag font served from our own
+    // package/origin instead of the polyfill's default jsDelivr CDN.
+    copy({
+      targets: [
+        {
+          src: 'src/elements/fields/PhoneField/TwemojiCountryFlags.woff2',
+          dest: ['dist', 'cjs']
+        }
+      ],
+      hook: 'closeBundle',
+      copyOnce: true
+    }),
     replace({
       preventAssignment: true,
       values: {
