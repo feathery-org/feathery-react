@@ -121,9 +121,6 @@ const LoginForm = ({
     authState.onLogout = onLogout;
     authState.setAuthId = (newId: string) => {
       if (newId === '') {
-        // [Hosted Login] Cleanup if user is logged out. Necessary if user was
-        // logged out on another domain, but appropriate logic to run in any
-        // case.
         authState.redirectAfterLogin = false;
         setShowLoader(false);
         if (isAuthStytch() && authState._featheryHosted)
