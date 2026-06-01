@@ -59,7 +59,8 @@ const Element = ({ node: el, form }: any) => {
     focusRef,
     setCardElement,
     visiblePositions,
-    featheryContext
+    featheryContext,
+    assistantClient
   } = form;
 
   const readOnly =
@@ -98,6 +99,7 @@ const Element = ({ node: el, form }: any) => {
         updateFieldValues={updateFieldValues}
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
+        assistantClient={assistantClient}
       />
     );
   else if (type === 'text')

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
@@ -37,7 +37,8 @@ function TableElement({
   updateFieldValues = () => {},
   submitCustom = () => {},
   editMode = false,
-  buttonLoaders = {}
+  buttonLoaders = {},
+  assistantClient
 }: any) {
   const styles = useMemo(
     () => applyTableStyles(responsiveStyles),
@@ -100,6 +101,8 @@ function TableElement({
       onMutate
     });
 
+  const tableId = element?.id;
+
   const canEdit = enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddDeleteRows;
   const canDeleteRows = canEdit && enableAddDeleteRows;
@@ -134,6 +137,42 @@ function TableElement({
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
 
+  const wrappedHandleAddRow = useCallback(() => {
+    setDeleteRowIndex(null);
+    handleAddRow();
+    setPendingAddRows((prev) => {
+      const next = new Set<number>();
+      next.add(0);
+      prev.forEach((idx) => next.add(idx + 1));
+      return next;
+    });
+  }, [handleAddRow]);
+
+  const wrappedHandleDeleteRow = useCallback(
+    (rowIndex: number) => {
+      handleDeleteRow(rowIndex);
+      setDeleteRowIndex(null);
+    },
+    [handleDeleteRow]
+  );
+
+  // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
+  useEffect(() => {
+    if (!assistantClient || !tableId) return;
+    assistantClient.registerTable(tableId, {
+      handleCellEdit: wrappedHandleCellEdit,
+      handleAddRow: wrappedHandleAddRow,
+      handleDeleteRow: wrappedHandleDeleteRow
+    });
+    return () => assistantClient.unregisterTable(tableId);
+  }, [
+    assistantClient,
+    tableId,
+    wrappedHandleCellEdit,
+    wrappedHandleAddRow,
+    wrappedHandleDeleteRow
+  ]);
+
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;
 
@@ -155,16 +194,7 @@ function TableElement({
             <button
               type='button'
               css={addRowButtonStyle}
-              onClick={() => {
-                setDeleteRowIndex(null);
-                handleAddRow();
-                setPendingAddRows((prev) => {
-                  const next = new Set<number>();
-                  next.add(0);
-                  prev.forEach((idx) => next.add(idx + 1));
-                  return next;
-                });
-              }}
+              onClick={wrappedHandleAddRow}
             >
               + Add Row
             </button>
@@ -380,10 +410,7 @@ function TableElement({
                               anchorEl={
                                 actionCellRefs.current.get(rowIndex) ?? null
                               }
-                              onConfirm={() => {
-                                handleDeleteRow(rowIndex);
-                                setDeleteRowIndex(null);
-                              }}
+                              onConfirm={() => wrappedHandleDeleteRow(rowIndex)}
                               onCancel={handleCancelDelete}
                             />
                           )}
@@ -422,10 +449,7 @@ function TableElement({
                             anchorEl={
                               deleteIconRefs.current.get(rowIndex) ?? null
                             }
-                            onConfirm={() => {
-                              handleDeleteRow(rowIndex);
-                              setDeleteRowIndex(null);
-                            }}
+                            onConfirm={() => wrappedHandleDeleteRow(rowIndex)}
                             onCancel={handleCancelDelete}
                           />
                         )}

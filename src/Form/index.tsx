@@ -347,6 +347,7 @@ function Form({
   const [formId, setFormId] = useState(formIdProp);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
+  const assistantClientRef = useRef<AssistantClient | undefined>(undefined);
   const navigate = useNavigate();
   const location = useLocation();
   const session = initState.formSessions[formId];
@@ -2926,6 +2927,21 @@ function Form({
         }
       : undefined;
 
+  if (internalState[_internalId]) {
+    const callbacks = {
+      buttonOnClick,
+      runElementActions,
+      tableOnClick,
+      changeValue
+    };
+    if (assistantClientRef.current) {
+      assistantClientRef.current.updateCallbacks(callbacks);
+    } else {
+      assistantClientRef.current = new AssistantClient(callbacks);
+      internalState[_internalId].assistantClient = assistantClientRef.current;
+    }
+  }
+
   const form = {
     userProgress,
     curDepth,
@@ -2956,16 +2972,9 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
-    featheryContext: getFormContext(_internalId)
+    featheryContext: getFormContext(_internalId),
+    assistantClient: internalState[_internalId]?.assistantClient
   };
-
-  if (internalState[_internalId]) {
-    internalState[_internalId].assistantClient = new AssistantClient({
-      buttonOnClick,
-      runElementActions,
-      changeValue
-    });
-  }
 
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished

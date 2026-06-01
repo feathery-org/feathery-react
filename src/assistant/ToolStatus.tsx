@@ -20,15 +20,39 @@ export interface ToolLabel {
 }
 
 export const TOOL_LABELS: Record<string, ToolLabel> = {
-  searchDocuments: {
-    running: 'Searching documents...',
-    done: 'Searched the documents'
-  },
   searchWeb: {
     running: 'Searching the web...',
     done: 'Searched the web'
   },
   scrapeUrl: { running: 'Reading web page...', done: 'Read the web page' },
+  searchDocuments: {
+    running: 'Searching documents...',
+    done: 'Searched the documents'
+  },
+  setFieldValue: {
+    running: 'Updating form fields...',
+    done: 'Updated form fields'
+  },
+  clickElement: {
+    running: 'Running form action...',
+    done: 'Ran the form action'
+  },
+  addTableRow: {
+    running: 'Adding a row...',
+    done: 'Added a row'
+  },
+  deleteTableRow: {
+    running: 'Deleting a row...',
+    done: 'Deleted a row'
+  },
+  setTableCellValue: {
+    running: 'Updating table cells...',
+    done: 'Updated table cells'
+  },
+  triggerTableAction: {
+    running: 'Running table action...',
+    done: 'Ran the table action'
+  },
   getPanelSnapshot: {
     running: 'Reading the form...',
     done: 'Reviewed the form'
@@ -36,10 +60,6 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
   getFuserSnapshot: {
     running: 'Looking up your submission...',
     done: 'Reviewed the submission'
-  },
-  listFormExtractions: {
-    running: 'Looking up extractions...',
-    done: 'Reviewed available extractions'
   },
   getExtractionSnapshot: {
     running: 'Reading extraction setup...',
@@ -49,13 +69,9 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     running: 'Reading extraction results...',
     done: 'Reviewed the extraction results'
   },
-  setFieldValue: {
-    running: 'Updating form fields...',
-    done: 'Updated form fields'
-  },
-  clickElement: {
-    running: 'Just a moment...',
-    done: 'Triggered a form action'
+  listFormExtractions: {
+    running: 'Looking up extractions...',
+    done: 'Reviewed available extractions'
   },
   getLogicRules: {
     running: 'Reading form logic...',

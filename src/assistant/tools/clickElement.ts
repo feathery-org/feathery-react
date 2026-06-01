@@ -3,8 +3,11 @@ import { initState } from '../../utils/init';
 import { getRepeatedContainer } from '../../utils/repeat';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { isButtonDisabled } from '../../utils/button';
-import { findClickableAncestorSubgrids } from '../utils';
-import { validateRepeatIndex } from './utils';
+import {
+  findClickableAncestorSubgrids,
+  snapshotInlineErrors,
+  validateRepeatIndex
+} from './utils';
 
 type ClickErrorType =
   | 'not_on_step'
@@ -59,18 +62,6 @@ const findElement = (state: any, elementId: string): FoundElement | null => {
     };
   }
   return null;
-};
-
-const snapshotInlineErrors = (state: any): Record<string, string> => {
-  const inlineErrors = state?.inlineErrors ?? {};
-  const out: Record<string, string> = {};
-  for (const key of Object.keys(inlineErrors)) {
-    const message = inlineErrors[key]?.message;
-    if (typeof message === 'string' && message.length > 0) {
-      out[key] = message;
-    }
-  }
-  return out;
 };
 
 export async function dispatchClickElement(
