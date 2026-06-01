@@ -499,12 +499,14 @@ function Form({
     const right = side === 'right' ? width : 0;
     if (isFillWidth) {
       const calc = `calc(100% - ${left + right}px)`;
+      const sidebarOpen = !!side && width > 0;
       return {
         minWidth: calc,
         maxWidth: calc,
         marginLeft: `${left}px`,
         marginRight: `${right}px`,
-        transition
+        transition,
+        ...(sidebarOpen ? { height: '100vh', overflowY: 'auto' } : {})
       };
     }
     if (!side || !width) return {};
