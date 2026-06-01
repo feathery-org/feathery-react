@@ -68,6 +68,13 @@ export function installSegment(segmentConfig: any) {
       script.async = true;
       script.src =
         'https://cdn.segment.com/analytics.js/v1/' + key + '/analytics.min.js';
+      // Log an error if the Segment analytics.js script fails to load.
+      script.onerror = function () {
+        console.error(
+          'Feathery: Segment integration failed to load analytics.js from ' +
+            script.src
+        );
+      };
       // Insert our script next to the first script element.
       const first = featheryDoc().getElementsByTagName('script')[0];
       first.parentNode.insertBefore(script, first);
