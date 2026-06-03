@@ -115,6 +115,7 @@
     "@emotion/react": "11.14.0",
     "@feathery/client-utils": "^0.16.1",
     "@fingerprintjs/fingerprintjs": "5.1.0",
+    "@ricky0123/vad-web": "^0.0.30",
     "@rc-component/slider": "^1.0.0",
     "@segment/analytics-next": "^1.84.0",
     "@stripe/react-stripe-js": "3.7.0",

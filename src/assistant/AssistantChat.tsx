@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { ChatIcon } from './icons';
 import { DEFAULT_CHAT_COLOR, getChatColors } from './colors';
 import useAutoScroll from './hooks/useAutoScroll';
 import useAssistantLayout from './hooks/useAssistantLayout';
+import useAssistantVoice from './hooks/useAssistantVoice';
 import { useChatRegistry } from './ChatRegistryProvider';
 import ChatContent from './components/ChatContent';
 import type {
@@ -11,6 +12,8 @@ import type {
   AssistantMode,
   WorkflowAction
 } from './types';
+
+export type { AssistantLayoutState, AssistantMode } from './types';
 
 const FAB_SIZE = 56;
 
@@ -60,7 +63,10 @@ function AssistantChat({
     handleNewThread,
     handleSelectThread,
     handleDeleteThread,
-    ensureThreadForSend
+    ensureThreadForSend,
+    baseUrl,
+    headers,
+    voiceActiveRef
   } = useChatRegistry();
 
   const colors = useMemo(
@@ -72,6 +78,7 @@ function AssistantChat({
     messages: rawMessages,
     sendMessage,
     status,
+    stop,
     error
   } = useChat({
     chat: activeChat
@@ -97,11 +104,35 @@ function AssistantChat({
     return combined;
   }, [rawMessages]);
 
+  const onBeforeSend = useCallback(() => {
+    atBottomRef.current = true;
+    ensureThreadForSend();
+  }, [atBottomRef, ensureThreadForSend]);
+
+  const {
+    voiceState,
+    voiceActive,
+    micAvailable,
+    voiceStateByMsg,
+    startVoice,
+    stopVoice,
+    handlePillTap
+  } = useAssistantVoice({
+    baseUrl,
+    headers,
+    messages,
+    status,
+    sendMessage,
+    stop,
+    onBeforeSend
+  });
+  voiceActiveRef.current = voiceActive;
+
   const {
     containerRef: messagesContainerRef,
     endRef: messagesEndRef,
     onScroll: handleMessagesScroll
-  } = useAutoScroll(atBottomRef, messages, status);
+  } = useAutoScroll(atBottomRef, messages, status, voiceStateByMsg);
 
   useEffect(() => {
     if (isOpen) fetchThreads();
@@ -128,6 +159,19 @@ function AssistantChat({
         }
       ]
     } as any);
+  };
+
+  const onNewThread = () => {
+    stopVoice();
+    handleNewThread();
+  };
+  const onSelectThread = async (id: string) => {
+    if (id !== activeThreadId) stopVoice();
+    await handleSelectThread(id);
+  };
+  const onDeleteThread = async (id: string, e: MouseEvent) => {
+    if (id === activeThreadId) stopVoice();
+    await handleDeleteThread(id, e);
   };
 
   const isLoading = status === 'submitted' || status === 'streaming';
@@ -222,9 +266,9 @@ function AssistantChat({
         allowedModes={allowedModes}
         threads={threads}
         activeThreadId={activeThreadId}
-        onNewThread={handleNewThread}
-        onSelectThread={handleSelectThread}
-        onDeleteThread={handleDeleteThread}
+        onNewThread={onNewThread}
+        onSelectThread={onSelectThread}
+        onDeleteThread={onDeleteThread}
         onCollapse={() => setIsOpen(false)}
         layoutSide={layoutSide}
         CollapseIcon={CollapseIcon}
@@ -240,6 +284,14 @@ function AssistantChat({
         onWorkflowAction={handleWorkflowAction}
         canSend={status === 'ready'}
         onSend={handleSend}
+        voiceActive={voiceActive}
+        voiceState={voiceState}
+        voiceStateByMsg={voiceStateByMsg}
+        micAvailable={micAvailable}
+        onStartVoice={startVoice}
+        onStopVoice={stopVoice}
+        onPillTap={handlePillTap}
+        onStopGenerating={stop}
         colors={colors}
       />
     </div>

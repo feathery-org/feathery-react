@@ -14,6 +14,9 @@ type MessageListProps = {
   containerRef: RefObject<HTMLDivElement>;
   endRef: RefObject<HTMLDivElement>;
   onScroll: () => void;
+  voiceActive?: boolean;
+  voiceState?: string;
+  voiceStateByMsg?: Record<string, any>;
 };
 
 function MessageList({
@@ -24,7 +27,10 @@ function MessageList({
   colors,
   containerRef,
   endRef,
-  onScroll
+  onScroll,
+  voiceActive,
+  voiceState,
+  voiceStateByMsg
 }: MessageListProps) {
   return (
     <div
@@ -87,12 +93,46 @@ function MessageList({
           <Fragment key={message.id}>
             {(() => {
               const isLastMsg = mIdx === messages.length - 1;
+              const voiceGated = !!voiceActive && isLastMsg;
+              const msgVoice = voiceGated
+                ? voiceStateByMsg?.[message.id]
+                : undefined;
               const chunks = mergeAssistantParts(message.parts);
               const lastPart = message.parts[message.parts.length - 1];
               const turnFinished =
                 !isLastMsg || (status === 'ready' && lastPart?.type === 'text');
+              let lastTextEntryDone = true;
               return chunks.map((chunk, chunkIdx) => {
                 if (chunk.kind === 'text') {
+                  let shownText: string;
+                  let entryDone: boolean;
+                  if (!voiceGated) {
+                    shownText = chunk.text;
+                    entryDone = true;
+                  } else {
+                    const ev = msgVoice?.entries[chunkIdx];
+                    if (ev?.revealAll) {
+                      shownText = chunk.text;
+                      entryDone = true;
+                    } else if (!ev) {
+                      shownText = '';
+                      entryDone = false;
+                    } else {
+                      const seg = ev.segments[ev.revealedCount];
+                      const last = ev.segments[ev.segments.length - 1];
+                      const offset = seg
+                        ? seg.start + ev.currentChars
+                        : last
+                        ? last.start + last.text.length
+                        : 0;
+                      shownText = chunk.text.slice(0, offset);
+                      entryDone =
+                        ev.revealedCount >= ev.segments.length &&
+                        ev.scannedUpTo >= chunk.text.length;
+                    }
+                  }
+                  lastTextEntryDone = entryDone;
+                  if (voiceGated && !shownText) return null;
                   return (
                     <div
                       key={chunk.key}
@@ -115,20 +155,36 @@ function MessageList({
                         }}
                       >
                         <MarkdownText
-                          text={chunk.text}
+                          text={shownText}
                           isStreaming={
-                            isLoading &&
-                            isLastMsg &&
-                            chunkIdx === chunks.length - 1
+                            ((isLoading && chunkIdx === chunks.length - 1) ||
+                              !entryDone) &&
+                            isLastMsg
                           }
                         />
                       </div>
                     </div>
                   );
                 }
-                const followedByText = chunks
+                if (voiceGated && !lastTextEntryDone) return null;
+                const rawFollowedByText = chunks
                   .slice(chunkIdx + 1)
                   .some((c) => c.kind === 'text');
+                let followedByText = rawFollowedByText;
+                if (voiceGated && rawFollowedByText) {
+                  const nextTextIdx = chunks.findIndex(
+                    (c, i) => i > chunkIdx && c.kind === 'text'
+                  );
+                  if (nextTextIdx >= 0) {
+                    const ev = msgVoice?.entries[nextTextIdx];
+                    const started =
+                      !!ev &&
+                      (ev.revealAll ||
+                        ev.revealedCount > 0 ||
+                        ev.currentChars > 0);
+                    followedByText = started;
+                  }
+                }
                 return (
                   <div
                     key={chunk.key}
@@ -155,11 +211,32 @@ function MessageList({
       )}
 
       {(() => {
-        if (!isLoading) return null;
         const last = messages[messages.length - 1] as
-          | { role?: string; parts?: any[] }
+          | { id?: string; role?: string; parts?: any[] }
           | undefined;
         if (!last) return null;
+
+        if (voiceActive) {
+          if (last.role === 'assistant') {
+            const entries = voiceStateByMsg?.[last.id ?? '']?.entries ?? [];
+            const revealStarted = entries.some(
+              (e: any) =>
+                e.revealAll || e.revealedCount > 0 || e.currentChars > 0
+            );
+            if (revealStarted) return null;
+            return <ToolChunkPlaceholder />;
+          }
+          if (
+            isLoading ||
+            voiceState === 'transcribing' ||
+            voiceState === 'thinking'
+          ) {
+            return <ToolChunkPlaceholder />;
+          }
+          return null;
+        }
+
+        if (!isLoading) return null;
         if (last.role !== 'user') {
           const parts = last.parts || [];
           const hasContent = parts.some((p: any) => {

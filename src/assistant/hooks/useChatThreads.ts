@@ -1,4 +1,11 @@
-import { MouseEvent, useCallback, useMemo, useRef, useState } from 'react';
+import {
+  MouseEvent,
+  MutableRefObject,
+  useCallback,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Chat } from '@ai-sdk/react';
 import {
@@ -25,20 +32,24 @@ type UseChatThreadsArgs = {
   headers: AssistantHeaders;
   instanceId?: string;
   getTargets: () => ResourceRef[];
+  voiceActiveRef: MutableRefObject<boolean>;
 };
 
 export default function useChatThreads({
   baseUrl,
   headers,
   instanceId,
-  getTargets
+  getTargets,
+  voiceActiveRef
 }: UseChatThreadsArgs) {
   const [threads, setThreads] = useState<AssistantThreadDetail[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const atBottomRef = useRef(true);
 
   const buildChatBody = (): Record<string, unknown> => {
-    const body: Record<string, unknown> = {};
+    const body: Record<string, unknown> = {
+      voice_mode: voiceActiveRef.current
+    };
     const targets = getTargets();
     if (targets.length > 0) body.targets = targets;
     if (instanceId) {

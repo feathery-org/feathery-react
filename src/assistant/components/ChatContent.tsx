@@ -7,6 +7,7 @@ import ChatInputBar from './ChatInputBar';
 import { ChatColors } from '../colors';
 import type { AssistantMode, WorkflowAction } from '../types';
 import type { AssistantThreadDetail } from '../utils';
+import type { VoiceState } from '../voice/VoiceSession';
 
 type ChatContentProps = {
   title: string;
@@ -33,6 +34,14 @@ type ChatContentProps = {
   onWorkflowAction: (action: WorkflowAction) => void;
   canSend: boolean;
   onSend: (text: string) => void;
+  voiceActive: boolean;
+  voiceState: VoiceState;
+  voiceStateByMsg: Record<string, any>;
+  micAvailable: boolean;
+  onStartVoice: () => void;
+  onStopVoice: () => void;
+  onPillTap: () => void;
+  onStopGenerating: () => void;
   colors: ChatColors;
 };
 
@@ -61,6 +70,14 @@ function ChatContent({
   onWorkflowAction,
   canSend,
   onSend,
+  voiceActive,
+  voiceState,
+  voiceStateByMsg,
+  micAvailable,
+  onStartVoice,
+  onStopVoice,
+  onPillTap,
+  onStopGenerating,
   colors
 }: ChatContentProps) {
   return (
@@ -91,6 +108,9 @@ function ChatContent({
         containerRef={messagesContainerRef}
         endRef={messagesEndRef}
         onScroll={onMessagesScroll}
+        voiceActive={voiceActive}
+        voiceState={voiceState}
+        voiceStateByMsg={voiceStateByMsg}
       />
 
       <WorkflowActionBar
@@ -101,9 +121,16 @@ function ChatContent({
       />
 
       <ChatInputBar
+        voiceActive={voiceActive}
+        voiceState={voiceState}
         isLoading={isLoading}
         canSend={canSend}
+        micAvailable={micAvailable}
         onSend={onSend}
+        onStartVoice={onStartVoice}
+        onStopVoice={onStopVoice}
+        onPillTap={onPillTap}
+        onStopGenerating={onStopGenerating}
         colors={colors}
       />
     </>

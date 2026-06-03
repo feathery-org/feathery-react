@@ -1,10 +1,21 @@
-import { createContext, useContext, useMemo, ReactNode } from 'react';
+import {
+  createContext,
+  MutableRefObject,
+  ReactNode,
+  useContext,
+  useMemo,
+  useRef
+} from 'react';
 import { initInfo } from '../utils/init';
 import { getCookie } from '../utils/browser';
 import useChatThreads from './hooks/useChatThreads';
 import type { AssistantHeaders, ResourceRef } from './types';
 
-type ChatRegistryValue = ReturnType<typeof useChatThreads>;
+type ChatRegistryValue = ReturnType<typeof useChatThreads> & {
+  baseUrl: string;
+  headers: AssistantHeaders;
+  voiceActiveRef: MutableRefObject<boolean>;
+};
 
 const ChatRegistryContext = createContext<ChatRegistryValue | null>(null);
 
@@ -49,15 +60,28 @@ export function ChatRegistryProvider({
     };
   }, [headers, getJwt]);
 
+  const voiceActiveRef = useRef(false);
+
   const threadState = useChatThreads({
     baseUrl,
     headers: resolvedHeaders,
     instanceId,
-    getTargets
+    getTargets,
+    voiceActiveRef
   });
 
+  const value = useMemo<ChatRegistryValue>(
+    () => ({
+      ...threadState,
+      baseUrl,
+      headers: resolvedHeaders,
+      voiceActiveRef
+    }),
+    [threadState, baseUrl, resolvedHeaders]
+  );
+
   return (
-    <ChatRegistryContext.Provider value={threadState}>
+    <ChatRegistryContext.Provider value={value}>
       {children}
     </ChatRegistryContext.Provider>
   );

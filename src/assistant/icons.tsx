@@ -308,3 +308,107 @@ export function LinkIcon(props: ComponentProps<'svg'>) {
     </svg>
   );
 }
+
+export function MicIcon(props: ComponentProps<'svg'>) {
+  return (
+    <svg width='20' height='20' viewBox='0 0 24 24' fill='none' {...props}>
+      <rect
+        x='9'
+        y='3'
+        width='6'
+        height='12'
+        rx='3'
+        stroke='currentColor'
+        strokeWidth='2'
+      />
+      <path
+        d='M5 11a7 7 0 0 0 14 0'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <path
+        d='M12 18v3'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+    </svg>
+  );
+}
+
+export function WaveformIcon(props: ComponentProps<'svg'>) {
+  return (
+    <svg width='18' height='18' viewBox='0 0 24 24' fill='none' {...props}>
+      <path
+        d='M4 12v0'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <path
+        d='M8 9v6'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <path
+        d='M12 5v14'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <path
+        d='M16 9v6'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <path
+        d='M20 11v2'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+    </svg>
+  );
+}
+
+export function SpeakerIcon(props: ComponentProps<'svg'>) {
+  return (
+    <svg width='18' height='18' viewBox='0 0 24 24' fill='none' {...props}>
+      <path
+        d='M11 5 6 9H3v6h3l5 4z'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinejoin='round'
+      />
+      <path
+        d='M16 9a5 5 0 0 1 0 6'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <path
+        d='M19 6a9 9 0 0 1 0 12'
+        stroke='currentColor'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+    </svg>
+  );
+}
+
+export function StopIcon(props: ComponentProps<'svg'>) {
+  return (
+    <svg
+      width='20'
+      height='20'
+      viewBox='0 0 24 24'
+      fill='currentColor'
+      {...props}
+    >
+      <rect x='5' y='5' width='14' height='14' rx='2' />
+    </svg>
+  );
+}

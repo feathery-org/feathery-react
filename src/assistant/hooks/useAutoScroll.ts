@@ -8,7 +8,8 @@ const BOTTOM_THRESHOLD_PX = 60;
 export default function useAutoScroll(
   atBottomRef: MutableRefObject<boolean>,
   messages: unknown,
-  status: unknown
+  status: unknown,
+  extraDep?: unknown
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -23,7 +24,7 @@ export default function useAutoScroll(
   useEffect(() => {
     if (!atBottomRef.current) return;
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, extraDep]);
 
   useEffect(() => {
     if (status !== 'ready') return;
