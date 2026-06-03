@@ -228,8 +228,8 @@ import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
-import { AssistantChat } from '../assistant';
-import type { AssistantLayoutState } from '../assistant/AssistantChat';
+import { AssistantChat, ChatRegistryProvider } from '../assistant';
+import type { AssistantLayoutState } from '../assistant/types';
 import AssistantClient from '../assistant/AssistantClient';
 
 export * from './grid/StyledContainer';
@@ -3096,20 +3096,23 @@ function Form({
           }
         />
         {formSettings.assistantEnabled && (
-          <AssistantChat
-            instanceId={_internalId}
+          <ChatRegistryProvider
             baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
+            instanceId={_internalId}
             getTargets={getAssistantTargets}
-            bottom={
-              (formSettings.showBrand &&
-              formSettings.brandPosition === 'bottom_right'
-                ? 67
-                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
-            }
-            color={formSettings.assistantColor}
-            workflowActions={formSettings.assistantWorkflowActions}
-            onLayoutChange={handleAssistantLayoutChange}
-          />
+          >
+            <AssistantChat
+              bottom={
+                (formSettings.showBrand &&
+                formSettings.brandPosition === 'bottom_right'
+                  ? 67
+                  : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+              }
+              color={formSettings.assistantColor}
+              workflowActions={formSettings.assistantWorkflowActions}
+              onLayoutChange={handleAssistantLayoutChange}
+            />
+          </ChatRegistryProvider>
         )}
       </form>
     </ReactPortal>

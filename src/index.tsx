@@ -15,7 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
-import { AssistantChat } from './assistant';
+import { AssistantChat, ChatRegistryProvider } from './assistant';
 import './utils/polyfills';
 
 const mountedForms: Record<string, Root> = {};
@@ -82,6 +82,7 @@ export {
   LoginForm,
   useAuthClient,
   AssistantChat,
+  ChatRegistryProvider,
   Feathery,
   StyledContainer
 };

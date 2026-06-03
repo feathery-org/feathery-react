@@ -5,14 +5,14 @@ import {
   LinkIcon,
   MinimizeIcon,
   SpinnerIcon
-} from './icons';
+} from '../icons';
 import {
   DEFAULT_CHAT_COLOR,
   GRAY_200,
   GRAY_400,
   GRAY_500,
   RED_500
-} from './colors';
+} from '../colors';
 
 export interface ToolLabel {
   running: string;
