@@ -33,6 +33,72 @@ export const TYPE_MESSAGES_TO_IGNORE = [
   'Load failed'
 ];
 
+const getQuikAttachmentPosition = (position: any) =>
+  position === 'before' ? 'before' : 'after';
+
+const normalizeConfiguredQuikAttachments = (
+  value: any
+): Record<string, any>[] => {
+  if (value == null || value === '') return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((attachment) =>
+      normalizeConfiguredQuikAttachments(attachment)
+    );
+  }
+
+  if (typeof value === 'object') {
+    const id = value.id;
+    if (!id) return [];
+
+    const attachment: Record<string, any> = { id };
+    if (['before', 'after'].includes(value.position)) {
+      attachment.position = value.position;
+    }
+    return [attachment];
+  }
+
+  return [];
+};
+
+const normalizeDynamicQuikAttachmentIds = (value: any): string[] => {
+  if (value == null || value === '') return [];
+
+  if (typeof value === 'string') {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) return [];
+
+    try {
+      return normalizeDynamicQuikAttachmentIds(JSON.parse(trimmedValue));
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .filter((id) => ['string', 'number'].includes(typeof id))
+    .map((id) => String(id).trim())
+    .filter(Boolean);
+};
+
+const resolveQuikAttachments = (action: Record<string, any>) => {
+  const configuredAttachments = normalizeConfiguredQuikAttachments(
+    action.attachments
+  );
+  if (!action.quik_attachments_field_key) return configuredAttachments;
+
+  const dynamicAttachments = normalizeDynamicQuikAttachmentIds(
+    fieldValues[action.quik_attachments_field_key]
+  ).map((id) => ({
+    id,
+    position: getQuikAttachmentPosition(action.quik_attachments_position)
+  }));
+
+  return [...configuredAttachments, ...dynamicAttachments];
+};
+
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
   formKey: string;
@@ -467,10 +533,15 @@ export default class IntegrationClient {
       }
     }
 
+    const resolvedAction = {
+      ...action,
+      attachments: resolveQuikAttachments(action)
+    };
+
     return await apiGenerateQuikEnvelopes({
       sdkKey,
       formId: this.formKey,
-      action,
+      action: resolvedAction,
       userId,
       tags,
       checkInterval: this.QUIK_CHECK_INTERVAL,

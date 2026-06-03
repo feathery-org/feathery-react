@@ -1,6 +1,10 @@
 import IntegrationClient from '../featheryClient/integrationClient';
 import { fieldValues, initInfo } from '../init';
-import { getApiUrl, setEnvironment } from '@feathery/client-utils';
+import {
+  getApiUrl,
+  getStaticUrl,
+  setEnvironment
+} from '@feathery/client-utils';
 
 // Mock the API_URL and STATIC_URL to avoid circular dependency issues
 // since ../featheryClient/integrationClient imports them from ../featheryClient
@@ -13,6 +17,7 @@ jest.mock('../featheryClient', () => ({
 
 setEnvironment('production');
 const API_URL = getApiUrl();
+const STATIC_URL = getStaticUrl();
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -344,6 +349,108 @@ describe('IntegrationClient', () => {
         }
       );
       expect(result).toEqual({ forms: ['form1', 'form2'] });
+    });
+  });
+
+  describe('generateQuikEnvelopes', () => {
+    const createQuikClient = (formKey) => {
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.QUIK_CHECK_INTERVAL = 1;
+      integrationClient.QUIK_MAX_TIME = 10;
+      return integrationClient;
+    };
+
+    beforeEach(() => {
+      Object.keys(fieldValues).forEach((key) => delete fieldValues[key]);
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'running' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'complete' })
+        });
+    });
+
+    it('uses configured attachments without a dynamic field', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      const staticAttachments = [{ id: 'static-id', position: 'before' }];
+      Object.assign(fieldValues, {
+        quik_attachment_ids: [{ id: 'dynamic-id', position: 'after' }]
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        attachments: staticAttachments
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}quik/document/`,
+        expect.objectContaining({
+          body: expect.any(String)
+        })
+      );
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: staticAttachments
+        })
+      );
+
+      await resultPromise;
+    });
+
+    it('adds dynamic attachment IDs from a hidden field', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        quik_attachment_ids: JSON.stringify(['document-id', 'envelope-id'])
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        quik_attachments_field_key: 'quik_attachment_ids',
+        quik_attachments_position: 'after',
+        attachments: [{ id: 'static-id', position: 'before' }]
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [
+            { id: 'static-id', position: 'before' },
+            { id: 'document-id', position: 'after' },
+            { id: 'envelope-id', position: 'after' }
+          ]
+        })
+      );
+
+      await resultPromise;
+    });
+
+    it('ignores dynamic attachment objects', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        quik_attachment_ids: JSON.stringify([
+          { id: 'document-id', position: 'before' }
+        ])
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        quik_attachments_field_key: 'quik_attachment_ids',
+        attachments: [{ id: 'static-id', position: 'before' }]
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [{ id: 'static-id', position: 'before' }]
+        })
+      );
+
+      await resultPromise;
     });
   });
 
