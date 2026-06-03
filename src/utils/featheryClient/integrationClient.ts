@@ -33,23 +33,42 @@ export const TYPE_MESSAGES_TO_IGNORE = [
   'Load failed'
 ];
 
+const QUIK_DYNAMIC_ATTACHMENTS_OPTION = '__quik_dynamic_attachments__';
+
 const getQuikAttachmentPosition = (position: any) =>
   position === 'before' ? 'before' : 'after';
 
+const isQuikDynamicAttachmentId = (id: any) =>
+  typeof id === 'string' &&
+  (id === QUIK_DYNAMIC_ATTACHMENTS_OPTION ||
+    id.startsWith(`${QUIK_DYNAMIC_ATTACHMENTS_OPTION}:`));
+
 const normalizeConfiguredQuikAttachments = (
-  value: any
+  value: any,
+  getDynamicAttachmentIds: (attachment: any) => string[] = () => []
 ): Record<string, any>[] => {
   if (value == null || value === '') return [];
 
+  // Builder config stores attachment rows as a list. Normalize a list or single
+  // row into one flat attachment list so runtime consumers get one shape.
   if (Array.isArray(value)) {
     return value.flatMap((attachment) =>
-      normalizeConfiguredQuikAttachments(attachment)
+      normalizeConfiguredQuikAttachments(attachment, getDynamicAttachmentIds)
     );
   }
 
   if (typeof value === 'object') {
     const id = value.id;
-    if (!id) return [];
+    if (!id && !value.field_key) return [];
+
+    // Dynamic rows are builder-configured placeholders. The hidden field
+    // supplies only doc IDs; placement comes from this row's before/after slot.
+    if (isQuikDynamicAttachmentId(id) || value.field_key) {
+      return getDynamicAttachmentIds(value).map((attachmentId) => ({
+        id: attachmentId,
+        position: getQuikAttachmentPosition(value.position)
+      }));
+    }
 
     const attachment: Record<string, any> = { id };
     if (['before', 'after'].includes(value.position)) {
@@ -62,28 +81,10 @@ const normalizeConfiguredQuikAttachments = (
 };
 
 const normalizeDynamicQuikAttachmentIds = (value: any): string[] => {
-  if (value == null || value === '') return [];
-
-  if (typeof value === 'string') {
-    const trimmedValue = value.trim();
-    if (!trimmedValue) return [];
-
-    try {
-      const parsedValue = JSON.parse(trimmedValue);
-      if (Array.isArray(parsedValue)) {
-        return normalizeDynamicQuikAttachmentIds(parsedValue);
-      }
-    } catch {
-      // Treat normal strings as a single document/envelope ID.
-    }
-
-    return [trimmedValue];
-  }
-
   if (!Array.isArray(value)) return [];
 
-  // Dynamic hidden fields intentionally support only these ID shapes:
-  // ['doc-id'], 'doc-id', '["doc-id"]', or '["doc-id-1","doc-id-2"]'.
+  // Dynamic hidden fields intentionally support only string ID arrays.
+  // Invalid values are ignored instead of treated as attachment config.
   return value
     .filter((id) => typeof id === 'string')
     .map((id) => id.trim())
@@ -91,19 +92,13 @@ const normalizeDynamicQuikAttachmentIds = (value: any): string[] => {
 };
 
 const resolveQuikAttachments = (action: Record<string, any>) => {
-  const configuredAttachments = normalizeConfiguredQuikAttachments(
-    action.attachments
+  const getDynamicAttachmentIds = (attachment: any = {}) => {
+    return normalizeDynamicQuikAttachmentIds(fieldValues[attachment.field_key]);
+  };
+  return normalizeConfiguredQuikAttachments(
+    action.attachments,
+    getDynamicAttachmentIds
   );
-  if (!action.quik_attachments_field_key) return configuredAttachments;
-
-  const dynamicAttachments = normalizeDynamicQuikAttachmentIds(
-    fieldValues[action.quik_attachments_field_key]
-  ).map((id) => ({
-    id,
-    position: getQuikAttachmentPosition(action.quik_attachments_position)
-  }));
-
-  return [...configuredAttachments, ...dynamicAttachments];
 };
 
 // THIRD-PARTY INTEGRATIONS
