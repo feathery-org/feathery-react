@@ -69,17 +69,24 @@ const normalizeDynamicQuikAttachmentIds = (value: any): string[] => {
     if (!trimmedValue) return [];
 
     try {
-      return normalizeDynamicQuikAttachmentIds(JSON.parse(trimmedValue));
+      const parsedValue = JSON.parse(trimmedValue);
+      if (Array.isArray(parsedValue)) {
+        return normalizeDynamicQuikAttachmentIds(parsedValue);
+      }
     } catch {
-      return [];
+      // Treat normal strings as a single document/envelope ID.
     }
+
+    return [trimmedValue];
   }
 
   if (!Array.isArray(value)) return [];
 
+  // Dynamic hidden fields intentionally support only these ID shapes:
+  // ['doc-id'], 'doc-id', '["doc-id"]', or '["doc-id-1","doc-id-2"]'.
   return value
-    .filter((id) => ['string', 'number'].includes(typeof id))
-    .map((id) => String(id).trim())
+    .filter((id) => typeof id === 'string')
+    .map((id) => id.trim())
     .filter(Boolean);
 };
 

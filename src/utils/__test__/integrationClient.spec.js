@@ -429,6 +429,28 @@ describe('IntegrationClient', () => {
       await resultPromise;
     });
 
+    it('adds a single dynamic attachment ID from a hidden field', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        quik_attachment_ids: 'document-id'
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        quik_attachments_field_key: 'quik_attachment_ids',
+        quik_attachments_position: 'before'
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [{ id: 'document-id', position: 'before' }]
+        })
+      );
+
+      await resultPromise;
+    });
+
     it('ignores dynamic attachment objects', async () => {
       const formKey = 'test_form_key';
       const integrationClient = createQuikClient(formKey);
