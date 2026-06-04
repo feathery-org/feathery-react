@@ -7,7 +7,7 @@ const CONNECTOR_GAP = 6;
 type StepConfig = {
   label: string;
   step_key: string;
-  visibility_field?: string;
+  visibility_field_key?: string;
   visibility_condition?: '' | 'show' | 'hide';
 };
 
@@ -19,8 +19,8 @@ function isFieldTruthy(fieldKey: string): boolean {
 
 function isStepVisible(step: StepConfig): boolean {
   const cond = step.visibility_condition;
-  if (!cond || !step.visibility_field) return true;
-  const truthy = isFieldTruthy(step.visibility_field);
+  if (!cond || !step.visibility_field_key) return true;
+  const truthy = isFieldTruthy(step.visibility_field_key);
   return cond === 'show' ? truthy : !truthy;
 }
 
