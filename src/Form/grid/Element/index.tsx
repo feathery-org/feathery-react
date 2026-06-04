@@ -102,6 +102,14 @@ const Element = ({ node: el, form }: any) => {
         assistantClient={assistantClient}
       />
     );
+  else if (type === 'tabs')
+    return (
+      <Elements.TabsElement
+        {...basicProps}
+        stepKey={activeStep?.key}
+        changeStep={form.changeStep}
+      />
+    );
   else if (type === 'text')
     return (
       <Elements.TextElement

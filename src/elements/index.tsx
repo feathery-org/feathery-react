@@ -15,13 +15,18 @@ const TableElement = lazy(
   () => import(/* webpackChunkName: "TableElement" */ './basic/TableElement')
 );
 
+const TabsElement = lazy(
+  () => import(/* webpackChunkName: "TabsElement" */ './basic/TabsElement')
+);
+
 const Basic = {
   ImageElement,
   VideoElement,
   TextElement,
   ButtonElement,
   ProgressBarElement,
-  TableElement
+  TableElement,
+  TabsElement
 };
 
 const Elements = { ...Basic, ...Fields };

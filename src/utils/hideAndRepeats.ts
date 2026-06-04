@@ -143,7 +143,8 @@ const stepElementTypes = [
   'progress_bars',
   'images',
   'videos',
-  'tables'
+  'tables',
+  'tabs_elements'
 ];
 
 const getPositionKey = (node: any) => {
