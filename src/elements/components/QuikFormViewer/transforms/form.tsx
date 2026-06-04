@@ -64,6 +64,20 @@ const FORM_STYLES = `
     display: block !important;
   }
 
+  /*
+   * Overlay inputs are sized in pt that already account for their padding and
+   * border (the source renders them border-box via its external CSS/JS, which
+   * does not run inside this restructured iframe). Force border-box so the pt
+   * width/height is the rendered box — otherwise content-box adds padding +
+   * border on top and the boxes render too large, most visibly in height.
+   */
+  #QFVPageList input,
+  #QFVPageList textarea,
+  #QFVPageList select,
+  #QFVPageList label {
+    box-sizing: border-box !important;
+  }
+
   .input-label {
     border: none !important;
   }
