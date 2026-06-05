@@ -106,7 +106,7 @@ export const getAllElements = (step: any) => {
     ...step.buttons.map((e: any) => [e, 'button']),
     ...step.servar_fields.map((e: any) => [e, 'field']),
     ...step.subgrids.map((e: any) => [e, 'subgrid']),
-    ...(step.tabs_elements?.map((e: any) => [e, 'tabs']) ?? [])
+    ...(step.tabs?.map((e: any) => [e, 'tab']) ?? [])
   ];
 };
 

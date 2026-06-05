@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 
-import { adjustColor } from '../../utils/styles';
 import { hoverStylesGuard } from '../../utils/browser';
 
 type TabEntry = {
@@ -10,41 +9,23 @@ type TabEntry = {
 };
 
 function applyTabsStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets(
-    'tabs',
-    'tab',
-    'tabActive',
-    'tabHover',
-    'tabDisabled'
-  );
+  responsiveStyles.addTargets('tab', 'tabActive', 'tabHover', 'tabDisabled');
 
-  // Base 'tab' target — applied to every tab button.
   responsiveStyles.applyBackgroundColorGradient('tab');
   responsiveStyles.applyCorners('tab');
   responsiveStyles.applyBoxShadow('tab');
   responsiveStyles.applyTextAlign('tab');
   responsiveStyles.applyBorders({ target: 'tab' });
-  // State-specific font colors flow through the .active / :hover /
-  // [aria-disabled] selectors set up in JSX, not via :hover/:focus pseudos.
   responsiveStyles.applyFontStyles('tab', false, true);
 
-  // Hover.
-  if (element.styles?.hover_background_color) {
-    responsiveStyles.applyColor(
-      'tabHover',
-      'hover_background_color',
-      'background'
-    );
-  } else {
-    responsiveStyles.apply('tabHover', 'background_color', (a: any) => {
-      if (!a) return {};
-      return { background: adjustColor(a, -15) };
-    });
-  }
+  responsiveStyles.applyColor(
+    'tabHover',
+    'hover_background_color',
+    'background'
+  );
   responsiveStyles.applyColor('tabHover', 'hover_font_color', 'color');
   responsiveStyles.applyBorders({ target: 'tabHover', prefix: 'hover_' });
 
-  // Active (matched by .active class in JSX).
   responsiveStyles.applyColor(
     'tabActive',
     'selected_background_color',
@@ -53,7 +34,6 @@ function applyTabsStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyColor('tabActive', 'selected_font_color', 'color');
   responsiveStyles.applyBorders({ target: 'tabActive', prefix: 'selected_' });
 
-  // Disabled (matched by [aria-disabled="true"] in JSX).
   responsiveStyles.applyColor(
     'tabDisabled',
     'disabled_background_color',
@@ -71,19 +51,16 @@ function TabsElement({
   editMode,
   changeStep,
   stepKey,
-  elementProps = {},
-  children
+  elementProps = {}
 }: any) {
   const styles = useMemo(
     () => applyTabsStyles(element, responsiveStyles),
     [responsiveStyles]
   );
 
-  const props = element.properties ?? {};
-  const entries: TabEntry[] = Array.isArray(props.tabs_entries)
-    ? props.tabs_entries
-    : [];
-  const direction = props.direction === 'vertical' ? 'column' : 'row';
+  const entries: TabEntry[] = element.properties.tabs_entries ?? [];
+  const direction =
+    element.properties.direction === 'vertical' ? 'column' : 'row';
 
   const baseTabStyles = styles.getTarget('tab');
   const activeStyles = styles.getTarget('tabActive');
@@ -151,7 +128,6 @@ function TabsElement({
           </button>
         );
       })}
-      {children}
     </div>
   );
 }

@@ -152,7 +152,7 @@ const typeMap = {
   servar_fields: 'field',
   videos: 'video',
   tables: 'table',
-  tabs_elements: 'tabs',
+  tabs: 'tab',
   subgrids: 'container'
 };
 

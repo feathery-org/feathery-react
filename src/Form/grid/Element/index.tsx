@@ -102,7 +102,7 @@ const Element = ({ node: el, form }: any) => {
         assistantClient={assistantClient}
       />
     );
-  else if (type === 'tabs')
+  else if (type === 'tab')
     return (
       <Elements.TabsElement
         {...basicProps}

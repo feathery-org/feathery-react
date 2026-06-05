@@ -144,7 +144,7 @@ const stepElementTypes = [
   'images',
   'videos',
   'tables',
-  'tabs_elements'
+  'tabs'
 ];
 
 const getPositionKey = (node: any) => {
