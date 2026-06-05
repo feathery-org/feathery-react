@@ -104,7 +104,7 @@ const SIDEBAR_WIDTH_STORAGE_KEY = 'feathery.assistant.sidebarWidth';
 const SIDEBAR_MIN_WIDTH = 280;
 const SIDEBAR_MAX_ABS = 800;
 const SIDEBAR_MAX_VIEWPORT_RATIO = 0.6;
-const DEFAULT_SIDEBAR_WIDTH = 380;
+const DEFAULT_SIDEBAR_WIDTH = 400;
 
 const getSidebarMaxWidth = (): number => {
   try {
@@ -831,8 +831,7 @@ const AssistantChat = ({
           width: `${sidebarWidth}px`,
           height: '100vh',
           borderRadius: 0,
-          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.12)',
-          borderRight: `1px solid ${GRAY_200}`
+          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.12)'
         }
       : mode === 'sidebar-right'
       ? {
@@ -841,8 +840,7 @@ const AssistantChat = ({
           width: `${sidebarWidth}px`,
           height: '100vh',
           borderRadius: 0,
-          boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.12)',
-          borderLeft: `1px solid ${GRAY_200}`
+          boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.12)'
         }
       : mode === 'fullscreen'
       ? {

@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
+import { isFit } from '../../utils/hydration';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import ErrorInput from '../components/ErrorInput';
@@ -44,6 +45,15 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     }
   );
   responsiveStyles.applyTextAlign('buttonLabel');
+  // Fit-width buttons shrink to their text and padding, so prevent the
+  // text from wrapping
+  responsiveStyles.apply('buttonLabel', 'width_unit', (unit: any) => {
+    if (!isFit(unit)) return {};
+    return {
+      whiteSpace: 'nowrap',
+      'span, a': { whiteSpace: 'pre' }
+    };
+  });
   responsiveStyles.apply(
     'button',
     [
@@ -141,6 +151,9 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     'loader',
     ['height', 'height_unit'],
     (a: any, b: any) => {
+      // Fit-height buttons have no numeric height, so size the loader
+      // relative to the button text instead
+      if (isFit(b)) return { width: '1em', height: '1em' };
       const halfHeight = Math.round(a / 2);
       const dimension = `${halfHeight}${b}`;
       return { width: dimension, height: dimension };

@@ -153,7 +153,14 @@ export function trackEvent(
     if (!integrations?.segment?.metadata?.identify_user || !segmentData.userId)
       delete segmentData.userId;
     if (fieldData?.segment) segmentData.submittedData = fieldData.segment;
-    featheryWindow().analytics.track(title, segmentData);
+    try {
+      featheryWindow().analytics.track(title, segmentData);
+    } catch (error) {
+      console.error(
+        `Feathery: Segment integration failed to send event "${title}"`,
+        error
+      );
+    }
   }
 
   const amplitudeData: any = { ...metadata };

@@ -121,7 +121,11 @@ export interface ToolRow {
 
 const isRunningState = (s: string) =>
   s === 'input-streaming' || s === 'input-available';
-const isErrorState = (s: string) => s === 'output-error';
+const isErrorRow = (row: ToolRow) =>
+  row.state === 'output-error' ||
+  (typeof row.output === 'object' &&
+    row.output !== null &&
+    (row.output as { ok?: unknown }).ok === false);
 
 interface ToolRowDetailProps {
   row: ToolRow;
@@ -203,7 +207,7 @@ const labelFor = (row: ToolRow): string => {
     done: 'Done'
   };
   if (isRunningState(row.state)) return labels.running;
-  if (isErrorState(row.state)) return labels.done ?? 'Failed';
+  if (isErrorRow(row)) return labels.done ?? 'Failed';
   return labels.done ?? labels.running;
 };
 
@@ -268,7 +272,7 @@ export const ToolChunk = ({
   // Inline only when done; wrapping while in-flight avoids reflow on a 2nd row
   if (chunkDone && rows.length === 1) {
     const row = rows[0];
-    const error = isErrorState(row.state);
+    const error = isErrorRow(row);
     const expandable = hasDetail(row);
     return (
       <div css={containerCss}>
@@ -381,7 +385,7 @@ interface ToolChunkRowProps {
 const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
   const expandable = hasDetail(row);
   const running = isRunningState(row.state);
-  const error = isErrorState(row.state);
+  const error = isErrorRow(row);
   // Auto-expanded while running, collapses when output lands
   const [override, setOverride] = useState<boolean | null>(null);
   const expanded = override ?? running;
