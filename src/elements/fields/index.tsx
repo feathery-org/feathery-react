@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
+import { isFit } from '../../utils/hydration';
 
 type VisiblePositions = Record<string, boolean[]>;
 
@@ -379,6 +380,8 @@ function applyFieldStyles(field: any, styles: any) {
         'field',
         ['button_width', 'button_width_unit', 'content_responsive'],
         (a: any, b: any, c: boolean) => {
+          // Fit-width buttons size to their content
+          if (isFit(b)) return { width: 'fit-content' };
           const metric = `${a}${b}`;
           if (c) return { minWidth: metric };
           else
@@ -391,9 +394,11 @@ function applyFieldStyles(field: any, styles: any) {
       styles.apply(
         'field',
         ['button_height', 'button_height_unit', 'content_responsive'],
-        (a: any, b: any, c: boolean) => ({
-          [c ? 'minHeight' : 'height']: `${a}${b}`
-        })
+        (a: any, b: any, c: boolean) => {
+          // Fit-height buttons size to their content
+          if (isFit(b)) return { height: 'fit-content' };
+          return { [c ? 'minHeight' : 'height']: `${a}${b}` };
+        }
       );
       styles.applyBackgroundColorGradient('field');
       styles.applyBoxShadow('field');

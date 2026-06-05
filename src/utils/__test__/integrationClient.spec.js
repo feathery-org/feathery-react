@@ -1,6 +1,10 @@
 import IntegrationClient from '../featheryClient/integrationClient';
 import { fieldValues, initInfo } from '../init';
-import { getApiUrl, setEnvironment } from '@feathery/client-utils';
+import {
+  getApiUrl,
+  getStaticUrl,
+  setEnvironment
+} from '@feathery/client-utils';
 
 // Mock the API_URL and STATIC_URL to avoid circular dependency issues
 // since ../featheryClient/integrationClient imports them from ../featheryClient
@@ -13,6 +17,7 @@ jest.mock('../featheryClient', () => ({
 
 setEnvironment('production');
 const API_URL = getApiUrl();
+const STATIC_URL = getStaticUrl();
 
 jest.mock('../init', () => ({
   initInfo: jest.fn(),
@@ -344,6 +349,183 @@ describe('IntegrationClient', () => {
         }
       );
       expect(result).toEqual({ forms: ['form1', 'form2'] });
+    });
+  });
+
+  describe('generateQuikEnvelopes', () => {
+    const createQuikClient = (formKey) => {
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.QUIK_CHECK_INTERVAL = 1;
+      integrationClient.QUIK_MAX_TIME = 10;
+      return integrationClient;
+    };
+
+    beforeEach(() => {
+      Object.keys(fieldValues).forEach((key) => delete fieldValues[key]);
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'running' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'complete' })
+        });
+    });
+
+    it('uses configured attachments without a dynamic field', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      const staticAttachments = [{ id: 'static-id', position: 'before' }];
+      Object.assign(fieldValues, {
+        quik_attachment_ids: [{ id: 'dynamic-id', position: 'after' }]
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        attachments: staticAttachments
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${STATIC_URL}quik/document/`,
+        expect.objectContaining({
+          body: expect.any(String)
+        })
+      );
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: staticAttachments
+        })
+      );
+
+      await resultPromise;
+    });
+
+    it('ignores action-level dynamic attachment fields without a configured row', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        quik_attachment_ids: ['document-id', 'envelope-id']
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        quik_attachments_field_key: 'quik_attachment_ids',
+        quik_attachments_position: 'after',
+        attachments: [{ id: 'static-id', position: 'before' }]
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [{ id: 'static-id', position: 'before' }]
+        })
+      );
+
+      await resultPromise;
+    });
+
+    it('expands dynamic attachment placeholders in configured order', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        quik_attachment_ids: ['document-id', 'envelope-id']
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        attachments: [
+          { id: 'before-static-id', position: 'before' },
+          {
+            id: '__quik_dynamic_attachments__',
+            position: 'before',
+            field_key: 'quik_attachment_ids'
+          },
+          { id: 'after-dynamic-static-id', position: 'before' }
+        ]
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [
+            { id: 'before-static-id', position: 'before' },
+            { id: 'document-id', position: 'before' },
+            { id: 'envelope-id', position: 'before' },
+            { id: 'after-dynamic-static-id', position: 'before' }
+          ]
+        })
+      );
+
+      await resultPromise;
+    });
+
+    it('expands multiple dynamic attachment fields in configured order', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        first_quik_attachment_ids: ['first-document-id', 'first-envelope-id'],
+        second_quik_attachment_ids: ['second-document-id']
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        attachments: [
+          { id: 'before-static-id', position: 'before' },
+          {
+            id: '__quik_dynamic_attachments__:first-field-id',
+            position: 'before',
+            field_key: 'first_quik_attachment_ids'
+          },
+          { id: 'middle-static-id', position: 'before' },
+          {
+            id: '__quik_dynamic_attachments__:second-field-id',
+            position: 'before',
+            field_key: 'second_quik_attachment_ids'
+          }
+        ]
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [
+            { id: 'before-static-id', position: 'before' },
+            { id: 'first-document-id', position: 'before' },
+            { id: 'first-envelope-id', position: 'before' },
+            { id: 'middle-static-id', position: 'before' },
+            { id: 'second-document-id', position: 'before' }
+          ]
+        })
+      );
+
+      await resultPromise;
+    });
+
+    it('ignores dynamic attachment objects', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = createQuikClient(formKey);
+      Object.assign(fieldValues, {
+        quik_attachment_ids: [{ id: 'document-id', position: 'before' }]
+      });
+
+      const resultPromise = integrationClient.generateQuikEnvelopes({
+        form_fill_type: 'pdf',
+        attachments: [
+          { id: 'static-id', position: 'before' },
+          {
+            id: '__quik_dynamic_attachments__',
+            position: 'before',
+            field_key: 'quik_attachment_ids'
+          }
+        ]
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+        expect.objectContaining({
+          attachments: [{ id: 'static-id', position: 'before' }]
+        })
+      );
+
+      await resultPromise;
     });
   });
 
