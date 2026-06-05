@@ -29,10 +29,6 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     done: 'Searched the web'
   },
   scrapeUrl: { running: 'Reading web page...', done: 'Read the web page' },
-  getPanelRuntime: {
-    running: 'Reading the page...',
-    done: 'Reviewed the page'
-  },
   getPanelSnapshot: {
     running: 'Reading the form...',
     done: 'Reviewed the form'

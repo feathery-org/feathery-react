@@ -436,7 +436,12 @@ const AssistantChat = ({
 
         if (toolCall.toolName === 'setFieldValue') {
           type FieldResult =
-            | { fieldKey: string; ok: true }
+            | {
+                fieldKey: string;
+                ok: true;
+                value: unknown;
+                priorValue: unknown;
+              }
             | {
                 fieldKey: string;
                 ok: false;
@@ -448,6 +453,14 @@ const AssistantChat = ({
           };
           const fields = Array.isArray(input.fields) ? input.fields : [];
           const snap = instanceId ? getPanelRuntimeSnapshot(instanceId) : null;
+          const toCloneable = (v: unknown): unknown =>
+            v == null ? null : JSON.parse(JSON.stringify(v));
+          const priorValues = new Map<string, unknown>(
+            (snap?.currentStepFields ?? []).map((f) => [
+              f.key,
+              toCloneable(f.value)
+            ])
+          );
           const results: FieldResult[] = [];
           const toApply: Array<{ fieldKey: string; value: unknown }> = [];
           for (const item of fields) {
@@ -480,8 +493,13 @@ const AssistantChat = ({
           }
           try {
             await applyServarValues(instanceId, toApply);
-            for (const { fieldKey } of toApply) {
-              results.push({ fieldKey, ok: true });
+            for (const { fieldKey, value } of toApply) {
+              results.push({
+                fieldKey,
+                ok: true,
+                value,
+                priorValue: priorValues.get(fieldKey) ?? null
+              });
             }
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
