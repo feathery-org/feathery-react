@@ -2227,9 +2227,14 @@ function Form({
       // it. If navigating but there is no step to navigate to, still attempt
       // to complete the form here since the user may leave before the
       // nav action event gets sent
+      // A next action may specify an explicit target step (e.g. clicking a
+      // stepper step); otherwise the next step is resolved from the step's
+      // navigation conditions.
+      const nextAction = actions.find(
+        (action: any) => action.type === ACTION_NEXT
+      );
       const hasNext =
-        actions.some((action: any) => action.type === ACTION_NEXT) &&
-        getNextStepKey(metadata);
+        nextAction && (nextAction.next_step_key ?? getNextStepKey(metadata));
 
       let submissionResult: [Promise<any>] | undefined;
       try {
@@ -2494,7 +2499,7 @@ function Form({
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
         await goToNewStep({
-          redirectKey: getNextStepKey(metadata),
+          redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
           submitData: submit,
           submitPromise,

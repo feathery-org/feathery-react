@@ -30,6 +30,7 @@ function StepperBar({
   stepKey,
   textPlacement = 'bottom',
   onStepClick,
+  allowAllNavigation = false,
   vertical = false,
   style
 }: {
@@ -38,6 +39,7 @@ function StepperBar({
   stepKey?: string;
   textPlacement?: string;
   onStepClick?: (stepKey: string) => void;
+  allowAllNavigation?: boolean;
   vertical?: boolean;
   style?: React.CSSProperties;
 }) {
@@ -84,7 +86,13 @@ function StepperBar({
       const isActive = index === activeStep;
       const isLast = index === steps.length - 1;
       const sKey = visibleStepConfigs?.[index]?.step_key;
-      const isClickable = isCompleted && !!onStepClick && !!sKey;
+      // With all-step navigation on, any step other than the current one is
+      // clickable; otherwise only completed (already-visited) steps are.
+      const isClickable =
+        !!onStepClick &&
+        !!sKey &&
+        !isActive &&
+        (allowAllNavigation || isCompleted);
 
       const connectorStyle = vertical
         ? {
