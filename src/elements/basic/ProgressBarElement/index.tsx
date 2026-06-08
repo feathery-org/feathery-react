@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { isNum } from '../../../utils/primitives';
+import { ACTION_NEXT } from '../../../utils/elementActions';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 import StepperBar from './components/StepperBar';
@@ -31,6 +32,7 @@ function ProgressBarElement({
   maxDepth = 1,
   stepKey,
   changeStep,
+  runElementActions,
   elementProps = {},
   children
 }: any) {
@@ -54,6 +56,19 @@ function ProgressBarElement({
   };
 
   if (element.properties?.stepper) {
+    // When navigation to all steps is enabled, clicking a step validates and
+    // submits the current step before navigating to the clicked step; otherwise
+    // only already-visited steps are clickable and navigation happens directly.
+    const allowAllNavigation = !!element.properties?.navigate_to_all_steps;
+    const onStepClick = allowAllNavigation
+      ? (targetStepKey: string) =>
+          runElementActions({
+            element,
+            elementType: 'progress_bar',
+            actions: [{ type: ACTION_NEXT, next_step_key: targetStepKey }],
+            submit: true
+          })
+      : changeStep;
     return (
       <div {...containerProps}>
         {children}
@@ -62,7 +77,8 @@ function ProgressBarElement({
           stepConfigs={element.properties?.stepper_steps ?? []}
           stepKey={stepKey}
           textPlacement={element.styles.percent_text_layout}
-          onStepClick={changeStep}
+          onStepClick={onStepClick}
+          allowAllNavigation={allowAllNavigation}
           vertical={vertical}
           style={vertical ? { flex: 1 } : undefined}
         />
