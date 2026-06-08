@@ -33,8 +33,17 @@ type DocusignSigner = {
   email: string;
   name: string;
 };
+type DocusignQuikConfig = {
+  form_groups: {
+    forms: { id: string }[];
+    csv_prefill: string[];
+    index: number;
+  }[];
+  field_mapping: { quikField: string; featheryField: string }[];
+};
 export type SendDocusignParams = {
-  documents: string[];
+  documents?: string[];
+  quikConfig?: DocusignQuikConfig;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
   fillData?: Record<string, any>;
