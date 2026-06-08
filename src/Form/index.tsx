@@ -2942,6 +2942,7 @@ function Form({
     changeValue,
     changeStep: (nextStepKey: string) =>
       changeFormStep(nextStepKey, activeStep.key, false),
+    client,
     updateFieldValues,
     submitCustom: (values: Record<string, any>) => client?.submitCustom(values),
     elementOnView,
@@ -3003,11 +3004,9 @@ function Form({
   )
     return <FormOff reason={formOffReason.current} showCTA={false} />;
   else if (anyFinished) {
-    const completeState =
-      formSettings.completionBehavior === 'show_completed_screen' ? (
-        <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
-      ) : null;
-    return completeState;
+    return formSettings.completionBehavior === 'show_completed_screen' ? (
+      <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
+    ) : null;
   } else if (!activeStep) return stepLoader;
 
   return (

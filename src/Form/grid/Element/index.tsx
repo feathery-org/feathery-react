@@ -88,8 +88,8 @@ const Element = ({ node: el, form }: any) => {
         curDepth={curDepth}
         maxDepth={maxDepth}
         stepKey={activeStep?.key}
-        changeStep={form.changeStep}
         runElementActions={runElementActions}
+        client={form.client}
       />
     );
   else if (type === 'image') return <Elements.ImageElement {...basicProps} />;
