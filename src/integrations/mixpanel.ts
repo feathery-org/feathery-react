@@ -83,7 +83,10 @@ export function installMixpanel(mixpanelConfig: any) {
     })(featheryDoc(), featheryWindow().mixpanel || []);
 
     const meta = mixpanelConfig.metadata;
-    featheryWindow().mixpanel.init(meta.api_key);
+    const options = meta.eu_server
+      ? { api_host: 'https://api-eu.mixpanel.com' }
+      : {};
+    featheryWindow().mixpanel.init(meta.api_key, options);
     if (meta.identify_user)
       featheryWindow().mixpanel.identify(initInfo().userId);
   }
