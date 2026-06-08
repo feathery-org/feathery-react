@@ -9,7 +9,17 @@ type TabEntry = {
 };
 
 function applyTabsStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets('tab', 'tabActive', 'tabHover', 'tabDisabled');
+  responsiveStyles.addTargets(
+    'tabsContainer',
+    'tab',
+    'tabActive',
+    'tabHover',
+    'tabDisabled'
+  );
+
+  responsiveStyles.apply('tabsContainer', 'gap', (gap: number) => ({
+    gap: gap ? `${gap}px` : undefined
+  }));
 
   responsiveStyles.applyBackgroundColorGradient('tab');
   responsiveStyles.applyCorners('tab');
@@ -62,6 +72,7 @@ function TabsElement({
   const direction =
     element.properties.direction === 'vertical' ? 'column' : 'row';
 
+  const containerStyles = styles.getTarget('tabsContainer');
   const baseTabStyles = styles.getTarget('tab');
   const activeStyles = styles.getTarget('tabActive');
   const hoverStyles = hoverStylesGuard(styles.getTarget('tabHover'));
@@ -75,7 +86,8 @@ function TabsElement({
         flexDirection: direction as any,
         width: '100%',
         height: '100%',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        ...containerStyles
       }}
       {...elementProps}
     >
