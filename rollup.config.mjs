@@ -58,6 +58,7 @@ export default {
       }
     }),
     resolve({
+      browser: true,
       extensions: ['.ts', '.tsx', '.js', '.jsx']
     }),
     commonjs(),
