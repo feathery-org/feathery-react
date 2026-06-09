@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useReducer } from 'react';
 import { isNum } from '../../../utils/primitives';
 import { ACTION_NEXT } from '../../../utils/elementActions';
+import { loadCompletedSteps } from '../../../utils/init';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 import StepperBar from './components/StepperBar';
@@ -31,8 +32,8 @@ function ProgressBarElement({
   curDepth = 1,
   maxDepth = 1,
   stepKey,
-  changeStep,
   runElementActions,
+  client,
   elementProps = {},
   children
 }: any) {
@@ -40,6 +41,14 @@ function ProgressBarElement({
     () => applyProgressBarStyles(responsiveStyles),
     [responsiveStyles]
   );
+
+  const [, rerender] = useReducer((x) => x + 1, 0);
+  const isStepper = !!element.properties?.stepper;
+  // Fetch prior step completion the first time a stepper renders (deduped per
+  // form inside loadCompletedSteps), then re-render this stepper to show it
+  useEffect(() => {
+    if (isStepper) loadCompletedSteps(client).then(() => rerender());
+  }, [isStepper]);
 
   const vertical = element.styles.bar_direction === 'vertical';
 
@@ -55,20 +64,17 @@ function ProgressBarElement({
     ...elementProps
   };
 
-  if (element.properties?.stepper) {
-    // When navigation to all steps is enabled, clicking a step validates and
-    // submits the current step before navigating to the clicked step; otherwise
-    // only already-visited steps are clickable and navigation happens directly.
+  if (isStepper) {
+    // Clicking a step navigates to it via a NEXT action. When navigation to all
+    // steps is enabled, the current step is validated & submitted first;
+    // otherwise only already-visited steps are clickable
     const allowAllNavigation = !!element.properties?.navigate_to_all_steps;
-    const onStepClick = allowAllNavigation
-      ? (targetStepKey: string) =>
-          runElementActions({
-            element,
-            elementType: 'progress_bar',
-            actions: [{ type: ACTION_NEXT, next_step_key: targetStepKey }],
-            submit: true
-          })
-      : changeStep;
+    const onStepClick = (targetStepKey: string) =>
+      runElementActions({
+        element,
+        elementType: 'progress_bar',
+        actions: [{ type: ACTION_NEXT, next_step_key: targetStepKey }]
+      });
     return (
       <div {...containerProps}>
         {children}
