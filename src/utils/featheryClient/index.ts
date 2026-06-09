@@ -650,6 +650,14 @@ export default class FeatheryClient extends IntegrationClient {
       return;
     }
 
+    // If the previous flush hasn't finished yet, skip this cycle. The pending
+    // updates stay queued and a new debounced cycle is scheduled so they get
+    // submitted once the in-flight request completes.
+    if (Object.keys(this.customSubmitInFlight).length) {
+      this.debouncedSubmitCustom(override);
+      return;
+    }
+
     const customKeyValues = { ...this.pendingCustomFieldUpdates };
     this.pendingCustomFieldUpdates = {}; // Clear pending updates after copying them
 
@@ -710,8 +718,12 @@ export default class FeatheryClient extends IntegrationClient {
       options,
       'submit'
     );
+    // Clean up on both success and failure so a failed request doesn't
+    // permanently register as in flight and block future flush cycles
+    const removeInFlight = () => delete this.customSubmitInFlight[uniqueId];
     this.customSubmitInFlight[uniqueId] = req.then(
-      () => delete this.customSubmitInFlight[uniqueId]
+      removeInFlight,
+      removeInFlight
     );
     return await req;
   }
@@ -723,8 +735,16 @@ export default class FeatheryClient extends IntegrationClient {
     // we call the debounced method and then flush() to immediately submit changes
     // see: https://github.com/lodash/lodash/issues/4185#issuecomment-462388355
     this.debouncedSubmitCustom(override);
-    const ret = await this.debouncedSubmitCustom.flush();
-    await Promise.all(Object.values(this.customSubmitInFlight));
+    let ret = await this.debouncedSubmitCustom.flush();
+    // A flush cycle is skipped if a previous submission is still in flight, so
+    // wait for in-flight submissions to settle and re-flush until any updates
+    // still pending have actually been submitted
+    while (Object.keys(this.customSubmitInFlight).length) {
+      await Promise.all(Object.values(this.customSubmitInFlight));
+      if (!Object.keys(this.pendingCustomFieldUpdates).length) break;
+      this.debouncedSubmitCustom(override);
+      ret = await this.debouncedSubmitCustom.flush();
+    }
     return ret;
   }
 
