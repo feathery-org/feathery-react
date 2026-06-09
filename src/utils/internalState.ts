@@ -33,9 +33,9 @@ type DocusignSigner = {
   email: string;
   name: string;
 };
-type DocusignLibraryFill = {
+type DocusignLibraryDocuments = {
   library: 'quik';
-  form_groups: {
+  groups: {
     forms: { id: string }[];
     rolePrefixes: string[];
     index: number;
@@ -44,7 +44,7 @@ type DocusignLibraryFill = {
 };
 export type SendDocusignParams = {
   documents?: string[];
-  libraryFill?: DocusignLibraryFill;
+  libraryDocuments?: DocusignLibraryDocuments;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
   fillData?: Record<string, any>;
