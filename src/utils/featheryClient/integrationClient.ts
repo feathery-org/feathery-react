@@ -470,7 +470,7 @@ export default class IntegrationClient {
 
   sendDocusignEnvelope({
     documents,
-    quikConfig,
+    libraryFill,
     fillData,
     emailSubject,
     emailBlurb,
@@ -486,7 +486,7 @@ export default class IntegrationClient {
         fuser_key: userId,
         form_key: this.formKey,
         documents,
-        quik_config: quikConfig,
+        library_fill: libraryFill,
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
