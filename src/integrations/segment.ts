@@ -36,7 +36,7 @@ export function installSegment(segmentConfig: any) {
   // Load the Segment chunk in the background. The synchronous buffer above
   // covers the load gap, so we deliberately don't await this — blocking here
   // would hold up fetchSession (and thus first render) for Segment forms.
-  void loadSegment(segmentConfig, queue);
+  loadSegment(segmentConfig, queue);
 }
 
 async function loadSegment(segmentConfig: any, queue: QueuedCall[]) {
