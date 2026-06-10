@@ -5,7 +5,7 @@ type AssistantClientCallbacks = {
   changeValue: (value: any, field: any, index?: number | null) => void;
 };
 
-export type TableHandlers = {
+type TableHandlers = {
   handleCellEdit: (fieldKey: string, rowIndex: number, value: any) => void;
   handleAddRow: () => void;
   handleDeleteRow: (rowIndex: number) => void;

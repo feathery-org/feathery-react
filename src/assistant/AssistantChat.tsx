@@ -29,13 +29,13 @@ export type AssistantChatProps = {
   onLayoutChange?: null | ((state: AssistantLayoutState) => void);
 };
 
-const AssistantChat = ({
+function AssistantChat({
   bottom = 20,
   color,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
   onLayoutChange
-}: AssistantChatProps) => {
+}: AssistantChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const {
     mode,
@@ -244,6 +244,6 @@ const AssistantChat = ({
       />
     </div>
   );
-};
+}
 
 export default AssistantChat;

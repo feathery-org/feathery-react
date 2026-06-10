@@ -27,14 +27,14 @@ export type ChatRegistryProviderProps = {
   children: ReactNode;
 };
 
-export const ChatRegistryProvider = ({
+export function ChatRegistryProvider({
   baseUrl,
   headers,
   getJwt,
   instanceId,
   getTargets,
   children
-}: ChatRegistryProviderProps) => {
+}: ChatRegistryProviderProps) {
   const resolvedHeaders = useMemo<AssistantHeaders>(() => {
     if (headers) return headers;
     if (getJwt) return () => ({ Authorization: `Bearer ${getJwt()}` });
@@ -61,6 +61,6 @@ export const ChatRegistryProvider = ({
       {children}
     </ChatRegistryContext.Provider>
   );
-};
+}
 
 export default ChatRegistryProvider;

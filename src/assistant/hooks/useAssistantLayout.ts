@@ -22,35 +22,38 @@ const MODE_STORAGE_KEY_SUFFIX = 'mode';
 const SIDEBAR_WIDTH_STORAGE_KEY_SUFFIX = 'sidebarWidth';
 const DEFAULT_MODE: AssistantMode = 'current';
 
-const isAssistantMode = (v: unknown): v is AssistantMode =>
-  v === 'current' ||
-  v === 'sidebar-left' ||
-  v === 'sidebar-right' ||
-  v === 'fullscreen';
+function isAssistantMode(v: unknown): v is AssistantMode {
+  return (
+    v === 'current' ||
+    v === 'sidebar-left' ||
+    v === 'sidebar-right' ||
+    v === 'fullscreen'
+  );
+}
 
-const readStoredMode = (modeStorageKey: string): AssistantMode => {
+function readStoredMode(modeStorageKey: string): AssistantMode {
   try {
     const raw = featheryWindow().localStorage.getItem(modeStorageKey);
     return isAssistantMode(raw) ? raw : DEFAULT_MODE;
   } catch {
     return DEFAULT_MODE;
   }
-};
+}
 
-const writeStoredMode = (modeStorageKey: string, mode: AssistantMode) => {
+function writeStoredMode(modeStorageKey: string, mode: AssistantMode) {
   try {
     featheryWindow().localStorage.setItem(modeStorageKey, mode);
   } catch {
     // localStorage unavailable, mode stays in component state for the session
   }
-};
+}
 
 const SIDEBAR_MIN_WIDTH = 280;
 const SIDEBAR_MAX_ABS = 800;
 const SIDEBAR_MAX_VIEWPORT_RATIO = 0.6;
 const DEFAULT_SIDEBAR_WIDTH = 400;
 
-const getSidebarMaxWidth = (): number => {
+function getSidebarMaxWidth(): number {
   try {
     return Math.min(
       SIDEBAR_MAX_ABS,
@@ -59,16 +62,16 @@ const getSidebarMaxWidth = (): number => {
   } catch {
     return SIDEBAR_MAX_ABS;
   }
-};
+}
 
-const clampSidebarWidth = (w: number): number => {
+function clampSidebarWidth(w: number): number {
   const max = Math.max(SIDEBAR_MIN_WIDTH, getSidebarMaxWidth());
   if (w < SIDEBAR_MIN_WIDTH) return SIDEBAR_MIN_WIDTH;
   if (w > max) return max;
   return w;
-};
+}
 
-const readStoredSidebarWidth = (sidebarWidthStorageKey: string): number => {
+function readStoredSidebarWidth(sidebarWidthStorageKey: string): number {
   try {
     const raw = featheryWindow().localStorage.getItem(sidebarWidthStorageKey);
     const parsed = raw ? parseInt(raw, 10) : NaN;
@@ -78,18 +81,18 @@ const readStoredSidebarWidth = (sidebarWidthStorageKey: string): number => {
   } catch {
     return DEFAULT_SIDEBAR_WIDTH;
   }
-};
+}
 
-const writeStoredSidebarWidth = (
+function writeStoredSidebarWidth(
   sidebarWidthStorageKey: string,
   w: number
-): void => {
+): void {
   try {
     featheryWindow().localStorage.setItem(sidebarWidthStorageKey, String(w));
   } catch {
     // localStorage unavailable, width stays in component state for the session
   }
-};
+}
 
 type Params = {
   isOpen: boolean;

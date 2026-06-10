@@ -9,7 +9,7 @@ export const GRAY_800 = '#1f2937';
 export const RED_500 = '#ef4444';
 
 // Generate lighter/darker variants from hex color
-export const adjustColor = (hex: string, percent: number): string => {
+function adjustColor(hex: string, percent: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.min(
     255,
@@ -24,9 +24,9 @@ export const adjustColor = (hex: string, percent: number): string => {
     Math.max(0, (num & 0x0000ff) + Math.round(2.55 * percent))
   );
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-};
+}
 
-export const blendToWhite = (hex: string, percent: number): string => {
+function blendToWhite(hex: string, percent: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = (num >> 16) & 0xff;
   const g = (num >> 8) & 0xff;
@@ -38,7 +38,7 @@ export const blendToWhite = (hex: string, percent: number): string => {
   return `#${((newR << 16) | (newG << 8) | newB)
     .toString(16)
     .padStart(6, '0')}`;
-};
+}
 
 export interface ChatColors {
   primary: string;
@@ -48,9 +48,11 @@ export interface ChatColors {
 }
 
 // Compute all color variants from primary
-export const getChatColors = (primary: string): ChatColors => ({
-  primary, // Main color: buttons, header
-  hover: adjustColor(primary, -15), // Darker hover state
-  disabled: adjustColor(primary, 30), // Lighter disabled state
-  light: blendToWhite(primary, 90) // Light: assistant bubbles
-});
+export function getChatColors(primary: string): ChatColors {
+  return {
+    primary, // Main color: buttons, header
+    hover: adjustColor(primary, -15), // Darker hover state
+    disabled: adjustColor(primary, 30), // Lighter disabled state
+    light: blendToWhite(primary, 90) // Light: assistant bubbles
+  };
+}

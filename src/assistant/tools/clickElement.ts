@@ -42,7 +42,7 @@ type FoundElement = {
   position: number[];
 };
 
-const findElement = (state: any, elementId: string): FoundElement | null => {
+function findElement(state: any, elementId: string): FoundElement | null {
   const step = state?.currentStep;
   if (!step) return null;
   const sources: Array<[any[] | undefined, ElementType]> = [
@@ -62,7 +62,7 @@ const findElement = (state: any, elementId: string): FoundElement | null => {
     };
   }
   return null;
-};
+}
 
 export async function dispatchClickElement(
   formUuid: string | undefined,

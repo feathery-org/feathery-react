@@ -10,7 +10,7 @@ import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
 import { isButtonDisabled } from '../../utils/button';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 
-export type PanelRuntimeFieldEntry = {
+type PanelRuntimeFieldEntry = {
   key: string;
   type: string;
   value: unknown;
@@ -37,7 +37,7 @@ export type PanelRuntimeFieldEntry = {
   stepSize?: number;
 };
 
-export type PanelRuntimeElementEntry =
+type PanelRuntimeElementEntry =
   | {
       type: 'text';
       id?: string;
@@ -81,7 +81,7 @@ export type PanelRuntimeElementEntry =
       visible: boolean;
     };
 
-export type PanelRuntimeTableEntry = {
+type PanelRuntimeTableEntry = {
   id: string;
   columns: Array<{ name: string; fieldKey: string }>;
   rows: unknown[][];
@@ -93,7 +93,7 @@ export type PanelRuntimeTableEntry = {
   visible: boolean;
 };
 
-export type PanelRuntimeSnapshot = {
+type PanelRuntimeSnapshot = {
   currentStep: { id: string; key: string };
   previousStepName?: string;
   totalSteps: number;
@@ -104,7 +104,7 @@ export type PanelRuntimeSnapshot = {
   hiddenFieldValues: Record<string, unknown>;
 };
 
-const extractRawText = (props: Record<string, unknown>): string => {
+function extractRawText(props: Record<string, unknown>): string {
   const plain = props.text;
   if (typeof plain === 'string' && plain.trim()) return plain;
   const formatted = props.text_formatted as
@@ -117,29 +117,30 @@ const extractRawText = (props: Record<string, unknown>): string => {
     .map((op) => (typeof op?.insert === 'string' ? op.insert : ''))
     .join('')
     .trim();
-};
+}
 
-const resolveText = (text: string, repeat?: number): string => {
+function resolveText(text: string, repeat?: number): string {
   if (!text) return '';
   try {
     return replaceTextVariables(text, repeat);
   } catch {
     return text;
   }
-};
+}
 
-export const getCurrentStepKey = (formId: string): string | undefined =>
-  internalState[formId]?.currentStep?.key;
+export function getCurrentStepKey(formId: string): string | undefined {
+  return internalState[formId]?.currentStep?.key;
+}
 
 // Mirrors canRunAction in utils/elementActions.ts; step events run for every in-scope step, element events require elementId in rule.elements.
 const STEP_EVENTS = new Set(['submit', 'load']);
-const elementHasLogicRules = (
+function elementHasLogicRules(
   logicRules: any[] | undefined,
   triggerEvent: string,
   stepId: string,
   elementId: string
-): boolean =>
-  (logicRules ?? []).some((rule) => {
+): boolean {
+  return (logicRules ?? []).some((rule) => {
     if (rule?.trigger_event !== triggerEvent) return false;
     if (rule.enabled === false || rule.valid === false) return false;
     const { steps, elements } = rule;
@@ -148,10 +149,11 @@ const elementHasLogicRules = (
     if (STEP_EVENTS.has(triggerEvent)) return true;
     return Array.isArray(elements) && elements.includes(elementId);
   });
+}
 
-export const getPanelRuntimeSnapshot = (
+export function getPanelRuntimeSnapshot(
   formId: string
-): PanelRuntimeSnapshot | null => {
+): PanelRuntimeSnapshot | null {
   const state = internalState[formId];
   if (!state || !state.currentStep) return null;
 
@@ -513,4 +515,4 @@ export const getPanelRuntimeSnapshot = (
     values,
     hiddenFieldValues
   };
-};
+}

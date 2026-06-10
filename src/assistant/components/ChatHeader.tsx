@@ -47,7 +47,7 @@ type ChatHeaderProps = {
   colors: ChatColors;
 };
 
-const ChatHeader = ({
+function ChatHeader({
   title,
   mode,
   setMode,
@@ -62,7 +62,7 @@ const ChatHeader = ({
   CollapseIcon,
   ModeTriggerIcon,
   colors
-}: ChatHeaderProps) => {
+}: ChatHeaderProps) {
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const visibleThreads = threads.filter((t) => t.title);
@@ -362,6 +362,6 @@ const ChatHeader = ({
       )}
     </div>
   );
-};
+}
 
 export default ChatHeader;

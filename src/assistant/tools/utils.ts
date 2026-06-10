@@ -1,7 +1,7 @@
 import internalState from '../../utils/internalState';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 
-export const snapshotInlineErrors = (state: any): Record<string, string> => {
+export function snapshotInlineErrors(state: any): Record<string, string> {
   const out: Record<string, string> = {};
   const inlineErrors = state?.inlineErrors ?? {};
   for (const key of Object.keys(inlineErrors)) {
@@ -9,13 +9,13 @@ export const snapshotInlineErrors = (state: any): Record<string, string> => {
     if (typeof message === 'string' && message.length > 0) out[key] = message;
   }
   return out;
-};
+}
 
 // Subgrids whose position is a strict prefix of `position` (callers pre-filter to those whose handler does anything), innermost first.
-export const findClickableAncestorSubgrids = (
+export function findClickableAncestorSubgrids(
   subgrids: any[] | undefined,
   position: number[]
-): any[] => {
+): any[] {
   if (
     !Array.isArray(subgrids) ||
     !Array.isArray(position) ||
@@ -38,9 +38,9 @@ export const findClickableAncestorSubgrids = (
   }
   matches.sort((a, b) => b.position.length - a.position.length);
   return matches;
-};
+}
 
-export type RepeatIndexFailure = {
+type RepeatIndexFailure = {
   errorType:
     | 'repeated_index_missing'
     | 'repeated_index_out_of_range'
@@ -86,21 +86,21 @@ export type TableLookupErrorType =
   | 'not_on_step'
   | 'hidden';
 
-export type FoundTable = {
+type FoundTable = {
   state: any;
   table: any;
   columns: Array<{ name: string; field_key?: string }>;
   rowCount: number;
 };
 
-export type TableLookupResult =
+type TableLookupResult =
   | { ok: true; found: FoundTable }
   | { ok: false; errorType: TableLookupErrorType; error: string };
 
-export const findTableOnCurrentStep = (
+export function findTableOnCurrentStep(
   formUuid: string | undefined,
   tableId: string
-): TableLookupResult => {
+): TableLookupResult {
   if (!formUuid) {
     return {
       ok: false,
@@ -150,24 +150,24 @@ export const findTableOnCurrentStep = (
     return Array.isArray(v) ? Math.max(max, v.length) : max;
   }, 0);
   return { ok: true, found: { state, table, columns, rowCount } };
-};
+}
 
-export const getTableCapabilities = (
+export function getTableCapabilities(
   table: any,
   rowCount: number
-): { canEditCells: boolean; canAddRows: boolean; canDeleteRows: boolean } => {
+): { canEditCells: boolean; canAddRows: boolean; canDeleteRows: boolean } {
   const props = table?.properties ?? {};
   // A transpose table with zero rows renders un-transposed, so it stays editable
   const canEditCells =
     !!props.enable_editing && !(props.transpose && rowCount > 0);
   const addDelete = canEditCells && !!props.add_delete_rows;
   return { canEditCells, canAddRows: addDelete, canDeleteRows: addDelete };
-};
+}
 
-export const buildRowData = (
+export function buildRowData(
   found: FoundTable,
   rowIndex: number
-): Record<string, any> => {
+): Record<string, any> {
   const rowData: Record<string, any> = {};
   for (const col of found.columns) {
     if (!col?.field_key) continue;
@@ -176,4 +176,4 @@ export const buildRowData = (
     rowData[col.name] = cValue;
   }
   return rowData;
-};
+}

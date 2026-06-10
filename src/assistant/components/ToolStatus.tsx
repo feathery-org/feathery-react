@@ -14,12 +14,12 @@ import {
   RED_500
 } from '../colors';
 
-export interface ToolLabel {
+interface ToolLabel {
   running: string;
   done?: string;
 }
 
-export const TOOL_LABELS: Record<string, ToolLabel> = {
+const TOOL_LABELS: Record<string, ToolLabel> = {
   searchWeb: {
     running: 'Searching the web...',
     done: 'Searched the web'
@@ -94,16 +94,16 @@ export function readPartType(
 }
 
 // Format URL for display (show domain + path); CSS handles truncation.
-const formatUrl = (url: string): string => {
+function formatUrl(url: string): string {
   try {
     const parsed = new URL(url);
     return parsed.hostname + (parsed.pathname !== '/' ? parsed.pathname : '');
   } catch {
     return url;
   }
-};
+}
 
-const extractUrls = (output: unknown): string[] => {
+function extractUrls(output: unknown): string[] {
   if (!output || typeof output !== 'object') return [];
   const out = output as Record<string, unknown>;
   const urls: string[] = [];
@@ -125,7 +125,7 @@ const extractUrls = (output: unknown): string[] => {
   if (Array.isArray(output))
     return Array.from(new Set(extractFromArray(output)));
   return [];
-};
+}
 
 export interface ToolRow {
   key: string;
@@ -135,13 +135,17 @@ export interface ToolRow {
   output?: unknown;
 }
 
-const isRunningState = (s: string) =>
-  s === 'input-streaming' || s === 'input-available';
-const isErrorRow = (row: ToolRow) =>
-  row.state === 'output-error' ||
-  (typeof row.output === 'object' &&
-    row.output !== null &&
-    (row.output as { ok?: unknown }).ok === false);
+function isRunningState(s: string) {
+  return s === 'input-streaming' || s === 'input-available';
+}
+function isErrorRow(row: ToolRow) {
+  return (
+    row.state === 'output-error' ||
+    (typeof row.output === 'object' &&
+      row.output !== null &&
+      (row.output as { ok?: unknown }).ok === false)
+  );
+}
 
 interface ToolRowDetailProps {
   row: ToolRow;
@@ -149,7 +153,7 @@ interface ToolRowDetailProps {
   indent?: number;
 }
 
-const ToolRowDetail = ({ row, linkColor, indent = 24 }: ToolRowDetailProps) => {
+function ToolRowDetail({ row, linkColor, indent = 24 }: ToolRowDetailProps) {
   const query = row.input?.query;
   const urls = extractUrls(row.output);
   const hasContent = !!query || urls.length > 0;
@@ -209,15 +213,15 @@ const ToolRowDetail = ({ row, linkColor, indent = 24 }: ToolRowDetailProps) => {
       ))}
     </div>
   );
-};
+}
 
-const hasDetail = (row: ToolRow): boolean => {
+function hasDetail(row: ToolRow): boolean {
   if (row.input?.query) return true;
   if (extractUrls(row.output).length > 0) return true;
   return false;
-};
+}
 
-const labelFor = (row: ToolRow): string => {
+function labelFor(row: ToolRow): string {
   const labels = TOOL_LABELS[row.toolName] || {
     running: 'Working...',
     done: 'Done'
@@ -225,7 +229,7 @@ const labelFor = (row: ToolRow): string => {
   if (isRunningState(row.state)) return labels.running;
   if (isErrorRow(row)) return labels.done ?? 'Failed';
   return labels.done ?? labels.running;
-};
+}
 
 // background-clip:text so the gradient sweep only paints the glyphs
 const shimmerCss = {
@@ -249,13 +253,13 @@ interface ToolChunkProps {
   isFirstChunk?: boolean;
 }
 
-export const ToolChunk = ({
+export function ToolChunk({
   rows,
   followedByText,
   turnFinished,
   linkColor = DEFAULT_CHAT_COLOR,
   isFirstChunk = false
-}: ToolChunkProps) => {
+}: ToolChunkProps) {
   const isRunning = rows.some((r) => isRunningState(r.state));
   const chunkDone = !isRunning && (followedByText || turnFinished);
   const shouldCollapse = !isRunning && followedByText;
@@ -391,14 +395,14 @@ export const ToolChunk = ({
       )}
     </div>
   );
-};
+}
 
 interface ToolChunkRowProps {
   row: ToolRow;
   linkColor: string;
 }
 
-const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
+function ToolChunkRow({ row, linkColor }: ToolChunkRowProps) {
   const expandable = hasDetail(row);
   const running = isRunningState(row.state);
   const error = isErrorRow(row);
@@ -453,10 +457,10 @@ const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
       )}
     </div>
   );
-};
+}
 
 // Mimics the chunk header so a real tool arriving doesn't reflow the layout
-export const ToolChunkPlaceholder = () => {
+export function ToolChunkPlaceholder() {
   return (
     <div
       css={{
@@ -485,6 +489,6 @@ export const ToolChunkPlaceholder = () => {
       </div>
     </div>
   );
-};
+}
 
 export default ToolChunk;

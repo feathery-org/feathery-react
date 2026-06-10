@@ -12,16 +12,20 @@ const LazyChatRegistryProvider = lazy(() =>
   )
 );
 
-export const AssistantChat = (props: AssistantChatProps) => (
-  <Suspense fallback={null}>
-    <LazyAssistantChat {...props} />
-  </Suspense>
-);
+export function AssistantChat(props: AssistantChatProps) {
+  return (
+    <Suspense fallback={null}>
+      <LazyAssistantChat {...props} />
+    </Suspense>
+  );
+}
 
-export const ChatRegistryProvider = (props: ChatRegistryProviderProps) => (
-  <Suspense fallback={null}>
-    <LazyChatRegistryProvider {...props} />
-  </Suspense>
-);
+export function ChatRegistryProvider(props: ChatRegistryProviderProps) {
+  return (
+    <Suspense fallback={null}>
+      <LazyChatRegistryProvider {...props} />
+    </Suspense>
+  );
+}
 
 export type { AssistantChatProps, ChatRegistryProviderProps };

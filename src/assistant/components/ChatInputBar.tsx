@@ -10,12 +10,12 @@ type ChatInputBarProps = {
   colors: ChatColors;
 };
 
-const ChatInputBar = ({
+function ChatInputBar({
   isLoading,
   canSend,
   onSend,
   colors
-}: ChatInputBarProps) => {
+}: ChatInputBarProps) {
   const [input, setInput] = useState('');
 
   const submit = () => {
@@ -90,6 +90,6 @@ const ChatInputBar = ({
       </button>
     </div>
   );
-};
+}
 
 export default ChatInputBar;

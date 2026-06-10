@@ -36,7 +36,7 @@ type ChatContentProps = {
   colors: ChatColors;
 };
 
-const ChatContent = ({
+function ChatContent({
   title,
   mode,
   setMode,
@@ -62,50 +62,52 @@ const ChatContent = ({
   canSend,
   onSend,
   colors
-}: ChatContentProps) => (
-  <>
-    <ChatHeader
-      title={title}
-      mode={mode}
-      setMode={setMode}
-      allowedModes={allowedModes}
-      threads={threads}
-      activeThreadId={activeThreadId}
-      onNewThread={onNewThread}
-      onSelectThread={onSelectThread}
-      onDeleteThread={onDeleteThread}
-      onCollapse={onCollapse}
-      layoutSide={layoutSide}
-      CollapseIcon={CollapseIcon}
-      ModeTriggerIcon={ModeTriggerIcon}
-      colors={colors}
-    />
+}: ChatContentProps) {
+  return (
+    <>
+      <ChatHeader
+        title={title}
+        mode={mode}
+        setMode={setMode}
+        allowedModes={allowedModes}
+        threads={threads}
+        activeThreadId={activeThreadId}
+        onNewThread={onNewThread}
+        onSelectThread={onSelectThread}
+        onDeleteThread={onDeleteThread}
+        onCollapse={onCollapse}
+        layoutSide={layoutSide}
+        CollapseIcon={CollapseIcon}
+        ModeTriggerIcon={ModeTriggerIcon}
+        colors={colors}
+      />
 
-    <MessageList
-      messages={messages}
-      status={status}
-      isLoading={isLoading}
-      error={error}
-      colors={colors}
-      containerRef={messagesContainerRef}
-      endRef={messagesEndRef}
-      onScroll={onMessagesScroll}
-    />
+      <MessageList
+        messages={messages}
+        status={status}
+        isLoading={isLoading}
+        error={error}
+        colors={colors}
+        containerRef={messagesContainerRef}
+        endRef={messagesEndRef}
+        onScroll={onMessagesScroll}
+      />
 
-    <WorkflowActionBar
-      actions={workflowActions}
-      disabled={isLoading}
-      onAction={onWorkflowAction}
-      colors={colors}
-    />
+      <WorkflowActionBar
+        actions={workflowActions}
+        disabled={isLoading}
+        onAction={onWorkflowAction}
+        colors={colors}
+      />
 
-    <ChatInputBar
-      isLoading={isLoading}
-      canSend={canSend}
-      onSend={onSend}
-      colors={colors}
-    />
-  </>
-);
+      <ChatInputBar
+        isLoading={isLoading}
+        canSend={canSend}
+        onSend={onSend}
+        colors={colors}
+      />
+    </>
+  );
+}
 
 export default ChatContent;

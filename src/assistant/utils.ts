@@ -15,7 +15,7 @@ type AssistantChunk =
   | { kind: 'text'; key: string; text: string }
   | { kind: 'tools'; key: string; rows: ToolRow[] };
 
-export const mergeAssistantParts = (parts: any[]): AssistantChunk[] => {
+export function mergeAssistantParts(parts: any[]): AssistantChunk[] {
   const chunks: AssistantChunk[] = [];
   parts.forEach((part: any, index: number) => {
     if (part.type === 'text' && part.text.trim()) {
@@ -48,7 +48,7 @@ export const mergeAssistantParts = (parts: any[]): AssistantChunk[] => {
     }
   });
   return chunks;
-};
+}
 
 export type AssistantThreadDetail = {
   id: string;
@@ -60,28 +60,28 @@ export type AssistantThreadDetail = {
   chat?: Chat<any>;
 };
 
-export const getThreadList = async (
+export async function getThreadList(
   baseUrl: string,
   headers: AssistantHeaders
-): Promise<AssistantThreadDetail[] | null> => {
+): Promise<AssistantThreadDetail[] | null> {
   const res = await fetch(`${baseUrl}threads/`, { headers: headers() });
   if (!res.ok) return null;
   return res.json();
-};
+}
 
-export const getThreadDetail = async (
+export async function getThreadDetail(
   baseUrl: string,
   headers: AssistantHeaders,
   threadId: string
-): Promise<AssistantThreadDetail | null> => {
+): Promise<AssistantThreadDetail | null> {
   const res = await fetch(`${baseUrl}threads/${threadId}/`, {
     headers: headers()
   });
   if (!res.ok) return null;
   return res.json();
-};
+}
 
-export const generateThreadTitle = async (
+export async function generateThreadTitle(
   baseUrl: string,
   headers: AssistantHeaders,
   threadId: string | null,
@@ -90,7 +90,7 @@ export const generateThreadTitle = async (
     targets?: { type: string; id: string }[];
     current_step?: string;
   }
-): Promise<string | null> => {
+): Promise<string | null> {
   const res = await fetch(`${baseUrl}threads/title/`, {
     method: 'POST',
     headers: { ...headers(), 'Content-Type': 'application/json' },
@@ -103,18 +103,18 @@ export const generateThreadTitle = async (
   if (!res.ok) return null;
   const data = await res.json();
   return data.title ?? null;
-};
+}
 
-export const deleteThread = async (
+export async function deleteThread(
   baseUrl: string,
   headers: AssistantHeaders,
   threadId: string
-): Promise<void> => {
+): Promise<void> {
   await fetch(`${baseUrl}threads/${threadId}/`, {
     method: 'DELETE',
     headers: headers()
   });
-};
+}
 
 // Runs client-forwarded tool calls and writes the result back as the chat's tool output
 export async function handleAssistantToolCall(

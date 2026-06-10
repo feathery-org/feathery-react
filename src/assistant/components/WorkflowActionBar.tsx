@@ -10,12 +10,12 @@ type WorkflowActionBarProps = {
   colors: ChatColors;
 };
 
-const WorkflowActionBar = ({
+function WorkflowActionBar({
   actions,
   disabled,
   onAction,
   colors
-}: WorkflowActionBarProps) => {
+}: WorkflowActionBarProps) {
   const [tooltip, setTooltip] = useState<{
     text: string;
     x: number;
@@ -93,6 +93,6 @@ const WorkflowActionBar = ({
       )}
     </div>
   );
-};
+}
 
 export default WorkflowActionBar;
