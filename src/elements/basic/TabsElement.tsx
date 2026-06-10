@@ -59,7 +59,7 @@ function TabsElement({
   element,
   responsiveStyles,
   editMode,
-  changeStep,
+  onTabClick,
   stepKey,
   elementProps = {}
 }: any) {
@@ -133,7 +133,7 @@ function TabsElement({
             aria-disabled={disabled}
             onClick={() => {
               if (editMode || disabled) return;
-              changeStep(entry.step_key);
+              onTabClick?.(entry);
             }}
           >
             {entry.label}
