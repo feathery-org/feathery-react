@@ -1,6 +1,7 @@
 import {
   buildRowData,
   findTableOnCurrentStep,
+  getLiveStepKey,
   getTableCapabilities,
   snapshotInlineErrors,
   type TableLookupErrorType
@@ -81,7 +82,7 @@ export async function dispatchTriggerTableAction(
   }
 
   const rowData = buildRowData(lookup.found, rowIndex);
-  const fromStepKey = state.currentStep.key;
+  const fromStepKey = getLiveStepKey(state);
   const errorsBefore = snapshotInlineErrors(state);
 
   try {
@@ -99,7 +100,7 @@ export async function dispatchTriggerTableAction(
     };
   }
 
-  const toStepKey = state.currentStep?.key ?? fromStepKey;
+  const toStepKey = getLiveStepKey(state) ?? fromStepKey;
   const errorsAfter = snapshotInlineErrors(state);
   const fieldErrors: Record<string, string> = {};
   for (const key of Object.keys(errorsAfter)) {

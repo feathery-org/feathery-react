@@ -72,7 +72,7 @@ export const getFormContext = (formUuid: string) => {
     goToStep: (stepKey: any) => {
       const { currentStep, navigate, steps, setStepKey, client, trackHashes } =
         formState;
-      changeStep(
+      const changed = changeStep(
         stepKey,
         currentStep.key,
         steps,
@@ -81,6 +81,7 @@ export const getFormContext = (formUuid: string) => {
         client,
         trackHashes
       );
+      if (changed) formState.latestStepName = stepKey;
     },
     isTestForm: () => initState.isTestEnv,
     isLastStep: () => {

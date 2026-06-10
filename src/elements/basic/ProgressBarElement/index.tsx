@@ -65,9 +65,9 @@ function ProgressBarElement({
   };
 
   if (isStepper) {
-    // Clicking a step navigates to it via a NEXT action. When navigation to all
-    // steps is enabled, the current step is validated & submitted first;
-    // otherwise only already-visited steps are clickable
+    // Clicking a step navigates to it via a NEXT action without submitting.
+    // Navigation to all steps makes any step clickable, otherwise only
+    // already-visited steps are
     const allowAllNavigation = !!element.properties?.navigate_to_all_steps;
     const onStepClick = (targetStepKey: string) =>
       runElementActions({
