@@ -9,13 +9,7 @@ type TabEntry = {
 };
 
 function applyTabsStyles(element: any, responsiveStyles: any) {
-  responsiveStyles.addTargets(
-    'tabsContainer',
-    'tab',
-    'tabActive',
-    'tabHover',
-    'tabDisabled'
-  );
+  responsiveStyles.addTargets('tabsContainer', 'tab', 'tabActive', 'tabHover');
 
   responsiveStyles.apply('tabsContainer', 'gap', (gap: number) => ({
     gap: gap ? `${gap}px` : undefined
@@ -44,14 +38,6 @@ function applyTabsStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyColor('tabActive', 'selected_font_color', 'color');
   responsiveStyles.applyBorders({ target: 'tabActive', prefix: 'selected_' });
 
-  responsiveStyles.applyColor(
-    'tabDisabled',
-    'disabled_background_color',
-    'background'
-  );
-  responsiveStyles.applyColor('tabDisabled', 'disabled_font_color', 'color');
-  responsiveStyles.applyBorders({ target: 'tabDisabled', prefix: 'disabled_' });
-
   return responsiveStyles;
 }
 
@@ -76,7 +62,6 @@ function TabsElement({
   const baseTabStyles = styles.getTarget('tab');
   const activeStyles = styles.getTarget('tabActive');
   const hoverStyles = hoverStylesGuard(styles.getTarget('tabHover'));
-  const disabledStyles = styles.getTarget('tabDisabled');
 
   return (
     <div
@@ -114,7 +99,6 @@ function TabsElement({
       )}
       {entries.map((entry) => {
         const isActive = entry.step_key === stepKey;
-        const disabled = !entry.step_key;
         return (
           <button
             key={entry.id}
@@ -123,16 +107,14 @@ function TabsElement({
             css={{
               flex: 1,
               border: 'none',
-              cursor: editMode || disabled ? 'default' : 'pointer',
+              cursor: editMode ? 'default' : 'pointer',
               transition: '0.2s ease all',
               ...baseTabStyles,
-              '&[aria-disabled="true"]': disabledStyles,
-              '&[aria-disabled="false"]:hover': hoverStyles,
-              '&[aria-disabled="false"].active': activeStyles
+              '&:hover': hoverStyles,
+              '&.active': activeStyles
             }}
-            aria-disabled={disabled}
             onClick={() => {
-              if (editMode || disabled) return;
+              if (editMode || !entry.step_key) return;
               onTabClick?.(entry);
             }}
           >

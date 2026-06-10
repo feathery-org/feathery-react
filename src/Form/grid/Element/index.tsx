@@ -113,16 +113,12 @@ const Element = ({ node: el, form }: any) => {
         {...basicProps}
         stepKey={activeStep?.key}
         onTabClick={(entry: any) => {
-          if (el.properties.submit) {
-            runElementActions({
-              actions: [{ type: ACTION_NEXT, next_step_key: entry.step_key }],
-              element: el,
-              elementType: 'tab',
-              submit: true
-            });
-          } else {
-            form.changeStep(entry.step_key);
-          }
+          runElementActions({
+            actions: [{ type: ACTION_NEXT, next_step_key: entry.step_key }],
+            element: el,
+            elementType: 'tab',
+            submit: el.properties.submit
+          });
         }}
       />
     );
