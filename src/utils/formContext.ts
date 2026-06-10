@@ -206,14 +206,14 @@ export const getFormContext = (formUuid: string) => {
       operation,
       entryId,
       data,
-      conditions
+      where
     }: HubActionOptions) =>
       formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
         data,
-        conditions
+        where
       }),
     generateDocuments: ({
       documentIds,
