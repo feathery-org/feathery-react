@@ -12,7 +12,7 @@ const BUFFERED_METHODS = ['track', 'page', 'identify'] as const;
 
 type QueuedCall = [typeof BUFFERED_METHODS[number], any[]];
 
-export async function installSegment(segmentConfig: any) {
+export function installSegment(segmentConfig: any) {
   if (!segmentConfig || segmentInstalled) return;
   segmentInstalled = true;
 
@@ -33,6 +33,13 @@ export async function installSegment(segmentConfig: any) {
   });
   featheryWindow().analytics = buffer;
 
+  // Load the Segment chunk in the background. The synchronous buffer above
+  // covers the load gap, so we deliberately don't await this — blocking here
+  // would hold up fetchSession (and thus first render) for Segment forms.
+  void loadSegment(segmentConfig, queue);
+}
+
+async function loadSegment(segmentConfig: any, queue: QueuedCall[]) {
   let AnalyticsBrowserClass: typeof AnalyticsBrowser;
   try {
     ({ AnalyticsBrowser: AnalyticsBrowserClass } = await import(
