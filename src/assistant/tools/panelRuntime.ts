@@ -1,7 +1,6 @@
 import internalState from '../../utils/internalState';
 import { initState } from '../../utils/init';
 import { replaceTextVariables } from '../../elements/components/TextNodes';
-import { findClickableAncestorSubgrids } from '../utils';
 import {
   getRepeatedContainer,
   getRepeatedContainers
@@ -9,6 +8,7 @@ import {
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
 import { isButtonDisabled } from '../../utils/button';
+import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -82,8 +82,14 @@ export type PanelRuntimeElementEntry =
     };
 
 export type PanelRuntimeTableEntry = {
+  id: string;
   columns: Array<{ name: string; fieldKey: string }>;
   rows: unknown[][];
+  actions?: Array<{ label: string }>;
+  canAddRows?: boolean;
+  canDeleteRows?: boolean;
+  canEditCells?: boolean;
+  hasLogicRules?: boolean;
   visible: boolean;
 };
 
@@ -465,12 +471,34 @@ export const getPanelRuntimeSnapshot = (
         return Array.isArray(v) ? v[i] ?? null : v ?? null;
       })
     );
+    const rawActions = Array.isArray(el?.properties?.actions)
+      ? el.properties.actions
+      : [];
+    const actions = rawActions
+      .map((a: any) => ({ label: typeof a?.label === 'string' ? a.label : '' }))
+      .filter((a: { label: string }) => a.label.trim().length > 0);
+    const { canEditCells, canAddRows, canDeleteRows } = getTableCapabilities(
+      el,
+      numRows
+    );
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      el.id ?? ''
+    );
     currentStepTables.push({
+      id: el.id ?? '',
       columns: cols.map((c) => ({
         name: c.name ?? c.field_key ?? '',
         fieldKey: c.field_key ?? ''
       })),
       rows,
+      ...(actions.length > 0 ? { actions } : {}),
+      ...(canAddRows ? { canAddRows: true } : {}),
+      ...(canDeleteRows ? { canDeleteRows: true } : {}),
+      ...(canEditCells ? { canEditCells: true } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
       visible: visibilityFor(el)
     });
   });

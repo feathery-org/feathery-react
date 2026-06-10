@@ -59,6 +59,12 @@ import {
 } from './tools/panelRuntime';
 import { dispatchSetFieldValue } from './tools/setFieldValue';
 import { dispatchClickElement } from './tools/clickElement';
+import { dispatchTriggerTableAction } from './tools/triggerTableAction';
+import {
+  dispatchAddTableRow,
+  dispatchDeleteTableRow,
+  dispatchSetTableCellValue
+} from './tools/tableMutations';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -459,6 +465,84 @@ const AssistantChat = ({
           );
           chat.addToolOutput({
             tool: 'clickElement',
+            toolCallId: toolCall.toolCallId,
+            output
+          });
+        } else if (toolCall.toolName === 'triggerTableAction') {
+          const input = (toolCall.input ?? {}) as {
+            tableId?: unknown;
+            rowIndex?: unknown;
+            actionLabel?: unknown;
+          };
+          const tableId =
+            typeof input.tableId === 'string' ? input.tableId : '';
+          const rowIndex =
+            typeof input.rowIndex === 'number' ? input.rowIndex : NaN;
+          const actionLabel =
+            typeof input.actionLabel === 'string'
+              ? input.actionLabel
+              : undefined;
+          const output = await dispatchTriggerTableAction(
+            instanceId,
+            tableId,
+            rowIndex,
+            actionLabel
+          );
+          chat.addToolOutput({
+            tool: 'triggerTableAction',
+            toolCallId: toolCall.toolCallId,
+            output
+          });
+        } else if (toolCall.toolName === 'addTableRow') {
+          const input = (toolCall.input ?? {}) as { tableId?: unknown };
+          const tableId =
+            typeof input.tableId === 'string' ? input.tableId : '';
+          const output = await dispatchAddTableRow(instanceId, tableId);
+          chat.addToolOutput({
+            tool: 'addTableRow',
+            toolCallId: toolCall.toolCallId,
+            output
+          });
+        } else if (toolCall.toolName === 'deleteTableRow') {
+          const input = (toolCall.input ?? {}) as {
+            tableId?: unknown;
+            rowIndex?: unknown;
+          };
+          const tableId =
+            typeof input.tableId === 'string' ? input.tableId : '';
+          const rowIndex =
+            typeof input.rowIndex === 'number' ? input.rowIndex : NaN;
+          const output = await dispatchDeleteTableRow(
+            instanceId,
+            tableId,
+            rowIndex
+          );
+          chat.addToolOutput({
+            tool: 'deleteTableRow',
+            toolCallId: toolCall.toolCallId,
+            output
+          });
+        } else if (toolCall.toolName === 'setTableCellValue') {
+          const input = (toolCall.input ?? {}) as {
+            tableId?: unknown;
+            cells?: unknown;
+          };
+          const tableId =
+            typeof input.tableId === 'string' ? input.tableId : '';
+          const cells = Array.isArray(input.cells)
+            ? (input.cells as Array<{
+                rowIndex: unknown;
+                fieldKey: unknown;
+                value: unknown;
+              }>)
+            : [];
+          const output = await dispatchSetTableCellValue(
+            instanceId,
+            tableId,
+            cells
+          );
+          chat.addToolOutput({
+            tool: 'setTableCellValue',
             toolCallId: toolCall.toolCallId,
             output
           });
