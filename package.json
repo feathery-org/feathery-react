@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.40.1",
+  "version": "2.44.0",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -116,6 +116,7 @@
     "@feathery/client-utils": "0.17.0",
     "@fingerprintjs/fingerprintjs": "5.1.0",
     "@rc-component/slider": "^1.0.0",
+    "@segment/analytics-next": "^1.84.0",
     "@stripe/react-stripe-js": "3.7.0",
     "@stripe/stripe-js": "7.3.0",
     "@stytch/vanilla-js": "5.23.1",

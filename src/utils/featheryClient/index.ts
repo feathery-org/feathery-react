@@ -7,6 +7,7 @@ import {
   initFormsPromise,
   initInfo,
   initState,
+  markStepCompleted,
   setFieldValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
@@ -494,6 +495,28 @@ export default class FeatheryClient extends IntegrationClient {
     return res;
   }
 
+  // Lazily fetch the step keys the user has already completed. Queried only
+  // when a stepper element renders, so it stays out of the session payload.
+  async fetchCompletedSteps(): Promise<string[]> {
+    await initFormsPromise;
+    const { userId, collaboratorId, overrideUserId } = initInfo();
+
+    let params: Record<string, any> = {
+      form_key: this.formKey,
+      override: overrideUserId
+    };
+    if (userId) params.fuser_key = userId;
+    if (collaboratorId) params.collaborator_user = collaboratorId;
+    // @ts-expect-error encodeGetParams returns the encoded query string
+    params = encodeGetParams(params);
+    const url = `${API_URL}panel/step/completion/?${params}`;
+
+    const response = await this._fetch(url, {});
+    if (!response) return [];
+    const data = await response.json().catch(() => ({}));
+    return data.completed_steps ?? [];
+  }
+
   async fetchSession(formPromise = null, block = false) {
     // Block if there's a chance user id isn't available yet
     await (block ? initFormsPromise : Promise.resolve());
@@ -810,6 +833,10 @@ export default class FeatheryClient extends IntegrationClient {
 
   async registerEvent(eventData: any) {
     if (this.draft) return;
+
+    // A 'complete' event means the step was submitted — record it so the
+    // stepper reflects which steps are completed vs merely skipped over.
+    if (eventData.event === 'complete') markStepCompleted(eventData.step_key);
 
     if (!isInteractionDetected() || this.userEventQueue.isReplayingEvents()) {
       return this.userEventQueue.enqueue(eventData);

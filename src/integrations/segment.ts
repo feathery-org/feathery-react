@@ -1,99 +1,65 @@
-import { featheryDoc, featheryWindow } from '../utils/browser';
+import { featheryWindow } from '../utils/browser';
 import { initInfo } from '../utils/init';
+import type { AnalyticsBrowser } from '@segment/analytics-next';
 
 let segmentInstalled = false;
 
+// Stubbed synchronously so events fired before the Segment chunk loads are
+// queued and replayed rather than dropped by the call site's guard.
+const BUFFERED_METHODS = ['track', 'page', 'identify'] as const;
+
+type QueuedCall = [typeof BUFFERED_METHODS[number], any[]];
+
 export function installSegment(segmentConfig: any) {
-  if (!segmentConfig || segmentInstalled) return Promise.resolve();
+  if (!segmentConfig || segmentInstalled) return;
   segmentInstalled = true;
 
-  // Script from https://segment.com/docs/connections/sources/catalog/libraries/website/javascript/quickstart/#step-2-add-the-segment-snippet
-  // Create a queue, but don't obliterate an existing one!
-  const analytics = (featheryWindow().analytics =
-    featheryWindow().analytics || []);
-
-  // If the real analytics.js is already on the page return.
-  // If the snippet was invoked already show an error.
-  if (!analytics.initialize && !analytics.invoked) {
-    // Invoked flag, to make sure the snippet
-    // is never invoked twice.
-    analytics.invoked = true;
-    // A list of the methods in Analytics.js to stub.
-    analytics.methods = [
-      'trackSubmit',
-      'trackClick',
-      'trackLink',
-      'trackForm',
-      'pageview',
-      'identify',
-      'reset',
-      'group',
-      'track',
-      'ready',
-      'alias',
-      'debug',
-      'page',
-      'once',
-      'off',
-      'on',
-      'addSourceMiddleware',
-      'addIntegrationMiddleware',
-      'setAnonymousId',
-      'addDestinationMiddleware'
-    ];
-    // Define a factory to create stubs. These are placeholders
-    // for methods in Analytics.js so that you never have to wait
-    // for it to load to actually record data. The `method` is
-    // stored as the first argument, so we can replay the data.
-    analytics.factory = function (method: any) {
-      return function () {
-        // eslint-disable-next-line prefer-rest-params
-        const args = Array.prototype.slice.call(arguments);
-        args.unshift(method);
-        analytics.push(args);
-        return analytics;
-      };
-    };
-    // For each of our methods, generate a queueing stub.
-    for (let i = 0; i < analytics.methods.length; i++) {
-      const key = analytics.methods[i];
-      analytics[key] = analytics.factory(key);
-    }
-    // Define a method to load Analytics.js from our CDN,
-    // and that will be sure to only ever load it once.
-    analytics.load = function (key: any, options: any) {
-      // Create an async script element based on your key.
-      const script = featheryDoc().createElement('script');
-      script.type = 'text/javascript';
-      script.async = true;
-      script.src =
-        'https://cdn.segment.com/analytics.js/v1/' + key + '/analytics.min.js';
-      // Log an error if the Segment analytics.js script fails to load.
-      script.onerror = function () {
-        console.error(
-          'Feathery: Segment integration failed to load analytics.js from ' +
-            script.src
-        );
-      };
-      // Insert our script next to the first script element.
-      const first = featheryDoc().getElementsByTagName('script')[0];
-      first.parentNode.insertBefore(script, first);
-      analytics._loadOptions = options;
-    };
-    analytics._writeKey = segmentConfig.metadata.api_key;
-    // Add a version to keep track of what's in the wild.
-    analytics.SNIPPET_VERSION = '4.15.2';
-    // Load Analytics.js with your key, which will automatically
-    // load the tools you've enabled for your account. Boosh!
-    analytics.load(segmentConfig.metadata.api_key);
-    // Make the first page call to load the integrations. If
-    // you'd like to manually name or tag the page, edit or
-    // move this call however you'd like.
-    analytics.page();
+  // Don't clobber a customer's own Segment, whether fully loaded (`initialize`)
+  // or still mid-load via the v1 snippet stub (`invoked`).
+  const existing = featheryWindow().analytics;
+  if (existing && (existing.initialize || existing.invoked)) {
+    if (segmentConfig.metadata.identify_user)
+      existing.identify(initInfo().userId);
+    return;
   }
 
+  const queue: QueuedCall[] = [];
+  const buffer: Record<string, (...args: any[]) => void> = {};
+  BUFFERED_METHODS.forEach((method) => {
+    buffer[method] = (...args: any[]) => queue.push([method, args]);
+  });
+  featheryWindow().analytics = buffer;
+
+  // Not awaited: the buffer covers the load gap, so blocking here would hold up
+  // fetchSession (and first render) for Segment forms.
+  loadSegment(segmentConfig, queue);
+}
+
+async function loadSegment(segmentConfig: any, queue: QueuedCall[]) {
+  let AnalyticsBrowserClass: typeof AnalyticsBrowser;
+  try {
+    ({ AnalyticsBrowser: AnalyticsBrowserClass } = await import(
+      /* webpackChunkName: "segment" */ '@segment/analytics-next'
+    ));
+  } catch (error) {
+    console.error(
+      'Feathery: Segment integration failed to load analytics-next',
+      error
+    );
+    return;
+  }
+
+  const analytics = AnalyticsBrowserClass.load({
+    writeKey: segmentConfig.metadata.api_key
+  });
+  analytics.catch((error: unknown) => {
+    console.error('Feathery: Segment integration failed to initialize', error);
+  });
+
+  featheryWindow().analytics = analytics;
+
+  analytics.page();
   if (segmentConfig.metadata.identify_user)
     analytics.identify(initInfo().userId);
-
-  return Promise.resolve();
+  queue.forEach(([method, args]) => (analytics as any)[method](...args));
 }

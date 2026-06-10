@@ -428,6 +428,13 @@ export function castHiddenVal(hfType: string, val: any) {
     case 'number_value':
       newVal = Number(val);
       break;
+    case 'boolean_value':
+      if (typeof val === 'boolean') newVal = val;
+      else {
+        const lowered = String(val).trim().toLowerCase();
+        newVal = lowered === 'true' || lowered === 'yes' || lowered === '1';
+      }
+      break;
     default:
       newVal = String(val);
       break;

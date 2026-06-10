@@ -347,6 +347,7 @@ function Form({
   const [formId, setFormId] = useState(formIdProp);
   const clientRef = useRef<any>(undefined);
   const client = clientRef.current;
+  const assistantClientRef = useRef<AssistantClient | undefined>(undefined);
   const navigate = useNavigate();
   const location = useLocation();
   const session = initState.formSessions[formId];
@@ -1038,13 +1039,6 @@ function Form({
         ...props2
       }));
 
-  // keep internalState fresh
-  if (internalState[_internalId]) {
-    internalState[_internalId].setInlineErrors = setInlineErrors;
-    internalState[_internalId].inlineErrors = inlineErrors;
-    internalState[_internalId].logicRules = logicRules;
-  }
-
   const changeFormStep = (newKey: string, oldKey: string, load: boolean) => {
     const changed = changeStep(
       newKey,
@@ -1391,6 +1385,16 @@ function Form({
     return visiblePositions;
   }, [activeStep, render, formSettings]);
 
+  // keep internalState fresh
+  if (internalState[_internalId]) {
+    internalState[_internalId].setInlineErrors = setInlineErrors;
+    internalState[_internalId].inlineErrors = inlineErrors;
+    internalState[_internalId].logicRules = logicRules;
+    if (visiblePositions) {
+      internalState[_internalId].visiblePositions = visiblePositions;
+    }
+  }
+
   useEffect(() => {
     if (clientRef.current) return;
 
@@ -1563,7 +1567,7 @@ function Form({
   const changeValue = (
     value: any,
     field: any,
-    index = null,
+    index: number | null = null,
     rerender = true,
     triggerErrors = true
   ) => {
@@ -2227,9 +2231,14 @@ function Form({
       // it. If navigating but there is no step to navigate to, still attempt
       // to complete the form here since the user may leave before the
       // nav action event gets sent
+      // A next action may specify an explicit target step (e.g. clicking a
+      // stepper step); otherwise the next step is resolved from the step's
+      // navigation conditions.
+      const nextAction = actions.find(
+        (action: any) => action.type === ACTION_NEXT
+      );
       const hasNext =
-        actions.some((action: any) => action.type === ACTION_NEXT) &&
-        getNextStepKey(metadata);
+        nextAction && (nextAction.next_step_key ?? getNextStepKey(metadata));
 
       let submissionResult: [Promise<any>] | undefined;
       try {
@@ -2494,7 +2503,7 @@ function Form({
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
         await goToNewStep({
-          redirectKey: getNextStepKey(metadata),
+          redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
           submitData: submit,
           submitPromise,
@@ -2918,6 +2927,21 @@ function Form({
         }
       : undefined;
 
+  if (internalState[_internalId]) {
+    const callbacks = {
+      buttonOnClick,
+      runElementActions,
+      tableOnClick,
+      changeValue
+    };
+    if (assistantClientRef.current) {
+      assistantClientRef.current.updateCallbacks(callbacks);
+    } else {
+      assistantClientRef.current = new AssistantClient(callbacks);
+      internalState[_internalId].assistantClient = assistantClientRef.current;
+    }
+  }
+
   const form = {
     userProgress,
     curDepth,
@@ -2937,6 +2961,7 @@ function Form({
     changeValue,
     changeStep: (nextStepKey: string) =>
       changeFormStep(nextStepKey, activeStep.key, false),
+    client,
     updateFieldValues,
     submitCustom: (values: Record<string, any>) => client?.submitCustom(values),
     elementOnView,
@@ -2947,15 +2972,9 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
-    featheryContext: getFormContext(_internalId)
+    featheryContext: getFormContext(_internalId),
+    assistantClient: internalState[_internalId]?.assistantClient
   };
-
-  if (internalState[_internalId]) {
-    internalState[_internalId].assistantClient = new AssistantClient({
-      buttonOnClick,
-      runElementActions
-    });
-  }
 
   // If form was completed in a previous session and edits are disabled,
   // consider the form finished
@@ -2998,11 +3017,9 @@ function Form({
   )
     return <FormOff reason={formOffReason.current} showCTA={false} />;
   else if (anyFinished) {
-    const completeState =
-      formSettings.completionBehavior === 'show_completed_screen' ? (
-        <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
-      ) : null;
-    return completeState;
+    return formSettings.completionBehavior === 'show_completed_screen' ? (
+      <FormOff reason={FILLED_OUT} showCTA={formSettings.showBrand} />
+    ) : null;
   } else if (!activeStep) return stepLoader;
 
   return (

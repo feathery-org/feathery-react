@@ -33,8 +33,18 @@ type DocusignSigner = {
   email: string;
   name: string;
 };
+type DocusignLibraryDocuments = {
+  library: 'quik';
+  groups: {
+    forms: { id: string }[];
+    rolePrefixes: string[];
+    index: number;
+  }[];
+  field_mapping: { roleField: string; featheryField: string }[];
+};
 export type SendDocusignParams = {
-  documents: string[];
+  documents?: string[];
+  libraryDocuments?: DocusignLibraryDocuments;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
   fillData?: Record<string, any>;

@@ -1,7 +1,14 @@
 import internalState from '../../utils/internalState';
 import { initState } from '../../utils/init';
 import { replaceTextVariables } from '../../elements/components/TextNodes';
-import { findClickableAncestorSubgrids } from '../utils';
+import {
+  getRepeatedContainer,
+  getRepeatedContainers
+} from '../../utils/repeat';
+import { getPositionKey } from '../../utils/hideAndRepeats';
+import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
+import { isButtonDisabled } from '../../utils/button';
+import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -10,13 +17,15 @@ export type PanelRuntimeFieldEntry = {
   visible: boolean;
   disabled: boolean;
   required: boolean;
-  repeated: boolean;
+  rowCount?: number;
+  repeatContainerId?: string;
   hasLogicRules?: boolean;
   clickableAncestorIds?: string[];
   placeholder?: string;
   tooltip?: string;
   error?: string;
   options?: Array<{ value: string; label: string }>;
+  rowOptions?: Array<Array<{ value: string; label: string }> | null>;
   questions?: Array<{ id: string; label: string }>;
   minLength?: number;
   maxLength?: number;
@@ -38,6 +47,7 @@ export type PanelRuntimeElementEntry =
       actions?: Array<Record<string, unknown>>;
       hasLogicRules?: boolean;
       clickableAncestorIds?: string[];
+      repeatContainerId?: string;
     }
   | {
       type: 'image';
@@ -50,9 +60,11 @@ export type PanelRuntimeElementEntry =
       id: string;
       text: string;
       visible: boolean;
+      disabled: boolean;
       submit: boolean;
       actions: Array<Record<string, unknown>>;
       hasLogicRules?: boolean;
+      repeatContainerId?: string;
     }
   | {
       type: 'container';
@@ -61,6 +73,7 @@ export type PanelRuntimeElementEntry =
       actions: Array<Record<string, unknown>>;
       hasLogicRules?: boolean;
       clickableAncestorIds?: string[];
+      repeatContainerId?: string;
     }
   | {
       type: 'progress';
@@ -69,8 +82,14 @@ export type PanelRuntimeElementEntry =
     };
 
 export type PanelRuntimeTableEntry = {
+  id: string;
   columns: Array<{ name: string; fieldKey: string }>;
   rows: unknown[][];
+  actions?: Array<{ label: string }>;
+  canAddRows?: boolean;
+  canDeleteRows?: boolean;
+  canEditCells?: boolean;
+  hasLogicRules?: boolean;
   visible: boolean;
 };
 
@@ -157,6 +176,15 @@ export const getPanelRuntimeSnapshot = (
       Array.isArray(el?.position) ? el.position : []
     ).map((sg: any) => sg.id ?? '');
 
+  // Match the renderer (fields + text-variable arrays) by reading the same flags it builds
+  const rowCountByContainer: Record<string, number> = {};
+  getRepeatedContainers(step as any).forEach((container: any) => {
+    const id = container?.id;
+    if (!id) return;
+    const flags = visiblePositions[getPositionKey(container)];
+    if (Array.isArray(flags)) rowCountByContainer[id] = flags.length;
+  });
+
   // Build per-field entries for the current step
   const currentStepFields: PanelRuntimeFieldEntry[] = (
     step.servar_fields ?? []
@@ -179,6 +207,11 @@ export const getPanelRuntimeSnapshot = (
     const error = inlineErrors[field.servar.key]?.message;
     const servar = field.servar ?? {};
     const meta = servar.metadata ?? {};
+    const repeated = !!servar.repeated;
+    const repeatAncestor = repeated
+      ? getRepeatedContainer(step as any, field)
+      : undefined;
+    const repeatAncestorId = repeatAncestor?.id ?? '';
     const rawOptions = Array.isArray(meta.options) ? meta.options : null;
     const rawLabels = Array.isArray(meta.labels) ? meta.labels : [];
     const options = rawOptions
@@ -186,6 +219,24 @@ export const getPanelRuntimeSnapshot = (
           value: String(value ?? ''),
           label: String(rawLabels[i] ?? value ?? '')
         }))
+      : undefined;
+    // Per-row option overrides for repeated choice fields
+    const rawRowOptions = Array.isArray(meta.repeat_options)
+      ? meta.repeat_options.map((row: any) =>
+          Array.isArray(row)
+            ? row.map((o: any) => ({
+                value: String(o?.value ?? o ?? ''),
+                label: String(o?.label ?? o?.value ?? o ?? '')
+              }))
+            : null
+        )
+      : undefined;
+    const padTarget =
+      rowCountByContainer[repeatAncestorId] ?? rawRowOptions?.length ?? 0;
+    const rowOptions = rawRowOptions
+      ? Array.from({ length: padTarget }, (_, i) =>
+          Array.isArray(rawRowOptions[i]) ? rawRowOptions[i] : null
+        )
       : undefined;
     const rawQuestions = Array.isArray(meta.questions) ? meta.questions : null;
     const questions = rawQuestions
@@ -217,20 +268,37 @@ export const getPanelRuntimeSnapshot = (
       servar.id ?? ''
     );
     const clickableAncestorIds = findClickableAncestorIds(field);
+    let value = fieldEntity?.value ?? null;
+    const rowCount = repeated
+      ? rowCountByContainer[repeatAncestorId] ??
+        (Array.isArray(value) ? (value as unknown[]).length : 0)
+      : undefined;
+    // Pad to rowCount so trailing rendered-but-unwritten rows read as blank
+    if (typeof rowCount === 'number' && rowCount > 0) {
+      const base = Array.isArray(value) ? value : [];
+      if (base.length < rowCount) {
+        value = [
+          ...base,
+          ...Array(rowCount - base.length).fill(getDefaultFieldValue(field))
+        ];
+      }
+    }
     return {
       key: servar.key,
       type: servar.type,
-      value: fieldEntity?.value ?? null,
+      value,
       visible,
       disabled,
       required: !!servar.required,
-      repeated: !!servar.repeated,
+      ...(typeof rowCount === 'number' ? { rowCount } : {}),
+      ...(repeatAncestor?.id ? { repeatContainerId: repeatAncestor.id } : {}),
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
       ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
       ...(placeholder ? { placeholder } : {}),
       ...(tooltip ? { tooltip } : {}),
       ...(error ? { error } : {}),
       ...(options ? { options } : {}),
+      ...(rowOptions ? { rowOptions } : {}),
       ...(questions ? { questions } : {}),
       ...(typeof servar.min_length === 'number'
         ? { minLength: servar.min_length }
@@ -292,13 +360,20 @@ export const getPanelRuntimeSnapshot = (
       sg.id ?? ''
     );
     const clickableAncestorIds = findClickableAncestorIds(sg);
+    // A repeated subgrid is its own repeat container (one clickable instance per row)
+    const containerRepeatContainer = !sg.repeated
+      ? getRepeatedContainer(step as any, sg)?.id
+      : sg.id;
     currentStepElements.push({
       type: 'container',
       id: sg.id ?? '',
       visible: visibilityFor(sg),
       actions,
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
-      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
+      ...(containerRepeatContainer
+        ? { repeatContainerId: containerRepeatContainer }
+        : {})
     });
   });
 
@@ -315,6 +390,7 @@ export const getPanelRuntimeSnapshot = (
       el.id ?? ''
     );
     const clickableAncestorIds = findClickableAncestorIds(el);
+    const textRepeatContainer = getRepeatedContainer(step as any, el)?.id;
     currentStepElements.push({
       type: 'text',
       text: resolved,
@@ -323,12 +399,12 @@ export const getPanelRuntimeSnapshot = (
       ...(raw !== resolved ? { templateText: raw } : {}),
       ...(actions.length > 0 ? { actions } : {}),
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
-      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
+      ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {}),
+      ...(textRepeatContainer ? { repeatContainerId: textRepeatContainer } : {})
     });
   });
   (step.buttons ?? []).forEach((el: any) => {
     const raw = extractRawText(el?.properties ?? {});
-    if (!raw) return;
     const props = el?.properties ?? {};
     const actions = Array.isArray(props.actions) ? props.actions : [];
     // submit-flagged buttons also fire submit-trigger and form_complete-trigger rules on this step
@@ -337,14 +413,20 @@ export const getPanelRuntimeSnapshot = (
       (!!props.submit &&
         (elementHasLogicRules(logicRules, 'submit', step.id, '') ||
           elementHasLogicRules(logicRules, 'form_complete', step.id, '')));
+    if (!raw && actions.length === 0 && !props.submit && !hasLogicRules) return;
+    const buttonRepeatContainer = getRepeatedContainer(step as any, el)?.id;
     currentStepElements.push({
       type: 'button',
       id: el.id ?? '',
       text: resolveText(raw),
       visible: visibilityFor(el),
+      disabled: isButtonDisabled(el, step, visiblePositions, formReadOnly),
       submit: !!props.submit,
       actions,
-      ...(hasLogicRules ? { hasLogicRules: true } : {})
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
+      ...(buttonRepeatContainer
+        ? { repeatContainerId: buttonRepeatContainer }
+        : {})
     });
   });
   (step.images ?? []).forEach((el: any) => {
@@ -389,12 +471,34 @@ export const getPanelRuntimeSnapshot = (
         return Array.isArray(v) ? v[i] ?? null : v ?? null;
       })
     );
+    const rawActions = Array.isArray(el?.properties?.actions)
+      ? el.properties.actions
+      : [];
+    const actions = rawActions
+      .map((a: any) => ({ label: typeof a?.label === 'string' ? a.label : '' }))
+      .filter((a: { label: string }) => a.label.trim().length > 0);
+    const { canEditCells, canAddRows, canDeleteRows } = getTableCapabilities(
+      el,
+      numRows
+    );
+    const hasLogicRules = elementHasLogicRules(
+      logicRules,
+      'action',
+      step.id,
+      el.id ?? ''
+    );
     currentStepTables.push({
+      id: el.id ?? '',
       columns: cols.map((c) => ({
         name: c.name ?? c.field_key ?? '',
         fieldKey: c.field_key ?? ''
       })),
       rows,
+      ...(actions.length > 0 ? { actions } : {}),
+      ...(canAddRows ? { canAddRows: true } : {}),
+      ...(canDeleteRows ? { canDeleteRows: true } : {}),
+      ...(canEditCells ? { canEditCells: true } : {}),
+      ...(hasLogicRules ? { hasLogicRules: true } : {}),
       visible: visibilityFor(el)
     });
   });

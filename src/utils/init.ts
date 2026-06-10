@@ -58,6 +58,14 @@ type InitState = {
   initNoSave: boolean;
   _internalUserId: string;
   authenticationError?: string;
+  // Step keys the user has completed (i.e. submitted), loaded lazily when a
+  // stepper renders and updated as the user advances. Used to render stepper
+  // completion so a step skipped over (navigated past without submitting)
+  // stays uncompleted.
+  completedSteps: Set<string>;
+  // Form keys whose completed steps have already been fetched, so a stepper
+  // only triggers the request once per form.
+  completedStepsLoaded: Set<string>;
 } & InitOptions;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -84,7 +92,9 @@ const initState: InitState = {
   isTestEnv: false,
   initNoSave: false,
   theme: '',
-  region: ''
+  region: '',
+  completedSteps: new Set(),
+  completedStepsLoaded: new Set()
 };
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
@@ -275,6 +285,33 @@ function getFieldValues() {
   return { ...fieldValues };
 }
 
+function getCompletedStepKeys() {
+  // Make a copy so callers can't mutate the set directly
+  return new Set(initState.completedSteps);
+}
+
+// Record a step as completed once it has been submitted
+function markStepCompleted(stepKey: string) {
+  if (stepKey) initState.completedSteps.add(stepKey);
+}
+
+// Fetch the user's completed steps for a form once (deduped per form key) and
+// seed them into init state. Triggered lazily by the stepper element when it
+// renders; the stepper re-renders itself once this resolves.
+async function loadCompletedSteps(client: any) {
+  const formKey = client?.formKey;
+  if (!formKey || initState.completedStepsLoaded.has(formKey)) return;
+  initState.completedStepsLoaded.add(formKey);
+  try {
+    // Merge rather than replace so steps already completed locally aren't
+    // dropped (completion is monotonic — a step never becomes uncompleted)
+    (await client.fetchCompletedSteps()).forEach(markStepCompleted);
+  } catch (e) {
+    // Allow a retry on the next render if the request failed
+    initState.completedStepsLoaded.delete(formKey);
+  }
+}
+
 declare const __PACKAGE_VERSION__: string;
 
 function logFeatheryBadge() {
@@ -292,6 +329,9 @@ export {
   updateTheme,
   setFieldValues,
   getFieldValues,
+  getCompletedStepKeys,
+  markStepCompleted,
+  loadCompletedSteps,
   initState,
   initFormsPromise,
   fieldValues,

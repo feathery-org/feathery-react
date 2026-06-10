@@ -67,32 +67,3 @@ export const deleteThread = async (
     headers: headers()
   });
 };
-
-// Subgrids whose position is a strict prefix of `position` (callers pre-filter to those whose handler does anything), innermost first.
-export const findClickableAncestorSubgrids = (
-  subgrids: any[] | undefined,
-  position: number[]
-): any[] => {
-  if (
-    !Array.isArray(subgrids) ||
-    !Array.isArray(position) ||
-    position.length === 0
-  )
-    return [];
-  const matches: any[] = [];
-  for (const sg of subgrids) {
-    const pos = Array.isArray(sg?.position) ? sg.position : [];
-    if (pos.length >= position.length) continue;
-    let isPrefix = true;
-    for (let i = 0; i < pos.length; i++) {
-      if (pos[i] !== position[i]) {
-        isPrefix = false;
-        break;
-      }
-    }
-    if (!isPrefix) continue;
-    matches.push(sg);
-  }
-  matches.sort((a, b) => b.position.length - a.position.length);
-  return matches;
-};

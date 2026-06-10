@@ -1,8 +1,8 @@
 import React from 'react';
-import { getFieldValues } from '../../../../utils/init';
+import { getCompletedStepKeys, getFieldValues } from '../../../../utils/init';
 
 const CIRCLE_SIZE = 28;
-const CONNECTOR_GAP = 6;
+const CONNECTOR_GAP = 4;
 
 type StepConfig = {
   label: string;
@@ -30,6 +30,7 @@ function StepperBar({
   stepKey,
   textPlacement = 'bottom',
   onStepClick,
+  allowAllNavigation = false,
   vertical = false,
   style
 }: {
@@ -38,6 +39,7 @@ function StepperBar({
   stepKey?: string;
   textPlacement?: string;
   onStepClick?: (stepKey: string) => void;
+  allowAllNavigation?: boolean;
   vertical?: boolean;
   style?: React.CSSProperties;
 }) {
@@ -52,11 +54,22 @@ function StepperBar({
       )
     : 0;
 
+  const completedStepKeys = getCompletedStepKeys();
+
   const mainDim = vertical ? 'height' : 'width';
   const crossAlign = vertical ? 'alignItems' : 'justifyContent';
 
+  // Halo around the active step's circle so it reads as the current step even
+  // though it shares the filled bar color with completed steps.
+  const activeRingColor = barStyles.backgroundColor ?? '#888';
   const circleStyleFor = (isCompleted: boolean, isActive: boolean) => {
-    if (isActive || isCompleted) return { ...barStyles, color: '#fff' };
+    if (isActive)
+      return {
+        ...barStyles,
+        color: '#fff',
+        boxShadow: `0 0 0 2px #fff, 0 0 0 4px ${activeRingColor}`
+      };
+    if (isCompleted) return { ...barStyles, color: '#fff' };
     return { backgroundColor: '#e9ecef', color: '#888' };
   };
 
@@ -80,11 +93,20 @@ function StepperBar({
 
   const renderNodes = () =>
     steps.map((_, index) => {
-      const isCompleted = index < activeStep;
       const isActive = index === activeStep;
       const isLast = index === steps.length - 1;
       const sKey = visibleStepConfigs?.[index]?.step_key;
-      const isClickable = isCompleted && !!onStepClick && !!sKey;
+      // A step is completed only if it was actually submitted. Steps skipped
+      // over (navigated past without submitting) stay uncompleted even when
+      // they sit behind the current step.
+      const isCompleted = !!sKey && completedStepKeys.has(sKey);
+      // With all-step navigation on, any step other than the current one is
+      // clickable; otherwise only completed (already-visited) steps are.
+      const isClickable =
+        !!onStepClick &&
+        !!sKey &&
+        !isActive &&
+        (allowAllNavigation || isCompleted);
 
       const connectorStyle = vertical
         ? {
@@ -120,13 +142,18 @@ function StepperBar({
             }}
             onClick={isClickable ? () => onStepClick(sKey) : undefined}
           >
-            {circleContent(isCompleted, index)}
+            {circleContent(isCompleted && !isActive, index)}
           </div>
           {!isLast && (
             <div
               css={{
                 ...connectorStyle,
-                ...(isCompleted ? barStyles : { backgroundColor: '#e9ecef' })
+                // Connectors track progress to the active step: fill every
+                // connector up to (and into) the active node, regardless of
+                // which individual steps were completed vs skipped.
+                ...(index < activeStep
+                  ? barStyles
+                  : { backgroundColor: '#e9ecef' })
               }}
             />
           )}
