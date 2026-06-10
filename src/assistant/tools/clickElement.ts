@@ -1,14 +1,23 @@
 import internalState from '../../utils/internalState';
+import { initState } from '../../utils/init';
+import { getRepeatedContainer } from '../../utils/repeat';
+import { getPositionKey } from '../../utils/hideAndRepeats';
+import { isButtonDisabled } from '../../utils/button';
 import { findClickableAncestorSubgrids } from '../utils';
+import { validateRepeatIndex } from './utils';
 
-export type ClickErrorType =
+type ClickErrorType =
   | 'not_on_step'
   | 'hidden'
+  | 'disabled'
   | 'no_form_state'
   | 'shape_mismatch'
+  | 'repeated_index_missing'
+  | 'repeated_index_out_of_range'
+  | 'repeated_index_unexpected'
   | 'dispatch_failed';
 
-export type ClickResult =
+type ClickResult =
   | {
       ok: true;
       navigated: { fromStepKey: string; toStepKey: string } | null;
@@ -52,12 +61,6 @@ const findElement = (state: any, elementId: string): FoundElement | null => {
   return null;
 };
 
-const isVisible = (state: any, position: number[]): boolean => {
-  const positionKey = position.join(',') || 'root';
-  const flags = state.visiblePositions?.[positionKey];
-  return Array.isArray(flags) ? flags.some(Boolean) : true;
-};
-
 const snapshotInlineErrors = (state: any): Record<string, string> => {
   const inlineErrors = state?.inlineErrors ?? {};
   const out: Record<string, string> = {};
@@ -72,8 +75,12 @@ const snapshotInlineErrors = (state: any): Record<string, string> => {
 
 export async function dispatchClickElement(
   formUuid: string | undefined,
-  elementId: string
+  elementId: string,
+  rawRepeatIndex: unknown
 ): Promise<ClickResult> {
+  const repeatIndex = Number.isInteger(rawRepeatIndex)
+    ? (rawRepeatIndex as number)
+    : null;
   if (!formUuid) {
     return {
       ok: false,
@@ -105,11 +112,60 @@ export async function dispatchClickElement(
       error: `Element '${elementId}' is not on the current step.`
     };
   }
-  if (!isVisible(state, found.position)) {
+  const visiblePositions = state.visiblePositions ?? {};
+  const flags = visiblePositions[getPositionKey(found.element) ?? 'root'];
+  if (Array.isArray(flags) && !flags.some(Boolean)) {
     return {
       ok: false,
       errorType: 'hidden',
       error: `Element '${elementId}' is on the current step but is hidden right now.`
+    };
+  }
+  if (found.elementType === 'button') {
+    const formReadOnly = !!(
+      state.formSettings?.readOnly ||
+      initState.collaboratorReview === 'readOnly'
+    );
+    if (
+      isButtonDisabled(
+        found.element,
+        state.currentStep,
+        visiblePositions,
+        formReadOnly
+      )
+    ) {
+      return {
+        ok: false,
+        errorType: 'disabled',
+        error: `Button '${elementId}' is disabled and cannot be clicked.`
+      };
+    }
+  }
+  // A repeated subgrid is its own repeat container (one clickable instance per row)
+  const repeatContainer = found.element.repeated
+    ? found.element
+    : getRepeatedContainer(state.currentStep, found.element);
+  const rowCount = repeatContainer
+    ? (visiblePositions[getPositionKey(repeatContainer) ?? 'root'] ?? []).length
+    : 0;
+  const repeatFailure = validateRepeatIndex(
+    repeatIndex,
+    !!repeatContainer,
+    rowCount,
+    elementId
+  );
+  if (repeatFailure) return { ok: false, ...repeatFailure };
+
+  // Reject clicks on a row hidden by a per-row rule
+  if (
+    typeof repeatIndex === 'number' &&
+    Array.isArray(flags) &&
+    !flags[repeatIndex]
+  ) {
+    return {
+      ok: false,
+      errorType: 'hidden',
+      error: `Row ${repeatIndex} of element '${elementId}' is hidden right now.`
     };
   }
 
@@ -117,9 +173,14 @@ export async function dispatchClickElement(
   const fromStepKey = state.currentStep.key;
   const errorsBefore = snapshotInlineErrors(state);
 
+  const elementForDispatch =
+    typeof repeatIndex === 'number'
+      ? { ...found.element, repeat: repeatIndex }
+      : found.element;
+
   try {
     if (found.elementType === 'button') {
-      await client.click(found.element);
+      await client.click(elementForDispatch);
     } else {
       // Capture ancestors before the child's action runs, it may navigate
       const ancestors = findClickableAncestorSubgrids(
@@ -128,14 +189,19 @@ export async function dispatchClickElement(
       );
       await client.runActions({
         actions: found.actions,
-        element: found.element,
+        element: elementForDispatch,
         elementType: found.elementType
       });
       for (const sg of ancestors) {
         const acts = sg?.properties?.actions;
+        // Only ancestors that live inside the repeated container act on the targeted row
+        const insideRepeat =
+          typeof repeatIndex === 'number' &&
+          !!repeatContainer &&
+          sg.position.length >= repeatContainer.position.length;
         await client.runActions({
           actions: Array.isArray(acts) ? acts : [],
-          element: sg,
+          element: insideRepeat ? { ...sg, repeat: repeatIndex } : sg,
           elementType: 'container'
         });
       }

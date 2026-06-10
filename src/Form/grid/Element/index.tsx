@@ -11,13 +11,9 @@ import {
   numMatchingItems,
   stringifyWithNull
 } from '../../../utils/primitives';
-import { isFieldValueEmpty } from '../../../utils/validation';
 import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
-import {
-  ACTION_STORE_FIELD,
-  NAVIGATION_ACTIONS
-} from '../../../utils/elementActions';
+import { isButtonDisabled } from '../../../utils/button';
 import {
   getInlineError,
   handleCheckboxGroupChange,
@@ -124,58 +120,12 @@ const Element = ({ node: el, form }: any) => {
       />
     );
   else if (type === 'button') {
-    let disabled = false;
-    if (el.properties.disable_if_fields_incomplete) {
-      const fieldsMissingValue = getVisibleElements(
-        activeStep,
-        visiblePositions,
-        ['servar_fields'],
-        true
-      ).some(({ element, repeat }) => {
-        if (isFieldActuallyRequired(element, activeStep)) {
-          const servar = element.servar;
-          let fieldVal: any = fieldValues[servar.key];
-          if (servar.repeated) fieldVal = fieldVal[repeat];
-          return isFieldValueEmpty(fieldVal, servar);
-        }
-        return false;
-      });
-      const storeElements = getVisibleElements(
-        activeStep,
-        visiblePositions,
-        ['buttons', 'subgrids'],
-        true
-      )
-        .map(({ element }) => element)
-        .filter(
-          ({ id, properties }) =>
-            id !== el.id &&
-            (properties.actions ?? []).some(
-              (action: any) =>
-                action.type === ACTION_STORE_FIELD &&
-                action.custom_store_field_key
-            )
-        );
-      const elementsHaveValues =
-        storeElements.length === 0 || // Loose check via "some" since "requiredness" of click action
-        // elements can depend on use case
-        storeElements.some(({ properties }: any) =>
-          (properties.actions ?? []).some(
-            (action: any) =>
-              action.type === ACTION_STORE_FIELD &&
-              fieldValues[action.custom_store_field_key]
-          )
-        );
-      disabled = fieldsMissingValue || !elementsHaveValues;
-    }
-    if (!disabled && readOnly) {
-      const actions = el.properties.actions ?? [];
-      const hasNav = actions.some((action: any) =>
-        NAVIGATION_ACTIONS.includes(action.type)
-      );
-      // Disable buttons not used for navigation
-      disabled = !hasNav;
-    }
+    const disabled = isButtonDisabled(
+      el,
+      activeStep,
+      visiblePositions,
+      readOnly
+    );
     let loaderData = buttonLoaders[el.id];
     if (isNum(loaderData?.repeat) && loaderData.repeat !== el.repeat)
       loaderData = null;
