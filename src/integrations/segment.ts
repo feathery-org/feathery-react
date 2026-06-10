@@ -16,10 +16,13 @@ export function installSegment(segmentConfig: any) {
   if (!segmentConfig || segmentInstalled) return;
   segmentInstalled = true;
 
-  // If a real (customer-loaded) Segment instance is already on the page, don't
-  // clobber it — just respect it and optionally identify the user.
+  // If a customer's own Segment already owns window.analytics, don't clobber
+  // it — just respect it and optionally identify the user. This covers both a
+  // fully-loaded instance (`initialize`) and one still mid-load via the v1
+  // snippet stub (`invoked`); overwriting the latter would drop the events
+  // they've already queued.
   const existing = featheryWindow().analytics;
-  if (existing && existing.initialize) {
+  if (existing && (existing.initialize || existing.invoked)) {
     if (segmentConfig.metadata.identify_user)
       existing.identify(initInfo().userId);
     return;
