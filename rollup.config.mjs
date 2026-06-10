@@ -6,6 +6,7 @@ import copy from 'rollup-plugin-copy';
 import replace from '@rollup/plugin-replace';
 import babel from '@rollup/plugin-babel';
 import { readFileSync } from 'fs';
+import path from 'path';
 
 // Read package.json
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
@@ -57,8 +58,27 @@ export default {
         __PACKAGE_VERSION__: JSON.stringify(pkg.version)
       }
     }),
+    // @segment/analytics-next's `browser` field swaps its deprecated Node
+    // entry (which drags in node-fetch and breaks the build) for a browser
+    // stub. node-resolve only honors that field via the global `browser: true`
+    // option, which would also flip every other dependency to its browser
+    // variant (e.g. Stripe and react-datepicker to their UMD builds), so scope
+    // the swap to just this package.
+    {
+      name: 'segment-browser-entry',
+      resolveId(source, importer) {
+        if (
+          source === './node' &&
+          importer?.includes(`@segment${path.sep}analytics-next`)
+        ) {
+          return path.resolve(
+            'node_modules/@segment/analytics-next/dist/pkg/node/node.browser.js'
+          );
+        }
+        return null;
+      }
+    },
     resolve({
-      browser: true,
       extensions: ['.ts', '.tsx', '.js', '.jsx']
     }),
     commonjs(),
