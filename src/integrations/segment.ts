@@ -4,10 +4,8 @@ import type { AnalyticsBrowser } from '@segment/analytics-next';
 
 let segmentInstalled = false;
 
-// Methods the rest of the SDK calls on `window.analytics` (see trackEvent in
-// ./utils). We stub these synchronously so any event fired before the Segment
-// chunk finishes downloading is queued and replayed, rather than silently
-// dropped by the `if (window.analytics)` guard at the call site.
+// Stubbed synchronously so events fired before the Segment chunk loads are
+// queued and replayed rather than dropped by the call site's guard.
 const BUFFERED_METHODS = ['track', 'page', 'identify'] as const;
 
 type QueuedCall = [typeof BUFFERED_METHODS[number], any[]];
@@ -16,11 +14,8 @@ export function installSegment(segmentConfig: any) {
   if (!segmentConfig || segmentInstalled) return;
   segmentInstalled = true;
 
-  // If a customer's own Segment already owns window.analytics, don't clobber
-  // it — just respect it and optionally identify the user. This covers both a
-  // fully-loaded instance (`initialize`) and one still mid-load via the v1
-  // snippet stub (`invoked`); overwriting the latter would drop the events
-  // they've already queued.
+  // Don't clobber a customer's own Segment, whether fully loaded (`initialize`)
+  // or still mid-load via the v1 snippet stub (`invoked`).
   const existing = featheryWindow().analytics;
   if (existing && (existing.initialize || existing.invoked)) {
     if (segmentConfig.metadata.identify_user)
@@ -28,7 +23,6 @@ export function installSegment(segmentConfig: any) {
     return;
   }
 
-  // Synchronous buffer: queue calls until the real instance is ready.
   const queue: QueuedCall[] = [];
   const buffer: Record<string, (...args: any[]) => void> = {};
   BUFFERED_METHODS.forEach((method) => {
@@ -36,9 +30,8 @@ export function installSegment(segmentConfig: any) {
   });
   featheryWindow().analytics = buffer;
 
-  // Load the Segment chunk in the background. The synchronous buffer above
-  // covers the load gap, so we deliberately don't await this — blocking here
-  // would hold up fetchSession (and thus first render) for Segment forms.
+  // Not awaited: the buffer covers the load gap, so blocking here would hold up
+  // fetchSession (and first render) for Segment forms.
   loadSegment(segmentConfig, queue);
 }
 
@@ -56,8 +49,6 @@ async function loadSegment(segmentConfig: any, queue: QueuedCall[]) {
     return;
   }
 
-  // `load` returns a buffered facade that queues calls until the underlying
-  // script is ready, and is awaitable so we can surface initialization errors.
   const analytics = AnalyticsBrowserClass.load({
     writeKey: segmentConfig.metadata.api_key
   });
@@ -67,7 +58,6 @@ async function loadSegment(segmentConfig: any, queue: QueuedCall[]) {
 
   featheryWindow().analytics = analytics;
 
-  // Open the session, then replay anything captured during the load gap.
   analytics.page();
   if (segmentConfig.metadata.identify_user)
     analytics.identify(initInfo().userId);
