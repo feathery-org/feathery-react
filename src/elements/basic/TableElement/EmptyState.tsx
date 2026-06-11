@@ -1,4 +1,5 @@
 import { emptyStateContainerStyle, emptyStateTextStyle } from './styles';
+import { TABLE_CLASS } from './classNames';
 
 type EmptyStateProps = {
   hasSearchQuery: boolean;
@@ -6,7 +7,7 @@ type EmptyStateProps = {
 
 export function EmptyState({ hasSearchQuery }: EmptyStateProps) {
   return (
-    <div css={emptyStateContainerStyle}>
+    <div className={TABLE_CLASS.empty} css={emptyStateContainerStyle}>
       {hasSearchQuery && (
         <svg
           css={{

@@ -212,6 +212,7 @@ jest.mock('../../integrations/flinks', () => ({
 
 jest.mock('../../utils/browser', () => ({
   downloadAllFileUrls: jest.fn(),
+  featheryDoc: () => globalThis.document,
   featheryWindow: () => ({
     addEventListener: jest.fn(),
     removeEventListener: jest.fn(),

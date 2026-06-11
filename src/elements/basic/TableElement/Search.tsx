@@ -4,6 +4,7 @@ import {
   searchInputStyle,
   searchWrapperStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 
 function SearchIcon() {
   return (
@@ -35,12 +36,13 @@ export function Search({ searchQuery, onSearchChange }: SearchProps) {
   };
 
   return (
-    <div css={searchWrapperStyle as any}>
+    <div className={TABLE_CLASS.search} css={searchWrapperStyle as any}>
       <div css={searchIconWrapperStyle as any}>
         <SearchIcon />
       </div>
       <input
         type='text'
+        className={TABLE_CLASS.searchInput}
         css={searchInputStyle}
         placeholder='Search'
         value={searchQuery}

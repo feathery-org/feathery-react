@@ -1,9 +1,11 @@
+import { Fragment } from 'react';
 import {
   thStyle,
   sortIconContainerStyle,
   sortArrowStyle,
   sortHeaderContentStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 import { Column } from './types';
 
 type SortHeaderProps = {
@@ -24,6 +26,7 @@ export function SortIcon({ isSorted, sortDirection }: SortIconProps) {
   return (
     <svg
       xmlns='http://www.w3.org/2000/svg'
+      className={TABLE_CLASS.sortIcon}
       viewBox='0 0 24 24'
       fill='none'
       aria-hidden='true'
@@ -59,7 +62,7 @@ export function SortHeader({
   styles
 }: SortHeaderProps) {
   return (
-    <>
+    <Fragment>
       {columns.map((column, index) => {
         const isSortable = enableSort;
         const isSorted = sortColumn === column.name;
@@ -69,6 +72,8 @@ export function SortHeader({
           <th
             key={index}
             scope='col'
+            className={TABLE_CLASS.headerCell}
+            data-feathery-field={column.field_key}
             onClick={() => isSortable && onSort(column.name)}
             css={{
               ...thStyle,
@@ -88,6 +93,6 @@ export function SortHeader({
           </th>
         );
       })}
-    </>
+    </Fragment>
   );
 }

@@ -8,6 +8,7 @@ import {
   confirmDeleteButtonStyle,
   confirmCancelButtonStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 
 type DeleteConfirmProps = {
   anchorEl: HTMLElement | null;
@@ -66,6 +67,7 @@ export function DeleteConfirm({
       ref={popoverRef}
       role='alertdialog'
       aria-label={message}
+      className={TABLE_CLASS.deleteConfirm}
       css={{
         ...confirmPopoverStyle,
         top: `${top}px`,
