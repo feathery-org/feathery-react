@@ -80,7 +80,7 @@ function ProgressBarElement({
         {children}
         <StepperBar
           styles={styles}
-          stepConfigs={element.properties?.stepper_steps ?? []}
+          stepConfigs={element.properties?.entries ?? []}
           stepKey={stepKey}
           textPlacement={element.styles.percent_text_layout}
           onStepClick={onStepClick}

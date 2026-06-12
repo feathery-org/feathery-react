@@ -54,7 +54,7 @@ function TabsElement({
     [responsiveStyles]
   );
 
-  const entries: TabEntry[] = element.properties.tabs_entries ?? [];
+  const entries: TabEntry[] = element.properties.entries ?? [];
   const direction =
     element.properties.direction === 'vertical' ? 'column' : 'row';
 
