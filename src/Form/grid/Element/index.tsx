@@ -14,6 +14,7 @@ import {
 import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import { isButtonDisabled } from '../../../utils/button';
+import { ACTION_NEXT } from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
@@ -100,6 +101,21 @@ const Element = ({ node: el, form }: any) => {
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
         assistantClient={assistantClient}
+      />
+    );
+  else if (type === 'tab')
+    return (
+      <Elements.TabsElement
+        {...basicProps}
+        stepKey={activeStep?.key}
+        onTabClick={(entry: any) => {
+          runElementActions({
+            actions: [{ type: ACTION_NEXT, next_step_key: entry.step_key }],
+            element: el,
+            elementType: 'tab',
+            submit: el.properties.submit
+          });
+        }}
       />
     );
   else if (type === 'text')
