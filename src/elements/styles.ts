@@ -348,34 +348,49 @@ export default class ResponsiveStyles {
   applyFontStyles(
     target: string,
     placeholder = false,
-    ignoreSelectorFontColor = false
+    ignoreSelectorFontColor = false,
+    prefix = '',
+    skipUnset = false
   ) {
-    this.apply(target, 'font_weight', (a: any) => ({
+    // With skipUnset, properties without a value emit no CSS at all (instead
+    // of defaults like lineHeight: 'normal') so the target inherits them from
+    // its parent. Used for labels, which inherit the field's font unless a
+    // label_* property is explicitly set.
+    const apply = (target: string, properties: any, get: any) =>
+      this.apply(
+        target,
+        properties,
+        skipUnset
+          ? (...vals: any[]) =>
+              vals.every((v) => v === undefined) ? {} : get(...vals)
+          : get
+      );
+    apply(target, `${prefix}font_weight`, (a: any) => ({
       fontWeight: a
     }));
-    this.applyFontFamily(target);
-    this.apply(target, 'font_size', (a: any) => ({
+    this.applyFontFamily(target, prefix);
+    apply(target, `${prefix}font_size`, (a: any) => ({
       fontSize: `${a}px`
     }));
-    this.apply(target, 'line_height', (a: any) => ({
+    apply(target, `${prefix}line_height`, (a: any) => ({
       lineHeight: isNum(a) ? `${a}px` : 'normal'
     }));
-    this.apply(target, 'letter_spacing', (a: any) => ({
+    apply(target, `${prefix}letter_spacing`, (a: any) => ({
       letterSpacing: isNum(a) ? `${a}px` : 'normal'
     }));
-    this.apply(target, 'text_transform', (a: any) => ({
+    apply(target, `${prefix}text_transform`, (a: any) => ({
       textTransform: a || 'none'
     }));
-    this.apply(
+    apply(
       target,
-      placeholder ? 'placeholder_italic' : 'font_italic',
+      placeholder ? `${prefix}placeholder_italic` : `${prefix}font_italic`,
       (a: any) => ({
         fontStyle: a ? 'italic' : 'normal'
       })
     );
-    this.apply(
+    apply(
       target,
-      placeholder ? 'placeholder_color' : 'font_color',
+      placeholder ? `${prefix}placeholder_color` : `${prefix}font_color`,
       (a: any) => ({
         color: `#${a}`,
         '&:disabled': {
@@ -391,20 +406,24 @@ export default class ResponsiveStyles {
       })
     );
     if (!placeholder && !ignoreSelectorFontColor) {
-      this.apply(target, 'hover_font_color', (color: any) => ({
+      apply(target, `${prefix}hover_font_color`, (color: any) => ({
         '&:hover': color ? { color: `#${color}` } : {}
       }));
-      this.apply(target, 'selected_font_color', (color: any) => ({
+      apply(target, `${prefix}selected_font_color`, (color: any) => ({
         '&:focus': color ? { color: `#${color}` } : {}
       }));
     }
 
-    this.apply(target, ['font_strike', 'font_underline'], (a: any, b: any) => {
-      const lines = [];
-      if (a) lines.push('line-through');
-      if (b) lines.push('underline');
-      if (lines.length > 0) return { textDecoration: lines.join(' ') };
-    });
+    apply(
+      target,
+      [`${prefix}font_strike`, `${prefix}font_underline`],
+      (a: any, b: any) => {
+        const lines = [];
+        if (a) lines.push('line-through');
+        if (b) lines.push('underline');
+        if (lines.length > 0) return { textDecoration: lines.join(' ') };
+      }
+    );
   }
 
   applySpanSelectorStyles(target: string, prefix = '') {
@@ -432,8 +451,8 @@ export default class ResponsiveStyles {
     return families;
   }
 
-  applyFontFamily(target: string) {
-    this.apply(target, 'font_family', (a: string) => {
+  applyFontFamily(target: string, prefix = '') {
+    this.apply(target, `${prefix}font_family`, (a: string) => {
       if (!a) return {};
       return { fontFamily: this.transformFontFamilies(a) };
     });

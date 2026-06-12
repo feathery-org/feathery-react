@@ -241,6 +241,12 @@ const defaultBorderFields = [
 
 export const DROPDOWN_Z_INDEX = 10;
 
+function applyLabelFontStyles(styles: any) {
+  // skipUnset: unset label_* properties emit no CSS so the label inherits the
+  // field's font from its container instead of getting font-style defaults
+  styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
+}
+
 function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets(
@@ -251,7 +257,8 @@ function applyFieldStyles(field: any, styles: any) {
     'active',
     'hover',
     'disabled',
-    'tooltipIcon'
+    'tooltipIcon',
+    'fieldLabel'
   );
 
   // For these fields, selector font colors
@@ -261,6 +268,14 @@ function applyFieldStyles(field: any, styles: any) {
   );
   styles.applyFontStyles('fc', false, true);
   styles.applyFontStyles('field', false, ignoreSelectorColors);
+
+  // Label styling is independent of the field. When a label_* property is
+  // unset, nothing is applied and the label inherits the field's font from its
+  // container ('fc'), preserving prior behavior.
+  applyLabelFontStyles(styles);
+  styles.apply('fieldLabel', 'label_gap', (a: any) =>
+    a === undefined ? {} : { marginBottom: `${a}px` }
+  );
 
   // These are fields that don't have content inside, which won't be shifted by
   // a default border
@@ -625,6 +640,10 @@ Object.entries(Fields).map(([key, Field]: any) => {
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
   Fields[key] = memo(({ element, responsiveStyles, ...props }) => {
     const servar = element.servar;
+    const styles = useMemo(
+      () => applyFieldStyles(element, responsiveStyles),
+      [element]
+    );
     const fieldLabel = servar?.name ? (
       <label
         // Doesn't work for repeats currently since repeating field IDs aren't unique
@@ -633,16 +652,13 @@ Object.entries(Fields).map(([key, Field]: any) => {
           marginBottom: servar.type === 'checkbox' ? 0 : '10px',
           display: 'inline-block',
           whiteSpace: 'pre-wrap',
-          overflowWrap: 'anywhere'
+          overflowWrap: 'anywhere',
+          ...styles.getTarget('fieldLabel')
         }}
       >
         {servar.name}
       </label>
     ) : null;
-    const styles = useMemo(
-      () => applyFieldStyles(element, responsiveStyles),
-      [element]
-    );
     return (
       <Field
         element={element}
