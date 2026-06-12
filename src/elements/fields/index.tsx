@@ -244,7 +244,7 @@ export const DROPDOWN_Z_INDEX = 10;
 function applyLabelFontStyles(styles: any) {
   // skipUnset: unset label_* properties emit no CSS so the label inherits the
   // field's font from its container instead of getting font-style defaults
-  styles.applyFontStyles('field-label', false, true, 'label_', true);
+  styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
 function applyFieldStyles(field: any, styles: any) {
@@ -258,7 +258,7 @@ function applyFieldStyles(field: any, styles: any) {
     'hover',
     'disabled',
     'tooltipIcon',
-    'field-label'
+    'fieldLabel'
   );
 
   // For these fields, selector font colors
@@ -273,7 +273,7 @@ function applyFieldStyles(field: any, styles: any) {
   // unset, nothing is applied and the label inherits the field's font from its
   // container ('fc'), preserving prior behavior.
   applyLabelFontStyles(styles);
-  styles.apply('field-label', 'label_gap', (a: any) =>
+  styles.apply('fieldLabel', 'label_gap', (a: any) =>
     a === undefined ? {} : { marginBottom: `${a}px` }
   );
 
@@ -653,7 +653,7 @@ Object.entries(Fields).map(([key, Field]: any) => {
           display: 'inline-block',
           whiteSpace: 'pre-wrap',
           overflowWrap: 'anywhere',
-          ...styles.getTarget('field-label')
+          ...styles.getTarget('fieldLabel')
         }}
       >
         {servar.name}
