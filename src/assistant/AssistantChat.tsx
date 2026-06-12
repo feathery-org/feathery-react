@@ -59,6 +59,7 @@ import {
 } from './tools/panelRuntime';
 import { dispatchSetFieldValue } from './tools/setFieldValue';
 import { dispatchClickElement } from './tools/clickElement';
+import { dispatchNavigate } from './tools/navigate';
 import { dispatchTriggerTableAction } from './tools/triggerTableAction';
 import {
   dispatchAddTableRow,
@@ -465,6 +466,16 @@ const AssistantChat = ({
           );
           chat.addToolOutput({
             tool: 'clickElement',
+            toolCallId: toolCall.toolCallId,
+            output
+          });
+        } else if (toolCall.toolName === 'navigateToStep') {
+          const input = (toolCall.input ?? {}) as { stepKey?: unknown };
+          const stepKey =
+            typeof input.stepKey === 'string' ? input.stepKey : '';
+          const output = await dispatchNavigate(instanceId, stepKey);
+          chat.addToolOutput({
+            tool: 'navigateToStep',
             toolCallId: toolCall.toolCallId,
             output
           });

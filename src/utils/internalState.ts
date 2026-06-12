@@ -58,7 +58,9 @@ export type GetDocusignEnvelopeParams = {
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
+  latestStepName?: string;
   previousStepName: string;
+  backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
   assistantClient?: AssistantClient;
