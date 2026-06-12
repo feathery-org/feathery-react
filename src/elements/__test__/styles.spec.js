@@ -66,7 +66,7 @@ describe('responsiveStyles', () => {
   describe('applyFontStyles with a prefix', () => {
     it('reads the prefixed property namespace, not the unprefixed one', () => {
       // Arrange
-      const TARGET = 'field-label';
+      const TARGET = 'fieldLabel';
       const objectUnderTest = new ResponsiveStyles(
         {
           styles: {
@@ -98,8 +98,8 @@ describe('responsiveStyles', () => {
   });
 
   // Mirrors how applyFieldStyles (src/elements/fields/index.tsx) builds the
-  // 'field-label' target so the label can be styled independently of the field.
-  describe('field-label target (label styling)', () => {
+  // 'fieldLabel' target so the label can be styled independently of the field.
+  describe('fieldLabel target (label styling)', () => {
     const buildFieldLabelTarget = (styles) => {
       const rs = new ResponsiveStyles(
         { styles },
@@ -107,15 +107,15 @@ describe('responsiveStyles', () => {
         false,
         DEFAULT_MOBILE_BREAKPOINT
       );
-      rs.addTargets('field-label');
-      rs.applyFontStyles('field-label', false, true, 'label_', true);
-      rs.apply('field-label', 'label_margin_top', (a) =>
+      rs.addTargets('fieldLabel');
+      rs.applyFontStyles('fieldLabel', false, true, 'label_', true);
+      rs.apply('fieldLabel', 'label_margin_top', (a) =>
         a === undefined ? {} : { marginTop: `${a}px` }
       );
-      rs.apply('field-label', 'label_gap', (a) =>
+      rs.apply('fieldLabel', 'label_gap', (a) =>
         a === undefined ? {} : { marginBottom: `${a}px` }
       );
-      return rs.getTarget('field-label');
+      return rs.getTarget('fieldLabel');
     };
 
     it('maps label_* font, margin, and gap props onto the target', () => {
