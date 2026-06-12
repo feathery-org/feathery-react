@@ -14,11 +14,7 @@ import {
 import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import { isButtonDisabled } from '../../../utils/button';
-import {
-  ACTION_NEXT,
-  ACTION_STORE_FIELD,
-  NAVIGATION_ACTIONS
-} from '../../../utils/elementActions';
+import { ACTION_NEXT } from '../../../utils/elementActions';
 import {
   getInlineError,
   handleCheckboxGroupChange,
