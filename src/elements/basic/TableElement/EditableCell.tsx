@@ -15,6 +15,7 @@ import {
   actionMenuStyle,
   actionMenuItemStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 
 type EditableCellProps = {
   value: any;
@@ -136,7 +137,7 @@ export function EditableCell({
 
   if (isEditing) {
     return (
-      <div css={editingCellContentStyle}>
+      <div className={TABLE_CLASS.editableCell} css={editingCellContentStyle}>
         <div css={editingCellSizerStyle}>{`${editValue}\u200b`}</div>
         <textarea
           ref={inputRef}
@@ -144,6 +145,7 @@ export function EditableCell({
           onChange={(e) => setEditValue(e.target.value)}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
+          className={TABLE_CLASS.cellInput}
           css={{ ...cellInputStyle, ...editingCellInputStyle }}
           onClick={(e) => e.stopPropagation()}
         />
@@ -153,14 +155,18 @@ export function EditableCell({
 
   if (isEmpty) {
     return (
-      <span css={clickToEditStyle} onClick={startEditing}>
+      <span
+        className={TABLE_CLASS.editableCell}
+        css={clickToEditStyle}
+        onClick={startEditing}
+      >
         Click to edit
       </span>
     );
   }
 
   return (
-    <div css={editableCellContentStyle}>
+    <div className={TABLE_CLASS.editableCell} css={editableCellContentStyle}>
       <span css={editableCellTextStyle}>{displayValue}</span>
       <button
         ref={menuButtonRef}

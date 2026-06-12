@@ -11,6 +11,7 @@ import React, {
 import debounce from 'lodash.debounce';
 
 import { calculateGlobalCSS, calculateStepCSS } from '../utils/hydration';
+import { FeatheryCacheProvider } from '../utils/emotionCache';
 import {
   clearBrowserErrors,
   getAllElements,
@@ -3138,15 +3139,17 @@ export function JSForm({
   // Check client for NextJS support
   if (formId && runningInClient())
     return (
-      <RouterProvider>
-        <Form
-          {...props}
-          formId={formId}
-          key={`${formId}_${remount}`}
-          _internalId={_internalId}
-          _isAuthLoading={_isAuthLoading}
-        />
-      </RouterProvider>
+      <FeatheryCacheProvider>
+        <RouterProvider>
+          <Form
+            {...props}
+            formId={formId}
+            key={`${formId}_${remount}`}
+            _internalId={_internalId}
+            _isAuthLoading={_isAuthLoading}
+          />
+        </RouterProvider>
+      </FeatheryCacheProvider>
     );
   else return null;
 }

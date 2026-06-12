@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { fieldValues } from '../../../utils/init';
 import {
@@ -11,6 +11,7 @@ import {
   menuIconStyle,
   actionIconButtonStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 import { Action, Column } from './types';
 import { featheryDoc } from '../../../utils/browser';
 
@@ -130,7 +131,7 @@ export function ActionButtons({
   return (
     <div ref={containerRef} css={actionContainerStyle}>
       {useOverflow ? (
-        <>
+        <Fragment>
           <button
             ref={menuButtonRef}
             type='button'
@@ -139,6 +140,7 @@ export function ActionButtons({
               e.stopPropagation();
               handleMenuToggle();
             }}
+            className={TABLE_CLASS.actionMenuButton}
             css={actionIconButtonStyle}
           >
             {overflowLoader ? (
@@ -161,6 +163,7 @@ export function ActionButtons({
             createPortal(
               <div
                 ref={menuRef}
+                className={TABLE_CLASS.actionMenu}
                 css={{
                   ...actionMenuStyle,
                   top: `${menuPosition.top}px`,
@@ -178,6 +181,7 @@ export function ActionButtons({
                         e.stopPropagation();
                         handleActionClick(action);
                       }}
+                      className={TABLE_CLASS.actionMenuItem}
                       css={actionMenuItemStyle}
                       disabled={disabled}
                     >
@@ -195,6 +199,7 @@ export function ActionButtons({
                         setIsMenuOpen(false);
                         onDeleteRow(rowIndex);
                       }}
+                      className={TABLE_CLASS.actionMenuItem}
                       css={actionMenuDeleteItemStyle}
                     >
                       Delete
@@ -204,7 +209,7 @@ export function ActionButtons({
               </div>,
               featheryDoc().body
             )}
-        </>
+        </Fragment>
       ) : (
         actions.map((action, index) => {
           const buttonKey = `${tableId}_${rowIndex}_${action.label}`;
@@ -218,6 +223,7 @@ export function ActionButtons({
                 e.stopPropagation();
                 handleActionClick(action);
               }}
+              className={TABLE_CLASS.actionButton}
               css={actionButtonStyle}
               disabled={disabled}
             >

@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import {
   navStyle,
   navTextBoldStyle,
@@ -10,6 +11,7 @@ import {
   overflowSelectStyle,
   paginationListStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 
 type PaginationProps = {
   currentPage: number;
@@ -49,6 +51,7 @@ function PreviousButton({ disabled, onClick }: PreviousButtonProps) {
       type='button'
       onClick={onClick}
       disabled={disabled}
+      className={TABLE_CLASS.pageButton}
       css={{
         ...(pageButtonPrevStyle as any),
         ...(disabled ? pageButtonDisabledStyle : {})
@@ -70,6 +73,7 @@ function NextButton({ disabled, onClick }: NextButtonProps) {
       type='button'
       onClick={onClick}
       disabled={disabled}
+      className={TABLE_CLASS.pageButton}
       css={{
         ...(pageButtonNextStyle as any),
         ...(disabled ? pageButtonDisabledStyle : {})
@@ -93,6 +97,7 @@ function OverflowSelect({ pages, onPageChange }: OverflowSelectProps) {
         onPageChange(Number(e.target.value));
       }}
       aria-label='Go to page'
+      className={TABLE_CLASS.pageSelect}
       css={overflowSelectStyle as any}
     >
       <option value='' disabled hidden>
@@ -150,7 +155,7 @@ function PageNumbers({
   }
 
   return (
-    <>
+    <Fragment>
       {items.map((item, idx) => {
         if (item.type === 'overflow') {
           if (item.pages.length === 1) {
@@ -159,6 +164,7 @@ function PageNumbers({
                 <button
                   type='button'
                   onClick={() => onPageChange(item.pages[0])}
+                  className={TABLE_CLASS.pageButton}
                   css={pageButtonStyle as any}
                 >
                   {item.pages[0] + 1}
@@ -180,6 +186,7 @@ function PageNumbers({
               type='button'
               onClick={() => onPageChange(item.page)}
               aria-current={isActive ? 'page' : undefined}
+              className={TABLE_CLASS.pageButton}
               css={
                 isActive
                   ? (pageButtonActiveStyle as any)
@@ -191,7 +198,7 @@ function PageNumbers({
           </li>
         );
       })}
-    </>
+    </Fragment>
   );
 }
 
@@ -205,7 +212,11 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   return (
-    <nav css={navStyle as any} aria-label='Table navigation'>
+    <nav
+      className={TABLE_CLASS.pagination}
+      css={navStyle as any}
+      aria-label='Table navigation'
+    >
       <PageInfo
         currentPage={currentPage}
         totalItems={totalItems}

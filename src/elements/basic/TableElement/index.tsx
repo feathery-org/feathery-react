@@ -24,6 +24,7 @@ import {
   deleteColumnStyle,
   deleteIconStyle
 } from './styles';
+import { TABLE_CLASS } from './classNames';
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
@@ -178,13 +179,14 @@ function TableElement({
 
   return (
     <div
+      className={TABLE_CLASS.container}
       css={{
         ...containerStyle,
         ...styles.getTarget('container')
       }}
     >
       {showToolbar && (
-        <div css={toolbarStyle}>
+        <div className={TABLE_CLASS.toolbar} css={toolbarStyle}>
           {enableSearch ? (
             <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />
           ) : (
@@ -193,6 +195,7 @@ function TableElement({
           {showAddRow && (
             <button
               type='button'
+              className={TABLE_CLASS.addRowButton}
               css={addRowButtonStyle}
               onClick={wrappedHandleAddRow}
             >
@@ -206,13 +209,14 @@ function TableElement({
       ) : (
         <div css={{ overflowX: 'auto' }}>
           <table
+            className={TABLE_CLASS.table}
             css={{
               ...(tableStyle as any),
               ...styles.getTarget('table')
             }}
           >
             {!isTransposed && (
-              <thead css={theadStyle}>
+              <thead className={TABLE_CLASS.header} css={theadStyle}>
                 <tr>
                   <SortHeader
                     columns={columns}
@@ -225,6 +229,7 @@ function TableElement({
                   {actions.length > 0 && (
                     <th
                       scope='col'
+                      className={TABLE_CLASS.headerCell}
                       css={{
                         ...thStyle,
                         paddingLeft: 0,
@@ -237,6 +242,7 @@ function TableElement({
                   {showStandaloneDeleteColumn && (
                     <th
                       scope='col'
+                      className={TABLE_CLASS.headerCell}
                       css={{
                         ...thStyle,
                         ...deleteColumnStyle,
@@ -247,7 +253,7 @@ function TableElement({
                 </tr>
               </thead>
             )}
-            <tbody css={styles.getTarget('tbody')}>
+            <tbody className={TABLE_CLASS.body} css={styles.getTarget('tbody')}>
               {paginatedRowIndices.map((rowIndex) => {
                 const rowData: Record<string, any> = {};
                 if (!isTransposed) {
@@ -272,6 +278,7 @@ function TableElement({
                 return (
                   <tr
                     key={rowIndex}
+                    className={TABLE_CLASS.row}
                     css={{ ...rowStyle, ...styles.getTarget('tr') }}
                     onClick={handleRowClick}
                   >
@@ -344,9 +351,22 @@ function TableElement({
                         }
                       };
 
+                      // In transposed mode each rendered row holds one
+                      // original field, so every cell in it belongs to
+                      // baseColumns[rowIndex]
+                      const cellFieldKey = isTransposed
+                        ? baseColumns[rowIndex]?.field_key
+                        : column.field_key;
+
                       return (
                         <CellElement
                           key={colIndex}
+                          className={
+                            isFirstColInTranspose
+                              ? TABLE_CLASS.headerCell
+                              : TABLE_CLASS.cell
+                          }
+                          data-feathery-field={cellFieldKey}
                           css={cellCss}
                           onClick={handleCellClick}
                           {...(isFirstColInTranspose ? { scope: 'row' } : {})}
@@ -386,6 +406,7 @@ function TableElement({
                           if (el) actionCellRefs.current.set(rowIndex, el);
                           else actionCellRefs.current.delete(rowIndex);
                         }}
+                        className={TABLE_CLASS.cell}
                         css={{
                           ...(cellStyle as any),
                           paddingLeft: 0,
@@ -418,6 +439,7 @@ function TableElement({
                     )}
                     {showStandaloneDeleteColumn && (
                       <td
+                        className={TABLE_CLASS.cell}
                         css={{
                           ...deleteColumnStyle,
                           ...styles.getTarget('td')
@@ -429,6 +451,7 @@ function TableElement({
                             if (el) deleteIconRefs.current.set(rowIndex, el);
                             else deleteIconRefs.current.delete(rowIndex);
                           }}
+                          className={TABLE_CLASS.deleteButton}
                           css={{
                             ...deleteIconStyle,
                             ...(deleteRowIndex === rowIndex && {
@@ -459,9 +482,13 @@ function TableElement({
                 );
               })}
               {isTransposed && actions.length > 0 && (
-                <tr css={{ ...rowStyle, ...styles.getTarget('tr') }}>
+                <tr
+                  className={TABLE_CLASS.row}
+                  css={{ ...rowStyle, ...styles.getTarget('tr') }}
+                >
                   <th
                     scope='row'
+                    className={TABLE_CLASS.headerCell}
                     css={{
                       ...thStyle,
                       backgroundColor: '#f9fafb',
@@ -476,6 +503,7 @@ function TableElement({
                   {transposedRowIndices.map((originalRowIndex, idx) => (
                     <td
                       key={originalRowIndex}
+                      className={TABLE_CLASS.cell}
                       css={{
                         ...(cellStyle as any),
                         ...(idx === 0 ? {} : { paddingLeft: 0 }),
