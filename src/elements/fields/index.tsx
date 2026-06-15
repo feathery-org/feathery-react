@@ -276,6 +276,9 @@ function applyFieldStyles(field: any, styles: any) {
   styles.apply('fieldLabel', 'label_gap', (a: any) =>
     a === undefined ? {} : { marginBottom: `${a}px` }
   );
+  styles.apply('fieldLabel', 'label_text_align', (a: any) => (
+    a === undefined ? { textAlign: 'left' } : { textAlign: a }
+  ));
 
   // These are fields that don't have content inside, which won't be shifted by
   // a default border

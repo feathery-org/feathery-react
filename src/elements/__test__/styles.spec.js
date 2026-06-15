@@ -109,9 +109,6 @@ describe('responsiveStyles', () => {
       );
       rs.addTargets('fieldLabel');
       rs.applyFontStyles('fieldLabel', false, true, 'label_', true);
-      rs.apply('fieldLabel', 'label_margin_top', (a) =>
-        a === undefined ? {} : { marginTop: `${a}px` }
-      );
       rs.apply('fieldLabel', 'label_gap', (a) =>
         a === undefined ? {} : { marginBottom: `${a}px` }
       );
