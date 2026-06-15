@@ -109,7 +109,17 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           width='100%'
           height='100%'
           src={url}
-          css={{ border: 'none' }}
+          scrolling='auto'
+          css={{
+            border: 'none',
+            display: 'block',
+            flex: '1 1 auto',
+            height: '100%',
+            maxHeight: '100%',
+            minHeight: 0,
+            overflow: 'auto',
+            width: '100%'
+          }}
         />
       );
     }
