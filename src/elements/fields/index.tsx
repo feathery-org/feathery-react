@@ -1,6 +1,10 @@
 import React, { memo, useMemo } from 'react';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
 import { isFit } from '../../utils/hydration';
+import {
+  LABEL_TEXT_ALIGN_DEFAULT,
+  getLabelGapDefault
+} from '../utils/labelStyleResolver';
 
 type VisiblePositions = Record<string, boolean[]>;
 
@@ -243,7 +247,9 @@ export const DROPDOWN_Z_INDEX = 10;
 
 function applyLabelFontStyles(styles: any) {
   // skipUnset: unset label_* properties emit no CSS so the label inherits the
-  // field's font from its container instead of getting font-style defaults
+  // field's font from its container instead of getting font-style defaults.
+  // NOTE: resolveLabelStyle (../labelStyleResolver) mirrors this font-inheritance
+  // semantic for UIs that need the concrete displayed value — keep the two in sync.
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
@@ -276,9 +282,11 @@ function applyFieldStyles(field: any, styles: any) {
   styles.apply('fieldLabel', 'label_gap', (a: any) =>
     a === undefined ? {} : { marginBottom: `${a}px` }
   );
-  styles.apply('fieldLabel', 'label_text_align', (a: any) => (
-    a === undefined ? { textAlign: 'left' } : { textAlign: a }
-  ));
+  styles.apply('fieldLabel', 'label_text_align', (a: any) =>
+    a === undefined
+      ? { textAlign: LABEL_TEXT_ALIGN_DEFAULT }
+      : { textAlign: a }
+  );
 
   // These are fields that don't have content inside, which won't be shifted by
   // a default border
@@ -652,7 +660,7 @@ Object.entries(Fields).map(([key, Field]: any) => {
         // Doesn't work for repeats currently since repeating field IDs aren't unique
         htmlFor={servar.repeated ? undefined : servar.key}
         style={{
-          marginBottom: servar.type === 'checkbox' ? 0 : '10px',
+          marginBottom: `${getLabelGapDefault(servar.type)}px`,
           display: 'inline-block',
           whiteSpace: 'pre-wrap',
           overflowWrap: 'anywhere',

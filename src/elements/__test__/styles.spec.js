@@ -1,4 +1,5 @@
 import ResponsiveStyles, { DEFAULT_MOBILE_BREAKPOINT } from '../styles';
+import { LABEL_TEXT_ALIGN_DEFAULT } from '../utils/labelStyleResolver';
 
 const TEST_COLOR_BACKGROUND = 'dddddd';
 const mockElement = {
@@ -112,16 +113,20 @@ describe('responsiveStyles', () => {
       rs.apply('fieldLabel', 'label_gap', (a) =>
         a === undefined ? {} : { marginBottom: `${a}px` }
       );
+      rs.apply('fieldLabel', 'label_text_align', (a) =>
+        a === undefined
+          ? { textAlign: LABEL_TEXT_ALIGN_DEFAULT }
+          : { textAlign: a }
+      );
       return rs.getTarget('fieldLabel');
     };
 
-    it('maps label_* font, margin, and gap props onto the target', () => {
+    it('maps label_* font and gap props onto the target', () => {
       // Act
       const actual = buildFieldLabelTarget({
         label_font_size: 20,
         label_font_color: 'FF0000',
         label_font_family: 'Arial',
-        label_margin_top: 4,
         label_gap: 12
       });
 
@@ -130,7 +135,6 @@ describe('responsiveStyles', () => {
         fontSize: '20px',
         color: '#FF0000',
         fontFamily: 'Arial',
-        marginTop: '4px',
         marginBottom: '12px'
       });
     });
@@ -143,29 +147,41 @@ describe('responsiveStyles', () => {
       expect(actual.marginBottom).toBe('24px');
     });
 
-    it('is backwards compatible: unset label_gap / label_margin_top emit no margin so the hardcoded default survives', () => {
+    it('is backwards compatible: unset label_gap emits no margin so the hardcoded default survives', () => {
       // Act
       const actual = buildFieldLabelTarget({});
 
       // Assert
       expect(actual.marginBottom).toBeUndefined();
-      expect(actual.marginTop).toBeUndefined();
     });
 
-    it('is backwards compatible: with no label_* styles set, the target emits no CSS so the label inherits the field font', () => {
+    it('is backwards compatible: with no label_* styles set, the target emits no font CSS so the label inherits the field font (text-align forced to default)', () => {
       // Act
       const actual = buildFieldLabelTarget({});
 
-      // Assert
-      expect(actual).toEqual({});
+      // Assert: only the forced text-align default is emitted; no font props
+      expect(actual).toEqual({ textAlign: LABEL_TEXT_ALIGN_DEFAULT });
     });
 
-    it('emits only the label_* properties that are set; unset ones still inherit', () => {
+    it('emits only the label_* font properties that are set; unset ones still inherit', () => {
       // Act
       const actual = buildFieldLabelTarget({ label_font_size: 20 });
 
       // Assert
-      expect(actual).toEqual({ fontSize: '20px' });
+      expect(actual).toEqual({
+        fontSize: '20px',
+        textAlign: LABEL_TEXT_ALIGN_DEFAULT
+      });
+    });
+
+    it('forces text-align to the shared default when label_text_align is unset', () => {
+      const actual = buildFieldLabelTarget({});
+      expect(actual.textAlign).toBe(LABEL_TEXT_ALIGN_DEFAULT);
+    });
+
+    it('uses an explicit label_text_align over the default', () => {
+      const actual = buildFieldLabelTarget({ label_text_align: 'center' });
+      expect(actual.textAlign).toBe('center');
     });
   });
 });

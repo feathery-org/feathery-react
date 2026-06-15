@@ -16,6 +16,9 @@ import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import { AssistantChat } from './assistant';
+import {
+  resolveLabelStyle,
+} from './elements/utils/labelStyleResolver';
 import './utils/polyfills';
 
 const mountedForms: Record<string, Root> = {};
@@ -78,6 +81,7 @@ export {
   updateTheme,
   setFieldValues,
   getFieldValues,
+  resolveLabelStyle,
   renderAt,
   LoginForm,
   useAuthClient,
