@@ -10,7 +10,7 @@ import { getRepeatedContainers } from '../../utils/repeat';
 import CalendlyEmbed from './CalendlyEmbed';
 import QuikFormViewer from '../../elements/components/QuikFormViewer';
 
-const Grid = ({ step, form, viewport }: any) => {
+export const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
 
   const formattedStep: any = buildStepGrid(

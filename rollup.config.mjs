@@ -12,7 +12,10 @@ import path from 'path';
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
 export default {
-  input: 'src/index.tsx',
+  input: {
+    index: 'src/index.tsx',
+    'thumbnail-renderer': 'src/Form/ThumbnailRenderer.tsx'
+  },
   output: [
     {
       dir: 'dist',
