@@ -76,6 +76,18 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
   getLogicRules: {
     running: 'Reading form logic...',
     done: 'Reviewed form logic'
+  },
+  listFormHubs: {
+    running: 'Looking up records on file...',
+    done: 'Reviewed available records'
+  },
+  getHubSchema: {
+    running: 'Reading record setup...',
+    done: 'Reviewed the record setup'
+  },
+  queryHub: {
+    running: 'Searching records on file...',
+    done: 'Searched the records on file'
   }
 };
 
