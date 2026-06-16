@@ -80,7 +80,12 @@ function ProgressBarElement({
         {children}
         <StepperBar
           styles={styles}
-          stepConfigs={element.properties?.entries ?? []}
+          // TODO: remove stepper_steps after BE migration
+          stepConfigs={
+            element.properties?.entries ??
+            element.properties?.stepper_steps ??
+            []
+          }
           stepKey={stepKey}
           textPlacement={element.styles.percent_text_layout}
           onStepClick={onStepClick}
