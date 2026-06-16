@@ -328,7 +328,8 @@ function PinInputField({
         display: 'flex',
         position: 'relative',
         flexDirection: 'column',
-        pointerEvents: editMode ? 'none' : 'auto'
+        pointerEvents: editMode ? 'none' : 'auto',
+        ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
     >
