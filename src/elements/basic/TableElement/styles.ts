@@ -431,30 +431,6 @@ export const editingCellInputStyle = {
   height: '100%'
 } as const;
 
-export const overflowIconStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '24px',
-  height: '24px',
-  borderRadius: '4px',
-  border: 'none',
-  backgroundColor: 'transparent',
-  color: colors.gray400,
-  cursor: 'pointer',
-  opacity: 0,
-  transition: 'opacity 0.15s',
-  flexShrink: 0,
-  padding: 0,
-  'tr:hover &, &[aria-expanded="true"]': {
-    opacity: 1
-  },
-  '&:hover': {
-    backgroundColor: colors.gray100,
-    color: colors.gray600
-  }
-} as const;
-
 export const deleteColumnStyle = {
   width: '40px',
   padding: '0 8px'

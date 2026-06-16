@@ -88,19 +88,18 @@ function TableElement({
     baseFieldValues
   } = useTableData({ element, editMode, dataVersion });
 
-  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellClear } =
-    useTableMutations({
-      columns: baseColumns,
-      updateFieldValues,
-      submitCustom,
-      editMode,
-      editModeFieldValues: activeFieldValues,
-      enablePagination,
-      setCurrentPage,
-      setSearchQuery,
-      searchQuery,
-      onMutate
-    });
+  const { handleAddRow, handleDeleteRow, handleCellEdit } = useTableMutations({
+    columns: baseColumns,
+    updateFieldValues,
+    submitCustom,
+    editMode,
+    editModeFieldValues: activeFieldValues,
+    enablePagination,
+    setCurrentPage,
+    setSearchQuery,
+    searchQuery,
+    onMutate
+  });
 
   const tableId = element?.id;
 
@@ -392,7 +391,6 @@ function TableElement({
                               fieldKey={column.field_key}
                               rowIndex={rowIndex}
                               onEdit={wrappedHandleCellEdit}
-                              onClear={handleCellClear}
                             />
                           ) : (
                             stringifyWithNull(cellValue) ?? ''

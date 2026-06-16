@@ -20,7 +20,6 @@ type UseTableMutationsReturn = {
   handleDeleteRow: (rowIndex: number) => void;
   handleRemoveRowLocal: (rowIndex: number) => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
-  handleCellClear: (fieldKey: string, rowIndex: number) => void;
 };
 
 export function useTableMutations({
@@ -122,18 +121,10 @@ export function useTableMutations({
     [getFieldArray, updateFieldValues, submitCustom, editMode, onMutate]
   );
 
-  const handleCellClear = useCallback(
-    (fieldKey: string, rowIndex: number) => {
-      handleCellEdit(fieldKey, rowIndex, '');
-    },
-    [handleCellEdit]
-  );
-
   return {
     handleAddRow,
     handleDeleteRow,
     handleRemoveRowLocal,
-    handleCellEdit,
-    handleCellClear
+    handleCellEdit
   };
 }
