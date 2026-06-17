@@ -297,9 +297,12 @@ export const ToolChunk = ({
         })
   };
 
+  // Tools without a label aren't shown individually, only the chunk header
+  const labeledRows = rows.filter((row) => row.toolName in TOOL_LABELS);
+
   // Inline only when done; wrapping while in-flight avoids reflow on a 2nd row
-  if (chunkDone && rows.length === 1) {
-    const row = rows[0];
+  if (chunkDone && labeledRows.length === 1) {
+    const row = labeledRows[0];
     const error = isErrorRow(row);
     const expandable = hasDetail(row);
     return (
@@ -348,8 +351,10 @@ export const ToolChunk = ({
     );
   }
 
-  // Multi-tool case
+  // Header path: status label always shows; the list expands only when
+  // there are displayable tools behind it
   const headerLabel = chunkDone ? 'Finished working' : 'Working on it...';
+  const expandable = labeledRows.length > 0;
 
   return (
     <div css={containerCss}>
@@ -357,7 +362,7 @@ export const ToolChunk = ({
           immediately after the label as the expand/collapse affordance. */}
       <button
         type='button'
-        onClick={toggle}
+        onClick={expandable ? toggle : undefined}
         css={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -365,7 +370,7 @@ export const ToolChunk = ({
           background: 'none',
           border: 'none',
           padding: '4px 0',
-          cursor: 'pointer',
+          cursor: expandable ? 'pointer' : 'default',
           color: GRAY_500,
           textAlign: 'left',
           font: 'inherit',
@@ -374,18 +379,20 @@ export const ToolChunk = ({
         }}
       >
         <span css={chunkDone ? undefined : shimmerCss}>{headerLabel}</span>
-        <MinimizeIcon
-          css={{
-            width: '12px',
-            height: '12px',
-            color: GRAY_400,
-            transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
-            transition: 'transform 0.2s ease',
-            flexShrink: 0
-          }}
-        />
+        {expandable && (
+          <MinimizeIcon
+            css={{
+              width: '12px',
+              height: '12px',
+              color: GRAY_400,
+              transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)',
+              transition: 'transform 0.2s ease',
+              flexShrink: 0
+            }}
+          />
+        )}
       </button>
-      {expanded && (
+      {expandable && expanded && (
         <div
           css={{
             display: 'flex',
@@ -396,7 +403,7 @@ export const ToolChunk = ({
             borderLeft: `2px solid ${GRAY_200}`
           }}
         >
-          {rows.map((row) => (
+          {labeledRows.map((row) => (
             <ToolChunkRow key={row.key} row={row} linkColor={linkColor} />
           ))}
         </div>
