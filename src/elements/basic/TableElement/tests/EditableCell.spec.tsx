@@ -1,16 +1,38 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EditableCell } from '../EditableCell';
 
-const renderCell = (overrides: Partial<React.ComponentProps<typeof EditableCell>> = {}) => {
+// EditableCell is a controlled editor: the parent owns which cell is open. This
+// harness mimics that parent so the click-to-edit flow can be exercised in
+// isolation, opening this cell when onStartEdit fires and closing on onStopEdit.
+const ControlledCell = (
+  props: Partial<React.ComponentProps<typeof EditableCell>>
+) => {
+  const [editing, setEditing] = useState(false);
+  return (
+    <EditableCell
+      value='hello'
+      fieldKey='field1'
+      rowIndex={0}
+      isEditing={editing}
+      onEdit={jest.fn()}
+      onStartEdit={() => setEditing(true)}
+      onStopEdit={() => setEditing(false)}
+      onNavigate={jest.fn()}
+      {...props}
+    />
+  );
+};
+
+const renderCell = (
+  overrides: Partial<React.ComponentProps<typeof EditableCell>> = {}
+) => {
   const props = {
-    value: 'hello',
-    fieldKey: 'field1',
-    rowIndex: 0,
     onEdit: jest.fn(),
+    onNavigate: jest.fn(),
     ...overrides
   };
-  render(<EditableCell {...props} />);
+  render(<ControlledCell {...props} />);
   return props;
 };
 
@@ -57,7 +79,11 @@ describe('EditableCell - click to edit', () => {
   });
 
   it('saves an edited value on blur', () => {
-    const { onEdit } = renderCell({ value: 'hello', fieldKey: 'field1', rowIndex: 1 });
+    const { onEdit } = renderCell({
+      value: 'hello',
+      fieldKey: 'field1',
+      rowIndex: 1
+    });
 
     fireEvent.click(screen.getByText('hello'));
     const input = screen.getByRole('textbox') as HTMLTextAreaElement;
@@ -68,7 +94,11 @@ describe('EditableCell - click to edit', () => {
   });
 
   it('commits the edit when Enter is pressed', () => {
-    const { onEdit } = renderCell({ value: 'hello', fieldKey: 'field1', rowIndex: 1 });
+    const { onEdit } = renderCell({
+      value: 'hello',
+      fieldKey: 'field1',
+      rowIndex: 1
+    });
 
     fireEvent.click(screen.getByText('hello'));
     const input = screen.getByRole('textbox') as HTMLTextAreaElement;
@@ -106,7 +136,11 @@ describe('EditableCell - click to edit', () => {
   });
 
   it('clears a cell by selecting all and deleting', () => {
-    const { onEdit } = renderCell({ value: 'hello', fieldKey: 'field1', rowIndex: 0 });
+    const { onEdit } = renderCell({
+      value: 'hello',
+      fieldKey: 'field1',
+      rowIndex: 0
+    });
 
     fireEvent.click(screen.getByText('hello'));
     const input = screen.getByRole('textbox') as HTMLTextAreaElement;
@@ -116,24 +150,59 @@ describe('EditableCell - click to edit', () => {
 
     expect(onEdit).toHaveBeenCalledWith('field1', 0, '');
   });
+});
 
-  it('only one cell is in edit mode at a time, committing the previous on switch', () => {
+describe('EditableCell - Tab navigation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('commits the current value, then navigates forward on Tab', () => {
     const onEdit = jest.fn();
-    render(
-      <div>
-        <EditableCell value='A' fieldKey='f' rowIndex={0} onEdit={onEdit} />
-        <EditableCell value='B' fieldKey='f' rowIndex={1} onEdit={onEdit} />
-      </div>
-    );
+    const onNavigate = jest.fn();
+    renderCell({ value: 'hello', fieldKey: 'f', rowIndex: 2, onEdit, onNavigate });
 
-    // Edit cell A and change its value, but do NOT blur it manually
-    fireEvent.click(screen.getByText('A'));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'A2' } });
+    fireEvent.click(screen.getByText('hello'));
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'world' } });
+    fireEvent.keyDown(input, { key: 'Tab' });
 
-    // Switching to cell B must close A (one editor) and persist A's edit
-    fireEvent.click(screen.getByText('B'));
+    expect(onEdit).toHaveBeenCalledWith('f', 2, 'world');
+    expect(onNavigate).toHaveBeenCalledWith(false);
+  });
 
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(onEdit).toHaveBeenCalledWith('f', 0, 'A2');
+  it('navigates backward on Shift+Tab', () => {
+    const onNavigate = jest.fn();
+    renderCell({ value: 'hello', onNavigate });
+
+    fireEvent.click(screen.getByText('hello'));
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+
+    expect(onNavigate).toHaveBeenCalledWith(true);
+  });
+
+  it('prevents the browser default Tab so focus does not drift', () => {
+    renderCell({ value: 'hello' });
+
+    fireEvent.click(screen.getByText('hello'));
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const prevented = !fireEvent.keyDown(input, { key: 'Tab' });
+
+    expect(prevented).toBe(true);
+  });
+
+  it('does not double-save on the blur that follows Tab navigation', () => {
+    const onEdit = jest.fn();
+    renderCell({ value: 'hello', fieldKey: 'f', rowIndex: 0, onEdit });
+
+    fireEvent.click(screen.getByText('hello'));
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'world' } });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    // Moving focus to the next cell blurs this one; it must not re-fire onEdit
+    fireEvent.blur(input);
+
+    expect(onEdit).toHaveBeenCalledTimes(1);
   });
 });

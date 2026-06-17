@@ -8,3 +8,5 @@ export type Column = {
   field_type: string;
   field_key: string;
 };
+
+export type CellCoord = { rowIndex: number; colIndex: number };

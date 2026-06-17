@@ -16,22 +16,38 @@ type EditableCellProps = {
   value: any;
   fieldKey: string;
   rowIndex: number;
+  isEditing: boolean;
   onEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
+  onStartEdit: () => void;
+  onStopEdit: () => void;
+  onNavigate: (backward: boolean) => void;
 };
 
 export function EditableCell({
   value,
   fieldKey,
   rowIndex,
-  onEdit
+  isEditing,
+  onEdit,
+  onStartEdit,
+  onStopEdit,
+  onNavigate
 }: EditableCellProps) {
-  const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const shouldSaveRef = useRef(true);
+  // Suppresses the blur that fires when focus moves to the next cell during Tab
+  // navigation, so it does not re-save or clear the freshly-set editing cell.
+  const skipBlurRef = useRef(false);
 
   const displayValue = stringifyWithNull(value) ?? '';
   const isEmpty = displayValue === '';
+
+  // Seed the draft value the moment this cell becomes the active editor, before
+  // paint, so the textarea shows the right content on first render (no flash).
+  const prevEditingRef = useRef(false);
+  if (isEditing && !prevEditingRef.current) setEditValue(displayValue);
+  prevEditingRef.current = isEditing;
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -45,25 +61,23 @@ export function EditableCell({
     // blur handler before opening this one. Clicking a cell's (non-focusable)
     const active = featheryDoc().activeElement as HTMLElement | null;
     if (active && active !== inputRef.current) active.blur();
-    setEditValue(displayValue);
-    setIsEditing(true);
+    onStartEdit();
   };
 
-  const saveEdit = () => {
+  const saveValue = () => {
     if (editValue !== displayValue) {
       onEdit(fieldKey, rowIndex, editValue);
     }
-    setIsEditing(false);
-  };
-
-  const cancelEdit = () => {
-    shouldSaveRef.current = false;
-    setIsEditing(false);
   };
 
   const handleBlur = () => {
-    if (shouldSaveRef.current) saveEdit();
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
+      return;
+    }
+    if (shouldSaveRef.current) saveValue();
     shouldSaveRef.current = true;
+    onStopEdit();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -72,10 +86,13 @@ export function EditableCell({
       inputRef.current?.blur();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      cancelEdit();
-    } else if (e.key === 'Tab') {
       shouldSaveRef.current = false;
-      saveEdit();
+      inputRef.current?.blur();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      skipBlurRef.current = true;
+      saveValue();
+      onNavigate(e.shiftKey);
     }
   };
 
