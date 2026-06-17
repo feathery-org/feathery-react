@@ -66,7 +66,7 @@ function TabsElement({
   return (
     <div
       id={element.id}
-      style={{
+      css={{
         display: 'flex',
         flexDirection: direction as any,
         width: '100%',
