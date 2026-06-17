@@ -22,6 +22,10 @@ export type Trigger = {
   rowIndex?: number;
   action?: string;
   rowData?: Record<string, any>;
+  // Set for data-cell clicks; absent for row-level/action clicks
+  columnIndex?: number;
+  columnKey?: string;
+  columnName?: string;
 };
 
 export type FieldData = {
