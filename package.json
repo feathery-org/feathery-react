@@ -15,6 +15,12 @@
       "import": "./dist/index.js",
       "require": "./cjs/index.js",
       "default": "./cjs/index.js"
+    },
+    "./thumbnail-renderer": {
+      "types": "./dist/Form/ThumbnailRenderer.d.ts",
+      "import": "./dist/thumbnail-renderer.js",
+      "require": "./cjs/thumbnail-renderer.js",
+      "default": "./cjs/thumbnail-renderer.js"
     }
   },
   "engines": {
