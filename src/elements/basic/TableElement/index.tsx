@@ -6,6 +6,7 @@ import { Pagination } from './Pagination';
 import { ActionButtons } from './Actions';
 import { EmptyState } from './EmptyState';
 import { EditableCell } from './EditableCell';
+import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
@@ -88,19 +89,18 @@ function TableElement({
     baseFieldValues
   } = useTableData({ element, editMode, dataVersion });
 
-  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellClear } =
-    useTableMutations({
-      columns: baseColumns,
-      updateFieldValues,
-      submitCustom,
-      editMode,
-      editModeFieldValues: activeFieldValues,
-      enablePagination,
-      setCurrentPage,
-      setSearchQuery,
-      searchQuery,
-      onMutate
-    });
+  const { handleAddRow, handleDeleteRow, handleCellEdit } = useTableMutations({
+    columns: baseColumns,
+    updateFieldValues,
+    submitCustom,
+    editMode,
+    editModeFieldValues: activeFieldValues,
+    enablePagination,
+    setCurrentPage,
+    setSearchQuery,
+    searchQuery,
+    onMutate
+  });
 
   const tableId = element?.id;
 
@@ -129,11 +129,37 @@ function TableElement({
   );
 
   const [deleteRowIndex, setDeleteRowIndex] = useState<number | null>(null);
+  const [editingCell, setEditingCell] = useState<{
+    rowIndex: number;
+    colIndex: number;
+  } | null>(null);
   const prevPageRef = useRef(currentPage);
   if (prevPageRef.current !== currentPage) {
     prevPageRef.current = currentPage;
     setDeleteRowIndex(null);
+    // A coordinate from the previous page would point at an off-page row.
+    setEditingCell(null);
   }
+
+  const requestEdit = useCallback(
+    (rowIndex: number, colIndex: number) =>
+      setEditingCell({ rowIndex, colIndex }),
+    []
+  );
+  const stopEdit = useCallback(() => setEditingCell(null), []);
+  const navigateEdit = useCallback(
+    (rowIndex: number, colIndex: number, backward: boolean) => {
+      setEditingCell(
+        getNextEditableCell(
+          paginatedRowIndices,
+          columns.length,
+          { rowIndex, colIndex },
+          backward
+        )
+      );
+    },
+    [paginatedRowIndices, columns.length]
+  );
   const handleCancelDelete = useCallback(() => setDeleteRowIndex(null), []);
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
@@ -391,8 +417,18 @@ function TableElement({
                               value={cellValue}
                               fieldKey={column.field_key}
                               rowIndex={rowIndex}
+                              isEditing={
+                                editingCell?.rowIndex === rowIndex &&
+                                editingCell?.colIndex === colIndex
+                              }
                               onEdit={wrappedHandleCellEdit}
-                              onClear={handleCellClear}
+                              onStartEdit={() =>
+                                requestEdit(rowIndex, colIndex)
+                              }
+                              onStopEdit={stopEdit}
+                              onNavigate={(backward) =>
+                                navigateEdit(rowIndex, colIndex, backward)
+                              }
                             />
                           ) : (
                             stringifyWithNull(cellValue) ?? ''

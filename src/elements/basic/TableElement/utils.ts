@@ -1,4 +1,5 @@
 import { stringifyWithNull } from '../../../utils/primitives';
+import { CellCoord } from './types';
 
 export type SortableValue = {
   original: any;
@@ -99,4 +100,50 @@ export function compareSortableValues(
 
   // Fall back to string comparison
   return a.asString.localeCompare(b.asString);
+}
+
+/**
+ * Compute the next/previous editable cell for Tab navigation.
+ *
+ * In non-transposed editable tables every column is editable, so the grid is
+ * simply `rowIndices` (the visible rows, in display order) by `columnCount`.
+ *
+ * Forward (Tab): move one column right; at the end of a row wrap to the first
+ * column of the next visible row. Backward (Shift+Tab): mirror that.
+ *
+ * Returns `null` past the last editable cell (forward) or before the first one
+ * (backward) so the caller can commit-and-stay instead of wrapping around.
+ */
+export function getNextEditableCell(
+  rowIndices: number[],
+  columnCount: number,
+  current: CellCoord,
+  backward: boolean
+): CellCoord | null {
+  if (columnCount <= 0) return null;
+
+  const rowPos = rowIndices.indexOf(current.rowIndex);
+  if (rowPos === -1) return null;
+
+  const lastCol = columnCount - 1;
+  let { colIndex } = current;
+  let pos = rowPos;
+
+  if (backward) {
+    colIndex -= 1;
+    if (colIndex < 0) {
+      colIndex = lastCol;
+      pos -= 1;
+    }
+    if (pos < 0) return null;
+  } else {
+    colIndex += 1;
+    if (colIndex > lastCol) {
+      colIndex = 0;
+      pos += 1;
+    }
+    if (pos > rowIndices.length - 1) return null;
+  }
+
+  return { rowIndex: rowIndices[pos], colIndex };
 }

@@ -1,19 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useRef, useEffect } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import { stringifyWithNull } from '../../../utils/primitives';
-import { DeleteConfirm } from './DeleteConfirm';
 import {
   clickToEditStyle,
   cellInputStyle,
-  overflowIconStyle,
   editableCellContentStyle,
   editableCellTextStyle,
   editingCellContentStyle,
   editingCellInputStyle,
-  editingCellSizerStyle,
-  actionMenuStyle,
-  actionMenuItemStyle
+  editingCellSizerStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
@@ -21,118 +16,84 @@ type EditableCellProps = {
   value: any;
   fieldKey: string;
   rowIndex: number;
+  isEditing: boolean;
   onEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
-  onClear: (fieldKey: string, rowIndex: number) => void;
+  onStartEdit: () => void;
+  onStopEdit: () => void;
+  onNavigate: (backward: boolean) => void;
 };
-
-function OverflowIcon() {
-  return (
-    <svg width='16' height='16' fill='currentColor' viewBox='0 0 24 24'>
-      <circle cx='12' cy='5' r='2' />
-      <circle cx='12' cy='12' r='2' />
-      <circle cx='12' cy='19' r='2' />
-    </svg>
-  );
-}
 
 export function EditableCell({
   value,
   fieldKey,
   rowIndex,
+  isEditing,
   onEdit,
-  onClear
+  onStartEdit,
+  onStopEdit,
+  onNavigate
 }: EditableCellProps) {
-  const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const shouldSaveRef = useRef(true);
-
-  const closeClearConfirm = useCallback(() => setShowClearConfirm(false), []);
+  // Suppresses the blur that fires when focus moves to the next cell during Tab
+  // navigation, so it does not re-save or clear the freshly-set editing cell.
+  const skipBlurRef = useRef(false);
 
   const displayValue = stringifyWithNull(value) ?? '';
   const isEmpty = displayValue === '';
 
+  // Seed the draft value the moment this cell becomes the active editor, before
+  // paint, so the textarea shows the right content on first render (no flash).
+  const prevEditingRef = useRef(false);
+  if (isEditing && !prevEditingRef.current) setEditValue(displayValue);
+  prevEditingRef.current = isEditing;
+
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
+      inputRef.current.select();
     }
   }, [isEditing]);
 
-  useEffect(() => {
-    if (!isMenuOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node) &&
-        menuButtonRef.current &&
-        !menuButtonRef.current.contains(event.target as Node)
-      ) {
-        setIsMenuOpen(false);
-      }
-    };
-
-    const handleScroll = () => setIsMenuOpen(false);
-
-    const doc = featheryDoc();
-    doc.addEventListener('mousedown', handleClickOutside);
-    doc.addEventListener('scroll', handleScroll, true);
-
-    return () => {
-      doc.removeEventListener('mousedown', handleClickOutside);
-      doc.removeEventListener('scroll', handleScroll, true);
-    };
-  }, [isMenuOpen]);
-
   const startEditing = () => {
-    setEditValue(displayValue);
-    setIsEditing(true);
-    setIsMenuOpen(false);
+    // Force any other cell that is mid-edit to commit and close via its own
+    // blur handler before opening this one. Clicking a cell's (non-focusable)
+    const active = featheryDoc().activeElement as HTMLElement | null;
+    if (active && active !== inputRef.current) active.blur();
+    onStartEdit();
   };
 
-  const saveEdit = () => {
+  const saveValue = () => {
     if (editValue !== displayValue) {
       onEdit(fieldKey, rowIndex, editValue);
     }
-    setIsEditing(false);
-  };
-
-  const cancelEdit = () => {
-    shouldSaveRef.current = false;
-    setIsEditing(false);
   };
 
   const handleBlur = () => {
-    if (shouldSaveRef.current) saveEdit();
+    if (skipBlurRef.current) {
+      skipBlurRef.current = false;
+      return;
+    }
+    if (shouldSaveRef.current) saveValue();
     shouldSaveRef.current = true;
+    onStopEdit();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      shouldSaveRef.current = false;
-      saveEdit();
+      inputRef.current?.blur();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      cancelEdit();
-    } else if (e.key === 'Tab') {
       shouldSaveRef.current = false;
-      saveEdit();
+      inputRef.current?.blur();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      skipBlurRef.current = true;
+      saveValue();
+      onNavigate(e.shiftKey);
     }
-  };
-
-  const handleMenuToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!isMenuOpen && menuButtonRef.current) {
-      const rect = menuButtonRef.current.getBoundingClientRect();
-      setMenuPosition({ top: rect.bottom + 4, left: rect.right });
-    }
-    setIsMenuOpen(!isMenuOpen);
   };
 
   if (isEditing) {
@@ -167,67 +128,12 @@ export function EditableCell({
 
   return (
     <div className={TABLE_CLASS.editableCell} css={editableCellContentStyle}>
-      <span css={editableCellTextStyle}>{displayValue}</span>
-      <button
-        ref={menuButtonRef}
-        type='button'
-        aria-expanded={isMenuOpen}
-        aria-haspopup='menu'
-        css={overflowIconStyle}
-        onClick={handleMenuToggle}
+      <span
+        css={{ ...editableCellTextStyle, cursor: 'pointer' }}
+        onClick={startEditing}
       >
-        <OverflowIcon />
-      </button>
-      {isMenuOpen &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role='menu'
-            css={{
-              ...actionMenuStyle,
-              top: `${menuPosition.top}px`,
-              left: `${menuPosition.left}px`,
-              transform: 'translateX(-100%)'
-            }}
-          >
-            <button
-              type='button'
-              role='menuitem'
-              css={actionMenuItemStyle}
-              onClick={(e) => {
-                e.stopPropagation();
-                startEditing();
-              }}
-            >
-              Edit Value
-            </button>
-            <button
-              type='button'
-              role='menuitem'
-              css={actionMenuItemStyle}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsMenuOpen(false);
-                setShowClearConfirm(true);
-              }}
-            >
-              Clear Field
-            </button>
-          </div>,
-          featheryDoc().body
-        )}
-      {showClearConfirm && (
-        <DeleteConfirm
-          anchorEl={menuButtonRef.current}
-          message='Clear this field?'
-          confirmLabel='Clear'
-          onConfirm={() => {
-            closeClearConfirm();
-            onClear(fieldKey, rowIndex);
-          }}
-          onCancel={closeClearConfirm}
-        />
-      )}
+        {displayValue}
+      </span>
     </div>
   );
 }
