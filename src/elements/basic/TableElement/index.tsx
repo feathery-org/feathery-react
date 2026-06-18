@@ -370,9 +370,22 @@ function TableElement({
                               : fValue;
                             originalRowData[col.name] = cValue;
                           });
+                          const originalColumn = baseColumns[rowIndex];
                           onClick({
                             rowIndex: originalRowIndex,
-                            rowData: originalRowData
+                            rowData: originalRowData,
+                            columnIndex: rowIndex,
+                            columnKey: originalColumn?.field_key,
+                            columnName: originalColumn?.name
+                          });
+                        } else if (!isTransposed && !canEdit) {
+                          e.stopPropagation();
+                          onClick({
+                            rowIndex,
+                            rowData,
+                            columnIndex: colIndex,
+                            columnKey: column.field_key,
+                            columnName: column.name
                           });
                         }
                       };
