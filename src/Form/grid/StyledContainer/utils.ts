@@ -221,8 +221,16 @@ export const resizeFitContainer = (div: any) => {
   const containerMarginRight = getStylePxValue(containerStyles.marginRight);
   const totalMargin = containerMarginLeft + containerMarginRight;
 
-  // Set the maxWidth to the calculated width of it's children and the width to 100% - total margin
-  div.style.maxWidth = `${childrenWidth}px`;
+  let totalPadding = 0;
+  if (containerStyles.boxSizing === 'border-box') {
+    totalPadding =
+      getStylePxValue(containerStyles.paddingLeft) +
+      getStylePxValue(containerStyles.paddingRight) +
+      getStylePxValue(containerStyles.borderLeftWidth) +
+      getStylePxValue(containerStyles.borderRightWidth);
+  }
+
+  div.style.maxWidth = `${childrenWidth + totalPadding}px`;
   div.style.width = `calc(100% - ${totalMargin}px)`;
 };
 

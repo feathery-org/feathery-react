@@ -45,15 +45,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     }
   );
   responsiveStyles.applyTextAlign('buttonLabel');
-  // Fit-width buttons shrink to their text and padding, so prevent the
-  // text from wrapping
-  responsiveStyles.apply('buttonLabel', 'width_unit', (unit: any) => {
-    if (!isFit(unit)) return {};
-    return {
-      whiteSpace: 'nowrap',
-      'span, a': { whiteSpace: 'pre' }
-    };
-  });
   responsiveStyles.apply(
     'button',
     [
