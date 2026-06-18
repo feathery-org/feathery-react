@@ -1,9 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Tooltip } from './Tooltip';
 import { HelpIcon } from './icons';
 import { FORM_Z_INDEX } from '../../utils/styles';
 import { replaceTextVariables } from './TextNodes';
-import Overlay from './Overlay';
+import HoverTooltip from './HoverTooltip';
 import { isMobile as _isMobile } from '../../utils/browser';
 
 interface InlineTooltipProps {
@@ -66,34 +65,16 @@ export default function InlineTooltip({
         <HelpIcon cssStyles={responsiveStyles.getTarget('tooltipIcon')} />
       </div>
 
-      <Overlay
+      <HoverTooltip
         show={show}
-        targetRef={triggerRef}
+        triggerRef={triggerRef}
         containerRef={containerRef}
+        text={text}
+        id={id}
         placement='left'
-        onHide={() => setShow(false)}
         offset={8}
-      >
-        <Tooltip
-          id={`tooltip-${id}`}
-          css={{
-            zIndex: FORM_Z_INDEX + 1,
-            padding: '.4rem 0',
-            transition: 'opacity .10s linear',
-            '.tooltip-inner': {
-              maxWidth: '200px',
-              padding: '.25rem .5rem',
-              color: '#fff',
-              textAlign: 'center',
-              backgroundColor: '#000',
-              borderRadius: '.25rem',
-              fontSize: 'smaller'
-            }
-          }}
-        >
-          {text}
-        </Tooltip>
-      </Overlay>
+        onHide={() => setShow(false)}
+      />
     </>
   );
 }

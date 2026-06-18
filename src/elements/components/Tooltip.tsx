@@ -4,9 +4,15 @@ import type { Interpolation, Theme } from '@emotion/react';
 
 interface TooltipProps extends ComponentProps<'div'> {
   css?: Interpolation<Theme>;
+  maxWidth?: string;
 }
 
-const Tooltip = ({ children, css, ...props }: TooltipProps) => {
+const Tooltip = ({
+  children,
+  css,
+  maxWidth = '200px',
+  ...props
+}: TooltipProps) => {
   return (
     <div
       css={{
@@ -14,13 +20,15 @@ const Tooltip = ({ children, css, ...props }: TooltipProps) => {
         padding: '.4rem 0',
         transition: 'opacity .10s linear',
         '.tooltip-inner': {
-          maxWidth: '200px',
+          maxWidth,
           padding: '.25rem .5rem',
           color: '#fff',
           textAlign: 'center',
           backgroundColor: '#000',
           borderRadius: '.25rem',
-          fontSize: 'smaller'
+          fontSize: 'smaller',
+          // break long unbroken words so they wrap instead of overflowing
+          overflowWrap: 'anywhere'
         },
         ...(css as any)
       }}
