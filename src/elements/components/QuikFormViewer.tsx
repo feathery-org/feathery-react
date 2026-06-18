@@ -4,6 +4,7 @@ import { generateHeaderElement } from './QuikFormViewer/transforms/header';
 import { generateFormElement } from './QuikFormViewer/transforms/form';
 import { generateSidebarElement } from './QuikFormViewer/transforms/sidebar';
 import FeatheryClient from '../../utils/featheryClient';
+import FeatherySpinner from './Spinner';
 
 interface FrameProps {
   html?: string;
@@ -85,7 +86,42 @@ function QuikFormViewer({
     };
   }, [setShow]);
 
-  if (!htmlContent) return <div>Loading...</div>;
+  if (!htmlContent)
+    return (
+      <div
+        css={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          height: '100%',
+          minHeight: 200
+        }}
+      >
+        <div
+          css={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 16
+          }}
+        >
+          <div css={{ fontSize: 28 }}>
+            <FeatherySpinner />
+          </div>
+          <span
+            css={{
+              fontFamily: "'Helvetica Neue', helvetica, arial, sans-serif",
+              fontSize: 16,
+              fontWeight: 400,
+              color: '#414859'
+            }}
+          >
+            Generating your paperwork. Please wait...
+          </span>
+        </div>
+      </div>
+    );
 
   return (
     <div
