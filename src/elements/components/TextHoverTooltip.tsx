@@ -1,7 +1,5 @@
 import React, { useState, useRef, RefObject } from 'react';
-import { Tooltip } from './Tooltip';
-import { FORM_Z_INDEX } from '../../utils/styles';
-import Overlay from './Overlay';
+import HoverTooltip from './HoverTooltip';
 import { isMobile as _isMobile } from '../../utils/browser';
 
 interface TextHoverTooltipProps {
@@ -36,35 +34,17 @@ export default function TextHoverTooltip({
         {children}
       </span>
 
-      <Overlay
+      <HoverTooltip
         show={show}
-        targetRef={triggerRef}
+        triggerRef={triggerRef}
         containerRef={containerRef}
+        text={text}
+        id={text}
         placement='top'
-        onHide={() => setShow(false)}
         offset={4}
-      >
-        <Tooltip
-          id={`tooltip-${text}`}
-          css={{
-            zIndex: FORM_Z_INDEX + 1,
-            padding: '.4rem 0',
-            margin: '0 1rem',
-            transition: 'opacity .10s linear',
-            '.tooltip-inner': {
-              maxWidth: '200px',
-              padding: '.25rem .5rem',
-              color: '#fff',
-              textAlign: 'center',
-              backgroundColor: '#000',
-              borderRadius: '.25rem',
-              fontSize: 'smaller'
-            }
-          }}
-        >
-          {text}
-        </Tooltip>
-      </Overlay>
+        onHide={() => setShow(false)}
+        css={{ margin: '0 1rem' }}
+      />
     </>
   );
 }

@@ -1,6 +1,9 @@
-import React, { PropsWithChildren, useRef } from 'react';
+import React, { PropsWithChildren, useRef, useState } from 'react';
 import { StyledContainer, getCellStyle } from '../StyledContainer';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
+import HoverTooltip from '../../../elements/components/HoverTooltip';
+import { replaceTextVariables } from '../../../elements/components/TextNodes';
+import { isMobile as _isMobile } from '../../../utils/browser';
 
 type ContainerProps = PropsWithChildren & {
   node: any;
@@ -24,8 +27,28 @@ export const Container = ({
   children
 }: ContainerProps) => {
   const ref = useRef<HTMLDivElement>(null);
+  const [showTooltip, setShowTooltip] = useState(false);
   const additionalCss: any = {};
   let handleClick: any;
+
+  // Container-level hover tooltips apply only to actual containers. Field
+  // elements share the same `tooltipText` property but render their own
+  // icon-based InlineTooltip, so they must be excluded here.
+  const tooltipText =
+    !node.isElement && node.properties?.tooltipText
+      ? replaceTextVariables(node.properties.tooltipText, node.repeat)
+      : '';
+  const isMobile = _isMobile();
+  const tooltipHoverProps = tooltipText
+    ? {
+        // mouse hover is the primary trigger; disabled on mobile where a tap is
+        // ambiguous (containers commonly carry click actions)
+        onMouseEnter: isMobile ? undefined : () => setShowTooltip(true),
+        onMouseLeave: isMobile ? undefined : () => setShowTooltip(false),
+        onFocus: () => setShowTooltip(true),
+        onBlur: () => setShowTooltip(false)
+      }
+    : {};
 
   if (!node.isElement) {
     const properties = node.properties ?? {};
@@ -71,15 +94,28 @@ export const Container = ({
   }
 
   return (
-    <StyledContainer
-      ref={ref}
-      node={node}
-      css={additionalCss}
-      onClick={handleClick}
-      viewport={viewport}
-      breakpoint={form.formSettings.mobileBreakpoint}
-    >
-      {children}
-    </StyledContainer>
+    <>
+      <StyledContainer
+        ref={ref}
+        node={node}
+        css={additionalCss}
+        onClick={handleClick}
+        viewport={viewport}
+        breakpoint={form.formSettings.mobileBreakpoint}
+        {...tooltipHoverProps}
+      >
+        {children}
+      </StyledContainer>
+      {tooltipText && (
+        <HoverTooltip
+          show={showTooltip}
+          triggerRef={ref}
+          text={tooltipText}
+          id={node.id}
+          onHide={() => setShowTooltip(false)}
+          maxWidth='320px'
+        />
+      )}
+    </>
   );
 };

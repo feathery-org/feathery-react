@@ -14,7 +14,7 @@ type Position = {
   left: number;
 };
 
-type Placement =
+export type Placement =
   | 'top'
   | 'top-start'
   | 'top-end'
