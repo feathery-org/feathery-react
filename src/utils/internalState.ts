@@ -50,6 +50,7 @@ export type SendDocusignParams = {
   fillData?: Record<string, any>;
   emailSubject?: string;
   emailBlurb?: string;
+  draft?: boolean;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
