@@ -396,6 +396,7 @@ export function mapFormSettingsResponse(res: any) {
     clearHideIfFields: res.clear_hide_if_fields,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: res.ai_assistant_settings?.enabled,
+    assistantVoiceEnabled: res.ai_assistant_settings?.voice_enabled ?? false,
     assistantColor: res.ai_assistant_settings?.color
       ? `#${res.ai_assistant_settings.color}`
       : '#6b7280',
