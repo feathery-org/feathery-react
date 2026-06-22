@@ -242,6 +242,9 @@ function ButtonElement({
         ...(active === null
           ? { '&[aria-disabled="false"]:focus': activeStyles }
           : {}),
+        ...(element.properties.submit
+          ? { '& > *': { pointerEvents: 'none' } }
+          : {}),
         '&&&': styles.getTarget('button')
       }}
       // Use aria-disabled instead of disabled since disabled elements cannot display html errors
