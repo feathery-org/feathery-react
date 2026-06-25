@@ -477,7 +477,8 @@ export default class IntegrationClient {
     signers,
     existingEnvelopeId,
     draft,
-    wetSign
+    wetSign,
+    useDisclosure
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -495,7 +496,8 @@ export default class IntegrationClient {
         signers: signers,
         docusign_envelope_id: existingEnvelopeId,
         draft,
-        wet_sign: wetSign
+        wet_sign: wetSign,
+        use_disclosure: useDisclosure
       })
     };
     return this._fetch(url, options, false).then(async (response) => {

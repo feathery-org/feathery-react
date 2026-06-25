@@ -591,12 +591,14 @@ describe('IntegrationClient', () => {
 
       const result = await integrationClient.sendDocusignEnvelope({
         documents: ['doc-1'],
-        wetSign: true
+        wetSign: true,
+        useDisclosure: true
       });
 
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(global.fetch.mock.calls[0][1].method).toBe('POST');
       expect(body.wet_sign).toBe(true);
+      expect(body.use_disclosure).toBe(true);
       expect(body.signers).toBeUndefined();
       expect(body.documents).toEqual(['doc-1']);
       expect(result).toEqual({ docusign_envelope_id: 'wet-1' });

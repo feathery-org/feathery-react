@@ -53,6 +53,8 @@ export type SendDocusignParams = {
   draft?: boolean;
   // Designate the envelope for wet (on-paper) signing; signers become optional
   wetSign?: boolean;
+  // Show recipients the account's Electronic Record and Signature Disclosure
+  useDisclosure?: boolean;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
