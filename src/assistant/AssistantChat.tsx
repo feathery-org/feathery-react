@@ -22,11 +22,14 @@ import {
   CloseIcon,
   FloatingIcon,
   FullscreenIcon,
+  MicIcon,
   MinusIcon,
   SendIcon,
   SidebarLeftIcon,
-  SidebarRightIcon
+  SidebarRightIcon,
+  WaveformIcon
 } from './icons';
+import { useAssistantVoice } from './voice/useAssistantVoice';
 import {
   DEFAULT_CHAT_COLOR,
   getChatColors,
@@ -217,6 +220,7 @@ export type AssistantChatProps = {
   getJwt?: () => string;
   bottom?: number;
   color?: string;
+  voiceEnabled?: boolean;
   workflowActions?: WorkflowAction[];
   allowedModes?: AssistantMode[];
   onLayoutChange?: null | ((state: AssistantLayoutState) => void);
@@ -229,6 +233,7 @@ const AssistantChat = ({
   baseUrl,
   bottom = 20,
   color,
+  voiceEnabled = false,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
   onLayoutChange
@@ -332,17 +337,34 @@ const AssistantChat = ({
     x: number;
     y: number;
   } | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   // Suppresses auto-scroll when the user has scrolled up to read earlier content
   const atBottomRef = useRef(true);
   const BOTTOM_THRESHOLD_PX = 60;
+
+  // Voice state read while sending a request and while routing its streamed data parts
+  const voiceActiveRef = useRef(false);
+  const pendingAudioRef = useRef<Blob | null>(null);
+  const voiceDataRef = useRef<
+    | ((part: {
+        type: string;
+        data?: { text?: string; audio?: string };
+      }) => void)
+    | null
+  >(null);
 
   const handleMessagesScroll = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
     atBottomRef.current = distance < BOTTOM_THRESHOLD_PX;
+  }, []);
+
+  // Keep the newest content anchored at the bottom, pushing older content up
+  const pinToBottom = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el || !atBottomRef.current) return;
+    el.scrollTop = el.scrollHeight;
   }, []);
 
   const colors = useMemo(
@@ -358,6 +380,37 @@ const AssistantChat = ({
     let resolvedThreadId = threadId;
     let titleGenerated = !!initialTitle;
 
+    // Title the thread from its first user message, whether typed or a voice transcript
+    const triggerTitle = (userText?: string) => {
+      if (titleGenerated || !userText) return;
+      titleGenerated = true;
+      const currentThreadId = resolvedThreadId || null;
+      const titleContext: {
+        targets?: ResourceRef[];
+        current_step?: string;
+      } = {};
+      const targets = getTargets();
+      if (targets.length > 0) titleContext.targets = targets;
+      if (instanceId) {
+        const stepKey = getCurrentStepKey(instanceId);
+        if (stepKey) titleContext.current_step = stepKey;
+      }
+      generateThreadTitle(
+        baseUrl,
+        headers,
+        currentThreadId,
+        userText,
+        titleContext
+      ).then((title) => {
+        if (!title) return;
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === currentThreadId || t.chat === chat ? { ...t, title } : t
+          )
+        );
+      });
+    };
+
     const chatTransport = new DefaultChatTransport({
       api: baseUrl,
       headers: headers,
@@ -366,7 +419,29 @@ const AssistantChat = ({
         thread_id: resolvedThreadId || null
       }),
       fetch: async (url: any, init?: any) => {
-        const res = await fetch(url, init);
+        let res: Response;
+        if (voiceActiveRef.current) {
+          const form = new FormData();
+          form.append(
+            'payload',
+            typeof init?.body === 'string'
+              ? init.body
+              : JSON.stringify(init?.body ?? {})
+          );
+          const audio = pendingAudioRef.current;
+          if (audio) {
+            form.append('audio', audio, 'speech.wav');
+            pendingAudioRef.current = null;
+          }
+          res = await fetch(`${baseUrl}voice/turn/`, {
+            method: 'POST',
+            headers: headers(),
+            body: form,
+            signal: init?.signal
+          });
+        } else {
+          res = await fetch(url, init);
+        }
         const threadId = res.headers.get('X-Thread-Id');
         if (threadId && !resolvedThreadId) {
           resolvedThreadId = threadId;
@@ -387,44 +462,9 @@ const AssistantChat = ({
               );
           });
         }
-        if (!titleGenerated) {
-          const titleMessage = chat.messages.find((m: any) => m.role === 'user')
-            ?.parts?.[0]?.text;
-          if (titleMessage) {
-            titleGenerated = true;
-            const currentThreadId = resolvedThreadId || threadId || null;
-            const titleContext: {
-              targets?: ResourceRef[];
-              current_step?: string;
-            } = {};
-            const targets = getTargets();
-            if (targets.length > 0) titleContext.targets = targets;
-            if (instanceId) {
-              const stepKey = getCurrentStepKey(instanceId);
-              if (stepKey) titleContext.current_step = stepKey;
-            }
-            generateThreadTitle(
-              baseUrl,
-              headers,
-              currentThreadId,
-              titleMessage,
-              titleContext
-            ).then((title) => {
-              if (!title) return;
-              if (currentThreadId) {
-                setThreads((prev) =>
-                  prev.map((t) =>
-                    t.id === currentThreadId ? { ...t, title } : t
-                  )
-                );
-              } else {
-                setThreads((prev) =>
-                  prev.map((t) => (t.chat === chat ? { ...t, title } : t))
-                );
-              }
-            });
-          }
-        }
+        triggerTitle(
+          chat.messages.find((m: any) => m.role === 'user')?.parts?.[0]?.text
+        );
         return res;
       }
     });
@@ -433,6 +473,10 @@ const AssistantChat = ({
       transport: chatTransport,
       messages: initialMessages,
       sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+      onData: (part: any) => {
+        if (part?.type === 'data-transcript') triggerTitle(part.data?.text);
+        voiceDataRef.current?.(part);
+      },
       onToolCall: async ({ toolCall }: any) => {
         if (toolCall.dynamic) return;
 
@@ -574,6 +618,7 @@ const AssistantChat = ({
   const {
     messages: rawMessages,
     sendMessage,
+    setMessages,
     status,
     error
   } = useChat({
@@ -601,21 +646,14 @@ const AssistantChat = ({
   }, [rawMessages]);
 
   useEffect(() => {
-    if (!atBottomRef.current) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    pinToBottom();
+  }, [messages, pinToBottom]);
 
   useEffect(() => {
     if (status !== 'ready') return;
-    if (!atBottomRef.current) return;
-    const id = featheryWindow().requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'end'
-      });
-    });
+    const id = featheryWindow().requestAnimationFrame(pinToBottom);
     return () => featheryWindow().cancelAnimationFrame(id);
-  }, [status]);
+  }, [status, pinToBottom]);
 
   const fetchThreads = useCallback(async () => {
     const data = await getThreadList(baseUrl, headers);
@@ -634,6 +672,7 @@ const AssistantChat = ({
   }, [isOpen, fetchThreads]);
 
   const handleNewThread = () => {
+    stopVoice();
     atBottomRef.current = true;
     const id = uuidv4();
     const now = new Date().toISOString();
@@ -653,6 +692,7 @@ const AssistantChat = ({
   };
 
   const handleSelectThread = async (id: string) => {
+    stopVoice();
     atBottomRef.current = true;
     if (threads.find((t) => t.id === id)?.chat) {
       setActiveThreadId(id);
@@ -679,44 +719,9 @@ const AssistantChat = ({
     if (activeThreadId === id) handleNewThread();
   };
 
-  const handleSend = () => {
-    if (input.trim() && status === 'ready') {
-      atBottomRef.current = true;
-      const now = new Date().toISOString();
-      if (!activeThreadId) {
-        // First send, register readyChat as a real thread entry
-        const id = uuidv4();
-        setThreads((prev) => [
-          {
-            id,
-            title: 'New Chat',
-            created_at: now,
-            updated_at: now,
-            isTemporary: true,
-            chat: activeChat
-          },
-          ...prev
-        ]);
-        setActiveThreadId(id);
-      } else {
-        if (activeThread && !activeThread.title) {
-          setThreads((prev) => [
-            {
-              ...activeThread,
-              title: 'New Chat',
-              updated_at: now
-            },
-            ...prev.filter((t) => t.id !== activeThreadId)
-          ]);
-        }
-      }
-      sendMessage({ text: input });
-      setInput('');
-    }
-  };
-
-  const handleWorkflowAction = (action: WorkflowAction) => {
-    if (status !== 'ready') return;
+  // First send of a thread registers it as a real entry, for both text and voice
+  const registerActiveThread = useCallback(() => {
+    atBottomRef.current = true;
     const now = new Date().toISOString();
     if (!activeThreadId) {
       const id = uuidv4();
@@ -738,6 +743,43 @@ const AssistantChat = ({
         ...prev.filter((t) => t.id !== activeThreadId)
       ]);
     }
+  }, [activeThreadId, activeThread, activeChat]);
+
+  const {
+    voiceState,
+    voiceActive,
+    micAvailable,
+    spokenChars,
+    audioDraining,
+    startVoice,
+    stopVoice,
+    skipSpeaking
+  } = useAssistantVoice({
+    status,
+    sendMessage: (message) => sendMessage(message),
+    setMessages,
+    ensureThread: registerActiveThread,
+    voiceActiveRef,
+    pendingAudioRef,
+    voiceDataRef
+  });
+
+  // Voice: keep the view pinned to the bottom as the reply reveals during playback
+  useEffect(() => {
+    pinToBottom();
+  }, [spokenChars, audioDraining, pinToBottom]);
+
+  const handleSend = () => {
+    if (input.trim() && status === 'ready') {
+      registerActiveThread();
+      sendMessage({ text: input });
+      setInput('');
+    }
+  };
+
+  const handleWorkflowAction = (action: WorkflowAction) => {
+    if (status !== 'ready') return;
+    registerActiveThread();
     sendMessage({
       parts: [
         { type: 'text', text: action.name },
@@ -763,6 +805,21 @@ const AssistantChat = ({
   const visibleThreads = threads.filter((t) => t.title);
 
   const isLoading = status === 'submitted' || status === 'streaming';
+
+  const composerButtonCss = {
+    padding: '10px',
+    backgroundColor: colors.primary,
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background-color 0.2s',
+    ':hover:not(:disabled)': { backgroundColor: colors.hover },
+    ':disabled': { backgroundColor: colors.disabled, cursor: 'not-allowed' }
+  } as const;
 
   const layoutSide: 'left' | 'right' | null =
     mode === 'sidebar-left'
@@ -1019,7 +1076,10 @@ const AssistantChat = ({
           </button>
           <button
             type='button'
-            onClick={() => setIsOpen(false)}
+            onClick={() => {
+              stopVoice();
+              setIsOpen(false);
+            }}
             css={{
               background: 'none',
               border: 'none',
@@ -1274,36 +1334,40 @@ const AssistantChat = ({
 
         {messages.map((message, mIdx) =>
           message.role === 'user' ? (
-            // User message - single bubble
-            <div
-              key={message.id}
-              css={{
-                display: 'flex',
-                justifyContent: 'flex-end'
-              }}
-            >
+            // Show the bubble only once its transcript lands, not as an empty placeholder
+            (message.parts ?? []).some(
+              (p: any) => p.type === 'text' && (p.text ?? '').trim()
+            ) ? (
               <div
+                key={message.id}
                 css={{
-                  maxWidth: '80%',
-                  padding: '10px 14px',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  lineHeight: '1.5',
-                  backgroundColor: colors.primary,
-                  color: 'white',
-                  overflowWrap: 'anywhere',
-                  wordBreak: 'break-word'
+                  display: 'flex',
+                  justifyContent: 'flex-end'
                 }}
               >
-                {message.parts
-                  .filter((part: any) => !part.hidden)
-                  .map((part: any, index: number) =>
-                    part.type === 'text' ? (
-                      <span key={index}>{part.text}</span>
-                    ) : null
-                  )}
+                <div
+                  css={{
+                    maxWidth: '80%',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    fontSize: '14px',
+                    lineHeight: '1.5',
+                    backgroundColor: colors.primary,
+                    color: 'white',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {message.parts
+                    .filter((part: any) => !part.hidden)
+                    .map((part: any, index: number) =>
+                      part.type === 'text' ? (
+                        <span key={index}>{part.text}</span>
+                      ) : null
+                    )}
+                </div>
               </div>
-            </div>
+            ) : null
           ) : (
             <Fragment key={message.id}>
               {(() => {
@@ -1313,8 +1377,27 @@ const AssistantChat = ({
                 const turnFinished =
                   !isLastMsg ||
                   (status === 'ready' && lastPart?.type === 'text');
+                // Voice: reveal parts top-to-bottom, paced by how much audio has played
+                const paceByAudio =
+                  voiceActiveRef.current &&
+                  isLastMsg &&
+                  (isLoading || audioDraining);
+                let revealable = paceByAudio ? spokenChars : Infinity;
+                let blocked = false;
                 return chunks.map((chunk, chunkIdx) => {
+                  if (blocked) return null;
                   if (chunk.kind === 'text') {
+                    // Reveal up to the spoken budget, whitespace is free so the trailing "?" isn't held back
+                    let revealLen = 0;
+                    while (
+                      revealLen < chunk.text.length &&
+                      (revealable > 0 || /\s/.test(chunk.text[revealLen]))
+                    ) {
+                      if (!/\s/.test(chunk.text[revealLen])) revealable -= 1;
+                      revealLen += 1;
+                    }
+                    if (revealLen < chunk.text.length) blocked = true;
+                    if (revealLen <= 0) return null;
                     return (
                       <div
                         key={chunk.key}
@@ -1337,7 +1420,7 @@ const AssistantChat = ({
                           }}
                         >
                           <MarkdownText
-                            text={chunk.text}
+                            text={chunk.text.slice(0, revealLen)}
                             isStreaming={
                               isLoading &&
                               isLastMsg &&
@@ -1351,6 +1434,9 @@ const AssistantChat = ({
                   const followedByText = chunks
                     .slice(chunkIdx + 1)
                     .some((c) => c.kind === 'text');
+                  // Hold the tool's working state until the followup reply's audio begins
+                  const audioPending =
+                    paceByAudio && followedByText && revealable <= 0;
                   return (
                     <div
                       key={chunk.key}
@@ -1365,6 +1451,7 @@ const AssistantChat = ({
                         rows={chunk.rows}
                         turnFinished={turnFinished}
                         followedByText={followedByText}
+                        audioPending={audioPending}
                         linkColor={colors.primary}
                         isFirstChunk={chunkIdx === 0}
                       />
@@ -1382,14 +1469,23 @@ const AssistantChat = ({
             | { role?: string; parts?: any[] }
             | undefined;
           if (!last) return null;
-          if (last.role !== 'user') {
-            const parts = last.parts || [];
-            const hasContent = parts.some((p: any) => {
-              if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
-              const t = typeof p?.type === 'string' ? p.type : '';
-              return t.startsWith('tool-') || t === 'dynamic-tool';
-            });
-            if (hasContent) return null;
+          const parts = last.parts || [];
+          const isContent = (p: any) => {
+            if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
+            const t = typeof p?.type === 'string' ? p.type : '';
+            return t.startsWith('tool-') || t === 'dynamic-tool';
+          };
+          const hasContent = parts.some(isContent);
+          if (last.role === 'user') {
+            // Wait for the user's (transcribed) message to be visible before showing the indicator
+            if (!hasContent) return null;
+          } else {
+            // Voice: keep the indicator up while a leading reply is held waiting for its audio
+            const held =
+              voiceActiveRef.current &&
+              spokenChars <= 0 &&
+              parts.find(isContent)?.type === 'text';
+            if (hasContent && !held) return null;
           }
           return <ToolChunkPlaceholder />;
         })()}
@@ -1407,8 +1503,6 @@ const AssistantChat = ({
             Something went wrong. Please try again.
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Workflow action buttons */}
@@ -1493,51 +1587,86 @@ const AssistantChat = ({
           backgroundColor: GRAY_50
         }}
       >
-        <input
-          type='text'
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder='Type a message...'
-          css={{
-            flex: 1,
-            padding: '10px 14px',
-            border: `1px solid ${GRAY_200}`,
-            borderRadius: '8px',
-            fontSize: '14px',
-            outline: 'none',
-            transition: 'border-color 0.2s',
-            ':focus': {
-              borderColor: colors.primary
-            }
-          }}
-        />
-        <button
-          type='button'
-          onClick={handleSend}
-          disabled={isLoading || !input.trim()}
-          css={{
-            padding: '10px',
-            backgroundColor: colors.primary,
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'background-color 0.2s',
-            ':hover:not(:disabled)': {
-              backgroundColor: colors.hover
-            },
-            ':disabled': {
-              backgroundColor: colors.disabled,
-              cursor: 'not-allowed'
-            }
-          }}
-        >
-          <SendIcon />
-        </button>
+        {voiceActive ? (
+          <button
+            type='button'
+            onClick={voiceState === 'speaking' ? skipSpeaking : undefined}
+            css={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 14px',
+              border: `1px solid ${GRAY_200}`,
+              borderRadius: '8px',
+              backgroundColor: 'white',
+              fontSize: '14px',
+              color: GRAY_800,
+              cursor: voiceState === 'speaking' ? 'pointer' : 'default'
+            }}
+          >
+            <WaveformIcon css={{ color: colors.primary }} />
+            {voiceState === 'loading'
+              ? 'Loading…'
+              : voiceState === 'transcribing'
+              ? 'Transcribing…'
+              : voiceState === 'thinking'
+              ? 'Thinking…'
+              : voiceState === 'speaking'
+              ? 'Tap to skip'
+              : 'Listening…'}
+          </button>
+        ) : (
+          <input
+            type='text'
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder='Type a message...'
+            css={{
+              flex: 1,
+              padding: '10px 14px',
+              border: `1px solid ${GRAY_200}`,
+              borderRadius: '8px',
+              fontSize: '14px',
+              outline: 'none',
+              transition: 'border-color 0.2s',
+              ':focus': {
+                borderColor: colors.primary
+              }
+            }}
+          />
+        )}
+        {voiceActive ? (
+          <button
+            type='button'
+            onClick={stopVoice}
+            aria-label='Exit voice mode'
+            css={composerButtonCss}
+          >
+            <CloseIcon />
+          </button>
+        ) : !voiceEnabled || input.trim() ? (
+          <button
+            type='button'
+            onClick={handleSend}
+            disabled={isLoading || !input.trim()}
+            css={composerButtonCss}
+          >
+            <SendIcon />
+          </button>
+        ) : (
+          <button
+            type='button'
+            onClick={startVoice}
+            disabled={isLoading || !micAvailable}
+            aria-label='Start voice mode'
+            title={micAvailable ? undefined : 'Microphone unavailable'}
+            css={composerButtonCss}
+          >
+            <MicIcon />
+          </button>
+        )}
       </div>
     </div>
   );

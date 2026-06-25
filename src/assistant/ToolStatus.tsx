@@ -257,6 +257,7 @@ interface ToolChunkProps {
   rows: ToolRow[];
   followedByText: boolean;
   turnFinished: boolean;
+  audioPending?: boolean;
   linkColor?: string;
   isFirstChunk?: boolean;
 }
@@ -265,12 +266,15 @@ export const ToolChunk = ({
   rows,
   followedByText,
   turnFinished,
+  audioPending = false,
   linkColor = DEFAULT_CHAT_COLOR,
   isFirstChunk = false
 }: ToolChunkProps) => {
   const isRunning = rows.some((r) => isRunningState(r.state));
-  const chunkDone = !isRunning && (followedByText || turnFinished);
-  const shouldCollapse = !isRunning && followedByText;
+  // Voice: keep showing "Working on it" until the following reply's audio arrives
+  const chunkDone =
+    !isRunning && !audioPending && (followedByText || turnFinished);
+  const shouldCollapse = !isRunning && !audioPending && followedByText;
   const defaultExpanded = !shouldCollapse;
   const [override, setOverride] = useState<boolean | null>(null);
   const expanded = override ?? defaultExpanded;
