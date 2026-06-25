@@ -61,6 +61,9 @@ export type UpdateDocusignEnvelopeParams = {
   status: 'sent' | 'voided';
   voidedReason?: string; // required by the backend when status is 'voided'
 };
+export type DiscardDocusignEnvelopeParams = {
+  envelopeId: string;
+};
 
 export interface FormInternalState {
   language: string | undefined;
@@ -112,6 +115,9 @@ export interface FormInternalState {
   getDocusignEnvelope: (params: GetDocusignEnvelopeParams) => Promise<any>;
   updateDocusignEnvelope: (
     params: UpdateDocusignEnvelopeParams
+  ) => Promise<any>;
+  discardDocusignEnvelope: (
+    params: DiscardDocusignEnvelopeParams
   ) => Promise<any>;
   getConfig: GetConfig;
 }
