@@ -476,7 +476,8 @@ export default class IntegrationClient {
     emailBlurb,
     signers,
     existingEnvelopeId,
-    draft
+    draft,
+    wetSign
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -493,7 +494,8 @@ export default class IntegrationClient {
         email_blurb: emailBlurb,
         signers: signers,
         docusign_envelope_id: existingEnvelopeId,
-        draft
+        draft,
+        wet_sign: wetSign
       })
     };
     return this._fetch(url, options, false).then(async (response) => {

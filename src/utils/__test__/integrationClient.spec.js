@@ -578,4 +578,28 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
   });
+
+  describe('sendDocusignEnvelope', () => {
+    it('forwards wet_sign without requiring signers', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'wet-1' })
+      });
+
+      const result = await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        wetSign: true
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(global.fetch.mock.calls[0][1].method).toBe('POST');
+      expect(body.wet_sign).toBe(true);
+      expect(body.signers).toBeUndefined();
+      expect(body.documents).toEqual(['doc-1']);
+      expect(result).toEqual({ docusign_envelope_id: 'wet-1' });
+    });
+  });
 });
