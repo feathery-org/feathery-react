@@ -531,7 +531,7 @@ export default class IntegrationClient {
     const url = `${API_URL}docusign/envelope/`;
     const options = {
       headers: { 'Content-Type': 'application/json' },
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify({
         fuser_key: userId,
         form_key: this.formKey,

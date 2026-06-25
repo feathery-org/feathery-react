@@ -597,7 +597,7 @@ describe('IntegrationClient', () => {
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('docusign/envelope/'),
         expect.objectContaining({
-          method: 'PUT',
+          method: 'PATCH',
           body: JSON.stringify({
             fuser_key: 'test_user_id',
             form_key: formKey,
