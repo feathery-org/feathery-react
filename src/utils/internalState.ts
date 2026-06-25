@@ -55,6 +55,12 @@ export type SendDocusignParams = {
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
 };
+export type UpdateDocusignEnvelopeParams = {
+  envelopeId: string;
+  // Operator-driven transitions only: send a draft or cancel an envelope
+  status: 'sent' | 'voided';
+  voidedReason?: string; // required by the backend when status is 'voided'
+};
 
 export interface FormInternalState {
   language: string | undefined;
@@ -104,6 +110,9 @@ export interface FormInternalState {
   fillQuikForms: (params: FillQuikParams) => Promise<void>;
   sendDocusignEnvelope: (params: SendDocusignParams) => Promise<void>;
   getDocusignEnvelope: (params: GetDocusignEnvelopeParams) => Promise<any>;
+  updateDocusignEnvelope: (
+    params: UpdateDocusignEnvelopeParams
+  ) => Promise<any>;
   getConfig: GetConfig;
 }
 

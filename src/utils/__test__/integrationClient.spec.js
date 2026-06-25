@@ -578,4 +578,60 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
   });
+
+  describe('updateDocusignEnvelope', () => {
+    it('sends a PUT with the envelope id and status', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'sent' })
+      });
+
+      const result = await integrationClient.updateDocusignEnvelope({
+        envelopeId: 'env-123',
+        status: 'sent'
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('docusign/envelope/'),
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({
+            fuser_key: 'test_user_id',
+            form_key: formKey,
+            docusign_envelope_id: 'env-123',
+            status: 'sent',
+            voided_reason: undefined
+          })
+        })
+      );
+      expect(result).toEqual({ status: 'sent' });
+    });
+
+    it('includes voided_reason when voiding', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ status: 'voided' })
+      });
+
+      await integrationClient.updateDocusignEnvelope({
+        envelopeId: 'env-123',
+        status: 'voided',
+        voidedReason: 'Customer cancelled'
+      });
+
+      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+        fuser_key: 'test_user_id',
+        form_key: formKey,
+        docusign_envelope_id: 'env-123',
+        status: 'voided',
+        voided_reason: 'Customer cancelled'
+      });
+    });
+  });
 });
