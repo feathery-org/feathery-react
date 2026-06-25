@@ -57,10 +57,6 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     running: 'Reading the form...',
     done: 'Reviewed the form'
   },
-  getFuserSnapshot: {
-    running: 'Looking up your submission...',
-    done: 'Reviewed the submission'
-  },
   getExtractionSnapshot: {
     running: 'Reading extraction setup...',
     done: 'Reviewed the extraction setup'
@@ -88,6 +84,10 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
   queryHub: {
     running: 'Searching records on file...',
     done: 'Searched the records on file'
+  },
+  querySubmissions: {
+    running: 'Searching submissions...',
+    done: 'Searched submissions'
   }
 };
 
