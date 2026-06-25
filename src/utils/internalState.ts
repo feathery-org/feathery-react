@@ -57,12 +57,10 @@ export type GetDocusignEnvelopeParams = {
 };
 export type UpdateDocusignEnvelopeParams = {
   envelopeId: string;
-  // Operator-driven transitions only: send a draft or cancel an envelope
-  status: 'sent' | 'voided';
+  // 'sent' (send a draft) | 'voided' (cancel) | 'discarded' (move to the
+  // recycle bin, deleting a draft)
+  status: 'sent' | 'voided' | 'discarded';
   voidedReason?: string; // required by the backend when status is 'voided'
-};
-export type DiscardDocusignEnvelopeParams = {
-  envelopeId: string;
 };
 
 export interface FormInternalState {
@@ -115,9 +113,6 @@ export interface FormInternalState {
   getDocusignEnvelope: (params: GetDocusignEnvelopeParams) => Promise<any>;
   updateDocusignEnvelope: (
     params: UpdateDocusignEnvelopeParams
-  ) => Promise<any>;
-  discardDocusignEnvelope: (
-    params: DiscardDocusignEnvelopeParams
   ) => Promise<any>;
   getConfig: GetConfig;
 }

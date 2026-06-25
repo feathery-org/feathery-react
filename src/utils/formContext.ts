@@ -15,7 +15,6 @@ import internalState, {
   AlloyEntities,
   GetConfigParams,
   GetDocusignEnvelopeParams,
-  DiscardDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
@@ -197,8 +196,6 @@ export const getFormContext = (formUuid: string) => {
       formState.getDocusignEnvelope(params),
     updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
       formState.updateDocusignEnvelope(params),
-    discardDocusignEnvelope: (params: DiscardDocusignEnvelopeParams) =>
-      formState.discardDocusignEnvelope(params),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>

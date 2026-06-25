@@ -635,32 +635,35 @@ describe('IntegrationClient', () => {
     });
   });
 
-  describe('discardDocusignEnvelope', () => {
-    it('sends a DELETE with the envelope id', async () => {
+  describe('updateDocusignEnvelope (discard)', () => {
+    it('discards via PATCH with status discarded', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
 
       global.fetch.mockResolvedValue({
         ok: true,
-        json: jest.fn().mockResolvedValue({ discarded: ['env-123'] })
+        json: jest.fn().mockResolvedValue({ status: 'discarded' })
       });
 
-      const result = await integrationClient.discardDocusignEnvelope({
-        envelopeId: 'env-123'
+      const result = await integrationClient.updateDocusignEnvelope({
+        envelopeId: 'env-123',
+        status: 'discarded'
       });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('docusign/envelope/'),
         expect.objectContaining({
-          method: 'DELETE',
+          method: 'PATCH',
           body: JSON.stringify({
             fuser_key: 'test_user_id',
             form_key: formKey,
-            docusign_envelope_id: 'env-123'
+            docusign_envelope_id: 'env-123',
+            status: 'discarded',
+            voided_reason: undefined
           })
         })
       );
-      expect(result).toEqual({ discarded: ['env-123'] });
+      expect(result).toEqual({ status: 'discarded' });
     });
   });
 });
