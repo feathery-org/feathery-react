@@ -117,6 +117,19 @@ export interface ActionData {
   targetElement?: any;
 }
 
+// Restrict a field-data payload to a configured subset of field keys.
+// An empty or absent selection means "send all fields" (the default behavior).
+export const filterTrackedFields = <T>(
+  fields: Record<string, T>,
+  selectedKeys?: string[]
+): Record<string, T> => {
+  if (!selectedKeys?.length) return fields;
+  return selectedKeys.reduce((acc, key) => {
+    if (key in fields) acc[key] = fields[key];
+    return acc;
+  }, {} as Record<string, T>);
+};
+
 export function trackEvent(
   integrations: any,
   title: string,
