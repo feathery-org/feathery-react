@@ -106,7 +106,6 @@ function TableElement({
       return;
     }
     clearTableSelection(element.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, sortColumn, sortDirection, currentPage]);
 
   const { handleAddRow, handleDeleteRow, handleCellEdit } = useTableMutations({

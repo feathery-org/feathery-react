@@ -8,7 +8,10 @@ export const tableSelectionState: Record<string, Set<number>> = {};
 // entity can clamp/validate selection without reaching into React.
 export const tableRowCounts: Record<string, number> = {};
 
-export const registerTableRowCount = (tableId: string, rowCount: number): void => {
+export const registerTableRowCount = (
+  tableId: string,
+  rowCount: number
+): void => {
   tableRowCounts[tableId] = rowCount;
 };
 
@@ -29,10 +32,15 @@ export const clampIndices = (indices: number[], rowCount: number): number[] => {
 };
 
 export const getSelectedRows = (tableId: string): number[] =>
-  clampIndices(Array.from(tableSelectionState[tableId] ?? []), getTableRowCount(tableId));
+  clampIndices(
+    Array.from(tableSelectionState[tableId] ?? []),
+    getTableRowCount(tableId)
+  );
 
 export const setSelectedRows = (tableId: string, indices: number[]): void => {
-  tableSelectionState[tableId] = new Set(clampIndices(indices, getTableRowCount(tableId)));
+  tableSelectionState[tableId] = new Set(
+    clampIndices(indices, getTableRowCount(tableId))
+  );
   rerenderAllForms();
 };
 
@@ -50,7 +58,10 @@ export const clearTableSelection = (tableId: string): void => {
 };
 
 // On row delete: drop the deleted base index and shift higher indices down by 1.
-export const remapAfterDelete = (tableId: string, deletedIndex: number): void => {
+export const remapAfterDelete = (
+  tableId: string,
+  deletedIndex: number
+): void => {
   const current = tableSelectionState[tableId];
   if (!current) return;
   const remapped = new Set<number>();

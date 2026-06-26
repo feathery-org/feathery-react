@@ -125,6 +125,7 @@ jest.mock('../../utils/fieldHelperFunctions', () => ({
   formatStepFields: () => ({}),
   formatAllFormFields: () => ({}),
   getAllFields: () => ({}),
+  getAllTables: () => ({}),
   getDefaultFieldValue: () => '',
   getDefaultFormFieldValue: () => '',
   getFieldValue: () => ({ value: '', valueList: undefined }),

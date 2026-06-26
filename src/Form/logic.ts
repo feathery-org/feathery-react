@@ -509,7 +509,9 @@ export const getInjectableTables = (
   injectableFields: Record<string, any>
 ): Record<string, any> =>
   Object.entries(tables ?? {})
-    .filter(([key]) => isValidFieldIdentifier(key) && !(key in injectableFields))
+    .filter(
+      ([key]) => isValidFieldIdentifier(key) && !(key in injectableFields)
+    )
     .reduce((acc, [key, table]) => {
       acc[key] = table;
       return acc;
