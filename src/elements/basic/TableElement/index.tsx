@@ -5,7 +5,8 @@ import {
   unregisterTableRowCount,
   getSelectedRows,
   toggleRow,
-  setSelectedRows
+  setSelectedRows,
+  clearTableSelection
 } from '../../../utils/tableState';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
@@ -95,6 +96,18 @@ function TableElement({
     baseColumns,
     baseFieldValues
   } = useTableData({ element, editMode, dataVersion });
+
+  // Selection is only meaningful within one stable view; any sort/search/page
+  // change resets it (base indices would otherwise point at different rows).
+  const isMountedRef = useRef(false);
+  useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
+    clearTableSelection(element.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, sortColumn, sortDirection, currentPage]);
 
   const { handleAddRow, handleDeleteRow, handleCellEdit } = useTableMutations({
     columns: baseColumns,

@@ -2,7 +2,11 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
-import { tableSelectionState, getSelectedRows } from '../../../../utils/tableState';
+import {
+  tableSelectionState,
+  getSelectedRows,
+  clearTableSelection
+} from '../../../../utils/tableState';
 
 jest.mock('../../../../utils/formHelperFunctions', () => ({
   rerenderAllForms: jest.fn()
@@ -84,5 +88,25 @@ describe('TableElement - row selection', () => {
     );
 
     expect(screen.queryByRole('checkbox', { name: /select row/i })).toBeNull();
+  });
+
+  it('clears selection when search query changes', () => {
+    render(
+      <TableElement
+        element={makeElement({ enable_row_selection: true, search: true })}
+        responsiveStyles={mockStyles()}
+        onClick={jest.fn()}
+      />
+    );
+
+    // Select the first row
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select row/i });
+    fireEvent.click(checkboxes[0]);
+    expect(getSelectedRows('table1')).toEqual([0]);
+
+    // Changing search query should clear the selection
+    const searchInput = screen.getByPlaceholderText('Search');
+    fireEvent.change(searchInput, { target: { value: 'Bob' } });
+    expect(getSelectedRows('table1')).toEqual([]);
   });
 });
