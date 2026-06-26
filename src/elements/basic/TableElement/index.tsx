@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { stringifyWithNull } from '../../../utils/primitives';
+import {
+  registerTableRowCount,
+  unregisterTableRowCount,
+  getSelectedRows,
+  toggleRow,
+  setSelectedRows
+} from '../../../utils/tableState';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
 import { Pagination } from './Pagination';
@@ -103,6 +110,14 @@ function TableElement({
   });
 
   const tableId = element?.id;
+
+  const enableRowSelection = !!element?.properties?.enable_row_selection;
+  const selectedRows = getSelectedRows(element.id);
+
+  useEffect(() => {
+    registerTableRowCount(element.id, totalRows);
+    return () => unregisterTableRowCount(element.id);
+  }, [element.id, totalRows]);
 
   const canEdit = enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddDeleteRows;
@@ -244,6 +259,26 @@ function TableElement({
             {!isTransposed && (
               <thead className={TABLE_CLASS.header} css={theadStyle}>
                 <tr>
+                  {enableRowSelection && (
+                    <th>
+                      <input
+                        type='checkbox'
+                        aria-label='Select all displayed rows'
+                        checked={
+                          paginatedRowIndices.length > 0 &&
+                          paginatedRowIndices.every((i: number) =>
+                            selectedRows.includes(i)
+                          )
+                        }
+                        onChange={(e) =>
+                          setSelectedRows(
+                            element.id,
+                            e.target.checked ? paginatedRowIndices : []
+                          )
+                        }
+                      />
+                    </th>
+                  )}
                   <SortHeader
                     columns={columns}
                     enableSort={enableSort}
@@ -308,6 +343,16 @@ function TableElement({
                     css={{ ...rowStyle, ...styles.getTarget('tr') }}
                     onClick={handleRowClick}
                   >
+                    {enableRowSelection && (
+                      <td>
+                        <input
+                          type='checkbox'
+                          aria-label={`Select row ${rowIndex + 1}`}
+                          checked={selectedRows.includes(rowIndex)}
+                          onChange={() => toggleRow(element.id, rowIndex)}
+                        />
+                      </td>
+                    )}
                     {columns.map((column, colIndex) => {
                       const fieldValue = activeFieldValues[column.field_key];
                       const cellValue = Array.isArray(fieldValue)
