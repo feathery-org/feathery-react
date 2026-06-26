@@ -2,6 +2,7 @@ import { findCountryByID } from '../elements/components/data/countries';
 import { formatDateString } from '../elements/fields/DateSelectorField/utils';
 import { featheryWindow } from './browser';
 import Field from './entities/Field';
+import Table from './entities/Table';
 import FeatheryClient from './featheryClient';
 import { getVisibleElements } from './hideAndRepeats';
 import { toBase64 } from './image';
@@ -362,6 +363,19 @@ export const getAllFields = (
   });
 
   return fields;
+};
+
+export const getAllTables = (
+  tables: { id: string; key?: string }[],
+  formUuid: string
+): Record<string, Table> => {
+  const result: Record<string, Table> = {};
+  tables.forEach((table) => {
+    // Legacy/keyless tables are not logic-addressable, but still render + select.
+    if (!table.key) return;
+    result[table.key] = new Table(table.id, formUuid);
+  });
+  return result;
 };
 
 /**

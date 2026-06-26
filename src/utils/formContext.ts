@@ -43,7 +43,7 @@ export const getFormContext = (formUuid: string) => {
   // use of certain props in the callback functions.
   let formState = internalState[formUuid];
   if (!formState) {
-    formState = { fields: {} } as any;
+    formState = { fields: {}, tables: {} } as any;
     setFormInternalState(formUuid, formState);
   }
 
@@ -54,6 +54,7 @@ export const getFormContext = (formUuid: string) => {
     formId: formState.formId,
     _getInternalUserId: () => initState._internalUserId,
     fields: formState.fields,
+    tables: formState.tables,
     products: formState.products,
     cart: formState.cart,
     collaborator: formState.collaborator,

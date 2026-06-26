@@ -46,6 +46,7 @@ import {
   FieldStyles,
   formatStepFields,
   getAllFields,
+  getAllTables,
   getDefaultFieldValue,
   getDefaultFormFieldValue,
   getFieldValue,
@@ -1095,6 +1096,11 @@ function Form({
         getAllFields(fieldKeys, Object.keys(hiddenFields), _internalId)
       );
 
+    // create tables (logic-addressable, named) only once and seal it
+    let tables = internalState[_internalId]?.tables;
+    if (!tables || !Object.isSealed(tables))
+      tables = Object.seal(getAllTables(newStep.tables ?? [], _internalId));
+
     const newVisiblePositions = getVisiblePositions(newStep, _internalId);
     preloadStepFields(newStep, newVisiblePositions).catch(() => {});
 
@@ -1107,6 +1113,7 @@ function Form({
         visiblePositions: newVisiblePositions,
         client,
         fields,
+        tables,
         products: Object.seal(
           getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
         ),
