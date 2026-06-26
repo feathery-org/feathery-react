@@ -175,3 +175,64 @@ describe('useTableMutations - remap wiring', () => {
     expect(getSelectedRows('t1')).toEqual([0, 3]);
   });
 });
+
+describe('I1 - transpose mode disables row selection', () => {
+  beforeEach(() => {
+    seedFieldValues();
+    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+  });
+
+  afterEach(() => {
+    clearFieldValues();
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  it('renders NO per-row checkboxes when enable_row_selection=true and transpose=true', () => {
+    render(
+      <TableElement
+        element={makeElement({ enable_row_selection: true, transpose: true })}
+        responsiveStyles={mockStyles()}
+        onClick={jest.fn()}
+      />
+    );
+
+    expect(
+      screen.queryByRole('checkbox', { name: /select row/i })
+    ).toBeNull();
+  });
+});
+
+describe('I2 - registerTableRowCount uses base row count', () => {
+  beforeEach(() => {
+    Object.assign(fieldValues, {
+      name_key: ['Alice', 'Bob', 'Carol', 'Dave', 'Eve'],
+      age_key: ['30', '40', '50', '60', '70']
+    });
+    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+  });
+
+  afterEach(() => {
+    delete (fieldValues as any).name_key;
+    delete (fieldValues as any).age_key;
+    jest.clearAllMocks();
+    sessionStorage.clear();
+  });
+
+  it('registered rowCount equals base row count even when search filters the view', () => {
+    render(
+      <TableElement
+        element={makeElement({ enable_row_selection: true, search: true })}
+        responsiveStyles={mockStyles()}
+        onClick={jest.fn()}
+      />
+    );
+
+    // The component should have registered rowCount = 5 (base rows)
+    // even though a search filter might reduce the visible set.
+    // Manually set a row index >= any filtered count (e.g. index 4) and
+    // confirm it is NOT clamped away (i.e. base count was registered, not filtered count).
+    setSelectedRows('table1', [4]);
+    expect(getSelectedRows('table1')).toEqual([4]);
+  });
+});

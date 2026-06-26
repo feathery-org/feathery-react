@@ -90,6 +90,7 @@ function TableElement({
     transposedRowIndices,
     totalRows,
     totalPages,
+    baseNumRows,
     hasData,
     hasSearchResults,
     activeFieldValues,
@@ -128,9 +129,9 @@ function TableElement({
   const selectedRows = getSelectedRows(element.id);
 
   useEffect(() => {
-    registerTableRowCount(element.id, totalRows);
+    registerTableRowCount(element.id, baseNumRows);
     return () => unregisterTableRowCount(element.id);
-  }, [element.id, totalRows]);
+  }, [element.id, baseNumRows]);
 
   const canEdit = enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddDeleteRows;
@@ -356,7 +357,7 @@ function TableElement({
                     css={{ ...rowStyle, ...styles.getTarget('tr') }}
                     onClick={handleRowClick}
                   >
-                    {enableRowSelection && (
+                    {enableRowSelection && !isTransposed && (
                       <td>
                         <input
                           type='checkbox'

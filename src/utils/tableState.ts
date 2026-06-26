@@ -38,9 +38,14 @@ export const getSelectedRows = (tableId: string): number[] =>
   );
 
 export const setSelectedRows = (tableId: string, indices: number[]): void => {
-  tableSelectionState[tableId] = new Set(
-    clampIndices(indices, getTableRowCount(tableId))
-  );
+  const rowCount = getTableRowCount(tableId);
+  if (rowCount === 0 && indices.length > 0) {
+    console.warn(
+      `[feathery] setSelectedRows: table "${tableId}" has no registered row count — ` +
+        'selection is disabled or the table is unmounted. All indices will be dropped.'
+    );
+  }
+  tableSelectionState[tableId] = new Set(clampIndices(indices, rowCount));
   rerenderAllForms();
 };
 
@@ -58,6 +63,7 @@ export const clearTableSelection = (tableId: string): void => {
 };
 
 // On row delete: drop the deleted base index and shift higher indices down by 1.
+// The delete flow triggers the rerender; this helper intentionally does not.
 export const remapAfterDelete = (
   tableId: string,
   deletedIndex: number

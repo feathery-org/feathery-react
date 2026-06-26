@@ -130,6 +130,7 @@ type UseTableDataReturn = {
   totalRows: number;
   totalPages: number;
   rowsPerPage: number;
+  baseNumRows: number;
   hasData: boolean;
   hasSearchResults: boolean;
   activeFieldValues: Record<string, any>;
@@ -516,6 +517,7 @@ export function useTableData({
 
     totalRows,
     totalPages,
+    baseNumRows,
     hasData,
     activeFieldValues,
     baseColumns,
