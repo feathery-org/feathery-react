@@ -504,6 +504,17 @@ export function replaceImportsWithDefinitions(
   return [...definitions, '', ...remainingLines].join('\n');
 }
 
+export const getInjectableTables = (
+  tables: Record<string, any>,
+  injectableFields: Record<string, any>
+): Record<string, any> =>
+  Object.entries(tables ?? {})
+    .filter(([key]) => isValidFieldIdentifier(key) && !(key in injectableFields))
+    .reduce((acc, [key, table]) => {
+      acc[key] = table;
+      return acc;
+    }, {} as Record<string, any>);
+
 // Used to warn about logic rule errors
 export const handleRuleError = (errorMessage: string, logicRule: LogicRule) => {
   // log that a specific rule had an error, log it to warning console
@@ -576,16 +587,23 @@ export const runClientSideLogic = async (
       acc[key] = field;
       return acc;
     }, {} as Record<string, Field>);
+
+  const injectableTables = getInjectableTables(
+    internalState?.tables ?? {},
+    injectableFields
+  );
   // @ts-ignore
   const fn = new AsyncFunction(
     'feathery',
     // pass in all the fields as arguments so they are globals in the rule code
     ...Object.keys(injectableFields),
+    ...Object.keys(injectableTables),
     asyncWrappedCode
   );
   await fn(
     { ...props, http: httpHelpers(client, connectorFields) },
-    ...Object.values(injectableFields)
+    ...Object.values(injectableFields),
+    ...Object.values(injectableTables)
   ).catch((e: any) => {
     // catch unhandled rejections in async user code (if a promise is returned)
     // handle any errors in async code that actually returns a promise
