@@ -1,5 +1,3 @@
-jest.mock('../formHelperFunctions', () => ({ rerenderAllForms: jest.fn() }));
-
 import {
   tableSelectionState,
   registerTableRowCount,
@@ -12,9 +10,13 @@ import {
 } from '../tableState';
 import { rerenderAllForms } from '../formHelperFunctions';
 
+jest.mock('../formHelperFunctions', () => ({ rerenderAllForms: jest.fn() }));
+
 describe('tableState', () => {
   beforeEach(() => {
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
     (rerenderAllForms as jest.Mock).mockClear();
     registerTableRowCount('t1', 5);
   });
@@ -45,6 +47,8 @@ describe('tableState', () => {
   it('remapAfterDelete drops deleted index and shifts higher down', () => {
     setSelectedRows('t1', [0, 2, 4]);
     remapAfterDelete('t1', 2);
-    expect(Array.from(tableSelectionState['t1']).sort((a, b) => a - b)).toEqual([0, 3]);
+    expect(Array.from(tableSelectionState.t1).sort((a, b) => a - b)).toEqual([
+      0, 3
+    ]);
   });
 });

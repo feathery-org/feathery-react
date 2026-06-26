@@ -1,6 +1,6 @@
-jest.mock('../formHelperFunctions', () => ({ rerenderAllForms: jest.fn() }));
-
 import { getAllTables } from '../fieldHelperFunctions';
+
+jest.mock('../formHelperFunctions', () => ({ rerenderAllForms: jest.fn() }));
 
 describe('getAllTables', () => {
   it('builds entities keyed by name, skipping keyless (legacy) tables', () => {

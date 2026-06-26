@@ -1,11 +1,13 @@
-jest.mock('../formHelperFunctions', () => ({ rerenderAllForms: jest.fn() }));
-
 import Table from '../entities/Table';
 import { registerTableRowCount, tableSelectionState } from '../tableState';
 
+jest.mock('../formHelperFunctions', () => ({ rerenderAllForms: jest.fn() }));
+
 describe('Table entity', () => {
   beforeEach(() => {
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
     registerTableRowCount('tbl_1', 4);
   });
 
