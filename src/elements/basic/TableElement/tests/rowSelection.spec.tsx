@@ -1,12 +1,17 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
 import {
   tableSelectionState,
   getSelectedRows,
+  setSelectedRows,
+  registerTableRowCount,
+  remapAfterDelete,
   clearTableSelection
 } from '../../../../utils/tableState';
+import { useTableMutations } from '../useTableMutations';
 
 jest.mock('../../../../utils/formHelperFunctions', () => ({
   rerenderAllForms: jest.fn()
@@ -108,5 +113,65 @@ describe('TableElement - row selection', () => {
     const searchInput = screen.getByPlaceholderText('Search');
     fireEvent.change(searchInput, { target: { value: 'Bob' } });
     expect(getSelectedRows('table1')).toEqual([]);
+  });
+});
+
+describe('remapAfterDelete - helper contract', () => {
+  beforeEach(() => {
+    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+  });
+
+  it('remaps selection after a row delete (helper contract used by the hook)', () => {
+    registerTableRowCount('tbl_x', 5);
+    setSelectedRows('tbl_x', [0, 2, 4]);
+    remapAfterDelete('tbl_x', 2);
+    expect(getSelectedRows('tbl_x')).toEqual([0, 3]);
+  });
+});
+
+describe('useTableMutations - remap wiring', () => {
+  const minimalProps = {
+    columns: [],
+    updateFieldValues: jest.fn(),
+    submitCustom: jest.fn(),
+    editMode: false,
+    editModeFieldValues: {},
+    enablePagination: false,
+    setCurrentPage: jest.fn(),
+    setSearchQuery: jest.fn(),
+    searchQuery: '',
+    onMutate: jest.fn(),
+    tableId: 't1'
+  };
+
+  beforeEach(() => {
+    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    jest.clearAllMocks();
+  });
+
+  it('remaps selection in the store when handleDeleteRow is called', () => {
+    registerTableRowCount('t1', 5);
+    setSelectedRows('t1', [0, 2, 4]);
+
+    const { result } = renderHook(() => useTableMutations(minimalProps));
+
+    act(() => {
+      result.current.handleDeleteRow(2);
+    });
+
+    expect(getSelectedRows('t1')).toEqual([0, 3]);
+  });
+
+  it('remaps selection in the store when handleRemoveRowLocal is called', () => {
+    registerTableRowCount('t1', 5);
+    setSelectedRows('t1', [0, 2, 4]);
+
+    const { result } = renderHook(() => useTableMutations(minimalProps));
+
+    act(() => {
+      result.current.handleRemoveRowLocal(2);
+    });
+
+    expect(getSelectedRows('t1')).toEqual([0, 3]);
   });
 });

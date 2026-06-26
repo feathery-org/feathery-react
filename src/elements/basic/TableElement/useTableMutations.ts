@@ -1,8 +1,10 @@
 import { useCallback, useRef } from 'react';
 import { fieldValues } from '../../../utils/init';
+import { remapAfterDelete } from '../../../utils/tableState';
 import { Column } from './types';
 
 type UseTableMutationsProps = {
+  tableId: string;
   columns: Column[];
   updateFieldValues: (values: Record<string, any>) => void;
   submitCustom: (values: Record<string, any>) => void;
@@ -23,6 +25,7 @@ type UseTableMutationsReturn = {
 };
 
 export function useTableMutations({
+  tableId,
   columns,
   updateFieldValues,
   submitCustom,
@@ -88,9 +91,11 @@ export function useTableMutations({
       const updates = buildRowRemovalUpdates(rowIndex);
       updateFieldValues(updates);
       if (!editMode) submitCustom(updates);
+      remapAfterDelete(tableId, rowIndex);
       onMutate();
     },
     [
+      tableId,
       buildRowRemovalUpdates,
       updateFieldValues,
       submitCustom,
@@ -103,9 +108,10 @@ export function useTableMutations({
     (rowIndex: number) => {
       const updates = buildRowRemovalUpdates(rowIndex);
       updateFieldValues(updates);
+      remapAfterDelete(tableId, rowIndex);
       onMutate();
     },
-    [buildRowRemovalUpdates, updateFieldValues, onMutate]
+    [tableId, buildRowRemovalUpdates, updateFieldValues, onMutate]
   );
 
   const handleCellEdit = useCallback(

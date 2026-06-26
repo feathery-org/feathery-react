@@ -110,6 +110,7 @@ function TableElement({
   }, [searchQuery, sortColumn, sortDirection, currentPage]);
 
   const { handleAddRow, handleDeleteRow, handleCellEdit } = useTableMutations({
+    tableId: element.id,
     columns: baseColumns,
     updateFieldValues,
     submitCustom,
