@@ -138,6 +138,7 @@ import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   GetDocusignEnvelopeParams,
   SendDocusignParams,
+  UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from '../utils/internalState';
 import {
@@ -1212,6 +1213,8 @@ function Form({
         },
         getDocusignEnvelope: (params: GetDocusignEnvelopeParams) =>
           client.getDocusignEnvelope(params),
+        updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
+          client.updateDocusignEnvelope(params),
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,

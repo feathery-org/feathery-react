@@ -17,6 +17,7 @@ import internalState, {
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
   SendDocusignParams,
+  UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from './internalState';
 import { validateElements } from './validation';
@@ -193,6 +194,8 @@ export const getFormContext = (formUuid: string) => {
       formState.sendDocusignEnvelope(params),
     getDocusignEnvelope: (params: GetDocusignEnvelopeParams) =>
       formState.getDocusignEnvelope(params),
+    updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
+      formState.updateDocusignEnvelope(params),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>
