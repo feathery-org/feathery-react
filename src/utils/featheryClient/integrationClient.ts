@@ -471,6 +471,7 @@ export default class IntegrationClient {
   sendDocusignEnvelope({
     documents,
     libraryDocuments,
+    documentInstances,
     fillData,
     emailSubject,
     emailBlurb,
@@ -490,10 +491,21 @@ export default class IntegrationClient {
         form_key: this.formKey,
         documents,
         library_documents: libraryDocuments,
+        document_instances: documentInstances?.map((instance) => ({
+          document_id: instance.documentId,
+          envelope_id: instance.envelopeId,
+          fill_data: instance.fillData,
+          signer_map: instance.signerMap
+        })),
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
-        signers: signers,
+        signers: signers?.map((signer) => ({
+          email: signer.email,
+          name: signer.name,
+          sign_method: signer.signMethod,
+          routing_order: signer.routingOrder
+        })),
         docusign_envelope_id: existingEnvelopeId,
         draft,
         wet_sign: wetSign,

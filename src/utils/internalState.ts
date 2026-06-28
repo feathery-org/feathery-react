@@ -30,8 +30,23 @@ export type GetConfig = ({
   unique
 }: GetConfigParams) => Promise<Record<string, any>[]>;
 type DocusignSigner = {
-  email: string;
+  // Required for esign signers; omit for paper signers (not a DocuSign recipient)
+  email?: string;
   name: string;
+  // 'esign' (default) signs electronically; 'paper' is excluded from the
+  // envelope (no recipient/tabs) for offline signing
+  signMethod?: 'esign' | 'paper';
+  // Optional signing-order override; equal values sign in parallel
+  routingOrder?: string;
+};
+// One document in a multi-instance envelope: either fill a template fresh
+// (documentId + fillData) or reuse a previously generated envelope (envelopeId).
+// signerMap routes a template field's signer_index -> an index in `signers`.
+type DocusignDocumentInstance = {
+  documentId?: string;
+  envelopeId?: string;
+  fillData?: Record<string, any>;
+  signerMap?: Record<string, number>;
 };
 type DocusignLibraryDocuments = {
   library: 'quik';
@@ -45,6 +60,7 @@ type DocusignLibraryDocuments = {
 export type SendDocusignParams = {
   documents?: string[];
   libraryDocuments?: DocusignLibraryDocuments;
+  documentInstances?: DocusignDocumentInstance[];
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
   fillData?: Record<string, any>;
