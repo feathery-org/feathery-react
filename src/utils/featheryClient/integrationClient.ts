@@ -6,7 +6,8 @@ import {
   AlloyEntities,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
-  SendDocusignParams
+  SendDocusignParams,
+  UpdateDocusignEnvelopeParams
 } from '../internalState';
 import { featheryWindow } from '../browser';
 import {
@@ -513,6 +514,32 @@ export default class IntegrationClient {
     });
     const url = `${API_URL}docusign/envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
+  updateDocusignEnvelope({
+    envelopeId,
+    status,
+    voidedReason
+  }: UpdateDocusignEnvelopeParams) {
+    const { userId } = initInfo();
+    const url = `${API_URL}docusign/envelope/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH',
+      body: JSON.stringify({
+        fuser_key: userId,
+        form_key: this.formKey,
+        docusign_envelope_id: envelopeId,
+        status,
+        voided_reason: voidedReason
+      })
+    };
+    return this._fetch(url, options, false).then(async (response) => {
       if (response) {
         if (response.ok) return await response.json();
         else throw Error(parseAPIError(await response.json()));
