@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MODAL_Z_INDEX } from '../../../../utils/styles';
-import {
-  buildReversedFieldValues,
-  FieldColumnMapping
-} from '../../../../utils/spreadsheet';
+import { buildReversedFieldValues } from '../../../../utils/spreadsheet';
 import { MappingSection } from '../spreadsheetMappingSections';
 
 const MAX_PREVIEW_ROWS = 5;
@@ -37,78 +34,81 @@ function SpreadsheetMappingModal({
 }: SpreadsheetMappingModalProps) {
   const [selectedSheet, setSelectedSheet] = useState(0);
   const [step, setStep] = useState(0);
-  // One field->column mapping per sheet index, so switching sheets keeps each
-  // sheet's mapping.
-  const [mappings, setMappings] = useState<Record<number, FieldColumnMapping>>(
-    {}
-  );
+  // A single field->column mapping shared across sheets and steps, keyed by
+  // column HEADER (not position) so switching to a sheet with different columns
+  // never loses or misapplies a selection. Save resolves headers to the
+  // selected sheet's columns.
+  const [mapping, setMapping] = useState<Record<string, string>>({});
 
   // Reset everything whenever a new file (new sheet set) is loaded.
   useEffect(() => {
     setSelectedSheet(0);
     setStep(0);
-    setMappings({});
+    setMapping({});
   }, [sheets]);
 
   const activeSheet = sheets[selectedSheet] ?? sheets[0] ?? EMPTY_SHEET;
   const { headers, rows } = activeSheet;
 
   // Pre-fill: a field whose label matches a column header (case-insensitive)
-  // maps to that column.
+  // maps to that header.
   const prefill = useMemo(() => {
-    const headerToIndex = new Map(
-      headers.map((h, i) => [h.toLowerCase(), i] as const)
-    );
-    const initial: FieldColumnMapping = {};
+    const initial: Record<string, string> = {};
     sections.forEach((sec) =>
       sec.fields.forEach((field) => {
-        const idx = headerToIndex.get(field.label.toLowerCase());
-        if (idx !== undefined) initial[field.key] = idx;
+        const match = headers.find(
+          (h) => h.toLowerCase() === field.label.toLowerCase()
+        );
+        if (match !== undefined) initial[field.key] = match;
       })
     );
     return initial;
   }, [headers, sections]);
 
-  // Seed the prefill the first time a sheet is viewed; never clobber existing.
+  // Auto-fill matching columns for the active sheet, but only for fields the
+  // user hasn't already mapped — never clobber existing selections.
   useEffect(() => {
-    setMappings((prev) =>
-      prev[selectedSheet] ? prev : { ...prev, [selectedSheet]: prefill }
-    );
-  }, [prefill, selectedSheet]);
+    setMapping((prev) => {
+      const next = { ...prev };
+      Object.entries(prefill).forEach(([key, header]) => {
+        if (next[key] === undefined) next[key] = header;
+      });
+      return next;
+    });
+  }, [prefill]);
 
   if (!show || sections.length === 0) return null;
 
-  const mapping = mappings[selectedSheet] ?? {};
+  const headerSet = new Set(headers);
+  // A mapped field only counts / resolves when its header exists on this sheet.
+  const isResolvable = (fieldKey: string) =>
+    mapping[fieldKey] !== undefined && headerSet.has(mapping[fieldKey]);
+
   const currentSection = sections[Math.min(step, sections.length - 1)];
   const isLastStep = step >= sections.length - 1;
   const previewRows = rows.slice(0, MAX_PREVIEW_ROWS);
 
-  const sectionMappedCount = currentSection.fields.filter(
-    (f) => mapping[f.key] != null
+  const sectionMappedCount = currentSection.fields.filter((f) =>
+    isResolvable(f.key)
   ).length;
-  const totalMapped = Object.values(mappings).reduce(
-    (n, m) => n + Object.keys(m).length,
-    0
-  );
+  const totalMapped = Object.keys(mapping).filter(isResolvable).length;
 
-  const setFieldColumn = (fieldKey: string, value: string) =>
-    setMappings((prev) => {
-      const current = { ...(prev[selectedSheet] ?? {}) };
-      if (value === '') delete current[fieldKey];
-      else current[fieldKey] = Number(value);
-      return { ...prev, [selectedSheet]: current };
+  const setFieldColumn = (fieldKey: string, header: string) =>
+    setMapping((prev) => {
+      const next = { ...prev };
+      if (header === '') delete next[fieldKey];
+      else next[fieldKey] = header;
+      return next;
     });
 
-  // Aggregate mapped values across every sheet the user has configured.
+  // Resolve each mapped header to a column in the selected sheet, then pull data.
   const handleSave = () => {
-    const values: Record<string, string[]> = {};
-    sheets.forEach((sheet, i) => {
-      Object.assign(
-        values,
-        buildReversedFieldValues(sheet.rows, mappings[i] ?? {})
-      );
+    const indexMapping: Record<string, number> = {};
+    Object.entries(mapping).forEach(([fieldKey, header]) => {
+      const idx = headers.indexOf(header);
+      if (idx >= 0) indexMapping[fieldKey] = idx;
     });
-    onSave(values);
+    onSave(buildReversedFieldValues(activeSheet.rows, indexMapping));
   };
 
   const fontFamily =
@@ -316,7 +316,7 @@ function SpreadsheetMappingModal({
                     </div>
                     <span css={{ color: '#a1a1aa' }}>=</span>
                     <select
-                      value={mapping[field.key] ?? ''}
+                      value={isResolvable(field.key) ? mapping[field.key] : ''}
                       onChange={(e) =>
                         setFieldColumn(field.key, e.target.value)
                       }
@@ -333,7 +333,7 @@ function SpreadsheetMappingModal({
                     >
                       <option value=''>Select column...</option>
                       {headers.map((header, i) => (
-                        <option key={i} value={i}>
+                        <option key={i} value={header}>
                           {header}
                         </option>
                       ))}
@@ -414,8 +414,8 @@ function SpreadsheetMappingModal({
                   flex: '0 0 auto'
                 }}
               >
-                Showing {previewRows.length} of {rows.length} rows. All values in
-                each mapped column are saved to the field as a list.
+                Showing {previewRows.length} of {rows.length} rows. All values
+                in each mapped column are saved to the field as a list.
               </div>
             </div>
           </div>
