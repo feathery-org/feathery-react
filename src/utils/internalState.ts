@@ -57,6 +57,12 @@ type DocusignLibraryDocuments = {
   }[];
   field_mapping: { roleField: string; featheryField: string }[];
 };
+// Reminder + expiration schedule (day counts). Omit either block to leave that
+// part on the DocuSign account default.
+type DocusignNotification = {
+  reminders?: { enabled?: boolean; delay?: number; frequency?: number };
+  expirations?: { enabled?: boolean; after?: number; warn?: number };
+};
 export type SendDocusignParams = {
   documents?: string[];
   libraryDocuments?: DocusignLibraryDocuments;
@@ -71,6 +77,8 @@ export type SendDocusignParams = {
   wetSign?: boolean;
   // Show recipients the account's Electronic Record and Signature Disclosure
   useDisclosure?: boolean;
+  // Custom reminder/expiration schedule for the envelope
+  notification?: DocusignNotification;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
