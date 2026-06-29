@@ -80,18 +80,16 @@ function SpreadsheetMappingModal({
   if (!show || sections.length === 0) return null;
 
   const headerSet = new Set(headers);
-  // A mapped field only counts / resolves when its header exists on this sheet.
-  const isResolvable = (fieldKey: string) =>
-    mapping[fieldKey] !== undefined && headerSet.has(mapping[fieldKey]);
 
   const currentSection = sections[Math.min(step, sections.length - 1)];
   const isLastStep = step >= sections.length - 1;
   const previewRows = rows.slice(0, MAX_PREVIEW_ROWS);
 
-  const sectionMappedCount = currentSection.fields.filter((f) =>
-    isResolvable(f.key)
+  // Counts reflect every mapped field and don't change when the sheet is swapped.
+  const sectionMappedCount = currentSection.fields.filter(
+    (f) => mapping[f.key] !== undefined
   ).length;
-  const totalMapped = Object.keys(mapping).filter(isResolvable).length;
+  const totalMapped = Object.keys(mapping).length;
 
   const setFieldColumn = (fieldKey: string, header: string) =>
     setMapping((prev) => {
@@ -316,7 +314,7 @@ function SpreadsheetMappingModal({
                     </div>
                     <span css={{ color: '#a1a1aa' }}>=</span>
                     <select
-                      value={isResolvable(field.key) ? mapping[field.key] : ''}
+                      value={mapping[field.key] ?? ''}
                       onChange={(e) =>
                         setFieldColumn(field.key, e.target.value)
                       }
@@ -332,6 +330,14 @@ function SpreadsheetMappingModal({
                       }}
                     >
                       <option value=''>Select column...</option>
+                      {/* Keep a mapped column visible even if it's not on the
+                          current sheet, so the selection (and count) persists. */}
+                      {mapping[field.key] !== undefined &&
+                        !headerSet.has(mapping[field.key]) && (
+                          <option value={mapping[field.key]}>
+                            {mapping[field.key]} (not on this sheet)
+                          </option>
+                        )}
                       {headers.map((header, i) => (
                         <option key={i} value={header}>
                           {header}
