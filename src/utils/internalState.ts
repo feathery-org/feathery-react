@@ -4,6 +4,7 @@ import {
   FieldStyles
 } from './fieldHelperFunctions';
 import Field from './entities/Field';
+import Table from './entities/Table';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
@@ -74,6 +75,7 @@ export interface FormInternalState {
   formName: string;
   formId: string;
   fields: Record<string, Field>;
+  tables: Record<string, Table>;
   products: Record<string, SimplifiedProduct>;
   cart: Cart;
   collaborator: Collaborator;

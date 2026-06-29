@@ -57,7 +57,9 @@ describe('TableElement - row selection', () => {
   beforeEach(() => {
     seedFieldValues();
     // Clear selection state for this table
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
   });
 
   afterEach(() => {
@@ -118,7 +120,9 @@ describe('TableElement - row selection', () => {
 
 describe('remapAfterDelete - helper contract', () => {
   beforeEach(() => {
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
   });
 
   it('remaps selection after a row delete (helper contract used by the hook)', () => {
@@ -145,7 +149,9 @@ describe('useTableMutations - remap wiring', () => {
   };
 
   beforeEach(() => {
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
     jest.clearAllMocks();
   });
 
@@ -179,7 +185,9 @@ describe('useTableMutations - remap wiring', () => {
 describe('I1 - transpose mode disables row selection', () => {
   beforeEach(() => {
     seedFieldValues();
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
   });
 
   afterEach(() => {
@@ -197,9 +205,7 @@ describe('I1 - transpose mode disables row selection', () => {
       />
     );
 
-    expect(
-      screen.queryByRole('checkbox', { name: /select row/i })
-    ).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /select row/i })).toBeNull();
   });
 });
 
@@ -209,7 +215,9 @@ describe('I2 - registerTableRowCount uses base row count', () => {
       name_key: ['Alice', 'Bob', 'Carol', 'Dave', 'Eve'],
       age_key: ['30', '40', '50', '60', '70']
     });
-    Object.keys(tableSelectionState).forEach((k) => delete tableSelectionState[k]);
+    Object.keys(tableSelectionState).forEach(
+      (k) => delete tableSelectionState[k]
+    );
   });
 
   afterEach(() => {
