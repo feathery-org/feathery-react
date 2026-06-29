@@ -138,7 +138,13 @@ describe('parseWorkbook (CSV)', () => {
     const file = new File(['a,b\n1,2'], 'data.csv', { type: 'text/csv' });
     const sheets = await parseWorkbook(file);
     expect(sheets).toEqual([
-      { name: 'Sheet1', rows: [['a', 'b'], ['1', '2']] }
+      {
+        name: 'Sheet1',
+        rows: [
+          ['a', 'b'],
+          ['1', '2']
+        ]
+      }
     ]);
   });
 });

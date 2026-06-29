@@ -37,7 +37,8 @@ function FileUploadField({
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
-  const spreadsheetMappingEnabled = !!servar.metadata.enable_spreadsheet_mapping;
+  const spreadsheetMappingEnabled =
+    !!servar.metadata.enable_spreadsheet_mapping;
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [rawFiles, setRawFiles] = useState<Promise<File>[]>([]);
@@ -209,7 +210,7 @@ function FileUploadField({
       }
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, length);
-      void maybeOpenSpreadsheetMapping(files);
+      maybeOpenSpreadsheetMapping(files);
       fileInput.current?.setCustomValidity('');
 
       // Wipe the value of the upload element so we can upload multiple copies of the same file
@@ -432,9 +433,7 @@ function FileUploadField({
           sections={SPREADSHEET_MAPPING_SECTIONS}
           fileName={mappingState.fileName}
           responsiveStyles={responsiveStyles}
-          onClose={() =>
-            setMappingState((prev) => ({ ...prev, show: false }))
-          }
+          onClose={() => setMappingState((prev) => ({ ...prev, show: false }))}
           onSave={handleSaveMapping}
         />
       )}
