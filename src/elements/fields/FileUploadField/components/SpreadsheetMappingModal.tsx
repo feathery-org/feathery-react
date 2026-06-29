@@ -155,8 +155,8 @@ function SpreadsheetMappingModal({
           position: 'relative',
           backgroundColor: '#fff',
           borderRadius: '14px',
-          width: '90vw',
-          maxWidth: '900px',
+          width: '95vw',
+          maxWidth: '1200px',
           maxHeight: '85vh',
           display: 'flex',
           flexDirection: 'column',
@@ -264,9 +264,10 @@ function SpreadsheetMappingModal({
             {/* Field list for the current section */}
             <div
               css={{
-                flex: '0 0 420px',
+                flex: '0 0 620px',
                 minHeight: 0,
                 overflowY: 'auto',
+                overflowX: 'auto',
                 paddingRight: '4px'
               }}
             >
@@ -291,7 +292,9 @@ function SpreadsheetMappingModal({
                 css={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '10px'
+                  gap: '10px',
+                  width: 'max-content',
+                  minWidth: '100%'
                 }}
               >
                 {currentSection.fields.map((field) => (
@@ -302,8 +305,9 @@ function SpreadsheetMappingModal({
                     <div
                       title={field.label}
                       css={{
-                        flex: 1,
-                        minWidth: 0,
+                        flexShrink: 0,
+                        minWidth: 320,
+                        whiteSpace: 'nowrap',
                         padding: '8px 10px',
                         border: '1px solid #e4e4e7',
                         borderRadius: '6px',
@@ -319,8 +323,8 @@ function SpreadsheetMappingModal({
                         setFieldColumn(field.key, e.target.value)
                       }
                       css={{
-                        flex: 1,
-                        minWidth: 0,
+                        flexShrink: 0,
+                        width: 240,
                         padding: '8px 10px',
                         border: '1px solid #e4e4e7',
                         borderRadius: '6px',
