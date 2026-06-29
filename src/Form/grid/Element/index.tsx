@@ -345,6 +345,10 @@ const Element = ({ node: el, form }: any) => {
               });
             }}
             initialFiles={fieldVal}
+            onApplyMapping={(values: Record<string, string[]>) => {
+              if (values && Object.keys(values).length > 0)
+                updateFieldValues(values);
+            }}
           />
         );
       case 'button_group':
