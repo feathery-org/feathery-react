@@ -150,28 +150,42 @@ const isElementVisible = (state: any, el: any): boolean => {
   return Array.isArray(flags) ? flags.some(Boolean) : true;
 };
 
-export const collectStepperNavigation = (
+export const collectNavigableSteps = (
   state: any
-): Array<{ stepKey: string; element: any }> => {
+): Array<{
+  stepKey: string;
+  element: any;
+  elementType: 'progress_bar' | 'tab';
+}> => {
   const step = state?.currentStep;
   if (!step) return [];
-  const out: Array<{ stepKey: string; element: any }> = [];
+  const out: Array<{
+    stepKey: string;
+    element: any;
+    elementType: 'progress_bar' | 'tab';
+  }> = [];
   const seen = new Set<string>();
   const completedStepKeys = getCompletedStepKeys();
   (step.progress_bars ?? []).forEach((el: any) => {
     if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
     const allowAll = !!el.properties.navigate_to_all_steps;
-    // TODO: remove stepper_steps after BE migration
-    const configs = Array.isArray(el.properties.entries)
-      ? el.properties.entries
-      : el.properties.stepper_steps ?? [];
-    configs.forEach((s: any) => {
+    (el.properties.entries ?? []).forEach((s: any) => {
       const stepKey = s?.step_key;
       if (!stepKey || stepKey === step.key || seen.has(stepKey)) return;
       if (!isStepperStepVisible(s)) return;
       if (!allowAll && !completedStepKeys.has(stepKey)) return;
       seen.add(stepKey);
-      out.push({ stepKey, element: el });
+      out.push({ stepKey, element: el, elementType: 'progress_bar' });
+    });
+  });
+  // Tabs jump freely to any tab's step, no completed-step gating
+  (step.tabs ?? []).forEach((el: any) => {
+    if (!isElementVisible(state, el)) return;
+    (el.properties.entries ?? []).forEach((s: any) => {
+      const stepKey = s?.step_key;
+      if (!stepKey || stepKey === step.key || seen.has(stepKey)) return;
+      seen.add(stepKey);
+      out.push({ stepKey, element: el, elementType: 'tab' });
     });
   });
   return out;
@@ -191,11 +205,7 @@ export const collectNavigationSurfaces = (
     if (seenSurfaceIds.has(surfaceId)) return;
     seenSurfaceIds.add(surfaceId);
     const allowAll = !!el.properties.navigate_to_all_steps;
-    // TODO: remove stepper_steps after BE migration
-    const configs = Array.isArray(el.properties.entries)
-      ? el.properties.entries
-      : el.properties.stepper_steps ?? [];
-    const steps = configs
+    const steps = (el.properties.entries ?? [])
       .filter((s: any) => isStepperStepVisible(s))
       .map((s: any, idx: number) => {
         const stepKey = s?.step_key;
@@ -217,6 +227,35 @@ export const collectNavigationSurfaces = (
         id: surfaceId,
         // Stepper clicks navigate without validating or submitting the current step
         submitsCurrentStep: false,
+        steps
+      });
+  });
+  (step.tabs ?? []).forEach((el: any) => {
+    if (!isElementVisible(state, el)) return;
+    const surfaceId = el.properties.link_id || el.id;
+    if (seenSurfaceIds.has(surfaceId)) return;
+    seenSurfaceIds.add(surfaceId);
+    const steps = (el.properties.entries ?? []).map((s: any, idx: number) => {
+      const stepKey = s?.step_key;
+      const label = String(s?.label ?? '');
+      const position = idx + 1;
+      if (!stepKey) return { label, position, reachable: false };
+      const active = stepKey === step.key;
+      return {
+        stepKey,
+        label,
+        position,
+        ...(active ? { active: true } : {}),
+        // Any tab is reachable, no completed-step gating
+        reachable: !active
+      };
+    });
+    if (steps.length > 0)
+      out.push({
+        surface: 'tab',
+        id: surfaceId,
+        // A tab with submit validates and submits the current step before switching
+        submitsCurrentStep: !!el.properties.submit,
         steps
       });
   });

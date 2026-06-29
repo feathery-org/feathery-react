@@ -1,6 +1,6 @@
 import internalState from '../../utils/internalState';
 import { ACTION_NEXT } from '../../utils/elementActions';
-import { collectStepperNavigation } from './panelRuntime';
+import { collectNavigableSteps } from './panelRuntime';
 import { getLiveStepKey, snapshotInlineErrors } from './utils';
 
 type NavigateErrorType =
@@ -48,7 +48,7 @@ export async function dispatchNavigate(
     };
   }
 
-  const target = collectStepperNavigation(state).find(
+  const target = collectNavigableSteps(state).find(
     (n) => n.stepKey === stepKey
   );
   if (!target) {
@@ -67,7 +67,11 @@ export async function dispatchNavigate(
     await client.runActions({
       actions: [{ type: ACTION_NEXT, next_step_key: stepKey }],
       element: target.element,
-      elementType: 'progress_bar'
+      elementType: target.elementType,
+      // A tab carries its own submit behavior, mirror the live tab click
+      ...(target.elementType === 'tab'
+        ? { submit: !!target.element.properties?.submit }
+        : {})
     });
   } catch (err) {
     return {
