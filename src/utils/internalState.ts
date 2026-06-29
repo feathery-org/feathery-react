@@ -38,6 +38,8 @@ type DocusignSigner = {
   signMethod?: 'esign' | 'paper';
   // Optional signing-order override; equal values sign in parallel
   routingOrder?: string;
+  // Document visibility: 0-based document indices to hide from this signer
+  excludedDocuments?: number[];
 };
 // One document in a multi-instance envelope: either fill a template fresh
 // (documentId + fillData) or reuse a previously generated envelope (envelopeId).
@@ -79,6 +81,11 @@ export type SendDocusignParams = {
   useDisclosure?: boolean;
   // Custom reminder/expiration schedule for the envelope
   notification?: DocusignNotification;
+  // DocuSign brand profile GUID to apply to the envelope
+  brandId?: string;
+  // Enforce per-signer document visibility (auto-on when a signer has
+  // excludedDocuments)
+  enforceSignerVisibility?: boolean;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
