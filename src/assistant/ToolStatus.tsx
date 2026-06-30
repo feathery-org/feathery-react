@@ -65,17 +65,9 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     running: 'Reading extraction results...',
     done: 'Reviewed the extraction results'
   },
-  listFormExtractions: {
-    running: 'Looking up extractions...',
-    done: 'Reviewed available extractions'
-  },
   getLogicRules: {
     running: 'Reading form logic...',
     done: 'Reviewed form logic'
-  },
-  listFormHubs: {
-    running: 'Looking up records on file...',
-    done: 'Reviewed available records'
   },
   getHubSchema: {
     running: 'Reading record setup...',
