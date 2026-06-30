@@ -345,6 +345,14 @@ const Element = ({ node: el, form }: any) => {
               });
             }}
             initialFiles={fieldVal}
+            onApplyMapping={(values: Record<string, string[]>) => {
+              if (values && Object.keys(values).length > 0) {
+                // Update in-memory values AND persist them (updateFieldValues
+                // alone only updates local state, like the store-field action).
+                updateFieldValues(values);
+                submitCustom(values);
+              }
+            }}
           />
         );
       case 'button_group':

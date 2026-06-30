@@ -9,6 +9,15 @@ import {
 import { imgMaxSizeStyles } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
+import {
+  isSpreadsheetFile,
+  normalizeSpreadsheet,
+  parseWorkbook
+} from '../../../utils/spreadsheet';
+import SpreadsheetMappingModal, {
+  MappingSheet
+} from './components/SpreadsheetMappingModal';
+import { SPREADSHEET_MAPPING_SECTIONS } from './spreadsheetMappingSections';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -22,11 +31,14 @@ function FileUploadField({
   onChange: customOnChange = () => {},
   initialFiles = [],
   elementProps = {},
+  onApplyMapping = () => {},
   children
 }: any) {
   const servar = element.servar;
   const showLabel = servar.name !== '';
   const isMultiple = servar.metadata.multiple;
+  const spreadsheetMappingEnabled =
+    !!servar.metadata.enable_spreadsheet_mapping;
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [rawFiles, setRawFiles] = useState<Promise<File>[]>([]);
@@ -34,6 +46,36 @@ function FileUploadField({
   const [failedThumbnails, setFailedThumbnails] = useState<Set<number>>(
     new Set()
   );
+  const [mappingState, setMappingState] = useState<{
+    show: boolean;
+    sheets: MappingSheet[];
+    fileName?: string;
+  }>({ show: false, sheets: [] });
+
+  // When enabled, parse a freshly-uploaded spreadsheet and open the mapping modal.
+  const maybeOpenSpreadsheetMapping = async (files: File[]) => {
+    if (editMode || !spreadsheetMappingEnabled) return;
+    const file = files[0];
+    if (!file || !isSpreadsheetFile(file)) return;
+    try {
+      const sheets = (await parseWorkbook(file))
+        .map((sheet) => ({
+          name: sheet.name,
+          ...normalizeSpreadsheet(sheet.rows)
+        }))
+        // Keep only sheets that actually have data after empty-column removal.
+        .filter((sheet) => sheet.headers.length > 0 && sheet.rows.length > 0);
+      if (sheets.length === 0) return;
+      setMappingState({ show: true, sheets, fileName: file.name });
+    } catch (e) {
+      // Parsing failed; silently skip mapping (the file is still uploaded).
+    }
+  };
+
+  const handleSaveMapping = (values: Record<string, string[]>) => {
+    onApplyMapping(values);
+    setMappingState((prev) => ({ ...prev, show: false }));
+  };
 
   useEffect(() => {
     // Prevent infinite loop of setting a new empty array as the value
@@ -168,6 +210,7 @@ function FileUploadField({
       }
       setRawFiles(newRawFiles);
       customOnChange(newRawFiles, length);
+      maybeOpenSpreadsheetMapping(files);
       fileInput.current?.setCustomValidity('');
 
       // Wipe the value of the upload element so we can upload multiple copies of the same file
@@ -383,6 +426,17 @@ function FileUploadField({
           zIndex: FORM_Z_INDEX - 2
         }}
       />
+      {spreadsheetMappingEnabled && (
+        <SpreadsheetMappingModal
+          show={mappingState.show}
+          sheets={mappingState.sheets}
+          sections={SPREADSHEET_MAPPING_SECTIONS}
+          fileName={mappingState.fileName}
+          responsiveStyles={responsiveStyles}
+          onClose={() => setMappingState((prev) => ({ ...prev, show: false }))}
+          onSave={handleSaveMapping}
+        />
+      )}
     </div>
   );
 }
