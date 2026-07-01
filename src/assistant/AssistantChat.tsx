@@ -71,7 +71,7 @@ import {
   dispatchSetTableCellValue
 } from './tools/tableMutations';
 
-const FAB_SIZE = 56;
+const FAB_SIZE = 50;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
 
@@ -226,6 +226,9 @@ export type AssistantChatProps = {
   workflowActions?: WorkflowAction[];
   allowedModes?: AssistantMode[];
   onLayoutChange?: null | ((state: AssistantLayoutState) => void);
+  // Collapse and go silent while another surface (e.g. the dashboard Builder) owns
+  // the screen. Stays mounted so the thread, scroll, and open intent survive.
+  forceClosed?: boolean;
 };
 
 const AssistantChat = ({
@@ -238,7 +241,8 @@ const AssistantChat = ({
   voiceEnabled = false,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
-  onLayoutChange
+  onLayoutChange,
+  forceClosed = false
 }: AssistantChatProps) => {
   const headers = useMemo<AssistantHeaders>(() => {
     if (getJwt) return () => ({ Authorization: `Bearer ${getJwt()}` });
@@ -779,6 +783,11 @@ const AssistantChat = ({
     voiceDataRef
   });
 
+  // Go silent while another surface owns the screen (display:none alone can't stop voice)
+  useEffect(() => {
+    if (forceClosed) stopVoice();
+  }, [forceClosed, stopVoice]);
+
   // Voice: keep the view pinned to the bottom as the reply reveals during playback
   useEffect(() => {
     pinToBottom();
@@ -844,19 +853,23 @@ const AssistantChat = ({
       : mode === 'sidebar-right'
       ? 'right'
       : null;
-  const layoutWidth = isOpen && layoutSide ? sidebarWidth : 0;
+  // forceClosed collapses without unmounting, so the reported layout reflects hidden
+  const effectiveOpen = isOpen && !forceClosed;
+  const layoutWidth = effectiveOpen && layoutSide ? sidebarWidth : 0;
 
   const onLayoutChangeRef = useRef(onLayoutChange);
   onLayoutChangeRef.current = onLayoutChange;
   useEffect(() => {
     onLayoutChangeRef.current?.({
       mode,
-      isOpen,
+      isOpen: effectiveOpen,
       side: layoutSide,
       width: layoutWidth,
       isResizing
     });
-  }, [mode, isOpen, layoutSide, layoutWidth, isResizing]);
+  }, [mode, effectiveOpen, layoutSide, layoutWidth, isResizing]);
+
+  if (forceClosed) return null;
 
   const CollapseIcon =
     mode === 'sidebar-left'
