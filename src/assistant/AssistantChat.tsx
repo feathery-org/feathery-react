@@ -57,6 +57,7 @@ import {
 import { initInfo } from '../utils/init';
 import { featheryDoc, featheryWindow, getCookie } from '../utils/browser';
 import {
+  ensureCompletedSteps,
   getCurrentStepKey,
   getPanelRuntimeSnapshot
 } from './tools/panelRuntime';
@@ -767,7 +768,10 @@ const AssistantChat = ({
     skipSpeaking
   } = useAssistantVoice({
     status,
-    sendMessage: (message) => sendMessage(message),
+    sendMessage: async (message) => {
+      await ensureCompletedSteps(instanceId);
+      return sendMessage(message);
+    },
     setMessages,
     ensureThread: registerActiveThread,
     voiceActiveRef,
@@ -780,17 +784,19 @@ const AssistantChat = ({
     pinToBottom();
   }, [spokenChars, audioDraining, pinToBottom]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (input.trim() && status === 'ready') {
       registerActiveThread();
+      await ensureCompletedSteps(instanceId);
       sendMessage({ text: input });
       setInput('');
     }
   };
 
-  const handleWorkflowAction = (action: WorkflowAction) => {
+  const handleWorkflowAction = async (action: WorkflowAction) => {
     if (status !== 'ready') return;
     registerActiveThread();
+    await ensureCompletedSteps(instanceId);
     sendMessage({
       parts: [
         { type: 'text', text: action.name },

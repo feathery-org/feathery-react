@@ -1,5 +1,9 @@
 import internalState from '../../utils/internalState';
-import { getCompletedStepKeys, initState } from '../../utils/init';
+import {
+  getCompletedStepKeys,
+  initState,
+  loadCompletedSteps
+} from '../../utils/init';
 import { replaceTextVariables } from '../../elements/components/TextNodes';
 import {
   getRepeatedContainer,
@@ -10,7 +14,10 @@ import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
 import { isButtonDisabled } from '../../utils/button';
 import { ACTION_BACK, ACTION_NEXT } from '../../utils/elementActions';
 import { getPrevStepKey, nextStepKey } from '../../utils/stepHelperFunctions';
-import { isStepperStepVisible } from '../../utils/stepper';
+import {
+  isStepperStepReachable,
+  isStepperStepVisible
+} from '../../utils/stepper';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 
 export type PanelRuntimeFieldEntry = {
@@ -144,6 +151,15 @@ const resolveText = (text: string, repeat?: number): string => {
 export const getCurrentStepKey = (formId: string): string | undefined =>
   internalState[formId]?.currentStep?.key;
 
+// Hydrate prior-session completed steps so a snapshot's stepper reachability is correct on the first turn
+export const ensureCompletedSteps = async (
+  formId: string | undefined
+): Promise<void> => {
+  if (!formId) return;
+  const client = internalState[formId]?.client;
+  if (client) await loadCompletedSteps(client);
+};
+
 const isElementVisible = (state: any, el: any): boolean => {
   const positionKey = el.position?.join(',') || 'root';
   const flags = (state.visiblePositions ?? {})[positionKey];
@@ -168,12 +184,19 @@ export const collectNavigableSteps = (
   const completedStepKeys = getCompletedStepKeys();
   (step.progress_bars ?? []).forEach((el: any) => {
     if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
-    const allowAll = !!el.properties.navigate_to_all_steps;
-    (el.properties.entries ?? []).forEach((s: any) => {
+    const allowAll = !!el.properties?.navigate_to_all_steps;
+    (el.properties?.entries ?? []).forEach((s: any) => {
       const stepKey = s?.step_key;
-      if (!stepKey || stepKey === step.key || seen.has(stepKey)) return;
-      if (!isStepperStepVisible(s)) return;
-      if (!allowAll && !completedStepKeys.has(stepKey)) return;
+      if (!stepKey || seen.has(stepKey) || !isStepperStepVisible(s)) return;
+      const active = stepKey === step.key;
+      if (
+        !isStepperStepReachable(
+          active,
+          allowAll,
+          completedStepKeys.has(stepKey)
+        )
+      )
+        return;
       seen.add(stepKey);
       out.push({ stepKey, element: el, elementType: 'progress_bar' });
     });
@@ -181,7 +204,7 @@ export const collectNavigableSteps = (
   // Tabs jump freely to any tab's step, no completed-step gating
   (step.tabs ?? []).forEach((el: any) => {
     if (!isElementVisible(state, el)) return;
-    (el.properties.entries ?? []).forEach((s: any) => {
+    (el.properties?.entries ?? []).forEach((s: any) => {
       const stepKey = s?.step_key;
       if (!stepKey || stepKey === step.key || seen.has(stepKey)) return;
       seen.add(stepKey);
@@ -201,11 +224,11 @@ export const collectNavigationSurfaces = (
   const completedStepKeys = getCompletedStepKeys();
   (step.progress_bars ?? []).forEach((el: any) => {
     if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
-    const surfaceId = el.properties.link_id || el.id;
+    const surfaceId = el.properties?.link_id || el.id;
     if (seenSurfaceIds.has(surfaceId)) return;
     seenSurfaceIds.add(surfaceId);
-    const allowAll = !!el.properties.navigate_to_all_steps;
-    const steps = (el.properties.entries ?? [])
+    const allowAll = !!el.properties?.navigate_to_all_steps;
+    const steps = (el.properties?.entries ?? [])
       .filter((s: any) => isStepperStepVisible(s))
       .map((s: any, idx: number) => {
         const stepKey = s?.step_key;
@@ -218,7 +241,11 @@ export const collectNavigationSurfaces = (
           label,
           position,
           ...(active ? { active: true } : {}),
-          reachable: !active && (allowAll || completedStepKeys.has(stepKey))
+          reachable: isStepperStepReachable(
+            active,
+            allowAll,
+            completedStepKeys.has(stepKey)
+          )
         };
       });
     if (steps.length > 0)
@@ -232,10 +259,10 @@ export const collectNavigationSurfaces = (
   });
   (step.tabs ?? []).forEach((el: any) => {
     if (!isElementVisible(state, el)) return;
-    const surfaceId = el.properties.link_id || el.id;
+    const surfaceId = el.properties?.link_id || el.id;
     if (seenSurfaceIds.has(surfaceId)) return;
     seenSurfaceIds.add(surfaceId);
-    const steps = (el.properties.entries ?? []).map((s: any, idx: number) => {
+    const steps = (el.properties?.entries ?? []).map((s: any, idx: number) => {
       const stepKey = s?.step_key;
       const label = String(s?.label ?? '');
       const position = idx + 1;
@@ -255,7 +282,7 @@ export const collectNavigationSurfaces = (
         surface: 'tab',
         id: surfaceId,
         // A tab with submit validates and submits the current step before switching
-        submitsCurrentStep: !!el.properties.submit,
+        submitsCurrentStep: !!el.properties?.submit,
         steps
       });
   });

@@ -162,7 +162,7 @@ export async function dispatchClickElement(
   }
 
   const client = state.assistantClient;
-  const fromStepKey = getLiveStepKey(state);
+  const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
 
   const elementForDispatch =

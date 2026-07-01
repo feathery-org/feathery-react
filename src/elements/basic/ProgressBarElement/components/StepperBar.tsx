@@ -1,6 +1,9 @@
 import React from 'react';
 import { getCompletedStepKeys } from '../../../../utils/init';
-import { isStepperStepVisible } from '../../../../utils/stepper';
+import {
+  isStepperStepReachable,
+  isStepperStepVisible
+} from '../../../../utils/stepper';
 
 const CIRCLE_SIZE = 28;
 const CONNECTOR_GAP = 4;
@@ -93,8 +96,7 @@ function StepperBar({
       const isClickable =
         !!onStepClick &&
         !!sKey &&
-        !isActive &&
-        (allowAllNavigation || isCompleted);
+        isStepperStepReachable(isActive, allowAllNavigation, isCompleted);
 
       const connectorStyle = vertical
         ? {

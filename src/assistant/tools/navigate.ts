@@ -40,7 +40,7 @@ export async function dispatchNavigate(
       error: 'Form has not loaded yet.'
     };
   }
-  if (typeof stepKey !== 'string' || stepKey.length === 0) {
+  if (stepKey.length === 0) {
     return {
       ok: false,
       errorType: 'shape_mismatch',
@@ -60,7 +60,7 @@ export async function dispatchNavigate(
   }
 
   const client = state.assistantClient;
-  const fromStepKey = getLiveStepKey(state);
+  const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
 
   try {

@@ -82,7 +82,7 @@ export async function dispatchTriggerTableAction(
   }
 
   const rowData = buildRowData(lookup.found, rowIndex);
-  const fromStepKey = getLiveStepKey(state);
+  const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
 
   try {
