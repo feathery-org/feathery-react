@@ -41,15 +41,18 @@ type DocusignSigner = {
   // Document visibility: 0-based document indices to hide from this signer
   excludedDocuments?: number[];
 };
-// One document in a multi-instance envelope: either fill a template fresh
-// (documentId + fillData) or reuse a previously generated envelope (envelopeId).
-// signerMap routes a template field's signer_index -> an index in `signers`.
-type DocusignDocumentInstance = {
-  documentId?: string;
-  envelopeId?: string;
-  fillData?: Record<string, any>;
-  signerMap?: Record<string, number>;
-};
+// A document entry can be a plain template UUID string, or an object form for
+// multi-instance envelopes: fill a template fresh (documentId + fillData) or
+// reuse a previously generated envelope (envelopeId). signerMap routes a
+// template field's signer_index -> an index in `signers`.
+type DocusignDocument =
+  | string
+  | {
+      documentId?: string;
+      envelopeId?: string;
+      fillData?: Record<string, any>;
+      signerMap?: Record<string, number>;
+    };
 type DocusignLibraryDocuments = {
   library: 'quik';
   groups: {
@@ -66,9 +69,10 @@ type DocusignNotification = {
   expirations?: { enabled?: boolean; after?: number; warn?: number };
 };
 export type SendDocusignParams = {
-  documents?: string[];
+  // UUID strings for simple envelopes, or objects to fill the same template
+  // multiple times / route copies to different signers (see DocusignDocument).
+  documents?: DocusignDocument[];
   libraryDocuments?: DocusignLibraryDocuments;
-  documentInstances?: DocusignDocumentInstance[];
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
   fillData?: Record<string, any>;
