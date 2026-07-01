@@ -485,34 +485,25 @@ export default class IntegrationClient {
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
-    // `documents` is polymorphic: plain UUID strings, or objects for
-    // multi-instance envelopes. When any object is present, send everything as
-    // document_instances (a bare string becomes { document_id }); otherwise
-    // send the simple string list.
-    const usesInstances = (documents ?? []).some(
-      (doc) => typeof doc === 'object' && doc !== null
-    );
-    const documentInstances = usesInstances
-      ? (documents ?? []).map((doc) =>
-          typeof doc === 'string'
-            ? { document_id: doc }
-            : {
-                document_id: doc.documentId,
-                envelope_id: doc.envelopeId,
-                fill_data: doc.fillData,
-                signer_map: doc.signerMap
-              }
-        )
-      : undefined;
     const options = {
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
       body: JSON.stringify({
         fuser_key: userId,
         form_key: this.formKey,
-        documents: usesInstances ? undefined : documents,
+        // Polymorphic: plain UUID strings pass through; object entries are
+        // sent with snake_case keys for multi-instance envelopes.
+        documents: documents?.map((doc) =>
+          typeof doc === 'string'
+            ? doc
+            : {
+                document_id: doc.documentId,
+                envelope_id: doc.envelopeId,
+                fill_data: doc.fillData,
+                signer_map: doc.signerMap
+              }
+        ),
         library_documents: libraryDocuments,
-        document_instances: documentInstances,
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
