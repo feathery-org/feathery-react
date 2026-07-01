@@ -93,7 +93,11 @@ import {
   setupPaymentMethod,
   usePayments
 } from '../integrations/stripe';
-import { ActionData, trackEvent } from '../integrations/utils';
+import {
+  ActionData,
+  filterTrackedFields,
+  trackEvent
+} from '../integrations/utils';
 import DevNavBar from './components/DevNavBar';
 import FeatherySpinner from '../elements/components/Spinner';
 import CallbackQueue from '../utils/callbackQueue';
@@ -138,6 +142,7 @@ import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   GetDocusignEnvelopeParams,
   SendDocusignParams,
+  UpdateDocusignEnvelopeParams,
   setFormInternalState
 } from '../utils/internalState';
 import {
@@ -952,11 +957,21 @@ function Form({
 
     const data = { ...fieldValues };
     const fieldData: Record<string, any> = {};
-    if (integrations?.segment?.metadata.track_fields) fieldData.segment = data;
+    if (integrations?.segment?.metadata.track_fields)
+      fieldData.segment = filterTrackedFields(
+        data,
+        integrations.segment.metadata.track_field_keys
+      );
     if (integrations?.amplitude?.metadata.track_fields)
-      fieldData.amplitude = data;
+      fieldData.amplitude = filterTrackedFields(
+        data,
+        integrations.amplitude.metadata.track_field_keys
+      );
     if (integrations?.['google-tag-manager']?.metadata.track_fields)
-      fieldData['google-tag-manager'] = data;
+      fieldData['google-tag-manager'] = filterTrackedFields(
+        data,
+        integrations['google-tag-manager'].metadata.track_field_keys
+      );
     trackEvent(integrations, 'FeatheryFormComplete', '', formName, fieldData);
 
     await runUserLogic('form_complete');
@@ -1212,6 +1227,8 @@ function Form({
         },
         getDocusignEnvelope: (params: GetDocusignEnvelopeParams) =>
           client.getDocusignEnvelope(params),
+        updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
+          client.updateDocusignEnvelope(params),
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,
@@ -1708,17 +1725,28 @@ function Form({
 
     const fieldData: Record<string, any> = {};
     if (integrations?.segment?.metadata.track_fields)
-      fieldData.segment = formattedFields;
+      fieldData.segment = filterTrackedFields(
+        formattedFields,
+        integrations.segment.metadata.track_field_keys
+      );
     if (integrations?.amplitude?.metadata.track_fields)
-      fieldData.amplitude = formattedFields;
-    if (integrations?.['google-tag-manager']?.metadata.track_fields)
-      fieldData['google-tag-manager'] = Object.entries(formattedFields).reduce(
+      fieldData.amplitude = filterTrackedFields(
+        formattedFields,
+        integrations.amplitude.metadata.track_field_keys
+      );
+    if (integrations?.['google-tag-manager']?.metadata.track_fields) {
+      const gtmFields = filterTrackedFields(
+        formattedFields,
+        integrations['google-tag-manager'].metadata.track_field_keys
+      );
+      fieldData['google-tag-manager'] = Object.entries(gtmFields).reduce(
         (obj, [key, val]) => {
           obj[key] = val.value;
           return obj;
         },
         {} as Record<string, any>
       );
+    }
     trackEvent(
       integrations,
       'FeatheryStepSubmit',
