@@ -95,6 +95,7 @@ export default function DevNavBar({
           maxHeight: '300px',
           width: '200px',
           backgroundColor: 'white',
+          color: 'black',
           boxShadow: '0 4px 14px #00000040',
           borderRadius: '6px',
           overflowY: 'scroll',
