@@ -90,6 +90,9 @@ export type SendDocusignParams = {
   // Enforce per-signer document visibility (auto-on when a signer has
   // excludedDocuments)
   enforceSignerVisibility?: boolean;
+  // Fill documents only from fillData, ignoring the template's field mapping
+  // to the fuser's stored field values
+  ignoreTemplateFieldMapping?: boolean;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
