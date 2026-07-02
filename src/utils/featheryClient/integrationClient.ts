@@ -477,7 +477,12 @@ export default class IntegrationClient {
     emailBlurb,
     signers,
     existingEnvelopeId,
-    draft
+    draft,
+    wetSign,
+    useDisclosure,
+    notification,
+    brandId,
+    enforceSignerVisibility
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -487,14 +492,36 @@ export default class IntegrationClient {
       body: JSON.stringify({
         fuser_key: userId,
         form_key: this.formKey,
-        documents,
+        // Polymorphic: plain UUID strings pass through; object entries are
+        // sent with snake_case keys for multi-instance envelopes.
+        documents: documents?.map((doc) =>
+          typeof doc === 'string'
+            ? doc
+            : {
+                document_id: doc.documentId,
+                envelope_id: doc.envelopeId,
+                fill_data: doc.fillData,
+                signer_map: doc.signerMap
+              }
+        ),
         library_documents: libraryDocuments,
         fill_data: fillData,
         email_subject: emailSubject,
         email_blurb: emailBlurb,
-        signers: signers,
+        signers: signers?.map((signer) => ({
+          email: signer.email,
+          name: signer.name,
+          sign_method: signer.signMethod,
+          routing_order: signer.routingOrder,
+          excluded_documents: signer.excludedDocuments
+        })),
         docusign_envelope_id: existingEnvelopeId,
-        draft
+        draft,
+        wet_sign: wetSign,
+        use_disclosure: useDisclosure,
+        notification,
+        brand_id: brandId,
+        enforce_signer_visibility: enforceSignerVisibility
       })
     };
     return this._fetch(url, options, false).then(async (response) => {

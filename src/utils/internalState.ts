@@ -30,9 +30,29 @@ export type GetConfig = ({
   unique
 }: GetConfigParams) => Promise<Record<string, any>[]>;
 type DocusignSigner = {
-  email: string;
+  // Required for esign signers; omit for paper signers (not a DocuSign recipient)
+  email?: string;
   name: string;
+  // 'esign' (default) signs electronically; 'paper' is excluded from the
+  // envelope (no recipient/tabs) for offline signing
+  signMethod?: 'esign' | 'paper';
+  // Optional signing-order override; equal values sign in parallel
+  routingOrder?: string;
+  // Document visibility: 0-based document indices to hide from this signer
+  excludedDocuments?: number[];
 };
+// A document entry can be a plain template UUID string, or an object form for
+// multi-instance envelopes: fill a template fresh (documentId + fillData) or
+// reuse a previously generated envelope (envelopeId). signerMap routes a
+// template field's signer_index -> an index in `signers`.
+type DocusignDocument =
+  | string
+  | {
+      documentId?: string;
+      envelopeId?: string;
+      fillData?: Record<string, any>;
+      signerMap?: Record<string, number>;
+    };
 type DocusignLibraryDocuments = {
   library: 'quik';
   groups: {
@@ -42,8 +62,16 @@ type DocusignLibraryDocuments = {
   }[];
   field_mapping: { roleField: string; featheryField: string }[];
 };
+// Reminder + expiration schedule (day counts). Omit either block to leave that
+// part on the DocuSign account default.
+type DocusignNotification = {
+  reminders?: { enabled?: boolean; delay?: number; frequency?: number };
+  expirations?: { enabled?: boolean; after?: number; warn?: number };
+};
 export type SendDocusignParams = {
-  documents?: string[];
+  // UUID strings for simple envelopes, or objects to fill the same template
+  // multiple times / route copies to different signers (see DocusignDocument).
+  documents?: DocusignDocument[];
   libraryDocuments?: DocusignLibraryDocuments;
   existingEnvelopeId?: string;
   signers?: DocusignSigner[];
@@ -51,6 +79,17 @@ export type SendDocusignParams = {
   emailSubject?: string;
   emailBlurb?: string;
   draft?: boolean;
+  // Designate the envelope for wet (on-paper) signing; signers become optional
+  wetSign?: boolean;
+  // Show recipients the account's Electronic Record and Signature Disclosure
+  useDisclosure?: boolean;
+  // Custom reminder/expiration schedule for the envelope
+  notification?: DocusignNotification;
+  // DocuSign brand profile GUID to apply to the envelope
+  brandId?: string;
+  // Enforce per-signer document visibility (auto-on when a signer has
+  // excludedDocuments)
+  enforceSignerVisibility?: boolean;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
