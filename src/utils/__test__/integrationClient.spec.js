@@ -603,6 +603,26 @@ describe('IntegrationClient', () => {
       expect(body.documents).toEqual(['doc-1']);
       expect(result).toEqual({ docusign_envelope_id: 'wet-1' });
     });
+
+    it('forwards ignoreTemplateFieldMapping as ignore_template_field_mapping', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        fillData: { some_field_key: 'a string' },
+        ignoreTemplateFieldMapping: true
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.ignore_template_field_mapping).toBe(true);
+      expect(body.fill_data).toEqual({ some_field_key: 'a string' });
+    });
   });
 
   describe('updateDocusignEnvelope', () => {
