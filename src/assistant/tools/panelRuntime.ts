@@ -1,5 +1,9 @@
 import internalState from '../../utils/internalState';
-import { initState } from '../../utils/init';
+import {
+  getCompletedStepKeys,
+  initState,
+  loadCompletedSteps
+} from '../../utils/init';
 import { replaceTextVariables } from '../../elements/components/TextNodes';
 import {
   getRepeatedContainer,
@@ -8,6 +12,12 @@ import {
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
 import { isButtonDisabled } from '../../utils/button';
+import { ACTION_BACK, ACTION_NEXT } from '../../utils/elementActions';
+import { getPrevStepKey, nextStepKey } from '../../utils/stepHelperFunctions';
+import {
+  isStepperStepReachable,
+  isStepperStepVisible
+} from '../../utils/stepper';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 
 export type PanelRuntimeFieldEntry = {
@@ -63,6 +73,7 @@ export type PanelRuntimeElementEntry =
       disabled: boolean;
       submit: boolean;
       actions: Array<Record<string, unknown>>;
+      navigatesTo?: string | null;
       hasLogicRules?: boolean;
       repeatContainerId?: string;
     }
@@ -74,12 +85,20 @@ export type PanelRuntimeElementEntry =
       hasLogicRules?: boolean;
       clickableAncestorIds?: string[];
       repeatContainerId?: string;
-    }
-  | {
-      type: 'progress';
-      segments?: number;
-      visible: boolean;
     };
+
+export type PanelRuntimeNavigationSurface = {
+  surface: 'stepper' | 'tab';
+  id: string;
+  submitsCurrentStep: boolean;
+  steps: Array<{
+    stepKey?: string;
+    label: string;
+    position: number;
+    active?: boolean;
+    reachable: boolean;
+  }>;
+};
 
 export type PanelRuntimeTableEntry = {
   id: string;
@@ -96,7 +115,8 @@ export type PanelRuntimeTableEntry = {
 export type PanelRuntimeSnapshot = {
   currentStep: { id: string; key: string };
   previousStepName?: string;
-  totalSteps: number;
+  activeStepKey: string;
+  navigationSurfaces: PanelRuntimeNavigationSurface[];
   currentStepFields: PanelRuntimeFieldEntry[];
   currentStepElements: PanelRuntimeElementEntry[];
   currentStepTables: PanelRuntimeTableEntry[];
@@ -130,6 +150,144 @@ const resolveText = (text: string, repeat?: number): string => {
 
 export const getCurrentStepKey = (formId: string): string | undefined =>
   internalState[formId]?.currentStep?.key;
+
+// Hydrate prior-session completed steps so a snapshot's stepper reachability is correct on the first turn
+export const ensureCompletedSteps = async (
+  formId: string | undefined
+): Promise<void> => {
+  if (!formId) return;
+  const client = internalState[formId]?.client;
+  if (client) await loadCompletedSteps(client);
+};
+
+const isElementVisible = (state: any, el: any): boolean => {
+  const positionKey = el.position?.join(',') || 'root';
+  const flags = (state.visiblePositions ?? {})[positionKey];
+  return Array.isArray(flags) ? flags.some(Boolean) : true;
+};
+
+export const collectNavigableSteps = (
+  state: any
+): Array<{
+  stepKey: string;
+  element: any;
+  elementType: 'progress_bar' | 'tab';
+}> => {
+  const step = state?.currentStep;
+  if (!step) return [];
+  const out: Array<{
+    stepKey: string;
+    element: any;
+    elementType: 'progress_bar' | 'tab';
+  }> = [];
+  const seen = new Set<string>();
+  const completedStepKeys = getCompletedStepKeys();
+  (step.progress_bars ?? []).forEach((el: any) => {
+    if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
+    const allowAll = !!el.properties?.navigate_to_all_steps;
+    (el.properties?.entries ?? []).forEach((s: any) => {
+      const stepKey = s?.step_key;
+      if (!stepKey || seen.has(stepKey) || !isStepperStepVisible(s)) return;
+      const active = stepKey === step.key;
+      if (
+        !isStepperStepReachable(
+          active,
+          allowAll,
+          completedStepKeys.has(stepKey)
+        )
+      )
+        return;
+      seen.add(stepKey);
+      out.push({ stepKey, element: el, elementType: 'progress_bar' });
+    });
+  });
+  // Tabs jump freely to any tab's step, no completed-step gating
+  (step.tabs ?? []).forEach((el: any) => {
+    if (!isElementVisible(state, el)) return;
+    (el.properties?.entries ?? []).forEach((s: any) => {
+      const stepKey = s?.step_key;
+      if (!stepKey || stepKey === step.key || seen.has(stepKey)) return;
+      seen.add(stepKey);
+      out.push({ stepKey, element: el, elementType: 'tab' });
+    });
+  });
+  return out;
+};
+
+export const collectNavigationSurfaces = (
+  state: any
+): PanelRuntimeNavigationSurface[] => {
+  const step = state?.currentStep;
+  if (!step) return [];
+  const out: PanelRuntimeNavigationSurface[] = [];
+  const seenSurfaceIds = new Set<string>();
+  const completedStepKeys = getCompletedStepKeys();
+  (step.progress_bars ?? []).forEach((el: any) => {
+    if (!el?.properties?.stepper || !isElementVisible(state, el)) return;
+    const surfaceId = el.properties?.link_id || el.id;
+    if (seenSurfaceIds.has(surfaceId)) return;
+    seenSurfaceIds.add(surfaceId);
+    const allowAll = !!el.properties?.navigate_to_all_steps;
+    const steps = (el.properties?.entries ?? [])
+      .filter((s: any) => isStepperStepVisible(s))
+      .map((s: any, idx: number) => {
+        const stepKey = s?.step_key;
+        const label = String(s?.label ?? '');
+        const position = idx + 1;
+        if (!stepKey) return { label, position, reachable: false };
+        const active = stepKey === step.key;
+        return {
+          stepKey,
+          label,
+          position,
+          ...(active ? { active: true } : {}),
+          reachable: isStepperStepReachable(
+            active,
+            allowAll,
+            completedStepKeys.has(stepKey)
+          )
+        };
+      });
+    if (steps.length > 0)
+      out.push({
+        surface: 'stepper',
+        id: surfaceId,
+        // Stepper clicks navigate without validating or submitting the current step
+        submitsCurrentStep: false,
+        steps
+      });
+  });
+  (step.tabs ?? []).forEach((el: any) => {
+    if (!isElementVisible(state, el)) return;
+    const surfaceId = el.properties?.link_id || el.id;
+    if (seenSurfaceIds.has(surfaceId)) return;
+    seenSurfaceIds.add(surfaceId);
+    const steps = (el.properties?.entries ?? []).map((s: any, idx: number) => {
+      const stepKey = s?.step_key;
+      const label = String(s?.label ?? '');
+      const position = idx + 1;
+      if (!stepKey) return { label, position, reachable: false };
+      const active = stepKey === step.key;
+      return {
+        stepKey,
+        label,
+        position,
+        ...(active ? { active: true } : {}),
+        // Any tab is reachable, no completed-step gating
+        reachable: !active
+      };
+    });
+    if (steps.length > 0)
+      out.push({
+        surface: 'tab',
+        id: surfaceId,
+        // A tab with submit validates and submits the current step before switching
+        submitsCurrentStep: !!el.properties?.submit,
+        steps
+      });
+  });
+  return out;
+};
 
 // Mirrors canRunAction in utils/elementActions.ts; step events run for every in-scope step, element events require elementId in rule.elements.
 const STEP_EVENTS = new Set(['submit', 'load']);
@@ -345,11 +503,7 @@ export const getPanelRuntimeSnapshot = (
   }
 
   const currentStepElements: PanelRuntimeElementEntry[] = [];
-  const visibilityFor = (el: any): boolean => {
-    const positionKey = el.position?.join(',') || 'root';
-    const flags = visiblePositions[positionKey];
-    return Array.isArray(flags) ? flags.some(Boolean) : true;
-  };
+  const visibilityFor = (el: any): boolean => isElementVisible(state, el);
 
   clickableSubgrids.forEach((sg: any) => {
     const actions = sg.properties.actions;
@@ -415,6 +569,20 @@ export const getPanelRuntimeSnapshot = (
           elementHasLogicRules(logicRules, 'form_complete', step.id, '')));
     if (!raw && actions.length === 0 && !props.submit && !hasLogicRules) return;
     const buttonRepeatContainer = getRepeatedContainer(step as any, el)?.id;
+    const actionTypes = actions.map((a: any) => a?.type);
+    let navigatesTo: string | null | undefined;
+    if (actionTypes.includes(ACTION_BACK)) {
+      navigatesTo = getPrevStepKey(step, state.backNavMap ?? {}) || undefined;
+    } else if (actionTypes.includes(ACTION_NEXT)) {
+      navigatesTo =
+        nextStepKey(step.next_conditions ?? [], {
+          elementType: 'button',
+          elementIDs: [el.id]
+        }) || undefined;
+    } else if (props.submit) {
+      // Submit without a navigation action cannot move pages
+      navigatesTo = null;
+    }
     currentStepElements.push({
       type: 'button',
       id: el.id ?? '',
@@ -423,6 +591,7 @@ export const getPanelRuntimeSnapshot = (
       disabled: isButtonDisabled(el, step, visiblePositions, formReadOnly),
       submit: !!props.submit,
       actions,
+      ...(navigatesTo !== undefined ? { navigatesTo } : {}),
       ...(hasLogicRules ? { hasLogicRules: true } : {}),
       ...(buttonRepeatContainer
         ? { repeatContainerId: buttonRepeatContainer }
@@ -442,14 +611,6 @@ export const getPanelRuntimeSnapshot = (
       text: resolveText(altRaw),
       visible: visibilityFor(el),
       ...(clickableAncestorIds.length > 0 ? { clickableAncestorIds } : {})
-    });
-  });
-  (step.progress_bars ?? []).forEach((el: any) => {
-    const segments = el?.properties?.num_segments;
-    currentStepElements.push({
-      type: 'progress',
-      ...(typeof segments === 'number' ? { segments } : {}),
-      visible: visibilityFor(el)
     });
   });
 
@@ -506,7 +667,8 @@ export const getPanelRuntimeSnapshot = (
   return {
     currentStep: { id: step.id, key: step.key },
     previousStepName: state.previousStepName || undefined,
-    totalSteps: Object.keys(state.steps ?? {}).length,
+    activeStepKey: step.key,
+    navigationSurfaces: collectNavigationSurfaces(state),
     currentStepFields,
     currentStepElements,
     currentStepTables,

@@ -57,11 +57,13 @@ import {
 import { initInfo } from '../utils/init';
 import { featheryDoc, featheryWindow, getCookie } from '../utils/browser';
 import {
+  ensureCompletedSteps,
   getCurrentStepKey,
   getPanelRuntimeSnapshot
 } from './tools/panelRuntime';
 import { dispatchSetFieldValue } from './tools/setFieldValue';
 import { dispatchClickElement } from './tools/clickElement';
+import { dispatchNavigate } from './tools/navigate';
 import { dispatchTriggerTableAction } from './tools/triggerTableAction';
 import {
   dispatchAddTableRow,
@@ -512,6 +514,16 @@ const AssistantChat = ({
             toolCallId: toolCall.toolCallId,
             output
           });
+        } else if (toolCall.toolName === 'navigateToStep') {
+          const input = (toolCall.input ?? {}) as { stepKey?: unknown };
+          const stepKey =
+            typeof input.stepKey === 'string' ? input.stepKey : '';
+          const output = await dispatchNavigate(instanceId, stepKey);
+          chat.addToolOutput({
+            tool: 'navigateToStep',
+            toolCallId: toolCall.toolCallId,
+            output
+          });
         } else if (toolCall.toolName === 'triggerTableAction') {
           const input = (toolCall.input ?? {}) as {
             tableId?: unknown;
@@ -756,7 +768,10 @@ const AssistantChat = ({
     skipSpeaking
   } = useAssistantVoice({
     status,
-    sendMessage: (message) => sendMessage(message),
+    sendMessage: async (message) => {
+      await ensureCompletedSteps(instanceId);
+      return sendMessage(message);
+    },
     setMessages,
     ensureThread: registerActiveThread,
     voiceActiveRef,
@@ -769,17 +784,19 @@ const AssistantChat = ({
     pinToBottom();
   }, [spokenChars, audioDraining, pinToBottom]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (input.trim() && status === 'ready') {
       registerActiveThread();
+      await ensureCompletedSteps(instanceId);
       sendMessage({ text: input });
       setInput('');
     }
   };
 
-  const handleWorkflowAction = (action: WorkflowAction) => {
+  const handleWorkflowAction = async (action: WorkflowAction) => {
     if (status !== 'ready') return;
     registerActiveThread();
+    await ensureCompletedSteps(instanceId);
     sendMessage({
       parts: [
         { type: 'text', text: action.name },

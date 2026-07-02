@@ -30,7 +30,8 @@ export default class AssistantClient {
   runActions(args: {
     actions: any[];
     element: any;
-    elementType: 'button' | 'text' | 'container';
+    elementType: 'button' | 'text' | 'container' | 'progress_bar' | 'tab';
+    submit?: boolean;
   }): Promise<any> {
     return this._callbacks.runElementActions(args);
   }
