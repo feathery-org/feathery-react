@@ -1067,6 +1067,8 @@ function Form({
       trackHashes.current
     );
     if (changed) {
+      if (internalState[_internalId])
+        internalState[_internalId].latestStepName = newKey;
       const backKey = load ? backNavMap[oldKey] : oldKey;
       updateBackNavMap({ [newKey]: backKey });
     }
@@ -1117,7 +1119,9 @@ function Form({
       {
         language: language ?? initState.language,
         currentStep: newStep,
+        latestStepName: newStep.key,
         previousStepName: activeStep?.key ?? '',
+        backNavMap,
         visiblePositions: newVisiblePositions,
         client,
         fields,
@@ -1953,6 +1957,8 @@ function Form({
       } finally {
         if (complete) clearCompletionLoader();
       }
+      if (internalState[_internalId])
+        internalState[_internalId].latestStepName = redirectKey;
       updateBackNavMap({ [redirectKey]: activeStep.key });
       pendingScrollRef.current = explicitNav;
 
@@ -1972,6 +1978,8 @@ function Form({
     await callbackRef.current.all();
     const prevStepKey = getPrevStepKey(activeStep, backNavMap);
     if (prevStepKey) {
+      if (internalState[_internalId])
+        internalState[_internalId].latestStepName = prevStepKey;
       pendingScrollRef.current = false;
       if (trackHashes.current) navigate(getNewStepUrl(prevStepKey));
       else {

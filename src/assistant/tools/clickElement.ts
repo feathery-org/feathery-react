@@ -5,6 +5,7 @@ import { getPositionKey } from '../../utils/hideAndRepeats';
 import { isButtonDisabled } from '../../utils/button';
 import {
   findClickableAncestorSubgrids,
+  getLiveStepKey,
   snapshotInlineErrors,
   validateRepeatIndex
 } from './utils';
@@ -161,7 +162,7 @@ export async function dispatchClickElement(
   }
 
   const client = state.assistantClient;
-  const fromStepKey = state.currentStep.key;
+  const fromStepKey = getLiveStepKey(state) ?? '';
   const errorsBefore = snapshotInlineErrors(state);
 
   const elementForDispatch =
@@ -205,7 +206,7 @@ export async function dispatchClickElement(
     };
   }
 
-  const toStepKey = state.currentStep?.key ?? fromStepKey;
+  const toStepKey = getLiveStepKey(state) ?? fromStepKey;
   const errorsAfter = snapshotInlineErrors(state);
 
   const fieldErrors: Record<string, string> = {};

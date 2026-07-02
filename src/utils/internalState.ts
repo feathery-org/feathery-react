@@ -105,7 +105,9 @@ export type UpdateDocusignEnvelopeParams = {
 export interface FormInternalState {
   language: string | undefined;
   currentStep: any;
+  latestStepName?: string; // live step key, updated before currentStep.key catches up
   previousStepName: string;
+  backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
   assistantClient?: AssistantClient;

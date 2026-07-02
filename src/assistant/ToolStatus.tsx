@@ -37,6 +37,10 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     running: 'Running form action...',
     done: 'Ran the form action'
   },
+  navigateToStep: {
+    running: 'Moving to another page...',
+    done: 'Moved to another page'
+  },
   addTableRow: {
     running: 'Adding a row...',
     done: 'Added a row'

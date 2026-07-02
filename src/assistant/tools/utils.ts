@@ -1,6 +1,9 @@
 import internalState from '../../utils/internalState';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 
+export const getLiveStepKey = (state: any): string | undefined =>
+  state.latestStepName ?? state.currentStep?.key;
+
 export const snapshotInlineErrors = (state: any): Record<string, string> => {
   const out: Record<string, string> = {};
   const inlineErrors = state?.inlineErrors ?? {};
