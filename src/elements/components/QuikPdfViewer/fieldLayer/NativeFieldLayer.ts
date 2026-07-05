@@ -36,6 +36,7 @@ export class NativeFieldLayer implements FieldLayer {
 
   async validate(): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
+    const seenKeys = new Set<string>();
     const docs = this.getDocs();
     for (let docIndex = 0; docIndex < docs.length; docIndex++) {
       const { doc, pdfProxy } = docs[docIndex];
@@ -51,7 +52,11 @@ export class NativeFieldLayer implements FieldLayer {
             (ann.fieldFlags & REQUIRED_FIELD_FLAG) !== 0 &&
             !values[ann.fieldName]
           ) {
-            issues.push({ docIndex, fieldName: ann.fieldName });
+            const key = `${docIndex}:${ann.fieldName}`;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              issues.push({ docIndex, fieldName: ann.fieldName });
+            }
           }
         }
       }

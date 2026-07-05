@@ -71,3 +71,28 @@ it('reset calls remount', () => {
   new NativeFieldLayer(() => [], remount).reset();
   expect(remount).toHaveBeenCalled();
 });
+
+it('deduplicates required-field issues by docIndex and fieldName', async () => {
+  const form = makeEntry(
+    '44233',
+    0,
+    { '1own.MaritalStatus': [{ id: 'a1', type: 'radio', value: '' }] },
+    {},
+    [
+      {
+        fieldName: '1own.MaritalStatus',
+        fieldFlags: REQUIRED_FLAG,
+        fieldType: 'Btn'
+      },
+      {
+        fieldName: '1own.MaritalStatus',
+        fieldFlags: REQUIRED_FLAG,
+        fieldType: 'Btn'
+      }
+    ]
+  );
+  const layer = new NativeFieldLayer(() => [form] as any, jest.fn());
+  expect(await layer.validate()).toEqual([
+    { docIndex: 0, fieldName: '1own.MaritalStatus' }
+  ]);
+});
