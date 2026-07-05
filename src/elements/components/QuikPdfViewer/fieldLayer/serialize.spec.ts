@@ -50,8 +50,18 @@ describe('extractFieldValues', () => {
     const doc = makeDoc(
       {
         '1own.MaritalStatus': [
-          { id: 'r1', type: 'radiobutton', value: 'Off', exportValues: 'Married' },
-          { id: 'r2', type: 'radiobutton', value: 'Off', exportValues: 'Single' }
+          {
+            id: 'r1',
+            type: 'radiobutton',
+            value: 'Off',
+            exportValues: 'Married'
+          },
+          {
+            id: 'r2',
+            type: 'radiobutton',
+            value: 'Off',
+            exportValues: 'Single'
+          }
         ]
       },
       { r2: { value: true } }
@@ -64,6 +74,16 @@ describe('extractFieldValues', () => {
   it('returns {} for documents without fields', async () => {
     const doc = makeDoc(null, {});
     expect(await extractFieldValues(doc)).toEqual({});
+  });
+
+  it('warns when the document has no fillable form fields', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+    const doc = makeDoc(null, {});
+    await extractFieldValues(doc);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Feathery: document has no fillable form fields'
+    );
+    warnSpy.mockRestore();
   });
 });
 

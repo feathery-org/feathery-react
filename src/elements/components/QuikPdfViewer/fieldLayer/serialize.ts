@@ -15,7 +15,10 @@ export async function extractFieldValues(
 ): Promise<Record<string, string>> {
   const fieldObjects: Record<string, FieldObject[]> | null =
     await pdfDoc.getFieldObjects();
-  if (!fieldObjects) return {};
+  if (!fieldObjects || Object.keys(fieldObjects).length === 0) {
+    console.warn('Feathery: document has no fillable form fields');
+    return {};
+  }
   const storage: Record<string, { value?: unknown }> =
     pdfDoc.annotationStorage.getAll() ?? {};
 

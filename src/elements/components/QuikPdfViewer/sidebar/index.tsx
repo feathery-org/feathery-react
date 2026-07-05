@@ -12,7 +12,7 @@ interface ViewerSidebarProps {
   documents: ViewerDocument[];
   pageCounts: Record<string, number>;
   onNavigate: (pdfUrl: string, pageIndex: number) => void;
-  attachments: { name: string }[];
+  attachments: { id: string; name: string; position: 'before' | 'after' }[];
   onAddAttachment: (file: File) => void;
   onRemoveAttachment: (index: number) => void;
   uploading: boolean;

@@ -23,6 +23,7 @@ export interface ViewerDocument {
   form_name?: string;
   name?: string;
   position?: 'before' | 'after';
+  id?: string;
 }
 
 export interface QuikViewerPayload {
@@ -55,11 +56,19 @@ export default function QuikPdfViewer({
   const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
   const [attachments, setAttachments] = useState<
     { id: string; name: string; position: 'before' | 'after' }[]
-  >(action.attachments ?? []);
+  >(() =>
+    payload.documents
+      .filter((d) => d.type === 'attachment' && d.id)
+      .map((d) => ({
+        id: d.id as string,
+        name: d.name ?? '',
+        position: d.position ?? 'after'
+      }))
+  );
   const [addedDocuments, setAddedDocuments] = useState<ViewerDocument[]>([]);
-  const [removedAttachmentNames, setRemovedAttachmentNames] = useState<
-    string[]
-  >([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>(
+    []
+  );
   const [uploading, setUploading] = useState(false);
 
   const isExpired = useMemo(
@@ -73,9 +82,9 @@ export default function QuikPdfViewer({
       [...payload.documents, ...addedDocuments].filter(
         (doc) =>
           doc.type !== 'attachment' ||
-          !removedAttachmentNames.includes(doc.name ?? '')
+          !removedAttachmentIds.includes(doc.id ?? '')
       ),
-    [payload.documents, addedDocuments, removedAttachmentNames]
+    [payload.documents, addedDocuments, removedAttachmentIds]
   );
 
   useEffect(() => {
@@ -146,7 +155,8 @@ export default function QuikPdfViewer({
             type: 'attachment',
             pdf_url: result.url,
             name: file.name,
-            position: 'after'
+            position: 'after',
+            id: result.id
           }
         ]);
       } catch (e) {
@@ -165,7 +175,7 @@ export default function QuikPdfViewer({
       const removed = attachments[index];
       if (!removed) return;
       setAttachments((prev) => prev.filter((_, i) => i !== index));
-      setRemovedAttachmentNames((prev) => [...prev, removed.name]);
+      setRemovedAttachmentIds((prev) => [...prev, removed.id]);
     },
     [attachments]
   );
