@@ -1267,6 +1267,21 @@ function Form({
               setShowQuikFormViewer(false);
             setQuikHTMLPayload(payload.html);
             setShowQuikFormViewer(true);
+          } else if ((fillType as string) === 'viewer' && payload.documents) {
+            setQuikViewerPayload({
+              payload,
+              action: {
+                form_fill_type: fillType,
+                review_action: 'sign',
+                auth_user_id: docusignConnectionId,
+                docusign_custom_id: docusignCustomId,
+                enable_wet_sign: enableWetSign,
+                document_template_attachments: documentTemplates,
+                envelope_attachments: envelopes,
+                attachments
+              },
+              onComplete: () => setQuikViewerPayload(null)
+            });
           } else if (fillType === 'pdf' && payload.files) {
             await downloadAllFileUrls(payload.files);
           }
@@ -2736,6 +2751,17 @@ function Form({
             setQuikHTMLPayload(payload.html);
             setShowQuikFormViewer(true);
             break;
+          } else if (action.form_fill_type === 'viewer' && payload.documents) {
+            setQuikViewerPayload({
+              payload,
+              action,
+              onComplete: () => {
+                flowOnSuccess(i)().then(() => {
+                  setTimeout(() => setQuikViewerPayload(null), 500);
+                });
+              }
+            });
+            break;
           } else if (action.form_fill_type === 'pdf' && payload.files) {
             await downloadAllFileUrls(
               payload.files,
@@ -3097,7 +3123,13 @@ function Form({
               payload={quikViewerPayload.payload}
               action={quikViewerPayload.action}
               client={client}
-              setShow={() => setQuikViewerPayload(null)}
+              setShow={(show: boolean) => {
+                if (!show) {
+                  clearLoaders();
+                  setQuikViewerPayload(null);
+                }
+              }}
+              onComplete={quikViewerPayload.onComplete}
             />
           </React.Suspense>
         )}

@@ -609,6 +609,26 @@ export default class IntegrationClient {
     });
   }
 
+  async finalizeQuikViewer({
+    action,
+    reviewAction,
+    fieldOverrides,
+    attachments
+  }: {
+    action: Record<string, any>;
+    reviewAction: string;
+    fieldOverrides: Record<string, any>[];
+    attachments: Record<string, any>[];
+  }) {
+    return this.generateQuikEnvelopes({
+      ...action,
+      finalize: true,
+      review_action: reviewAction,
+      field_overrides: fieldOverrides,
+      attachments
+    });
+  }
+
   async getQuikForms({ dealerNames }: { dealerNames: string[] }) {
     const { sdkKey } = initInfo();
     return await apiGetQuikForms({ sdkKey, formId: this.formKey, dealerNames });
