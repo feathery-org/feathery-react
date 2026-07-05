@@ -8,10 +8,10 @@ const PAGE_GAP = 24;
 interface DocumentScrollProps {
   documents: ViewerDocument[];
   pageWidth: number;
-  pageCounts: Record<number, number>;
-  onDocLoad: (docIndex: number, pdfProxy: any) => void;
+  pageCounts: Record<string, number>;
+  onDocLoad: (pdfUrl: string, pdfProxy: any) => void;
   registerPageRef: (
-    docIndex: number,
+    pdfUrl: string,
     pageIndex: number,
     el: HTMLDivElement | null
   ) => void;
@@ -27,8 +27,8 @@ export default function DocumentScroll({
   remountKey
 }: DocumentScrollProps) {
   const handleLoad = useCallback(
-    (docIndex: number) => (pdfProxy: any) => {
-      onDocLoad(docIndex, pdfProxy);
+    (pdfUrl: string) => (pdfProxy: any) => {
+      onDocLoad(pdfUrl, pdfProxy);
     },
     [onDocLoad]
   );
@@ -36,11 +36,11 @@ export default function DocumentScroll({
   return (
     <div css={{ display: 'flex', flexDirection: 'column', gap: PAGE_GAP }}>
       <AnnotationLayerStyles />
-      {documents.map((doc, docIndex) => (
+      {documents.map((doc) => (
         <Document
-          key={`${docIndex}-${remountKey}`}
+          key={`${doc.pdf_url}-${remountKey}`}
           file={doc.pdf_url}
-          onLoadSuccess={handleLoad(docIndex)}
+          onLoadSuccess={handleLoad(doc.pdf_url)}
           loading={<div css={{ minHeight: 400 }} />}
           error={
             <div role='alert' css={{ padding: 24 }}>
@@ -49,21 +49,24 @@ export default function DocumentScroll({
             </div>
           }
         >
-          {Array.from({ length: pageCounts[docIndex] ?? 0 }, (_, pageIndex) => (
-            <div
-              key={pageIndex}
-              ref={(el) => registerPageRef(docIndex, pageIndex, el)}
-              css={{ marginBottom: PAGE_GAP }}
-            >
-              <Page
-                pageNumber={pageIndex + 1}
-                width={pageWidth}
-                renderForms
-                renderAnnotationLayer
-                renderTextLayer={false}
-              />
-            </div>
-          ))}
+          {Array.from(
+            { length: pageCounts[doc.pdf_url] ?? 0 },
+            (_, pageIndex) => (
+              <div
+                key={pageIndex}
+                ref={(el) => registerPageRef(doc.pdf_url, pageIndex, el)}
+                css={{ marginBottom: PAGE_GAP }}
+              >
+                <Page
+                  pageNumber={pageIndex + 1}
+                  width={pageWidth}
+                  renderForms
+                  renderAnnotationLayer
+                  renderTextLayer={false}
+                />
+              </div>
+            )
+          )}
         </Document>
       ))}
     </div>

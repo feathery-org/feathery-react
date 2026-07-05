@@ -45,13 +45,13 @@ export default function QuikPdfViewer({
   setShow,
   onComplete
 }: QuikPdfViewerProps) {
-  const loadedDocs = useRef<Record<number, any>>({});
+  const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [remountKey, setRemountKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [pageCounts, setPageCounts] = useState<Record<number, number>>({});
+  const [pageCounts, setPageCounts] = useState<Record<string, number>>({});
   const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
   const [attachments, setAttachments] = useState<
     { id: string; name: string; position: 'before' | 'after' }[]
@@ -96,7 +96,10 @@ export default function QuikPdfViewer({
       new NativeFieldLayer(
         () =>
           visibleDocuments.map(
-            (doc, i): LoadedDoc => ({ doc, pdfProxy: loadedDocs.current[i] })
+            (doc): LoadedDoc => ({
+              doc,
+              pdfProxy: loadedDocs.current[doc.pdf_url]
+            })
           ),
         () => {
           loadedDocs.current = {};
@@ -106,20 +109,20 @@ export default function QuikPdfViewer({
     [visibleDocuments]
   );
 
-  const onDocLoad = useCallback((docIndex: number, pdfProxy: any) => {
-    loadedDocs.current[docIndex] = pdfProxy;
-    setPageCounts((prev) => ({ ...prev, [docIndex]: pdfProxy.numPages }));
+  const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
+    loadedDocs.current[pdfUrl] = pdfProxy;
+    setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
   }, []);
 
   const registerPageRef = useCallback(
-    (docIndex: number, pageIndex: number, el: HTMLDivElement | null) => {
-      pageRefs.current[`${docIndex}-${pageIndex}`] = el;
+    (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
+      pageRefs.current[`${pdfUrl}-${pageIndex}`] = el;
     },
     []
   );
 
-  const onNavigate = useCallback((docIndex: number, pageIndex: number) => {
-    const el = pageRefs.current[`${docIndex}-${pageIndex}`];
+  const onNavigate = useCallback((pdfUrl: string, pageIndex: number) => {
+    const el = pageRefs.current[`${pdfUrl}-${pageIndex}`];
     if (!el) return;
     const reduceMotion = featheryWindow().matchMedia?.(
       '(prefers-reduced-motion: reduce)'
@@ -200,7 +203,7 @@ export default function QuikPdfViewer({
 
   const download = async () => {
     for (const [i, doc] of visibleDocuments.entries()) {
-      const proxy = loadedDocs.current[i];
+      const proxy = loadedDocs.current[doc.pdf_url];
       if (!proxy) continue;
       const bytes: Uint8Array = await proxy.saveDocument();
       const url = URL.createObjectURL(

@@ -10,8 +10,8 @@ const COLLAPSE_BREAKPOINT = 1024;
 
 interface ViewerSidebarProps {
   documents: ViewerDocument[];
-  pageCounts: Record<number, number>;
-  onNavigate: (docIndex: number, pageIndex: number) => void;
+  pageCounts: Record<string, number>;
+  onNavigate: (pdfUrl: string, pageIndex: number) => void;
   attachments: { name: string }[];
   onAddAttachment: (file: File) => void;
   onRemoveAttachment: (index: number) => void;

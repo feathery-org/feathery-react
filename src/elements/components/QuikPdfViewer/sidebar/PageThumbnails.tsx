@@ -6,8 +6,8 @@ const THUMBNAIL_WIDTH = 140;
 
 interface PageThumbnailsProps {
   documents: ViewerDocument[];
-  pageCounts: Record<number, number>;
-  onNavigate: (docIndex: number, pageIndex: number) => void;
+  pageCounts: Record<string, number>;
+  onNavigate: (pdfUrl: string, pageIndex: number) => void;
 }
 
 export default function PageThumbnails({
@@ -16,7 +16,7 @@ export default function PageThumbnails({
   onNavigate
 }: PageThumbnailsProps) {
   const totalPages = documents.reduce(
-    (sum, _doc, docIndex) => sum + (pageCounts[docIndex] ?? 0),
+    (sum, doc) => sum + (pageCounts[doc.pdf_url] ?? 0),
     0
   );
 
@@ -34,7 +34,7 @@ export default function PageThumbnails({
         <button
           type='button'
           css={linkButtonCss}
-          onClick={() => onNavigate(0, 0)}
+          onClick={() => documents[0] && onNavigate(documents[0].pdf_url, 0)}
           disabled={!documents.length}
         >
           First
@@ -46,10 +46,10 @@ export default function PageThumbnails({
           type='button'
           css={linkButtonCss}
           onClick={() => {
-            const lastDocIndex = documents.length - 1;
-            if (lastDocIndex < 0) return;
-            const lastPageIndex = (pageCounts[lastDocIndex] ?? 1) - 1;
-            onNavigate(lastDocIndex, lastPageIndex);
+            const lastDoc = documents[documents.length - 1];
+            if (!lastDoc) return;
+            const lastPageIndex = (pageCounts[lastDoc.pdf_url] ?? 1) - 1;
+            onNavigate(lastDoc.pdf_url, lastPageIndex);
           }}
           disabled={!documents.length}
         >
@@ -57,15 +57,15 @@ export default function PageThumbnails({
         </button>
       </div>
       <div css={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {documents.map((doc, docIndex) => (
+        {documents.map((doc) => (
           <Document
-            key={docIndex}
+            key={doc.pdf_url}
             file={doc.pdf_url}
             loading={null}
             error={null}
           >
             {Array.from(
-              { length: pageCounts[docIndex] ?? 0 },
+              { length: pageCounts[doc.pdf_url] ?? 0 },
               (_, pageIndex) => {
                 runningPageNumber += 1;
                 const pageNumber = runningPageNumber;
@@ -74,7 +74,7 @@ export default function PageThumbnails({
                     key={pageIndex}
                     type='button'
                     aria-label={`Go to page ${pageNumber}`}
-                    onClick={() => onNavigate(docIndex, pageIndex)}
+                    onClick={() => onNavigate(doc.pdf_url, pageIndex)}
                     css={thumbnailButtonCss}
                   >
                     <Page

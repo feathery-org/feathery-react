@@ -3,13 +3,11 @@ import { ViewerDocument } from '../index';
 
 interface FormsListProps {
   documents: ViewerDocument[];
-  onNavigate: (docIndex: number, pageIndex: number) => void;
+  onNavigate: (pdfUrl: string, pageIndex: number) => void;
 }
 
 export default function FormsList({ documents, onNavigate }: FormsListProps) {
-  const forms = documents
-    .map((doc, docIndex) => ({ doc, docIndex }))
-    .filter(({ doc }) => doc.type === 'form');
+  const forms = documents.filter((doc) => doc.type === 'form');
 
   if (!forms.length) return null;
 
@@ -17,11 +15,11 @@ export default function FormsList({ documents, onNavigate }: FormsListProps) {
     <section aria-label='Forms' css={{ padding: '16px 20px' }}>
       <h3 css={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Forms</h3>
       <div css={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {forms.map(({ doc, docIndex }) => (
+        {forms.map((doc) => (
           <button
-            key={docIndex}
+            key={doc.pdf_url}
             type='button'
-            onClick={() => onNavigate(docIndex, 0)}
+            onClick={() => onNavigate(doc.pdf_url, 0)}
             css={formButtonCss}
           >
             {doc.form_name}
