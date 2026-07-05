@@ -156,6 +156,29 @@ export default function AnnotationLayerStyles() {
           width: 100%;
           display: inline-block;
         }
+
+        /* Theme overrides so field widgets read as fillable inputs rather
+           than invisible overlays on top of the flattened PDF. */
+        .annotationLayer .textWidgetAnnotation input,
+        .annotationLayer .textWidgetAnnotation textarea,
+        .annotationLayer .choiceWidgetAnnotation select {
+          border: 1px solid rgba(59, 130, 246, 0.45);
+          border-radius: 2px;
+          background-color: rgba(59, 130, 246, 0.06);
+          font-family: inherit;
+        }
+
+        .annotationLayer input:focus,
+        .annotationLayer select:focus,
+        .annotationLayer textarea:focus {
+          outline: 2px solid #3b82f6;
+          background-color: white;
+        }
+
+        .annotationLayer .buttonWidgetAnnotation.checkBox input,
+        .annotationLayer .buttonWidgetAnnotation.radioButton input {
+          cursor: pointer;
+        }
       `}
     />
   );

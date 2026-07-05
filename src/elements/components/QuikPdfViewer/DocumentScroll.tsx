@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { Document, Page } from 'react-pdf';
 import { ViewerDocument } from './index';
 import AnnotationLayerStyles from './AnnotationLayerStyles';
@@ -8,6 +8,7 @@ const PAGE_GAP = 24;
 interface DocumentScrollProps {
   documents: ViewerDocument[];
   pageWidth: number;
+  pageCounts: Record<number, number>;
   onDocLoad: (docIndex: number, pdfProxy: any) => void;
   registerPageRef: (
     docIndex: number,
@@ -20,15 +21,13 @@ interface DocumentScrollProps {
 export default function DocumentScroll({
   documents,
   pageWidth,
+  pageCounts,
   onDocLoad,
   registerPageRef,
   remountKey
 }: DocumentScrollProps) {
-  const [pageCounts, setPageCounts] = useState<Record<number, number>>({});
-
   const handleLoad = useCallback(
     (docIndex: number) => (pdfProxy: any) => {
-      setPageCounts((prev) => ({ ...prev, [docIndex]: pdfProxy.numPages }));
       onDocLoad(docIndex, pdfProxy);
     },
     [onDocLoad]

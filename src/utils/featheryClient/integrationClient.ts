@@ -609,6 +609,27 @@ export default class IntegrationClient {
     });
   }
 
+  async uploadQuikAttachment(file: File): Promise<{ id: string; url: string }> {
+    const { userId } = initInfo();
+    const url = `${STATIC_URL}quik/attachment/`;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.set('form_key', this.formKey);
+    formData.set('fuser_key', userId ?? '');
+    const options = {
+      method: 'POST',
+      body: formData,
+      // In Safari, request fails with keepalive = true if over 64kb payload.
+      keepalive: false
+    };
+    const response = await this._fetch(url, options, false);
+    if (response) {
+      if (response.ok) return await response.json();
+      else throw Error(parseAPIError(await response.json()));
+    }
+    throw Error('Failed to upload attachment');
+  }
+
   async finalizeQuikViewer({
     action,
     reviewAction,

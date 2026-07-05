@@ -1,9 +1,19 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import './pdfSetup';
 import DocumentScroll from './DocumentScroll';
 import ViewerHeader from './ViewerHeader';
+import ViewerSidebar from './sidebar';
 import { NativeFieldLayer, LoadedDoc } from './fieldLayer/NativeFieldLayer';
-import { featheryDoc } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
+
+const MAX_PAGE_WIDTH = 900;
+const CONTAINER_PADDING = 48;
 
 export interface ViewerDocument {
   type: 'form' | 'attachment';
@@ -36,15 +46,56 @@ export default function QuikPdfViewer({
   onComplete
 }: QuikPdfViewerProps) {
   const loadedDocs = useRef<Record<number, any>>({});
+  const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [remountKey, setRemountKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [pageCounts, setPageCounts] = useState<Record<number, number>>({});
+  const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
+  const [attachments, setAttachments] = useState<
+    { id: string; name: string; position: 'before' | 'after' }[]
+  >(action.attachments ?? []);
+  const [addedDocuments, setAddedDocuments] = useState<ViewerDocument[]>([]);
+  const [removedAttachmentNames, setRemovedAttachmentNames] = useState<
+    string[]
+  >([]);
+  const [uploading, setUploading] = useState(false);
+
+  const isExpired = useMemo(
+    () => new Date(payload.expires_at).getTime() < Date.now(),
+    [payload.expires_at]
+  );
+  const [expiredBanner, setExpiredBanner] = useState(isExpired);
+
+  const visibleDocuments = useMemo(
+    () =>
+      [...payload.documents, ...addedDocuments].filter(
+        (doc) =>
+          doc.type !== 'attachment' ||
+          !removedAttachmentNames.includes(doc.name ?? '')
+      ),
+    [payload.documents, addedDocuments, removedAttachmentNames]
+  );
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) {
+        setPageWidth(Math.min(MAX_PAGE_WIDTH, width - CONTAINER_PADDING));
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
 
   const fieldLayer = useMemo(
     () =>
       new NativeFieldLayer(
         () =>
-          payload.documents.map(
+          visibleDocuments.map(
             (doc, i): LoadedDoc => ({ doc, pdfProxy: loadedDocs.current[i] })
           ),
         () => {
@@ -52,12 +103,69 @@ export default function QuikPdfViewer({
           setRemountKey((k) => k + 1);
         }
       ),
-    [payload.documents]
+    [visibleDocuments]
   );
 
   const onDocLoad = useCallback((docIndex: number, pdfProxy: any) => {
     loadedDocs.current[docIndex] = pdfProxy;
+    setPageCounts((prev) => ({ ...prev, [docIndex]: pdfProxy.numPages }));
   }, []);
+
+  const registerPageRef = useCallback(
+    (docIndex: number, pageIndex: number, el: HTMLDivElement | null) => {
+      pageRefs.current[`${docIndex}-${pageIndex}`] = el;
+    },
+    []
+  );
+
+  const onNavigate = useCallback((docIndex: number, pageIndex: number) => {
+    const el = pageRefs.current[`${docIndex}-${pageIndex}`];
+    if (!el) return;
+    const reduceMotion = featheryWindow().matchMedia?.(
+      '(prefers-reduced-motion: reduce)'
+    ).matches;
+    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
+  }, []);
+
+  const onAddAttachment = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setError('');
+      try {
+        const result = await client.uploadQuikAttachment(file);
+        setAttachments((prev) => [
+          ...prev,
+          { id: result.id, name: file.name, position: 'after' }
+        ]);
+        setAddedDocuments((prev) => [
+          ...prev,
+          {
+            type: 'attachment',
+            pdf_url: result.url,
+            name: file.name,
+            position: 'after'
+          }
+        ]);
+      } catch (e) {
+        setError(
+          e instanceof Error ? e.message : 'Failed to upload attachment'
+        );
+      } finally {
+        setUploading(false);
+      }
+    },
+    [client]
+  );
+
+  const onRemoveAttachment = useCallback(
+    (index: number) => {
+      const removed = attachments[index];
+      if (!removed) return;
+      setAttachments((prev) => prev.filter((_, i) => i !== index));
+      setRemovedAttachmentNames((prev) => [...prev, removed.name]);
+    },
+    [attachments]
+  );
 
   const finalize = async (reviewAction: string) => {
     setBusy(true);
@@ -77,10 +185,12 @@ export default function QuikPdfViewer({
         action,
         reviewAction,
         fieldOverrides,
-        attachments: action.attachments ?? []
+        attachments
       });
-      if (result?.status === 'error') setError(result.message);
-      else onComplete();
+      if (result?.status === 'error') {
+        if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
+        else setError(result.message);
+      } else onComplete();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
@@ -89,7 +199,7 @@ export default function QuikPdfViewer({
   };
 
   const download = async () => {
-    for (const [i, doc] of payload.documents.entries()) {
+    for (const [i, doc] of visibleDocuments.entries()) {
       const proxy = loadedDocs.current[i];
       if (!proxy) continue;
       const bytes: Uint8Array = await proxy.saveDocument();
@@ -126,6 +236,14 @@ export default function QuikPdfViewer({
         primaryLabel={isSign ? 'Sign' : 'Submit'}
         busy={busy}
       />
+      {expiredBanner && (
+        <div
+          role='alert'
+          css={{ padding: 12, background: '#fdecea', color: '#b3261e' }}
+        >
+          This session has expired. Please close and reopen the viewer.
+        </div>
+      )}
       {error && (
         <div
           role='alert'
@@ -134,13 +252,29 @@ export default function QuikPdfViewer({
           {error}
         </div>
       )}
-      <div css={{ flex: 1, overflow: 'auto', padding: 24 }}>
-        <DocumentScroll
-          documents={payload.documents}
-          pageWidth={900}
-          onDocLoad={onDocLoad}
-          registerPageRef={() => undefined}
-          remountKey={remountKey}
+      <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div
+          ref={scrollContainerRef}
+          css={{ flex: 1, overflow: 'auto', padding: 24 }}
+        >
+          <DocumentScroll
+            documents={visibleDocuments}
+            pageWidth={pageWidth}
+            pageCounts={pageCounts}
+            onDocLoad={onDocLoad}
+            registerPageRef={registerPageRef}
+            remountKey={remountKey}
+          />
+        </div>
+        <ViewerSidebar
+          documents={visibleDocuments}
+          pageCounts={pageCounts}
+          onNavigate={onNavigate}
+          attachments={attachments}
+          onAddAttachment={onAddAttachment}
+          onRemoveAttachment={onRemoveAttachment}
+          uploading={uploading}
+          expiresAt={payload.expires_at}
         />
       </div>
     </div>
