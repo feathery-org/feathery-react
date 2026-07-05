@@ -238,6 +238,10 @@ import { AssistantChat } from '../assistant';
 import type { AssistantLayoutState } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
 
+const QuikPdfViewer = React.lazy(
+  () => import('../elements/components/QuikPdfViewer')
+);
+
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -478,6 +482,7 @@ function Form({
 
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
+  const [quikViewerPayload, setQuikViewerPayload] = useState<any>(null);
   const { openFlinksConnect, flinksFrame } = useFlinksConnect();
 
   // When the active step changes, recalculate the dimensions of the new step
@@ -3085,6 +3090,16 @@ function Form({
             html={quikHTMLPayload}
             setShow={setShowQuikFormViewer}
           />
+        )}
+        {quikViewerPayload && (
+          <React.Suspense fallback={null}>
+            <QuikPdfViewer
+              payload={quikViewerPayload.payload}
+              action={quikViewerPayload.action}
+              client={client}
+              setShow={() => setQuikViewerPayload(null)}
+            />
+          </React.Suspense>
         )}
         {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
