@@ -482,7 +482,8 @@ export default class IntegrationClient {
     useDisclosure,
     notification,
     brandId,
-    enforceSignerVisibility
+    enforceSignerVisibility,
+    ignoreTemplateFieldMapping
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -521,7 +522,8 @@ export default class IntegrationClient {
         use_disclosure: useDisclosure,
         notification,
         brand_id: brandId,
-        enforce_signer_visibility: enforceSignerVisibility
+        enforce_signer_visibility: enforceSignerVisibility,
+        ignore_template_field_mapping: ignoreTemplateFieldMapping
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
