@@ -155,6 +155,8 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
     let renderTask: any = null;
 
     (async () => {
+      const pdfjs = await loadPdfjs();
+      if (cancelled) return;
       const page = await pdfProxy.getPage(pageNumber);
       if (cancelled) return;
       const unscaledViewport = page.getViewport({ scale: 1 });
@@ -171,7 +173,15 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         }px`;
         const canvasContext = canvas.getContext('2d');
         if (canvasContext) {
-          renderTask = page.render({ canvasContext, viewport });
+          renderTask = page.render({
+            canvasContext,
+            viewport,
+            // ENABLE_FORMS excludes interactive widget appearances from the
+            // canvas — they're rendered as HTML inputs by the annotation
+            // layer instead. The default (ENABLE) paints them onto the
+            // canvas too, doubling prefilled values under the inputs.
+            annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS
+          });
           try {
             await renderTask.promise;
           } catch (e: any) {
@@ -188,8 +198,6 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
           '--scale-factor',
           String(viewport.scale)
         );
-        const pdfjs = await loadPdfjs();
-        if (cancelled) return;
         const annotationViewport = viewport.clone({ dontFlip: true });
         const annotationLayer = new pdfjs.AnnotationLayer({
           div: annotationDiv,

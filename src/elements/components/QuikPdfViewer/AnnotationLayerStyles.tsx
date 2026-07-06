@@ -118,6 +118,48 @@ export default function AnnotationLayerStyles() {
           appearance: none;
         }
 
+        /* Checked-state glyphs, ported from pdf.js 4.8.69's viewer CSS.
+           With appearance: none the native checkmark/dot never paints, so
+           without these rules toggling a checkbox has no visible effect. */
+        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::before,
+        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after,
+        .annotationLayer
+          .buttonWidgetAnnotation.radioButton
+          input:checked::before {
+          background-color: CanvasText;
+          content: '';
+          display: block;
+          position: absolute;
+        }
+
+        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::before,
+        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after {
+          height: 80%;
+          left: 45%;
+          top: 10%;
+          width: 1px;
+        }
+
+        .annotationLayer
+          .buttonWidgetAnnotation.checkBox
+          input:checked::before {
+          transform: rotate(45deg);
+        }
+
+        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after {
+          transform: rotate(-45deg);
+        }
+
+        .annotationLayer
+          .buttonWidgetAnnotation.radioButton
+          input:checked::before {
+          border-radius: 50%;
+          height: 50%;
+          left: 25%;
+          top: 25%;
+          width: 50%;
+        }
+
         .annotationLayer .popupTriggerArea {
           height: 100%;
           width: 100%;
@@ -191,6 +233,8 @@ export default function AnnotationLayerStyles() {
         .annotationLayer .buttonWidgetAnnotation.checkBox input,
         .annotationLayer .buttonWidgetAnnotation.radioButton input {
           cursor: pointer;
+          border: 1px solid rgba(59, 130, 246, 0.45);
+          background-color: rgba(59, 130, 246, 0.06);
         }
       `}
     />
