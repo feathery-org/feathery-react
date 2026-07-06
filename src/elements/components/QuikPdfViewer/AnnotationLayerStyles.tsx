@@ -1,19 +1,32 @@
 import React from 'react';
 import { Global, css } from '@emotion/react';
 
-// Ported from react-pdf/dist/Page/AnnotationLayer.css. Jest's default config
-// cannot parse raw CSS imports and the rollup/webpack build pipeline for this
-// package does not process CSS either, so the annotation-layer positioning
-// rules are injected as an emotion global style instead of importing the
-// stylesheet directly. Keep this scoped to the QuikPdfViewer lazy chunk.
+// Ported from pdf.js 4.8.69's web/annotation_layer_builder.css (the pinned
+// CDN version — see pdfjsLoader.ts). Jest's default config cannot parse raw
+// CSS imports and the rollup/webpack build pipeline for this package does
+// not process CSS either, so the annotation-layer positioning rules are
+// injected as an emotion global style instead of importing the stylesheet
+// directly. Keep this scoped to the QuikPdfViewer lazy chunk.
+//
+// pdf.js 4.x sizes the layer via `setLayerDimensions`, which reads the
+// `--scale-factor` CSS custom property from the layer div itself (set at
+// render time in DocumentScroll.tsx/PageThumbnails.tsx), not from this
+// stylesheet — --scale-factor is only declared here as a safe default for
+// any late paint before the first render call completes.
 export default function AnnotationLayerStyles() {
   return (
     <Global
       styles={css`
         .annotationLayer {
+          --scale-factor: 1;
+          /* pdf.js's JS only ever sets --scale-factor on this element (see
+             setLayerDimensions in pdf.mjs); --total-scale-factor is not a
+             variable pdf.js itself defines, but the widget-sizing rules
+             below were ported from an older stylesheet that expects it, so
+             alias it here rather than rewriting every calc(). */
+          --total-scale-factor: var(--scale-factor);
           position: absolute;
-          top: 0;
-          left: 0;
+          inset: 0;
           pointer-events: none;
           transform-origin: 0 0;
           z-index: 3;

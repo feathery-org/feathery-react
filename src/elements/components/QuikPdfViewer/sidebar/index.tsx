@@ -11,6 +11,7 @@ const COLLAPSE_BREAKPOINT = 1024;
 interface ViewerSidebarProps {
   documents: ViewerDocument[];
   pageCounts: Record<string, number>;
+  pdfProxies: Record<string, any>;
   onNavigate: (pdfUrl: string, pageIndex: number) => void;
   attachments: { id: string; name: string; position: 'before' | 'after' }[];
   onAddAttachment: (file: File) => void;
@@ -42,6 +43,7 @@ function useIsNarrowViewport() {
 export default function ViewerSidebar({
   documents,
   pageCounts,
+  pdfProxies,
   onNavigate,
   attachments,
   onAddAttachment,
@@ -95,6 +97,7 @@ export default function ViewerSidebar({
             <PageThumbnails
               documents={documents}
               pageCounts={pageCounts}
+              pdfProxies={pdfProxies}
               onNavigate={onNavigate}
             />
             <FormsList documents={documents} onNavigate={onNavigate} />

@@ -1,5 +1,4 @@
-import React from 'react';
-import { Document, Page } from 'react-pdf';
+import React, { useEffect, useRef } from 'react';
 import { ViewerDocument } from '../index';
 
 const THUMBNAIL_WIDTH = 140;
@@ -7,12 +6,14 @@ const THUMBNAIL_WIDTH = 140;
 interface PageThumbnailsProps {
   documents: ViewerDocument[];
   pageCounts: Record<string, number>;
+  pdfProxies: Record<string, any>;
   onNavigate: (pdfUrl: string, pageIndex: number) => void;
 }
 
 export default function PageThumbnails({
   documents,
   pageCounts,
+  pdfProxies,
   onNavigate
 }: PageThumbnailsProps) {
   const totalPages = documents.reduce(
@@ -57,42 +58,30 @@ export default function PageThumbnails({
         </button>
       </div>
       <div css={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {documents.map((doc) => (
-          <Document
-            key={doc.pdf_url}
-            file={doc.pdf_url}
-            loading={null}
-            error={null}
-          >
-            {Array.from(
-              { length: pageCounts[doc.pdf_url] ?? 0 },
-              (_, pageIndex) => {
-                runningPageNumber += 1;
-                const pageNumber = runningPageNumber;
-                return (
-                  <button
-                    key={pageIndex}
-                    type='button'
-                    aria-label={`Go to page ${pageNumber}`}
-                    onClick={() => onNavigate(doc.pdf_url, pageIndex)}
-                    css={thumbnailButtonCss}
-                  >
-                    <Page
-                      pageNumber={pageIndex + 1}
-                      width={THUMBNAIL_WIDTH}
-                      renderAnnotationLayer={false}
-                      renderTextLayer={false}
-                      renderForms={false}
-                    />
-                    <span css={{ fontSize: 11, color: '#666' }}>
-                      {pageNumber}
-                    </span>
-                  </button>
-                );
-              }
-            )}
-          </Document>
-        ))}
+        {documents.map((doc) => {
+          const pdfProxy = pdfProxies[doc.pdf_url];
+          return Array.from(
+            { length: pageCounts[doc.pdf_url] ?? 0 },
+            (_, pageIndex) => {
+              runningPageNumber += 1;
+              const pageNumber = runningPageNumber;
+              return (
+                <button
+                  key={`${doc.pdf_url}-${pageIndex}`}
+                  type='button'
+                  aria-label={`Go to page ${pageNumber}`}
+                  onClick={() => onNavigate(doc.pdf_url, pageIndex)}
+                  css={thumbnailButtonCss}
+                >
+                  <ThumbnailCanvas pdfProxy={pdfProxy} pageIndex={pageIndex} />
+                  <span css={{ fontSize: 11, color: '#666' }}>
+                    {pageNumber}
+                  </span>
+                </button>
+              );
+            }
+          );
+        })}
       </div>
     </section>
   );
@@ -121,3 +110,48 @@ const thumbnailButtonCss = {
   width: '100%',
   '&:hover': { borderColor: '#3b82f6' }
 };
+
+interface ThumbnailCanvasProps {
+  pdfProxy: any;
+  pageIndex: number;
+}
+
+function ThumbnailCanvas({ pdfProxy, pageIndex }: ThumbnailCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!pdfProxy) return undefined;
+    let cancelled = false;
+    let renderTask: any = null;
+
+    (async () => {
+      const page = await pdfProxy.getPage(pageIndex + 1);
+      if (cancelled) return;
+      const unscaledViewport = page.getViewport({ scale: 1 });
+      const scale = THUMBNAIL_WIDTH / unscaledViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      canvas.style.width = `${THUMBNAIL_WIDTH}px`;
+      canvas.style.height = `${viewport.height}px`;
+      const canvasContext = canvas.getContext('2d');
+      if (!canvasContext) return;
+      renderTask = page.render({ canvasContext, viewport });
+      try {
+        await renderTask.promise;
+      } catch (e: any) {
+        if (e?.name !== 'RenderingCancelledException') throw e;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (renderTask) renderTask.cancel();
+    };
+  }, [pdfProxy, pageIndex]);
+
+  return <canvas ref={canvasRef} />;
+}

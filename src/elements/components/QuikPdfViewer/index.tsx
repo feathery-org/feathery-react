@@ -5,7 +5,6 @@ import React, {
   useRef,
   useState
 } from 'react';
-import './pdfSetup';
 import DocumentScroll from './DocumentScroll';
 import ViewerHeader from './ViewerHeader';
 import ViewerSidebar from './sidebar';
@@ -273,7 +272,6 @@ export default function QuikPdfViewer({
           <DocumentScroll
             documents={visibleDocuments}
             pageWidth={pageWidth}
-            pageCounts={pageCounts}
             onDocLoad={onDocLoad}
             registerPageRef={registerPageRef}
             remountKey={remountKey}
@@ -282,6 +280,7 @@ export default function QuikPdfViewer({
         <ViewerSidebar
           documents={visibleDocuments}
           pageCounts={pageCounts}
+          pdfProxies={loadedDocs.current}
           onNavigate={onNavigate}
           attachments={attachments}
           onAddAttachment={onAddAttachment}

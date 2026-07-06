@@ -1,0 +1,29 @@
+// pdf.js is loaded from a CDN at runtime instead of being bundled. The
+// prebuilt pdfjs-dist output declares its own top-level
+// `var __webpack_exports__`, which collides with bundlers/devtools that
+// evaluate modules inside a strict-mode eval wrapper (the hoisted var
+// shadows the wrapper's own binding and crashes module evaluation). Loading
+// it as a real ES module via dynamic `import()` at runtime sidesteps that
+// entirely, and keeps pdf.js out of every consumer's bundle.
+const PDFJS_VERSION = '4.8.69';
+
+let pdfjsPromise: Promise<any> | null = null;
+
+// `new Function` keeps bundlers (webpack/rollup) from trying to statically
+// resolve or rewrite the import specifier at build time.
+// eslint-disable-next-line no-new-func
+const dynamicImport = new Function('u', 'return import(u)') as (
+  url: string
+) => Promise<any>;
+
+export function loadPdfjs(): Promise<any> {
+  if (!pdfjsPromise) {
+    pdfjsPromise = dynamicImport(
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`
+    ).then((pdfjs: any) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
+}
