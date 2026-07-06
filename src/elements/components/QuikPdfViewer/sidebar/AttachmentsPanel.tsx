@@ -36,7 +36,7 @@ export default function AttachmentsPanel({
         <input
           ref={inputRef}
           type='file'
-          accept='.pdf,.jpg,.jpeg,.png,.gif,.bmp,.tif'
+          accept='.pdf'
           css={{ display: 'none' }}
           onChange={(e) => {
             const file = e.target.files?.[0];
