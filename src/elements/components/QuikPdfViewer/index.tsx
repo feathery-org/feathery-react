@@ -140,6 +140,13 @@ export default function QuikPdfViewer({
 
   const onAddAttachment = useCallback(
     async (file: File) => {
+      const isPdf =
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf');
+      if (!isPdf) {
+        setError('Attachments must be PDF files.');
+        return;
+      }
       setUploading(true);
       setError('');
       try {
@@ -210,19 +217,46 @@ export default function QuikPdfViewer({
     }
   };
 
+  // The merged download is generated server-side (Quik re-fill with the
+  // current field values + attachments appended). Saving client-side via
+  // pdf.js saveDocument() is broken for Quik's hybrid AcroForm fields: it
+  // writes /V onto the widget kid instead of the field dict, so Chrome's
+  // viewer shows the stale prefill when a field is focused.
   const download = async () => {
-    for (const [i, doc] of visibleDocuments.entries()) {
-      const proxy = loadedDocs.current[doc.pdf_url];
-      if (!proxy) continue;
-      const bytes: Uint8Array = await proxy.saveDocument();
-      const url = URL.createObjectURL(
-        new Blob([bytes], { type: 'application/pdf' })
-      );
+    setBusy(true);
+    setError('');
+    try {
+      const fieldOverrides = await fieldLayer.getOverrides();
+      const result = await client.finalizeQuikViewer({
+        action,
+        reviewAction: 'download',
+        fieldOverrides,
+        attachments
+      });
+      if (result?.status === 'error') {
+        if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
+        else setError(result.message);
+        return;
+      }
+      const fileUrl = result?.files?.[0];
+      if (!fileUrl) {
+        setError('Failed to generate the download.');
+        return;
+      }
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error('Failed to fetch the merged PDF');
+      const url = URL.createObjectURL(await response.blob());
       const a = featheryDoc().createElement('a');
       a.href = url;
-      a.download = doc.form_name ?? doc.name ?? `document-${i + 1}.pdf`;
+      const baseName =
+        visibleDocuments.find((doc) => doc.form_name)?.form_name ?? 'documents';
+      a.download = `${baseName}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
     }
   };
 
