@@ -58,7 +58,18 @@ export default {
     replace({
       preventAssignment: true,
       values: {
-        __PACKAGE_VERSION__: JSON.stringify(pkg.version)
+        __PACKAGE_VERSION__: JSON.stringify(pkg.version),
+        // Bake the backend env only when explicitly set at build time
+        // (e.g. `BACKEND_ENV=local yarn build:node` for local linking).
+        // Left unset, the runtime process.env lookup is preserved so
+        // consumers' bundlers can still inject it themselves.
+        ...(process.env.BACKEND_ENV
+          ? {
+              'process.env.BACKEND_ENV': JSON.stringify(
+                process.env.BACKEND_ENV
+              )
+            }
+          : {})
       }
     }),
     // @segment/analytics-next's `browser` field swaps its deprecated Node
