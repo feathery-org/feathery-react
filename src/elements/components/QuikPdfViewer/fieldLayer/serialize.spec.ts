@@ -1,4 +1,4 @@
-import { extractFieldValues, toFormFields } from './serialize';
+import { extractFieldValues, toFormFields, toQuikFieldName } from './serialize';
 
 const makeDoc = (fieldObjects: any, storage: Record<string, any>) => ({
   getFieldObjects: async () => fieldObjects,
@@ -71,6 +71,16 @@ describe('extractFieldValues', () => {
     });
   });
 
+  it('maps a qualified leaf field key to the Quik API field name', async () => {
+    const doc = makeDoc(
+      {
+        '1own.1own_FName': [{ id: 'a1', type: 'text', value: 'Prefill' }]
+      },
+      { a1: { value: 'Edited' } }
+    );
+    expect(await extractFieldValues(doc)).toEqual({ '1own.FName': 'Edited' });
+  });
+
   it('returns {} for documents without fields', async () => {
     const doc = makeDoc(null, {});
     expect(await extractFieldValues(doc)).toEqual({});
@@ -84,6 +94,20 @@ describe('extractFieldValues', () => {
       'Feathery: document has no fillable form fields'
     );
     warnSpy.mockRestore();
+  });
+});
+
+describe('toQuikFieldName', () => {
+  it('decodes an underscore-encoded leaf segment', () => {
+    expect(toQuikFieldName('1own.1own_FName')).toBe('1own.FName');
+  });
+
+  it('decodes a nested underscore-encoded leaf segment', () => {
+    expect(toQuikFieldName('1own.H.1own_H_Addr123')).toBe('1own.H.Addr123');
+  });
+
+  it('falls back to the full qualified name when the leaf has no underscore', () => {
+    expect(toQuikFieldName('1own.FName')).toBe('1own.FName');
   });
 });
 

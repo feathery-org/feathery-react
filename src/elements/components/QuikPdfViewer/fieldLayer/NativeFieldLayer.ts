@@ -1,5 +1,5 @@
 import { FieldLayer, QuikFieldOverride, ValidationIssue } from './types';
-import { extractFieldValues, toFormFields } from './serialize';
+import { extractFieldValues, toFormFields, toQuikFieldName } from './serialize';
 import { ViewerDocument } from '../index';
 
 const REQUIRED_FIELD_FLAG = 2;
@@ -46,16 +46,17 @@ export class NativeFieldLayer implements FieldLayer {
         const page = await pdfProxy.getPage(p);
         const annotations = await page.getAnnotations();
         for (const ann of annotations) {
+          if (!ann.fieldName) continue;
+          const fieldName = toQuikFieldName(ann.fieldName);
           if (
-            ann.fieldName &&
             // eslint-disable-next-line no-bitwise
             (ann.fieldFlags & REQUIRED_FIELD_FLAG) !== 0 &&
-            !values[ann.fieldName]
+            !values[fieldName]
           ) {
-            const key = `${docIndex}:${ann.fieldName}`;
+            const key = `${docIndex}:${fieldName}`;
             if (!seenKeys.has(key)) {
               seenKeys.add(key);
-              issues.push({ docIndex, fieldName: ann.fieldName });
+              issues.push({ docIndex, fieldName });
             }
           }
         }

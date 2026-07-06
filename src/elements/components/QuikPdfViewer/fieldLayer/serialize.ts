@@ -10,6 +10,16 @@ const exportValueOf = (obj: FieldObject): string => {
   return obj.exportValues ?? 'Yes';
 };
 
+// pdf.js exposes AcroForm-qualified field names (e.g. `1own.H.1own_H_Addr123`),
+// but Quik's FormFields API expects its own field names (e.g. `1own.H.Addr123`).
+// The leaf segment of the qualified name is the Quik field name with '.' encoded
+// as '_'. Decode it back; fall back to the full qualified name when the leaf
+// has no encoded separator (simple/flat field names).
+export function toQuikFieldName(qualifiedName: string): string {
+  const leaf = qualifiedName.split('.').pop() ?? qualifiedName;
+  return leaf.includes('_') ? leaf.replace(/_/g, '.') : qualifiedName;
+}
+
 export async function extractFieldValues(
   pdfDoc: any
 ): Promise<Record<string, string>> {
@@ -23,7 +33,8 @@ export async function extractFieldValues(
     pdfDoc.annotationStorage.getAll() ?? {};
 
   const values: Record<string, string> = {};
-  Object.entries(fieldObjects).forEach(([name, objs]) => {
+  Object.entries(fieldObjects).forEach(([qualifiedName, objs]) => {
+    const name = toQuikFieldName(qualifiedName);
     objs.forEach((obj) => {
       const stored = storage[obj.id];
       switch (obj.type) {

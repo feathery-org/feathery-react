@@ -72,6 +72,26 @@ it('reset calls remount', () => {
   expect(remount).toHaveBeenCalled();
 });
 
+it('normalizes qualified field names when reporting required-empty fields', async () => {
+  const form = makeEntry(
+    '44233',
+    0,
+    { '1own.1own_SSN': [{ id: 'a1', type: 'text', value: '' }] },
+    {},
+    [
+      {
+        fieldName: '1own.1own_SSN',
+        fieldFlags: REQUIRED_FLAG,
+        fieldType: 'Tx'
+      }
+    ]
+  );
+  const layer = new NativeFieldLayer(() => [form] as any, jest.fn());
+  expect(await layer.validate()).toEqual([
+    { docIndex: 0, fieldName: '1own.SSN' }
+  ]);
+});
+
 it('deduplicates required-field issues by docIndex and fieldName', async () => {
   const form = makeEntry(
     '44233',
