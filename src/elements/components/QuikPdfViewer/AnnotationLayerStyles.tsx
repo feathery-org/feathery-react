@@ -118,11 +118,18 @@ export default function AnnotationLayerStyles() {
           appearance: none;
         }
 
-        /* Checked-state glyphs, ported from pdf.js 4.8.69's viewer CSS.
-           With appearance: none the native checkmark/dot never paints, so
-           without these rules toggling a checkbox has no visible effect. */
-        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::before,
-        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after,
+        /* Checked-state glyphs. With appearance: none the native
+           checkmark/dot never paints, so without these rules toggling a
+           checkbox has no visible effect. The checkmark is an inline SVG
+           (thick rounded stroke, like Chrome's PDF editor) so it scales to
+           the widget rect at any zoom; a font glyph can't track box size. */
+        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.5 13.5 L9.5 18.5 L20 5' fill='none' stroke='%233b82f6' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: center;
+          background-size: 95% 95%;
+        }
+
         .annotationLayer
           .buttonWidgetAnnotation.radioButton
           input:checked::before {
@@ -130,29 +137,6 @@ export default function AnnotationLayerStyles() {
           content: '';
           display: block;
           position: absolute;
-        }
-
-        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::before,
-        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after {
-          height: 80%;
-          left: 45%;
-          top: 10%;
-          width: 1px;
-        }
-
-        .annotationLayer
-          .buttonWidgetAnnotation.checkBox
-          input:checked::before {
-          transform: rotate(45deg);
-        }
-
-        .annotationLayer .buttonWidgetAnnotation.checkBox input:checked::after {
-          transform: rotate(-45deg);
-        }
-
-        .annotationLayer
-          .buttonWidgetAnnotation.radioButton
-          input:checked::before {
           border-radius: 50%;
           height: 50%;
           left: 25%;
