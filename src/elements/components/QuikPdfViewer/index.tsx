@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState
 } from 'react';
-import DocumentScroll from './DocumentScroll';
+import DocumentCanvas from './DocumentCanvas';
 import ViewerHeader from './ViewerHeader';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
@@ -292,7 +292,7 @@ export default function QuikPdfViewer({
           ref={scrollContainerRef}
           css={{ flex: 1, overflow: 'auto', padding: 24 }}
         >
-          <DocumentScroll
+          <DocumentCanvas
             documents={visibleDocuments}
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
