@@ -13,9 +13,7 @@ export function useFieldProgress(
 ) {
   const [issues, setIssues] = useState<ValidationIssue[] | null>(null);
   const runIdRef = useRef(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined
-  );
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const recount = useCallback(async () => {
     const runId = ++runIdRef.current;
