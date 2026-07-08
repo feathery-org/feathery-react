@@ -42,11 +42,12 @@ export default function DocumentCanvas({
   remountKey
 }: DocumentCanvasProps) {
   const [docStates, setDocStates] = useState<Record<string, DocState>>({});
-  const cancelledRef = useRef(false);
+  const generationRef = useRef(0);
   const docUrlsKey = documents.map((d) => d.pdf_url).join('|');
 
   const loadDoc = useCallback(
     (doc: ViewerDocument) => {
+      const generation = generationRef.current;
       setDocStates((prev) => {
         const next = { ...prev };
         delete next[doc.pdf_url];
@@ -55,7 +56,7 @@ export default function DocumentCanvas({
       loadPdfjs()
         .then((pdfjs: any) => pdfjs.getDocument({ url: doc.pdf_url }).promise)
         .then((pdfProxy: any) => {
-          if (cancelledRef.current) return;
+          if (generationRef.current !== generation) return;
           setDocStates((prev) => ({
             ...prev,
             [doc.pdf_url]: { pdfProxy, error: '' }
@@ -63,7 +64,7 @@ export default function DocumentCanvas({
           onDocLoad(doc.pdf_url, pdfProxy);
         })
         .catch(() => {
-          if (cancelledRef.current) return;
+          if (generationRef.current !== generation) return;
           setDocStates((prev) => ({
             ...prev,
             [doc.pdf_url]: { pdfProxy: null, error: 'failed' }
@@ -74,11 +75,11 @@ export default function DocumentCanvas({
   );
 
   useEffect(() => {
-    cancelledRef.current = false;
+    generationRef.current += 1;
     setDocStates({});
     documents.forEach(loadDoc);
     return () => {
-      cancelledRef.current = true;
+      generationRef.current += 1;
     };
     // Deliberately keyed on remountKey/docUrlsKey rather than `documents`:
     // re-running this effect on every render would restart in-flight loads.
