@@ -168,7 +168,6 @@ export default function QuikPdfViewer({
     return () => doc.removeEventListener('keydown', onKeyDown);
     // setShow/onNavigate are stable for the life of the viewer; value state
     // is read through refs so the listener binds once.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fieldLayer = useMemo(

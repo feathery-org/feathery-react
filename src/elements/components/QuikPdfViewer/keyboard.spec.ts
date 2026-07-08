@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-globals */
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 describe('stepPageKey', () => {

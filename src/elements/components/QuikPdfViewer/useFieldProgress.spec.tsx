@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-globals */
 import React, { useRef } from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { useFieldProgress } from './useFieldProgress';

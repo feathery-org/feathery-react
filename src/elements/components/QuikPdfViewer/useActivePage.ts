@@ -44,7 +44,6 @@ export function useActivePage(
     };
     // The root element exists by the time effects run; keys register via
     // observePage which handles both before- and after-mount ordering.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const observePage = useCallback((key: string, el: HTMLElement | null) => {

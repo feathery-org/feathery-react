@@ -83,7 +83,6 @@ export default function DocumentCanvas({
     };
     // Deliberately keyed on remountKey/docUrlsKey rather than `documents`:
     // re-running this effect on every render would restart in-flight loads.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remountKey, docUrlsKey]);
 
   return (
