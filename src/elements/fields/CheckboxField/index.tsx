@@ -9,15 +9,24 @@ const MIN_CHECKBOX_PX = 13;
 
 // Possibly extract this to its own file, however the radio type is nearly identical to checkbox
 const radio = (size: any, color: any) => {
-  size = Math.floor(size / 1.7);
+  const dotRadius = Math.floor(size / 1.7) / 2;
+  // The dot is a radial gradient on a pseudo-element covering the whole input
+  // rather than a fixed-px box centered in leftover space: when that leftover
+  // is odd, browsers snap the box up to a device pixel off-center at some
+  // zoom/DPR levels, while gradients rasterize around the true center
   return {
-    height: size,
-    width: size,
-    minWidth: size,
-    minHeight: size,
+    position: 'absolute',
+    // inset: 0 — spelled out for older Safari, which lacks the shorthand
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    height: 'auto',
+    width: 'auto',
+    minWidth: 0,
+    minHeight: 0,
     border: 0,
-    boxShadow: `inset ${size}px ${size}px #${color}`,
-    borderRadius: '50%'
+    backgroundImage: `radial-gradient(circle, #${color} ${dotRadius}px, transparent ${dotRadius}px)`
   };
 };
 
@@ -216,7 +225,8 @@ export const composeCheckableInputStyle = (
   isRadio = false
 ) => {
   return {
-    position: 'static',
+    // Radio inputs anchor their absolutely-positioned ::before dot
+    position: isRadio ? 'relative' : 'static',
     marginLeft: 5,
     marginRight: 5,
     marginTop: 0,
