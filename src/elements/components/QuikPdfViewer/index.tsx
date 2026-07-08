@@ -6,7 +6,9 @@ import React, {
   useState
 } from 'react';
 import DocumentCanvas from './DocumentCanvas';
-import ViewerHeader from './ViewerHeader';
+import Toolbar from './Toolbar';
+import { useActivePage, pageKey } from './useActivePage';
+import { useIsNarrowViewport } from './useIsNarrowViewport';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
 import { NativeFieldLayer, LoadedDoc } from './fieldLayer/NativeFieldLayer';
@@ -14,6 +16,7 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export interface ViewerDocument {
   type: 'form' | 'attachment';
@@ -53,7 +56,14 @@ export default function QuikPdfViewer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pageCounts, setPageCounts] = useState<Record<string, number>>({});
-  const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
+  const [fitWidth, setFitWidth] = useState(MAX_PAGE_WIDTH);
+  const [zoom, setZoom] = useState<number | 'fit'>('fit');
+  const effectiveZoom = zoom === 'fit' ? 1 : zoom;
+  const pageWidth = Math.round(fitWidth * effectiveZoom);
+  const zoomIndex = ZOOM_LEVELS.indexOf(effectiveZoom);
+  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
+  const canZoomOut = zoomIndex > 0;
+  const zoomLabel = zoom === 'fit' ? 'Fit' : `${Math.round(zoom * 100)}%`;
   const [attachments, setAttachments] = useState<
     { id: string; name: string; position: 'before' | 'after' }[]
   >(() =>
@@ -87,13 +97,31 @@ export default function QuikPdfViewer({
     [payload.documents, addedDocuments, removedAttachmentIds]
   );
 
+  const pageEntries = useMemo(
+    () =>
+      visibleDocuments.flatMap((doc) =>
+        Array.from({ length: pageCounts[doc.pdf_url] ?? 0 }, (_, i) => ({
+          pdfUrl: doc.pdf_url,
+          pageIndex: i,
+          key: pageKey(doc.pdf_url, i)
+        }))
+      ),
+    [visibleDocuments, pageCounts]
+  );
+  const pageOrder = useMemo(() => pageEntries.map((p) => p.key), [pageEntries]);
+  const { activeKey, activePageNumber, observePage } = useActivePage(
+    scrollContainerRef,
+    pageOrder
+  );
+  const isNarrow = useIsNarrowViewport();
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
       if (width) {
-        setPageWidth(Math.min(MAX_PAGE_WIDTH, width - CONTAINER_PADDING));
+        setFitWidth(Math.min(MAX_PAGE_WIDTH, width - CONTAINER_PADDING));
       }
     });
     observer.observe(container);
@@ -125,13 +153,14 @@ export default function QuikPdfViewer({
 
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
-      pageRefs.current[`${pdfUrl}-${pageIndex}`] = el;
+      pageRefs.current[pageKey(pdfUrl, pageIndex)] = el;
+      observePage(pageKey(pdfUrl, pageIndex), el);
     },
-    []
+    [observePage]
   );
 
   const onNavigate = useCallback((pdfUrl: string, pageIndex: number) => {
-    const el = pageRefs.current[`${pdfUrl}-${pageIndex}`];
+    const el = pageRefs.current[pageKey(pdfUrl, pageIndex)];
     if (!el) return;
     const reduceMotion = featheryWindow().matchMedia?.(
       '(prefers-reduced-motion: reduce)'
@@ -273,7 +302,7 @@ export default function QuikPdfViewer({
         backgroundColor: '#f4f5f8'
       }}
     >
-      <ViewerHeader
+      <Toolbar
         title='Review Your Forms'
         onBack={() => setShow(false)}
         onReset={() => fieldLayer.reset()}
@@ -282,6 +311,19 @@ export default function QuikPdfViewer({
         onPrimary={() => finalize(isSign ? 'sign' : 'submit')}
         primaryLabel={isSign ? 'Sign' : 'Submit'}
         busy={busy}
+        zoomLabel={zoomLabel}
+        canZoomIn={canZoomIn}
+        canZoomOut={canZoomOut}
+        onZoomIn={() =>
+          setZoom(ZOOM_LEVELS[Math.min(zoomIndex + 1, ZOOM_LEVELS.length - 1)])
+        }
+        onZoomOut={() => setZoom(ZOOM_LEVELS[Math.max(zoomIndex - 1, 0)])}
+        onFitWidth={() => setZoom('fit')}
+        activePage={activePageNumber}
+        totalPages={pageOrder.length}
+        requiredRemaining={null}
+        onJumpToNextField={() => {}}
+        isNarrow={isNarrow}
       />
       {expiredBanner && (
         <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
