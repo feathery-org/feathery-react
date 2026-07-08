@@ -7,8 +7,6 @@ export const color = {
   textMuted: '#6b7280',
   accent: '#3b82f6',
   accentSoft: '#eff6ff',
-  // Feathery brand accent — used for the active sidebar tab.
-  brand: '#dc3a4b',
   primary: '#e2626e',
   primaryHover: '#dc3a4b',
   errorText: '#b3261e',

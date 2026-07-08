@@ -105,7 +105,7 @@ export default function ViewerSidebar({
                   fontWeight: tab === t ? 600 : 400,
                   color: tab === t ? color.text : color.textMuted,
                   boxShadow:
-                    tab === t ? `inset 0 -2px 0 ${color.brand}` : 'none'
+                    tab === t ? `inset 0 -2px 0 ${color.accent}` : 'none'
                 }}
               >
                 {t === 'pages' ? 'Pages' : 'Documents'}
