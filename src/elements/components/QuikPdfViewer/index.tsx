@@ -8,6 +8,7 @@ import React, {
 import DocumentCanvas from './DocumentCanvas';
 import Toolbar from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
+import { useFieldProgress } from './useFieldProgress';
 import { useIsNarrowViewport } from './useIsNarrowViewport';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
@@ -144,6 +145,17 @@ export default function QuikPdfViewer({
         }
       ),
     [visibleDocuments]
+  );
+
+  const docsLoadedKey = useMemo(
+    () => JSON.stringify(pageCounts),
+    [pageCounts]
+  );
+  const { requiredRemaining, jumpToNextField } = useFieldProgress(
+    fieldLayer,
+    scrollContainerRef,
+    docsLoadedKey,
+    remountKey
   );
 
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
@@ -321,8 +333,8 @@ export default function QuikPdfViewer({
         onFitWidth={() => setZoom('fit')}
         activePage={activePageNumber}
         totalPages={pageOrder.length}
-        requiredRemaining={null}
-        onJumpToNextField={() => {}}
+        requiredRemaining={requiredRemaining}
+        onJumpToNextField={jumpToNextField}
         isNarrow={isNarrow}
       />
       {expiredBanner && (
