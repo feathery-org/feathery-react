@@ -8,6 +8,7 @@ import React, {
 import DocumentScroll from './DocumentScroll';
 import ViewerHeader from './ViewerHeader';
 import ViewerSidebar from './sidebar';
+import AlertBanner from './AlertBanner';
 import { NativeFieldLayer, LoadedDoc } from './fieldLayer/NativeFieldLayer';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
@@ -283,21 +284,9 @@ export default function QuikPdfViewer({
         busy={busy}
       />
       {expiredBanner && (
-        <div
-          role='alert'
-          css={{ padding: 12, background: '#fdecea', color: '#b3261e' }}
-        >
-          This session has expired. Please close and reopen the viewer.
-        </div>
+        <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
       )}
-      {error && (
-        <div
-          role='alert'
-          css={{ padding: 12, background: '#fdecea', color: '#b3261e' }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div
           ref={scrollContainerRef}
