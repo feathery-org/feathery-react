@@ -1,57 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ViewerDocument } from '../index';
 import PageThumbnails from './PageThumbnails';
-import FormsList from './FormsList';
-import AttachmentsPanel from './AttachmentsPanel';
-import { featheryWindow } from '../../../../utils/browser';
+import DocumentsPanel from './DocumentsPanel';
+import { color, fontSize, shadow } from '../tokens';
+import { iconButtonCss } from '../buttonStyles';
+import { MenuIcon, CloseIcon } from '../icons';
 
-const SIDEBAR_WIDTH = 280;
-const COLLAPSE_BREAKPOINT = 1024;
+const SIDEBAR_WIDTH = 240;
 
 interface ViewerSidebarProps {
   documents: ViewerDocument[];
   pageCounts: Record<string, number>;
   pdfProxies: Record<string, any>;
+  activeKey: string;
   onNavigate: (pdfUrl: string, pageIndex: number) => void;
   attachments: { id: string; name: string; position: 'before' | 'after' }[];
   onAddAttachment: (file: File) => void;
   onRemoveAttachment: (index: number) => void;
   uploading: boolean;
   expiresAt?: string;
-}
-
-function useIsNarrowViewport() {
-  const [isNarrow, setIsNarrow] = useState(
-    () =>
-      featheryWindow().matchMedia?.(`(max-width: ${COLLAPSE_BREAKPOINT}px)`)
-        .matches ?? false
-  );
-
-  useEffect(() => {
-    const mql = featheryWindow().matchMedia?.(
-      `(max-width: ${COLLAPSE_BREAKPOINT}px)`
-    );
-    if (!mql) return;
-    const handler = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, []);
-
-  return isNarrow;
+  isNarrow: boolean;
 }
 
 export default function ViewerSidebar({
   documents,
   pageCounts,
   pdfProxies,
+  activeKey,
   onNavigate,
   attachments,
   onAddAttachment,
   onRemoveAttachment,
   uploading,
-  expiresAt
+  expiresAt,
+  isNarrow
 }: ViewerSidebarProps) {
-  const isNarrow = useIsNarrowViewport();
+  const [tab, setTab] = useState<'pages' | 'documents'>('pages');
   const [collapsed, setCollapsed] = useState(true);
   const expanded = !isNarrow || !collapsed;
   const isExpired = expiresAt
@@ -65,9 +49,17 @@ export default function ViewerSidebar({
           type='button'
           aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
           onClick={() => setCollapsed((c) => !c)}
-          css={toggleButtonCss}
+          css={{
+            ...iconButtonCss,
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            zIndex: 11,
+            backgroundColor: color.surface,
+            border: `1px solid ${color.border}`
+          }}
         >
-          {collapsed ? '☰' : '✕'}
+          {collapsed ? <MenuIcon size={18} /> : <CloseIcon size={18} />}
         </button>
       )}
       {expanded && (
@@ -76,46 +68,83 @@ export default function ViewerSidebar({
           css={{
             width: SIDEBAR_WIDTH,
             height: '100%',
-            overflowY: 'auto',
-            backgroundColor: 'white',
-            borderLeft: '1px solid #e2e4eb',
+            backgroundColor: color.surface,
+            borderRight: `1px solid ${color.border}`,
             display: 'flex',
             flexDirection: 'column',
             ...(isNarrow
               ? {
                   position: 'absolute',
-                  right: 0,
+                  left: 0,
                   top: 0,
                   bottom: 0,
                   zIndex: 10,
-                  boxShadow: '-4px 0 12px rgba(0,0,0,0.12)'
+                  boxShadow: shadow.drawer
                 }
               : {})
           }}
         >
+          <div
+            role='tablist'
+            css={{
+              display: 'flex',
+              borderBottom: `1px solid ${color.border}`,
+              flexShrink: 0,
+              ...(isNarrow ? { paddingLeft: 44 } : {})
+            }}
+          >
+            {(['pages', 'documents'] as const).map((t) => (
+              <button
+                key={t}
+                type='button'
+                role='tab'
+                aria-selected={tab === t}
+                onClick={() => setTab(t)}
+                css={{
+                  flex: 1,
+                  padding: '10px 0',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  fontSize: fontSize.base,
+                  fontWeight: tab === t ? 600 : 400,
+                  color: tab === t ? color.text : color.textMuted,
+                  boxShadow:
+                    tab === t ? `inset 0 -2px 0 ${color.accent}` : 'none'
+                }}
+              >
+                {t === 'pages' ? 'Pages' : 'Documents'}
+              </button>
+            ))}
+          </div>
           <div css={{ flex: 1, overflowY: 'auto' }}>
-            <PageThumbnails
-              documents={documents}
-              pageCounts={pageCounts}
-              pdfProxies={pdfProxies}
-              onNavigate={onNavigate}
-            />
-            <FormsList documents={documents} onNavigate={onNavigate} />
-            <AttachmentsPanel
-              attachments={attachments}
-              onAdd={onAddAttachment}
-              onRemove={onRemoveAttachment}
-              uploading={uploading}
-            />
+            {tab === 'pages' ? (
+              <PageThumbnails
+                documents={documents}
+                pageCounts={pageCounts}
+                pdfProxies={pdfProxies}
+                activeKey={activeKey}
+                onNavigate={onNavigate}
+              />
+            ) : (
+              <DocumentsPanel
+                documents={documents}
+                onNavigate={onNavigate}
+                attachments={attachments}
+                onAdd={onAddAttachment}
+                onRemove={onRemoveAttachment}
+                uploading={uploading}
+              />
+            )}
           </div>
           {expiresAt && (
             <div
               css={{
-                padding: '12px 20px',
-                textAlign: 'right',
-                fontSize: 12,
-                color: '#b3261e',
-                borderTop: '1px solid #e2e4eb'
+                padding: '10px 16px',
+                fontSize: fontSize.sm,
+                color: isExpired ? color.errorText : color.textMuted,
+                borderTop: `1px solid ${color.border}`,
+                flexShrink: 0
               }}
             >
               {isExpired ? 'Expired' : 'Expires'}{' '}
@@ -127,17 +156,3 @@ export default function ViewerSidebar({
     </div>
   );
 }
-
-const toggleButtonCss = {
-  position: 'absolute' as const,
-  top: 8,
-  right: 8,
-  zIndex: 11,
-  border: '1px solid #e2e4eb',
-  background: 'white',
-  borderRadius: 6,
-  width: 36,
-  height: 36,
-  cursor: 'pointer',
-  fontSize: 16
-};

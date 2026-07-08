@@ -56,7 +56,12 @@ it('shows completion state when no required fields remain', () => {
 it('collapses secondary actions into an overflow menu when narrow', () => {
   const onReset = jest.fn();
   render(
-    <Toolbar {...baseProps} isNarrow onReset={onReset} onSaveDraft={jest.fn()} />
+    <Toolbar
+      {...baseProps}
+      isNarrow
+      onReset={onReset}
+      onSaveDraft={jest.fn()}
+    />
   );
   expect(
     screen.queryByRole('button', { name: 'Reset' })

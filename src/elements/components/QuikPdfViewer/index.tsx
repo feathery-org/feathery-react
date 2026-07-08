@@ -147,10 +147,7 @@ export default function QuikPdfViewer({
     [visibleDocuments]
   );
 
-  const docsLoadedKey = useMemo(
-    () => JSON.stringify(pageCounts),
-    [pageCounts]
-  );
+  const docsLoadedKey = useMemo(() => JSON.stringify(pageCounts), [pageCounts]);
   const { requiredRemaining, jumpToNextField } = useFieldProgress(
     fieldLayer,
     scrollContainerRef,
@@ -342,6 +339,19 @@ export default function QuikPdfViewer({
       )}
       {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <ViewerSidebar
+          documents={visibleDocuments}
+          pageCounts={pageCounts}
+          pdfProxies={loadedDocs.current}
+          activeKey={activeKey}
+          onNavigate={onNavigate}
+          attachments={attachments}
+          onAddAttachment={onAddAttachment}
+          onRemoveAttachment={onRemoveAttachment}
+          uploading={uploading}
+          expiresAt={payload.expires_at}
+          isNarrow={isNarrow}
+        />
         <div
           ref={scrollContainerRef}
           css={{ flex: 1, overflow: 'auto', padding: 24 }}
@@ -354,17 +364,6 @@ export default function QuikPdfViewer({
             remountKey={remountKey}
           />
         </div>
-        <ViewerSidebar
-          documents={visibleDocuments}
-          pageCounts={pageCounts}
-          pdfProxies={loadedDocs.current}
-          onNavigate={onNavigate}
-          attachments={attachments}
-          onAddAttachment={onAddAttachment}
-          onRemoveAttachment={onRemoveAttachment}
-          uploading={uploading}
-          expiresAt={payload.expires_at}
-        />
       </div>
     </div>
   );
