@@ -5,8 +5,10 @@ export const color = {
   border: '#e2e4eb',
   text: '#111827',
   textMuted: '#6b7280',
-  accent: '#dc3a4b',
-  accentSoft: '#fef6f7',
+  accent: '#3b82f6',
+  accentSoft: '#eff6ff',
+  // Feathery brand accent — used for the active sidebar tab.
+  brand: '#dc3a4b',
   primary: '#e2626e',
   primaryHover: '#dc3a4b',
   errorText: '#b3261e',
