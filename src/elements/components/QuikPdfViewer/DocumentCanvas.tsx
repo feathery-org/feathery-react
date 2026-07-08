@@ -92,7 +92,9 @@ export default function DocumentCanvas({
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: PAGE_GAP
+        gap: PAGE_GAP,
+        width: 'fit-content',
+        minWidth: '100%'
       }}
     >
       <AnnotationLayerStyles />
