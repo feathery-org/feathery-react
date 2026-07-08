@@ -1,4 +1,4 @@
-import { stepPageKey, trapTabKey } from './keyboard';
+import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 describe('stepPageKey', () => {
   const order = ['a', 'b', 'c'];
@@ -36,5 +36,18 @@ describe('trapTabKey', () => {
     const e = { shiftKey: true, preventDefault: jest.fn() };
     trapTabKey(container, e);
     expect(document.activeElement?.id).toBe('last');
+  });
+});
+
+describe('isEditableTarget', () => {
+  it('returns true for form input elements', () => {
+    expect(isEditableTarget(document.createElement('input'))).toBe(true);
+    expect(isEditableTarget(document.createElement('textarea'))).toBe(true);
+    expect(isEditableTarget(document.createElement('select'))).toBe(true);
+  });
+  it('returns false for non-editable elements and null', () => {
+    expect(isEditableTarget(document.createElement('button'))).toBe(false);
+    expect(isEditableTarget(document.createElement('div'))).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
   });
 });

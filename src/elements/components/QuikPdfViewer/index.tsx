@@ -14,7 +14,7 @@ import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
 import { NativeFieldLayer, LoadedDoc } from './fieldLayer/NativeFieldLayer';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
-import { stepPageKey, trapTabKey } from './keyboard';
+import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
@@ -142,8 +142,15 @@ export default function QuikPdfViewer({
       const container = containerRef.current;
       if (!container) return;
       if (e.key === 'Escape') {
+        if (isEditableTarget(e.target)) {
+          // First Esc leaves the field; the next Esc closes the viewer.
+          (e.target as HTMLElement).blur();
+          return;
+        }
         setShow(false);
       } else if (e.key === 'PageDown' || e.key === 'PageUp') {
+        // Let focused inputs/textareas handle paging keys natively.
+        if (isEditableTarget(e.target)) return;
         e.preventDefault();
         const entries = pageEntriesRef.current;
         const nextKey = stepPageKey(

@@ -10,6 +10,18 @@ export function stepPageKey(
   return pageOrder[next];
 }
 
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return (
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    !!el.isContentEditable
+  );
+}
+
 interface TabLikeEvent {
   shiftKey: boolean;
   preventDefault: () => void;
