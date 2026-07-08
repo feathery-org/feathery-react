@@ -5,31 +5,32 @@ import Toolbar from './Toolbar';
 const baseProps = {
   title: 'Review Your Forms',
   onBack: jest.fn(),
-  onReset: jest.fn(),
   onDownload: jest.fn(),
   onPrimary: jest.fn(),
   primaryLabel: 'Sign',
   busy: false,
-  zoomLabel: 'Fit',
-  canZoomIn: true,
-  canZoomOut: true,
-  onZoomIn: jest.fn(),
-  onZoomOut: jest.fn(),
-  onFitWidth: jest.fn(),
-  activePage: 2,
-  totalPages: 10,
-  requiredRemaining: null,
-  onJumpToNextField: jest.fn(),
   isNarrow: false
 };
 
-it('renders title, page readout, and zoom controls', () => {
-  const onZoomIn = jest.fn();
-  render(<Toolbar {...baseProps} onZoomIn={onZoomIn} />);
+it('renders the title, download, and primary action', () => {
+  const onPrimary = jest.fn();
+  render(<Toolbar {...baseProps} onPrimary={onPrimary} />);
   expect(screen.getByText('Review Your Forms')).toBeInTheDocument();
-  expect(screen.getByText('Page 2 of 10')).toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText('Zoom in'));
-  expect(onZoomIn).toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /Sign/ }));
+  expect(onPrimary).toHaveBeenCalled();
+});
+
+it('does not render zoom, page, field-status, or reset controls', () => {
+  render(<Toolbar {...baseProps} onSaveDraft={jest.fn()} />);
+  expect(screen.queryByLabelText('Zoom in')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Fit width')).not.toBeInTheDocument();
+  expect(screen.queryByText(/Page \d+ of/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/required field/)).not.toBeInTheDocument();
+  expect(screen.queryByText('All fields complete')).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'Reset' })
+  ).not.toBeInTheDocument();
 });
 
 it('disables actions and keeps the primary label while busy', () => {
@@ -39,34 +40,27 @@ it('disables actions and keeps the primary label while busy', () => {
   expect(primary).toHaveTextContent('Sign');
 });
 
-it('shows the progress pill and jumps to the next field', () => {
-  const onJump = jest.fn();
-  render(
-    <Toolbar {...baseProps} requiredRemaining={3} onJumpToNextField={onJump} />
-  );
-  fireEvent.click(screen.getByText('3 required fields left'));
-  expect(onJump).toHaveBeenCalled();
+it('shows Save Draft only when provided', () => {
+  const { rerender } = render(<Toolbar {...baseProps} />);
+  expect(
+    screen.queryByRole('button', { name: 'Save Draft' })
+  ).not.toBeInTheDocument();
+  rerender(<Toolbar {...baseProps} onSaveDraft={jest.fn()} />);
+  expect(
+    screen.getByRole('button', { name: 'Save Draft' })
+  ).toBeInTheDocument();
 });
 
-it('shows completion state when no required fields remain', () => {
-  render(<Toolbar {...baseProps} requiredRemaining={0} />);
-  expect(screen.getByText('All fields complete')).toBeInTheDocument();
-});
-
-it('collapses secondary actions into an overflow menu when narrow', () => {
-  const onReset = jest.fn();
-  render(
-    <Toolbar
-      {...baseProps}
-      isNarrow
-      onReset={onReset}
-      onSaveDraft={jest.fn()}
-    />
-  );
+it('collapses Download into an overflow menu when narrow (no Reset)', () => {
+  const onDownload = jest.fn();
+  render(<Toolbar {...baseProps} isNarrow onDownload={onDownload} />);
+  expect(
+    screen.queryByRole('button', { name: 'Download' })
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByLabelText('More actions'));
   expect(
     screen.queryByRole('button', { name: 'Reset' })
   ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByLabelText('More actions'));
-  fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
-  expect(onReset).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  expect(onDownload).toHaveBeenCalled();
 });

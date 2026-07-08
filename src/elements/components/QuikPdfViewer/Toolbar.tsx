@@ -9,57 +9,30 @@ import {
 import {
   ChevronLeftIcon,
   DownloadIcon,
-  ResetIcon,
-  ZoomInIcon,
-  ZoomOutIcon,
-  FitWidthIcon,
   EllipsisIcon,
-  SpinnerIcon,
-  CheckIcon
+  SpinnerIcon
 } from './icons';
 import { featheryDoc } from '../../../utils/browser';
 
 export interface ToolbarProps {
   title: string;
   onBack: () => void;
-  onReset: () => void;
   onDownload: () => void;
   onSaveDraft?: () => void;
   onPrimary: () => void;
   primaryLabel: string;
   busy: boolean;
-  zoomLabel: string;
-  canZoomIn: boolean;
-  canZoomOut: boolean;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onFitWidth: () => void;
-  activePage: number;
-  totalPages: number;
-  requiredRemaining: number | null;
-  onJumpToNextField: () => void;
   isNarrow: boolean;
 }
 
 export default function Toolbar({
   title,
   onBack,
-  onReset,
   onDownload,
   onSaveDraft,
   onPrimary,
   primaryLabel,
   busy,
-  zoomLabel,
-  canZoomIn,
-  canZoomOut,
-  onZoomIn,
-  onZoomOut,
-  onFitWidth,
-  activePage,
-  totalPages,
-  requiredRemaining,
-  onJumpToNextField,
   isNarrow
 }: ToolbarProps) {
   return (
@@ -105,135 +78,22 @@ export default function Toolbar({
           {title}
         </span>
       </div>
-      {!isNarrow && (
-        <div css={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button
-            type='button'
-            aria-label='Zoom out'
-            disabled={!canZoomOut}
-            onClick={onZoomOut}
-            css={iconButtonCss}
-          >
-            <ZoomOutIcon size={17} />
-          </button>
-          <span
-            css={{
-              fontSize: fontSize.md,
-              color: color.textMuted,
-              minWidth: 44,
-              textAlign: 'center'
-            }}
-          >
-            {zoomLabel}
-          </span>
-          <button
-            type='button'
-            aria-label='Zoom in'
-            disabled={!canZoomIn}
-            onClick={onZoomIn}
-            css={iconButtonCss}
-          >
-            <ZoomInIcon size={17} />
-          </button>
-          <button
-            type='button'
-            aria-label='Fit width'
-            onClick={onFitWidth}
-            css={iconButtonCss}
-          >
-            <FitWidthIcon size={16} />
-          </button>
-          {totalPages > 0 && (
-            <>
-              <span
-                css={{
-                  width: 1,
-                  height: 20,
-                  backgroundColor: color.border,
-                  margin: '0 8px'
-                }}
-              />
-              <span
-                css={{
-                  fontSize: fontSize.md,
-                  color: color.textMuted,
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                Page {activePage} of {totalPages}
-              </span>
-            </>
-          )}
-        </div>
-      )}
       <div
         css={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          flex: 1,
           justifyContent: 'flex-end'
         }}
       >
-        {requiredRemaining !== null &&
-          (requiredRemaining > 0 ? (
-            <button
-              type='button'
-              onClick={onJumpToNextField}
-              css={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                borderRadius: radius.pill,
-                border: '1px solid transparent',
-                backgroundColor: color.accentSoft,
-                color: color.accent,
-                fontSize: fontSize.md,
-                fontWeight: 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                '&:hover': { borderColor: color.accent }
-              }}
-            >
-              {requiredRemaining} required field
-              {requiredRemaining === 1 ? '' : 's'} left
-            </button>
-          ) : (
-            <span
-              css={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 12px',
-                borderRadius: radius.pill,
-                backgroundColor: color.successBg,
-                color: color.successText,
-                fontSize: fontSize.md,
-                fontWeight: 600,
-                whiteSpace: 'nowrap'
-              }}
-            >
-              <CheckIcon size={14} /> All fields complete
-            </span>
-          ))}
         {isNarrow ? (
           <OverflowMenu
-            onReset={onReset}
             onDownload={onDownload}
             onSaveDraft={onSaveDraft}
             busy={busy}
           />
         ) : (
           <>
-            <button
-              type='button'
-              disabled={busy}
-              onClick={onReset}
-              css={quietButtonCss}
-            >
-              <ResetIcon size={16} /> Reset
-            </button>
             <button
               type='button'
               disabled={busy}
@@ -269,18 +129,12 @@ export default function Toolbar({
 }
 
 interface OverflowMenuProps {
-  onReset: () => void;
   onDownload: () => void;
   onSaveDraft?: () => void;
   busy: boolean;
 }
 
-function OverflowMenu({
-  onReset,
-  onDownload,
-  onSaveDraft,
-  busy
-}: OverflowMenuProps) {
+function OverflowMenu({ onDownload, onSaveDraft, busy }: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
@@ -349,7 +203,6 @@ function OverflowMenu({
             zIndex: 20
           }}
         >
-          {item('Reset', onReset)}
           {item('Download', onDownload)}
           {onSaveDraft && item('Save Draft', onSaveDraft)}
         </div>

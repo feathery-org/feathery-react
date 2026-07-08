@@ -18,7 +18,6 @@ interface ViewerSidebarProps {
   onAddAttachment: (file: File) => void;
   onRemoveAttachment: (index: number) => void;
   uploading: boolean;
-  expiresAt?: string;
   isNarrow: boolean;
 }
 
@@ -32,15 +31,11 @@ export default function ViewerSidebar({
   onAddAttachment,
   onRemoveAttachment,
   uploading,
-  expiresAt,
   isNarrow
 }: ViewerSidebarProps) {
   const [tab, setTab] = useState<'pages' | 'documents'>('pages');
   const [collapsed, setCollapsed] = useState(true);
   const expanded = !isNarrow || !collapsed;
-  const isExpired = expiresAt
-    ? new Date(expiresAt).getTime() < Date.now()
-    : false;
 
   return (
     <div css={{ position: 'relative', flexShrink: 0 }}>
@@ -137,20 +132,6 @@ export default function ViewerSidebar({
               />
             )}
           </div>
-          {expiresAt && (
-            <div
-              css={{
-                padding: '10px 16px',
-                fontSize: fontSize.sm,
-                color: isExpired ? color.errorText : color.textMuted,
-                borderTop: `1px solid ${color.border}`,
-                flexShrink: 0
-              }}
-            >
-              {isExpired ? 'Expired' : 'Expires'}{' '}
-              {new Date(expiresAt).toLocaleString()}
-            </div>
-          )}
         </aside>
       )}
     </div>

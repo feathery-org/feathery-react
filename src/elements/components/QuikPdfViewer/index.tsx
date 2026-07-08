@@ -8,7 +8,6 @@ import React, {
 import DocumentCanvas from './DocumentCanvas';
 import Toolbar from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
-import { useFieldProgress } from './useFieldProgress';
 import { useIsNarrowViewport } from './useIsNarrowViewport';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
@@ -18,7 +17,6 @@ import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
-const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export interface ViewerDocument {
   type: 'form' | 'attachment';
@@ -59,14 +57,7 @@ export default function QuikPdfViewer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [pageCounts, setPageCounts] = useState<Record<string, number>>({});
-  const [fitWidth, setFitWidth] = useState(MAX_PAGE_WIDTH);
-  const [zoom, setZoom] = useState<number | 'fit'>('fit');
-  const effectiveZoom = zoom === 'fit' ? 1 : zoom;
-  const pageWidth = Math.round(fitWidth * effectiveZoom);
-  const zoomIndex = ZOOM_LEVELS.indexOf(effectiveZoom);
-  const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
-  const canZoomOut = zoomIndex > 0;
-  const zoomLabel = zoom === 'fit' ? 'Fit' : `${Math.round(zoom * 100)}%`;
+  const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
   const [attachments, setAttachments] = useState<
     { id: string; name: string; position: 'before' | 'after' }[]
   >(() =>
@@ -112,7 +103,7 @@ export default function QuikPdfViewer({
     [visibleDocuments, pageCounts]
   );
   const pageOrder = useMemo(() => pageEntries.map((p) => p.key), [pageEntries]);
-  const { activeKey, activePageNumber, observePage } = useActivePage(
+  const { activeKey, observePage } = useActivePage(
     scrollContainerRef,
     pageOrder
   );
@@ -128,7 +119,7 @@ export default function QuikPdfViewer({
     const observer = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
       if (width) {
-        setFitWidth(Math.min(MAX_PAGE_WIDTH, width - CONTAINER_PADDING));
+        setPageWidth(Math.min(MAX_PAGE_WIDTH, width - CONTAINER_PADDING));
       }
     });
     observer.observe(container);
@@ -186,14 +177,6 @@ export default function QuikPdfViewer({
         }
       ),
     [visibleDocuments]
-  );
-
-  const docsLoadedKey = useMemo(() => JSON.stringify(pageCounts), [pageCounts]);
-  const { requiredRemaining, jumpToNextField } = useFieldProgress(
-    fieldLayer,
-    scrollContainerRef,
-    docsLoadedKey,
-    remountKey
   );
 
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
@@ -358,24 +341,11 @@ export default function QuikPdfViewer({
       <Toolbar
         title='Review Your Forms'
         onBack={() => setShow(false)}
-        onReset={() => fieldLayer.reset()}
         onDownload={download}
         onSaveDraft={isSign ? () => finalize('draft') : undefined}
         onPrimary={() => finalize(isSign ? 'sign' : 'submit')}
         primaryLabel={isSign ? 'Sign' : 'Submit'}
         busy={busy}
-        zoomLabel={zoomLabel}
-        canZoomIn={canZoomIn}
-        canZoomOut={canZoomOut}
-        onZoomIn={() =>
-          setZoom(ZOOM_LEVELS[Math.min(zoomIndex + 1, ZOOM_LEVELS.length - 1)])
-        }
-        onZoomOut={() => setZoom(ZOOM_LEVELS[Math.max(zoomIndex - 1, 0)])}
-        onFitWidth={() => setZoom('fit')}
-        activePage={activePageNumber}
-        totalPages={pageOrder.length}
-        requiredRemaining={requiredRemaining}
-        onJumpToNextField={jumpToNextField}
         isNarrow={isNarrow}
       />
       {expiredBanner && (
@@ -393,7 +363,6 @@ export default function QuikPdfViewer({
           onAddAttachment={onAddAttachment}
           onRemoveAttachment={onRemoveAttachment}
           uploading={uploading}
-          expiresAt={payload.expires_at}
           isNarrow={isNarrow}
         />
         <div
