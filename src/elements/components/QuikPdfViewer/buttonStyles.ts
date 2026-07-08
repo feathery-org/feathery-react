@@ -9,6 +9,7 @@ const baseButtonCss = {
   borderRadius: radius.md,
   fontSize: fontSize.base,
   fontWeight: 500,
+  whiteSpace: 'nowrap',
   cursor: 'pointer',
   transition:
     'background-color 150ms ease, border-color 150ms ease, color 150ms ease',
