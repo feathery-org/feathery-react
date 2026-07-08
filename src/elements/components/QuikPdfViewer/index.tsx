@@ -14,6 +14,7 @@ import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
 import { NativeFieldLayer, LoadedDoc } from './fieldLayer/NativeFieldLayer';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { stepPageKey, trapTabKey } from './keyboard';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
@@ -53,6 +54,7 @@ export default function QuikPdfViewer({
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [remountKey, setRemountKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -115,6 +117,10 @@ export default function QuikPdfViewer({
     pageOrder
   );
   const isNarrow = useIsNarrowViewport();
+  const pageEntriesRef = useRef(pageEntries);
+  pageEntriesRef.current = pageEntries;
+  const activeKeyRef = useRef(activeKey);
+  activeKeyRef.current = activeKey;
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -127,6 +133,35 @@ export default function QuikPdfViewer({
     });
     observer.observe(container);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    containerRef.current?.focus();
+    const doc = featheryDoc();
+    const onKeyDown = (e: KeyboardEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      if (e.key === 'Escape') {
+        setShow(false);
+      } else if (e.key === 'PageDown' || e.key === 'PageUp') {
+        e.preventDefault();
+        const entries = pageEntriesRef.current;
+        const nextKey = stepPageKey(
+          entries.map((p) => p.key),
+          activeKeyRef.current,
+          e.key === 'PageDown' ? 1 : -1
+        );
+        const target = entries.find((p) => p.key === nextKey);
+        if (target) onNavigate(target.pdfUrl, target.pageIndex);
+      } else if (e.key === 'Tab') {
+        trapTabKey(container, e);
+      }
+    };
+    doc.addEventListener('keydown', onKeyDown);
+    return () => doc.removeEventListener('keydown', onKeyDown);
+    // setShow/onNavigate are stable for the life of the viewer; value state
+    // is read through refs so the listener binds once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fieldLayer = useMemo(
@@ -302,13 +337,16 @@ export default function QuikPdfViewer({
   const isSign = action.review_action === 'sign';
   return (
     <div
+      ref={containerRef}
+      tabIndex={-1}
       css={{
         position: 'fixed',
         inset: 0,
         zIndex: 100,
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#f4f5f8'
+        backgroundColor: '#f4f5f8',
+        outline: 'none'
       }}
     >
       <Toolbar
