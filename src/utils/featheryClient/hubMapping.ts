@@ -58,7 +58,7 @@ export async function stagedHubAction(
     data?: Record<string, any>;
     rows?: Record<string, any>[];
   }
-) {
+): Promise<Record<string, any> | null> {
   const url = `${getApiUrl()}hub/${hubId}/action/`;
   const res = await apiFetch(
     sdkKey,

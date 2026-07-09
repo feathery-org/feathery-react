@@ -48,12 +48,14 @@ export interface StagedHubActionResponse {
 }
 
 // Minimal client interface this hook depends on. The real Feathery client
-// (added in R4) satisfies this structurally.
+// (added in R4) satisfies this structurally. stagedHubAction may resolve to
+// null when the underlying request never produced a response (e.g. the
+// client is offline) — callers must guard against that explicitly.
 export interface DataMappingClient {
   fetchHubSchemas: (hubIds: string[]) => Promise<HubSchemaResponse[]>;
   stagedHubAction: (
     params: StagedHubActionParams
-  ) => Promise<StagedHubActionResponse>;
+  ) => Promise<StagedHubActionResponse | null>;
 }
 
 export interface DataMappingHubConfig {
@@ -106,6 +108,8 @@ export const PARSE_ERROR_MESSAGE =
   "Couldn't read this file. Please upload a valid CSV or Excel file.";
 export const REQUEST_ERROR_MESSAGE =
   'Something went wrong. Your data is saved — try again.';
+export const STAGE_ERROR_MESSAGE =
+  "Something went wrong and your import wasn't saved. Please try again.";
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;
@@ -186,7 +190,11 @@ export default function useDataMapping(
         if (cancelled) return;
 
         const newTabs = config.hubs.map((hubConfig, i) =>
-          buildTab(hubConfig, schemas, stagedResults[i])
+          buildTab(
+            hubConfig,
+            schemas,
+            stagedResults[i] ?? { entries: [], errors: [] }
+          )
         );
         const anyStaged = newTabs.some((tab) => tab.staged.length > 0);
         setTabs(newTabs);
@@ -301,15 +309,15 @@ export default function useDataMapping(
           (fieldKey, raw) => coerceToHubType(raw, fieldTypeByKey[fieldKey])
         );
 
-        const stageResp = await client.stagedHubAction({
+        const stageResp = (await client.stagedHubAction({
           hubId: tab.hubId,
           operation: 'stage',
           rows
-        });
-        const stagedResp = await client.stagedHubAction({
+        })) ?? { entries: [], errors: [] };
+        const stagedResp = (await client.stagedHubAction({
           hubId: tab.hubId,
           operation: 'get_staged'
-        });
+        })) ?? { entries: [], errors: [] };
 
         updatedTabs.push({
           ...tab,
@@ -323,7 +331,7 @@ export default function useDataMapping(
       setTabs(updatedTabs);
       setMode('review');
     } catch {
-      setRequestError(REQUEST_ERROR_MESSAGE);
+      setRequestError(STAGE_ERROR_MESSAGE);
     } finally {
       setBusy(false);
     }
@@ -345,6 +353,11 @@ export default function useDataMapping(
           entryId,
           data: { [fieldKey]: coerced }
         });
+
+        if (!resp) {
+          setRequestError(REQUEST_ERROR_MESSAGE);
+          return;
+        }
 
         setTabs((prev) =>
           prev.map((t) => {
@@ -386,6 +399,10 @@ export default function useDataMapping(
           hubId: tab.hubId,
           operation: 'finalize'
         });
+        if (!resp) {
+          setRequestError(REQUEST_ERROR_MESSAGE);
+          return { ok: false };
+        }
         if (resp.errors && resp.errors.length > 0) {
           anyErrors = true;
           updatedTabs.push({ ...tab, errors: resp.errors });

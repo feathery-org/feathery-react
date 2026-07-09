@@ -214,8 +214,19 @@ describe('useDataMapping', () => {
 
     expect(result.current.mode).toBe('import');
     expect(result.current.requestError).toBe(
-      'Something went wrong. Your data is saved — try again.'
+      "Something went wrong and your import wasn't saved. Please try again."
     );
+  });
+
+  it('mounts with get_staged resolving null -> mode import without crashing', async () => {
+    const client = makeClient({
+      stagedHubAction: jest.fn().mockResolvedValue(null)
+    });
+    const { result } = renderHook(() => useDataMapping(baseConfig, client));
+
+    await waitFor(() => expect(result.current.mode).toBe('import'));
+    expect(result.current.tabs[0].staged).toEqual([]);
+    expect(result.current.tabs[0].errors).toEqual([]);
   });
 
   it('finalizeAll returning errors keeps review mode with errors set', async () => {
