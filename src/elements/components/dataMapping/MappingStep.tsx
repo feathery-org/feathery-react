@@ -21,7 +21,8 @@ function MappingStep({ hook, fontFamily }: MappingStepProps) {
     setFieldColumn,
     requiredUnmapped,
     stageAll,
-    busy
+    busy,
+    requestError
   } = hook;
 
   const [sheetIndex, setSheetIndex] = useState(0);
@@ -348,6 +349,18 @@ function MappingStep({ hook, fontFamily }: MappingStepProps) {
           </div>
         </div>
       </div>
+
+      {requestError && (
+        <div
+          css={{
+            padding: '0 20px',
+            color: '#b91c1c',
+            fontSize: '13px'
+          }}
+        >
+          {requestError}
+        </div>
+      )}
 
       <div
         css={{

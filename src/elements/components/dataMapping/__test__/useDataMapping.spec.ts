@@ -193,6 +193,30 @@ describe('useDataMapping', () => {
     ]);
   });
 
+  it('stageAll client rejection -> mode stays import and requestError is set', async () => {
+    const stagedHubAction = jest.fn()
+      .mockResolvedValueOnce({ entries: [], errors: [] }) // mount get_staged
+      .mockRejectedValueOnce(new Error('Network error')); // stage rejects
+    const client = makeClient({ stagedHubAction });
+    const { result } = renderHook(() => useDataMapping(baseConfig, client));
+    await waitFor(() => expect(result.current.mode).toBe('import'));
+
+    const file = makeCsvFile('name\nAnn\n');
+    await act(async () => {
+      await result.current.loadFile(file);
+    });
+    expect(result.current.requiredUnmapped).toEqual([]);
+
+    await act(async () => {
+      await result.current.stageAll();
+    });
+
+    expect(result.current.mode).toBe('import');
+    expect(result.current.requestError).toBe(
+      'Something went wrong. Your data is saved — try again.'
+    );
+  });
+
   it('finalizeAll returning errors keeps review mode with errors set', async () => {
     const stagedHubAction = jest.fn().mockImplementation((params) => {
       if (params.operation === 'get_staged') {
