@@ -10,6 +10,7 @@ export const ACTION_LOGOUT = 'logout';
 export const ACTION_NEXT = 'next';
 export const ACTION_NEW_SUBMISSION = 'new_submission';
 export const ACTION_OAUTH_LOGIN = 'trigger_oauth_login';
+export const ACTION_OPEN_DATA_MAPPING = 'open_data_mapping';
 export const ACTION_GENERATE_ENVELOPES = 'open_fuser_envelopes';
 export const ACTION_REMOVE_REPEATED_ROW = 'remove_repeated_row';
 export const ACTION_GENERATE_QUIK_DOCUMENTS = 'generate_quik_documents';

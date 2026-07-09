@@ -164,6 +164,7 @@ import {
   ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
   ACTION_OAUTH_LOGIN,
+  ACTION_OPEN_DATA_MAPPING,
   ACTION_PURCHASE_PRODUCTS,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
@@ -478,6 +479,9 @@ function Form({
 
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
+  const [dataMappingConfig, setDataMappingConfig] = useState<{
+    hubs: { hub_id: string; excluded_field_ids: string[] }[];
+  } | null>(null);
   const { openFlinksConnect, flinksFrame } = useFlinksConnect();
 
   // When the active step changes, recalculate the dimensions of the new step
@@ -1233,6 +1237,17 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
+        openDataMapping: ({
+          hubs
+        }: {
+          hubs: { hub_id: string; excluded_field_ids?: string[] }[];
+        }) =>
+          setDataMappingConfig({
+            hubs: hubs.map((h) => ({
+              hub_id: h.hub_id,
+              excluded_field_ids: h.excluded_field_ids ?? []
+            }))
+          }),
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,
@@ -2452,6 +2467,8 @@ function Form({
           await client.registerEvent(eventData);
           featheryWindow().location.href = url;
         }
+      } else if (type === ACTION_OPEN_DATA_MAPPING) {
+        setDataMappingConfig({ hubs: action.mapping_hubs ?? [] });
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
         const phoneNum = fieldValues[action.phone_target_field_key] as string;
         if (validators.phone(phoneNum)) {

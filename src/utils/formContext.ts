@@ -205,6 +205,9 @@ export const getFormContext = (formUuid: string) => {
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
+    openDataMapping: (options: {
+      hubs: { hub_id: string; excluded_field_ids?: string[] }[];
+    }) => formState.openDataMapping(options),
     dataHubAction: ({
       hubId,
       operation,

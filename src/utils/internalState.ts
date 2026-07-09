@@ -159,6 +159,9 @@ export interface FormInternalState {
     params: UpdateDocusignEnvelopeParams
   ) => Promise<any>;
   getConfig: GetConfig;
+  openDataMapping: (options: {
+    hubs: { hub_id: string; excluded_field_ids?: string[] }[];
+  }) => void;
 }
 
 type InternalState = {
