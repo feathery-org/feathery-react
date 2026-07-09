@@ -8,43 +8,28 @@ import {
   normalizeSpreadsheet,
   parseWorkbook
 } from '../../../utils/spreadsheet';
+import type {
+  HubSchema,
+  HubSchemaField,
+  HubValidationError,
+  StagedHubOperation
+} from '../../../utils/featheryClient/hubMapping';
 
-// Minimal local type definitions. These mirror the wire shapes the backend
-// will return from R4's client methods; they may move once that task lands.
-export interface HubSchemaField {
-  id: string;
-  key: string;
-  type: string;
-  required: boolean;
-  unique: boolean;
-  metadata: Record<string, any>;
-  constraint_rules: any[];
-  order: number;
-}
+// Canonical wire-shape types (HubSchemaField, HubValidationError,
+// StagedHubOperation) now live in featheryClient/hubMapping.ts (added by
+// R4) and are re-exported here so existing imports of this module keep
+// working unchanged.
+export type { HubSchemaField, HubValidationError, StagedHubOperation };
 
-export interface HubValidationError {
-  entry_id: string;
-  field_key: string;
-  message: string;
-}
-
-export interface HubSchemaResponse {
-  id: string;
-  key: string;
-  fields: HubSchemaField[];
-}
+// Alias retained for backwards compatibility with this module's existing
+// naming (identical shape to HubSchema).
+export type HubSchemaResponse = HubSchema;
 
 export interface StagedEntry {
   entry_id: string;
   data: Record<string, any>;
   row_index?: number;
 }
-
-export type StagedHubOperation =
-  | 'get_staged'
-  | 'stage'
-  | 'update_staged'
-  | 'finalize';
 
 export interface StagedHubActionParams {
   hubId: string;

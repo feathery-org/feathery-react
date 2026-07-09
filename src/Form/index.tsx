@@ -220,6 +220,7 @@ import { useFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
 import { getSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
+import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
@@ -3104,6 +3105,14 @@ function Form({
           />
         )}
         {flinksFrame}
+        {dataMappingConfig && (
+          <DataMappingModal
+            config={dataMappingConfig}
+            client={client}
+            responsiveStyles={globalCSS}
+            onClose={() => setDataMappingConfig(null)}
+          />
+        )}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (
           <CloseIcon

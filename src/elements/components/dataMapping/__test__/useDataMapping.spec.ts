@@ -194,7 +194,8 @@ describe('useDataMapping', () => {
   });
 
   it('stageAll client rejection -> mode stays import and requestError is set', async () => {
-    const stagedHubAction = jest.fn()
+    const stagedHubAction = jest
+      .fn()
       .mockResolvedValueOnce({ entries: [], errors: [] }) // mount get_staged
       .mockRejectedValueOnce(new Error('Network error')); // stage rejects
     const client = makeClient({ stagedHubAction });

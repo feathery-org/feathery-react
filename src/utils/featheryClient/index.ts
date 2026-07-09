@@ -54,6 +54,11 @@ import {
   setInteractionDetected
 } from '../interactionState';
 import { EventQueue } from '../eventQueue';
+import {
+  fetchHubSchemas,
+  stagedHubAction,
+  StagedHubOperation
+} from './hubMapping';
 
 setEnvironment('production');
 try {
@@ -1139,5 +1144,21 @@ export default class FeatheryClient extends IntegrationClient {
   async dataHubAction(options: HubActionOptions) {
     const { sdkKey } = initInfo();
     return apiDataHubAction(sdkKey, options, this.formKey);
+  }
+
+  fetchHubSchemas(hubIds: string[]) {
+    const { sdkKey } = initInfo();
+    return fetchHubSchemas(sdkKey, this.formKey, hubIds);
+  }
+
+  stagedHubAction(options: {
+    hubId: string;
+    operation: StagedHubOperation;
+    entryId?: string;
+    data?: Record<string, any>;
+    rows?: Record<string, any>[];
+  }) {
+    const { sdkKey, userId } = initInfo();
+    return stagedHubAction(sdkKey, this.formKey, userId ?? null, options);
   }
 }
