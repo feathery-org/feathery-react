@@ -220,6 +220,42 @@ export default function AnnotationLayerStyles() {
           border: 1px solid rgba(59, 130, 246, 0.45);
           background-color: rgba(59, 130, 246, 0.06);
         }
+
+        /* Text layer (ported from pdf.js 4.8.69 web/text_layer_builder.css).
+           Transparent, selectable text positioned over the canvas so screen
+           readers and copy/paste can access the document's real text. */
+        .textLayer {
+          position: absolute;
+          text-align: initial;
+          inset: 0;
+          overflow: clip;
+          opacity: 1;
+          line-height: 1;
+          -webkit-text-size-adjust: none;
+          -moz-text-size-adjust: none;
+          text-size-adjust: none;
+          forced-color-adjust: none;
+          transform-origin: 0 0;
+          caret-color: CanvasText;
+          z-index: 2;
+        }
+        .textLayer :is(span, br) {
+          color: transparent;
+          position: absolute;
+          white-space: pre;
+          cursor: text;
+          transform-origin: 0% 0%;
+        }
+        .textLayer span.markedContent {
+          top: 0;
+          height: 0;
+        }
+        .textLayer ::selection {
+          background: rgba(0, 0, 255, 0.25);
+        }
+        .textLayer br::selection {
+          background: transparent;
+        }
       `}
     />
   );

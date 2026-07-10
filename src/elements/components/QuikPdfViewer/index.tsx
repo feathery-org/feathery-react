@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState
 } from 'react';
+import { createPortal } from 'react-dom';
 import DocumentCanvas from './DocumentCanvas';
 import Toolbar from './Toolbar';
 import { useActivePage, pageKey } from './useActivePage';
@@ -17,6 +18,7 @@ import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
+const VIEWER_TITLE = 'Review Your Forms';
 
 export interface ViewerDocument {
   type: 'form' | 'attachment';
@@ -53,6 +55,17 @@ export default function QuikPdfViewer({
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Keep the keydown listener (bound once) calling the latest setShow, which
+  // the parent passes as a fresh closure on every render.
+  const setShowRef = useRef(setShow);
+  setShowRef.current = setShow;
+  // Dedicated body-level node so the viewer renders in its own subtree and the
+  // rest of the page can be made `inert` while it is open (see the portal
+  // effect below).
+  const portalElRef = useRef<HTMLElement | null>(null);
+  if (portalElRef.current === null && typeof document !== 'undefined') {
+    portalElRef.current = featheryDoc().createElement('div');
+  }
   const [remountKey, setRemountKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -126,7 +139,31 @@ export default function QuikPdfViewer({
     return () => observer.disconnect();
   }, []);
 
+  // Mount the portal node on the document body and make every sibling `inert`
+  // so assistive tech (and Tab) can't reach the form behind this modal. The
+  // Tab trap alone doesn't constrain a screen reader's virtual cursor.
   useEffect(() => {
+    const node = portalElRef.current;
+    if (!node) return undefined;
+    const body = featheryDoc().body;
+    body.appendChild(node);
+    const siblings = Array.from(body.children).filter(
+      (c) => c !== node
+    ) as HTMLElement[];
+    const hadInert = siblings.map((el) => el.hasAttribute('inert'));
+    siblings.forEach((el) => el.setAttribute('inert', ''));
+    return () => {
+      siblings.forEach((el, i) => {
+        if (!hadInert[i]) el.removeAttribute('inert');
+      });
+      if (node.parentNode) node.parentNode.removeChild(node);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Restore focus to whatever was focused before the viewer opened when it
+    // closes, so keyboard/SR users don't get dropped onto <body>.
+    const previouslyFocused = featheryDoc().activeElement as HTMLElement | null;
     containerRef.current?.focus();
     const doc = featheryDoc();
     const onKeyDown = (e: KeyboardEvent) => {
@@ -138,7 +175,7 @@ export default function QuikPdfViewer({
           (e.target as HTMLElement).blur();
           return;
         }
-        setShow(false);
+        setShowRef.current(false);
       } else if (e.key === 'PageDown' || e.key === 'PageUp') {
         // Let focused inputs/textareas handle paging keys natively.
         if (isEditableTarget(e.target)) return;
@@ -156,9 +193,12 @@ export default function QuikPdfViewer({
       }
     };
     doc.addEventListener('keydown', onKeyDown);
-    return () => doc.removeEventListener('keydown', onKeyDown);
-    // setShow/onNavigate are stable for the life of the viewer; value state
-    // is read through refs so the listener binds once.
+    return () => {
+      doc.removeEventListener('keydown', onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+    // onNavigate is stable; setShow is read via ref, so the listener binds
+    // once and always calls the latest setShow.
   }, []);
 
   const fieldLayer = useMemo(
@@ -274,7 +314,11 @@ export default function QuikPdfViewer({
         else setError(result.message);
       } else onComplete();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      // Errors can also surface as a thrown ValidationError (not just a
+      // {status:'error'} payload), so detect expiry here too.
+      const message = e instanceof Error ? e.message : 'Something went wrong';
+      if (/expired/i.test(message)) setExpiredBanner(true);
+      else setError(message);
     } finally {
       setBusy(false);
     }
@@ -306,27 +350,45 @@ export default function QuikPdfViewer({
         setError('Failed to generate the download.');
         return;
       }
-      const response = await fetch(fileUrl);
-      if (!response.ok) throw new Error('Failed to fetch the merged PDF');
-      const url = URL.createObjectURL(await response.blob());
-      const a = featheryDoc().createElement('a');
-      a.href = url;
       const baseName =
         visibleDocuments.find((doc) => doc.form_name)?.form_name ?? 'documents';
-      a.download = `${baseName}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const doc = featheryDoc();
+      try {
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error('Failed to fetch the merged PDF');
+        const url = URL.createObjectURL(await response.blob());
+        const a = doc.createElement('a');
+        a.href = url;
+        a.download = `${baseName}.pdf`;
+        doc.body.appendChild(a);
+        a.click();
+        a.remove();
+        // Revoke on a later tick: revoking synchronously after click() can
+        // cancel the download before the browser reads the blob.
+        featheryWindow().setTimeout(() => URL.revokeObjectURL(url), 30000);
+      } catch {
+        // The signed S3 URL may not send CORS headers for this origin, which
+        // makes fetch() throw. Fall back to opening the URL directly so the
+        // user still gets the file.
+        featheryWindow().open(fileUrl, '_blank', 'noopener');
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong');
+      const message = e instanceof Error ? e.message : 'Something went wrong';
+      if (/expired/i.test(message)) setExpiredBanner(true);
+      else setError(message);
     } finally {
       setBusy(false);
     }
   };
 
   const isSign = action.review_action === 'sign';
-  return (
+  if (!portalElRef.current) return null;
+  return createPortal(
     <div
       ref={containerRef}
+      role='dialog'
+      aria-modal='true'
+      aria-label={VIEWER_TITLE}
       tabIndex={-1}
       css={{
         position: 'fixed',
@@ -339,7 +401,7 @@ export default function QuikPdfViewer({
       }}
     >
       <Toolbar
-        title='Review Your Forms'
+        title={VIEWER_TITLE}
         onBack={() => setShow(false)}
         onDownload={download}
         onSaveDraft={isSign ? () => finalize('draft') : undefined}
@@ -378,6 +440,7 @@ export default function QuikPdfViewer({
           />
         </div>
       </div>
-    </div>
+    </div>,
+    portalElRef.current
   );
 }

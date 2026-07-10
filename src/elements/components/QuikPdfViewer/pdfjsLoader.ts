@@ -20,10 +20,18 @@ export function loadPdfjs(): Promise<any> {
   if (!pdfjsPromise) {
     pdfjsPromise = dynamicImport(
       `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.min.mjs`
-    ).then((pdfjs: any) => {
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
-      return pdfjs;
-    });
+    )
+      .then((pdfjs: any) => {
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VERSION}/pdf.worker.min.mjs`;
+        return pdfjs;
+      })
+      .catch((e: unknown) => {
+        // Don't memoize a rejected promise: a transient CDN/CSP failure would
+        // otherwise permanently break the viewer for the whole session. Clear
+        // the cache so the next loadPdfjs() (e.g. a page-level retry) re-tries.
+        pdfjsPromise = null;
+        throw e;
+      });
   }
   return pdfjsPromise;
 }

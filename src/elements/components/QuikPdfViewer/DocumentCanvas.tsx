@@ -43,11 +43,14 @@ export default function DocumentCanvas({
 }: DocumentCanvasProps) {
   const [docStates, setDocStates] = useState<Record<string, DocState>>({});
   const generationRef = useRef(0);
+  const loadedRef = useRef<Set<string>>(new Set());
+  const prevRemountRef = useRef(remountKey);
   const docUrlsKey = documents.map((d) => d.pdf_url).join('|');
 
   const loadDoc = useCallback(
     (doc: ViewerDocument) => {
       const generation = generationRef.current;
+      loadedRef.current.add(doc.pdf_url);
       setDocStates((prev) => {
         const next = { ...prev };
         delete next[doc.pdf_url];
@@ -74,16 +77,50 @@ export default function DocumentCanvas({
     [onDocLoad]
   );
 
-  useEffect(() => {
-    generationRef.current += 1;
-    setDocStates({});
-    documents.forEach(loadDoc);
-    return () => {
+  // Invalidate any in-flight load when the canvas unmounts entirely.
+  useEffect(
+    () => () => {
       generationRef.current += 1;
-    };
-    // Deliberately keyed on remountKey/docUrlsKey rather than `documents`:
-    // re-running this effect on every render would restart in-flight loads.
-  }, [remountKey, docUrlsKey]);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const urlSet = new Set(documents.map((d) => d.pdf_url));
+    const isRemount = prevRemountRef.current !== remountKey;
+    prevRemountRef.current = remountKey;
+
+    if (isRemount) {
+      // Reset button: invalidate every in-flight load and reload from scratch.
+      generationRef.current += 1;
+      loadedRef.current = new Set();
+      setDocStates({});
+      documents.forEach(loadDoc);
+      return;
+    }
+
+    // Incremental (attachment added/removed): adding or removing an attachment
+    // must NOT reload documents already on screen — reloading creates fresh
+    // pdfProxies with empty annotationStorage, silently discarding everything
+    // the user has typed. Prune removed docs and load ONLY new ones; existing
+    // pdfProxies (and their edited field values) are left untouched.
+    setDocStates((prev) => {
+      const next: Record<string, DocState> = {};
+      Object.keys(prev).forEach((u) => {
+        if (urlSet.has(u)) next[u] = prev[u];
+      });
+      return next;
+    });
+    loadedRef.current.forEach((u) => {
+      if (!urlSet.has(u)) loadedRef.current.delete(u);
+    });
+    documents.forEach((doc) => {
+      if (!loadedRef.current.has(doc.pdf_url)) loadDoc(doc);
+    });
+    // Keyed on remountKey/docUrlsKey rather than `documents`: re-running on
+    // every render would restart in-flight loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remountKey, docUrlsKey, loadDoc]);
 
   return (
     <div
@@ -214,6 +251,7 @@ interface PdfPageProps {
 
 function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const textLayerRef = useRef<HTMLDivElement | null>(null);
   const annotationDivRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -257,8 +295,48 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
       }
       if (cancelled) return;
 
+      // Text layer: expose the PDF's body text as selectable, screen-reader
+      // readable content over the (aria-hidden) canvas. Without it the document
+      // is an opaque image to assistive tech (WCAG 1.1.1 / 1.3.1).
+      const textDiv = textLayerRef.current;
+      if (textDiv && (pdfjs.TextLayer || pdfjs.renderTextLayer)) {
+        textDiv.innerHTML = '';
+        textDiv.style.setProperty('--scale-factor', String(viewport.scale));
+        try {
+          const textContentSource = page.streamTextContent
+            ? page.streamTextContent({
+                includeMarkedContent: true,
+                disableNormalization: true
+              })
+            : await page.getTextContent();
+          if (pdfjs.TextLayer) {
+            await new pdfjs.TextLayer({
+              textContentSource,
+              container: textDiv,
+              viewport
+            }).render();
+          } else {
+            await pdfjs.renderTextLayer({
+              textContentSource,
+              container: textDiv,
+              viewport
+            }).promise;
+          }
+        } catch {
+          // A text-layer failure must never block form rendering.
+        }
+        if (cancelled) return;
+      }
+
       const annotationDiv = annotationDivRef.current;
       if (annotationDiv) {
+        // Preserve focus across an annotation-layer rebuild (e.g. on resize):
+        // clearing innerHTML blurs the field the user is editing, so remember
+        // it and restore focus once the widgets are recreated.
+        const activeEl = annotationDiv.ownerDocument
+          .activeElement as HTMLElement | null;
+        const focusedId =
+          activeEl && annotationDiv.contains(activeEl) ? activeEl.id : '';
         annotationDiv.innerHTML = '';
         annotationDiv.style.setProperty(
           '--scale-factor',
@@ -285,6 +363,11 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
           annotationStorage: pdfProxy.annotationStorage,
           enableScripting: false
         });
+        if (focusedId && typeof CSS !== 'undefined' && CSS.escape) {
+          annotationDiv
+            .querySelector<HTMLElement>(`#${CSS.escape(focusedId)}`)
+            ?.focus();
+        }
       }
     })();
 
@@ -304,7 +387,12 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         backgroundColor: color.surface
       }}
     >
-      <canvas ref={canvasRef} css={{ display: 'block', borderRadius: 2 }} />
+      <canvas
+        ref={canvasRef}
+        aria-hidden='true'
+        css={{ display: 'block', borderRadius: 2 }}
+      />
+      <div ref={textLayerRef} className='textLayer' />
       <div ref={annotationDivRef} className='annotationLayer' />
     </div>
   );
