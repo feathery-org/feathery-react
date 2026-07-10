@@ -316,7 +316,8 @@ declare const __PACKAGE_VERSION__: string;
 
 function logFeatheryBadge() {
   console.log(
-    '%c Feathery %c v' + __PACKAGE_VERSION__ + ' ', // replaced with real version during build
+    // TEST(preview-deploy): remove marker before merge
+    '%c Feathery %c v' + __PACKAGE_VERSION__ + ' [preview-deploy-test] ', // replaced with real version during build
     'background: #e2626e; color: white; padding: 2px 6px; border-radius: 3px 0 0 3px; font-weight: bold;',
     'background: #fce7e9; color: #c5495a; padding: 2px 6px; border-radius: 0 3px 3px 0;'
   );

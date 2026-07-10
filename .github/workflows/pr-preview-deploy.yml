@@ -1,0 +1,139 @@
+name: Preview Deploy
+
+on:
+  issue_comment:
+    types: [created]
+  # Self-test: any PR that modifies this workflow runs the full deploy on itself
+  pull_request:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/pr-preview-deploy.yml'
+
+jobs:
+  preview:
+    # issue_comment path: only PR comments, only the command, only from org members
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/deploy-preview') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Acknowledge command
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              ...context.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      # issue_comment events carry no branch info, so resolve the PR head explicitly
+      - name: Resolve PR
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber =
+              context.eventName === 'pull_request'
+                ? context.payload.pull_request.number
+                : context.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: prNumber
+            });
+            core.setOutput('number', prNumber);
+            core.setOutput('sha', pr.head.sha);
+
+      - name: Checkout feathery-react at PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+          path: feathery-react
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'yarn'
+          cache-dependency-path: feathery-react/yarn.lock
+
+      - name: Install Dependencies
+        working-directory: feathery-react
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        working-directory: feathery-react
+        run: |
+          yarn build:umd
+          yarn build:node
+
+      - name: Pack Package
+        working-directory: feathery-react
+        run: yarn pack --filename pr-${{ steps.pr.outputs.number }}.tgz
+
+      - name: Checkout hosted-forms-next
+        uses: actions/checkout@v6
+        with:
+          repository: feathery-org/hosted-forms-next
+          token: ${{ secrets.FEATHERY_BOT_TOKEN }}
+          path: hosted-forms-next
+
+      - name: Install feathery-react build into hosted-forms
+        working-directory: hosted-forms-next
+        run: yarn add ../feathery-react/pr-${{ steps.pr.outputs.number }}.tgz
+
+      # --build pulls build settings + env vars from the linked Netlify site;
+      # --alias deploys to a stable non-production URL, never touching production
+      - name: Deploy preview to Netlify
+        id: deploy
+        working-directory: hosted-forms-next
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          npx -y netlify-cli deploy --build \
+            --alias feathery-react-pr-${{ steps.pr.outputs.number }} \
+            --message "feathery-react PR #${{ steps.pr.outputs.number }} (${{ steps.pr.outputs.sha }})" \
+            --json > deploy.json
+          echo "url=$(node -p "require('./deploy.json').deploy_url")" >> $GITHUB_OUTPUT
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.deploy.outputs.url }}';
+            const marker = '<!-- feathery-react-preview -->';
+            const body = [
+              marker,
+              "🚀 hosted-forms preview deployed with this PR's feathery-react build:",
+              '',
+              url,
+              '',
+              '_Deployed from ${{ steps.pr.outputs.sha }}. Comment `/deploy-preview` to redeploy._'
+            ].join('\n');
+            const issue_number = ${{ steps.pr.outputs.number }};
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number
+            });
+            const existing = comments.find((c) => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number,
+                body
+              });
+            }
