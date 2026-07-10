@@ -72,7 +72,10 @@ function DataMappingModal({
   }, [onClose]);
 
   const handleBackdropClick = () => {
-    if (mode === 'import' && Object.keys(hook.mapping).length > 0) {
+    const hasAnyMapping = Object.values(hook.mapping).some(
+      (hubMapping) => Object.keys(hubMapping).length > 0
+    );
+    if (mode === 'import' && hasAnyMapping) {
       if (!window.confirm('Discard this mapping?')) return;
     }
     onClose();

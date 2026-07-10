@@ -108,8 +108,9 @@ function MappingStep({ hook, fontFamily }: MappingStepProps) {
   const activeSheet = sheets[sheetIndex] ?? sheets[0];
   const currentTab = tabs[Math.min(activeTab, tabs.length - 1)];
   const isLastTab = activeTab >= tabs.length - 1;
+  const hubMapping = mapping[currentTab?.hubId ?? ''] ?? {};
   const tabMappedCount = (currentTab?.fields ?? []).filter(
-    (f) => mapping[f.key] !== undefined
+    (f) => hubMapping[f.key] !== undefined
   ).length;
   const previewRows = activeSheet?.rows.slice(0, MAX_PREVIEW_ROWS) ?? [];
 
@@ -222,7 +223,7 @@ function MappingStep({ hook, fontFamily }: MappingStepProps) {
               css={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
             >
               {(currentTab?.fields ?? []).map((field) => {
-                const ref = mapping[field.key];
+                const ref = hubMapping[field.key];
                 const value = ref ? `${ref.sheetIndex}::${ref.header}` : '';
                 return (
                   <div
@@ -248,12 +249,13 @@ function MappingStep({ hook, fontFamily }: MappingStepProps) {
                     <select
                       value={value}
                       onChange={(e) => {
+                        if (!currentTab) return;
                         if (e.target.value === '') {
-                          setFieldColumn(field.key, null);
+                          setFieldColumn(currentTab.hubId, field.key, null);
                           return;
                         }
                         const [sIdx, ...rest] = e.target.value.split('::');
-                        setFieldColumn(field.key, {
+                        setFieldColumn(currentTab.hubId, field.key, {
                           sheetIndex: Number(sIdx),
                           header: rest.join('::')
                         });

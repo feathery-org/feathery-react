@@ -112,11 +112,11 @@ describe('useDataMapping', () => {
 
     expect(result.current.parseError).toBeNull();
     expect(result.current.sheets).toHaveLength(1);
-    expect(result.current.mapping.name).toEqual({
+    expect(result.current.mapping['hub-1'].name).toEqual({
       sheetIndex: 0,
       header: 'NAME'
     });
-    expect(result.current.mapping.email).toEqual({
+    expect(result.current.mapping['hub-1'].email).toEqual({
       sheetIndex: 0,
       header: 'Email'
     });
@@ -154,7 +154,10 @@ describe('useDataMapping', () => {
     expect(result.current.mode).toBe('import');
 
     act(() => {
-      result.current.setFieldColumn('name', { sheetIndex: 0, header: 'Name' });
+      result.current.setFieldColumn('hub-1', 'name', {
+        sheetIndex: 0,
+        header: 'Name'
+      });
     });
     expect(result.current.requiredUnmapped).toEqual([]);
   });
@@ -337,7 +340,7 @@ describe('useDataMapping', () => {
     await waitFor(() => expect(result.current.mode).toBe('import'));
 
     act(() => {
-      result.current.setFieldColumn('name', {
+      result.current.setFieldColumn('hub-1', 'name', {
         sheetIndex: 0,
         header: 'Custom'
       });
@@ -348,29 +351,147 @@ describe('useDataMapping', () => {
       await result.current.loadFile(file);
     });
 
-    expect(result.current.mapping.name).toEqual({
+    expect(result.current.mapping['hub-1'].name).toEqual({
       sheetIndex: 0,
       header: 'Custom'
     });
-    expect(result.current.mapping.email).toEqual({
+    expect(result.current.mapping['hub-1'].email).toEqual({
       sheetIndex: 0,
       header: 'email'
     });
   });
 
-  it('setFieldColumn(key, null) deletes the mapping', async () => {
+  it('setFieldColumn(hubId, key, null) deletes the mapping', async () => {
     const client = makeClient();
     const { result } = renderHook(() => useDataMapping(baseConfig, client));
     await waitFor(() => expect(result.current.mode).toBe('import'));
 
     act(() => {
-      result.current.setFieldColumn('name', { sheetIndex: 0, header: 'Name' });
+      result.current.setFieldColumn('hub-1', 'name', {
+        sheetIndex: 0,
+        header: 'Name'
+      });
     });
-    expect(result.current.mapping.name).toBeDefined();
+    expect(result.current.mapping['hub-1'].name).toBeDefined();
 
     act(() => {
-      result.current.setFieldColumn('name', null);
+      result.current.setFieldColumn('hub-1', 'name', null);
     });
-    expect(result.current.mapping.name).toBeUndefined();
+    expect(result.current.mapping['hub-1'].name).toBeUndefined();
+  });
+
+  it('per-hub mapping: two hubs sharing field key "email" map independently, and clearing one leaves the other intact', async () => {
+    const config: DataMappingModalConfig = {
+      hubs: [
+        { hub_id: 'hub-a', excluded_field_ids: [] },
+        { hub_id: 'hub-b', excluded_field_ids: [] }
+      ]
+    };
+    const schemaA = {
+      id: 'hub-a',
+      key: 'HubA',
+      fields: [
+        {
+          id: 'a1',
+          key: 'email',
+          type: 'email',
+          required: false,
+          unique: false,
+          metadata: {},
+          constraint_rules: [],
+          order: 0
+        }
+      ]
+    };
+    const schemaB = {
+      id: 'hub-b',
+      key: 'HubB',
+      fields: [
+        {
+          id: 'b1',
+          key: 'email',
+          type: 'email',
+          required: false,
+          unique: false,
+          metadata: {},
+          constraint_rules: [],
+          order: 0
+        }
+      ]
+    };
+    const stagedHubAction = jest
+      .fn()
+      .mockResolvedValueOnce({ entries: [], errors: [] }) // mount get_staged hub-a
+      .mockResolvedValueOnce({ entries: [], errors: [] }) // mount get_staged hub-b
+      .mockResolvedValueOnce({ entries: [{ row_index: 0 }], errors: [] }) // stage hub-a
+      .mockResolvedValueOnce({
+        entries: [{ entry_id: 'ea', data: { email: 'x@example.com' } }],
+        errors: []
+      }) // post-stage get_staged hub-a
+      .mockResolvedValueOnce({ entries: [{ row_index: 0 }], errors: [] }) // stage hub-b
+      .mockResolvedValueOnce({
+        entries: [{ entry_id: 'eb', data: { email: 'y@example.com' } }],
+        errors: []
+      }); // post-stage get_staged hub-b
+    const client = makeClient({
+      fetchHubSchemas: jest.fn().mockResolvedValue([schemaA, schemaB]),
+      stagedHubAction
+    });
+    const { result } = renderHook(() => useDataMapping(config, client));
+    await waitFor(() => expect(result.current.mode).toBe('import'));
+
+    const file = makeCsvFile(
+      'colX,colY\nx@example.com,y@example.com\n'
+    );
+    await act(async () => {
+      await result.current.loadFile(file);
+    });
+
+    // Neither header matches "email" case-insensitively, so nothing was
+    // auto-mapped; map hub-a's email to colX and hub-b's email to colY.
+    act(() => {
+      result.current.setFieldColumn('hub-a', 'email', {
+        sheetIndex: 0,
+        header: 'colX'
+      });
+      result.current.setFieldColumn('hub-b', 'email', {
+        sheetIndex: 0,
+        header: 'colY'
+      });
+    });
+
+    expect(result.current.mapping['hub-a'].email).toEqual({
+      sheetIndex: 0,
+      header: 'colX'
+    });
+    expect(result.current.mapping['hub-b'].email).toEqual({
+      sheetIndex: 0,
+      header: 'colY'
+    });
+
+    await act(async () => {
+      await result.current.stageAll();
+    });
+
+    expect(stagedHubAction).toHaveBeenNthCalledWith(3, {
+      hubId: 'hub-a',
+      operation: 'stage',
+      rows: [{ email: 'x@example.com' }]
+    });
+    expect(stagedHubAction).toHaveBeenNthCalledWith(5, {
+      hubId: 'hub-b',
+      operation: 'stage',
+      rows: [{ email: 'y@example.com' }]
+    });
+
+    // Clearing hub-a's mapping must not affect hub-b's mapping.
+    act(() => {
+      result.current.setFieldColumn('hub-a', 'email', null);
+    });
+    expect(result.current.mapping['hub-a'].email).toBeUndefined();
+    expect(result.current.mapping['hub-b'].email).toEqual({
+      sheetIndex: 0,
+      header: 'colY'
+    });
   });
 });

@@ -87,8 +87,15 @@ export interface UseDataMapping {
   sheets: NormalizedSheet[];
   loadFile: (file: File) => Promise<void>;
   parseError: string | null;
-  mapping: FieldMapping;
-  setFieldColumn: (fieldKey: string, ref: ColumnRef | null) => void;
+  // Field mapping is independent per hub: each hub's tab gets its own
+  // FieldMapping so the same field key (e.g. "email") can map to a
+  // different column (or no column) on each tab.
+  mapping: Record<string, FieldMapping>;
+  setFieldColumn: (
+    hubId: string,
+    fieldKey: string,
+    ref: ColumnRef | null
+  ) => void;
   requiredUnmapped: string[];
   stageAll: () => Promise<void>;
   // review mode
@@ -162,7 +169,8 @@ export default function useDataMapping(
 
   const [sheets, setSheets] = useState<NormalizedSheet[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [mapping, setMapping] = useState<FieldMapping>({});
+  // Keyed by hubId; each hub owns its own independent FieldMapping.
+  const [mapping, setMapping] = useState<Record<string, FieldMapping>>({});
 
   const [busy, setBusy] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -219,18 +227,23 @@ export default function useDataMapping(
     setMapping((prev) => {
       const next = { ...prev };
       tabsRef.current.forEach((tab) => {
+        const hubMapping = { ...(next[tab.hubId] ?? {}) };
         tab.fields.forEach((field) => {
-          if (next[field.key] !== undefined) return;
+          // Never overwrite a manual (or previously auto-mapped) selection
+          // on this hub. The same header may still auto-map into other
+          // hubs independently.
+          if (hubMapping[field.key] !== undefined) return;
           for (let i = 0; i < normalizedSheets.length; i++) {
             const header = normalizedSheets[i].headers.find(
               (h) => h.toLowerCase() === field.key.toLowerCase()
             );
             if (header !== undefined) {
-              next[field.key] = { sheetIndex: i, header };
+              hubMapping[field.key] = { sheetIndex: i, header };
               break;
             }
           }
         });
+        next[tab.hubId] = hubMapping;
       });
       return next;
     });
@@ -263,27 +276,34 @@ export default function useDataMapping(
   );
 
   const setFieldColumn = useCallback(
-    (fieldKey: string, ref: ColumnRef | null) => {
+    (hubId: string, fieldKey: string, ref: ColumnRef | null) => {
       setMapping((prev) => {
-        const next = { ...prev };
-        if (ref === null) delete next[fieldKey];
-        else next[fieldKey] = ref;
-        return next;
+        const hubMapping = { ...(prev[hubId] ?? {}) };
+        if (ref === null) delete hubMapping[fieldKey];
+        else hubMapping[fieldKey] = ref;
+        return { ...prev, [hubId]: hubMapping };
       });
     },
     []
   );
 
   const requiredUnmapped = useMemo(() => {
-    const keys = new Set<string>();
-    tabs.forEach((tab) =>
+    // A required key unmapped on one hub still gates Save even if the same
+    // key is mapped on another hub, since mappings are per-hub. When there
+    // are 2+ tabs, disambiguate entries with the hub key so the message
+    // stays unambiguous.
+    const entries: string[] = [];
+    tabs.forEach((tab) => {
+      const hubMapping = mapping[tab.hubId] ?? {};
       tab.fields.forEach((field) => {
-        if (field.required && mapping[field.key] === undefined) {
-          keys.add(field.key);
+        if (field.required && hubMapping[field.key] === undefined) {
+          entries.push(
+            tabs.length > 1 ? `${tab.hubKey}: ${field.key}` : field.key
+          );
         }
-      })
-    );
-    return Array.from(keys);
+      });
+    });
+    return entries;
   }, [tabs, mapping]);
 
   const stageAll = useCallback(async () => {
@@ -294,12 +314,13 @@ export default function useDataMapping(
     try {
       const updatedTabs: HubTabState[] = [];
       for (const tab of tabsRef.current) {
+        const hubMapping = mapping[tab.hubId] ?? {};
         const tabMapping: FieldMapping = {};
         const fieldTypeByKey: Record<string, string> = {};
         tab.fields.forEach((field) => {
           fieldTypeByKey[field.key] = field.type;
-          if (mapping[field.key] !== undefined) {
-            tabMapping[field.key] = mapping[field.key];
+          if (hubMapping[field.key] !== undefined) {
+            tabMapping[field.key] = hubMapping[field.key];
           }
         });
 
