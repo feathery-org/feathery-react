@@ -44,10 +44,10 @@ jobs:
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
-      # Intentionally track npm latest so CI surfaces when the release job's
-      # Node runtime needs to be upgraded.
-      - name: Update npm
-        run: npm install -g npm@latest
+      # npm 12.0.0 is missing the bundled sigstore dependency.
+      # https://github.com/npm/cli/issues/9722
+      - name: Install npm 11
+        run: npm install -g npm@11
 
       - name: Install Dependencies
         run: yarn install --frozen-lockfile
