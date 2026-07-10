@@ -40,14 +40,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
-          
-      # Ensure npm 11.5.1 or later is installed for trusted publisher method
+
+      # Intentionally track npm latest so CI surfaces when the release job's
+      # Node runtime needs to be upgraded.
       - name: Update npm
         run: npm install -g npm@latest
-        
+
       - name: Install Dependencies
         run: yarn install --frozen-lockfile
 
