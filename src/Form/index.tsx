@@ -238,8 +238,8 @@ import { AssistantChat } from '../assistant';
 import type { AssistantLayoutState } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
 
-const QuikPdfViewer = React.lazy(
-  () => import('../elements/components/QuikPdfViewer')
+const DocumentViewer = React.lazy(
+  () => import('../elements/components/DocumentViewer')
 );
 
 export * from './grid/StyledContainer';
@@ -3119,7 +3119,7 @@ function Form({
         )}
         {quikViewerPayload && (
           <React.Suspense fallback={null}>
-            <QuikPdfViewer
+            <DocumentViewer
               payload={quikViewerPayload.payload}
               action={quikViewerPayload.action}
               client={client}

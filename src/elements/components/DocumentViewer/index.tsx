@@ -36,7 +36,7 @@ export interface QuikViewerPayload {
   expires_at: string;
 }
 
-interface QuikPdfViewerProps {
+interface DocumentViewerProps {
   payload: QuikViewerPayload;
   action: Record<string, any>;
   client: any;
@@ -44,13 +44,13 @@ interface QuikPdfViewerProps {
   onComplete: () => void;
 }
 
-export default function QuikPdfViewer({
+export default function DocumentViewer({
   payload,
   action,
   client,
   setShow,
   onComplete
-}: QuikPdfViewerProps) {
+}: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);

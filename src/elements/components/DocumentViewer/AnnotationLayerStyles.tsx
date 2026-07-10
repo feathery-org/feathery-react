@@ -6,7 +6,7 @@ import { Global, css } from '@emotion/react';
 // CSS imports and the rollup/webpack build pipeline for this package does
 // not process CSS either, so the annotation-layer positioning rules are
 // injected as an emotion global style instead of importing the stylesheet
-// directly. Keep this scoped to the QuikPdfViewer lazy chunk.
+// directly. Keep this scoped to the DocumentViewer lazy chunk.
 //
 // pdf.js 4.x sizes the layer via `setLayerDimensions`, which reads the
 // `--scale-factor` CSS custom property from the layer div itself (set at
