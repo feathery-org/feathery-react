@@ -1056,7 +1056,8 @@ function Form({
   const runUserLogic = async (
     event: string,
     getProps: () => Record<string, any> = () => ({}),
-    containerId?: string | undefined,
+    // Container id for container clicks; tab group link_id for tab clicks
+    altMatchId?: string | undefined,
     toAwait?: Promise<any>,
     flush = true
   ) => {
@@ -1084,7 +1085,7 @@ function Form({
       );
       const currentStepId = (internalState[_internalId]?.currentStep ?? {}).id;
       for (const logicRule of logicRulesForEvent) {
-        if (canRunAction(logicRule, currentStepId, props, containerId)) {
+        if (canRunAction(logicRule, currentStepId, props, altMatchId)) {
           logicRan = true;
 
           if (toAwait) await toAwait;
@@ -2436,7 +2437,7 @@ function Form({
           actions: actionTypes,
           actionData: actions
         }),
-        elementType === 'container' ? element.id : undefined,
+        elementType === 'container' ? element.id : element.properties?.link_id,
         submitPromise,
         // Only need to flush data if might race against
         // click actions

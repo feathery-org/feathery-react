@@ -69,18 +69,23 @@ function ProgressBarElement({
     // Navigation to all steps makes any step clickable, otherwise only
     // already-visited steps are
     const allowAllNavigation = !!element.properties?.navigate_to_all_steps;
-    const onStepClick = (targetStepKey: string) =>
+    const stepConfigs = element.properties?.entries ?? [];
+    const onStepClick = (config: any) =>
       runElementActions({
         element,
         elementType: 'progress_bar',
-        actions: [{ type: ACTION_NEXT, next_step_key: targetStepKey }]
+        actions: [{ type: ACTION_NEXT, next_step_key: config.step_key }],
+        triggerPayload: {
+          entryIndex: stepConfigs.indexOf(config),
+          text: config.label
+        }
       });
     return (
       <div {...containerProps}>
         {children}
         <StepperBar
           styles={styles}
-          stepConfigs={element.properties?.entries ?? []}
+          stepConfigs={stepConfigs}
           stepKey={stepKey}
           textPlacement={element.styles.percent_text_layout}
           onStepClick={onStepClick}

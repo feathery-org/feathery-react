@@ -70,7 +70,8 @@ export function canRunAction(
   logicRule: any,
   currentStepId: string,
   props: any,
-  containerId: string | undefined
+  // Container id for container clicks; tab group link_id for tab clicks
+  altMatchId: string | undefined
 ) {
   const event = logicRule.trigger_event;
   if (![...stepEvents, ...elementEvents].includes(event)) return true;
@@ -108,7 +109,7 @@ export function canRunAction(
     (logicRule.elements.includes(
       (props as ContextOnChange | ContextOnAction).trigger.id
     ) ||
-      logicRule.elements.includes(containerId ?? ''))
+      logicRule.elements.includes(altMatchId ?? ''))
   );
 }
 

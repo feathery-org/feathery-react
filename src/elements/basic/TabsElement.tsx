@@ -97,7 +97,7 @@ function TabsElement({
           Add tabs in the properties panel
         </div>
       )}
-      {entries.map((entry) => {
+      {entries.map((entry, index) => {
         const isActive = entry.step_key === stepKey;
         return (
           <button
@@ -115,7 +115,7 @@ function TabsElement({
             }}
             onClick={() => {
               if (editMode || !entry.step_key) return;
-              onTabClick?.(entry);
+              onTabClick?.(entry, index);
             }}
           >
             {entry.label}
