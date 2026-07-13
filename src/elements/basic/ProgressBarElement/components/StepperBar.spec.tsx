@@ -43,6 +43,8 @@ describe('StepperBar', () => {
     fireEvent.click(getByText('3'));
     fireEvent.click(getByText('2'));
     expect(onStepClick).toHaveBeenCalledTimes(1);
-    expect(onStepClick).toHaveBeenCalledWith('review');
+    expect(onStepClick).toHaveBeenCalledWith(
+      expect.objectContaining({ step_key: 'review' })
+    );
   });
 });

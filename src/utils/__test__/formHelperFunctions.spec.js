@@ -1,4 +1,8 @@
-import { getABVariant, httpHelpers } from '../formHelperFunctions';
+import {
+  getABVariant,
+  httpHelpers,
+  lookUpTrigger
+} from '../formHelperFunctions';
 import { initInfo, setFieldValues } from '../init';
 import FeatheryClient, { STATIC_URL } from '../featheryClient';
 
@@ -332,6 +336,22 @@ describe('formHelperFunctions', () => {
       expect(
         featheryClient.offlineRequestHandler.saveRequest
       ).toHaveBeenCalled();
+    });
+  });
+
+  describe('lookUpTrigger', () => {
+    it('returns tab trigger with the clicked entry payload', () => {
+      const step = { buttons: [], texts: [], servar_fields: [], tabs: [] };
+      const trigger = lookUpTrigger(step, 'tab-el-1', 'tab', {
+        entryIndex: 1,
+        text: 'Pricing'
+      });
+      expect(trigger).toEqual({
+        id: 'tab-el-1',
+        type: 'tab',
+        entryIndex: 1,
+        text: 'Pricing'
+      });
     });
   });
 });

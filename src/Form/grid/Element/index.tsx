@@ -75,8 +75,14 @@ const Element = ({ node: el, form }: any) => {
     formSettings
   };
   const fieldId = el.servar?.key ?? el.id;
-  if (elementOnView && onViewElements.includes(fieldId))
-    basicProps.onView = (inView: boolean) => elementOnView(fieldId, inView);
+  const linkId = el.properties?.link_id;
+  const viewId = onViewElements.includes(fieldId)
+    ? fieldId
+    : linkId && onViewElements.includes(linkId)
+    ? linkId
+    : undefined;
+  if (elementOnView && viewId)
+    basicProps.onView = (inView: boolean) => elementOnView(viewId, inView);
 
   if (type === 'progress_bar')
     return (
@@ -108,12 +114,16 @@ const Element = ({ node: el, form }: any) => {
       <Elements.TabsElement
         {...basicProps}
         stepKey={activeStep?.key}
-        onTabClick={(entry: any) => {
+        onTabClick={(entry: any, index: number) => {
           runElementActions({
             actions: [{ type: ACTION_NEXT, next_step_key: entry.step_key }],
             element: el,
             elementType: 'tab',
-            submit: el.properties.submit
+            submit: el.properties.submit,
+            triggerPayload: {
+              entryIndex: index,
+              text: entry.label
+            }
           });
         }}
       />
