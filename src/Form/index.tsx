@@ -2691,14 +2691,10 @@ function Form({
         const envelopeId = `envelope-${i}`;
         updateEnvelopeGeneration(envelopeId, { status: 'incomplete' });
         await Promise.all([submitPromise, client.flushCustomFields()]);
-        try {
-          const data = await client.generateEnvelopes(action);
-          if (data.status === 'error') {
-            updateEnvelopeGeneration(envelopeId, { status: 'error' });
-            setElementError(data.message);
-            break;
-          }
-          updateEnvelopeGeneration(envelopeId, { status: 'complete' });
+        // Shared with the review-step finalize response: runs the same
+        // sign-redirect/download/save handling the non-review path always
+        // ran immediately off the generate response.
+        const runEnvelopeAction = async (data: any) => {
           const envAction = action.envelope_action;
           if (!envAction) {
             // Sign files
@@ -2726,6 +2722,54 @@ function Form({
             updateFieldValues(newValues);
             client.submitCustom(newValues);
           }
+        };
+        try {
+          const data = await client.generateEnvelopes(action);
+          if (data.status === 'error') {
+            updateEnvelopeGeneration(envelopeId, { status: 'error' });
+            setElementError(data.message);
+            break;
+          }
+          updateEnvelopeGeneration(envelopeId, { status: 'complete' });
+
+          if (action.review_documents) {
+            // Open the review viewer with the generated envelopes instead of
+            // running the download/save/sign handling immediately; it runs
+            // once the user hits Continue and finalize succeeds.
+            setQuikViewerPayload({
+              payload: data,
+              action,
+              onFinalize: async ({
+                envelopes,
+                attachments,
+                envelopeAction
+              }: {
+                envelopes: {
+                  envelopeId: string;
+                  fieldOverrides?: Record<string, any>;
+                }[];
+                attachments: Record<string, any>[];
+                envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+              }) => {
+                const result = await client.finalizeDocumentReview(action, {
+                  envelopes,
+                  attachments,
+                  envelopeAction
+                });
+                if (result?.status === 'error') return result;
+                await runEnvelopeAction(result);
+                return result;
+              },
+              onComplete: () => {
+                flowOnSuccess(i)().then(() => {
+                  setTimeout(() => setQuikViewerPayload(null), 500);
+                });
+              }
+            });
+            break;
+          }
+
+          await runEnvelopeAction(data);
         } catch (e: any) {
           updateEnvelopeGeneration(envelopeId, { status: 'error' });
           setElementError((e as Error).message);
@@ -3130,6 +3174,7 @@ function Form({
                 }
               }}
               onComplete={quikViewerPayload.onComplete}
+              onFinalize={quikViewerPayload.onFinalize}
             />
           </React.Suspense>
         )}

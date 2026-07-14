@@ -66,6 +66,48 @@ it('skips attachments and reports required-empty fields', async () => {
   ]);
 });
 
+it('builds flat per-envelope overrides keyed by envelope_id for the generic review flow', async () => {
+  const entry = {
+    doc: { type: 'form', envelope_id: 'env-1' } as any,
+    pdfProxy: {
+      numPages: 1,
+      getFieldObjects: async () => ({
+        field_a: [{ id: 'a1', type: 'text', value: 'x' }]
+      }),
+      annotationStorage: {
+        getAll: () => ({ a1: { value: 'override-value' } })
+      },
+      getPage: async () => ({ getAnnotations: async () => [] })
+    }
+  };
+  const layer = new NativeFieldLayer(() => [entry], jest.fn());
+  expect(await layer.getEnvelopeOverrides()).toEqual([
+    { envelopeId: 'env-1', fieldOverrides: { field_a: 'override-value' } }
+  ]);
+});
+
+it('skips attachments and docs without an envelope_id when building envelope overrides', async () => {
+  const attachment = {
+    doc: { type: 'attachment', envelope_id: 'env-attachment' } as any,
+    pdfProxy: {
+      getFieldObjects: async () => null,
+      annotationStorage: { getAll: () => ({}) }
+    }
+  };
+  const noEnvelopeId = {
+    doc: { type: 'form' } as any,
+    pdfProxy: {
+      getFieldObjects: async () => ({}),
+      annotationStorage: { getAll: () => ({}) }
+    }
+  };
+  const layer = new NativeFieldLayer(
+    () => [attachment, noEnvelopeId] as any,
+    jest.fn()
+  );
+  expect(await layer.getEnvelopeOverrides()).toEqual([]);
+});
+
 it('reset calls remount', () => {
   const remount = jest.fn();
   new NativeFieldLayer(() => [], remount).reset();

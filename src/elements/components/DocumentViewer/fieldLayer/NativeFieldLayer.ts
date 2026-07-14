@@ -1,5 +1,15 @@
-import { FieldLayer, QuikFieldOverride, ValidationIssue } from './types';
-import { extractFieldValues, toFormFields, toQuikFieldName } from './serialize';
+import {
+  EnvelopeFieldOverride,
+  FieldLayer,
+  QuikFieldOverride,
+  ValidationIssue
+} from './types';
+import {
+  extractFieldValues,
+  extractRawFieldValues,
+  toFormFields,
+  toQuikFieldName
+} from './serialize';
 import { ViewerDocument } from '../index';
 
 const REQUIRED_FIELD_FLAG = 2;
@@ -26,6 +36,21 @@ export class NativeFieldLayer implements FieldLayer {
         group_index: doc.group_index ?? 0,
         form_fields: toFormFields(values)
       });
+    }
+    return overrides;
+  }
+
+  // Flat per-envelope overrides for the generic Generate Documents review
+  // flow (`finalizeDocumentReview`'s `envelopes[].field_overrides`), keyed by
+  // `envelope_id` rather than Quik's `form_id`/`group_index` pairing. Docs
+  // without an `envelope_id` (e.g. Quik documents, or attachments) are
+  // skipped — this method is only ever used on the generic review path.
+  async getEnvelopeOverrides(): Promise<EnvelopeFieldOverride[]> {
+    const overrides: EnvelopeFieldOverride[] = [];
+    for (const { doc, pdfProxy } of this.getDocs()) {
+      if (doc.type !== 'form' || !pdfProxy || !doc.envelope_id) continue;
+      const fieldOverrides = await extractRawFieldValues(pdfProxy);
+      overrides.push({ envelopeId: doc.envelope_id, fieldOverrides });
     }
     return overrides;
   }

@@ -17,12 +17,16 @@ import { featheryDoc } from '../../../utils/browser';
 export interface ToolbarProps {
   title: string;
   onBack: () => void;
-  onDownload: () => void;
+  onDownload?: () => void;
   onSaveDraft?: () => void;
   onPrimary: () => void;
   primaryLabel: string;
   busy: boolean;
   isNarrow: boolean;
+  // The generic Generate Documents review flow has a single Continue action
+  // (label varies by envelope_action) — the Quik-specific secondary
+  // Download/Save Draft controls don't apply and are hidden entirely.
+  singleAction?: boolean;
 }
 
 export default function Toolbar({
@@ -33,7 +37,8 @@ export default function Toolbar({
   onPrimary,
   primaryLabel,
   busy,
-  isNarrow
+  isNarrow,
+  singleAction
 }: ToolbarProps) {
   return (
     <header
@@ -86,34 +91,35 @@ export default function Toolbar({
           justifyContent: 'flex-end'
         }}
       >
-        {isNarrow ? (
-          <OverflowMenu
-            onDownload={onDownload}
-            onSaveDraft={onSaveDraft}
-            busy={busy}
-          />
-        ) : (
-          <>
-            <button
-              type='button'
-              disabled={busy}
-              onClick={onDownload}
-              css={quietButtonCss}
-            >
-              <DownloadIcon size={16} /> Download
-            </button>
-            {onSaveDraft && (
+        {!singleAction &&
+          (isNarrow ? (
+            <OverflowMenu
+              onDownload={onDownload}
+              onSaveDraft={onSaveDraft}
+              busy={busy}
+            />
+          ) : (
+            <>
               <button
                 type='button'
                 disabled={busy}
-                onClick={onSaveDraft}
-                css={secondaryButtonCss}
+                onClick={onDownload}
+                css={quietButtonCss}
               >
-                Save Draft
+                <DownloadIcon size={16} /> Download
               </button>
-            )}
-          </>
-        )}
+              {onSaveDraft && (
+                <button
+                  type='button'
+                  disabled={busy}
+                  onClick={onSaveDraft}
+                  css={secondaryButtonCss}
+                >
+                  Save Draft
+                </button>
+              )}
+            </>
+          ))}
         <button
           type='button'
           disabled={busy}
@@ -129,7 +135,7 @@ export default function Toolbar({
 }
 
 interface OverflowMenuProps {
-  onDownload: () => void;
+  onDownload?: () => void;
   onSaveDraft?: () => void;
   busy: boolean;
 }
@@ -203,7 +209,7 @@ function OverflowMenu({ onDownload, onSaveDraft, busy }: OverflowMenuProps) {
             zIndex: 20
           }}
         >
-          {item('Download', onDownload)}
+          {onDownload && item('Download', onDownload)}
           {onSaveDraft && item('Save Draft', onSaveDraft)}
         </div>
       )}

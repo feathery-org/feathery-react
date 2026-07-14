@@ -1,4 +1,9 @@
-import { extractFieldValues, toFormFields, toQuikFieldName } from './serialize';
+import {
+  extractFieldValues,
+  extractRawFieldValues,
+  toFormFields,
+  toQuikFieldName
+} from './serialize';
 
 const makeDoc = (fieldObjects: any, storage: Record<string, any>) => ({
   getFieldObjects: async () => fieldObjects,
@@ -94,6 +99,27 @@ describe('extractFieldValues', () => {
       'Feathery: document has no fillable form fields'
     );
     warnSpy.mockRestore();
+  });
+});
+
+describe('extractRawFieldValues', () => {
+  // Generic (non-Quik) generated PDFs are filled server-side with field
+  // widget names equal to the raw servar/hidden-field key exactly (see
+  // `fill_pdf`/`transform_user_fill_data` on the backend) — unlike Quik's
+  // AcroForm-qualified names, these must NOT go through `toQuikFieldName`'s
+  // underscore-to-dot decoding, since a real field key like `field_a` would
+  // otherwise be silently corrupted into `field.a`.
+  it('preserves underscore-containing field keys unchanged', async () => {
+    const doc = makeDoc(
+      { field_a: [{ id: 'a1', type: 'text', value: 'Prefill' }] },
+      { a1: { value: 'Edited' } }
+    );
+    expect(await extractRawFieldValues(doc)).toEqual({ field_a: 'Edited' });
+  });
+
+  it('returns {} for documents without fields', async () => {
+    const doc = makeDoc(null, {});
+    expect(await extractRawFieldValues(doc)).toEqual({});
   });
 });
 

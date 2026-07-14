@@ -51,6 +51,27 @@ it('shows Save Draft only when provided', () => {
   ).toBeInTheDocument();
 });
 
+it('hides Download and Save Draft when singleAction is set (Generate Documents review mode)', () => {
+  const onPrimary = jest.fn();
+  render(
+    <Toolbar
+      {...baseProps}
+      onSaveDraft={jest.fn()}
+      onDownload={undefined}
+      primaryLabel='Download'
+      onPrimary={onPrimary}
+      singleAction
+    />
+  );
+  expect(
+    screen.queryByRole('button', { name: 'Save Draft' })
+  ).not.toBeInTheDocument();
+  // Only one "Download"-named button: the single primary action.
+  expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  expect(onPrimary).toHaveBeenCalled();
+});
+
 it('collapses Download into an overflow menu when narrow (no Reset)', () => {
   const onDownload = jest.fn();
   render(<Toolbar {...baseProps} isNarrow onDownload={onDownload} />);

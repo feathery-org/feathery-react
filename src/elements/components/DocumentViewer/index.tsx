@@ -29,6 +29,11 @@ export interface ViewerDocument {
   pdf_url: string;
   form_id?: string;
   group_index?: number;
+  // Present on documents returned by the generic Generate Documents review
+  // flow's generate step (`envelopes[].envelope_id` at finalize time) —
+  // absent for Quik documents, which are keyed by form_id/group_index
+  // instead.
+  envelope_id?: string;
   form_name?: string;
   name?: string;
   position?: 'before' | 'after';
@@ -40,12 +45,24 @@ export interface QuikViewerPayload {
   expires_at: string;
 }
 
+export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
+
 interface DocumentViewerProps {
   payload: QuikViewerPayload;
   action: Record<string, any>;
   client: any;
   setShow: (show: boolean) => void;
   onComplete: () => void;
+  // Additive/optional: when the payload came from the generic Generate
+  // Documents `review_documents` flow (keyed off `action.review_documents`,
+  // not global state), the toolbar collapses to a single Continue action
+  // that calls this instead of `client.finalizeQuikViewer`. Left undefined
+  // for the existing Quik call site, which is unaffected.
+  onFinalize?: (params: {
+    envelopes: { envelopeId: string; fieldOverrides: Record<string, any> }[];
+    attachments: { id: string; position: 'before' | 'after' }[];
+    envelopeAction: ReviewEnvelopeAction;
+  }) => Promise<{ status?: string; message?: string } | void>;
 }
 
 export default function DocumentViewer({
@@ -53,7 +70,8 @@ export default function DocumentViewer({
   action,
   client,
   setShow,
-  onComplete
+  onComplete,
+  onFinalize
 }: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -386,6 +404,54 @@ export default function DocumentViewer({
   };
 
   const isSign = action.review_action === 'sign';
+
+  // The toolbar mode is keyed off the action/payload source (whether this
+  // viewer instance was opened for the generic Generate Documents
+  // `review_documents` flow), never off any global/module-level state — the
+  // Quik path (no `action.review_documents`) always takes the branches
+  // above unchanged.
+  const isReviewDocuments = !!action.review_documents;
+  const reviewEnvelopeAction: ReviewEnvelopeAction =
+    !action.envelope_action || action.envelope_action === 'sign'
+      ? 'sign'
+      : action.envelope_action;
+  const reviewPrimaryLabel =
+    { sign: 'Sign', fill: 'Continue', download: 'Download', save: 'Save' }[
+      reviewEnvelopeAction
+    ] ?? 'Continue';
+
+  const continueReview = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      if (reviewEnvelopeAction === 'sign') {
+        const issues = await fieldLayer.validate();
+        if (issues.length) {
+          setError(
+            `Please complete ${issues.length} required field(s) before signing.`
+          );
+          return;
+        }
+      }
+      const envelopes = await fieldLayer.getEnvelopeOverrides();
+      const result = await onFinalize?.({
+        envelopes,
+        attachments,
+        envelopeAction: reviewEnvelopeAction
+      });
+      if (result?.status === 'error') {
+        if (/expired/i.test(result.message ?? '')) setExpiredBanner(true);
+        else setError(result.message ?? 'Something went wrong');
+      } else onComplete();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Something went wrong';
+      if (/expired/i.test(message)) setExpiredBanner(true);
+      else setError(message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!portalElRef.current) return null;
   return createPortal(
     <div
@@ -407,12 +473,21 @@ export default function DocumentViewer({
       <Toolbar
         title={VIEWER_TITLE}
         onBack={() => setShow(false)}
-        onDownload={download}
-        onSaveDraft={isSign ? () => finalize('draft') : undefined}
-        onPrimary={() => finalize(isSign ? 'sign' : 'submit')}
-        primaryLabel={isSign ? 'Sign' : 'Submit'}
+        onDownload={isReviewDocuments ? undefined : download}
+        onSaveDraft={
+          !isReviewDocuments && isSign ? () => finalize('draft') : undefined
+        }
+        onPrimary={
+          isReviewDocuments
+            ? continueReview
+            : () => finalize(isSign ? 'sign' : 'submit')
+        }
+        primaryLabel={
+          isReviewDocuments ? reviewPrimaryLabel : isSign ? 'Sign' : 'Submit'
+        }
         busy={busy}
         isNarrow={isNarrow}
+        singleAction={isReviewDocuments}
       />
       {expiredBanner && (
         <AlertBanner message='This session has expired. Please close and reopen the viewer.' />

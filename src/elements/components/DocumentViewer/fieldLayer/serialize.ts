@@ -23,6 +23,26 @@ export function toQuikFieldName(qualifiedName: string): string {
 export async function extractFieldValues(
   pdfDoc: any
 ): Promise<Record<string, string>> {
+  return extractFieldValuesWithNameFn(pdfDoc, toQuikFieldName);
+}
+
+// Generic (non-Quik) generated PDFs are filled server-side with widget names
+// equal to the raw servar/hidden-field key exactly (see the backend's
+// `fill_pdf`/`transform_user_fill_data`), so field keys must be preserved
+// as-is rather than run through Quik's underscore-to-dot leaf decoding
+// (`toQuikFieldName` would otherwise corrupt a real key like `field_a` into
+// `field.a`). Used by the generic Generate Documents review flow's
+// `NativeFieldLayer.getEnvelopeOverrides`.
+export async function extractRawFieldValues(
+  pdfDoc: any
+): Promise<Record<string, string>> {
+  return extractFieldValuesWithNameFn(pdfDoc, (name) => name);
+}
+
+async function extractFieldValuesWithNameFn(
+  pdfDoc: any,
+  nameFn: (qualifiedName: string) => string
+): Promise<Record<string, string>> {
   const fieldObjects: Record<string, FieldObject[]> | null =
     await pdfDoc.getFieldObjects();
   if (!fieldObjects || Object.keys(fieldObjects).length === 0) {
@@ -34,7 +54,7 @@ export async function extractFieldValues(
 
   const values: Record<string, string> = {};
   Object.entries(fieldObjects).forEach(([qualifiedName, objs]) => {
-    const name = toQuikFieldName(qualifiedName);
+    const name = nameFn(qualifiedName);
     objs.forEach((obj) => {
       const stored = storage[obj.id];
       switch (obj.type) {
