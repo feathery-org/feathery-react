@@ -712,6 +712,86 @@ describe('IntegrationClient', () => {
         message: 'Envelope limit exceeded'
       });
     });
+
+    it('sends sign_method to the generate endpoint directly when present, without review_documents', async () => {
+      // client-utils' generateFormDocuments can't forward sign_method any
+      // more than it can review_documents, so a docusign sign action must
+      // also route through the direct call even outside the review flow.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest
+          .fn()
+          .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      const [url, options] = global.fetch.mock.calls[0];
+      expect(url).toBe(`${API_URL}document/form/generate/`);
+      const body = JSON.parse(options.body);
+      expect(body.sign_method).toBe('docusign');
+      expect(body.review_documents).toBeUndefined();
+      expect(result).toEqual({
+        docusign_envelope_id: 'ds-1',
+        status: 'sent'
+      });
+    });
+
+    it('sends sign_method alongside review_documents when both are present', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        review_documents: true,
+        sign_method: 'docusign'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+          expires_at: '2026-07-15T00:00:00Z'
+        })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBe('docusign');
+      expect(body.review_documents).toBe(true);
+    });
+
+    it('does not send sign_method when the action omits it (regression)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        review_documents: true
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+          expires_at: '2026-07-15T00:00:00Z'
+        })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBeUndefined();
+    });
   });
 
   describe('finalizeDocumentReview', () => {
@@ -897,6 +977,54 @@ describe('IntegrationClient', () => {
         status: 'error',
         message: 'Envelope expired'
       });
+    });
+
+    it('sends sign_method in the payload when present', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        ...baseAction,
+        run_async: false,
+        sign_method: 'docusign'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest
+          .fn()
+          .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
+      });
+
+      const result = await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBe('docusign');
+      expect(result).toEqual({
+        docusign_envelope_id: 'ds-1',
+        status: 'sent'
+      });
+    });
+
+    it('does not send sign_method when the action omits it (regression)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['merged.pdf'] })
+      });
+
+      await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBeUndefined();
     });
   });
 

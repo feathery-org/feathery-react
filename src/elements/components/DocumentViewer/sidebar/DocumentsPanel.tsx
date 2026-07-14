@@ -11,6 +11,9 @@ interface DocumentsPanelProps {
   onAdd: (file: File) => void;
   onRemove: (index: number) => void;
   uploading: boolean;
+  // Backend rejects attachments combined with a docusign sign action; the
+  // docusign-sign review flow passes false so the control isn't offered.
+  allowAdd?: boolean;
 }
 
 export default function DocumentsPanel({
@@ -19,7 +22,8 @@ export default function DocumentsPanel({
   attachments,
   onAdd,
   onRemove,
-  uploading
+  uploading,
+  allowAdd = true
 }: DocumentsPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const forms = documents.filter((doc) => doc.type === 'form');
@@ -52,26 +56,30 @@ export default function DocumentsPanel({
           }}
         >
           <h3 css={headingCss}>Attachments</h3>
-          <button
-            type='button'
-            aria-label='Add attachment'
-            disabled={uploading}
-            onClick={() => inputRef.current?.click()}
-            css={iconButtonCss}
-          >
-            {uploading ? <SpinnerIcon size={16} /> : <PlusIcon size={16} />}
-          </button>
-          <input
-            ref={inputRef}
-            type='file'
-            accept='.pdf'
-            css={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) onAdd(file);
-              e.target.value = '';
-            }}
-          />
+          {allowAdd && (
+            <>
+              <button
+                type='button'
+                aria-label='Add attachment'
+                disabled={uploading}
+                onClick={() => inputRef.current?.click()}
+                css={iconButtonCss}
+              >
+                {uploading ? <SpinnerIcon size={16} /> : <PlusIcon size={16} />}
+              </button>
+              <input
+                ref={inputRef}
+                type='file'
+                accept='.pdf'
+                css={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onAdd(file);
+                  e.target.value = '';
+                }}
+              />
+            </>
+          )}
         </div>
         {attachments.map((att, i) => (
           <div

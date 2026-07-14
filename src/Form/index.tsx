@@ -217,7 +217,7 @@ import {
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
-import { getSignUrl } from '../utils/document';
+import { getSignUrl, isDocusignSignAction } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
@@ -2697,6 +2697,14 @@ function Form({
         const runEnvelopeAction = async (data: any) => {
           const envAction = action.envelope_action;
           if (!envAction) {
+            if (isDocusignSignAction(action)) {
+              // DocuSign sign has no Feathery sign URL to redirect to — the
+              // `{docusign_envelope_id, status}` response (already validated
+              // for errors above) is itself the completion signal, so just
+              // continue the flow, mirroring how the Quik viewer continues
+              // after its own DocuSign sign.
+              return;
+            }
             // Sign files
             const url = getSignUrl(action.redirect);
             if (action.redirect) {

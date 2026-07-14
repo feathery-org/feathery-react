@@ -461,17 +461,19 @@ export default class IntegrationClient {
     const runAsync = action.run_async ?? true;
 
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
-    // set of known fields, so it can't carry the review-step flag through to
-    // the endpoint. Call the endpoint directly (reusing this client's own
-    // fetch/poll handling) whenever review is requested; leave the
-    // non-review path untouched.
-    if (action.review_documents) {
-      return await this.generateEnvelopesForReview({
+    // set of known fields, so it can't carry the review-step flag or
+    // sign_method through to the endpoint. Call the endpoint directly
+    // (reusing this client's own fetch/poll handling) whenever either is
+    // requested; leave the plain non-review/non-docusign path untouched.
+    if (action.review_documents || action.sign_method) {
+      return await this.generateEnvelopesDirect({
         documentIds,
         signerEmail,
         repeatable,
         runAsync,
-        envelopeAction
+        envelopeAction,
+        reviewDocuments: !!action.review_documents,
+        signMethod: action.sign_method
       });
     }
 
@@ -489,18 +491,22 @@ export default class IntegrationClient {
     });
   }
 
-  private async generateEnvelopesForReview({
+  private async generateEnvelopesDirect({
     documentIds,
     signerEmail,
     repeatable,
     runAsync,
-    envelopeAction
+    envelopeAction,
+    reviewDocuments,
+    signMethod
   }: {
     documentIds: string[];
     signerEmail: string;
     repeatable: boolean;
     runAsync: boolean;
     envelopeAction: 'sign' | 'fill';
+    reviewDocuments: boolean;
+    signMethod?: string;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -509,9 +515,10 @@ export default class IntegrationClient {
       documents: documentIds,
       run_async: runAsync,
       envelope_action: envelopeAction,
-      merge_docs: false,
-      review_documents: true
+      merge_docs: false
     };
+    if (reviewDocuments) payload.review_documents = true;
+    if (signMethod) payload.sign_method = signMethod;
     if (signerEmail) payload.signer_email = signerEmail;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -574,6 +581,7 @@ export default class IntegrationClient {
     };
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
+    if (action.sign_method) payload.sign_method = action.sign_method;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {

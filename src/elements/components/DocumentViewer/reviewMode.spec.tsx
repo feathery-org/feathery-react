@@ -140,6 +140,71 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
     expect(baseClient.finalizeQuikViewer).not.toHaveBeenCalled();
   });
+
+  it('hides the attachment upload UI when the action is a docusign sign, and finalizes with an empty attachments list', async () => {
+    // Backend 400s when attachments are combined with docusign sign
+    // (sign_method=docusign + envelope_action=sign): the upload control must
+    // be unavailable for this flow, and finalize must never send attachments.
+    const onFinalize = jest.fn().mockResolvedValue({
+      docusign_envelope_id: 'ds-1',
+      status: 'sent'
+    });
+    render(
+      <DocumentViewer
+        payload={basePayload}
+        action={{ review_documents: true, sign_method: 'docusign' }}
+        client={baseClient}
+        setShow={jest.fn()}
+        onComplete={jest.fn()}
+        onFinalize={onFinalize}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.queryByLabelText('Add attachment')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign' }));
+    await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+    expect(onFinalize).toHaveBeenCalledWith({
+      envelopes: [],
+      attachments: [],
+      envelopeAction: 'sign'
+    });
+  });
+
+  it('still shows the attachment upload UI for feathery sign / absent sign_method (regression)', () => {
+    render(
+      <DocumentViewer
+        payload={basePayload}
+        action={{ review_documents: true }}
+        client={baseClient}
+        setShow={jest.fn()}
+        onComplete={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.getByLabelText('Add attachment')).toBeInTheDocument();
+  });
+
+  it('still shows the attachment upload UI when sign_method is docusign but envelope_action is not sign (regression)', () => {
+    render(
+      <DocumentViewer
+        payload={basePayload}
+        action={{
+          review_documents: true,
+          sign_method: 'docusign',
+          envelope_action: 'download'
+        }}
+        client={baseClient}
+        setShow={jest.fn()}
+        onComplete={jest.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Documents' }));
+    expect(screen.getByLabelText('Add attachment')).toBeInTheDocument();
+  });
 });
 
 describe('DocumentViewer — Quik path stays unchanged (regression)', () => {

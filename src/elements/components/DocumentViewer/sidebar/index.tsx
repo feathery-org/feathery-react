@@ -19,6 +19,9 @@ interface ViewerSidebarProps {
   onRemoveAttachment: (index: number) => void;
   uploading: boolean;
   isNarrow: boolean;
+  // See DocumentsPanel's `allowAdd` — hidden for the docusign-sign review
+  // flow, since the backend rejects attachments combined with that action.
+  allowAttachmentUpload?: boolean;
 }
 
 export default function ViewerSidebar({
@@ -31,7 +34,8 @@ export default function ViewerSidebar({
   onAddAttachment,
   onRemoveAttachment,
   uploading,
-  isNarrow
+  isNarrow,
+  allowAttachmentUpload = true
 }: ViewerSidebarProps) {
   const [tab, setTab] = useState<'pages' | 'documents'>('pages');
   const [collapsed, setCollapsed] = useState(true);
@@ -129,6 +133,7 @@ export default function ViewerSidebar({
                 onAdd={onAddAttachment}
                 onRemove={onRemoveAttachment}
                 uploading={uploading}
+                allowAdd={allowAttachmentUpload}
               />
             )}
           </div>

@@ -50,3 +50,13 @@ it('lists forms and navigates on click', () => {
   fireEvent.click(screen.getByText('Form A'));
   expect(onNavigate).toHaveBeenCalledWith('u1', 0);
 });
+
+it('shows the Add attachment button by default (regression)', () => {
+  render(<DocumentsPanel {...baseProps} />);
+  expect(screen.getByLabelText('Add attachment')).toBeInTheDocument();
+});
+
+it('hides the Add attachment button when allowAdd is false', () => {
+  render(<DocumentsPanel {...baseProps} allowAdd={false} />);
+  expect(screen.queryByLabelText('Add attachment')).not.toBeInTheDocument();
+});

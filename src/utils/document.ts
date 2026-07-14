@@ -35,3 +35,12 @@ export function getSignUrl(redirect?: boolean | string) {
 
   return `https://${regionPart}document.feathery.io/to/${initState._internalUserId}${query}`;
 }
+
+// Generate Documents `sign` actions default to Feathery's own hosted eSign
+// flow (`getSignUrl` above). When the action is configured for DocuSign
+// instead, the backend's `{docusign_envelope_id, status}` response *is* the
+// completion signal — there is no Feathery sign URL to redirect to, so
+// callers must skip that redirect entirely and just continue the flow.
+export function isDocusignSignAction(action: Record<string, any>): boolean {
+  return action?.sign_method === 'docusign';
+}

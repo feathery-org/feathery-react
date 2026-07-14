@@ -415,6 +415,15 @@ export default function DocumentViewer({
     !action.envelope_action || action.envelope_action === 'sign'
       ? 'sign'
       : action.envelope_action;
+  // Backend 400s when attachments are combined with a docusign sign action
+  // (sign_method=docusign + envelope_action=sign) — hide the upload control
+  // and never send attachments for that combination. Unaffected: the Quik
+  // path (isReviewDocuments false) and any other envelope_action/sign_method
+  // combination for the generic review flow.
+  const isDocusignSignReview =
+    isReviewDocuments &&
+    action.sign_method === 'docusign' &&
+    reviewEnvelopeAction === 'sign';
   const reviewPrimaryLabel =
     { sign: 'Sign', fill: 'Continue', download: 'Download', save: 'Save' }[
       reviewEnvelopeAction
@@ -436,7 +445,7 @@ export default function DocumentViewer({
       const envelopes = await fieldLayer.getEnvelopeOverrides();
       const result = await onFinalize?.({
         envelopes,
-        attachments,
+        attachments: isDocusignSignReview ? [] : attachments,
         envelopeAction: reviewEnvelopeAction
       });
       if (result?.status === 'error') {
@@ -505,6 +514,7 @@ export default function DocumentViewer({
           onRemoveAttachment={onRemoveAttachment}
           uploading={uploading}
           isNarrow={isNarrow}
+          allowAttachmentUpload={!isDocusignSignReview}
         />
         <div
           ref={scrollContainerRef}
