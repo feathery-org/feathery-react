@@ -17,6 +17,7 @@ import {
   FormConflictError,
   generateFormDocuments as apiGenerateFormDocuments,
   generateQuikEnvelopes as apiGenerateQuikEnvelopes,
+  getApiUrl,
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
@@ -454,18 +455,189 @@ export default class IntegrationClient {
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
+    const documentIds = action.documents ?? [];
+    const signerEmail = signer?.toString() ?? '';
+    const repeatable = action.repeatable ?? false;
+    const runAsync = action.run_async ?? true;
+
+    // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
+    // set of known fields, so it can't carry the review-step flag through to
+    // the endpoint. Call the endpoint directly (reusing this client's own
+    // fetch/poll handling) whenever review is requested; leave the
+    // non-review path untouched.
+    if (action.review_documents) {
+      return await this.generateEnvelopesForReview({
+        documentIds,
+        signerEmail,
+        repeatable,
+        runAsync,
+        envelopeAction
+      });
+    }
 
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds: action.documents ?? [],
+      documentIds,
       userId,
-      signerEmail: signer?.toString() ?? '',
-      repeatable: action.repeatable ?? false,
-      runAsync: action.run_async ?? true,
+      signerEmail,
+      repeatable,
+      runAsync,
       envelopeAction,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
+    });
+  }
+
+  private async generateEnvelopesForReview({
+    documentIds,
+    signerEmail,
+    repeatable,
+    runAsync,
+    envelopeAction
+  }: {
+    documentIds: string[];
+    signerEmail: string;
+    repeatable: boolean;
+    runAsync: boolean;
+    envelopeAction: 'sign' | 'fill';
+  }) {
+    const { userId } = initInfo();
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      documents: documentIds,
+      run_async: runAsync,
+      envelope_action: envelopeAction,
+      merge_docs: false,
+      review_documents: true
+    };
+    if (signerEmail) payload.signer_email = signerEmail;
+    if (repeatable) payload.repeatable = repeatable;
+
+    const url = `${getApiUrl()}document/form/generate/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    const response = await this._fetch(url, options, false);
+    if (!response) return;
+    const data = await response.json();
+    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!runAsync || data.documents) return data;
+
+    const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${documentIds}`;
+    return await this.pollUntilComplete(
+      pollUrl,
+      this.ENVELOPE_CHECK_INTERVAL,
+      this.ENVELOPE_MAX_TIME,
+      'Document generation'
+    );
+  }
+
+  FINALIZE_CHECK_INTERVAL = 2000;
+  FINALIZE_MAX_TIME = 3 * 60 * 1000;
+
+  async finalizeDocumentReview(
+    action: Record<string, any>,
+    {
+      envelopes,
+      attachments,
+      envelopeAction
+    }: {
+      envelopes: {
+        envelopeId: string;
+        fieldOverrides?: Record<string, any>;
+      }[];
+      attachments?: Record<string, any>[];
+      envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+    }
+  ) {
+    const { userId } = initInfo();
+    const signer = fieldValues[action.envelope_signer_field_key];
+    const runAsync = action.run_async ?? true;
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      envelopes: envelopes.map((envelope) => ({
+        envelope_id: envelope.envelopeId,
+        field_overrides: envelope.fieldOverrides ?? {}
+      })),
+      attachments: attachments ?? [],
+      envelope_action: envelopeAction,
+      merge_docs: action.merge_docs ?? false,
+      run_async: runAsync
+    };
+    if (signer) payload.signer_email = signer.toString();
+    if (action.merged_file_name)
+      payload.merged_file_name = action.merged_file_name;
+
+    const url = `${getApiUrl()}document/form/finalize/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    const response = await this._fetch(url, options, false);
+    if (!response) return;
+    const data = await response.json();
+    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!runAsync || data.files) return data;
+
+    const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
+    const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;
+    return await this.pollUntilComplete(
+      pollUrl,
+      this.FINALIZE_CHECK_INTERVAL,
+      this.FINALIZE_MAX_TIME,
+      'Document finalize'
+    );
+  }
+
+  // Shared GET-poll loop for endpoints whose async path reports completion
+  // via `{ status: 'complete', ... }` (mirrors the poll pattern used by
+  // client-utils' generateFormDocuments / generateQuikEnvelopes, but routed
+  // through this._fetch so auth/conflict handling stays consistent).
+  private pollUntilComplete(
+    pollUrl: string,
+    checkInterval: number,
+    maxTime: number,
+    operationName: string
+  ): Promise<Record<string, any>> {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = maxTime / checkInterval;
+
+      const retryOrTimeout = () => {
+        if (attempts < maxAttempts) {
+          setTimeout(checkCompletion, checkInterval);
+        } else {
+          const message = `${operationName} took too long...`;
+          console.warn(message);
+          resolve({ status: 'error', message });
+        }
+      };
+
+      const checkCompletion = async (): Promise<void> => {
+        attempts += 1;
+        let response;
+        try {
+          response = await this._fetch(pollUrl);
+        } catch {
+          // transient network error - retry on next interval
+        }
+        if (!response) return retryOrTimeout();
+
+        const data = await response.json();
+        if (response.ok) {
+          if (data.status === 'complete') return resolve(data);
+          return retryOrTimeout();
+        }
+        return resolve({ status: 'error', message: parseAPIError(data) });
+      };
+
+      setTimeout(checkCompletion, checkInterval);
     });
   }
 

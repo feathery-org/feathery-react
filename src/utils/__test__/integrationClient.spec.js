@@ -577,6 +577,271 @@ describe('IntegrationClient', () => {
       );
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
+
+    it('does not send review_documents when the action omits it (regression)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf'] })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.review_documents).toBeUndefined();
+    });
+
+    it('sends review_documents to the generate endpoint directly and returns the sync payload', async () => {
+      // Arrange: client-utils' generateFormDocuments can't forward unknown
+      // params, so review_documents must be sent via a direct call.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: ['doc1', 'doc2'],
+        repeatable: true,
+        run_async: false,
+        envelope_action: 'download',
+        review_documents: true
+      };
+
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+
+      const documentsPayload = {
+        documents: [
+          { envelope_id: 'env-1', pdf_url: 'https://x/1.pdf', type: 'form' }
+        ],
+        expires_at: '2026-07-15T00:00:00Z'
+      };
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(documentsPayload)
+      });
+
+      // Act
+      const result = await integrationClient.generateEnvelopes(action);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/generate/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            documents: action.documents,
+            run_async: false,
+            envelope_action: 'fill',
+            merge_docs: false,
+            review_documents: true,
+            signer_email: 'test@example.com',
+            repeatable: true
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual(documentsPayload);
+    });
+
+    it('polls until complete when review_documents runs async', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
+      integrationClient.ENVELOPE_MAX_TIME = 20;
+      const action = {
+        documents: ['doc1'],
+        run_async: true,
+        review_documents: true
+      };
+
+      const completePayload = {
+        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+        expires_at: '2026-07-15T00:00:00Z',
+        status: 'complete'
+      };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'running' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[1][0]).toBe(
+        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=${action.documents}`
+      );
+      expect(result).toEqual(completePayload);
+    });
+
+    it('surfaces an error response from the review generate endpoint', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        review_documents: true
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: false,
+        json: jest.fn().mockResolvedValue({ error: 'Envelope limit exceeded' })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Envelope limit exceeded'
+      });
+    });
+  });
+
+  describe('finalizeDocumentReview', () => {
+    const baseAction = { form_key: 'test_form_key' };
+
+    it('sends envelopes/attachments to the finalize endpoint and returns files for download', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['merged.pdf'] })
+      });
+
+      const result = await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [
+          { envelopeId: 'env-1', fieldOverrides: { field_a: 'value_a' } }
+        ],
+        attachments: [{ id: 'att-1', position: 'after' }],
+        envelopeAction: 'download'
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/finalize/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            envelopes: [
+              { envelope_id: 'env-1', field_overrides: { field_a: 'value_a' } }
+            ],
+            attachments: [{ id: 'att-1', position: 'after' }],
+            envelope_action: 'download',
+            merge_docs: false,
+            run_async: false
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({ files: ['merged.pdf'] });
+    });
+
+    it('defaults attachments/field_overrides and forwards signer email for sign', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        ...baseAction,
+        run_async: false,
+        envelope_signer_field_key: 'signer_field'
+      };
+      Object.assign(fieldValues, { signer_field: 'signer@example.com' });
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'de-1' })
+      });
+
+      await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.envelopes).toEqual([
+        { envelope_id: 'env-1', field_overrides: {} }
+      ]);
+      expect(body.attachments).toEqual([]);
+      expect(body.signer_email).toBe('signer@example.com');
+      expect(body.envelope_action).toBe('sign');
+    });
+
+    it('polls until complete when finalize runs async', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+      integrationClient.FINALIZE_MAX_TIME = 20;
+      const action = { ...baseAction, run_async: true };
+
+      const completePayload = { status: 'complete', files: ['merged.pdf'] };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'running' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      const result = await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'save'
+      });
+
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[1][0]).toBe(
+        `${API_URL}document/form/finalize/poll/?fid=test_user_id&eids=env-1`
+      );
+      expect(result).toEqual(completePayload);
+    });
+
+    it('surfaces an error response from the finalize endpoint', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: false,
+        json: jest.fn().mockResolvedValue({ error: 'Envelope expired' })
+      });
+
+      const result = await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign'
+      });
+
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Envelope expired'
+      });
+    });
   });
 
   describe('sendDocusignEnvelope', () => {
