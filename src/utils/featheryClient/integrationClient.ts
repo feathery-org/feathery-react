@@ -27,6 +27,7 @@ import {
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
+import { isDocusignSignAction } from '../document';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -462,10 +463,11 @@ export default class IntegrationClient {
 
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
     // set of known fields, so it can't carry the review-step flag or
-    // sign_method through to the endpoint. Call the endpoint directly
-    // (reusing this client's own fetch/poll handling) whenever either is
-    // requested; leave the plain non-review/non-docusign path untouched.
-    if (action.review_documents || action.sign_method) {
+    // DocuSign's sign_method through to the endpoint. Call the endpoint
+    // directly (reusing this client's own fetch/poll handling) whenever
+    // either is requested; other sign_method values (e.g. Feathery's own
+    // hosted eSign) still go through the maintained library path below.
+    if (action.review_documents || isDocusignSignAction(action)) {
       return await this.generateEnvelopesDirect({
         documentIds,
         signerEmail,

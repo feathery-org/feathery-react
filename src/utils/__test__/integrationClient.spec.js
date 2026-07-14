@@ -792,6 +792,56 @@ describe('IntegrationClient', () => {
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.sign_method).toBeUndefined();
     });
+
+    it('routes a non-docusign sign_method through the library path, not the direct call (regression)', async () => {
+      // Only sign_method: 'docusign' needs the direct call to carry the flag
+      // through; other sign_method values (e.g. Feathery's own hosted eSign)
+      // must still go through @feathery/client-utils' generateFormDocuments,
+      // same as when sign_method is absent entirely.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: ['doc1', 'doc2'],
+        repeatable: true,
+        run_async: false,
+        envelope_action: 'download',
+        sign_method: 'feathery'
+      };
+
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/generate/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            documents: action.documents,
+            run_async: false,
+            envelope_action: 'fill',
+            merge_docs: false,
+            signer_email: 'test@example.com',
+            repeatable: true
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
+    });
   });
 
   describe('finalizeDocumentReview', () => {
