@@ -13,7 +13,11 @@ import { useIsNarrowViewport } from './useIsNarrowViewport';
 import ViewerSidebar from './sidebar';
 import AlertBanner from './AlertBanner';
 import { NativeFieldLayer, LoadedDoc } from './fieldLayer/NativeFieldLayer';
-import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import {
+  featheryDoc,
+  featheryWindow,
+  runningInClient
+} from '../../../utils/browser';
 import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
 
 const MAX_PAGE_WIDTH = 900;
@@ -63,7 +67,7 @@ export default function DocumentViewer({
   // rest of the page can be made `inert` while it is open (see the portal
   // effect below).
   const portalElRef = useRef<HTMLElement | null>(null);
-  if (portalElRef.current === null && typeof document !== 'undefined') {
+  if (portalElRef.current === null && runningInClient()) {
     portalElRef.current = featheryDoc().createElement('div');
   }
   const [remountKey, setRemountKey] = useState(0);
