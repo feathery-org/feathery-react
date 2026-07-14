@@ -554,8 +554,11 @@ export default class IntegrationClient {
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
     }
   ) {
+    if (!envelopes.length) {
+      return { status: 'error', message: 'No envelopes to finalize' };
+    }
+
     const { userId } = initInfo();
-    const signer = fieldValues[action.envelope_signer_field_key];
     const runAsync = action.run_async ?? true;
     const payload: Record<string, any> = {
       form_key: this.formKey,
@@ -569,7 +572,6 @@ export default class IntegrationClient {
       merge_docs: action.merge_docs ?? false,
       run_async: runAsync
     };
-    if (signer) payload.signer_email = signer.toString();
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
 
@@ -583,7 +585,12 @@ export default class IntegrationClient {
     if (!response) return;
     const data = await response.json();
     if (!response.ok) return { status: 'error', message: parseAPIError(data) };
-    if (!runAsync || data.files) return data;
+    // The sync response is already the final `{ files: [...] }` payload.
+    // The async response is always `{}` immediately, regardless of the
+    // requested envelope_action (sign/fill/download/save) — completion is
+    // only ever signaled by the poll endpoint's `status: 'complete'`, never
+    // by guessing at the shape of this intermediate body.
+    if (!runAsync) return data;
 
     const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
     const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;

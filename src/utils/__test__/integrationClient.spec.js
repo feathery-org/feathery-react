@@ -761,7 +761,7 @@ describe('IntegrationClient', () => {
       expect(result).toEqual({ files: ['merged.pdf'] });
     });
 
-    it('defaults attachments/field_overrides and forwards signer email for sign', async () => {
+    it('defaults attachments/field_overrides for sign and never sends signer_email (removed from the final contract)', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
       const action = {
@@ -773,7 +773,7 @@ describe('IntegrationClient', () => {
 
       global.fetch.mockResolvedValue({
         ok: true,
-        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'de-1' })
+        json: jest.fn().mockResolvedValue({ files: ['signed.pdf'] })
       });
 
       await integrationClient.finalizeDocumentReview(action, {
@@ -786,7 +786,7 @@ describe('IntegrationClient', () => {
         { envelope_id: 'env-1', field_overrides: {} }
       ]);
       expect(body.attachments).toEqual([]);
-      expect(body.signer_email).toBe('signer@example.com');
+      expect(body.signer_email).toBeUndefined();
       expect(body.envelope_action).toBe('sign');
     });
 
@@ -802,7 +802,12 @@ describe('IntegrationClient', () => {
       global.fetch
         .mockResolvedValueOnce({
           ok: true,
-          json: jest.fn().mockResolvedValue({ status: 'running' })
+          status: 201,
+          json: jest.fn().mockResolvedValue({})
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'incomplete' })
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -815,11 +820,62 @@ describe('IntegrationClient', () => {
         envelopeAction: 'save'
       });
 
-      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch).toHaveBeenCalledTimes(3);
       expect(global.fetch.mock.calls[1][0]).toBe(
         `${API_URL}document/form/finalize/poll/?fid=test_user_id&eids=env-1`
       );
       expect(result).toEqual(completePayload);
+    });
+
+    it('always polls for async finalize even if the initial POST response already looks file-shaped', async () => {
+      // Regression for the old `data.files` early-return heuristic: the
+      // real contract's immediate async POST response is always `{}` — the
+      // client must key completion off `run_async` + the poll's
+      // `status: 'complete'`, never off the shape of an intermediate body.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+      integrationClient.FINALIZE_MAX_TIME = 20;
+      const action = { ...baseAction, run_async: true };
+
+      const completePayload = { status: 'complete', files: ['merged.pdf'] };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ files: ['stale.pdf'] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      const result = await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(result).toEqual(completePayload);
+    });
+
+    it('rejects an empty envelopes list without making a network call (backend rejects [])', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      const result = await integrationClient.finalizeDocumentReview(action, {
+        envelopes: [],
+        envelopeAction: 'download'
+      });
+
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        status: 'error',
+        message: 'No envelopes to finalize'
+      });
     });
 
     it('surfaces an error response from the finalize endpoint', async () => {
