@@ -20,6 +20,7 @@ function MatrixField({
   const servar = element.servar;
   const allowMultiple = servar.metadata.multiple;
   const inputType = allowMultiple ? 'checkbox' : 'radio';
+  const transpose = servar.metadata.transpose ?? false;
   const containerRef = useRef(null);
   const { backgroundColor, borderRadius } =
     responsiveStyles.getTarget('sub-fc');
@@ -40,47 +41,123 @@ function MatrixField({
     options = servar.metadata.options;
   }
 
+  const containerCss = {
+    width: '100%',
+    height: '100%',
+    ...responsiveStyles.getTarget('fc'),
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center'
+  };
+
+  if (transpose) {
+    const colFraction = 100 / (servar.metadata.questions.length + 1);
+    const tWidthStyle = { minWidth: '100px', width: `${colFraction}%` };
+    const tFirstColStyle = { ...tWidthStyle, fontWeight: 400, padding: 8 };
+
+    return (
+      <div ref={containerRef} css={containerCss} {...elementProps}>
+        {children}
+        {fieldLabel}
+        <div style={{ display: 'flex', flexDirection: 'row', marginBottom: 6 }}>
+          <div css={tFirstColStyle} />
+          {servar.metadata.questions.map((q: any, i: number) => (
+            <TextHoverTooltip key={i} text={q.tooltip}>
+              <div
+                style={{
+                  flex: 1,
+                  fontWeight: 600,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  display: 'flex',
+                  textAlign: 'center'
+                }}
+              >
+                {q.label}
+              </div>
+            </TextHoverTooltip>
+          ))}
+        </div>
+        {options.map((opt: any, i: number) => (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              flexDirection: 'row',
+              borderRadius,
+              marginBottom: 6
+            }}
+          >
+            <div css={tFirstColStyle}>{opt}</div>
+            {servar.metadata.questions.map((q: any, j: number) => {
+              const questionVal = fieldVal[q.id];
+              const isChecked =
+                Array.isArray(questionVal) && questionVal.includes(opt);
+              return (
+                <div
+                  key={j}
+                  css={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    display: 'flex'
+                  }}
+                >
+                  <input
+                    type={inputType}
+                    name={
+                      repeatIndex !== null
+                        ? `${servar.key}-${j}-${repeatIndex}`
+                        : `${servar.key}-${j}`
+                    }
+                    aria-label={element.properties.aria_label}
+                    data-question-id={q.id}
+                    value={opt}
+                    disabled={disabled || q.read_only}
+                    checked={isChecked}
+                    onChange={onChange}
+                    onFocus={iosScrollOnFocus}
+                    css={composeCheckableInputStyle(
+                      styles,
+                      disabled,
+                      !allowMultiple
+                    )}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   const optionFraction = 100 / (options.length + 1);
   const widthStyle = { minWidth: '100px', width: `${optionFraction}%` };
-
   const firstColStyle = { ...widthStyle, fontWeight: 400, padding: 8 };
 
   return (
-    <div
-      ref={containerRef}
-      css={{
-        width: '100%',
-        height: '100%',
-        ...responsiveStyles.getTarget('fc'),
-        position: 'relative',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center'
-      }}
-      {...elementProps}
-    >
+    <div ref={containerRef} css={containerCss} {...elementProps}>
       {children}
       {fieldLabel}
       <div style={{ display: 'flex', flexDirection: 'row', marginBottom: 6 }}>
         <div css={firstColStyle} />
-        {options.map((opt: any, i: number) => {
-          // headers
-          return (
-            <div
-              key={i}
-              style={{
-                flex: 1,
-                fontWeight: 600,
-                justifyContent: 'center',
-                alignItems: 'center',
-                display: 'flex',
-                textAlign: 'center'
-              }}
-            >
-              {opt}
-            </div>
-          );
-        })}
+        {options.map((opt: any, i: number) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              fontWeight: 600,
+              justifyContent: 'center',
+              alignItems: 'center',
+              display: 'flex',
+              textAlign: 'center'
+            }}
+          >
+            {opt}
+          </div>
+        ))}
       </div>
       {servar.metadata.questions.map((q: any, i: number) => {
         const highlight = q.highlight_color
