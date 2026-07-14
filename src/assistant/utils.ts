@@ -12,11 +12,16 @@ export type AssistantThreadDetail = {
   chat?: Chat<any>;
 };
 
+// Thread endpoints live on the unified /agent/threads/ family, same origin as
+// the assistant chat base
+const threadsBase = (baseUrl: string) =>
+  new URL('/agent/threads/', baseUrl).href;
+
 export const getThreadList = async (
   baseUrl: string,
   headers: AssistantHeaders
 ): Promise<AssistantThreadDetail[] | null> => {
-  const res = await fetch(`${baseUrl}threads/`, { headers: headers() });
+  const res = await fetch(threadsBase(baseUrl), { headers: headers() });
   if (!res.ok) return null;
   return res.json();
 };
@@ -26,7 +31,7 @@ export const getThreadDetail = async (
   headers: AssistantHeaders,
   threadId: string
 ): Promise<AssistantThreadDetail | null> => {
-  const res = await fetch(`${baseUrl}threads/${threadId}/`, {
+  const res = await fetch(`${threadsBase(baseUrl)}${threadId}/`, {
     headers: headers()
   });
   if (!res.ok) return null;
@@ -43,7 +48,7 @@ export const generateThreadTitle = async (
     current_step?: string;
   }
 ): Promise<string | null> => {
-  const res = await fetch(`${baseUrl}threads/title/`, {
+  const res = await fetch(`${threadsBase(baseUrl)}title/`, {
     method: 'POST',
     headers: { ...headers(), 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -62,7 +67,7 @@ export const deleteThread = async (
   headers: AssistantHeaders,
   threadId: string
 ): Promise<void> => {
-  await fetch(`${baseUrl}threads/${threadId}/`, {
+  await fetch(`${threadsBase(baseUrl)}${threadId}/`, {
     method: 'DELETE',
     headers: headers()
   });

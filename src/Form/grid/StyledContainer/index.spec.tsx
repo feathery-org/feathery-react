@@ -64,3 +64,42 @@ describe('StyledContainer iframe embeds', () => {
     });
   });
 });
+
+describe('StyledContainer alignment', () => {
+  it('preserves pixel height for centered content when padding is omitted', () => {
+    const { container } = render(
+      <StyledContainer
+        node={{
+          id: 'centered-container',
+          key: 'centered-container',
+          type: 'container',
+          isElement: false,
+          parent: {
+            axis: 'column',
+            height: 'fit',
+            styles: {}
+          },
+          children: [{}],
+          axis: 'row',
+          width: '40px',
+          height: '40px',
+          properties: {},
+          styles: {
+            horizontal_align: 'center',
+            vertical_align: 'center'
+          },
+          mobile_styles: {}
+        }}
+        breakpoint={480}
+      >
+        <span>3</span>
+      </StyledContainer>
+    );
+
+    expect(container.querySelector('.inner-container')).toHaveStyle({
+      minHeight: '40px',
+      alignItems: 'center',
+      justifyContent: 'center'
+    });
+  });
+});
