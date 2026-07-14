@@ -51,6 +51,9 @@ function applyTextStyles(element: any, responsiveStyles: any) {
       if (isNum(b)) s.paddingRight = `${b}px`;
       if (isNum(c)) s.paddingBottom = `${c}px`;
       if (isNum(d)) s.paddingLeft = `${d}px`;
+      // The text box is width: 100%; keep padding inside that width like the
+      // native <button> box model, or the box overflows its grid cell
+      if (Object.keys(s).length) s.boxSizing = 'border-box';
       return s;
     }
   );
