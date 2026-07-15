@@ -35,6 +35,28 @@ function applyTextStyles(element: any, responsiveStyles: any) {
     textTransform: a || 'none'
   }));
   responsiveStyles.applyColor('text', 'background_color', 'backgroundColor');
+  responsiveStyles.applyCorners('text');
+  responsiveStyles.apply(
+    'text',
+    [
+      'uploader_padding_top',
+      'uploader_padding_right',
+      'uploader_padding_bottom',
+      'uploader_padding_left'
+    ],
+    (a: any, b: any, c: any, d: any) => {
+      // Guard per side: existing text elements have no uploader_padding_* keys
+      const s: any = {};
+      if (isNum(a)) s.paddingTop = `${a}px`;
+      if (isNum(b)) s.paddingRight = `${b}px`;
+      if (isNum(c)) s.paddingBottom = `${c}px`;
+      if (isNum(d)) s.paddingLeft = `${d}px`;
+      // The text box is width: 100%; keep padding inside that width like the
+      // native <button> box model, or the box overflows its grid cell
+      if (Object.keys(s).length) s.boxSizing = 'border-box';
+      return s;
+    }
+  );
 
   responsiveStyles.applyColor(
     'textHover',
@@ -65,7 +87,7 @@ function TextElement({
   );
   const { borderStyles, customBorder } = useBorder({
     element,
-    corners: false,
+    corners: true,
     breakpoint: responsiveStyles.getMobileBreakpoint()
   });
   return (
