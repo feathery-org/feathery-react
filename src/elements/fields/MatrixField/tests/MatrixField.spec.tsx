@@ -466,4 +466,77 @@ describe('MatrixField - Base Functionality', () => {
       expectMatrixInputToBeUnchecked('q2', 'Option 3');
     });
   });
+
+  describe('Field Interpolation', () => {
+    afterEach(async () => {
+      const { fieldValues } = await import('../../../../utils/init');
+      delete fieldValues.first_name;
+      delete fieldValues.rating_word;
+    });
+
+    it('interpolates field values in option (column header) labels', async () => {
+      const { fieldValues } = await import('../../../../utils/init');
+      fieldValues.rating_word = 'Great';
+
+      const options = ['Poor', '{{rating_word}}', 'Excellent'];
+      const element = createMatrixElement('matrix', { options });
+      const props = createMatrixProps(element);
+
+      render(<MatrixField {...props} />);
+
+      const headers = getColumnHeaders();
+      expect(headers[1].textContent).toBe('Great');
+    });
+
+    it('interpolates field values in question labels', async () => {
+      const { fieldValues } = await import('../../../../utils/init');
+      fieldValues.first_name = 'Alex';
+
+      const questions = createQuestionsMetadata([
+        {
+          id: 'q1',
+          label: 'How satisfied are you, {{first_name}}?',
+          tooltip: '',
+          read_only: false
+        }
+      ]);
+      const element = createMatrixElement('matrix', questions);
+      const props = createMatrixProps(element);
+
+      render(<MatrixField {...props} />);
+
+      expect(getQuestionLabel('q1')).toBe('How satisfied are you, Alex?');
+    });
+
+    it('interpolates field values in question tooltips', async () => {
+      const { fieldValues } = await import('../../../../utils/init');
+      fieldValues.first_name = 'Alex';
+
+      const questions = createQuestionsMetadata([
+        {
+          id: 'q1',
+          label: 'Question 1',
+          tooltip: 'Help text for {{first_name}}',
+          read_only: false
+        }
+      ]);
+      const element = createMatrixElement('matrix', questions);
+      const props = createMatrixProps(element);
+
+      render(<MatrixField {...props} />);
+
+      expectQuestionToHaveTooltip('q1', 'Help text for Alex');
+    });
+
+    it('leaves the pattern unchanged when the referenced field has no value', () => {
+      const options = ['{{missing_field}}', 'Option 2'];
+      const element = createMatrixElement('matrix', { options });
+      const props = createMatrixProps(element);
+
+      render(<MatrixField {...props} />);
+
+      const headers = getColumnHeaders();
+      expect(headers[0].textContent).toBe('{{missing_field}}');
+    });
+  });
 });
