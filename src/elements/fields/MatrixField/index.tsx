@@ -5,6 +5,7 @@ import {
   composeCheckableInputStyle
 } from '../CheckboxField';
 import { iosScrollOnFocus } from '../../../utils/browser';
+import { replaceTextVariables } from '../../components/TextNodes';
 
 function MatrixField({
   element,
@@ -77,7 +78,7 @@ function MatrixField({
                 textAlign: 'center'
               }}
             >
-              {opt}
+              {replaceTextVariables(opt, repeatIndex)}
             </div>
           );
         })}
@@ -97,8 +98,12 @@ function MatrixField({
               marginBottom: 6
             }}
           >
-            <TextHoverTooltip text={q.tooltip}>
-              <div css={firstColStyle}>{q.label}</div>
+            <TextHoverTooltip
+              text={replaceTextVariables(q.tooltip, repeatIndex)}
+            >
+              <div css={firstColStyle}>
+                {replaceTextVariables(q.label, repeatIndex)}
+              </div>
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[q.id];
