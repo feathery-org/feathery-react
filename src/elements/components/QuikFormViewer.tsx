@@ -64,12 +64,16 @@ function QuikFormViewer({
   }, [html]);
 
   useEffect(() => {
+    // Only lock body scroll for the full-screen modal; an inline embed lives
+    // inside a form container and must not touch the host page's overflow.
+    if (inline) return;
+
     featheryDoc().body.style.overflow = 'hidden';
 
     return () => {
       featheryDoc().body.style.removeProperty('overflow');
     };
-  }, []);
+  }, [inline]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
