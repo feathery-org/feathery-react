@@ -653,6 +653,8 @@ Object.entries(Fields).map(([key, Field]: any) => {
       () => applyFieldStyles(element, responsiveStyles),
       [element]
     );
+    const markRequired =
+      servar?.required && element.styles?.mark_required_asterisk;
     const fieldLabel = servar?.name ? (
       <label
         // Doesn't work for repeats currently since repeating field IDs aren't unique
@@ -666,6 +668,14 @@ Object.entries(Fields).map(([key, Field]: any) => {
         }}
       >
         {servar.name}
+        {markRequired && (
+          <span
+            aria-hidden='true'
+            style={{ color: '#e11900', marginLeft: '2px' }}
+          >
+            *
+          </span>
+        )}
       </label>
     ) : null;
     return (
