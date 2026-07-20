@@ -21,13 +21,15 @@ export default {
       dir: 'dist',
       format: 'esm',
       chunkFileNames: 'fthry_[name].[hash].js',
-      preserveModules: false
+      preserveModules: false,
+      sourcemap: true
     },
     {
       dir: 'cjs',
       format: 'cjs',
       chunkFileNames: 'fthry_[name].[hash].js',
-      exports: 'named'
+      exports: 'named',
+      sourcemap: true
     }
   ],
   external: [
