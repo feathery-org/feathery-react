@@ -24,11 +24,25 @@ import {
   FullscreenIcon,
   MicIcon,
   MinusIcon,
+  PaperclipIcon,
   SendIcon,
   SidebarLeftIcon,
   SidebarRightIcon,
   WaveformIcon
 } from './icons';
+import {
+  ACCEPT_ATTR,
+  getFilePart,
+  isTerminalStatus,
+  setChatSessionId
+} from './attachments';
+import {
+  AttachmentChip,
+  AttachmentPreview,
+  AttachmentPreviewOverlay,
+  MessageAttachment
+} from './AttachmentParts';
+import { useChatAttachments } from './useChatAttachments';
 import { useAssistantVoice } from './voice/useAssistantVoice';
 import {
   DEFAULT_CHAT_COLOR,
@@ -379,6 +393,10 @@ const AssistantChat = ({
     initialMessages: any[] = [],
     initialTitle?: string
   ): Chat<any> => {
+    // Attachment session key, a new chat sends the minted id as thread_id
+    // and the server adopts it on first message (builder convention) so
+    // pre-thread uploads land in the right thread
+    const sessionId = threadId ?? uuidv4();
     let resolvedThreadId = threadId;
     let titleGenerated = !!initialTitle;
 
@@ -418,7 +436,7 @@ const AssistantChat = ({
       headers: headers,
       body: () => ({
         ...buildChatBody(),
-        thread_id: resolvedThreadId || null
+        thread_id: resolvedThreadId || sessionId
       }),
       fetch: async (url: any, init?: any) => {
         let res: Response;
@@ -617,6 +635,8 @@ const AssistantChat = ({
       }
     });
 
+    setChatSessionId(chat, sessionId);
+
     return chat;
   };
 
@@ -636,6 +656,40 @@ const AssistantChat = ({
   } = useChat({
     chat: activeChat
   });
+
+  const {
+    attachments,
+    attachmentError,
+    attachmentsInFlight,
+    isDragging,
+    fileInputRef,
+    addFiles,
+    removeFile,
+    takeAttachments,
+    handlePaste: handleComposerPaste,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop
+  } = useChatAttachments({ activeChat, baseUrl, headers });
+
+  const [attachmentPreview, setAttachmentPreview] =
+    useState<AttachmentPreview | null>(null);
+  // A send fired while attachments were indexing, the message shows
+  // optimistically and the real request replaces it via messageId once its
+  // batch is terminal, files attached meanwhile stay for the next message
+  const [pendingSubmit, setPendingSubmit] = useState<{
+    tempId: string;
+    text: string;
+    previewUrls: string[];
+  } | null>(null);
+  useEffect(() => setPendingSubmit(null), [activeChat]);
+
+  const stagedAttachments = pendingSubmit
+    ? attachments.filter(
+        (a) => !pendingSubmit.previewUrls.includes(a.previewUrl)
+      )
+    : attachments;
+  const showAttachmentBar = stagedAttachments.length > 0 || !!attachmentError;
 
   const messages = useMemo(() => {
     const combined: typeof rawMessages = [];
@@ -684,6 +738,7 @@ const AssistantChat = ({
   }, [isOpen, fetchThreads]);
 
   const handleNewThread = () => {
+    if (pendingSubmit) return;
     stopVoice();
     atBottomRef.current = true;
     const id = uuidv4();
@@ -704,6 +759,7 @@ const AssistantChat = ({
   };
 
   const handleSelectThread = async (id: string) => {
+    if (pendingSubmit) return;
     stopVoice();
     atBottomRef.current = true;
     if (threads.find((t) => t.id === id)?.chat) {
@@ -785,13 +841,81 @@ const AssistantChat = ({
   }, [spokenChars, audioDraining, pinToBottom]);
 
   const handleSend = async () => {
-    if (input.trim() && status === 'ready') {
-      registerActiveThread();
-      await ensureCompletedSteps(instanceId);
-      sendMessage({ text: input });
+    if (status !== 'ready' || pendingSubmit) return;
+    const hasText = !!input.trim();
+    if (!hasText && attachments.length === 0) return;
+    registerActiveThread();
+
+    // Show the message now with local previews, the resolver fires the
+    // real request once the batch is terminal
+    if (attachmentsInFlight) {
+      const tempId = uuidv4();
+      const parts: any[] = [];
+      if (hasText) parts.push({ type: 'text', text: input });
+      attachments.forEach((a) => parts.push(getFilePart(a)));
+      setMessages([
+        ...(rawMessages as any[]),
+        { id: tempId, role: 'user', parts } as any
+      ]);
+      setPendingSubmit({
+        tempId,
+        text: input,
+        previewUrls: attachments.map((a) => a.previewUrl)
+      });
       setInput('');
+      return;
     }
+
+    await ensureCompletedSteps(instanceId);
+    const staged = takeAttachments();
+    const fileParts = staged.filter((a) => a.id).map(getFilePart);
+    sendMessage({
+      text: input,
+      ...(fileParts.length > 0 ? { files: fileParts } : {})
+    } as any);
+    setInput('');
+    staged.forEach((a) => URL.revokeObjectURL(a.previewUrl));
   };
+
+  // Optimistic-submit resolver: swap the placeholder for the real send once
+  // the batch is terminal, pendingSubmit clears only when the swap lands so
+  // the dim+spinner holds through the pre-send flush
+  const resolvingRef = useRef(false);
+  useEffect(() => {
+    if (!pendingSubmit || resolvingRef.current) return;
+    const submitted = attachments.filter((a) =>
+      pendingSubmit.previewUrls.includes(a.previewUrl)
+    );
+    if (submitted.some((a) => !isTerminalStatus(a.processingStatus))) return;
+    resolvingRef.current = true;
+    const { tempId, text, previewUrls } = pendingSubmit;
+    const staged = takeAttachments(previewUrls);
+    const fileParts = staged.filter((a) => a.id).map(getFilePart);
+    if (!text.trim() && fileParts.length === 0) {
+      // Every upload failed outright, drop the placeholder
+      setMessages((prev: any[]) => prev.filter((m) => m.id !== tempId));
+      staged.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      resolvingRef.current = false;
+      setPendingSubmit(null);
+      return;
+    }
+    (async () => {
+      await ensureCompletedSteps(instanceId);
+      // sendMessage swaps the placeholder synchronously before the request
+      const sent = sendMessage({
+        text,
+        ...(fileParts.length > 0 ? { files: fileParts } : {}),
+        messageId: tempId
+      } as any);
+      resolvingRef.current = false;
+      setPendingSubmit(null);
+      // Revoke the local previews only after the send settles, the
+      // placeholder renders from them until the swap lands, send errors
+      // surface via the chat's own error path
+      await sent.catch(() => {});
+      staged.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+    })();
+  }, [pendingSubmit, attachments]);
 
   const handleWorkflowAction = async (action: WorkflowAction) => {
     if (status !== 'ready') return;
@@ -1351,38 +1475,74 @@ const AssistantChat = ({
 
         {messages.map((message, mIdx) =>
           message.role === 'user' ? (
-            // Show the bubble only once its transcript lands, not as an empty placeholder
+            // Show the bubble only once its transcript or attachments land,
+            // not as an empty placeholder
             (message.parts ?? []).some(
-              (p: any) => p.type === 'text' && (p.text ?? '').trim()
+              (p: any) =>
+                (p.type === 'text' && (p.text ?? '').trim()) ||
+                p.type === 'file'
             ) ? (
               <div
                 key={message.id}
                 css={{
                   display: 'flex',
-                  justifyContent: 'flex-end'
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  gap: '6px'
                 }}
               >
                 <div
                   css={{
-                    maxWidth: '80%',
-                    padding: '10px 14px',
-                    borderRadius: '12px',
-                    fontSize: '14px',
-                    lineHeight: '1.5',
-                    backgroundColor: colors.primary,
-                    color: 'white',
-                    overflowWrap: 'anywhere',
-                    wordBreak: 'break-word'
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    justifyContent: 'flex-end',
+                    gap: '6px'
                   }}
                 >
-                  {message.parts
-                    .filter((part: any) => !part.hidden)
-                    .map((part: any, index: number) =>
-                      part.type === 'text' ? (
-                        <span key={index}>{part.text}</span>
-                      ) : null
-                    )}
+                  {(message.parts ?? [])
+                    .filter((part: any) => part.type === 'file')
+                    .map((part: any, index: number) => (
+                      <MessageAttachment
+                        key={`file-${index}`}
+                        mediaType={part.mediaType ?? ''}
+                        filename={part.filename}
+                        url={part.url}
+                        inFlight={pendingSubmit?.tempId === message.id}
+                        onOpen={() =>
+                          setAttachmentPreview({
+                            url: part.url,
+                            mediaType: part.mediaType ?? '',
+                            filename: part.filename
+                          })
+                        }
+                      />
+                    ))}
                 </div>
+                {(message.parts ?? []).some(
+                  (p: any) => p.type === 'text' && (p.text ?? '').trim()
+                ) && (
+                  <div
+                    css={{
+                      maxWidth: '80%',
+                      padding: '10px 14px',
+                      borderRadius: '12px',
+                      fontSize: '14px',
+                      lineHeight: '1.5',
+                      backgroundColor: colors.primary,
+                      color: 'white',
+                      overflowWrap: 'anywhere',
+                      wordBreak: 'break-word'
+                    }}
+                  >
+                    {message.parts
+                      .filter((part: any) => !part.hidden)
+                      .map((part: any, index: number) =>
+                        part.type === 'text' ? (
+                          <span key={index}>{part.text}</span>
+                        ) : null
+                      )}
+                  </div>
+                )}
               </div>
             ) : null
           ) : (
@@ -1507,6 +1667,8 @@ const AssistantChat = ({
           return <ToolChunkPlaceholder />;
         })()}
 
+        {pendingSubmit && <ToolChunkPlaceholder label='Uploading...' />}
+
         {error && (
           <div
             css={{
@@ -1594,16 +1756,85 @@ const AssistantChat = ({
       )}
 
       {/* Input */}
+      {showAttachmentBar && (
+        <div
+          css={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px',
+            padding: '10px 16px 0',
+            borderTop: `1px solid ${GRAY_200}`,
+            backgroundColor: GRAY_50
+          }}
+        >
+          {attachmentError && (
+            <div css={{ fontSize: '12px', color: '#dc2626', width: '100%' }}>
+              {attachmentError}
+            </div>
+          )}
+          {stagedAttachments.map((attachment) => (
+            <AttachmentChip
+              key={attachment.previewUrl}
+              attachment={attachment}
+              onRemove={() => removeFile(attachment.previewUrl)}
+            />
+          ))}
+        </div>
+      )}
       <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         css={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
           padding: '12px 16px',
-          borderTop: `1px solid ${GRAY_200}`,
-          backgroundColor: GRAY_50
+          borderTop: showAttachmentBar ? 'none' : `1px solid ${GRAY_200}`,
+          backgroundColor: GRAY_50,
+          ...(isDragging
+            ? { outline: `2px dashed ${colors.primary}`, outlineOffset: '-4px' }
+            : {})
         }}
       >
+        {!voiceActive && (
+          <>
+            <input
+              ref={fileInputRef}
+              type='file'
+              multiple
+              accept={ACCEPT_ATTR}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length) addFiles(files);
+                e.target.value = '';
+              }}
+              css={{ display: 'none' }}
+            />
+            <button
+              type='button'
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+              aria-label='Attach files'
+              css={{
+                padding: '10px',
+                backgroundColor: 'transparent',
+                color: GRAY_800,
+                border: `1px solid ${GRAY_200}`,
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'background-color 0.2s',
+                ':hover:not(:disabled)': { backgroundColor: GRAY_100 },
+                ':disabled': { cursor: 'not-allowed', color: GRAY_400 }
+              }}
+            >
+              <PaperclipIcon />
+            </button>
+          </>
+        )}
         {voiceActive ? (
           <button
             type='button'
@@ -1639,6 +1870,7 @@ const AssistantChat = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handleComposerPaste}
             placeholder='Type a message...'
             css={{
               flex: 1,
@@ -1663,11 +1895,15 @@ const AssistantChat = ({
           >
             <CloseIcon />
           </button>
-        ) : !voiceEnabled || input.trim() ? (
+        ) : !voiceEnabled || input.trim() || attachments.length > 0 ? (
           <button
             type='button'
             onClick={handleSend}
-            disabled={isLoading || !input.trim()}
+            disabled={
+              isLoading ||
+              !!pendingSubmit ||
+              (!input.trim() && attachments.length === 0)
+            }
             css={composerButtonCss}
           >
             <SendIcon />
@@ -1685,6 +1921,12 @@ const AssistantChat = ({
           </button>
         )}
       </div>
+      {attachmentPreview && (
+        <AttachmentPreviewOverlay
+          preview={attachmentPreview}
+          onClose={() => setAttachmentPreview(null)}
+        />
+      )}
     </div>
   );
 };
