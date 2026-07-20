@@ -57,6 +57,10 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     running: 'Running table action...',
     done: 'Ran the table action'
   },
+  queryAttachmentSemantic: {
+    running: 'Reading attachments...',
+    done: 'Read the attachments'
+  },
   getPanelSnapshot: {
     running: 'Reading the form...',
     done: 'Reviewed the form'
@@ -475,7 +479,11 @@ const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
 };
 
 // Mimics the chunk header so a real tool arriving doesn't reflow the layout
-export const ToolChunkPlaceholder = () => {
+export const ToolChunkPlaceholder = ({
+  label = 'Working on it...'
+}: {
+  label?: string;
+}) => {
   return (
     <div
       css={{
@@ -500,7 +508,7 @@ export const ToolChunkPlaceholder = () => {
           alignSelf: 'flex-start'
         }}
       >
-        <span css={shimmerCss}>Working on it...</span>
+        <span css={shimmerCss}>{label}</span>
       </div>
     </div>
   );
