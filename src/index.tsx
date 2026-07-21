@@ -17,6 +17,7 @@ import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import { AssistantChat } from './assistant';
 import { resolveLabelStyle } from './elements/utils/labelStyleResolver';
+import DocxEditor, { DocxEditorProps } from './elements/components/DocxEditor';
 import './utils/polyfills';
 
 const mountedForms: Record<string, Root> = {};
@@ -85,8 +86,9 @@ export {
   useAuthClient,
   AssistantChat,
   Feathery,
-  StyledContainer
+  StyledContainer,
+  DocxEditor
 };
 
-export type { OPERATOR_CODE, FormContext };
+export type { OPERATOR_CODE, FormContext, DocxEditorProps };
 export type { StyledContainerProps } from './Form/grid/StyledContainer';
