@@ -1,4 +1,5 @@
 import {
+  buildAssistantRequestBody,
   buildCallableRules,
   CallableRule,
   dispatchAssistantTool,
@@ -233,6 +234,43 @@ describe('normalizeSelection', () => {
     expect(res!.text).toHaveLength(SELECTION_TEXT_LIMIT);
     expect(res!.anchor).toBe('0:1');
     expect(res!.isCollapsed).toBe(false);
+  });
+});
+
+describe('buildAssistantRequestBody', () => {
+  it('nests all context fields under `context` (never at the top level)', () => {
+    const context = {
+      targets: [{ type: 'envelope', id: 'e1' }],
+      selection: { anchor: '0:1', text: 'hi', isCollapsed: false },
+      callable_rules: [{ id: 'r1' }],
+      panel_runtime: { step: 's1' }
+    };
+    const body = buildAssistantRequestBody(context, 'thread-9');
+
+    // Matches ai-services createAssistantContext: body.context.*
+    expect(body).toEqual({
+      context: {
+        targets: [{ type: 'envelope', id: 'e1' }],
+        selection: { anchor: '0:1', text: 'hi', isCollapsed: false },
+        callable_rules: [{ id: 'r1' }],
+        panel_runtime: { step: 's1' },
+        threadId: 'thread-9'
+      }
+    });
+    // The regression this guards: nothing leaks to the top level.
+    expect((body as any).targets).toBeUndefined();
+    expect((body as any).selection).toBeUndefined();
+    expect((body as any).callable_rules).toBeUndefined();
+    expect((body as any).thread_id).toBeUndefined();
+  });
+
+  it('normalizes a missing thread id to null under context', () => {
+    expect(buildAssistantRequestBody({}, null)).toEqual({
+      context: { threadId: null }
+    });
+    expect(buildAssistantRequestBody({}, '')).toEqual({
+      context: { threadId: null }
+    });
   });
 });
 

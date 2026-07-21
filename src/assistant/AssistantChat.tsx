@@ -87,6 +87,7 @@ import {
 import {
   AssistantSelection,
   AssistantToolContext,
+  buildAssistantRequestBody,
   buildCallableRules,
   CallableRule,
   dispatchAssistantTool,
@@ -328,25 +329,30 @@ const AssistantChat = ({
     };
   }, [getJwt]);
 
-  const buildChatBody = (): Record<string, unknown> => {
-    const body: Record<string, unknown> = {};
+  // ai-services reads everything off `body.context` (createAssistantContext:
+  // context.targets / context.selection / context.callable_rules /
+  // context.panel_runtime / context.threadId). Build that nested context here
+  // so the docx tools actually register instead of ai-services seeing no
+  // targets. threadId is merged in at the transport layer where it's resolved.
+  const buildChatContext = (): Record<string, unknown> => {
+    const context: Record<string, unknown> = {};
     const targets = getTargets();
-    if (targets.length > 0) body.targets = targets;
+    if (targets.length > 0) context.targets = targets;
 
     if (instanceId) {
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
-      if (panelRuntime) body.panel_runtime = panelRuntime;
+      if (panelRuntime) context.panel_runtime = panelRuntime;
     }
 
     // Current editor selection so "edit this / change that" resolves at send
     // time (Contract E). Sent as null when there's no usable selection.
-    body.selection = normalizeSelection(getSelectionRef.current?.());
+    context.selection = normalizeSelection(getSelectionRef.current?.());
 
     // Designer-defined tool rules the model can call (Contract E).
     const callableRules = resolveCallableRules();
-    if (callableRules.length > 0) body.callable_rules = callableRules;
+    if (callableRules.length > 0) context.callable_rules = callableRules;
 
-    return body;
+    return context;
   };
 
   const [isOpen, setIsOpen] = useState(false);
@@ -524,10 +530,15 @@ const AssistantChat = ({
     const chatTransport = new DefaultChatTransport({
       api: baseUrl,
       headers: headers,
-      body: () => ({
-        ...buildChatBody(),
-        thread_id: resolvedThreadId || sessionId
-      }),
+      // Nest the per-request context under `context` (ai-services reads
+      // body.context.*) while keeping master's attachment session adoption:
+      // a new chat sends the minted sessionId as the thread id so pre-thread
+      // uploads land in the right thread.
+      body: () =>
+        buildAssistantRequestBody(
+          buildChatContext(),
+          resolvedThreadId || sessionId
+        ),
       fetch: async (url: any, init?: any) => {
         let res: Response;
         if (voiceActiveRef.current) {

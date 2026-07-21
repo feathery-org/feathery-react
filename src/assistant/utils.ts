@@ -51,10 +51,13 @@ export const generateThreadTitle = async (
   const res = await fetch(`${threadsBase(baseUrl)}title/`, {
     method: 'POST',
     headers: { ...headers(), 'Content-Type': 'application/json' },
+    // ai-services reads targets/current_step off `body.context` (see the
+    // assistant controller's generateThreadTitle), so nest them rather than
+    // sending them at the top level.
     body: JSON.stringify({
       message,
       thread_id: threadId ?? undefined,
-      ...(context ?? {})
+      context: { ...(context ?? {}) }
     })
   });
   if (!res.ok) return null;

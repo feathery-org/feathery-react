@@ -231,6 +231,18 @@ export const buildCallableRules = (logicRules: any[] = []): CallableRule[] =>
       parameters: r?.metadata?.tool?.parameters ?? []
     }));
 
+// Wrap the per-request context under a `context` key. ai-services'
+// createAssistantContext reads everything off `body.context.*` (targets,
+// selection, callable_rules, panel_runtime, threadId), so anything sent at the
+// top level is silently ignored - which is why the docx tools failed to
+// register. threadId is merged in from the transport's resolved id.
+export const buildAssistantRequestBody = (
+  context: Record<string, unknown>,
+  threadId: string | null
+): { context: Record<string, unknown> } => ({
+  context: { ...context, threadId: threadId || null }
+});
+
 export type AssistantSelection = {
   anchor: string;
   text: string;
