@@ -61,7 +61,8 @@ const Element = ({ node: el, form }: any) => {
     setCardElement,
     visiblePositions,
     featheryContext,
-    assistantClient
+    assistantClient,
+    syncfusion
   } = form;
 
   const readOnly =
@@ -303,6 +304,20 @@ const Element = ({ node: el, form }: any) => {
             }}
             onClear={() => {
               changeValue(null, el, index);
+              onChange();
+            }}
+          />
+        );
+      case 'docx_editor':
+        return (
+          <Elements.DocxEditorField
+            {...fieldProps}
+            defaultValue={fieldVal}
+            serviceUrl={syncfusion?.service_url}
+            licenseKey={syncfusion?.license_key}
+            onSave={(blob: any) => {
+              clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
+              changeValue(Promise.resolve(blob), el, index);
               onChange();
             }}
           />

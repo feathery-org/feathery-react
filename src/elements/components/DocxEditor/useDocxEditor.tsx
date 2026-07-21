@@ -25,6 +25,23 @@ async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+// scriptjs can report the CDN bundle "loaded" a beat before the (multi-MB) ej2
+// UMD finishes attaching `ej` to window (notably under Next). Poll for it rather
+// than checking once.
+function waitForEj(timeoutMs = 15000): Promise<any> {
+  return new Promise((resolve) => {
+    const done = () => (featheryWindow() as any).ej?.documenteditor;
+    if (done()) return resolve((featheryWindow() as any).ej);
+    const start = Date.now();
+    const iv = setInterval(() => {
+      if (done() || Date.now() - start > timeoutMs) {
+        clearInterval(iv);
+        resolve((featheryWindow() as any).ej);
+      }
+    }, 50);
+  });
+}
+
 interface Props {
   source?: DocxSource;
   licenseKey?: string;
@@ -88,11 +105,12 @@ export function useDocxEditor({
         setError(null);
         loadStyles();
         await dynamicImport(EJ2_SCRIPT_URL);
-        const ej = (featheryWindow() as any).ej;
+        const ej = await waitForEj();
+        if (cancelled) return;
         if (!ej?.documenteditor) {
           throw new Error('Syncfusion Document Editor failed to load');
         }
-        if (cancelled || !containerRef.current) return;
+        if (!containerRef.current) return;
 
         if (licenseKey) ej.base.registerLicense(licenseKey);
         ej.documenteditor.DocumentEditorContainer.Inject(

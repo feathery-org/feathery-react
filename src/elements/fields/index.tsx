@@ -23,6 +23,8 @@ const fieldLoaders = {
     import(/* webpackChunkName: "CustomField" */ './CustomField'),
   DateSelectorField: () =>
     import(/* webpackChunkName: "DateSelectorField" */ './DateSelectorField'),
+  DocxEditorField: () =>
+    import(/* webpackChunkName: "DocxEditorField" */ './DocxEditorField'),
   DropdownField: () =>
     import(/* webpackChunkName: "DropdownField" */ './DropdownField'),
   DropdownMultiField: () =>
@@ -104,6 +106,7 @@ const CheckboxGroupField = createPreloadableField(
 );
 const ColorPickerField = createPreloadableField(fieldLoaders.ColorPickerField);
 const CustomField = createPreloadableField(fieldLoaders.CustomField);
+const DocxEditorField = createPreloadableField(fieldLoaders.DocxEditorField);
 const DateSelectorField = createPreloadableField(
   fieldLoaders.DateSelectorField
 );
@@ -137,6 +140,7 @@ const preloadableFields = {
   ColorPickerField,
   CustomField,
   DateSelectorField,
+  DocxEditorField,
   DropdownField,
   DropdownMultiField,
   FileUploadField,
@@ -168,6 +172,8 @@ const getFieldComponentKey = (servarType?: string): FieldComponentKey => {
       return 'CustomField';
     case 'file_upload':
       return 'FileUploadField';
+    case 'docx_editor':
+      return 'DocxEditorField';
     case 'button_group':
       return 'ButtonGroupField';
     case 'checkbox':
@@ -240,7 +246,8 @@ const defaultBorderFields = [
   'hex_color',
   'select',
   'signature',
-  'file_upload'
+  'file_upload',
+  'docx_editor'
 ];
 
 export const DROPDOWN_Z_INDEX = 10;
@@ -325,6 +332,16 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
+      break;
+    case 'docx_editor':
+      // The docx field wrapper renders the 'fc' target, so apply the element's
+      // configured height/width + visual styling there (so it can fill/size to
+      // its container instead of collapsing to content).
+      styles.applyHeight('fc');
+      styles.applyWidth('fc');
+      styles.applyCorners('fc');
+      styles.applyBorders({ target: 'fc' });
+      styles.applyBoxShadow('fc');
       break;
     case 'file_upload':
       styles.addTargets('ac', 'add');
