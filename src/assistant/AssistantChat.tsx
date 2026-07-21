@@ -84,6 +84,17 @@ import {
   dispatchDeleteTableRow,
   dispatchSetTableCellValue
 } from './tools/tableMutations';
+import {
+  AssistantSelection,
+  AssistantToolContext,
+  buildCallableRules,
+  CallableRule,
+  dispatchAssistantTool,
+  DocxBridge,
+  normalizeSelection
+} from './tools/assistantToolDispatch';
+import { runLogicRuleById } from '../Form/logic';
+import internalState from '../utils/internalState';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -245,6 +256,22 @@ export type AssistantChatProps = {
   stepSettings?: AssistantStepSettings;
   activeStepId?: string;
   onLayoutChange?: null | ((state: AssistantLayoutState) => void);
+  // HILB docx-editor extensibility (all SyncFusion-free; supplied by the host).
+  // Custom tool handlers, checked in onToolCall BEFORE any built-in branch so
+  // the host can add or override tools without forking this component.
+  customToolHandlers?: Record<string, (input: any) => Promise<any>>;
+  // Bridge to the host's docx editor for the getDocumentInventory /
+  // applyDocumentEdits tools. Absent handlers resolve a synthetic error.
+  docxBridge?: DocxBridge;
+  // Current editor selection at send time -> request `selection` (Contract E).
+  getSelection?: () => AssistantSelection | null;
+  // The form's `trigger_event='tool'` rules -> request `callable_rules` and
+  // rule-tool dispatch (Contract E/F). When omitted, derived from the loaded
+  // form's internalState.logicRules for `instanceId`.
+  getCallableRules?: () => CallableRule[];
+  // When true, the document is still being indexed - the composer shows a
+  // status line and disables send until indexing completes (Contract C).
+  indexing?: boolean;
 };
 
 const AssistantChat = ({
@@ -259,8 +286,35 @@ const AssistantChat = ({
   allowedModes = DEFAULT_MODES,
   stepSettings = {},
   activeStepId,
-  onLayoutChange
+  onLayoutChange,
+  customToolHandlers,
+  docxBridge,
+  getSelection,
+  getCallableRules,
+  indexing = false
 }: AssistantChatProps) => {
+  // The chat/transport closures below outlive a single render, so read the
+  // latest host-supplied handlers through refs rather than captured props.
+  const customToolHandlersRef = useRef(customToolHandlers);
+  customToolHandlersRef.current = customToolHandlers;
+  const docxBridgeRef = useRef(docxBridge);
+  docxBridgeRef.current = docxBridge;
+  const getSelectionRef = useRef(getSelection);
+  getSelectionRef.current = getSelection;
+  const getCallableRulesRef = useRef(getCallableRules);
+  getCallableRulesRef.current = getCallableRules;
+
+  // callable_rules for both the request payload (Contract E) and rule-tool
+  // dispatch (Contract F): host-supplied when provided, else derived from the
+  // loaded form's logic rules.
+  const resolveCallableRules = useCallback((): CallableRule[] => {
+    const provided = getCallableRulesRef.current?.();
+    if (provided) return provided;
+    if (instanceId) {
+      return buildCallableRules(internalState[instanceId]?.logicRules ?? []);
+    }
+    return [];
+  }, [instanceId]);
   const headers = useMemo<AssistantHeaders>(() => {
     if (getJwt) return () => ({ Authorization: `Bearer ${getJwt()}` });
     const { sdkKey } = initInfo();
@@ -283,6 +337,15 @@ const AssistantChat = ({
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
       if (panelRuntime) body.panel_runtime = panelRuntime;
     }
+
+    // Current editor selection so "edit this / change that" resolves at send
+    // time (Contract E). Sent as null when there's no usable selection.
+    body.selection = normalizeSelection(getSelectionRef.current?.());
+
+    // Designer-defined tool rules the model can call (Contract E).
+    const callableRules = resolveCallableRules();
+    if (callableRules.length > 0) body.callable_rules = callableRules;
+
     return body;
   };
 
@@ -525,6 +588,30 @@ const AssistantChat = ({
         voiceDataRef.current?.(part);
       },
       onToolCall: async ({ toolCall }: any) => {
+        // HILB dispatch runs first (Contract A/B/F): custom handlers, the docx
+        // bridge, and logic-rule tools - including dynamic (client-forwarded)
+        // tools that the branches below would otherwise skip.
+        const dispatchCtx: AssistantToolContext = {
+          customToolHandlers: customToolHandlersRef.current,
+          docxBridge: docxBridgeRef.current,
+          callableRules: resolveCallableRules(),
+          runLogicRule: (ruleId, inputParams) =>
+            runLogicRuleById(ruleId, inputParams, instanceId)
+        };
+        const dispatched = await dispatchAssistantTool(
+          toolCall.toolName,
+          toolCall.input ?? {},
+          dispatchCtx
+        );
+        if (dispatched.handled) {
+          chat.addToolOutput({
+            tool: toolCall.toolName,
+            toolCallId: toolCall.toolCallId,
+            output: dispatched.output
+          });
+          return;
+        }
+
         if (toolCall.dynamic) return;
 
         if (toolCall.toolName === 'setFieldValue') {
@@ -873,7 +960,9 @@ const AssistantChat = ({
   }, [spokenChars, audioDraining, pinToBottom]);
 
   const handleSend = async () => {
-    if (status !== 'ready' || pendingSubmit) return;
+    // Block sends while status is not ready, a submit is pending, or the
+    // document is still indexing (Contract C gate).
+    if (status !== 'ready' || pendingSubmit || indexing) return;
     const hasText = !!input.trim();
     if (!hasText && attachments.length === 0) return;
     registerActiveThread();
@@ -1798,6 +1887,38 @@ const AssistantChat = ({
         </div>
       )}
 
+      {/* Indexing status line: shown until the document index POST completes */}
+      {indexing && (
+        <div
+          css={{
+            padding: '8px 16px',
+            borderTop: `1px solid ${GRAY_200}`,
+            backgroundColor: GRAY_50,
+            color: GRAY_400,
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <span
+            css={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: colors.primary,
+              flexShrink: 0,
+              animation: 'feathery-pulse 1.2s ease-in-out infinite',
+              '@keyframes feathery-pulse': {
+                '0%, 100%': { opacity: 0.3 },
+                '50%': { opacity: 1 }
+              }
+            }}
+          />
+          Indexing document…
+        </div>
+      )}
+
       {/* Input */}
       {showAttachmentBar && (
         <div
@@ -1945,6 +2066,7 @@ const AssistantChat = ({
             disabled={
               isLoading ||
               !!pendingSubmit ||
+              indexing ||
               (!input.trim() && attachments.length === 0)
             }
             css={composerButtonCss}

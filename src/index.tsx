@@ -16,6 +16,7 @@ import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import { AssistantChat } from './assistant';
+import { runLogicRuleById } from './Form/logic';
 import { resolveLabelStyle } from './elements/utils/labelStyleResolver';
 import DocxEditor, { DocxEditorProps } from './elements/components/DocxEditor';
 import './utils/polyfills';
@@ -87,8 +88,16 @@ export {
   AssistantChat,
   Feathery,
   StyledContainer,
-  DocxEditor
+  DocxEditor,
+  runLogicRuleById
 };
 
+export type {
+  AssistantChatProps,
+  AssistantSelection,
+  CallableRule,
+  DocxBridge,
+  RunLogicRuleResult
+} from './assistant';
 export type { OPERATOR_CODE, FormContext, DocxEditorProps };
 export type { StyledContainerProps } from './Form/grid/StyledContainer';

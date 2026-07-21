@@ -113,6 +113,10 @@ export interface FormInternalState {
   backNavMap?: Record<string, string>;
   visiblePositions: any;
   logicRules?: LogicRule[];
+  // Cached logic-rule execution context so rules can be run on demand outside
+  // the form render loop (e.g. Robin tool dispatch via runLogicRuleById).
+  extractedSharedCodeInfo?: any[];
+  connectorFields?: any;
   assistantClient?: AssistantClient;
   client: FeatheryClient;
   formName: string;

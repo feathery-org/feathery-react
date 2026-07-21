@@ -1417,6 +1417,11 @@ function Form({
     internalState[_internalId].setInlineErrors = setInlineErrors;
     internalState[_internalId].inlineErrors = inlineErrors;
     internalState[_internalId].logicRules = logicRules;
+    // Cache the client-side rule execution context so Robin tool dispatch can
+    // run rules on demand via runLogicRuleById (outside this render loop).
+    internalState[_internalId].extractedSharedCodeInfo =
+      extractedSharedCodeInfo;
+    internalState[_internalId].connectorFields = connectorFields;
     if (visiblePositions) {
       internalState[_internalId].visiblePositions = visiblePositions;
     }

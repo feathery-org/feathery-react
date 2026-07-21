@@ -20,7 +20,9 @@ import {
   ServerSideLogicRule
 } from '../types/Form';
 import Field from '../utils/entities/Field';
-import { FormInternalState } from '../utils/internalState';
+import internalStateStore, { FormInternalState } from '../utils/internalState';
+import { getFormContext } from '../utils/formContext';
+import { getPrivateActions } from '../utils/sensitiveActions';
 
 export function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
@@ -544,8 +546,11 @@ export const runClientSideLogic = async (
   extractedSharedCodeInfo: ExtractedSharedCodeInfo[],
   internalState: FormInternalState,
   connectorFields: any,
-  props: Record<string, any>
-) => {
+  props: Record<string, any>,
+  // Robin-tool inputs exposed to the rule code as `feathery.inputs` (HILB
+  // Contract F). Omitted for ordinary event-triggered rule execution.
+  inputParams?: Record<string, any>
+): Promise<any> => {
   let logicRuleCode = logicRule.code;
 
   if (extractedSharedCodeInfo.length > 0) {
@@ -583,12 +588,143 @@ export const runClientSideLogic = async (
     ...Object.keys(injectableFields),
     asyncWrappedCode
   );
-  await fn(
-    { ...props, http: httpHelpers(client, connectorFields) },
-    ...Object.values(injectableFields)
-  ).catch((e: any) => {
+  // Capture the rule code's resolved return value so callers (e.g. Robin tool
+  // dispatch via runLogicRuleById) can use it; ordinary event execution simply
+  // ignores it. Errors are still swallowed + logged as before.
+  let returnValue: any;
+  try {
+    returnValue = await fn(
+      {
+        ...props,
+        http: httpHelpers(client, connectorFields),
+        inputs: inputParams ?? {}
+      },
+      ...Object.values(injectableFields)
+    );
+  } catch (e: any) {
     // catch unhandled rejections in async user code (if a promise is returned)
     // handle any errors in async code that actually returns a promise
     handleRuleError(e.message, logicRule);
+  }
+  return returnValue;
+};
+
+export type RunLogicRuleResult = {
+  changedFields: string[];
+  returnValue?: any;
+  error?: string;
+};
+
+// Snapshot every field's value (JSON-serialized) so we can diff after a rule
+// runs and report which fields it actually touched.
+const snapshotFieldValues = (
+  state: FormInternalState
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  Object.entries(state?.fields ?? {}).forEach(([key, field]) => {
+    try {
+      out[key] = JSON.stringify((field as any)?.value ?? null);
+    } catch {
+      out[key] = '';
+    }
   });
+  return out;
+};
+
+const diffChangedFields = (
+  before: Record<string, string>,
+  after: Record<string, string>
+): string[] => {
+  const changed: string[] = [];
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  keys.forEach((key) => {
+    if (before[key] !== after[key]) changed.push(key);
+  });
+  return changed;
+};
+
+// Execute a single logic rule on demand by its id - the entrypoint the Robin
+// assistant uses to invoke designer-defined `trigger_event === 'tool'` rules
+// (HILB Contract F). Resolves the rule from internalState.logicRules and
+// branches on server_side:
+//   - server_side: true  -> featheryClient.runServerSideLogicRule(id, {input_params})
+//                           (returnValue stays undefined in v1)
+//   - server_side: false -> runClientSideLogic with params exposed to the rule
+//                           code as `feathery.inputs`, capturing its return value
+// Returns the set of field keys the rule changed plus the client-side rule's
+// resolved return value. Never throws - failures surface via the `error` field.
+export const runLogicRuleById = async (
+  ruleId: string,
+  inputParams: Record<string, any> = {},
+  formUuid?: string
+): Promise<RunLogicRuleResult> => {
+  // Resolve the owning form. When no uuid is given, fall back to the only
+  // loaded form (the common single-form host case).
+  const uuids = Object.keys(internalStateStore);
+  const resolvedUuid =
+    formUuid && internalStateStore[formUuid]
+      ? formUuid
+      : !formUuid && uuids.length === 1
+      ? uuids[0]
+      : formUuid;
+  const state = resolvedUuid ? internalStateStore[resolvedUuid] : undefined;
+
+  if (!state) {
+    return { changedFields: [], error: 'Form has not loaded yet.' };
+  }
+
+  const rule = (state.logicRules ?? []).find((r) => r.id === ruleId);
+  if (!rule) {
+    return {
+      changedFields: [],
+      error: `Logic rule '${ruleId}' was not found on this form.`
+    };
+  }
+
+  const before = snapshotFieldValues(state);
+
+  try {
+    if (rule.server_side) {
+      const response = await state.client.runServerSideLogicRule(rule.id, {
+        input_params: inputParams
+      });
+      if (response?.field_data) {
+        setFieldValues(response.field_data, true, true);
+      }
+      if (response?.file_values) {
+        processFileValues(response.file_values);
+        rerenderAllForms();
+      }
+      if (response?.error) {
+        handleRuleError(response.error, rule);
+        return { changedFields: [], error: String(response.error) };
+      }
+      // Prefer the backend's authoritative field_data; fall back to a diff.
+      const changedFields = response?.field_data
+        ? Object.keys(response.field_data)
+        : diffChangedFields(before, snapshotFieldValues(state));
+      // Server-side returnValue stays undefined in v1 (Contract F).
+      return { changedFields };
+    }
+
+    const props = {
+      ...getFormContext(resolvedUuid as string),
+      ...getPrivateActions(resolvedUuid as string)
+    };
+    const returnValue = await runClientSideLogic(
+      rule,
+      state.client,
+      state.extractedSharedCodeInfo ?? [],
+      state,
+      state.connectorFields,
+      props,
+      inputParams
+    );
+    const changedFields = diffChangedFields(before, snapshotFieldValues(state));
+    return { changedFields, returnValue };
+  } catch (e: any) {
+    const message = e?.reason?.message ?? e?.error?.message ?? e?.message;
+    handleRuleError(message, rule);
+    return { changedFields: [], error: message ?? 'Logic rule failed.' };
+  }
 };

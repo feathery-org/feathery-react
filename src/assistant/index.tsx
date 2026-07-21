@@ -12,3 +12,9 @@ export const AssistantChat = (props: AssistantChatProps) => (
 );
 
 export type { AssistantChatProps };
+export type {
+  AssistantSelection,
+  CallableRule,
+  DocxBridge,
+  RunLogicRuleResult
+} from './tools/assistantToolDispatch';

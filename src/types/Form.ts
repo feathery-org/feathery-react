@@ -79,6 +79,22 @@ export interface Subgrid extends PositionedElement {
   repeated: boolean;
 }
 
+// A single Robin-callable parameter declared on a `trigger_event === 'tool'`
+// rule via `metadata.tool.parameters` (see the HILB spec, Contract E/F). A
+// 'file' param is an attachment-reference string (id), never a blob.
+export type RuleToolParameter = {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'file';
+  description?: string;
+  required?: boolean;
+};
+
+// Robin-tool configuration serialized onto a rule's existing `metadata` JSON.
+export type RuleToolMetadata = {
+  parameters?: RuleToolParameter[];
+  allowed_fields?: string[];
+};
+
 interface LogicRuleBase {
   id: string;
   name: string;
@@ -87,6 +103,10 @@ interface LogicRuleBase {
   elements: string[];
   enabled: boolean;
   valid: boolean;
+  // Shipped by the backend runtime serialization only for tool rules
+  // (Contract F): a human/model-facing description and the tool metadata.
+  description?: string;
+  metadata?: { tool?: RuleToolMetadata } & Record<string, any>;
 }
 // the server_side code is not exposed to the form
 export type ServerSideLogicRule = LogicRuleBase & {

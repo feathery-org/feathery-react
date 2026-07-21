@@ -922,7 +922,10 @@ export default class FeatheryClient extends IntegrationClient {
     return eventPromise;
   }
 
-  runServerSideLogicRule(id: string) {
+  runServerSideLogicRule(
+    id: string,
+    extra?: { input_params?: Record<string, any> }
+  ) {
     const { userId, collaboratorId } = initInfo();
     const data: any = {
       id: id,
@@ -930,6 +933,9 @@ export default class FeatheryClient extends IntegrationClient {
       fuser_key: userId
     };
     if (collaboratorId) data.collaborator_id = collaboratorId;
+    // Robin-tool inputs forwarded into the lambda json_data as input_params
+    // (HILB Contract F); never persisted to field values on the backend.
+    if (extra?.input_params) data.input_params = extra.input_params;
 
     const url = `${API_URL}panel/logic-rule/execute/`;
     const options = {
