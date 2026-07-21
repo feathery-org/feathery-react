@@ -446,7 +446,11 @@ function Form({
         if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
-        if (servar.type !== 'file_upload' && servar.type !== 'signature')
+        if (
+          servar.type !== 'file_upload' &&
+          servar.type !== 'signature' &&
+          servar.type !== 'docx_editor'
+        )
           return pending;
         if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
         pending.push(fieldKey);
@@ -3019,6 +3023,7 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
+    syncfusion: integrations?.syncfusion?.metadata,
     featheryContext: getFormContext(_internalId),
     assistantClient: internalState[_internalId]?.assistantClient
   };

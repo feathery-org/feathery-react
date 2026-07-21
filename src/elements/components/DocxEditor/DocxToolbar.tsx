@@ -1,4 +1,11 @@
-import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import React, {
+  ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react';
+import { createPortal } from 'react-dom';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { FONTS, FONT_SIZES, ZOOM_PRESETS } from './constants';
 import {
@@ -81,20 +88,25 @@ const triggerBtn = {
   transition: 'background 0.12s',
   '&:hover': { background: ZINC[100] }
 };
+// Panels render in a portal on document.body with fixed positioning (anchored
+// to the trigger). Absolute panels inside the toolbar get clipped by the tool
+// row's overflow:hidden, and their autoFocus inputs then force-scroll that
+// hidden container (breaking the whole row).
 const menuPanel = (align: 'start' | 'center' | 'end') => ({
-  position: 'absolute' as const,
-  top: '100%',
-  marginTop: 4,
-  left: align === 'start' ? 0 : align === 'center' ? '50%' : 'auto',
-  right: align === 'end' ? 0 : 'auto',
-  transform: align === 'center' ? 'translateX(-50%)' : 'none',
+  position: 'fixed' as const,
+  transform:
+    align === 'center'
+      ? 'translateX(-50%)'
+      : align === 'end'
+      ? 'translateX(-100%)'
+      : 'none',
   minWidth: 160,
   background: '#fff',
   border: `1px solid ${ZINC[200]}`,
   borderRadius: 8,
   boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
   padding: 4,
-  zIndex: 50
+  zIndex: 10000
 });
 const menuItem = (active = false) => ({
   display: 'flex',
@@ -129,6 +141,21 @@ function Divider() {
   );
 }
 
+const MoreIcon = (p: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    width='24'
+    height='24'
+    viewBox='0 0 24 24'
+    fill='currentColor'
+    xmlns='http://www.w3.org/2000/svg'
+    {...p}
+  >
+    <circle cx='5' cy='12' r='2' />
+    <circle cx='12' cy='12' r='2' />
+    <circle cx='19' cy='12' r='2' />
+  </svg>
+);
+
 interface MenuProps {
   trigger: (o: { open: boolean; toggle: () => void }) => ReactNode;
   children: (close: () => void) => ReactNode;
@@ -138,20 +165,39 @@ interface MenuProps {
 
 function Menu({ trigger, children, align = 'start', onClose }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     const doc = featheryDoc();
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-        onClose?.();
-      }
+      const t = e.target as Element;
+      // Ignore clicks on the trigger or inside ANY toolbar menu panel (panels
+      // are portaled to body, incl. menus nested inside the "More" panel).
+      if (ref.current?.contains(t) || t.closest?.('[data-docx-menu]')) return;
+      setOpen(false);
+      onClose?.();
     };
     doc.addEventListener('mousedown', onDown);
     return () => doc.removeEventListener('mousedown', onDown);
   }, [open, onClose]);
+
+  const toggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      setPos({
+        top: r.bottom + 4,
+        left:
+          align === 'start'
+            ? r.left
+            : align === 'center'
+            ? r.left + r.width / 2
+            : r.right
+      });
+    }
+    setOpen((o) => !o);
+  };
 
   const close = () => {
     setOpen(false);
@@ -160,8 +206,18 @@ function Menu({ trigger, children, align = 'start', onClose }: MenuProps) {
 
   return (
     <div css={{ position: 'relative' }} ref={ref}>
-      {trigger({ open, toggle: () => setOpen((o) => !o) })}
-      {open && <div css={menuPanel(align)}>{children(close)}</div>}
+      {trigger({ open, toggle })}
+      {open &&
+        createPortal(
+          <div
+            data-docx-menu=''
+            css={menuPanel(align)}
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {children(close)}
+          </div>,
+          featheryDoc().body
+        )}
     </div>
   );
 }
@@ -177,7 +233,8 @@ export interface DocxToolbarProps {
 
 // Flat toolbar driving the Syncfusion documentEditor API directly (the built-in
 // toolbar is disabled on the container). Active states track the editor's
-// selectionChange / zoomFactorChange events.
+// selectionChange / zoomFactorChange events. When the toolbar is too narrow the
+// non-essential groups collapse into a "More" dropdown.
 export default function DocxToolbar({
   editor,
   onSave,
@@ -186,6 +243,9 @@ export default function DocxToolbar({
   readOnly
 }: DocxToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [scrollable, setScrollable] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [zoomInput, setZoomInput] = useState('100');
   const [bold, setBold] = useState(false);
@@ -227,6 +287,26 @@ export default function DocxToolbar({
     };
   }, [editor]);
 
+  // Collapse non-essential groups into "More" if the full tool row doesn't fit.
+  // Measured once, synchronously before paint — the editor's container has a
+  // fixed size once placed, so no resize observation is needed (and observing
+  // caused collapse→expand render loops).
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth + 1) setCollapsed(true);
+  }, []);
+
+  // Minimum-width floor: if even the collapsed row can't fit, fall back to
+  // horizontal scrolling so every inline tool stays reachable. Also runs
+  // pre-paint (state set in the effect above flushes before painting).
+  useLayoutEffect(() => {
+    if (!collapsed) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth + 1) setScrollable(true);
+  }, [collapsed]);
+
   const applyZoom = (pct: number) => {
     editor.zoomFactor = Math.min(500, Math.max(50, pct)) / 100;
   };
@@ -254,6 +334,411 @@ export default function DocxToolbar({
     f.toLowerCase().includes(fontQuery.toLowerCase())
   );
 
+  // Tool groups. Essential ones stay inline; the rest collapse into "More".
+  const historyGroup = (
+    <>
+      <button
+        type='button'
+        css={iconBtn(false, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editorHistory.undo()}
+        title='Undo'
+      >
+        <UndoIcon width={16} height={16} />
+      </button>
+      <button
+        type='button'
+        css={iconBtn(false, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editorHistory.redo()}
+        title='Redo'
+      >
+        <RedoIcon width={16} height={16} />
+      </button>
+    </>
+  );
+
+  const zoomGroup = (
+    <>
+      <button
+        type='button'
+        css={iconBtn()}
+        onClick={() => applyZoom(zoom - 10)}
+        title='Zoom out'
+      >
+        <MinusIcon width={16} height={16} />
+      </button>
+      <Menu
+        align='center'
+        onClose={() => setZoomInput(String(zoom))}
+        trigger={({ toggle }) => (
+          <button
+            type='button'
+            css={{
+              ...triggerBtn,
+              width: 56,
+              justifyContent: 'center',
+              fontVariantNumeric: 'tabular-nums'
+            }}
+            onClick={toggle}
+          >
+            {zoom}%
+          </button>
+        )}
+      >
+        {(close) => (
+          <div css={{ width: 176 }}>
+            <input
+              css={{ ...textInput, marginBottom: 4 }}
+              value={zoomInput}
+              autoFocus
+              onChange={(e) => setZoomInput(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  const pct = parseInt(zoomInput, 10);
+                  if (Number.isFinite(pct)) applyZoom(pct);
+                  close();
+                }
+              }}
+            />
+            <button
+              type='button'
+              css={menuItem()}
+              onClick={() => {
+                editor.fitPage('FitPageWidth');
+                const pct = Math.round(editor.zoomFactor * 100);
+                setZoom(pct);
+                setZoomInput(String(pct));
+                close();
+              }}
+            >
+              <FitToPageIcon width={16} height={16} />
+              Fit to page
+            </button>
+            <div css={{ margin: '4px 0', height: 1, background: ZINC[200] }} />
+            {ZOOM_PRESETS.map((p) => (
+              <button
+                type='button'
+                key={p}
+                css={menuItem(p === zoom)}
+                onClick={() => {
+                  applyZoom(p);
+                  close();
+                }}
+              >
+                {p}%
+              </button>
+            ))}
+          </div>
+        )}
+      </Menu>
+      <button
+        type='button'
+        css={iconBtn()}
+        onClick={() => applyZoom(zoom + 10)}
+        title='Zoom in'
+      >
+        <PlusIcon width={16} height={16} />
+      </button>
+    </>
+  );
+
+  const styleGroup = (
+    <Menu
+      trigger={({ toggle }) => (
+        <button
+          type='button'
+          css={triggerBtn}
+          onClick={toggle}
+          title='Text style'
+          disabled={readOnly}
+        >
+          <StyleIcon width={16} height={16} />
+          <ChevronDownIcon width={14} height={14} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div css={{ width: 176 }}>
+          {STYLES.map(({ label, value, Icon }) => (
+            <button
+              type='button'
+              key={value}
+              css={menuItem(value === styleName)}
+              onClick={() => {
+                editor.editor.applyStyle(value, true);
+                close();
+              }}
+            >
+              <Icon width={16} height={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </Menu>
+  );
+
+  const fontGroup = (
+    <>
+      <Menu
+        onClose={() => setFontQuery('')}
+        trigger={({ toggle }) => (
+          <button
+            type='button'
+            css={{ ...triggerBtn, width: 128, justifyContent: 'space-between' }}
+            onClick={toggle}
+            disabled={readOnly}
+          >
+            <span
+              css={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+              style={{ fontFamily }}
+            >
+              {fontFamily}
+            </span>
+            <ChevronDownIcon width={14} height={14} />
+          </button>
+        )}
+      >
+        {(close) => (
+          <div css={{ width: 224, maxHeight: 320, overflowY: 'auto' }}>
+            <input
+              css={{ ...textInput, marginBottom: 4 }}
+              placeholder='Search fonts'
+              value={fontQuery}
+              autoFocus
+              onChange={(e) => setFontQuery(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+            {filteredFonts.map((f) => (
+              <button
+                type='button'
+                key={f}
+                css={menuItem(f === fontFamily)}
+                style={{ fontFamily: f }}
+                onClick={() => {
+                  editor.selection.characterFormat.fontFamily = f;
+                  close();
+                }}
+              >
+                {f}
+              </button>
+            ))}
+            {filteredFonts.length === 0 && (
+              <div css={{ padding: '6px 8px', fontSize: 14, color: ZINC[400] }}>
+                No fonts
+              </div>
+            )}
+          </div>
+        )}
+      </Menu>
+      <select
+        css={{ ...triggerBtn, width: 64, cursor: 'pointer' }}
+        value={fontSize}
+        disabled={readOnly}
+        onChange={(e) => {
+          const size = Number(e.target.value);
+          setFontSize(size);
+          editor.selection.characterFormat.fontSize = size;
+        }}
+      >
+        {(FONT_SIZES.includes(fontSize)
+          ? FONT_SIZES
+          : [...FONT_SIZES, fontSize].sort((a, b) => a - b)
+        ).map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+    </>
+  );
+
+  const formatGroup = (
+    <>
+      <button
+        type='button'
+        css={iconBtn(bold, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editor.toggleBold()}
+        title='Bold'
+      >
+        <BoldIcon width={16} height={16} />
+      </button>
+      <button
+        type='button'
+        css={iconBtn(italic, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editor.toggleItalic()}
+        title='Italic'
+      >
+        <ItalicIcon width={16} height={16} />
+      </button>
+      <button
+        type='button'
+        css={iconBtn(strike, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editor.toggleStrikethrough()}
+        title='Strikethrough'
+      >
+        <StrikeIcon width={16} height={16} />
+      </button>
+      <label
+        css={{ ...iconBtn(false, readOnly), position: 'relative' }}
+        title='Text color'
+      >
+        <FontColorIcon width={16} height={16} />
+        <span
+          css={{
+            position: 'absolute',
+            bottom: 4,
+            height: 2,
+            width: 16,
+            borderRadius: 2
+          }}
+          style={{ backgroundColor: fontColor }}
+        />
+        <input
+          type='color'
+          css={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            opacity: 0,
+            pointerEvents: 'none'
+          }}
+          value={fontColor}
+          disabled={readOnly}
+          onChange={(e) => {
+            setFontColor(e.target.value);
+            editor.selection.characterFormat.fontColor = e.target.value;
+          }}
+        />
+      </label>
+    </>
+  );
+
+  const insertGroup = (
+    <>
+      <button
+        type='button'
+        css={iconBtn(false, readOnly)}
+        disabled={readOnly}
+        onClick={insertLink}
+        title='Insert link'
+      >
+        <LinkIcon width={16} height={16} />
+      </button>
+      <button
+        type='button'
+        css={iconBtn(false, readOnly)}
+        disabled={readOnly}
+        onClick={() => fileInputRef.current?.click()}
+        title='Insert image'
+      >
+        <InsertImageIcon width={16} height={16} />
+      </button>
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='image/*'
+        css={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) insertImageFile(file);
+          e.target.value = '';
+        }}
+      />
+    </>
+  );
+
+  const listsGroup = (
+    <>
+      <button
+        type='button'
+        css={iconBtn(false, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editor.applyBullet('', 'Symbol')}
+        title='Bullet list'
+      >
+        <BulletListIcon width={16} height={16} />
+      </button>
+      <button
+        type='button'
+        css={iconBtn(false, readOnly)}
+        disabled={readOnly}
+        onClick={() => editor.editor.applyNumbering('%1.', 'Arabic')}
+        title='Numbered list'
+      >
+        <NumberListIcon width={16} height={16} />
+      </button>
+    </>
+  );
+
+  const alignGroup = (
+    <Menu
+      trigger={({ toggle }) => (
+        <button
+          type='button'
+          css={triggerBtn}
+          onClick={toggle}
+          title='Alignment'
+          disabled={readOnly}
+        >
+          <AlignIcon width={16} height={16} />
+          <ChevronDownIcon width={14} height={14} />
+        </button>
+      )}
+    >
+      {(close) => (
+        <div css={{ display: 'flex', gap: 2 }}>
+          {ALIGNMENTS.map(({ value, Icon }) => (
+            <button
+              type='button'
+              key={value}
+              css={iconBtn(value === alignment)}
+              title={value}
+              onClick={() => {
+                editor.selection.paragraphFormat.textAlignment = value;
+                close();
+              }}
+            >
+              <Icon width={16} height={16} />
+            </button>
+          ))}
+        </div>
+      )}
+    </Menu>
+  );
+
+  // Grouping mirrors Word/Google Docs compact toolbars: navigation (zoom) and
+  // core text controls (style, font, format, alignment) stay inline; insert
+  // actions and lists collapse into "More" first when space runs out.
+  const groups = [
+    { key: 'history', essential: true, node: historyGroup },
+    { key: 'zoom', essential: true, node: zoomGroup },
+    { key: 'style', essential: true, node: styleGroup },
+    { key: 'font', essential: true, node: fontGroup },
+    { key: 'format', essential: true, node: formatGroup },
+    { key: 'align', essential: true, node: alignGroup },
+    { key: 'insert', essential: false, node: insertGroup },
+    { key: 'lists', essential: false, node: listsGroup }
+  ];
+  const overflowGroups = groups.filter((g) => !g.essential);
+  const visibleGroups = collapsed ? groups.filter((g) => g.essential) : groups;
+  const renderRow = (gs: typeof groups) =>
+    gs.map((g, i) => (
+      <React.Fragment key={g.key}>
+        {i > 0 && <Divider />}
+        {g.node}
+      </React.Fragment>
+    ));
+
   return (
     <div
       css={{
@@ -266,385 +751,100 @@ export default function DocxToolbar({
         padding: '0 12px'
       }}
     >
-      <div css={{ flex: 1 }} />
-      <div css={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        {/* Undo / Redo */}
-        <button
-          css={iconBtn(false, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editorHistory.undo()}
-          title='Undo'
-        >
-          <UndoIcon width={16} height={16} />
-        </button>
-        <button
-          css={iconBtn(false, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editorHistory.redo()}
-          title='Redo'
-        >
-          <RedoIcon width={16} height={16} />
-        </button>
-
-        <Divider />
-
-        {/* Zoom */}
-        <button
-          css={iconBtn()}
-          onClick={() => applyZoom(zoom - 10)}
-          title='Zoom out'
-        >
-          <MinusIcon width={16} height={16} />
-        </button>
-        <Menu
-          align='center'
-          onClose={() => setZoomInput(String(zoom))}
-          trigger={({ toggle }) => (
-            <button
-              css={{
-                ...triggerBtn,
-                width: 56,
-                justifyContent: 'center',
-                fontVariantNumeric: 'tabular-nums'
-              }}
-              onClick={toggle}
-            >
-              {zoom}%
-            </button>
-          )}
-        >
-          {(close) => (
-            <div css={{ width: 176 }}>
-              <input
-                css={{ ...textInput, marginBottom: 4 }}
-                value={zoomInput}
-                autoFocus
-                onChange={(e) => setZoomInput(e.target.value)}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') {
-                    const pct = parseInt(zoomInput, 10);
-                    if (Number.isFinite(pct)) applyZoom(pct);
-                    close();
-                  }
-                }}
-              />
-              <button
-                css={menuItem()}
-                onClick={() => {
-                  editor.fitPage('FitPageWidth');
-                  const pct = Math.round(editor.zoomFactor * 100);
-                  setZoom(pct);
-                  setZoomInput(String(pct));
-                  close();
-                }}
-              >
-                <FitToPageIcon width={16} height={16} />
-                Fit to page
-              </button>
-              <div
-                css={{ margin: '4px 0', height: 1, background: ZINC[200] }}
-              />
-              {ZOOM_PRESETS.map((p) => (
-                <button
-                  key={p}
-                  css={menuItem(p === zoom)}
-                  onClick={() => {
-                    applyZoom(p);
-                    close();
-                  }}
-                >
-                  {p}%
-                </button>
-              ))}
-            </div>
-          )}
-        </Menu>
-        <button
-          css={iconBtn()}
-          onClick={() => applyZoom(zoom + 10)}
-          title='Zoom in'
-        >
-          <PlusIcon width={16} height={16} />
-        </button>
-
-        <Divider />
-
-        {/* Paragraph style */}
-        <Menu
-          trigger={({ toggle }) => (
-            <button
-              css={triggerBtn}
-              onClick={toggle}
-              title='Text style'
-              disabled={readOnly}
-            >
-              <StyleIcon width={16} height={16} />
-              <ChevronDownIcon width={14} height={14} />
-            </button>
-          )}
-        >
-          {(close) => (
-            <div css={{ width: 176 }}>
-              {STYLES.map(({ label, value, Icon }) => (
-                <button
-                  key={value}
-                  css={menuItem(value === styleName)}
-                  onClick={() => {
-                    editor.editor.applyStyle(value, true);
-                    close();
-                  }}
-                >
-                  <Icon width={16} height={16} />
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </Menu>
-
-        {/* Font family (searchable, each rendered in its own font) */}
-        <Menu
-          onClose={() => setFontQuery('')}
-          trigger={({ toggle }) => (
-            <button
-              css={{
-                ...triggerBtn,
-                width: 128,
-                justifyContent: 'space-between'
-              }}
-              onClick={toggle}
-              disabled={readOnly}
-            >
-              <span
-                css={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}
-                style={{ fontFamily }}
-              >
-                {fontFamily}
-              </span>
-              <ChevronDownIcon width={14} height={14} />
-            </button>
-          )}
-        >
-          {(close) => (
-            <div css={{ width: 224, maxHeight: 320, overflowY: 'auto' }}>
-              <input
-                css={{ ...textInput, marginBottom: 4 }}
-                placeholder='Search fonts'
-                value={fontQuery}
-                autoFocus
-                onChange={(e) => setFontQuery(e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-              />
-              {filteredFonts.map((f) => (
-                <button
-                  key={f}
-                  css={menuItem(f === fontFamily)}
-                  style={{ fontFamily: f }}
-                  onClick={() => {
-                    editor.selection.characterFormat.fontFamily = f;
-                    close();
-                  }}
-                >
-                  {f}
-                </button>
-              ))}
-              {filteredFonts.length === 0 && (
-                <div
-                  css={{ padding: '6px 8px', fontSize: 14, color: ZINC[400] }}
-                >
-                  No fonts
-                </div>
-              )}
-            </div>
-          )}
-        </Menu>
-
-        {/* Font size */}
-        <select
-          css={{ ...triggerBtn, width: 64, cursor: 'pointer' }}
-          value={fontSize}
-          disabled={readOnly}
-          onChange={(e) => {
-            const size = Number(e.target.value);
-            setFontSize(size);
-            editor.selection.characterFormat.fontSize = size;
+      {/* Tool row: centered when it fits; non-essential groups collapse into a
+          "More" dropdown when the container is too narrow. Save/Download pinned. */}
+      <div
+        ref={scrollRef}
+        css={{
+          flex: '1 1 auto',
+          minWidth: 0,
+          overflowX: scrollable ? 'auto' : 'hidden',
+          overflowY: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          ...(scrollable && {
+            scrollbarWidth: 'thin' as const,
+            '&::-webkit-scrollbar': { height: 6 },
+            '&::-webkit-scrollbar-thumb': {
+              background: ZINC[300],
+              borderRadius: 3
+            }
+          })
+        }}
+      >
+        <div
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            // Centered when there's room; when scrolling, auto margins would
+            // make the overflowing left edge unreachable, so left-align.
+            margin: scrollable ? undefined : '0 auto'
           }}
         >
-          {(FONT_SIZES.includes(fontSize)
-            ? FONT_SIZES
-            : [...FONT_SIZES, fontSize].sort((a, b) => a - b)
-          ).map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-
-        <Divider />
-
-        {/* Bold / Italic / Strikethrough */}
-        <button
-          css={iconBtn(bold, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editor.toggleBold()}
-          title='Bold'
-        >
-          <BoldIcon width={16} height={16} />
-        </button>
-        <button
-          css={iconBtn(italic, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editor.toggleItalic()}
-          title='Italic'
-        >
-          <ItalicIcon width={16} height={16} />
-        </button>
-        <button
-          css={iconBtn(strike, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editor.toggleStrikethrough()}
-          title='Strikethrough'
-        >
-          <StrikeIcon width={16} height={16} />
-        </button>
-
-        {/* Text color */}
-        <label
-          css={{ ...iconBtn(false, readOnly), position: 'relative' }}
-          title='Text color'
-        >
-          <FontColorIcon width={16} height={16} />
-          <span
-            css={{
-              position: 'absolute',
-              bottom: 4,
-              height: 2,
-              width: 16,
-              borderRadius: 2
-            }}
-            style={{ backgroundColor: fontColor }}
-          />
-          <input
-            type='color'
-            css={{
-              position: 'absolute',
-              width: 1,
-              height: 1,
-              opacity: 0,
-              pointerEvents: 'none'
-            }}
-            value={fontColor}
-            disabled={readOnly}
-            onChange={(e) => {
-              setFontColor(e.target.value);
-              editor.selection.characterFormat.fontColor = e.target.value;
-            }}
-          />
-        </label>
-
-        <Divider />
-
-        {/* Link / Image */}
-        <button
-          css={iconBtn(false, readOnly)}
-          disabled={readOnly}
-          onClick={insertLink}
-          title='Insert link'
-        >
-          <LinkIcon width={16} height={16} />
-        </button>
-        <button
-          css={iconBtn(false, readOnly)}
-          disabled={readOnly}
-          onClick={() => fileInputRef.current?.click()}
-          title='Insert image'
-        >
-          <InsertImageIcon width={16} height={16} />
-        </button>
-        <input
-          ref={fileInputRef}
-          type='file'
-          accept='image/*'
-          css={{ display: 'none' }}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) insertImageFile(file);
-            e.target.value = '';
-          }}
-        />
-
-        <Divider />
-
-        {/* Lists */}
-        <button
-          css={iconBtn(false, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editor.applyBullet('', 'Symbol')}
-          title='Bullet list'
-        >
-          <BulletListIcon width={16} height={16} />
-        </button>
-        <button
-          css={iconBtn(false, readOnly)}
-          disabled={readOnly}
-          onClick={() => editor.editor.applyNumbering('%1.', 'Arabic')}
-          title='Numbered list'
-        >
-          <NumberListIcon width={16} height={16} />
-        </button>
-
-        <Divider />
-
-        {/* Alignment */}
-        <Menu
-          trigger={({ toggle }) => (
-            <button
-              css={triggerBtn}
-              onClick={toggle}
-              title='Alignment'
-              disabled={readOnly}
-            >
-              <AlignIcon width={16} height={16} />
-              <ChevronDownIcon width={14} height={14} />
-            </button>
+          {renderRow(visibleGroups)}
+          {collapsed && (
+            <>
+              <Divider />
+              <Menu
+                align='end'
+                trigger={({ toggle }) => (
+                  <button
+                    type='button'
+                    css={triggerBtn}
+                    onClick={toggle}
+                    title='More tools'
+                    disabled={readOnly}
+                  >
+                    <MoreIcon width={16} height={16} />
+                    <ChevronDownIcon width={14} height={14} />
+                  </button>
+                )}
+              >
+                {() => (
+                  <div
+                    css={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      minWidth: 220
+                    }}
+                  >
+                    {overflowGroups.map((g) => (
+                      <div
+                        key={g.key}
+                        css={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        {g.node}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Menu>
+            </>
           )}
-        >
-          {(close) => (
-            <div css={{ display: 'flex', gap: 2 }}>
-              {ALIGNMENTS.map(({ value, Icon }) => (
-                <button
-                  key={value}
-                  css={iconBtn(value === alignment)}
-                  title={value}
-                  onClick={() => {
-                    editor.selection.paragraphFormat.textAlignment = value;
-                    close();
-                  }}
-                >
-                  <Icon width={16} height={16} />
-                </button>
-              ))}
-            </div>
-          )}
-        </Menu>
+        </div>
       </div>
 
-      {/* Save / Download (top right) */}
+      {/* Save / Download (pinned right) */}
       <div
         css={{
           display: 'flex',
-          flex: 1,
+          flex: '0 0 auto',
+          alignItems: 'center',
+          paddingLeft: 8,
           justifyContent: 'flex-end',
           gap: 8
         }}
       >
         {onDownload && (
           <button
+            type='button'
             css={{
               display: 'flex',
               height: 32,
@@ -668,6 +868,7 @@ export default function DocxToolbar({
         )}
         {onSave && (
           <button
+            type='button'
             css={{
               display: 'flex',
               height: 32,
