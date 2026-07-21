@@ -182,6 +182,10 @@ export const getFormContext = (formUuid: string) => {
       actionIds: IntegrationActionIds,
       options: IntegrationActionOptions
     ) => formState.client.customRolloutAction(actionIds, options),
+    runComputerAgent: async (agentId: string) => {
+      const res = await formState.client.runComputerAgent(agentId);
+      return res.ok ? (res.payload.run_url as string) : '';
+    },
     runAIExtraction: async (
       extractionId: string,
       options = { waitForCompletion: false },
