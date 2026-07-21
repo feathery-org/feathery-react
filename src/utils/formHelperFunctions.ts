@@ -400,7 +400,8 @@ export function mapFormSettingsResponse(res: any) {
     assistantColor: res.ai_assistant_settings?.color
       ? `#${res.ai_assistant_settings.color}`
       : '#6b7280',
-    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? []
+    assistantWorkflowActions: res.ai_assistant_settings?.workflow_actions ?? [],
+    assistantStepSettings: res.ai_assistant_settings?.step_settings ?? {}
   };
 }
 

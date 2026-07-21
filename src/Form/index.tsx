@@ -235,7 +235,10 @@ import { useAIExtractionToast } from './components/ActionToast/useAIExtractionTo
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
-import type { AssistantLayoutState } from '../assistant/AssistantChat';
+import type {
+  AssistantLayoutState,
+  AssistantStepSettings
+} from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
 
 export * from './grid/StyledContainer';
@@ -390,7 +393,8 @@ function Form({
     assistantEnabled: false,
     assistantVoiceEnabled: false,
     assistantColor: '#6b7280',
-    assistantWorkflowActions: []
+    assistantWorkflowActions: [],
+    assistantStepSettings: {} as AssistantStepSettings
   });
   const trackHashes = useRef(false);
   const curLanguage = useRef<undefined | string>(undefined);
@@ -3147,6 +3151,8 @@ function Form({
             color={formSettings.assistantColor}
             voiceEnabled={formSettings.assistantVoiceEnabled}
             workflowActions={formSettings.assistantWorkflowActions}
+            stepSettings={formSettings.assistantStepSettings}
+            activeStepId={activeStep?.id}
             onLayoutChange={handleAssistantLayoutChange}
           />
         )}
