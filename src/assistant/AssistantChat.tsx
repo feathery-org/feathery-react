@@ -94,6 +94,8 @@ import {
   DocxBridge,
   normalizeSelection
 } from './tools/assistantToolDispatch';
+import { createDocxEditorBridge } from './tools/docxEditorBridge';
+import { getDocxEditor } from './tools/docxEditorRegistry';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
 
@@ -316,6 +318,17 @@ const AssistantChat = ({
     }
     return [];
   }, [instanceId]);
+
+  // Docx bridge for getDocumentInventory/applyDocumentEdits: a host-supplied
+  // bridge wins; otherwise fall back to a default bridge over the in-form
+  // docx_editor field's registered editor (docxEditorRegistry), so the ops act
+  // on the field's live editor with no host wiring.
+  const resolveDocxBridge = useCallback(
+    () =>
+      docxBridgeRef.current ??
+      createDocxEditorBridge(() => getDocxEditor(instanceId)),
+    [instanceId]
+  );
   const headers = useMemo<AssistantHeaders>(() => {
     if (getJwt) return () => ({ Authorization: `Bearer ${getJwt()}` });
     const { sdkKey } = initInfo();
@@ -604,7 +617,7 @@ const AssistantChat = ({
         // tools that the branches below would otherwise skip.
         const dispatchCtx: AssistantToolContext = {
           customToolHandlers: customToolHandlersRef.current,
-          docxBridge: docxBridgeRef.current,
+          docxBridge: resolveDocxBridge(),
           callableRules: resolveCallableRules(),
           runLogicRule: (ruleId, inputParams) =>
             runLogicRuleById(ruleId, inputParams, instanceId)

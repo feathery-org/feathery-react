@@ -3025,7 +3025,10 @@ function Form({
     calendly: integrations?.calendly?.metadata,
     syncfusion: integrations?.syncfusion?.metadata,
     featheryContext: getFormContext(_internalId),
-    assistantClient: internalState[_internalId]?.assistantClient
+    assistantClient: internalState[_internalId]?.assistantClient,
+    // Form instance id so fields (e.g. docx_editor) can register runtime
+    // handles into per-form registries the assistant reads back.
+    _internalId
   };
 
   // If form was completed in a previous session and edits are disabled,

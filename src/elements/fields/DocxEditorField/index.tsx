@@ -3,6 +3,10 @@ import DocxEditor from '../../components/DocxEditor';
 import { DocxSource } from '../../components/DocxEditor/types';
 import ErrorInput from '../../components/ErrorInput';
 import { featheryWindow } from '../../../utils/browser';
+import {
+  registerDocxEditor,
+  unregisterDocxEditor
+} from '../../../assistant/tools/docxEditorRegistry';
 
 // Form field wrapper around the standalone DocxEditor. Its value is the edited
 // .docx (stored like a file field). `serviceUrl`/`licenseKey` are injected by
@@ -18,6 +22,11 @@ const DocxEditorField = ({
   onSave,
   serviceUrl,
   licenseKey,
+  // Form instance id (from the dispatcher) used to register the mounted editor
+  // so the Robin assistant's docx ops can reach it.
+  instanceId,
+  // Optional passthrough for hosts that want the live editor directly.
+  onEditorReady,
   elementProps = {},
   children
 }: any) => {
@@ -31,6 +40,16 @@ const DocxEditorField = ({
   const resolvedLicenseKey =
     licenseKey || envCfg.licenseKey || meta.license_key;
   const [source, setSource] = useState<DocxSource | undefined>(undefined);
+  const [editor, setEditor] = useState<any>(null);
+
+  // Register the mounted DocumentEditor so the Robin assistant's docx bridge
+  // (getDocumentInventory/applyDocumentEdits) can act on this field's editor.
+  // Unregisters on unmount / when the editor instance changes.
+  useEffect(() => {
+    if (!editor || !instanceId) return;
+    registerDocxEditor(instanceId, editor);
+    return () => unregisterDocxEditor(instanceId, editor);
+  }, [editor, instanceId]);
 
   // Resolve the current value (File / Promise<File>) into bytes for the editor.
   // Falls back to a configured template URL, else opens a blank document.
@@ -101,6 +120,10 @@ const DocxEditorField = ({
         hideDownload={!!meta.hide_download}
         fileName={servar.key}
         onSave={(blob: Blob) => onSave?.(blob)}
+        onEditorReady={(ed: any) => {
+          setEditor(ed);
+          onEditorReady?.(ed);
+        }}
       />
       {/* Always rendered so the Form can set validation errors on this field. */}
       <ErrorInput id={servar.key} name={servar.key} />
