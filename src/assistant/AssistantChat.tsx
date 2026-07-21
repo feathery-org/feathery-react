@@ -214,6 +214,9 @@ export type WorkflowAction = {
   instructions: string;
 };
 
+export type AssistantStepDefault = 'closed' | 'floating' | 'sidebar_right';
+export type AssistantStepSettings = Record<string, AssistantStepDefault>;
+
 export type AssistantLayoutState = {
   mode: AssistantMode;
   isOpen: boolean;
@@ -239,6 +242,8 @@ export type AssistantChatProps = {
   voiceEnabled?: boolean;
   workflowActions?: WorkflowAction[];
   allowedModes?: AssistantMode[];
+  stepSettings?: AssistantStepSettings;
+  activeStepId?: string;
   onLayoutChange?: null | ((state: AssistantLayoutState) => void);
 };
 
@@ -252,6 +257,8 @@ const AssistantChat = ({
   voiceEnabled = false,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
+  stepSettings = {},
+  activeStepId,
   onLayoutChange
 }: AssistantChatProps) => {
   const headers = useMemo<AssistantHeaders>(() => {
@@ -285,6 +292,26 @@ const AssistantChat = ({
     setModeState(next);
     writeStoredMode(next);
   }, []);
+
+  // Whitelist: no steps configured = available everywhere, otherwise the
+  // assistant is hidden on steps absent from the map (kept mounted, see render)
+  const whitelistActive = Object.keys(stepSettings).length > 0;
+  const hiddenByWhitelist =
+    whitelistActive && (!activeStepId || !(activeStepId in stepSettings));
+
+  // Apply the creator's open default once per step entry, close/switch still sticks
+  const forcedStepRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!activeStepId || activeStepId === forcedStepRef.current) return;
+    forcedStepRef.current = activeStepId;
+    const stepDefault = stepSettings[activeStepId];
+    if (stepDefault === 'floating' || stepDefault === 'sidebar_right') {
+      setIsOpen(true);
+      setModeState(
+        stepDefault === 'sidebar_right' ? 'sidebar-right' : 'current'
+      );
+    }
+  }, [activeStepId, stepSettings]);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(
     readStoredSidebarWidth
@@ -835,6 +862,11 @@ const AssistantChat = ({
     voiceDataRef
   });
 
+  // Stop the mic if the assistant becomes hidden on a whitelisted step
+  useEffect(() => {
+    if (hiddenByWhitelist) stopVoice();
+  }, [hiddenByWhitelist, stopVoice]);
+
   // Voice: keep the view pinned to the bottom as the reply reveals during playback
   useEffect(() => {
     pinToBottom();
@@ -968,19 +1000,27 @@ const AssistantChat = ({
       : mode === 'sidebar-right'
       ? 'right'
       : null;
-  const layoutWidth = isOpen && layoutSide ? sidebarWidth : 0;
+  const layoutOpen = isOpen && !hiddenByWhitelist;
+  const layoutWidth = layoutOpen && layoutSide ? sidebarWidth : 0;
 
   const onLayoutChangeRef = useRef(onLayoutChange);
   onLayoutChangeRef.current = onLayoutChange;
   useEffect(() => {
     onLayoutChangeRef.current?.({
       mode,
-      isOpen,
-      side: layoutSide,
+      isOpen: layoutOpen,
+      side: hiddenByWhitelist ? null : layoutSide,
       width: layoutWidth,
       isResizing
     });
-  }, [mode, isOpen, layoutSide, layoutWidth, isResizing]);
+  }, [
+    mode,
+    layoutOpen,
+    layoutSide,
+    layoutWidth,
+    isResizing,
+    hiddenByWhitelist
+  ]);
 
   const CollapseIcon =
     mode === 'sidebar-left'
@@ -999,6 +1039,9 @@ const AssistantChat = ({
       : mode === 'fullscreen'
       ? FullscreenIcon
       : FloatingIcon;
+
+  // Stay mounted so chat/thread state survives navigating hidden steps
+  if (hiddenByWhitelist) return null;
 
   const fabOnLeft = mode === 'sidebar-left';
   const fabSide = fabOnLeft ? { left: '20px' } : { right: '20px' };
