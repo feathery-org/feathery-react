@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import DocxEditor from '../../components/DocxEditor';
 import { DocxSource } from '../../components/DocxEditor/types';
 import ErrorInput from '../../components/ErrorInput';
@@ -12,10 +12,16 @@ const DocxEditorField = ({
   responsiveStyles,
   editMode,
   disabled = false,
-  // Current field value: a File / Promise<File> (a previously saved edit) or ''.
+  // Current field value: a File / Promise<File> (a previously saved edit), an
+  // envelope reference ({ envelope_id, file_url }) written by the Generate
+  // Documents action, or ''.
   defaultValue = null,
   // Writes the field value — the dispatcher wires this to changeValue().
   onSave,
+  // Persists edits back onto a generated envelope — the dispatcher wires this
+  // to the backend envelope file endpoint. Used when the value is an envelope
+  // reference.
+  onSaveEnvelope,
   serviceUrl,
   licenseKey,
   elementProps = {},
@@ -31,9 +37,15 @@ const DocxEditorField = ({
   const resolvedLicenseKey =
     licenseKey || envCfg.licenseKey || meta.license_key;
   const [source, setSource] = useState<DocxSource | undefined>(undefined);
+  const [envelopeId, setEnvelopeId] = useState<string | undefined>(undefined);
+  // Envelope whose file is currently open, so a value update that only
+  // refreshes the reference (e.g. a new signed URL after saving) doesn't
+  // reload the document out from under the user.
+  const loadedEnvelopeRef = useRef<string | null>(null);
 
-  // Resolve the current value (File / Promise<File>) into bytes for the editor.
-  // Falls back to a configured template URL, else opens a blank document.
+  // Resolve the current value into a document for the editor: saved bytes
+  // (File / Promise<File>), a generated envelope reference or file URL, or a
+  // configured template URL; else opens a blank document.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -41,10 +53,27 @@ const DocxEditorField = ({
       if (cancelled) return;
       if (val instanceof Blob) {
         const buffer = await val.arrayBuffer();
-        if (!cancelled) setSource({ buffer });
+        if (cancelled) return;
+        loadedEnvelopeRef.current = null;
+        setEnvelopeId(undefined);
+        setSource({ buffer });
+      } else if (val && typeof val === 'object' && val.file_url) {
+        setEnvelopeId(val.envelope_id);
+        if (!val.envelope_id || loadedEnvelopeRef.current !== val.envelope_id) {
+          loadedEnvelopeRef.current = val.envelope_id ?? null;
+          setSource({ url: val.file_url });
+        }
+      } else if (typeof val === 'string' && val.startsWith('http')) {
+        loadedEnvelopeRef.current = null;
+        setEnvelopeId(undefined);
+        setSource({ url: val });
       } else if (meta.template_url) {
+        loadedEnvelopeRef.current = null;
+        setEnvelopeId(undefined);
         setSource({ url: meta.template_url });
       } else {
+        loadedEnvelopeRef.current = null;
+        setEnvelopeId(undefined);
         setSource(undefined);
       }
     })();
@@ -100,7 +129,14 @@ const DocxEditorField = ({
         readOnly={disabled || !!meta.read_only}
         hideDownload={!!meta.hide_download}
         fileName={servar.key}
-        onSave={(blob: Blob) => onSave?.(blob)}
+        onSave={(blob: Blob) => {
+          // Envelope-backed documents persist to the envelope; otherwise the
+          // blob becomes the field value. Returning the promise lets the
+          // editor surface errors and stay dirty on failure.
+          if (envelopeId && onSaveEnvelope)
+            return onSaveEnvelope(envelopeId, blob);
+          return onSave?.(blob);
+        }}
       />
       {/* Always rendered so the Form can set validation errors on this field. */}
       <ErrorInput id={servar.key} name={servar.key} />

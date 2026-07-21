@@ -2781,9 +2781,24 @@ function Form({
               replaceTextVariables(action.envelope_zip_name)
             );
           } else if (envAction === 'save') {
-            let files = data.files;
-            if (files.length === 1) files = files[0];
-            const newValues = { [action.save_document_field_key]: files };
+            const saveKey = action.save_document_field_key;
+            const targetServar = getServarByFieldKey(saveKey);
+            let newValue;
+            if (targetServar?.type === 'docx_editor') {
+              // A docx editor field holds a reference to the generated
+              // envelope so edits can be saved back onto it.
+              const envelope = (data.envelopes ?? [])[0];
+              if (!envelope) {
+                setElementError('No document was generated');
+                break;
+              }
+              newValue = { envelope_id: envelope.id, file_url: envelope.file };
+            } else {
+              let files = data.files;
+              if (files.length === 1) files = files[0];
+              newValue = files;
+            }
+            const newValues = { [saveKey]: newValue };
             updateFieldValues(newValues);
             client.submitCustom(newValues);
           }

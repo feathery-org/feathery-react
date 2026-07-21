@@ -469,6 +469,24 @@ export default class IntegrationClient {
     });
   }
 
+  // Replace a generated envelope's file with an edited version, e.g. from the
+  // in-form document editor. Returns { id, file, updated_at } with a fresh
+  // signed file URL.
+  saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('file', file, fileName);
+    const url = `${API_URL}document/envelope/${envelopeId}/file/`;
+    const options = { method: 'PATCH', body: formData };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
   sendDocusignEnvelope({
     documents,
     libraryDocuments,

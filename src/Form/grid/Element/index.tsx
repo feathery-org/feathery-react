@@ -51,6 +51,7 @@ const Element = ({ node: el, form }: any) => {
     inlineErrors,
     setInlineErrors,
     changeValue,
+    client,
     updateFieldValues,
     submitCustom,
     elementOnView,
@@ -319,6 +320,22 @@ const Element = ({ node: el, form }: any) => {
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               changeValue(Promise.resolve(blob), el, index);
               onChange();
+            }}
+            onSaveEnvelope={async (envelopeId: string, blob: Blob) => {
+              const res = await client.saveEnvelopeFile(
+                envelopeId,
+                blob,
+                `${servar.key}.docx`
+              );
+              if (res?.file) {
+                const newValue = {
+                  envelope_id: envelopeId,
+                  file_url: res.file
+                };
+                changeValue(newValue, el, index);
+                submitCustom({ [servar.key]: newValue });
+                onChange();
+              }
             }}
           />
         );
