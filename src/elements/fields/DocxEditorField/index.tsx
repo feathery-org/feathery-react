@@ -117,27 +117,36 @@ const DocxEditorField = ({
         // e.g. a fixed px height or 100% to fill a sized container.
         height: 600,
         position: 'relative',
+        // The grid gives field cells `min-width: min-content`. Syncfusion's
+        // min-content is a full document page (and it grows as the editor
+        // re-lays-out on each click), so left in normal flow it drags the cell
+        // ever wider. Clip here and take the editor out of flow (below) so it
+        // fills the cell without contributing to its intrinsic width.
+        minWidth: 0,
+        overflow: 'hidden',
         ...responsiveStyles?.getTarget('fc')
       }}
       {...elementProps}
     >
       {children}
-      <DocxEditor
-        source={source}
-        serviceUrl={resolvedServiceUrl}
-        licenseKey={resolvedLicenseKey}
-        readOnly={disabled || !!meta.read_only}
-        hideDownload={!!meta.hide_download}
-        fileName={servar.key}
-        onSave={(blob: Blob) => {
-          // Envelope-backed documents persist to the envelope; otherwise the
-          // blob becomes the field value. Returning the promise lets the
-          // editor surface errors and stay dirty on failure.
-          if (envelopeId && onSaveEnvelope)
-            return onSaveEnvelope(envelopeId, blob);
-          return onSave?.(blob);
-        }}
-      />
+      <div css={{ position: 'absolute', inset: 0 }}>
+        <DocxEditor
+          source={source}
+          serviceUrl={resolvedServiceUrl}
+          licenseKey={resolvedLicenseKey}
+          readOnly={disabled || !!meta.read_only}
+          hideDownload={!!meta.hide_download}
+          fileName={servar.key}
+          onSave={(blob: Blob) => {
+            // Envelope-backed documents persist to the envelope; otherwise the
+            // blob becomes the field value. Returning the promise lets the
+            // editor surface errors and stay dirty on failure.
+            if (envelopeId && onSaveEnvelope)
+              return onSaveEnvelope(envelopeId, blob);
+            return onSave?.(blob);
+          }}
+        />
+      </div>
       {/* Always rendered so the Form can set validation errors on this field. */}
       <ErrorInput id={servar.key} name={servar.key} />
     </div>

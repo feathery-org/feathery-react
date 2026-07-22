@@ -29,6 +29,8 @@ import {
   NumberListIcon,
   PlusIcon,
   RedoIcon,
+  SaveIcon,
+  SpinnerIcon,
   StrikeIcon,
   TextIcon,
   UndoIcon
@@ -40,10 +42,14 @@ const ZINC = {
   200: '#e4e4e7',
   300: '#d4d4d8',
   400: '#a1a1aa',
+  500: '#71717a',
   700: '#3f3f46',
   900: '#18181b'
 };
 const INDIGO = '#6366f1';
+// Feathery brand red (matches the dashboard's `destructive` color).
+const FEATHERY_RED = 'hsl(3, 46%, 55%)';
+const FEATHERY_RED_HOVER = 'hsl(3, 48%, 50%)';
 
 const STYLES = [
   { label: 'Text', value: 'Normal', Icon: TextIcon },
@@ -228,6 +234,8 @@ export interface DocxToolbarProps {
   onSave?: () => void;
   onDownload?: () => void;
   saving?: boolean;
+  /** Unsaved edits since the last successful save — surfaces an indicator. */
+  dirty?: boolean;
   readOnly?: boolean;
 }
 
@@ -240,6 +248,7 @@ export default function DocxToolbar({
   onSave,
   onDownload,
   saving,
+  dirty,
   readOnly
 }: DocxToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -842,6 +851,30 @@ export default function DocxToolbar({
           gap: 8
         }}
       >
+        {dirty && (
+          <span
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 13,
+              color: ZINC[500],
+              whiteSpace: 'nowrap'
+            }}
+            title='You have unsaved changes'
+          >
+            <span
+              css={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: FEATHERY_RED,
+                flex: '0 0 auto'
+              }}
+            />
+            Unsaved changes
+          </span>
+        )}
         {onDownload && (
           <button
             type='button'
@@ -863,7 +896,7 @@ export default function DocxToolbar({
             onClick={onDownload}
           >
             <DownloadIcon width={16} height={16} />
-            Download
+            Export
           </button>
         )}
         {onSave && (
@@ -876,18 +909,28 @@ export default function DocxToolbar({
               gap: 6,
               borderRadius: 6,
               border: 'none',
-              background: INDIGO,
+              background: FEATHERY_RED,
               padding: '0 12px',
               fontSize: 14,
               fontWeight: 500,
               color: '#fff',
               cursor: saving ? 'default' : 'pointer',
-              opacity: saving ? 0.6 : 1
+              '&:hover': {
+                background: saving ? FEATHERY_RED : FEATHERY_RED_HOVER
+              }
             }}
             disabled={saving}
             onClick={onSave}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {/* Icon slot is a fixed 16px in both states, and the label stays
+                "Save", so swapping in the spinner never resizes the button
+                (no flicker on quick saves). */}
+            {saving ? (
+              <SpinnerIcon width={16} height={16} />
+            ) : (
+              <SaveIcon width={16} height={16} />
+            )}
+            Save
           </button>
         )}
       </div>

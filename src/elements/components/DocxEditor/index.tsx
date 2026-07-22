@@ -65,6 +65,7 @@ function DocxEditor({
   onSave
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const { containerRef, editor, loading, error, exportDoc } = useDocxEditor({
@@ -77,6 +78,7 @@ function DocxEditor({
     onDirty: () => {
       if (!dirtyRef.current) {
         dirtyRef.current = true;
+        setDirty(true);
         onChange?.(true);
       }
     },
@@ -102,6 +104,7 @@ function DocxEditor({
       const blob = await exportDoc();
       await onSave(blob);
       dirtyRef.current = false;
+      setDirty(false);
       onChange?.(false);
     } catch (err) {
       onError?.((err as Error).message || String(err));
@@ -139,12 +142,29 @@ function DocxEditor({
           onSave={onSave ? handleSave : undefined}
           onDownload={hideDownload ? undefined : handleDownload}
           saving={saving}
+          dirty={dirty}
           readOnly={readOnly}
         />
       )}
       <div css={{ flex: 1, minHeight: 0, position: 'relative' }}>
         {/* Syncfusion mounts its editor into this element. */}
-        <div ref={containerRef} css={{ width: '100%', height: '100%' }} />
+        <div
+          ref={containerRef}
+          css={{
+            width: '100%',
+            height: '100%',
+            // Syncfusion's status-bar page control renders the "Page" label,
+            // the number input, and "of N" with mismatched vertical alignment.
+            // Center them (scoped to this editor's DOM).
+            '& .e-de-ctnr-pagenumber': {
+              display: 'inline-flex',
+              alignItems: 'center'
+            },
+            '& .e-de-pagenumber-input, & .e-de-pagenumber-text': {
+              verticalAlign: 'middle'
+            }
+          }}
+        />
         {loading && !error && <div css={overlay}>Loading document…</div>}
         {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
       </div>
