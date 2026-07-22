@@ -1,6 +1,8 @@
 import {
   anchorFromOffset,
+  buildDocxIndexBlocks,
   createDocxEditorBridge,
+  firstMeaningfulLine,
   FULL_INVENTORY_BLOCK_LIMIT,
   readDocxSelection
 } from '../docxEditorBridge';
@@ -412,5 +414,107 @@ describe('atomic revision grouping (fix #3: content-loss guard)', () => {
     changes[1].reject(); // no-op after the group resolved
     expect(accepted.sort()).toEqual(['deletion', 'insertion']);
     expect(rejected).toEqual([]);
+  });
+});
+
+describe('firstMeaningfulLine', () => {
+  it('returns the first non-empty line, dropping a leading tab column', () => {
+    expect(firstMeaningfulLine('\t\r\r\rTable of Contents\rAbout Us\t5\r')).toBe(
+      'Table of Contents'
+    );
+    expect(firstMeaningfulLine('About Us\t5')).toBe('About Us');
+    expect(firstMeaningfulLine('Single line')).toBe('Single line');
+  });
+
+  it('returns empty string for whitespace-only input', () => {
+    expect(firstMeaningfulLine('\t\r\r')).toBe('');
+    expect(firstMeaningfulLine('')).toBe('');
+  });
+});
+
+describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
+  // The model copies the whole inventory block into `expect`; it spans \r and
+  // can never findAll verbatim. The guard must probe the first meaningful line.
+  const MULTI_PARA_EXPECT =
+    '\t\r\r\rTable of Contents\rAbout Us\t5\rOur Mission\t5\r';
+
+  it('does NOT fail stale_anchor on a multi-paragraph expect when the anchor is live', async () => {
+    // 'Table of Contents' (first meaningful line) present, and the find target.
+    const { editor, searchResults } = makeEditor(SFDT, [
+      'Table of Contents',
+      'About Us'
+    ]);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: 's0:b0',
+          find: 'About Us',
+          replace: 'About The Hilb Group',
+          expect: MULTI_PARA_EXPECT
+        }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
+    expect(searchResults.replaceAll).toHaveBeenCalledWith('About The Hilb Group');
+  });
+
+  it('still fails stale_anchor when the anchored first line is genuinely gone', async () => {
+    // First meaningful line of expect not present -> content shifted/changed.
+    const { editor, searchResults } = makeEditor(SFDT, ['About Us']);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: 's0:b0',
+          find: 'About Us',
+          replace: 'X',
+          expect: 'Vanished Heading\rsome body text\r'
+        }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
+    expect(searchResults.replaceAll).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildDocxIndexBlocks (fix #4a: index inventory)', () => {
+  it('builds text-carrying blocks (paragraphs + table cells), skipping empties', () => {
+    const doc = {
+      sec: [
+        {
+          b: [
+            { pf: { sty: 'Heading 1' }, i: [{ tlp: 'Premium Summary' }] },
+            { i: [{ tlp: '' }] }, // empty paragraph - skipped
+            {
+              r: [
+                {
+                  c: [
+                    { b: [{ i: [{ tlp: 'Premium: $2,691' }] }] },
+                    { b: [{ i: [{ tlp: '' }] }] } // empty cell - skipped
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const editor = { serialize: () => JSON.stringify(doc) };
+    const blocks = buildDocxIndexBlocks(editor);
+    expect(blocks.map((b) => b.text)).toEqual([
+      'Premium Summary',
+      'Premium: $2,691'
+    ]);
+    expect(blocks.map((b) => b.anchor)).toEqual(['s0:b0', 's0:b2:r0:c0:b0']);
+    expect(blocks[1].kind).toBe('table_cell');
+    expect(blocks[0].format).toMatchObject({ styleName: 'Heading 1' });
+  });
+
+  it('returns [] when the document cannot be read', () => {
+    expect(buildDocxIndexBlocks({ serialize: () => 42 as any })).toEqual([]);
+    expect(buildDocxIndexBlocks(undefined)).toEqual([]);
   });
 });

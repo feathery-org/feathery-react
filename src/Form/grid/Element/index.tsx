@@ -63,7 +63,9 @@ const Element = ({ node: el, form }: any) => {
     featheryContext,
     assistantClient,
     syncfusion,
-    _internalId
+    _internalId,
+    assistantEnabled,
+    assistantBaseUrl
   } = form;
 
   const readOnly =
@@ -317,6 +319,8 @@ const Element = ({ node: el, form }: any) => {
             serviceUrl={syncfusion?.service_url}
             licenseKey={syncfusion?.license_key}
             instanceId={_internalId}
+            assistantEnabled={assistantEnabled}
+            assistantBaseUrl={assistantBaseUrl}
             onSave={(blob: any) => {
               clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               changeValue(Promise.resolve(blob), el, index);

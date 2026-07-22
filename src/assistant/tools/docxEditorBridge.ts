@@ -19,6 +19,20 @@ export const SELECTION_TEXT_LIMIT = 500;
 
 const err = (error: string, message: string) => ({ ok: false, error, message });
 
+// The first meaningful line of a (possibly multi-paragraph) `expect` string:
+// split on paragraph/line marks, drop any leading tab-delimited page-number
+// column (e.g. a ToC "About Us\t5"), and return the first non-empty piece.
+// SyncFusion's findAll cannot match text spanning paragraph marks (\r), so a
+// whole-block `expect` (which the model routinely copies from inventory) must
+// be reduced to a single anchored line before it can serve as a CAS guard.
+export const firstMeaningfulLine = (s: string): string => {
+  for (const raw of String(s ?? '').split(/[\r\n]/)) {
+    const line = raw.split('\t')[0].trim();
+    if (line) return line;
+  }
+  return '';
+};
+
 // Strip the trailing offset from a SyncFusion hierarchical index to get the
 // block anchor. "0;3;5" -> "0;3"; a table cell "0;2;0;1;0;4" -> "0;2;0;1;0".
 // Mirrors feathery-frontend EnvelopeAssistant's anchorFromOffset.
@@ -190,6 +204,33 @@ const buildOutline = (flat: FlatBlock[]) => {
   return { sections };
 };
 
+export type DocIndexBlock = {
+  anchor: string;
+  kind: string;
+  text: string;
+  format?: Record<string, any>;
+};
+
+// Build the block inventory to POST to /assistant/document-index (Contract C):
+// every addressable block (paragraphs + table cells) that carries text. Empty
+// blocks are skipped - they embed nothing and only bloat the index.
+export const buildDocxIndexBlocks = (editor: any): DocIndexBlock[] => {
+  const doc = readDocument(editor);
+  if (!doc) return [];
+  return flattenBlocks(doc)
+    .map((f) => f.entry)
+    .filter((e) => (e.text ?? '').trim().length > 0)
+    .map((e) => {
+      const block: DocIndexBlock = {
+        anchor: e.anchor,
+        kind: e.kind,
+        text: e.text
+      };
+      if (e.format) block.format = e.format;
+      return block;
+    });
+};
+
 // --- atomic revision grouping (content-loss guard) -------------------------
 //
 // Under track changes a replace is authored as TWO revisions: a Deletion of the
@@ -339,12 +380,17 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
         if (typeof query !== 'string' || !query) {
           throw new Error('replace_text requires a non-empty find/text.');
         }
-        // Compare-and-swap guard: if `expect` is set, the expected text must
-        // still be present, else the anchor is stale and we do not write.
+        // Compare-and-swap guard: if `expect` is set, the anchored content must
+        // still be present, else the anchor is stale and we do not write. The
+        // model routinely copies a whole (multi-paragraph) inventory block into
+        // `expect`; that can't be matched verbatim (it spans \r), so probe with
+        // the first meaningful line of `expect`, falling back to `find` itself.
+        // Only the true "content is gone" case throws stale_anchor.
         if (typeof op.expect === 'string' && op.expect) {
-          editor.search?.findAll?.(op.expect);
+          const probe = firstMeaningfulLine(op.expect) || query;
+          editor.search?.findAll?.(probe);
           if (!(editor.search?.searchResults?.length > 0)) {
-            const e: any = new Error(`Expected text not found: ${op.expect}`);
+            const e: any = new Error(`Expected text not found: ${probe}`);
             e.code = 'stale_anchor';
             throw e;
           }

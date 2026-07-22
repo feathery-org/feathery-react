@@ -3011,6 +3011,17 @@ function Form({
     }
   }
 
+  // Base URL for the assistant proxy (chat + document-index share it). Only
+  // meaningful when Assist is enabled on this form; guarded so a missing/invalid
+  // API_URL (e.g. in tests) can't throw during an ordinary render.
+  const assistantBaseUrl = (() => {
+    try {
+      return `${new URL(API_URL).origin}/agent/assistant/`;
+    } catch {
+      return undefined;
+    }
+  })();
+
   const form = {
     userProgress,
     curDepth,
@@ -3046,7 +3057,10 @@ function Form({
     assistantClient: internalState[_internalId]?.assistantClient,
     // Form instance id so fields (e.g. docx_editor) can register runtime
     // handles into per-form registries the assistant reads back.
-    _internalId
+    _internalId,
+    // Assist context for the docx_editor field's document indexing (CRACK #4a).
+    assistantEnabled: !!formSettings.assistantEnabled,
+    assistantBaseUrl
   };
 
   // If form was completed in a previous session and edits are disabled,
@@ -3168,10 +3182,10 @@ function Form({
               : 20
           }
         />
-        {formSettings.assistantEnabled && (
+        {formSettings.assistantEnabled && assistantBaseUrl && (
           <AssistantChat
             instanceId={_internalId}
-            baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
+            baseUrl={assistantBaseUrl}
             getTargets={getAssistantTargets}
             getSelection={getAssistantSelection}
             bottom={

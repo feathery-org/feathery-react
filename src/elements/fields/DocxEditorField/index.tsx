@@ -7,6 +7,7 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docxEditorRegistry';
+import { useDocxDocumentIndex } from '../../../assistant/tools/documentIndex';
 
 // Form field wrapper around the standalone DocxEditor. Its value is the edited
 // .docx (stored like a file field). `serviceUrl`/`licenseKey` are injected by
@@ -27,6 +28,11 @@ const DocxEditorField = ({
   instanceId,
   // Optional passthrough for hosts that want the live editor directly.
   onEditorReady,
+  // Assist context (from the dispatcher): when Assist is enabled, the mounted
+  // document is indexed for semantic search via the generated_document id we
+  // emit as the assistant target (the docx servar id).
+  assistantEnabled = false,
+  assistantBaseUrl,
   elementProps = {},
   children
 }: any) => {
@@ -41,6 +47,7 @@ const DocxEditorField = ({
     licenseKey || envCfg.licenseKey || meta.license_key;
   const [source, setSource] = useState<DocxSource | undefined>(undefined);
   const [editor, setEditor] = useState<any>(null);
+  const [ready, setReady] = useState(false);
 
   // Register the mounted DocumentEditor so the Robin assistant's docx bridge
   // (getDocumentInventory/applyDocumentEdits) can act on this field's editor.
@@ -50,6 +57,18 @@ const DocxEditorField = ({
     registerDocxEditor(instanceId, editor);
     return () => unregisterDocxEditor(instanceId, editor);
   }, [editor, instanceId]);
+
+  // Index the document for semantic search once it loads (Contract C / CRACK
+  // #4a), keyed by the generated_document id (the docx servar id) we emit as the
+  // assistant target so searchGeneratedDocument can mount in-form.
+  const generatedDocumentId = servar.id ?? servar.key;
+  const { reindexDebounced } = useDocxDocumentIndex({
+    editor,
+    ready,
+    enabled: !!assistantEnabled,
+    baseUrl: assistantBaseUrl,
+    generatedDocumentId
+  });
 
   // Resolve the current value (File / Promise<File>) into bytes for the editor.
   // Falls back to a configured template URL, else opens a blank document.
@@ -120,6 +139,11 @@ const DocxEditorField = ({
         hideDownload={!!meta.hide_download}
         fileName={servar.key}
         onSave={(blob: Blob) => onSave?.(blob)}
+        onReady={() => setReady(true)}
+        onChange={(dirty: boolean) => {
+          // Re-index (debounced) after edits so semantic search stays fresh.
+          if (dirty) reindexDebounced();
+        }}
         onEditorReady={(ed: any) => {
           setEditor(ed);
           onEditorReady?.(ed);
