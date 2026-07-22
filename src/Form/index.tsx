@@ -2756,6 +2756,14 @@ function Form({
             break;
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
+          if (action.view_draft) {
+            // Tell any mounted document-editor container to reload the freshly
+            // generated envelope (needed when the editor is on the same step as
+            // the button; a different-step editor loads it on mount).
+            featheryWindow().dispatchEvent(
+              new CustomEvent('feathery-docx-editor-refresh')
+            );
+          }
           const envAction = action.envelope_action;
           if (!envAction) {
             // Sign files

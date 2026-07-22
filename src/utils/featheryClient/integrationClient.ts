@@ -487,6 +487,23 @@ export default class IntegrationClient {
     });
   }
 
+  // The current (reused) envelope for this submission + document, loaded by the
+  // in-form document editor container. Returns {id, file, type, signed} or {}.
+  getCurrentEnvelope(documentId: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      document_id: documentId
+    });
+    const url = `${API_URL}document/current-envelope/?${params}`;
+    return this._fetch(url, {}, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
   sendDocusignEnvelope({
     documents,
     libraryDocuments,

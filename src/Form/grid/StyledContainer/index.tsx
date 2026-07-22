@@ -18,6 +18,7 @@ import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
+import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
 
 export type StyledContainerProps = PropsWithChildren & {
@@ -120,6 +121,16 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
             overflow: 'auto',
             width: '100%'
           }}
+        />
+      );
+    }
+
+    if (node.properties.document_editor) {
+      children.push(
+        <DocumentEditorContainer
+          key={`docx:${node.properties.document_editor_document || 'none'}`}
+          documentId={node.properties.document_editor_document}
+          editMode={editMode}
         />
       );
     }
