@@ -181,7 +181,6 @@ export function getDefaultFieldValue(field: any) {
     case 'select':
     case 'signature':
     case 'file_upload':
-    case 'docx_editor':
       return null;
     case 'dropdown_multi':
     case 'button_group':
@@ -318,12 +317,9 @@ export const formatStepFields = (
   > = {};
   fields.forEach((field: any) => {
     const servar = field.servar;
-    // Only use base64 for signature/docx if these values will be presented to the user
+    // Only use base64 for signature if these values will be presented to the user
     let value: any = fieldValues[servar.key];
-    if (
-      forUser &&
-      (servar.type === 'signature' || servar.type === 'docx_editor')
-    ) {
+    if (forUser && servar.type === 'signature') {
       value = servar.repeated
         ? value.map(_transformSignatureVal)
         : _transformSignatureVal(value);
