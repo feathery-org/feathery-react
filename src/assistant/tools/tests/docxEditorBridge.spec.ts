@@ -33,14 +33,44 @@ const SFDT = {
   ]
 };
 
-// Stateful editor stub. `present` is the set of strings findAll() will "find".
-// `captured.tracking` records enableTrackChanges at the moment a write happens
-// (global replaceAll OR an anchored selection insertText).
+const OFFSET = (anchor: string) => anchorToOffsetPath(anchor);
+
+// Stateful editor stub modeling SyncFusion search well enough to exercise the
+// block-scoped replace. findAll(q) derives matches from the doc's blocks (each
+// with a hierarchical `start` offset "<blockPath>;<charIdx>"), exposed via
+// searchResults.innerList; setting .index selects one; .replace(text) rewrites
+// the current match (recorded in replaceCalls). `present` lets the CAS guard's
+// findAll(probe) report a hit for text that isn't itself a block (e.g. a ToC
+// first line). `captured.tracking` records enableTrackChanges at write time.
+// selection.select / editor.insertText are provided but MUST NOT be used by the
+// (marker-safe) anchored path - the tests assert they stay uncalled.
 const makeEditor = (doc: any, present: string[] = []) => {
   const captured: { tracking?: boolean } = {};
-  const searchResults = {
+  const replaceCalls: Array<{ start?: string; text: string }> = [];
+  let matches: Array<{ start: string }> = [];
+
+  const deriveMatches = (q: string) => {
+    const out: Array<{ start: string }> = [];
+    for (const b of buildDocxIndexBlocks(editor)) {
+      const t = b.text ?? '';
+      let idx = t.indexOf(q);
+      while (q && idx >= 0) {
+        out.push({ start: `${OFFSET(b.anchor)};${idx}` });
+        idx = t.indexOf(q, idx + q.length);
+      }
+    }
+    return out;
+  };
+
+  const searchResults: any = {
     length: 0,
-    replaceAll: jest.fn(function (this: any) {
+    index: -1,
+    innerList: [] as Array<{ start: string }>,
+    replace: jest.fn(function (text: string) {
+      captured.tracking = editor.enableTrackChanges;
+      replaceCalls.push({ start: matches[searchResults.index]?.start, text });
+    }),
+    replaceAll: jest.fn(function () {
       captured.tracking = editor.enableTrackChanges;
     })
   };
@@ -49,12 +79,14 @@ const makeEditor = (doc: any, present: string[] = []) => {
     serialize: () => JSON.stringify(doc),
     search: {
       findAll: jest.fn((q: string) => {
-        searchResults.length = present.includes(q) ? 1 : 0;
+        matches = deriveMatches(q);
+        searchResults.innerList = matches;
+        searchResults.length = matches.length || (present.includes(q) ? 1 : 0);
+        searchResults.index = -1;
       }),
       searchResults
     },
-    // Anchored-replace surface: select a block range, then insertText rewrites it.
-    selection: { select: jest.fn() },
+    selection: { select: jest.fn(), startOffset: undefined },
     editor: {
       insertText: jest.fn(function () {
         captured.tracking = editor.enableTrackChanges;
@@ -63,7 +95,7 @@ const makeEditor = (doc: any, present: string[] = []) => {
     revisions: { acceptAll: jest.fn() },
     editorHistory: { undo: jest.fn(), redo: jest.fn() }
   };
-  return { editor, captured, searchResults };
+  return { editor, captured, searchResults, replaceCalls };
 };
 
 describe('createDocxEditorBridge - getDocumentInventory', () => {
@@ -165,8 +197,8 @@ describe('createDocxEditorBridge - getDocumentInventory', () => {
 });
 
 describe('createDocxEditorBridge - applyDocumentEdits', () => {
-  it('applies an anchored replace as a scoped tracked change and restores tracking', async () => {
-    const { editor, captured, searchResults } = makeEditor(SFDT, [
+  it('applies an anchored replace via scoped search-replace and restores tracking', async () => {
+    const { editor, captured, searchResults, replaceCalls } = makeEditor(SFDT, [
       'Quote: $5,500'
     ]);
     const bridge = createDocxEditorBridge(() => editor);
@@ -184,18 +216,20 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
     expect(res.results).toEqual([
       { anchor: 's0:b1', op: 'replace_text', ok: true }
     ]);
-    // Anchored path: select the block range + rewrite only that block, NOT a
-    // global replaceAll.
-    expect(editor.selection.select).toHaveBeenCalledWith('0;1;0', '0;1;13');
-    expect(editor.editor.insertText).toHaveBeenCalledWith('Quote: $6,000');
+    // Uses SyncFusion's search (marker-safe match sizing) scoped to the block -
+    // NOT a manually-computed selection range or a global replaceAll.
+    expect(replaceCalls).toEqual([{ start: '0;1;0', text: 'Quote: $6,000' }]);
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
+    expect(editor.selection.select).not.toHaveBeenCalled();
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
     // Ran with track-changes ON, restored to the prior value (false) after.
     expect(captured.tracking).toBe(true);
     expect(editor.enableTrackChanges).toBe(false);
   });
 
   it('fails a replace_text with a stale expect guard without writing', async () => {
-    const { editor, searchResults } = makeEditor(SFDT, []); // expect not present
+    // `expect`'s content is no longer in the document -> the anchor is stale.
+    const { editor, searchResults } = makeEditor(SFDT, []);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
@@ -204,13 +238,13 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
           anchor: 's0:b1',
           find: 'Quote: $5,500',
           replace: 'X',
-          expect: 'Quote: $5,500'
+          expect: 'Stale Quote: $4,000' // absent from the doc
         }
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
-    expect(editor.editor.insertText).not.toHaveBeenCalled();
+    expect(searchResults.replace).not.toHaveBeenCalled();
   });
 
   it('reports not_found when the query is absent', async () => {
@@ -455,7 +489,7 @@ describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
 
   it('does NOT fail stale_anchor on a multi-paragraph expect when the anchor is live', async () => {
     // 'Table of Contents' (first meaningful line of expect) present for the guard.
-    const { editor, searchResults } = makeEditor(SFDT, ['Table of Contents']);
+    const { editor, replaceCalls } = makeEditor(SFDT, ['Table of Contents']);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
@@ -469,7 +503,7 @@ describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
-    expect(editor.editor.insertText).toHaveBeenCalledWith('Quote: $6,000');
+    expect(replaceCalls).toEqual([{ start: '0;1;0', text: 'Quote: $6,000' }]);
   });
 
   it('still fails stale_anchor when the anchored first line is genuinely gone', async () => {
@@ -488,8 +522,8 @@ describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
+    expect(searchResults.replace).not.toHaveBeenCalled();
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
-    expect(editor.editor.insertText).not.toHaveBeenCalled();
   });
 });
 
@@ -558,7 +592,7 @@ describe('replace_text anchor scoping (precision fix: no global over-apply)', ()
   };
 
   it('anchored replace rewrites ONLY the target block, not every occurrence', async () => {
-    const { editor, searchResults } = makeEditor(DOC);
+    const { editor, searchResults, replaceCalls } = makeEditor(DOC);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
@@ -566,12 +600,12 @@ describe('replace_text anchor scoping (precision fix: no global over-apply)', ()
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: true, anchor: 's0:b0' });
-    // Selects only block b0's range and rewrites just that block.
-    expect(editor.selection.select).toHaveBeenCalledWith('0;0;0', '0;0;11');
-    expect(editor.editor.insertText).toHaveBeenCalledTimes(1);
-    expect(editor.editor.insertText).toHaveBeenCalledWith('Our Purpose');
-    // The global replace-all path (which would hit BOTH occurrences) is not used.
+    // Only the b0 match ('0;0;...') is replaced; the identical b2 occurrence
+    // ('0;2;...') is left alone. No global replaceAll, no offset-select.
+    expect(replaceCalls).toEqual([{ start: '0;0;0', text: 'Our Purpose' }]);
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
+    expect(editor.selection.select).not.toHaveBeenCalled();
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
   });
 
   it('unanchored replace stays global (bulk asks rewrite every occurrence)', async () => {
@@ -583,8 +617,7 @@ describe('replace_text anchor scoping (precision fix: no global over-apply)', ()
     expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
     expect(searchResults.replaceAll).toHaveBeenCalledWith('Our Purpose');
     // No block scoping when no anchor is given.
-    expect(editor.selection.select).not.toHaveBeenCalled();
-    expect(editor.editor.insertText).not.toHaveBeenCalled();
+    expect(searchResults.replace).not.toHaveBeenCalled();
   });
 
   it('anchored replace errors not_found when the phrase is absent from that block', async () => {
@@ -597,12 +630,12 @@ describe('replace_text anchor scoping (precision fix: no global over-apply)', ()
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: false, error: 'not_found' });
-    expect(editor.editor.insertText).not.toHaveBeenCalled();
+    expect(searchResults.replace).not.toHaveBeenCalled();
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
   });
 
   it('anchored replace errors stale_anchor for an unknown block anchor', async () => {
-    const { editor } = makeEditor(DOC);
+    const { editor, searchResults } = makeEditor(DOC);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
@@ -610,6 +643,100 @@ describe('replace_text anchor scoping (precision fix: no global over-apply)', ()
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
+    expect(searchResults.replace).not.toHaveBeenCalled();
+  });
+});
+
+describe('replace_text on a ToC-bookmark-target heading (truncation regression)', () => {
+  // The "Our Purposeon" bug: a heading that is a ToC target has zero-width
+  // BOOKMARK markers around its text ([bkt,bkt,text,bkt,bkt]) which occupy
+  // SyncFusion offsets. A range derived from the flattened text length (11)
+  // undershot the true end offset (13) and deleted only "Our Missi". The fix
+  // uses search (marker-aware) so the WHOLE match is replaced regardless of
+  // markers, and never derives a selection range from text length.
+  const bookmarkHeading = () => ({
+    sections: [
+      {
+        blocks: [
+          {
+            paragraphFormat: { styleName: 'Heading 1' },
+            inlines: [
+              { bookmarkType: 0, name: '_Toc1' }, // BookmarkStart (zero-width)
+              { bookmarkType: 1, name: '_Toc1' }, // BookmarkEnd   (zero-width)
+              { text: 'Our Mission' },
+              { bookmarkType: 0, name: '_Toc2' },
+              { bookmarkType: 1, name: '_Toc2' }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  it('flattens the heading text past the markers and replaces the FULL phrase', async () => {
+    const doc = bookmarkHeading();
+    // Sanity: markers contribute no characters to the flattened text.
+    const [block] = buildDocxIndexBlocks({ serialize: () => JSON.stringify(doc) });
+    expect(block.text).toBe('Our Mission');
+
+    const { editor, replaceCalls } = makeEditor(doc);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        { op: 'replace_text', anchor: 's0:b0', find: 'Our Mission', replace: 'Our Purpose' }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, anchor: 's0:b0' });
+    // Whole phrase replaced via search - NO offset-length select (which would
+    // have truncated to "Our Missi" and left "on").
+    expect(replaceCalls).toEqual([{ start: '0;0;0', text: 'Our Purpose' }]);
+    expect(editor.selection.select).not.toHaveBeenCalled();
     expect(editor.editor.insertText).not.toHaveBeenCalled();
+  });
+
+  it('passes the exact replacement regardless of length (longer or shorter)', async () => {
+    for (const replacement of ['Our Purpose And Vision', 'Aim']) {
+      const { editor, replaceCalls } = makeEditor(bookmarkHeading());
+      const bridge = createDocxEditorBridge(() => editor);
+      const res: any = await bridge.applyDocumentEdits!({
+        edits: [
+          { op: 'replace_text', anchor: 's0:b0', find: 'Our Mission', replace: replacement }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true });
+      // Search replaces the whole match with the exact replacement - no
+      // truncation on a longer replacement, no overrun on a shorter one.
+      expect(replaceCalls).toEqual([{ start: '0;0;0', text: replacement }]);
+    }
+  });
+
+  it('replaces a match at the very end of a block (no trailing fragment)', async () => {
+    // "...ends with Our Mission" - phrase sits at the block end, mark after it.
+    const doc = {
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                { text: 'This section ends with Our Mission' },
+                { bookmarkType: 0, name: '_b' },
+                { bookmarkType: 1, name: '_b' }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const { editor, replaceCalls } = makeEditor(doc);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        { op: 'replace_text', anchor: 's0:b0', find: 'Our Mission', replace: 'Our Purpose' }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true });
+    // Match start is at char offset 23 within the block; the full phrase (not a
+    // truncated prefix) is what the search replaces.
+    expect(replaceCalls).toEqual([{ start: '0;0;23', text: 'Our Purpose' }]);
   });
 });

@@ -31,6 +31,29 @@ export const anchorToOffsetPath = (anchor: string): string =>
     .filter((seg) => seg !== '')
     .join(';');
 
+// The start offset (SyncFusion hierarchical string, e.g. "2;2;2") of the i-th
+// search result, used to decide which block a match lives in. Prefer the
+// result's own `start` when it's a string; otherwise navigate to it and read
+// the live selection start. Returns undefined when neither is available.
+export const searchMatchStart = (
+  editor: any,
+  results: any,
+  i: number
+): string | undefined => {
+  const item =
+    results?.innerList?.[i] ??
+    (typeof results?.get === 'function' ? results.get(i) : undefined);
+  const s = item?.start;
+  if (typeof s === 'string') return s;
+  try {
+    results.index = i;
+  } catch {
+    /* setting index unsupported */
+  }
+  const sel = editor?.selection?.startOffset;
+  return typeof sel === 'string' ? sel : undefined;
+};
+
 // The first meaningful line of a (possibly multi-paragraph) `expect` string:
 // split on paragraph/line marks, drop any leading tab-delimited page-number
 // column (e.g. a ToC "About Us\t5"), and return the first non-empty piece.
@@ -410,8 +433,17 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
 
         // Anchored replace: scope the rewrite to the single block named by
         // op.anchor so a targeted phrase rename does NOT become a global
-        // replace-all. Select the block's text range and rewrite only that
-        // block's occurrences; occurrences elsewhere are untouched.
+        // replace-all - and do it via SyncFusion's search engine, NOT a
+        // manually-computed selection range.
+        //
+        // Root cause of the earlier "Our Purposeon" truncation: a range built
+        // as [path;0 .. path;{flattenedTextLength}] undershoots whenever the
+        // block carries zero-width inline markers (a ToC-target heading has
+        // BookmarkStart/BookmarkEnd around the text: [bkt,bkt,text,bkt,bkt]),
+        // because those markers occupy SyncFusion offset positions but add no
+        // characters to the flattened text - so the delete stopped short and
+        // left a fragment. search.findAll sizes each match correctly regardless
+        // of markers; we just restrict which matches get replaced to this block.
         if (typeof op.anchor === 'string' && op.anchor) {
           const doc = readDocument(editor);
           const target = doc
@@ -422,22 +454,45 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
             e.code = 'stale_anchor';
             throw e;
           }
-          const liveText = target.entry.text ?? '';
-          if (liveText.indexOf(query) < 0) {
+          if ((target.entry.text ?? '').indexOf(query) < 0) {
             const e: any = new Error(
               `Text not found at anchor ${op.anchor}: ${query}`
             );
             e.code = 'not_found';
             throw e;
           }
+
           const path = anchorToOffsetPath(op.anchor);
-          // Select the whole block (0 .. text length) and overwrite it with the
-          // phrase-substituted text - replaces every occurrence within this
-          // block only. (Whole-block rewrite; intra-block character formatting
-          // outside the phrase is not individually preserved.)
-          editor.selection?.select?.(`${path};0`, `${path};${liveText.length}`);
-          const newText = liveText.split(query).join(replacement);
-          editor.editor?.insertText?.(newText);
+          editor.search?.findAll?.(query);
+          const results = editor.search?.searchResults;
+          const total = results?.length ?? 0;
+          const inBlock: number[] = [];
+          for (let i = 0; i < total; i++) {
+            const start = searchMatchStart(editor, results, i);
+            if (typeof start === 'string' && start.indexOf(`${path};`) === 0) {
+              inBlock.push(i);
+            }
+          }
+          if (inBlock.length === 0) {
+            const e: any = new Error(
+              `Text not found at anchor ${op.anchor}: ${query}`
+            );
+            e.code = 'not_found';
+            throw e;
+          }
+          if (typeof results.replace !== 'function') {
+            // Never silently succeed: without a per-match replace we cannot
+            // scope the edit, so surface an error rather than corrupt/no-op.
+            const e: any = new Error('Editor search replace is unavailable.');
+            e.code = 'replace_unavailable';
+            throw e;
+          }
+          // Replace last -> first so replacing one match cannot shift the
+          // offsets of earlier (not-yet-replaced) matches.
+          for (let k = inBlock.length - 1; k >= 0; k--) {
+            results.index = inBlock[k];
+            results.replace(replacement);
+          }
           return;
         }
 
