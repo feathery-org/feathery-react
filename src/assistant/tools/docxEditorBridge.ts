@@ -19,6 +19,18 @@ export const SELECTION_TEXT_LIMIT = 500;
 
 const err = (error: string, message: string) => ({ ok: false, error, message });
 
+// Convert an inventory/flattenBlocks anchor into the SyncFusion hierarchical
+// offset path used by editor.selection.select. flattenBlocks emits paragraphs
+// as `s{si}:b{bi}` and table cells as `s{si}:b{bi}:r{ri}:c{ci}:b{cbi}`; strip
+// the letter prefixes and join the numeric segments with ';' -> `0;0` /
+// `0;1;0;0;0`. Tolerant of an already-`;`-formatted anchor.
+export const anchorToOffsetPath = (anchor: string): string =>
+  String(anchor ?? '')
+    .split(':')
+    .map((seg) => seg.replace(/[a-z]/gi, ''))
+    .filter((seg) => seg !== '')
+    .join(';');
+
 // The first meaningful line of a (possibly multi-paragraph) `expect` string:
 // split on paragraph/line marks, drop any leading tab-delimited page-number
 // column (e.g. a ToC "About Us\t5"), and return the first non-empty piece.
@@ -395,6 +407,42 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
             throw e;
           }
         }
+
+        // Anchored replace: scope the rewrite to the single block named by
+        // op.anchor so a targeted phrase rename does NOT become a global
+        // replace-all. Select the block's text range and rewrite only that
+        // block's occurrences; occurrences elsewhere are untouched.
+        if (typeof op.anchor === 'string' && op.anchor) {
+          const doc = readDocument(editor);
+          const target = doc
+            ? flattenBlocks(doc).find((f) => f.anchor === op.anchor)
+            : undefined;
+          if (!target) {
+            const e: any = new Error(`Anchor not found: ${op.anchor}`);
+            e.code = 'stale_anchor';
+            throw e;
+          }
+          const liveText = target.entry.text ?? '';
+          if (liveText.indexOf(query) < 0) {
+            const e: any = new Error(
+              `Text not found at anchor ${op.anchor}: ${query}`
+            );
+            e.code = 'not_found';
+            throw e;
+          }
+          const path = anchorToOffsetPath(op.anchor);
+          // Select the whole block (0 .. text length) and overwrite it with the
+          // phrase-substituted text - replaces every occurrence within this
+          // block only. (Whole-block rewrite; intra-block character formatting
+          // outside the phrase is not individually preserved.)
+          editor.selection?.select?.(`${path};0`, `${path};${liveText.length}`);
+          const newText = liveText.split(query).join(replacement);
+          editor.editor?.insertText?.(newText);
+          return;
+        }
+
+        // Unanchored replace: global replace-all across the document. Bulk asks
+        // ("change every premium") depend on this whole-document behavior.
         editor.search?.findAll?.(query);
         if (!(editor.search?.searchResults?.length > 0)) {
           const e: any = new Error(`Text not found: ${query}`);

@@ -1,5 +1,6 @@
 import {
   anchorFromOffset,
+  anchorToOffsetPath,
   buildDocxIndexBlocks,
   createDocxEditorBridge,
   firstMeaningfulLine,
@@ -33,6 +34,8 @@ const SFDT = {
 };
 
 // Stateful editor stub. `present` is the set of strings findAll() will "find".
+// `captured.tracking` records enableTrackChanges at the moment a write happens
+// (global replaceAll OR an anchored selection insertText).
 const makeEditor = (doc: any, present: string[] = []) => {
   const captured: { tracking?: boolean } = {};
   const searchResults = {
@@ -49,6 +52,13 @@ const makeEditor = (doc: any, present: string[] = []) => {
         searchResults.length = present.includes(q) ? 1 : 0;
       }),
       searchResults
+    },
+    // Anchored-replace surface: select a block range, then insertText rewrites it.
+    selection: { select: jest.fn() },
+    editor: {
+      insertText: jest.fn(function () {
+        captured.tracking = editor.enableTrackChanges;
+      })
     },
     revisions: { acceptAll: jest.fn() },
     editorHistory: { undo: jest.fn(), redo: jest.fn() }
@@ -155,7 +165,7 @@ describe('createDocxEditorBridge - getDocumentInventory', () => {
 });
 
 describe('createDocxEditorBridge - applyDocumentEdits', () => {
-  it('applies a replace_text op as a tracked change and restores tracking', async () => {
+  it('applies an anchored replace as a scoped tracked change and restores tracking', async () => {
     const { editor, captured, searchResults } = makeEditor(SFDT, [
       'Quote: $5,500'
     ]);
@@ -164,7 +174,7 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
       edits: [
         {
           op: 'replace_text',
-          anchor: 's0:b1',
+          anchor: 's0:b1', // the "Quote: $5,500" block
           find: 'Quote: $5,500',
           replace: 'Quote: $6,000',
           expect: 'Quote: $5,500'
@@ -174,7 +184,11 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
     expect(res.results).toEqual([
       { anchor: 's0:b1', op: 'replace_text', ok: true }
     ]);
-    expect(searchResults.replaceAll).toHaveBeenCalledWith('Quote: $6,000');
+    // Anchored path: select the block range + rewrite only that block, NOT a
+    // global replaceAll.
+    expect(editor.selection.select).toHaveBeenCalledWith('0;1;0', '0;1;13');
+    expect(editor.editor.insertText).toHaveBeenCalledWith('Quote: $6,000');
+    expect(searchResults.replaceAll).not.toHaveBeenCalled();
     // Ran with track-changes ON, restored to the prior value (false) after.
     expect(captured.tracking).toBe(true);
     expect(editor.enableTrackChanges).toBe(false);
@@ -196,6 +210,7 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
     });
     expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
   });
 
   it('reports not_found when the query is absent', async () => {
@@ -439,37 +454,34 @@ describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
     '\t\r\r\rTable of Contents\rAbout Us\t5\rOur Mission\t5\r';
 
   it('does NOT fail stale_anchor on a multi-paragraph expect when the anchor is live', async () => {
-    // 'Table of Contents' (first meaningful line) present, and the find target.
-    const { editor, searchResults } = makeEditor(SFDT, [
-      'Table of Contents',
-      'About Us'
-    ]);
+    // 'Table of Contents' (first meaningful line of expect) present for the guard.
+    const { editor, searchResults } = makeEditor(SFDT, ['Table of Contents']);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
         {
           op: 'replace_text',
-          anchor: 's0:b0',
-          find: 'About Us',
-          replace: 'About The Hilb Group',
+          anchor: 's0:b1', // the "Quote: $5,500" block (contains the find)
+          find: 'Quote: $5,500',
+          replace: 'Quote: $6,000',
           expect: MULTI_PARA_EXPECT
         }
       ]
     });
     expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
-    expect(searchResults.replaceAll).toHaveBeenCalledWith('About The Hilb Group');
+    expect(editor.editor.insertText).toHaveBeenCalledWith('Quote: $6,000');
   });
 
   it('still fails stale_anchor when the anchored first line is genuinely gone', async () => {
     // First meaningful line of expect not present -> content shifted/changed.
-    const { editor, searchResults } = makeEditor(SFDT, ['About Us']);
+    const { editor, searchResults } = makeEditor(SFDT, ['Quote: $5,500']);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
         {
           op: 'replace_text',
-          anchor: 's0:b0',
-          find: 'About Us',
+          anchor: 's0:b1',
+          find: 'Quote: $5,500',
           replace: 'X',
           expect: 'Vanished Heading\rsome body text\r'
         }
@@ -477,6 +489,7 @@ describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
     });
     expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
     expect(searchResults.replaceAll).not.toHaveBeenCalled();
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
   });
 });
 
@@ -516,5 +529,87 @@ describe('buildDocxIndexBlocks (fix #4a: index inventory)', () => {
   it('returns [] when the document cannot be read', () => {
     expect(buildDocxIndexBlocks({ serialize: () => 42 as any })).toEqual([]);
     expect(buildDocxIndexBlocks(undefined)).toEqual([]);
+  });
+});
+
+describe('anchorToOffsetPath', () => {
+  it('converts flattenBlocks anchors to SyncFusion offset paths', () => {
+    expect(anchorToOffsetPath('s0:b0')).toBe('0;0');
+    expect(anchorToOffsetPath('s2:b7')).toBe('2;7');
+    expect(anchorToOffsetPath('s0:b1:r0:c1:b0')).toBe('0;1;0;1;0');
+  });
+  it('is tolerant of an already-semicolon-formatted anchor', () => {
+    expect(anchorToOffsetPath('0;3')).toBe('0;3');
+  });
+});
+
+describe('replace_text anchor scoping (precision fix: no global over-apply)', () => {
+  // "Our Mission" appears in TWO heading blocks (b0 and b2).
+  const DOC = {
+    sections: [
+      {
+        blocks: [
+          { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'Our Mission' }] },
+          { inlines: [{ text: 'Body text about the topic' }] },
+          { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'Our Mission' }] }
+        ]
+      }
+    ]
+  };
+
+  it('anchored replace rewrites ONLY the target block, not every occurrence', async () => {
+    const { editor, searchResults } = makeEditor(DOC);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        { op: 'replace_text', anchor: 's0:b0', find: 'Our Mission', replace: 'Our Purpose' }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, anchor: 's0:b0' });
+    // Selects only block b0's range and rewrites just that block.
+    expect(editor.selection.select).toHaveBeenCalledWith('0;0;0', '0;0;11');
+    expect(editor.editor.insertText).toHaveBeenCalledTimes(1);
+    expect(editor.editor.insertText).toHaveBeenCalledWith('Our Purpose');
+    // The global replace-all path (which would hit BOTH occurrences) is not used.
+    expect(searchResults.replaceAll).not.toHaveBeenCalled();
+  });
+
+  it('unanchored replace stays global (bulk asks rewrite every occurrence)', async () => {
+    const { editor, searchResults } = makeEditor(DOC, ['Our Mission']);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [{ op: 'replace_text', find: 'Our Mission', replace: 'Our Purpose' }]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
+    expect(searchResults.replaceAll).toHaveBeenCalledWith('Our Purpose');
+    // No block scoping when no anchor is given.
+    expect(editor.selection.select).not.toHaveBeenCalled();
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
+  });
+
+  it('anchored replace errors not_found when the phrase is absent from that block', async () => {
+    const { editor, searchResults } = makeEditor(DOC);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        // b1 does not contain "Our Mission"
+        { op: 'replace_text', anchor: 's0:b1', find: 'Our Mission', replace: 'Our Purpose' }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: false, error: 'not_found' });
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
+    expect(searchResults.replaceAll).not.toHaveBeenCalled();
+  });
+
+  it('anchored replace errors stale_anchor for an unknown block anchor', async () => {
+    const { editor } = makeEditor(DOC);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        { op: 'replace_text', anchor: 's9:b9', find: 'Our Mission', replace: 'x' }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
+    expect(editor.editor.insertText).not.toHaveBeenCalled();
   });
 });
