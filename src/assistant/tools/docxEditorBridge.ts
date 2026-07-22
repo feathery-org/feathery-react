@@ -60,8 +60,14 @@ const inlineText = (inline: any): string => {
   const t = pick(inline, 'text', 'tlp');
   return typeof t === 'string' ? t : '';
 };
-const isTableBlock = (block: any): boolean =>
-  pick(block, 'rows', 'rw', 'cells') !== undefined;
+// Optimized-SFDT row key is 'r' (SyncFusion keywords.js: rowsProperty=['rows','r']).
+// The live editor ALWAYS serializes optimized SFDT, so probing only 'rw' walked
+// every table as one empty paragraph - tables invisible to inventory/search/edit.
+// 'rw' kept as a defensive probe.
+const getRows = (block: any): any[] | undefined => {
+  const rows = pick(block, 'rows', 'r', 'rw');
+  return Array.isArray(rows) ? rows : undefined;
+};
 
 type InventoryEntry = {
   anchor: string;
@@ -102,18 +108,43 @@ const headingLevel = (styleName: unknown): number | null => {
 type FlatBlock = { anchor: string; block: any; entry: InventoryEntry };
 
 // Flatten SFDT sections->blocks into a single reading-order list with stable
-// `s{sectionIdx}:b{blockIdx}` anchors shared by inventory reads and edits.
+// anchors shared by inventory reads and edits. Paragraphs get `s{si}:b{bi}`;
+// a table descends into rows->cells->cell-blocks, emitting each cell paragraph
+// as an addressable `table_cell` entry (`s{si}:b{bi}:r{ri}:c{ci}:b{cbi}`) so
+// table content is visible to inventory/search and editable via replace_text.
 const flattenBlocks = (doc: any): FlatBlock[] => {
   const out: FlatBlock[] = [];
   getSections(doc).forEach((sec: any, si: number) => {
     getBlocks(sec).forEach((block: any, bi: number) => {
+      const rows = getRows(block);
+      if (rows) {
+        rows.forEach((row: any, ri: number) => {
+          const cells: any[] = pick(row, 'cells', 'c') ?? [];
+          cells.forEach((cell: any, ci: number) => {
+            getBlocks(cell).forEach((cb: any, cbi: number) => {
+              const anchor = `s${si}:b${bi}:r${ri}:c${ci}:b${cbi}`;
+              out.push({
+                anchor,
+                block: cb,
+                entry: {
+                  anchor,
+                  kind: 'table_cell',
+                  text: blockText(cb),
+                  format: blockFormat(cb)
+                }
+              });
+            });
+          });
+        });
+        return;
+      }
       const anchor = `s${si}:b${bi}`;
       out.push({
         anchor,
         block,
         entry: {
           anchor,
-          kind: isTableBlock(block) ? 'table' : 'paragraph',
+          kind: 'paragraph',
           text: blockText(block),
           format: blockFormat(block)
         }
@@ -157,6 +188,75 @@ const buildOutline = (flat: FlatBlock[]) => {
     if (sections.length) sections[sections.length - 1].blockCount += 1;
   });
   return { sections };
+};
+
+// --- atomic revision grouping (content-loss guard) -------------------------
+//
+// Under track changes a replace is authored as TWO revisions: a Deletion of the
+// old run + an Insertion of the new run. Resolving them together is safe, but
+// resolving them individually per card in a contradictory order (reject the
+// insertion AND accept the deletion) deletes BOTH and the paragraph's content
+// is lost. Fix (ported from feathery-frontend fc02e5934): bind the revisions of
+// one logical edit into a group so the first per-card accept/reject cascades to
+// the whole group - the only two internally-consistent outcomes, neither of
+// which can empty the block.
+
+// Read the editor's current revisions as a plain array (order preserved).
+const snapshotRevisions = (editor: any): any[] => {
+  const col = editor?.revisions;
+  if (!col) return [];
+  if (Array.isArray(col.changes)) return col.changes.slice();
+  if (typeof col.length === 'number' && typeof col.get === 'function') {
+    const out: any[] = [];
+    for (let i = 0; i < col.length; i++) {
+      const rev = col.get(i);
+      if (rev) out.push(rev);
+    }
+    return out;
+  }
+  return [];
+};
+
+// Bind a set of revisions authored by ONE logical edit so per-card accept/reject
+// is all-or-nothing. The first accept/reject on any member resolves the whole
+// group; later clicks on resolved members are no-ops. Native handlers are
+// wrapped in try/catch so a stale-range throw on a later member cannot undo the
+// first member's result.
+const groupRevisionsAtomic = (group: any[]): void => {
+  if (group.length < 2) return;
+  const natives = group.map((rev) => ({
+    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
+    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined
+  }));
+  const state = { resolved: false };
+  const resolveAll = (isAccept: boolean) => {
+    if (state.resolved) return;
+    state.resolved = true;
+    for (const n of natives) {
+      const fn = isAccept ? n.accept : n.reject;
+      if (!fn) continue;
+      try {
+        fn();
+      } catch {
+        // A later member's range may be stale once the first resolved; the
+        // group's outcome is already consistent, so swallow and move on.
+      }
+    }
+  };
+  for (const rev of group) {
+    rev.accept = () => resolveAll(true);
+    rev.reject = () => resolveAll(false);
+  }
+};
+
+// Diff the revisions created by a single op (against a pre-op snapshot) and bind
+// them atomically. A no-op when the op added fewer than two revisions.
+const groupNewRevisions = (editor: any, before: any[]): void => {
+  const after = snapshotRevisions(editor);
+  if (after.length <= before.length) return;
+  const beforeSet = new Set(before);
+  const created = after.filter((rev) => !beforeSet.has(rev));
+  groupRevisionsAtomic(created);
 };
 
 export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
@@ -282,8 +382,12 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
 
     const results = edits.map((op: any) => {
       const base = { anchor: op?.anchor, op: op?.op };
+      const revsBefore = snapshotRevisions(editor);
       try {
         runOp(editor, op);
+        // Bind this op's delete+insert revisions so per-card accept/reject is
+        // all-or-nothing and cannot split one logical edit into content loss.
+        groupNewRevisions(editor, revsBefore);
         return { ...base, ok: true };
       } catch (e: any) {
         return { ...base, ok: false, error: e?.code ?? e?.message ?? 'error' };

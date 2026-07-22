@@ -258,3 +258,159 @@ describe('anchorFromOffset / readDocxSelection', () => {
     expect(sel?.isCollapsed).toBe(false);
   });
 });
+
+// Optimized SFDT (short keys) with a 2x2 table - row key 'r', cells 'c'.
+const TABLE_SFDT = {
+  sec: [
+    {
+      b: [
+        { i: [{ tlp: 'Above table' }] },
+        {
+          r: [
+            {
+              c: [
+                { b: [{ i: [{ tlp: 'Cell A1' }] }] },
+                { b: [{ i: [{ tlp: 'Cell B1' }] }] }
+              ]
+            },
+            {
+              c: [
+                { b: [{ i: [{ tlp: 'Cell A2' }] }] },
+                { b: [{ i: [{ tlp: 'Cell B2' }] }] }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+};
+
+describe('createDocxEditorBridge - table walk (fix #1: optimized row key)', () => {
+  it('enumerates table cells as addressable table_cell blocks', async () => {
+    const { editor } = makeEditor(TABLE_SFDT);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.getDocumentInventory!({ scope: 'full' });
+    // 1 paragraph above + 4 cells (would be 1 empty "table" block before the fix)
+    expect(res.inventory).toHaveLength(5);
+    expect(res.inventory[0]).toMatchObject({
+      anchor: 's0:b0',
+      kind: 'paragraph',
+      text: 'Above table'
+    });
+    const cells = res.inventory.slice(1);
+    expect(cells.map((c: any) => c.kind)).toEqual([
+      'table_cell',
+      'table_cell',
+      'table_cell',
+      'table_cell'
+    ]);
+    expect(cells.map((c: any) => c.text)).toEqual([
+      'Cell A1',
+      'Cell B1',
+      'Cell A2',
+      'Cell B2'
+    ]);
+    expect(cells.map((c: any) => c.anchor)).toEqual([
+      's0:b1:r0:c0:b0',
+      's0:b1:r0:c1:b0',
+      's0:b1:r1:c0:b0',
+      's0:b1:r1:c1:b0'
+    ]);
+  });
+
+  it('lets replace_text edit table-cell content (now that cells are visible)', async () => {
+    const { editor, searchResults } = makeEditor(TABLE_SFDT, ['Cell B2']);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [{ op: 'replace_text', find: 'Cell B2', replace: 'Edited B2' }]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
+    expect(searchResults.replaceAll).toHaveBeenCalledWith('Edited B2');
+  });
+});
+
+describe('styling ops never silently succeed (fix #2: verified absent)', () => {
+  it('returns an error (not a false ok) for set_char_format', async () => {
+    const { editor } = makeEditor(SFDT);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        { op: 'set_char_format' }, // empty
+        { op: 'set_char_format', bold: true } // with a field
+      ]
+    });
+    // The bridge does not implement styling setters, so they return
+    // unsupported_op - never a silent ok that makes Assist falsely say "Done".
+    expect(res.results[0]).toMatchObject({ ok: false });
+    expect(res.results[1]).toMatchObject({ ok: false });
+    expect(res.results.every((r: any) => r.ok === false)).toBe(true);
+  });
+});
+
+// Editor whose tracked replace authors a delete+insert revision pair, with a
+// per-revision accept/reject we can drive to reproduce the content-loss path.
+const makeRevisionEditor = () => {
+  const accepted: string[] = [];
+  const rejected: string[] = [];
+  const mkRev = (id: string) => ({
+    id,
+    accept() {
+      accepted.push((this as any).id);
+    },
+    reject() {
+      rejected.push((this as any).id);
+    }
+  });
+  const changes: any[] = [];
+  const searchResults = {
+    length: 0,
+    replaceAll: jest.fn(() => {
+      changes.push(mkRev('deletion'), mkRev('insertion'));
+    })
+  };
+  const editor: any = {
+    enableTrackChanges: false,
+    serialize: () => JSON.stringify(SFDT),
+    search: {
+      findAll: jest.fn(() => {
+        searchResults.length = 1;
+      }),
+      searchResults
+    },
+    revisions: { changes, acceptAll: jest.fn() }
+  };
+  return { editor, changes, accepted, rejected };
+};
+
+describe('atomic revision grouping (fix #3: content-loss guard)', () => {
+  it('groups a replace\'s delete+insert so a per-card reject rejects both (no split)', async () => {
+    const { editor, changes, accepted, rejected } = makeRevisionEditor();
+    const bridge = createDocxEditorBridge(() => editor);
+    await bridge.applyDocumentEdits!({
+      edits: [{ op: 'replace_text', find: 'x', replace: 'y' }]
+    });
+    expect(changes).toHaveLength(2);
+
+    // Contradictory per-card order: reject the insertion, then accept the
+    // deletion. Before the fix this drops BOTH runs (content loss). Grouped,
+    // the first action resolves the whole edit and the second is a no-op.
+    changes[1].reject(); // reject insertion
+    changes[0].accept(); // accept deletion (should be a no-op now)
+
+    expect(rejected.sort()).toEqual(['deletion', 'insertion']);
+    expect(accepted).toEqual([]);
+  });
+
+  it('accepting one member accepts the whole group', async () => {
+    const { editor, changes, accepted, rejected } = makeRevisionEditor();
+    const bridge = createDocxEditorBridge(() => editor);
+    await bridge.applyDocumentEdits!({
+      edits: [{ op: 'replace_text', find: 'x', replace: 'y' }]
+    });
+    changes[0].accept();
+    changes[1].reject(); // no-op after the group resolved
+    expect(accepted.sort()).toEqual(['deletion', 'insertion']);
+    expect(rejected).toEqual([]);
+  });
+});
