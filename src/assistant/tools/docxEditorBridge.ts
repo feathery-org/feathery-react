@@ -109,6 +109,15 @@ const inlineText = (inline: any): string => {
   const t = pick(inline, 'text', 'tlp');
   return typeof t === 'string' ? t : '';
 };
+
+// Field marker kind for an inline: 0 = field begin, 2 = field separator,
+// 1 = field end (SyncFusion fieldType; optimized short key 'ft'). Fields wrap a
+// ToC entry / HYPERLINK / PAGEREF as: begin, <field code>, separator,
+// <field result = visible text>, end.
+const fieldTypeOf = (inline: any): number | undefined => {
+  const v = pick(inline, 'fieldType', 'ft');
+  return typeof v === 'number' ? v : undefined;
+};
 // Optimized-SFDT row key is 'r' (SyncFusion keywords.js: rowsProperty=['rows','r']).
 // The live editor ALWAYS serializes optimized SFDT, so probing only 'rw' walked
 // every table as one empty paragraph - tables invisible to inventory/search/edit.
@@ -125,8 +134,31 @@ type InventoryEntry = {
   format?: Record<string, any>;
 };
 
-const blockText = (block: any): string =>
-  getInlines(block).map(inlineText).join('');
+// Visible text of a block. Field-aware: the text BETWEEN a field begin and its
+// separator is the field CODE (e.g. `HYPERLINK \l "_Toc.."`, `PAGEREF _Toc.. \h`)
+// and must NOT appear in the inventory - only the field RESULT (the rendered
+// text after the separator) is visible. Without this, a ToC entry's flattened
+// text is polluted with field code, which corrupts the inventory and makes the
+// `expect` CAS guard/first-line probe unmatchable (the ToC edit failed
+// stale_anchor). Non-field blocks concatenate all runs as before.
+const blockText = (block: any): string => {
+  let out = '';
+  let inFieldCode = false; // between field begin and separator
+  for (const inline of getInlines(block)) {
+    const ft = fieldTypeOf(inline);
+    if (ft === 0) {
+      inFieldCode = true; // field begin -> field code follows
+      continue;
+    }
+    if (ft === 2 || ft === 1) {
+      inFieldCode = false; // separator -> result follows; end -> field over
+      continue;
+    }
+    if (inFieldCode) continue; // drop field-code runs
+    out += inlineText(inline);
+  }
+  return out;
+};
 
 const blockFormat = (block: any): Record<string, any> => {
   const pf = getParaFormat(block);
@@ -419,13 +451,20 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
         // still be present, else the anchor is stale and we do not write. The
         // model routinely copies a whole (multi-paragraph) inventory block into
         // `expect`; that can't be matched verbatim (it spans \r), so probe with
-        // the first meaningful line of `expect`, falling back to `find` itself.
-        // Only the true "content is gone" case throws stale_anchor.
+        // the first meaningful line of `expect`. For field blocks (ToC/HYPERLINK)
+        // that first line can be unmatchable, so we also accept the `find`
+        // target still being present - only when NEITHER is found is the anchor
+        // truly stale.
         if (typeof op.expect === 'string' && op.expect) {
-          const probe = firstMeaningfulLine(op.expect) || query;
-          editor.search?.findAll?.(probe);
-          if (!(editor.search?.searchResults?.length > 0)) {
-            const e: any = new Error(`Expected text not found: ${probe}`);
+          const probes = [firstMeaningfulLine(op.expect), query].filter(
+            Boolean
+          );
+          const present = probes.some((p) => {
+            editor.search?.findAll?.(p);
+            return editor.search?.searchResults?.length > 0;
+          });
+          if (!present) {
+            const e: any = new Error(`Expected text not found: ${probes[0]}`);
             e.code = 'stale_anchor';
             throw e;
           }

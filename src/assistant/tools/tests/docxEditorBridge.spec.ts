@@ -227,24 +227,26 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
     expect(editor.enableTrackChanges).toBe(false);
   });
 
-  it('fails a replace_text with a stale expect guard without writing', async () => {
-    // `expect`'s content is no longer in the document -> the anchor is stale.
-    const { editor, searchResults } = makeEditor(SFDT, []);
+  it('a mismatched expect does not block the edit when find is still present', async () => {
+    // The whole-block `expect` no longer matches verbatim (field code / drift),
+    // but the precise `find` target is still there -> the guard must fall back
+    // to `find` and let the scoped edit proceed (this is what unblocks ToC /
+    // field-result edits) rather than throwing stale_anchor.
+    const { editor, replaceCalls } = makeEditor(SFDT, []);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
         {
           op: 'replace_text',
           anchor: 's0:b1',
-          find: 'Quote: $5,500',
-          replace: 'X',
-          expect: 'Stale Quote: $4,000' // absent from the doc
+          find: 'Quote: $5,500', // still present in the block
+          replace: 'Quote: $6,000',
+          expect: 'Stale Quote: $4,000' // no longer matches verbatim
         }
       ]
     });
-    expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
-    expect(searchResults.replaceAll).not.toHaveBeenCalled();
-    expect(searchResults.replace).not.toHaveBeenCalled();
+    expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
+    expect(replaceCalls).toEqual([{ start: '0;1;0', text: 'Quote: $6,000' }]);
   });
 
   it('reports not_found when the query is absent', async () => {
@@ -506,18 +508,19 @@ describe('replace_text expect guard (fix #3: paragraph-aware CAS)', () => {
     expect(replaceCalls).toEqual([{ start: '0;1;0', text: 'Quote: $6,000' }]);
   });
 
-  it('still fails stale_anchor when the anchored first line is genuinely gone', async () => {
-    // First meaningful line of expect not present -> content shifted/changed.
-    const { editor, searchResults } = makeEditor(SFDT, ['Quote: $5,500']);
+  it('still fails stale_anchor when neither the expect line nor find is present', async () => {
+    // Both the expect first line AND the find target are gone from the doc ->
+    // the anchor is genuinely stale.
+    const { editor, searchResults } = makeEditor(SFDT, []);
     const bridge = createDocxEditorBridge(() => editor);
     const res: any = await bridge.applyDocumentEdits!({
       edits: [
         {
           op: 'replace_text',
           anchor: 's0:b1',
-          find: 'Quote: $5,500',
+          find: 'Old Quote $4,000', // absent
           replace: 'X',
-          expect: 'Vanished Heading\rsome body text\r'
+          expect: 'Vanished Heading\rsome body text\r' // absent
         }
       ]
     });
@@ -738,5 +741,86 @@ describe('replace_text on a ToC-bookmark-target heading (truncation regression)'
     // Match start is at char offset 23 within the block; the full phrase (not a
     // truncated prefix) is what the search replaces.
     expect(replaceCalls).toEqual([{ start: '0;0;23', text: 'Our Purpose' }]);
+  });
+});
+
+describe('replace_text on a ToC / HYPERLINK field-result block', () => {
+  // A ToC entry is a field: [begin, <field code>, separator, <result text>, end].
+  // The visible text is the RESULT ("Our Mission  5"); the field CODE
+  // (HYPERLINK/PAGEREF) must never surface in the inventory.
+  const withToc = () => ({
+    sections: [
+      {
+        // s0 = the ToC
+        blocks: [
+          {
+            paragraphFormat: { styleName: 'TOC 1' },
+            inlines: [
+              { fieldType: 0, hasFieldEnd: true },
+              { text: ' HYPERLINK \\l "_Toc001" ' }, // field code (must be hidden)
+              { fieldType: 2 },
+              { text: 'Our Mission' }, // field RESULT (visible)
+              { text: '\t' },
+              { text: '5' },
+              { fieldType: 1 }
+            ]
+          }
+        ]
+      },
+      {
+        // s1 = the body heading the ToC points at
+        blocks: [
+          { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'Our Mission' }] }
+        ]
+      }
+    ]
+  });
+
+  it('flattens the field block to its RESULT text only (no field code)', () => {
+    const [tocEntry] = buildDocxIndexBlocks({
+      serialize: () => JSON.stringify(withToc())
+    });
+    expect(tocEntry.anchor).toBe('s0:b0');
+    expect(tocEntry.text).toBe('Our Mission\t5');
+    expect(tocEntry.text).not.toContain('HYPERLINK');
+  });
+
+  it('anchored replace updates the ToC entry display text (field result)', async () => {
+    const { editor, replaceCalls, searchResults } = makeEditor(withToc());
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: 's0:b0', // the ToC entry (field) block
+          find: 'Our Mission',
+          replace: 'Our Purpose',
+          expect: 'Our Mission\t5'
+        }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, anchor: 's0:b0' });
+    // The ToC entry's visible run is replaced (its match, start '0;0;...') and
+    // the identical heading occurrence in s1 is NOT touched by this op.
+    expect(replaceCalls).toEqual([{ start: '0;0;0', text: 'Our Purpose' }]);
+    expect(searchResults.replaceAll).not.toHaveBeenCalled();
+  });
+
+  it('no longer fails stale_anchor on a ToC field block', async () => {
+    const { editor } = makeEditor(withToc());
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: 's0:b0',
+          find: 'Our Mission',
+          replace: 'Our Purpose',
+          expect: 'Our Mission\t5'
+        }
+      ]
+    });
+    expect(res.results[0].ok).toBe(true);
+    expect(res.results[0].error).toBeUndefined();
   });
 });
