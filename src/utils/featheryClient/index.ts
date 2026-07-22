@@ -191,6 +191,10 @@ export default class FeatheryClient extends IntegrationClient {
       fileValue = servar.file_upload;
     } else if ('signature' in servar) {
       fileValue = servar.signature;
+    } else if ('docx_editor' in servar) {
+      // The edited .docx flows through as a Promise<Blob> (DocxEditor onSave ->
+      // changeValue), the same single-file shape as file_upload/signature.
+      fileValue = servar.docx_editor;
     }
 
     if (!fileValue) return null;
@@ -828,7 +832,9 @@ export default class FeatheryClient extends IntegrationClient {
     gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
-      ['file_upload', 'signature'].some((type) => type in servar);
+      ['file_upload', 'signature', 'docx_editor'].some(
+        (type) => type in servar
+      );
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 

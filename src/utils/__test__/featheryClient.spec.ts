@@ -799,3 +799,67 @@ describe('FeatheryClient - using api helpers', () => {
     });
   });
 });
+
+// CRACK #2: docx_editor must be treated as a file servar so the edited .docx
+// blob routes to the file-upload endpoint (not the JSON submit, which drops
+// the Blob) - otherwise edits never persist and reopen shows the template.
+describe('FeatheryClient - docx_editor file routing (CRACK #2 fix)', () => {
+  const formKey = 'formKey';
+  let client: FeatheryClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.fetch = jest.fn();
+    (initInfo as jest.Mock).mockReturnValue({
+      sdkKey: 'sdkKey',
+      userId: 'userId',
+      collaboratorId: 'collaboratorId'
+    });
+    client = new FeatheryClient(formKey);
+  });
+
+  it('_getFileValue reads the docx_editor Promise<Blob> value', async () => {
+    const blob = new Blob(['edited docx'], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    });
+    const result = await (client as any)._getFileValue({
+      key: 'proposal_doc',
+      docx_editor: Promise.resolve(blob)
+    });
+    expect(result).toBe(blob);
+  });
+
+  it('routes a docx_editor servar to _submitFileData, not _submitJSONData', async () => {
+    const blob = new Blob(['edited docx']);
+    const step = { key: 'Step 1', buttons: [], subgrids: [] };
+    const servars = [
+      { key: 'clientName', text_field: 'Acme' },
+      { key: 'proposal_doc', docx_editor: Promise.resolve(blob) }
+    ];
+
+    const submitFile = jest
+      .spyOn(client as any, '_submitFileData')
+      .mockResolvedValue(undefined);
+    const submitJSON = jest
+      .spyOn(client as any, '_submitJSONData')
+      .mockResolvedValue(undefined);
+    jest.spyOn(client as any, 'submitCustom').mockResolvedValue(undefined);
+    jest
+      .spyOn(client as any, 'handleInteraction')
+      .mockResolvedValue(undefined as any);
+
+    await client.submitStep(servars, step, false);
+
+    // The docx servar is uploaded via the file endpoint...
+    expect(submitFile).toHaveBeenCalledTimes(1);
+    expect(submitFile).toHaveBeenCalledWith(
+      expect.objectContaining({ key: 'proposal_doc' }),
+      'Step 1'
+    );
+    // ...and is excluded from the JSON submit (which can't carry a Blob).
+    expect(submitJSON).toHaveBeenCalledTimes(1);
+    const jsonServars = (submitJSON.mock.calls[0] as any)[0];
+    expect(jsonServars.map((s: any) => s.key)).toEqual(['clientName']);
+    expect(jsonServars.some((s: any) => 'docx_editor' in s)).toBe(false);
+  });
+});
