@@ -824,3 +824,57 @@ describe('replace_text on a ToC / HYPERLINK field-result block', () => {
     expect(res.results[0].error).toBeUndefined();
   });
 });
+
+describe('replace_text with a selection (semicolon) anchor', () => {
+  // Deictic "change this": readDocxSelection emits the SyncFusion offset form
+  // "sec;block" (e.g. "2;3"), NOT the flatten "s{n}:b{n}" form. The matcher must
+  // normalize both so the selection-anchored edit resolves (regression: it
+  // failed stale_anchor because only the flatten form was matched).
+  const DOC = {
+    sections: [
+      { blocks: [{ inlines: [{ text: 'section zero' }] }] },
+      { blocks: [{ inlines: [{ text: 'section one' }] }] },
+      {
+        blocks: [
+          { inlines: [{ text: 'alpha' }] },
+          { inlines: [{ text: 'beta' }] },
+          { inlines: [{ text: 'gamma' }] },
+          {
+            paragraphFormat: { styleName: 'Heading 1' },
+            inlines: [{ text: 'Our Mission' }]
+          } // flatten anchor s2:b3 == offset "2;3"
+        ]
+      }
+    ]
+  };
+
+  it('resolves the raw "2;3" offset anchor and applies the scoped replace', async () => {
+    const { editor, replaceCalls, searchResults } = makeEditor(DOC);
+    const bridge = createDocxEditorBridge(() => editor);
+    const res: any = await bridge.applyDocumentEdits!({
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '2;3', // selection-context anchor (semicolon form)
+          find: 'Our Mission',
+          replace: 'Our Purpose',
+          expect: 'Our Mission'
+        }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
+    expect(res.results[0].error).toBeUndefined();
+    expect(replaceCalls).toEqual([{ start: '2;3;0', text: 'Our Purpose' }]);
+    expect(searchResults.replaceAll).not.toHaveBeenCalled();
+  });
+
+  it('the anchor readDocxSelection produces matches the flatten block', () => {
+    // Selection startOffset "2;3;7" -> anchor "2;3", which the matcher canonicalizes
+    // to the same path as flatten "s2:b3".
+    const sel = readDocxSelection({
+      selection: { startOffset: '2;3;7', endOffset: '2;3;18', text: 'Our Mission' }
+    });
+    expect(sel?.anchor).toBe('2;3');
+    expect(anchorToOffsetPath(sel!.anchor)).toBe(anchorToOffsetPath('s2:b3'));
+  });
+});

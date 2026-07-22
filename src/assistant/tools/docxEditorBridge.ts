@@ -484,9 +484,19 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
         // left a fragment. search.findAll sizes each match correctly regardless
         // of markers; we just restrict which matches get replaced to this block.
         if (typeof op.anchor === 'string' && op.anchor) {
+          // Normalize the incoming anchor so ANY source resolves: the flatten
+          // form `s{n}:b{n}` (inventory / search-anchored / table cells) and
+          // the raw SyncFusion offset form `sec;block` (selection context, from
+          // readDocxSelection/anchorFromOffset for deictic "change this" edits)
+          // both canonicalize to the same offset path.
+          const path = anchorToOffsetPath(op.anchor);
           const doc = readDocument(editor);
           const target = doc
-            ? flattenBlocks(doc).find((f) => f.anchor === op.anchor)
+            ? flattenBlocks(doc).find(
+                (f) =>
+                  f.anchor === op.anchor ||
+                  anchorToOffsetPath(f.anchor) === path
+              )
             : undefined;
           if (!target) {
             const e: any = new Error(`Anchor not found: ${op.anchor}`);
@@ -501,7 +511,6 @@ export function createDocxEditorBridge(getEditor: () => any): DocxBridge {
             throw e;
           }
 
-          const path = anchorToOffsetPath(op.anchor);
           editor.search?.findAll?.(query);
           const results = editor.search?.searchResults;
           const total = results?.length ?? 0;
