@@ -25,7 +25,8 @@ type OPERATOR_CODE =
   | 'is_numerical'
   | 'is_text'
   | 'selections_include'
-  | 'selections_dont_include';
+  | 'selections_dont_include'
+  | 'equal_length';
 
 export type FieldValueType = {
   field_type: 'servar' | 'hidden';
@@ -86,6 +87,9 @@ const evalComparisonRule = (
   repeatIndex?: number | undefined,
   internalId?: string
 ): boolean => {
+  if (LENGTH_COMPARISONS.has(rule.comparison))
+    return evalLengthComparisonRule(rule);
+
   // flatten the right side values/fields into flat list of values
   const flatValues = rule.values.flatMap((value) => {
     if (value !== null && valueTypeIsField(value))
@@ -108,6 +112,27 @@ const evalComparisonRule = (
   });
   return COMPARISON_FUNCTIONS[rule.comparison](leftFieldValues, flatValues);
 };
+
+const LENGTH_COMPARISONS = new Set<OPERATOR_CODE>(['equal_length']);
+
+const arrayLength = (value: any): number => {
+  if (Array.isArray(value)) return value.length;
+  if (value === null || value === undefined || value === '') return 0;
+  return 1;
+};
+
+const evalLengthComparisonRule = (rule: ResolvedComparisonRule): boolean => {
+  const leftLength = arrayLength(fieldValues[rule.field_key]);
+  const targetLengths = rule.values.map((value) => {
+    if (value !== null && valueTypeIsField(value))
+      return arrayLength(fieldValues[value.field_key]);
+    if (Array.isArray(value)) return value.length;
+    const count = Number(value);
+    return Number.isNaN(count) ? null : count;
+  });
+  return COMPARISON_FUNCTIONS[rule.comparison](leftLength, targetLengths);
+};
+
 const getValuesAsArray = (
   key: string,
   repeatIndex?: number,
@@ -321,7 +346,11 @@ const COMPARISON_FUNCTIONS: {
   not_ends_with: (l, r) =>
     l.some((l: any) => everyRight((l, r) => !String(l).endsWith(r), l, r)),
   is_true: (l) => l.some((l: any) => Boolean(l)),
-  is_false: (l) => l.some((l: any) => !l)
+  is_false: (l) => l.some((l: any) => !l),
+  equal_length: (leftLength, targetLengths) =>
+    targetLengths.some(
+      (target: number | null) => target !== null && leftLength === target
+    )
 };
 
 function deepEquals(a: any, b: any): boolean {

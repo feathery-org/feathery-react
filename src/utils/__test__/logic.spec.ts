@@ -620,6 +620,48 @@ describe('logic', () => {
         setFieldValues(0);
         expect(evalComparisonRule(rule(op))).toBeTruthy();
       });
+
+      it('equal_length', () => {
+        const op = 'equal_length';
+
+        setFieldValues(['a', 'b', 'c']);
+        expect(evalComparisonRule(rule(op, '3'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, 3))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, '2'))).toBeFalsy();
+
+        setFieldValues(['a', 'b', 'c']);
+        expect(evalComparisonRule(rule(op, '2', '3'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, '1', '2'))).toBeFalsy();
+
+        setFieldValues([]);
+        expect(evalComparisonRule(rule(op, '0'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, '1'))).toBeFalsy();
+
+        setFieldValues('hello');
+        expect(evalComparisonRule(rule(op, '1'))).toBeTruthy();
+        setFieldValues('');
+        expect(evalComparisonRule(rule(op, '0'))).toBeTruthy();
+
+        setFieldValues(['a', 'b']);
+        expect(evalComparisonRule(rule(op, 'abc'))).toBeFalsy();
+
+        setFieldValues(['a', 'b']);
+        expect(evalComparisonRule(rule(op, ['x', 'y']))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, ['x', 'y', 'z']))).toBeFalsy();
+      });
+
+      it('equal_length (field to field)', () => {
+        const op = 'equal_length';
+
+        setFieldValuesLR([['a', 'b', 'c']], [['x', 'y', 'z']]);
+        expect(evalComparisonRule(rule(op, field()))).toBeTruthy();
+
+        setFieldValuesLR([['a', 'b', 'c']], [['x', 'y']]);
+        expect(evalComparisonRule(rule(op, field()))).toBeFalsy();
+
+        setFieldValuesLR([['a']], ['scalar']);
+        expect(evalComparisonRule(rule(op, field()))).toBeTruthy();
+      });
     });
   });
 });
