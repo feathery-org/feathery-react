@@ -28,7 +28,7 @@ describe('generateThreadTitle request shape', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe('https://api.test/threads/title/');
+    expect(url).toBe('https://api.test/agent/threads/title/');
     const body = JSON.parse(init.body);
 
     expect(body.message).toBe('hello there');
