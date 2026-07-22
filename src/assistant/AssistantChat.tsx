@@ -274,8 +274,15 @@ const AssistantChat = ({
     };
   }, [getJwt]);
 
+  // form_key drives backend form auth on the SDK surface, the session only
+  // resolves an account after validating against this form's auth settings
+  const formKey = !getJwt
+    ? getTargets().find((t) => t.type === 'panel')?.id
+    : undefined;
+
   const buildChatBody = (): Record<string, unknown> => {
     const body: Record<string, unknown> = {};
+    if (formKey) body.form_key = formKey;
     const targets = getTargets();
     if (targets.length > 0) body.targets = targets;
 
@@ -447,7 +454,8 @@ const AssistantChat = ({
         headers,
         currentThreadId,
         userText,
-        titleContext
+        titleContext,
+        formKey
       ).then((title) => {
         if (!title) return;
         setThreads((prev) =>
@@ -480,6 +488,7 @@ const AssistantChat = ({
             form.append('audio', audio, 'speech.wav');
             pendingAudioRef.current = null;
           }
+          if (formKey) form.append('form_key', formKey);
           res = await fetch(`${baseUrl}voice/turn/`, {
             method: 'POST',
             headers: headers(),
@@ -498,7 +507,7 @@ const AssistantChat = ({
             )
           );
           setActiveThreadId(threadId);
-          getThreadDetail(baseUrl, headers, threadId).then((t) => {
+          getThreadDetail(baseUrl, headers, threadId, formKey).then((t) => {
             if (t)
               setThreads((prev) =>
                 prev.map((thread) =>
@@ -697,7 +706,7 @@ const AssistantChat = ({
     handleDragOver,
     handleDragLeave,
     handleDrop
-  } = useChatAttachments({ activeChat, baseUrl, headers });
+  } = useChatAttachments({ activeChat, baseUrl, headers, formKey });
 
   const [attachmentPreview, setAttachmentPreview] =
     useState<AttachmentPreview | null>(null);
@@ -749,7 +758,7 @@ const AssistantChat = ({
   }, [status, pinToBottom]);
 
   const fetchThreads = useCallback(async () => {
-    const data = await getThreadList(baseUrl, headers);
+    const data = await getThreadList(baseUrl, headers, formKey);
     if (!data) return;
     setThreads((prev) => [
       ...data.map((d) => ({
@@ -758,7 +767,7 @@ const AssistantChat = ({
       })),
       ...prev.filter((p) => !data.find((d) => d.id === p.id))
     ]);
-  }, [headers, baseUrl]);
+  }, [headers, baseUrl, formKey]);
 
   useEffect(() => {
     if (isOpen) fetchThreads();
@@ -794,7 +803,7 @@ const AssistantChat = ({
       setIsDropdownOpen(false);
       return;
     }
-    const thread = await getThreadDetail(baseUrl, headers, id);
+    const thread = await getThreadDetail(baseUrl, headers, id, formKey);
     if (!thread) return;
     const chat = makeChat(id, thread.messages ?? [], thread.title);
     setThreads((prev) =>
@@ -808,7 +817,7 @@ const AssistantChat = ({
     e.stopPropagation();
     const thread = threads.find((t) => t.id === id);
     if (!thread?.isTemporary) {
-      await deleteThread(baseUrl, headers, id);
+      await deleteThread(baseUrl, headers, id, formKey);
     }
     setThreads((prev) => prev.filter((t) => t.id !== id));
     if (activeThreadId === id) handleNewThread();
