@@ -1,6 +1,8 @@
 import {
+  anchorFromOffset,
   createDocxEditorBridge,
-  FULL_INVENTORY_BLOCK_LIMIT
+  FULL_INVENTORY_BLOCK_LIMIT,
+  readDocxSelection
 } from '../docxEditorBridge';
 
 const SFDT = {
@@ -224,5 +226,35 @@ describe('createDocxEditorBridge - applyDocumentEdits', () => {
       ok: false,
       error: 'no_editor'
     });
+  });
+});
+
+describe('anchorFromOffset / readDocxSelection', () => {
+  it('strips the trailing offset segment to get the block anchor', () => {
+    expect(anchorFromOffset('0;3;5')).toBe('0;3');
+    expect(anchorFromOffset('0;2;0;1;0;4')).toBe('0;2;0;1;0');
+    expect(anchorFromOffset('0')).toBe('0');
+    expect(anchorFromOffset('')).toBe('');
+  });
+
+  it('returns null when there is no usable selection', () => {
+    expect(readDocxSelection(undefined)).toBeNull();
+    expect(readDocxSelection({})).toBeNull();
+    expect(readDocxSelection({ selection: {} })).toBeNull();
+    expect(readDocxSelection({ selection: { startOffset: 42 } })).toBeNull();
+  });
+
+  it('clamps selection text to 500 chars', () => {
+    const sel = readDocxSelection({
+      selection: {
+        startOffset: '0;1;0',
+        endOffset: '0;1;600',
+        isEmpty: false,
+        text: 'x'.repeat(600)
+      }
+    });
+    expect(sel?.anchor).toBe('0;1');
+    expect(sel?.text).toHaveLength(500);
+    expect(sel?.isCollapsed).toBe(false);
   });
 });

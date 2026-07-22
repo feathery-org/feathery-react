@@ -239,6 +239,10 @@ import type {
   AssistantLayoutState,
   AssistantStepSettings
 } from '../assistant/AssistantChat';
+import {
+  buildAssistantTargets,
+  readAssistantSelection
+} from './assistantTargets';
 import AssistantClient from '../assistant/AssistantClient';
 
 export * from './grid/StyledContainer';
@@ -852,12 +856,26 @@ function Form({
     [setRender, render]
   );
 
-  const getAssistantTargets = useCallback(() => {
-    const targets: { type: string; id: string }[] = [];
-    if (formId) targets.push({ type: 'panel', id: formId });
-    if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
-    return targets;
-  }, [formId]);
+  // Latest active step, read inside the assistant callbacks below without
+  // changing their identity (which would rebuild the chat transport per step).
+  const activeStepRef = useRef<any>(null);
+  activeStepRef.current = activeStep;
+
+  // panel/fuser targets plus an additive generated_document target when a
+  // docx_editor field is on the active step (so ai-services mounts the docx
+  // tools in fill mode). See buildAssistantTargets.
+  const getAssistantTargets = useCallback(
+    () =>
+      buildAssistantTargets(formId, initState.userId, activeStepRef.current),
+    [formId]
+  );
+
+  // Current editor selection for the form-mounted assistant (Contract E), read
+  // from the docx_editor field's registered editor. Mirrors EnvelopeAssistant.
+  const getAssistantSelection = useCallback(
+    () => readAssistantSelection(_internalId),
+    [_internalId]
+  );
 
   useEffect(() => {
     return () => {
@@ -3155,6 +3173,7 @@ function Form({
             instanceId={_internalId}
             baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
             getTargets={getAssistantTargets}
+            getSelection={getAssistantSelection}
             bottom={
               (formSettings.showBrand &&
               formSettings.brandPosition === 'bottom_right'

@@ -8,13 +8,40 @@
 // (serialize/search/editorHistory/revisions/enableTrackChanges). It tolerates
 // both full and optimized (abbreviated-key) SFDT so it survives version drift.
 
-import { DocxBridge } from './assistantToolDispatch';
+import { AssistantSelection, DocxBridge } from './assistantToolDispatch';
 
 // Over 800 blocks, `full` is refused so the model uses outline+section instead
 // (Contract A) and we never dump a huge doc into context.
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 
+// Mirror of EnvelopeAssistant's SELECTION_TEXT_LIMIT (Contract E: <=500 chars).
+export const SELECTION_TEXT_LIMIT = 500;
+
 const err = (error: string, message: string) => ({ ok: false, error, message });
+
+// Strip the trailing offset from a SyncFusion hierarchical index to get the
+// block anchor. "0;3;5" -> "0;3"; a table cell "0;2;0;1;0;4" -> "0;2;0;1;0".
+// Mirrors feathery-frontend EnvelopeAssistant's anchorFromOffset.
+export const anchorFromOffset = (offset: string): string => {
+  const parts = String(offset ?? '').split(';');
+  if (parts.length <= 1) return offset ?? '';
+  parts.pop();
+  return parts.join(';');
+};
+
+// Contract E selection context read from the live editor: current anchor +
+// <=500 chars + isCollapsed, or null when there's no usable selection. Mirrors
+// EnvelopeAssistant's readSelection so in-form selection behaves identically.
+export const readDocxSelection = (editor: any): AssistantSelection | null => {
+  const sel = editor?.selection;
+  if (!sel || typeof sel.startOffset !== 'string') return null;
+  const anchor = anchorFromOffset(sel.startOffset);
+  if (!anchor) return null;
+  const text = typeof sel.text === 'string' ? sel.text : '';
+  const isCollapsed =
+    sel.isEmpty != null ? !!sel.isEmpty : sel.startOffset === sel.endOffset;
+  return { anchor, text: text.slice(0, SELECTION_TEXT_LIMIT), isCollapsed };
+};
 
 // --- tolerant SFDT accessors (full key first, optimized short key fallback) --
 const pick = (obj: any, ...keys: string[]): any => {
