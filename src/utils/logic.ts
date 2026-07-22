@@ -26,7 +26,8 @@ type OPERATOR_CODE =
   | 'is_text'
   | 'selections_include'
   | 'selections_dont_include'
-  | 'equal_length';
+  | 'equal_length'
+  | 'not_equal_length';
 
 export type FieldValueType = {
   field_type: 'servar' | 'hidden';
@@ -113,7 +114,10 @@ const evalComparisonRule = (
   return COMPARISON_FUNCTIONS[rule.comparison](leftFieldValues, flatValues);
 };
 
-const LENGTH_COMPARISONS = new Set<OPERATOR_CODE>(['equal_length']);
+const LENGTH_COMPARISONS = new Set<OPERATOR_CODE>([
+  'equal_length',
+  'not_equal_length'
+]);
 
 const arrayLength = (value: any): number => {
   if (Array.isArray(value)) return value.length;
@@ -350,6 +354,10 @@ const COMPARISON_FUNCTIONS: {
   equal_length: (leftLength, targetLengths) =>
     targetLengths.some(
       (target: number | null) => target !== null && leftLength === target
+    ),
+  not_equal_length: (leftLength, targetLengths) =>
+    targetLengths.every(
+      (target: number | null) => target === null || leftLength !== target
     )
 };
 

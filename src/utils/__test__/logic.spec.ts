@@ -662,6 +662,29 @@ describe('logic', () => {
         setFieldValuesLR([['a']], ['scalar']);
         expect(evalComparisonRule(rule(op, field()))).toBeTruthy();
       });
+
+      it('not_equal_length', () => {
+        const op = 'not_equal_length';
+
+        setFieldValues(['a', 'b', 'c']);
+        expect(evalComparisonRule(rule(op, '2'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, '3'))).toBeFalsy();
+        expect(evalComparisonRule(rule(op, 3))).toBeFalsy();
+
+        setFieldValues(['a', 'b', 'c']);
+        expect(evalComparisonRule(rule(op, '1', '2'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, '2', '3'))).toBeFalsy();
+
+        setFieldValues([]);
+        expect(evalComparisonRule(rule(op, '1'))).toBeTruthy();
+        expect(evalComparisonRule(rule(op, '0'))).toBeFalsy();
+
+        setFieldValuesLR([['a', 'b']], [['x', 'y', 'z']]);
+        expect(evalComparisonRule(rule(op, field()))).toBeTruthy();
+
+        setFieldValuesLR([['a', 'b']], [['x', 'y']]);
+        expect(evalComparisonRule(rule(op, field()))).toBeFalsy();
+      });
     });
   });
 });

@@ -425,6 +425,10 @@ export default class Field {
   hasSameLengthAs(...values: ({ id: string } | string)[]): boolean {
     return this._executeLogic('equal_length', values);
   }
+
+  doesNotHaveSameLengthAs(...values: ({ id: string } | string)[]): boolean {
+    return this._executeLogic('not_equal_length', values);
+  }
 }
 
 export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {
