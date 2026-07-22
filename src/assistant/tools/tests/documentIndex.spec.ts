@@ -1,6 +1,9 @@
+import { act, renderHook } from '@testing-library/react';
 import {
   documentIndexHeaders,
-  postDocxDocumentIndex
+  INDEX_RETRY_MS,
+  postDocxDocumentIndex,
+  useDocxDocumentIndex
 } from '../documentIndex';
 
 jest.mock('../../../utils/init', () => ({
@@ -87,5 +90,77 @@ describe('postDocxDocumentIndex', () => {
         blocks: BLOCKS
       })
     ).rejects.toThrow(/document-index failed \(500\)/);
+  });
+});
+
+// A single populated block so buildDocxIndexBlocks yields content.
+const LOADED_SFDT = {
+  sections: [{ blocks: [{ inlines: [{ text: 'Premium: $2,691' }] }] }]
+};
+const BLANK_SFDT = { sections: [{ blocks: [] }] };
+
+describe('useDocxDocumentIndex - fires once the doc actually loads (rf1 gap)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    (global as any).fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    delete (global as any).fetch;
+  });
+
+  it('does not POST the blank editor, and DOES POST after the source loads', async () => {
+    // onReady fires first for the blank editor (its source loads async), so at
+    // ready-time serialize() is empty; it becomes populated a moment later.
+    let loaded = false;
+    const editor = {
+      serialize: () => JSON.stringify(loaded ? LOADED_SFDT : BLANK_SFDT)
+    };
+
+    renderHook(() =>
+      useDocxDocumentIndex({
+        editor,
+        ready: true, // onReady already fired (for the blank doc)
+        enabled: true,
+        baseUrl: 'https://api.test/agent/assistant/',
+        generatedDocumentId: 'servar-123',
+        getJwt: () => 'JWT'
+      })
+    );
+
+    // Blank doc -> no POST yet; the hook is retrying.
+    expect((global as any).fetch).not.toHaveBeenCalled();
+
+    // The real document finishes loading, then a retry tick fires.
+    loaded = true;
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_RETRY_MS);
+    });
+
+    const fetchMock = (global as any).fetch as jest.Mock;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.test/agent/assistant/document-index');
+    expect(init.headers.Authorization).toBe('Bearer JWT');
+    const body = JSON.parse(init.body);
+    expect(body.envelopeId).toBe('servar-123');
+    expect(body.blocks).toHaveLength(1);
+  });
+
+  it('never POSTs while Assist is disabled', async () => {
+    const editor = { serialize: () => JSON.stringify(LOADED_SFDT) };
+    renderHook(() =>
+      useDocxDocumentIndex({
+        editor,
+        ready: true,
+        enabled: false,
+        baseUrl: 'https://api.test/agent/assistant/',
+        generatedDocumentId: 'servar-123'
+      })
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_RETRY_MS * 3);
+    });
+    expect((global as any).fetch).not.toHaveBeenCalled();
   });
 });

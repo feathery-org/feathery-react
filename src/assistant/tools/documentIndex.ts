@@ -18,6 +18,16 @@ import { buildDocxIndexBlocks, DocIndexBlock } from './docxEditorBridge';
 // Re-post the index this long after the last edit (matches the envelope path).
 export const REINDEX_DEBOUNCE_MS = 5000;
 
+// The docx field's onReady fires FIRST for the blank editor (its source loads
+// asynchronously), then again once the real document opens. `ready` therefore
+// flips true while the editor is still empty, and its later re-fire doesn't
+// change the boolean - so a one-shot "index when ready" effect reads an empty
+// doc and never retries. Instead we retry building the inventory on a short
+// interval until content appears, so the initial index reliably fires once the
+// document has actually loaded.
+export const INDEX_RETRY_MS = 500;
+export const INDEX_MAX_ATTEMPTS = 20; // ~10s of headroom for a large doc
+
 // Same auth shape AssistantChat uses: a host JWT when supplied, else the SDK key
 // plus the session cookie.
 export const documentIndexHeaders = (
@@ -101,6 +111,7 @@ export function useDocxDocumentIndex({
   const [indexError, setIndexError] = useState<string | null>(null);
   const didInitial = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (
@@ -112,14 +123,37 @@ export function useDocxDocumentIndex({
       didInitial.current
     )
       return;
-    const blocks = buildDocxIndexBlocks(editor);
-    if (blocks.length === 0) return; // doc not populated yet - wait, don't POST []
-    didInitial.current = true;
-    setIndexing(true);
-    setIndexError(null);
-    postDocxDocumentIndex({ baseUrl, generatedDocumentId, blocks, getJwt })
-      .catch((e) => setIndexError(e?.message ?? 'indexing failed'))
-      .finally(() => setIndexing(false));
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const attempt = () => {
+      if (cancelled || didInitial.current) return;
+      const blocks = buildDocxIndexBlocks(editor);
+      if (blocks.length === 0) {
+        // Doc not populated yet (onReady fired for the still-blank editor).
+        // Retry until content loads instead of giving up - never POST [].
+        if (attempts++ < INDEX_MAX_ATTEMPTS) {
+          retryRef.current = setTimeout(attempt, INDEX_RETRY_MS);
+        }
+        return;
+      }
+      didInitial.current = true;
+      setIndexing(true);
+      setIndexError(null);
+      postDocxDocumentIndex({ baseUrl, generatedDocumentId, blocks, getJwt })
+        .catch((e) => setIndexError(e?.message ?? 'indexing failed'))
+        .finally(() => {
+          if (!cancelled) setIndexing(false);
+        });
+    };
+
+    attempt();
+
+    return () => {
+      cancelled = true;
+      if (retryRef.current) clearTimeout(retryRef.current);
+    };
   }, [enabled, editor, ready, baseUrl, generatedDocumentId, getJwt]);
 
   const reindexDebounced = useCallback(() => {
