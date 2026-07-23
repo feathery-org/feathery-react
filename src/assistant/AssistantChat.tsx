@@ -206,6 +206,20 @@ const mergeAssistantParts = (parts: any[]): AssistantChunk[] => {
   return chunks;
 };
 
+// Title seed from the first user message: its first text part, else a framed list of attached filenames
+const titleSeedFromMessage = (message: any): string | undefined => {
+  const parts: any[] = message?.parts ?? [];
+  const textPart = parts.find(
+    (p) => p?.type === 'text' && typeof p.text === 'string' && p.text.trim()
+  );
+  if (textPart) return textPart.text;
+  const names = parts
+    .filter((p) => p?.type === 'file')
+    .map((p) => p.filename)
+    .filter(Boolean);
+  return names.length ? `Attached file(s): ${names.join(', ')}` : undefined;
+};
+
 export type ResourceRef = { type: string; id: string };
 
 export type WorkflowAction = {
@@ -519,7 +533,9 @@ const AssistantChat = ({
           });
         }
         triggerTitle(
-          chat.messages.find((m: any) => m.role === 'user')?.parts?.[0]?.text
+          titleSeedFromMessage(
+            chat.messages.find((m: any) => m.role === 'user')
+          )
         );
         return res;
       }
