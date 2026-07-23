@@ -550,6 +550,21 @@ export default class IntegrationClient {
     });
   }
 
+  getDocusignBrands() {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      form_key: this.formKey
+    });
+    const url = `${API_URL}docusign/brands/?${params}`;
+    return this._fetch(url, {}, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
+    });
+  }
+
   updateDocusignEnvelope({
     envelopeId,
     status,

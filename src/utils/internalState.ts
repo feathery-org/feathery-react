@@ -158,6 +158,7 @@ export interface FormInternalState {
   updateDocusignEnvelope: (
     params: UpdateDocusignEnvelopeParams
   ) => Promise<any>;
+  getDocusignBrands: () => Promise<any>;
   getConfig: GetConfig;
 }
 
