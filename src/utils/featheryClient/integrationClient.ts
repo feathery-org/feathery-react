@@ -455,6 +455,40 @@ export default class IntegrationClient {
         ? 'sign'
         : 'fill';
 
+    if (action.view_draft) {
+      // In-form document editor: reuse + overwrite ONE envelope per
+      // (fuser, document). Sent as a separate synchronous request carrying
+      // reuse_existing so the normal generate flows below (which create a new
+      // envelope each time) stay unchanged — apiGenerateFormDocuments can't
+      // forward the flag.
+      const url = `${API_URL}document/form/generate/`;
+      const body: Record<string, any> = {
+        form_key: this.formKey,
+        fuser_key: userId,
+        documents: action.documents ?? [],
+        run_async: false,
+        envelope_action: envelopeAction,
+        reuse_existing: true
+      };
+      if (signer) body.signer_email = signer.toString();
+      return this._fetch(
+        url,
+        {
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          body: JSON.stringify(body)
+        },
+        false
+      ).then(async (response) => {
+        if (!response) return { status: 'error', message: 'No response' };
+        if (response.ok) return await response.json();
+        return {
+          status: 'error',
+          message: parseAPIError(await response.json())
+        };
+      });
+    }
+
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
