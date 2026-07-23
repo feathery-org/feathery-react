@@ -54,4 +54,31 @@ describe('shouldElementHide', () => {
     );
     expect(shouldElementHide(element(testRightSideField))).toBeFalsy();
   });
+
+  it('hides based on array length (equal_length)', () => {
+    const lengthElement = (rightValue: any) => ({
+      show_logic: false,
+      hide_ifs: [
+        {
+          field_type: 'servar',
+          comparison: 'equal_length',
+          index: 0,
+          field_id: 'blaa',
+          servar: 'blaa',
+          field_key: fieldKey,
+          values: [rightValue]
+        }
+      ]
+    });
+
+    Object.assign(fieldValues, fieldValuesLR([['a', 'b']], [['x', 'y']]));
+    expect(shouldElementHide(lengthElement(testRightSideField))).toBeTruthy();
+
+    Object.assign(fieldValues, fieldValuesLR([['a', 'b']], [['x', 'y', 'z']]));
+    expect(shouldElementHide(lengthElement(testRightSideField))).toBeFalsy();
+
+    Object.assign(fieldValues, newFieldValues(['a', 'b']));
+    expect(shouldElementHide(lengthElement('2'))).toBeTruthy();
+    expect(shouldElementHide(lengthElement('3'))).toBeFalsy();
+  });
 });
