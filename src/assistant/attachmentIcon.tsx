@@ -65,9 +65,6 @@ export function getAttachmentIcon(file: {
   const mime = file.type ?? '';
   const ext = file.name?.split('.').pop()?.toLowerCase() ?? '';
 
-  if (mime === 'application/pdf' || ext === 'pdf') {
-    return { Icon: PdfIcon, color: '#fb7185' };
-  }
   if (
     mime === 'application/msword' ||
     mime ===
@@ -102,6 +99,10 @@ export function getAttachmentIcon(file: {
   }
   if (mime === 'text/csv' || ext === 'csv') {
     return { Icon: CsvIcon, color: '#2dd4bf' };
+  }
+  // PDF check last so a converted Office doc (mediaType application/pdf) keys off its original extension
+  if (mime === 'application/pdf' || ext === 'pdf') {
+    return { Icon: PdfIcon, color: '#fb7185' };
   }
 
   return null;

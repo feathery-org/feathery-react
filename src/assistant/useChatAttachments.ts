@@ -89,7 +89,8 @@ export function useChatAttachments({
         if (isTerminalStatus(uploaded.processingStatus)) return;
 
         // Upload auto-dispatches embedding server-side, poll until terminal,
-        // converted docs re-stamp filename/mediaType/url to the canonical PDF
+        // converted docs re-stamp mediaType/url to the canonical PDF but keep
+        // the original filename for display
         const processed = await pollAttachmentStatus(
           uploaded.id,
           baseUrl,
@@ -101,7 +102,6 @@ export function useChatAttachments({
         if (controller.signal.aborted) return;
         stamp({
           uploadedUrl: processed.url ?? uploaded.url,
-          uploadedFilename: processed.filename,
           uploadedMediaType: processed.mediaType,
           processingStatus: processed.processingStatus
         });
