@@ -1237,6 +1237,7 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
+        getDocusignBrands: () => client.getDocusignBrands(),
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,
