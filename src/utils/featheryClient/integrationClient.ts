@@ -454,40 +454,7 @@ export default class IntegrationClient {
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
-
-    if (action.view_draft) {
-      // In-form document editor: reuse + overwrite ONE envelope per
-      // (fuser, document). Sent as a separate synchronous request carrying
-      // reuse_existing so the normal generate flows below (which create a new
-      // envelope each time) stay unchanged — apiGenerateFormDocuments can't
-      // forward the flag.
-      const url = `${API_URL}document/form/generate/`;
-      const body: Record<string, any> = {
-        form_key: this.formKey,
-        fuser_key: userId,
-        documents: action.documents ?? [],
-        run_async: false,
-        envelope_action: envelopeAction,
-        reuse_existing: true
-      };
-      if (signer) body.signer_email = signer.toString();
-      return this._fetch(
-        url,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          method: 'POST',
-          body: JSON.stringify(body)
-        },
-        false
-      ).then(async (response) => {
-        if (!response) return { status: 'error', message: 'No response' };
-        if (response.ok) return await response.json();
-        return {
-          status: 'error',
-          message: parseAPIError(await response.json())
-        };
-      });
-    }
+    const runAsync = action.run_async ?? true;
 
     return await apiGenerateFormDocuments({
       sdkKey,
@@ -496,7 +463,7 @@ export default class IntegrationClient {
       userId,
       signerEmail: signer?.toString() ?? '',
       repeatable: action.repeatable ?? false,
-      runAsync: action.run_async ?? true,
+      runAsync,
       envelopeAction,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
@@ -521,8 +488,8 @@ export default class IntegrationClient {
     });
   }
 
-  // The current (reused) envelope for this submission + document, loaded by the
-  // in-form document editor container. Returns {id, file, type, signed} or {}.
+  // The newest envelope for this submission + document, loaded by the in-form
+  // document editor container. Returns {id, file, type, signed} or {}.
   getCurrentEnvelope(documentId: string) {
     const { userId } = initInfo();
     const params = encodeGetParams({

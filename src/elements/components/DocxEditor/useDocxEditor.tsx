@@ -21,7 +21,9 @@ function loadStyles() {
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
   const res = await fetch(source.url);
-  if (!res.ok) throw new Error(`Failed to fetch document (${res.status})`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch document (${res.status})`);
+  }
   return res.arrayBuffer();
 }
 
@@ -47,6 +49,8 @@ interface Props {
   licenseKey?: string;
   serviceUrl?: string;
   readOnly?: boolean;
+  /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
+  openNonce?: number;
   onReady?: () => void;
   /** Hands the live DocumentEditor instance to the host (e.g. the AI assistant
    *  drives the document directly through this — no iframe boundary). */
@@ -72,6 +76,7 @@ export function useDocxEditor({
   licenseKey,
   serviceUrl,
   readOnly,
+  openNonce = 0,
   onReady,
   onEditorReady,
   onDirty,
@@ -79,13 +84,21 @@ export function useDocxEditor({
 }: Props): Result {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerInstRef = useRef<any>(null);
+  // Ignore Syncfusion contentChange while we are programmatically opening a
+  // document — those events fire during load/destroy and must not mark dirty
+  // or kick off host re-renders mid-flight.
+  const ignoreContentChangeRef = useRef(true);
+  const onDirtyRef = useRef(onDirty);
+  onDirtyRef.current = onDirty;
   const [editor, setEditor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isReadOnly = !!readOnly;
 
   const fail = useCallback(
     (err: unknown) => {
       const msg = (err as Error)?.message || String(err);
+      console.error('Feathery document editor error:', msg);
       setError(msg);
       setLoading(false);
       onError?.(msg);
@@ -93,8 +106,10 @@ export function useDocxEditor({
     [onError]
   );
 
-  // Load the CDN assets and instantiate the editor. Recreated only if the
-  // editor's config (license/service/readOnly) changes.
+  // Load the CDN assets and instantiate the editor. Recreated only if license
+  // or serviceUrl changes — NOT on readOnly toggles (those update in place).
+  // Recreating mid-fetch/open destroys Syncfusion while it still holds null
+  // internal state and surfaces as "Cannot convert undefined or null to object".
   useEffect(() => {
     let cancelled = false;
     let instance: any = null;
@@ -103,6 +118,7 @@ export function useDocxEditor({
       try {
         setLoading(true);
         setError(null);
+        ignoreContentChangeRef.current = true;
         loadStyles();
         await dynamicImport(EJ2_SCRIPT_URL);
         const ej = await waitForEj();
@@ -122,17 +138,37 @@ export function useDocxEditor({
           serviceUrl: serviceUrl || '',
           height: '100%'
         });
-        instance.appendTo(containerRef.current);
+        // Wait until Syncfusion finishes creating the inner DocumentEditor —
+        // opening a doc before `created` leaves a blank default document.
+        await new Promise<void>((resolve, reject) => {
+          const t = featheryWindow().setTimeout(
+            () => reject(new Error('Document editor failed to create')),
+            15000
+          );
+          instance.addEventListener('created', () => {
+            featheryWindow().clearTimeout(t);
+            resolve();
+          });
+          instance.appendTo(containerRef.current);
+        });
+        if (cancelled) return;
         containerInstRef.current = instance;
 
         const ed = instance.documentEditor;
-        ed.isReadOnly = !!readOnly;
-        ed.addEventListener('contentChange', () => onDirty?.());
+        if (!ed) {
+          throw new Error('Document editor instance missing after create');
+        }
+        ed.isReadOnly = isReadOnly;
+        ed.addEventListener('contentChange', () => {
+          if (ignoreContentChangeRef.current) return;
+          onDirtyRef.current?.();
+        });
         setEditor(ed);
         onEditorReady?.(ed);
 
         // With no source the editor opens a blank document immediately.
         if (!source) {
+          ignoreContentChangeRef.current = false;
           setLoading(false);
           onReady?.();
         }
@@ -143,6 +179,8 @@ export function useDocxEditor({
 
     return () => {
       cancelled = true;
+      ignoreContentChangeRef.current = true;
+      setEditor(null);
       try {
         instance?.destroy?.();
       } catch {
@@ -150,40 +188,56 @@ export function useDocxEditor({
       }
       containerInstRef.current = null;
     };
-  }, [licenseKey, serviceUrl, readOnly]);
+    // `source` / `isReadOnly` intentionally omitted — open and readOnly are
+    // handled by sibling effects so we never tear down mid-fetch.
+  }, [licenseKey, serviceUrl]);
+
+  // Apply read-only in place; do not recreate the editor.
+  useEffect(() => {
+    if (!editor) return;
+    editor.isReadOnly = isReadOnly;
+  }, [editor, isReadOnly]);
 
   // Open / re-open the source document. Syncfusion's open() takes SFDT text —
   // NOT a .docx blob — so a .docx is converted server-side first: POST it to
-  // `${serviceUrl}Import` (multipart field "files"); the response is the SFDT
-  // (the service's `{"sfdt": "..."}` wrapper, which open() accepts as-is).
+  // `${serviceUrl}Import` (multipart field "files"); the response is SFDT,
+  // sometimes wrapped in `{"sfdt": "..."}` depending on the service build.
+  // Depend on the URL/buffer identity (not the wrapper object) so parent
+  // re-renders that recreate `{ url }` don't cancel an in-flight open.
+  const sourceUrl = source && 'url' in source ? source.url : undefined;
+  const sourceBuffer = source && 'buffer' in source ? source.buffer : undefined;
+
   useEffect(() => {
-    if (!editor || !source) return;
+    if (!editor || (!sourceUrl && !sourceBuffer)) return;
     let cancelled = false;
+    const openSource: DocxSource = sourceBuffer
+      ? { buffer: sourceBuffer }
+      : { url: sourceUrl as string };
 
     (async () => {
       try {
+        ignoreContentChangeRef.current = true;
         setLoading(true);
         setError(null);
-        const buffer = await resolveBuffer(source);
+        const buffer = await resolveBuffer(openSource);
         if (cancelled) return;
         if (!serviceUrl) {
           throw new Error('serviceUrl is required to open a .docx');
         }
-        const importUrl = serviceUrl.replace(/\/+$/, '') + '/Import';
-        const form = new FormData();
-        // The filename extension tells the service the input format.
-        form.append('files', new Blob([buffer]), 'document.docx');
-        const res = await fetch(importUrl, { method: 'POST', body: form });
-        if (cancelled) return;
-        if (!res.ok) {
-          throw new Error(
-            `DOCX import failed (HTTP ${res.status}) at ${importUrl}`
-          );
+        // Match the dashboard DocxPage path: hand Syncfusion the .docx blob
+        // and let it convert via serviceUrl. Manual Import→SFDT was returning
+        // optimized/base64 SFDT that open() often left as a blank document.
+        const blob = new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        const liveEditor = containerInstRef.current?.documentEditor ?? editor;
+        if (typeof liveEditor.openAsync === 'function') {
+          await liveEditor.openAsync(blob);
+        } else {
+          liveEditor.open(blob);
         }
-        // Pass the raw response body to open() (matches Syncfusion's sample
-        // `open(responseText)`); do NOT unwrap to the inner string.
-        editor.open(await res.text());
         if (cancelled) return;
+        ignoreContentChangeRef.current = false;
         setLoading(false);
         onReady?.();
       } catch (err) {
@@ -193,9 +247,9 @@ export function useDocxEditor({
 
     return () => {
       cancelled = true;
+      ignoreContentChangeRef.current = true;
     };
-  }, [editor, source, serviceUrl]);
-
+  }, [editor, sourceUrl, sourceBuffer, serviceUrl, openNonce]);
   const exportDoc = useCallback((): Promise<Blob> => {
     if (!editor) return Promise.reject(new Error('Editor is not ready'));
     return editor.saveAsBlob('Docx');

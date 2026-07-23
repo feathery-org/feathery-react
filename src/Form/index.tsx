@@ -2757,16 +2757,34 @@ function Form({
             break;
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
-          if (action.view_draft) {
+          const shouldLoadDraft =
+            action.view_draft || action.view_draft_container;
+          if (shouldLoadDraft) {
+            const refreshDetail = {
+              containerId: action.view_draft_container,
+              documents: action.documents ?? [],
+              envelopes: data.envelopes ?? []
+            };
+            const win = featheryWindow() as any;
+            win.__featheryDocxEditorDrafts = {
+              ...(win.__featheryDocxEditorDrafts ?? {}),
+              [action.view_draft_container ?? '']: refreshDetail
+            };
             // Tell any mounted document-editor container to reload the freshly
             // generated envelope (needed when the editor is on the same step as
-            // the button; a different-step editor loads it on mount).
-            featheryWindow().dispatchEvent(
-              new CustomEvent('feathery-docx-editor-refresh')
+            // the button; a different-step editor consumes the stored draft on
+            // mount).
+            win.dispatchEvent(
+              new CustomEvent('feathery-docx-editor-refresh', {
+                detail: refreshDetail
+              })
             );
           }
           const envAction = action.envelope_action;
-          if (!envAction) {
+          // When view_draft is set the draft is being reviewed in a
+          // document-editor container — don't navigate away to sign; signing
+          // is a separate action.
+          if (!envAction && !action.view_draft) {
             // Sign files
             const url = getSignUrl(action.redirect);
             if (action.redirect) {

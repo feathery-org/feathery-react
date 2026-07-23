@@ -61,8 +61,7 @@ const Element = ({ node: el, form }: any) => {
     setCardElement,
     visiblePositions,
     featheryContext,
-    assistantClient,
-    syncfusion
+    assistantClient
   } = form;
 
   const readOnly =

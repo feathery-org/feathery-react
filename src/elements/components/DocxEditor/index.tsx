@@ -21,6 +21,8 @@ export interface DocxEditorProps {
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
   className?: string;
+  /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
+  openNonce?: number;
   onReady?: () => void;
   /** Live DocumentEditor instance, for programmatic control (e.g. the AI
    *  assistant drives the document directly through this). */
@@ -58,6 +60,7 @@ function DocxEditor({
   visible = true,
   hideDownload,
   className,
+  openNonce,
   onReady,
   onEditorReady,
   onChange,
@@ -73,6 +76,7 @@ function DocxEditor({
     licenseKey,
     serviceUrl,
     readOnly,
+    openNonce,
     onReady,
     onEditorReady,
     onDirty: () => {

@@ -103,3 +103,28 @@ describe('StyledContainer alignment', () => {
     });
   });
 });
+
+describe('StyledContainer document editor', () => {
+  it('mounts the document editor placeholder when document_editor is set', () => {
+    const { getByText } = render(
+      <StyledContainer
+        node={{
+          ...baseNode,
+          properties: { document_editor: true }
+        }}
+        editMode
+        breakpoint={480}
+      />
+    );
+
+    expect(getByText('Document editor')).toBeTruthy();
+  });
+
+  it('does not mount the document editor when document_editor is unset', () => {
+    const { queryByText } = render(
+      <StyledContainer node={baseNode} editMode breakpoint={480} />
+    );
+
+    expect(queryByText('Document editor')).toBeNull();
+  });
+});
