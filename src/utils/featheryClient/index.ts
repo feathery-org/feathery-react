@@ -978,6 +978,24 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
+  async runComputerAgent(agentId: string) {
+    const { userId } = initInfo();
+    await this.submitQueue;
+    const url = `${API_URL}computer-agent/run/`;
+    const reqOptions = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        agent_id: agentId,
+        fuser_key: userId
+      })
+    };
+    const res = await this._fetch(url, reqOptions, false);
+    if (res && res.status === 201)
+      return { ok: true, payload: await res.json() };
+    else return { ok: false, error: (await res?.text()) ?? '' };
+  }
+
   async forwardInboxEmail({ options }: { options: ForwardInboxEmailOptions }) {
     const { userId, sdkKey } = initInfo();
     const forwardUserId = options.submissionId || userId;

@@ -421,6 +421,14 @@ export default class Field {
   selectionsDoNotInclude(...values: ({ id: string } | string)[]): boolean {
     return this._executeLogic('selections_dont_include', values);
   }
+
+  hasSameLengthAs(...values: ({ id: string } | string)[]): boolean {
+    return this._executeLogic('equal_length', values);
+  }
+
+  doesNotHaveSameLengthAs(...values: ({ id: string } | string)[]): boolean {
+    return this._executeLogic('not_equal_length', values);
+  }
 }
 
 export function parseUserVal(userVal: FeatheryFieldTypes, key: string) {

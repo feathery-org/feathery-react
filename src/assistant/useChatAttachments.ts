@@ -27,11 +27,13 @@ import {
 export function useChatAttachments({
   activeChat,
   baseUrl,
-  headers
+  headers,
+  formKey
 }: {
   activeChat: Chat<any>;
   baseUrl: string;
   headers: AssistantHeaders;
+  formKey?: string;
 }) {
   const [attachments, setAttachments] = useState<AssistantAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -73,7 +75,8 @@ export function useChatAttachments({
           baseUrl,
           headers,
           sessionId,
-          controller.signal
+          controller.signal,
+          formKey
         );
         if (controller.signal.aborted) return;
         stamp({
@@ -92,7 +95,8 @@ export function useChatAttachments({
           baseUrl,
           headers,
           sessionId,
-          controller.signal
+          controller.signal,
+          formKey
         );
         if (controller.signal.aborted) return;
         stamp({
@@ -119,7 +123,7 @@ export function useChatAttachments({
         uploadControllersRef.current.delete(previewUrl);
       }
     },
-    [activeChat, baseUrl, headers]
+    [activeChat, baseUrl, headers, formKey]
   );
 
   const addFiles = useCallback(

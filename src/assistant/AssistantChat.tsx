@@ -214,6 +214,9 @@ export type WorkflowAction = {
   instructions: string;
 };
 
+export type AssistantStepDefault = 'closed' | 'floating' | 'sidebar_right';
+export type AssistantStepSettings = Record<string, AssistantStepDefault>;
+
 export type AssistantLayoutState = {
   mode: AssistantMode;
   isOpen: boolean;
@@ -239,6 +242,8 @@ export type AssistantChatProps = {
   voiceEnabled?: boolean;
   workflowActions?: WorkflowAction[];
   allowedModes?: AssistantMode[];
+  stepSettings?: AssistantStepSettings;
+  activeStepId?: string;
   onLayoutChange?: null | ((state: AssistantLayoutState) => void);
 };
 
@@ -252,6 +257,8 @@ const AssistantChat = ({
   voiceEnabled = false,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
+  stepSettings = {},
+  activeStepId,
   onLayoutChange
 }: AssistantChatProps) => {
   const headers = useMemo<AssistantHeaders>(() => {
@@ -267,8 +274,15 @@ const AssistantChat = ({
     };
   }, [getJwt]);
 
+  // form_key drives backend form auth on the SDK surface, the session only
+  // resolves an account after validating against this form's auth settings
+  const formKey = !getJwt
+    ? getTargets().find((t) => t.type === 'panel')?.id
+    : undefined;
+
   const buildChatBody = (): Record<string, unknown> => {
     const body: Record<string, unknown> = {};
+    if (formKey) body.form_key = formKey;
     const targets = getTargets();
     if (targets.length > 0) body.targets = targets;
 
@@ -285,6 +299,26 @@ const AssistantChat = ({
     setModeState(next);
     writeStoredMode(next);
   }, []);
+
+  // Whitelist: no steps configured = available everywhere, otherwise the
+  // assistant is hidden on steps absent from the map (kept mounted, see render)
+  const whitelistActive = Object.keys(stepSettings).length > 0;
+  const hiddenByWhitelist =
+    whitelistActive && (!activeStepId || !(activeStepId in stepSettings));
+
+  // Apply the creator's open default once per step entry, close/switch still sticks
+  const forcedStepRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!activeStepId || activeStepId === forcedStepRef.current) return;
+    forcedStepRef.current = activeStepId;
+    const stepDefault = stepSettings[activeStepId];
+    if (stepDefault === 'floating' || stepDefault === 'sidebar_right') {
+      setIsOpen(true);
+      setModeState(
+        stepDefault === 'sidebar_right' ? 'sidebar-right' : 'current'
+      );
+    }
+  }, [activeStepId, stepSettings]);
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(
     readStoredSidebarWidth
@@ -420,7 +454,8 @@ const AssistantChat = ({
         headers,
         currentThreadId,
         userText,
-        titleContext
+        titleContext,
+        formKey
       ).then((title) => {
         if (!title) return;
         setThreads((prev) =>
@@ -453,6 +488,7 @@ const AssistantChat = ({
             form.append('audio', audio, 'speech.wav');
             pendingAudioRef.current = null;
           }
+          if (formKey) form.append('form_key', formKey);
           res = await fetch(`${baseUrl}voice/turn/`, {
             method: 'POST',
             headers: headers(),
@@ -471,7 +507,7 @@ const AssistantChat = ({
             )
           );
           setActiveThreadId(threadId);
-          getThreadDetail(baseUrl, headers, threadId).then((t) => {
+          getThreadDetail(baseUrl, headers, threadId, formKey).then((t) => {
             if (t)
               setThreads((prev) =>
                 prev.map((thread) =>
@@ -670,7 +706,7 @@ const AssistantChat = ({
     handleDragOver,
     handleDragLeave,
     handleDrop
-  } = useChatAttachments({ activeChat, baseUrl, headers });
+  } = useChatAttachments({ activeChat, baseUrl, headers, formKey });
 
   const [attachmentPreview, setAttachmentPreview] =
     useState<AttachmentPreview | null>(null);
@@ -722,7 +758,7 @@ const AssistantChat = ({
   }, [status, pinToBottom]);
 
   const fetchThreads = useCallback(async () => {
-    const data = await getThreadList(baseUrl, headers);
+    const data = await getThreadList(baseUrl, headers, formKey);
     if (!data) return;
     setThreads((prev) => [
       ...data.map((d) => ({
@@ -731,7 +767,7 @@ const AssistantChat = ({
       })),
       ...prev.filter((p) => !data.find((d) => d.id === p.id))
     ]);
-  }, [headers, baseUrl]);
+  }, [headers, baseUrl, formKey]);
 
   useEffect(() => {
     if (isOpen) fetchThreads();
@@ -767,7 +803,7 @@ const AssistantChat = ({
       setIsDropdownOpen(false);
       return;
     }
-    const thread = await getThreadDetail(baseUrl, headers, id);
+    const thread = await getThreadDetail(baseUrl, headers, id, formKey);
     if (!thread) return;
     const chat = makeChat(id, thread.messages ?? [], thread.title);
     setThreads((prev) =>
@@ -781,7 +817,7 @@ const AssistantChat = ({
     e.stopPropagation();
     const thread = threads.find((t) => t.id === id);
     if (!thread?.isTemporary) {
-      await deleteThread(baseUrl, headers, id);
+      await deleteThread(baseUrl, headers, id, formKey);
     }
     setThreads((prev) => prev.filter((t) => t.id !== id));
     if (activeThreadId === id) handleNewThread();
@@ -834,6 +870,11 @@ const AssistantChat = ({
     pendingAudioRef,
     voiceDataRef
   });
+
+  // Stop the mic if the assistant becomes hidden on a whitelisted step
+  useEffect(() => {
+    if (hiddenByWhitelist) stopVoice();
+  }, [hiddenByWhitelist, stopVoice]);
 
   // Voice: keep the view pinned to the bottom as the reply reveals during playback
   useEffect(() => {
@@ -968,19 +1009,27 @@ const AssistantChat = ({
       : mode === 'sidebar-right'
       ? 'right'
       : null;
-  const layoutWidth = isOpen && layoutSide ? sidebarWidth : 0;
+  const layoutOpen = isOpen && !hiddenByWhitelist;
+  const layoutWidth = layoutOpen && layoutSide ? sidebarWidth : 0;
 
   const onLayoutChangeRef = useRef(onLayoutChange);
   onLayoutChangeRef.current = onLayoutChange;
   useEffect(() => {
     onLayoutChangeRef.current?.({
       mode,
-      isOpen,
-      side: layoutSide,
+      isOpen: layoutOpen,
+      side: hiddenByWhitelist ? null : layoutSide,
       width: layoutWidth,
       isResizing
     });
-  }, [mode, isOpen, layoutSide, layoutWidth, isResizing]);
+  }, [
+    mode,
+    layoutOpen,
+    layoutSide,
+    layoutWidth,
+    isResizing,
+    hiddenByWhitelist
+  ]);
 
   const CollapseIcon =
     mode === 'sidebar-left'
@@ -999,6 +1048,9 @@ const AssistantChat = ({
       : mode === 'fullscreen'
       ? FullscreenIcon
       : FloatingIcon;
+
+  // Stay mounted so chat/thread state survives navigating hidden steps
+  if (hiddenByWhitelist) return null;
 
   const fabOnLeft = mode === 'sidebar-left';
   const fabSide = fabOnLeft ? { left: '20px' } : { right: '20px' };

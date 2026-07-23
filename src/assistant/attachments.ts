@@ -1,7 +1,7 @@
 import type { FileUIPart } from 'ai';
 import { Chat } from '@ai-sdk/react';
 import { featheryDoc } from '../utils/browser';
-import { AssistantHeaders } from './utils';
+import { AssistantHeaders, withFormKey } from './utils';
 
 export const MAX_DIMENSION = 1568;
 export const MAX_FILE_SIZE = 25 * 1024 * 1024;
@@ -151,11 +151,12 @@ export async function uploadAttachment(
   baseUrl: string,
   headers: AssistantHeaders,
   sessionId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  formKey?: string
 ): Promise<UploadedAttachment> {
   const form = new FormData();
   form.append('file', file);
-  const response = await fetch(attachmentBase(baseUrl), {
+  const response = await fetch(withFormKey(attachmentBase(baseUrl), formKey), {
     method: 'POST',
     headers: { ...headers(), 'X-Session-ID': sessionId },
     body: form,
@@ -204,7 +205,8 @@ export async function pollAttachmentStatus(
   baseUrl: string,
   headers: AssistantHeaders,
   sessionId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  formKey?: string
 ): Promise<UploadedAttachment> {
   const id = encodeURIComponent(attachmentId);
   const deadline = Date.now() + POLL_TIMEOUT_MS;
@@ -212,11 +214,14 @@ export async function pollAttachmentStatus(
   while (true) {
     let resp: Response | null = null;
     try {
-      resp = await fetch(`${attachmentBase(baseUrl)}${id}/url/`, {
-        method: 'GET',
-        headers: { ...headers(), 'X-Session-ID': sessionId },
-        signal
-      });
+      resp = await fetch(
+        withFormKey(`${attachmentBase(baseUrl)}${id}/url/`, formKey),
+        {
+          method: 'GET',
+          headers: { ...headers(), 'X-Session-ID': sessionId },
+          signal
+        }
+      );
     } catch (err) {
       // Network blips retry until the deadline, aborts exit the loop
       if (signal.aborted) throw err;
