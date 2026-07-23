@@ -158,6 +158,7 @@ import {
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
   ACTION_GENERATE_ENVELOPES,
+  ACTION_SIGN_DOCUMENTS,
   ACTION_GENERATE_QUIK_DOCUMENTS,
   ACTION_INVITE_COLLABORATOR,
   ACTION_LOGOUT,
@@ -2796,6 +2797,20 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
+      } else if (type === ACTION_SIGN_DOCUMENTS) {
+        // Enter the existing envelope sign flow for this submission's
+        // documents WITHOUT regenerating (which would overwrite editor edits).
+        // Same redirect/openTab behavior as the generate 'sign' branch above.
+        const url = getSignUrl(action.redirect);
+        if (action.redirect) {
+          await client.registerEvent({
+            step_key: activeStep.key,
+            next_step_key: '',
+            event: submit ? 'complete' : 'skip',
+            completed: true
+          });
+          featheryWindow().location.href = url;
+        } else openTab(url);
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {

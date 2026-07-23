@@ -2,6 +2,32 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DocxEditor from './index';
 import FeatheryClient from '../../../utils/featheryClient';
 import { featheryWindow } from '../../../utils/browser';
+import { initState } from '../../../utils/init';
+import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
+
+// The container carries no document. Its document is owned by the Generate
+// Documents button that targets it: find the action whose view_draft_container
+// matches this container and use its first document. Scans loaded form schemas
+// (container ids are unique, so no need to know the form key).
+function resolveDocumentId(containerId?: string): string | undefined {
+  if (!containerId) return undefined;
+  const schemas = (initState as any).formSchemas ?? {};
+  for (const key of Object.keys(schemas)) {
+    for (const step of schemas[key]?.steps ?? []) {
+      for (const button of step?.buttons ?? []) {
+        for (const action of button?.properties?.actions ?? []) {
+          if (
+            action?.type === ACTION_GENERATE_ENVELOPES &&
+            action?.view_draft_container === containerId
+          ) {
+            return (action.documents ?? [])[0];
+          }
+        }
+      }
+    }
+  }
+  return undefined;
+}
 
 interface Envelope {
   id: string;
@@ -43,15 +69,20 @@ const wrap = {
 // place. The renderer is chosen by envelope type so other types (csv/pdf) can
 // be added without changing this wiring.
 export default function DocumentEditorContainer({
-  documentId,
+  containerId,
   editMode
 }: {
-  documentId?: string;
+  containerId?: string;
   editMode?: boolean;
 }) {
   // saveEnvelopeFile/getCurrentEnvelope only use initInfo(), not the form key,
   // so a lightweight client instance is sufficient here.
   const client = useMemo(() => new FeatheryClient(), []);
+  // Document is owned by the button that targets this container.
+  const documentId = useMemo(
+    () => resolveDocumentId(containerId),
+    [containerId]
+  );
   const [envelope, setEnvelope] = useState<Envelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +136,11 @@ export default function DocumentEditorContainer({
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!documentId)
-    return box(<div css={placeholder}>No document configured.</div>);
+    return box(
+      <div css={placeholder}>
+        No document yet — generate it to start editing.
+      </div>
+    );
   if (loading) return box(<div css={placeholder}>Loading document…</div>);
   if (error)
     return box(<div css={{ ...placeholder, color: '#dc2626' }}>{error}</div>);

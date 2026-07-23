@@ -128,8 +128,8 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
     if (node.properties.document_editor) {
       children.push(
         <DocumentEditorContainer
-          key={`docx:${node.properties.document_editor_document || 'none'}`}
-          documentId={node.properties.document_editor_document}
+          key={`docx:${node.id}`}
+          containerId={node.id}
           editMode={editMode}
         />
       );
