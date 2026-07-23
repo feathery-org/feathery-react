@@ -69,25 +69,25 @@ export const TOOL_LABELS: Record<string, ToolLabel> = {
     running: 'Reading extraction setup...',
     done: 'Reviewed the extraction setup'
   },
-  getExtractionResults: {
-    running: 'Reading extraction results...',
-    done: 'Reviewed the extraction results'
-  },
   getLogicRules: {
     running: 'Reading form logic...',
     done: 'Reviewed form logic'
   },
   getHubSchema: {
-    running: 'Reading record setup...',
-    done: 'Reviewed the record setup'
+    running: 'Reading data setup...',
+    done: 'Reviewed the data setup'
   },
-  queryHub: {
-    running: 'Searching records on file...',
-    done: 'Searched the records on file'
+  queryRecords: {
+    running: 'Searching data...',
+    done: 'Searched the data'
   },
-  querySubmissions: {
-    running: 'Searching submissions...',
-    done: 'Searched submissions'
+  getRecords: {
+    running: 'Looking up details...',
+    done: 'Looked up the details'
+  },
+  aggregateRecords: {
+    running: 'Calculating stats...',
+    done: 'Calculated the stats'
   }
 };
 
