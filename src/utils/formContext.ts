@@ -201,6 +201,7 @@ export const getFormContext = (formUuid: string) => {
       formState.getDocusignEnvelope(params),
     updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
       formState.updateDocusignEnvelope(params),
+    getDocusignBrands: () => formState.getDocusignBrands(),
     applyAlloyJourney: (journeyToken: string, entities: AlloyEntities) =>
       formState.client.alloyJourneyApplication(journeyToken, entities),
     searchLoanProCustomer: () =>
