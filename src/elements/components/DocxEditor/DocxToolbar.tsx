@@ -33,6 +33,7 @@ import {
   SignatureIcon,
   SpinnerIcon,
   StrikeIcon,
+  TableIcon,
   TextIcon,
   UndoIcon
 } from './icons';
@@ -229,6 +230,58 @@ function Menu({ trigger, children, align = 'start', onClose }: MenuProps) {
   );
 }
 
+// Word-style grid picker: hover to size, click to insert an R×C table.
+function TableGridPicker({
+  onPick
+}: {
+  onPick: (rows: number, cols: number) => void;
+}) {
+  const MAX = 8;
+  const [hover, setHover] = useState({ r: 0, c: 0 });
+  return (
+    <div css={{ padding: 4 }} onMouseLeave={() => setHover({ r: 0, c: 0 })}>
+      <div
+        css={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${MAX}, 18px)`,
+          gap: 2
+        }}
+      >
+        {Array.from({ length: MAX * MAX }).map((_, i) => {
+          const r = Math.floor(i / MAX);
+          const c = i % MAX;
+          const active = r <= hover.r && c <= hover.c;
+          return (
+            <div
+              key={i}
+              onMouseEnter={() => setHover({ r, c })}
+              onClick={() => onPick(r + 1, c + 1)}
+              css={{
+                width: 18,
+                height: 18,
+                borderRadius: 2,
+                cursor: 'pointer',
+                border: `1px solid ${active ? INDIGO : ZINC[300]}`,
+                background: active ? `${INDIGO}33` : '#fff'
+              }}
+            />
+          );
+        })}
+      </div>
+      <div
+        css={{
+          marginTop: 6,
+          fontSize: 13,
+          color: ZINC[700],
+          textAlign: 'center'
+        }}
+      >
+        {hover.r + 1} × {hover.c + 1}
+      </div>
+    </div>
+  );
+}
+
 export interface DocxToolbarProps {
   /** Live Syncfusion DocumentEditor instance. */
   editor: any;
@@ -264,6 +317,12 @@ export default function DocxToolbar({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [scrollable, setScrollable] = useState(false);
+  // Which edges have more tools beyond them, so a shadow can hint at the
+  // scrollable overflow on that side. Both false until the row overflows.
+  const [scrollEdges, setScrollEdges] = useState({
+    atStart: true,
+    atEnd: true
+  });
   const [zoom, setZoom] = useState(100);
   const [zoomInput, setZoomInput] = useState('100');
   const [bold, setBold] = useState(false);
@@ -322,8 +381,26 @@ export default function DocxToolbar({
     if (!collapsed) return;
     const el = scrollRef.current;
     if (!el) return;
-    if (el.scrollWidth > el.clientWidth + 1) setScrollable(true);
+    if (el.scrollWidth > el.clientWidth + 1) {
+      setScrollable(true);
+      updateScrollEdges();
+    }
   }, [collapsed]);
+
+  // +1 tolerance for sub-pixel rounding. Called on mount-to-scrollable and on
+  // every scroll so the edge shadows track the current position.
+  const updateScrollEdges = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    const atStart = el.scrollLeft <= 1;
+    const atEnd = el.scrollLeft >= maxScrollLeft - 1;
+    setScrollEdges((current) =>
+      current.atStart === atStart && current.atEnd === atEnd
+        ? current
+        : { atStart, atEnd }
+    );
+  };
 
   const applyZoom = (pct: number) => {
     editor.zoomFactor = Math.min(500, Math.max(50, pct)) / 100;
@@ -673,6 +750,28 @@ export default function DocxToolbar({
           e.target.value = '';
         }}
       />
+      <Menu
+        trigger={({ toggle }) => (
+          <button
+            type='button'
+            css={iconBtn(false, readOnly)}
+            disabled={readOnly}
+            onClick={toggle}
+            title='Insert table'
+          >
+            <TableIcon width={16} height={16} />
+          </button>
+        )}
+      >
+        {(close) => (
+          <TableGridPicker
+            onPick={(rows, cols) => {
+              editor.editor.insertTable(rows, cols);
+              close();
+            }}
+          />
+        )}
+      </Menu>
     </>
   );
 
@@ -682,7 +781,7 @@ export default function DocxToolbar({
         type='button'
         css={iconBtn(false, readOnly)}
         disabled={readOnly}
-        onClick={() => editor.editor.applyBullet('', 'Symbol')}
+        onClick={() => editor.editor.applyBullet('', 'Symbol')}
         title='Bullet list'
       >
         <BulletListIcon width={16} height={16} />
@@ -771,83 +870,127 @@ export default function DocxToolbar({
       }}
     >
       {/* Tool row: centered when it fits; non-essential groups collapse into a
-          "More" dropdown when the container is too narrow. Save/Download pinned. */}
+          "More" dropdown when the container is too narrow. Save/Download pinned.
+          The wrapper is the positioning context for the edge shadows. */}
       <div
-        ref={scrollRef}
         css={{
+          position: 'relative',
           flex: '1 1 auto',
           minWidth: 0,
-          overflowX: scrollable ? 'auto' : 'hidden',
-          overflowY: 'hidden',
-          display: 'flex',
-          alignItems: 'center',
-          ...(scrollable && {
-            scrollbarWidth: 'thin' as const,
-            '&::-webkit-scrollbar': { height: 6 },
-            '&::-webkit-scrollbar-thumb': {
-              background: ZINC[300],
-              borderRadius: 3
-            }
-          })
+          display: 'flex'
         }}
       >
         <div
+          ref={scrollRef}
+          onScroll={updateScrollEdges}
           css={{
+            flex: '1 1 auto',
+            minWidth: 0,
+            overflowX: scrollable ? 'auto' : 'hidden',
+            overflowY: 'hidden',
             display: 'flex',
             alignItems: 'center',
-            gap: 2,
-            // Centered when there's room; when scrolling, auto margins would
-            // make the overflowing left edge unreachable, so left-align.
-            margin: scrollable ? undefined : '0 auto'
+            ...(scrollable && {
+              scrollbarWidth: 'thin' as const,
+              '&::-webkit-scrollbar': { height: 6 },
+              '&::-webkit-scrollbar-thumb': {
+                background: ZINC[300],
+                borderRadius: 3
+              }
+            })
           }}
         >
-          {renderRow(visibleGroups)}
-          {collapsed && (
-            <>
-              <Divider />
-              <Menu
-                align='end'
-                trigger={({ toggle }) => (
-                  <button
-                    type='button'
-                    css={triggerBtn}
-                    onClick={toggle}
-                    title='More tools'
-                    disabled={readOnly}
-                  >
-                    <MoreIcon width={16} height={16} />
-                    <ChevronDownIcon width={14} height={14} />
-                  </button>
-                )}
-              >
-                {() => (
-                  <div
-                    css={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                      minWidth: 220
-                    }}
-                  >
-                    {overflowGroups.map((g) => (
-                      <div
-                        key={g.key}
-                        css={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 2,
-                          flexWrap: 'wrap'
-                        }}
-                      >
-                        {g.node}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Menu>
-            </>
-          )}
+          <div
+            css={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              // Centered when there's room; when scrolling, auto margins would
+              // make the overflowing left edge unreachable, so left-align.
+              margin: scrollable ? undefined : '0 auto'
+            }}
+          >
+            {renderRow(visibleGroups)}
+            {collapsed && (
+              <>
+                <Divider />
+                <Menu
+                  align='end'
+                  trigger={({ toggle }) => (
+                    <button
+                      type='button'
+                      css={triggerBtn}
+                      onClick={toggle}
+                      title='More tools'
+                      disabled={readOnly}
+                    >
+                      <MoreIcon width={16} height={16} />
+                      <ChevronDownIcon width={14} height={14} />
+                    </button>
+                  )}
+                >
+                  {() => (
+                    <div
+                      css={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        minWidth: 220
+                      }}
+                    >
+                      {overflowGroups.map((g) => (
+                        <div
+                          key={g.key}
+                          css={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 2,
+                            flexWrap: 'wrap'
+                          }}
+                        >
+                          {g.node}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Menu>
+              </>
+            )}
+          </div>
         </div>
+        {/* Edge shadows: hint at scrollable overflow on whichever side still
+            has tools beyond it. Pinned to the wrapper, outside the scroll area
+            so they don't move with the content. */}
+        <div
+          aria-hidden
+          css={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 24,
+            pointerEvents: 'none',
+            background:
+              'linear-gradient(to right, rgba(0, 0, 51, 0.1), transparent)',
+            opacity: scrollable && !scrollEdges.atStart ? 1 : 0,
+            transition: 'opacity 120ms ease'
+          }}
+        />
+        <div
+          aria-hidden
+          css={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 24,
+            pointerEvents: 'none',
+            background:
+              'linear-gradient(to left, rgba(0, 0, 51, 0.1), transparent)',
+            opacity: scrollable && !scrollEdges.atEnd ? 1 : 0,
+            transition: 'opacity 120ms ease'
+          }}
+        />
       </div>
 
       {/* Save / Download / Sign (pinned right) */}
@@ -906,7 +1049,7 @@ export default function DocxToolbar({
             onClick={onDownload}
           >
             <DownloadIcon width={16} height={16} />
-            Export
+            Download
           </button>
         )}
         {terminalAction && onTerminalAction && (

@@ -166,6 +166,18 @@ export const InsertImageIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
+export const TableIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='3' y='4' width='18' height='16' rx='1.5' />
+      <line x1='3' y1='10' x2='21' y2='10' />
+      <line x1='3' y1='15' x2='21' y2='15' />
+      <line x1='9' y1='4' x2='9' y2='20' />
+      <line x1='15' y1='4' x2='15' y2='20' />
+    </g>
+  </Svg>
+);
+
 export const BulletListIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path
@@ -316,7 +328,7 @@ export const AlignJustifyIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
-// Tray with a down arrow (line style), matching the "Export" button in the mock.
+// Tray with a down arrow (line style), matching the "Download" button in the mock.
 export const DownloadIcon = (p: SVGProps<SVGSVGElement>) => (
   <svg
     width='24'

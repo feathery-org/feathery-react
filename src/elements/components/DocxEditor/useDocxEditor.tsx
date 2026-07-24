@@ -169,6 +169,9 @@ export function useDocxEditor({
           if (ignoreContentChangeRef.current) return;
           onDirtyRef.current?.();
         });
+        // Native right-click menu — insert/delete table rows & columns,
+        // cut/copy/paste, etc. (the built-in toolbar is disabled).
+        ed.enableContextMenu = true;
         setEditor(ed);
         onEditorReady?.(ed);
 
