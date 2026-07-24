@@ -2757,9 +2757,7 @@ function Form({
             break;
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
-          const shouldLoadDraft =
-            action.view_draft || action.view_draft_container;
-          if (shouldLoadDraft) {
+          if (action.view_draft_container) {
             const refreshDetail = {
               containerId: action.view_draft_container,
               documents: action.documents ?? [],
@@ -2781,10 +2779,9 @@ function Form({
             );
           }
           const envAction = action.envelope_action;
-          // When view_draft is set the draft is being reviewed in a
-          // document-editor container — don't navigate away to sign; signing
-          // is a separate action.
-          if (!envAction && !action.view_draft) {
+          // When an editor container is targeted, the draft is being reviewed
+          // inline — don't navigate away to sign; signing is a separate action.
+          if (!envAction && !action.view_draft_container) {
             // Sign files
             const url = getSignUrl(action.redirect);
             if (action.redirect) {

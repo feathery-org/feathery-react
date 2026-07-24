@@ -48,8 +48,8 @@ interface RefreshEventDetail {
   envelopes?: Envelope[];
 }
 
-// Fired by the Generate Documents action (with "View Draft") so an already
-// mounted editor reloads the freshly generated envelope.
+// Fired by the Generate Documents action targeting this container so an
+// already mounted editor reloads the freshly generated envelope.
 
 function resolveViewDraftReadOnly(containerId?: string): boolean | undefined {
   if (!containerId) return undefined;
@@ -69,7 +69,7 @@ function resolveViewDraftReadOnly(containerId?: string): boolean | undefined {
             if (typeof action.view_draft_read_only === 'boolean') {
               return action.view_draft_read_only;
             }
-            // View Draft defaults to editable.
+            // Targeted editor drafts default to editable.
             return false;
           }
         }
@@ -244,7 +244,7 @@ export default function DocumentEditorContainer({
   const activeDocumentId = documentId ?? envelope?.document;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
-  // `view_draft_read_only` (default: editable when View Draft is on).
+  // `view_draft_read_only` (default: editable).
   const actionReadOnly = resolveViewDraftReadOnly(containerId);
   const readOnly = !!envelope?.signed || !!actionReadOnly;
 
