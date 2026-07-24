@@ -357,6 +357,7 @@ describe('ButtonGroupField', () => {
         fieldVal: ['Option 2']
       });
 
+      setMockFieldValue(['Option 2']);
       render(<ButtonGroupField {...props} />);
 
       expectButtonToBeUnselected('Option 1');
@@ -374,6 +375,7 @@ describe('ButtonGroupField', () => {
         fieldVal: ['Option 1', 'Option 3']
       });
 
+      setMockFieldValue(['Option 1', 'Option 3']);
       render(<ButtonGroupField {...props} />);
 
       expectButtonToBeSelected('Option 1');
@@ -391,6 +393,7 @@ describe('ButtonGroupField', () => {
         fieldVal: ['Apple', 'Cherry']
       });
 
+      setMockFieldValue(['Apple', 'Cherry']);
       render(<ButtonGroupField {...props} />);
 
       expectButtonToBeSelected('Apple');
@@ -407,6 +410,7 @@ describe('ButtonGroupField', () => {
         fieldVal: []
       });
 
+      setMockFieldValue([]);
       render(<ButtonGroupField {...props} />);
 
       expectButtonToBeUnselected('Option 1');
