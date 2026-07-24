@@ -10,11 +10,14 @@ export interface DocxEditorProps {
   source?: DocxSource;
   /** Base name (no extension) used for save/download. */
   fileName?: string;
-  /** Syncfusion license key — injected, never committed to this library. */
+  /** Syncfusion license key — injected, never committed to this library.
+   *  Optional when the Word Processor license is configured server-side. */
   licenseKey?: string;
-  /** URL of a hosted Syncfusion Document Editor web service. Required to OPEN a
-   *  .docx (DOCX↔SFDT conversion happens server-side). */
+  /** Base URL of the Document Editor web service (Feathery proxy or direct).
+   *  Required to OPEN a .docx (DOCX↔SFDT conversion happens server-side). */
   serviceUrl?: string;
+  /** Extra headers for serviceUrl requests (e.g. Feathery Authorization). */
+  headers?: Record<string, string>[];
   readOnly?: boolean;
   /** Controlled reveal. When explicitly false the editor is unmounted. */
   visible?: boolean;
@@ -56,6 +59,7 @@ function DocxEditor({
   fileName = 'document',
   licenseKey,
   serviceUrl,
+  headers,
   readOnly,
   visible = true,
   hideDownload,
@@ -75,6 +79,7 @@ function DocxEditor({
     source,
     licenseKey,
     serviceUrl,
+    headers,
     readOnly,
     openNonce,
     onReady,

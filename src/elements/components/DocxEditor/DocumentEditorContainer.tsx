@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DocxEditor from './index';
-import FeatheryClient from '../../../utils/featheryClient';
+import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow } from '../../../utils/browser';
-import { initState } from '../../../utils/init';
+import { initInfo, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 
 // The container carries no document. Its document is owned by the Generate
@@ -161,9 +161,18 @@ export default function DocumentEditorContainer({
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
   // undefined and the editor never opens the generated docx.
-  // The serviceUrl/licenseKey strings themselves are stable, so this does
-  // not recreate the Syncfusion instance.
+  // Default serviceUrl is the Feathery backend proxy (hides the self-hosted
+  // Word Processor). window.featherySyncfusion may override for local smoke
+  // tests; licenseKey is optional (server license lives on the Word Processor).
   const syncfusion = (featheryWindow() as any).featherySyncfusion ?? {};
+  const serviceUrl =
+    syncfusion.serviceUrl || `${API_URL}document/editor/`;
+  const { sdkKey } = initInfo();
+  const serviceHeaders = useMemo(() => {
+    if (syncfusion.headers) return syncfusion.headers;
+    if (sdkKey) return [{ Authorization: `Token ${sdkKey}` }];
+    return [];
+  }, [sdkKey, syncfusion.headers]);
 
   const loadEnvelope = useCallback(async () => {
     if (!documentId) return;
@@ -268,16 +277,17 @@ export default function DocumentEditorContainer({
     );
   }
 
-  if (!syncfusion.serviceUrl) {
+  if (!serviceUrl) {
     console.warn(
-      'Feathery: window.featherySyncfusion.serviceUrl is not set — the document editor cannot convert/open the .docx'
+      'Feathery: document editor serviceUrl is not set — cannot convert/open the .docx'
     );
   }
 
   return box(
     <DocxEditor
       source={source}
-      serviceUrl={syncfusion.serviceUrl}
+      serviceUrl={serviceUrl}
+      headers={serviceHeaders}
       licenseKey={syncfusion.licenseKey}
       readOnly={readOnly}
       openNonce={reloadKey}

@@ -48,6 +48,8 @@ interface Props {
   source?: DocxSource;
   licenseKey?: string;
   serviceUrl?: string;
+  /** Extra headers for Syncfusion serviceUrl requests (e.g. Feathery auth). */
+  headers?: Record<string, string>[];
   readOnly?: boolean;
   /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
   openNonce?: number;
@@ -75,6 +77,7 @@ export function useDocxEditor({
   source,
   licenseKey,
   serviceUrl,
+  headers,
   readOnly,
   openNonce = 0,
   onReady,
@@ -106,6 +109,8 @@ export function useDocxEditor({
     [onError]
   );
 
+  const headersKey = JSON.stringify(headers ?? []);
+
   // Load the CDN assets and instantiate the editor. Recreated only if license
   // or serviceUrl changes — NOT on readOnly toggles (those update in place).
   // Recreating mid-fetch/open destroys Syncfusion while it still holds null
@@ -136,6 +141,7 @@ export function useDocxEditor({
           enableToolbar: false,
           showPropertiesPane: false,
           serviceUrl: serviceUrl || '',
+          headers: headers || [],
           height: '100%'
         });
         // Wait until Syncfusion finishes creating the inner DocumentEditor —
@@ -190,7 +196,7 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [licenseKey, serviceUrl]);
+  }, [licenseKey, serviceUrl, headersKey]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
