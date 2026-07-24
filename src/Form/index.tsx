@@ -2778,34 +2778,34 @@ function Form({
               })
             );
           }
-          const envAction = action.envelope_action;
-          // When an editor container is targeted, the draft is being reviewed
-          // inline — don't navigate away to sign; signing is a separate action.
-          if (!envAction && !action.view_draft_container) {
-            // Sign files
-            const url = getSignUrl(action.redirect);
-            if (action.redirect) {
-              const eventData: Record<string, any> = {
-                step_key: activeStep.key,
-                next_step_key: '',
-                event: submit ? 'complete' : 'skip',
-                completed: true
-              };
-              await client.registerEvent(eventData);
-              featheryWindow().location.href = url;
-            } else openTab(url);
-          } else if (envAction === 'download' && data.files) {
-            // Download files directly
-            await downloadAllFileUrls(
-              data.files,
-              replaceTextVariables(action.envelope_zip_name)
-            );
-          } else if (envAction === 'save') {
-            let files = data.files;
-            if (files.length === 1) files = files[0];
-            const newValues = { [action.save_document_field_key]: files };
-            updateFieldValues(newValues);
-            client.submitCustom(newValues);
+          if (!action.view_draft_container) {
+            const envAction = action.envelope_action;
+            if (!envAction || envAction === 'sign') {
+              // Sign files
+              const url = getSignUrl(action.redirect);
+              if (action.redirect) {
+                const eventData: Record<string, any> = {
+                  step_key: activeStep.key,
+                  next_step_key: '',
+                  event: submit ? 'complete' : 'skip',
+                  completed: true
+                };
+                await client.registerEvent(eventData);
+                featheryWindow().location.href = url;
+              } else openTab(url);
+            } else if (envAction === 'download' && data.files) {
+              // Download files directly
+              await downloadAllFileUrls(
+                data.files,
+                replaceTextVariables(action.envelope_zip_name)
+              );
+            } else if (envAction === 'save') {
+              let files = data.files;
+              if (files.length === 1) files = files[0];
+              const newValues = { [action.save_document_field_key]: files };
+              updateFieldValues(newValues);
+              client.submitCustom(newValues);
+            }
           }
         } catch (e: any) {
           updateEnvelopeGeneration(envelopeId, { status: 'error' });

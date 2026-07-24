@@ -23,6 +23,10 @@ export interface DocxEditorProps {
   visible?: boolean;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
+  terminalAction?: 'download' | 'sign';
+  onTerminalAction?: (saveResult?: unknown) => void | Promise<void>;
+  terminalActionDisabled?: boolean;
+  terminalActionLoading?: boolean;
   className?: string;
   /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
   openNonce?: number;
@@ -35,7 +39,7 @@ export interface DocxEditorProps {
   onError?: (error: string) => void;
   /** Persistence boundary: receives the exported .docx. The host decides where
    *  it goes (the component never persists on its own). */
-  onSave?: (blob: Blob) => void | Promise<void>;
+  onSave?: (blob: Blob) => unknown | Promise<unknown>;
 }
 
 const overlay = {
@@ -63,6 +67,10 @@ function DocxEditor({
   readOnly,
   visible = true,
   hideDownload,
+  terminalAction,
+  onTerminalAction,
+  terminalActionDisabled,
+  terminalActionLoading,
   className,
   openNonce,
   onReady,
@@ -74,6 +82,7 @@ function DocxEditor({
   const dirtyRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [terminalRunning, setTerminalRunning] = useState(false);
 
   const { containerRef, editor, loading, error, exportDoc } = useDocxEditor({
     source,
@@ -106,19 +115,26 @@ function DocxEditor({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const handleSave = async () => {
+  const saveCurrentDocument = async () => {
     if (!onSave) return;
     setSaving(true);
     try {
       const blob = await exportDoc();
-      await onSave(blob);
+      const result = await onSave(blob);
       dirtyRef.current = false;
       setDirty(false);
       onChange?.(false);
-    } catch (err) {
-      onError?.((err as Error).message || String(err));
+      return result;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      await saveCurrentDocument();
+    } catch (err) {
+      onError?.((err as Error).message || String(err));
     }
   };
 
@@ -127,6 +143,21 @@ function DocxEditor({
       triggerDownload(await exportDoc());
     } catch (err) {
       onError?.((err as Error).message || String(err));
+    }
+  };
+
+  const handleTerminalAction = async () => {
+    if (!onTerminalAction) return;
+    setTerminalRunning(true);
+    try {
+      const saveResult = dirtyRef.current
+        ? await saveCurrentDocument()
+        : undefined;
+      await onTerminalAction(saveResult);
+    } catch (err) {
+      onError?.((err as Error).message || String(err));
+    } finally {
+      setTerminalRunning(false);
     }
   };
 
@@ -148,8 +179,16 @@ function DocxEditor({
       {editor && (
         <DocxToolbar
           editor={editor}
-          onSave={onSave ? handleSave : undefined}
-          onDownload={hideDownload ? undefined : handleDownload}
+          onSave={onSave && !terminalAction ? handleSave : undefined}
+          onDownload={
+            hideDownload || terminalAction ? undefined : handleDownload
+          }
+          terminalAction={terminalAction}
+          onTerminalAction={onTerminalAction ? handleTerminalAction : undefined}
+          terminalActionDisabled={
+            !!terminalActionDisabled || saving || terminalRunning
+          }
+          terminalActionLoading={!!terminalActionLoading || terminalRunning}
           saving={saving}
           dirty={dirty}
           readOnly={readOnly}

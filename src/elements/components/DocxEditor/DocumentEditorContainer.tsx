@@ -1,15 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
-import { featheryWindow } from '../../../utils/browser';
-import { initInfo, initState } from '../../../utils/init';
+import {
+  downloadAllFileUrls,
+  featheryWindow,
+  openTab
+} from '../../../utils/browser';
+import { initInfo, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
+import { getSignUrl } from '../../../utils/document';
+import { replaceTextVariables } from '../TextNodes';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
 // matches this container and use its first document. Scans loaded form schemas
 // (container ids are unique, so no need to know the form key).
-function resolveDocumentId(containerId?: string): string | undefined {
+function resolveTargetAction(
+  containerId?: string
+): Record<string, any> | undefined {
   if (!containerId) return undefined;
   const schemas = (initState as any).formSchemas ?? {};
   for (const key of Object.keys(schemas)) {
@@ -25,7 +33,7 @@ function resolveDocumentId(containerId?: string): string | undefined {
             action?.type === ACTION_GENERATE_ENVELOPES &&
             action?.view_draft_container === containerId
           ) {
-            return (action.documents ?? [])[0];
+            return action;
           }
         }
       }
@@ -50,35 +58,6 @@ interface RefreshEventDetail {
 
 // Fired by the Generate Documents action targeting this container so an
 // already mounted editor reloads the freshly generated envelope.
-
-function resolveViewDraftReadOnly(containerId?: string): boolean | undefined {
-  if (!containerId) return undefined;
-  const schemas = (initState as any).formSchemas ?? {};
-  for (const key of Object.keys(schemas)) {
-    const rawSteps = schemas[key]?.steps;
-    const steps = Array.isArray(rawSteps)
-      ? rawSteps
-      : Object.values(rawSteps ?? {});
-    for (const step of steps as any[]) {
-      for (const button of step?.buttons ?? []) {
-        for (const action of button?.properties?.actions ?? []) {
-          if (
-            action?.type === ACTION_GENERATE_ENVELOPES &&
-            action?.view_draft_container === containerId
-          ) {
-            if (typeof action.view_draft_read_only === 'boolean') {
-              return action.view_draft_read_only;
-            }
-            // Targeted editor drafts default to editable.
-            return false;
-          }
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
 const REFRESH_EVENT = 'feathery-docx-editor-refresh';
 const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
 
@@ -140,16 +119,23 @@ export default function DocumentEditorContainer({
     () => getPendingDraft(containerId),
     [containerId]
   );
+  const targetAction = useMemo(
+    () => resolveTargetAction(containerId),
+    [containerId]
+  );
   // Document is owned by the button that targets this container.
   const documentId = useMemo(
     () =>
-      resolveDocumentId(containerId) ??
+      (targetAction?.documents ?? [])[0] ??
       pendingDraft?.documents?.[0] ??
       pendingDraft?.envelopes?.[0]?.document,
-    [containerId, pendingDraft]
+    [targetAction, pendingDraft]
   );
   const [envelope, setEnvelope] = useState<Envelope | null>(
     () => getGeneratedEnvelope(pendingDraft, documentId) ?? null
+  );
+  const [sourceUrl, setSourceUrl] = useState<string | undefined>(
+    () => getGeneratedEnvelope(pendingDraft, documentId)?.file ?? undefined
   );
   const [loading, setLoading] = useState(!envelope);
   const [error, setError] = useState<string | null>(null);
@@ -165,8 +151,7 @@ export default function DocumentEditorContainer({
   // Word Processor). window.featherySyncfusion may override for local smoke
   // tests; licenseKey is optional (server license lives on the Word Processor).
   const syncfusion = (featheryWindow() as any).featherySyncfusion ?? {};
-  const serviceUrl =
-    syncfusion.serviceUrl || `${API_URL}document/editor/`;
+  const serviceUrl = syncfusion.serviceUrl || `${API_URL}document/editor/`;
   const { sdkKey } = initInfo();
   const serviceHeaders = useMemo(() => {
     if (syncfusion.headers) return syncfusion.headers;
@@ -178,7 +163,9 @@ export default function DocumentEditorContainer({
     if (!documentId) return;
     try {
       const env = await client.getCurrentEnvelope(documentId);
-      setEnvelope(env && env.id ? (env as Envelope) : null);
+      const nextEnvelope = env && env.id ? (env as Envelope) : null;
+      setEnvelope(nextEnvelope);
+      setSourceUrl(nextEnvelope?.file ?? undefined);
       setError(null);
     } catch (e: any) {
       console.error('Feathery: failed to load current envelope', e);
@@ -199,6 +186,7 @@ export default function DocumentEditorContainer({
     );
     if (pendingEnvelope?.id) {
       setEnvelope(pendingEnvelope);
+      setSourceUrl(pendingEnvelope.file ?? undefined);
       setLoading(false);
       return;
     }
@@ -220,6 +208,7 @@ export default function DocumentEditorContainer({
       const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
       if (generatedEnvelope?.id) {
         setEnvelope(generatedEnvelope);
+        setSourceUrl(generatedEnvelope.file ?? undefined);
         setError(null);
         setLoading(false);
         setReloadKey((k) => k + 1);
@@ -236,17 +225,77 @@ export default function DocumentEditorContainer({
   // Stable source unless a different envelope loads or a regenerate is
   // signalled (reloadKey) — a plain save leaves both unchanged, so it doesn't
   // reload the document.
-  const fileUrl = envelope?.file ?? undefined;
   const source = useMemo(
-    () => (fileUrl ? { url: fileUrl } : undefined),
-    [fileUrl]
+    () => (sourceUrl ? { url: sourceUrl } : undefined),
+    [sourceUrl]
   );
   const activeDocumentId = documentId ?? envelope?.document;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
   // `view_draft_read_only` (default: editable).
-  const actionReadOnly = resolveViewDraftReadOnly(containerId);
+  const actionReadOnly =
+    typeof targetAction?.view_draft_read_only === 'boolean'
+      ? targetAction.view_draft_read_only
+      : false;
   const readOnly = !!envelope?.signed || !!actionReadOnly;
+  const terminalAction = targetAction
+    ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
+      ? 'sign'
+      : targetAction.envelope_action === 'download'
+      ? 'download'
+      : undefined
+    : undefined;
+
+  const saveEnvelope = useCallback(
+    async (blob: Blob) => {
+      if (!envelope) return;
+      const updated = await client.saveEnvelopeFile(
+        envelope.id,
+        blob,
+        'document.docx'
+      );
+      const savedFileUrl = updated?.file ?? envelope.file;
+      if (updated?.file) {
+        setEnvelope((current) =>
+          current?.id === envelope.id
+            ? { ...current, file: updated.file }
+            : current
+        );
+      }
+      if (
+        targetAction?.envelope_action === 'save' &&
+        targetAction.save_document_field_key &&
+        savedFileUrl
+      ) {
+        const newValues = {
+          [targetAction.save_document_field_key]: savedFileUrl
+        };
+        setFieldValues(newValues, true, true);
+        await client.submitCustom(newValues);
+      }
+      return updated;
+    },
+    [client, envelope, targetAction]
+  );
+
+  const runTerminalAction = useCallback(
+    async (saveResult?: unknown) => {
+      const savedFileUrl =
+        (saveResult as { file?: string } | undefined)?.file ?? envelope?.file;
+      if (!savedFileUrl || !terminalAction) return;
+      if (terminalAction === 'download') {
+        await downloadAllFileUrls(
+          [savedFileUrl],
+          replaceTextVariables(targetAction?.envelope_zip_name)
+        );
+      } else if (terminalAction === 'sign') {
+        const url = getSignUrl(targetAction?.redirect);
+        if (targetAction?.redirect) featheryWindow().location.href = url;
+        else openTab(url);
+      }
+    },
+    [envelope?.file, targetAction, terminalAction]
+  );
 
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 
@@ -292,11 +341,10 @@ export default function DocumentEditorContainer({
       readOnly={readOnly}
       openNonce={reloadKey}
       fileName='document'
-      onSave={async (blob: Blob) => {
-        // Overwrite the same envelope; keep the loaded source stable so the
-        // user's view is preserved after saving.
-        await client.saveEnvelopeFile(envelope.id, blob, 'document.docx');
-      }}
+      terminalAction={terminalAction}
+      onTerminalAction={terminalAction ? runTerminalAction : undefined}
+      terminalActionDisabled={!envelope.file}
+      onSave={saveEnvelope}
     />
   );
 }

@@ -30,6 +30,7 @@ import {
   PlusIcon,
   RedoIcon,
   SaveIcon,
+  SignatureIcon,
   SpinnerIcon,
   StrikeIcon,
   TextIcon,
@@ -47,9 +48,9 @@ const ZINC = {
   900: '#18181b'
 };
 const INDIGO = '#6366f1';
-// Feathery brand red (matches the dashboard's `destructive` color).
-const FEATHERY_RED = 'hsl(3, 46%, 55%)';
-const FEATHERY_RED_HOVER = 'hsl(3, 48%, 50%)';
+// Feathery primary button colors (matches the dashboard Core Button default).
+const FEATHERY_RED = '#e2626e';
+const FEATHERY_RED_HOVER = '#dc3a4b';
 
 const STYLES = [
   { label: 'Text', value: 'Normal', Icon: TextIcon },
@@ -233,6 +234,10 @@ export interface DocxToolbarProps {
   editor: any;
   onSave?: () => void;
   onDownload?: () => void;
+  terminalAction?: 'download' | 'sign';
+  onTerminalAction?: () => void;
+  terminalActionDisabled?: boolean;
+  terminalActionLoading?: boolean;
   saving?: boolean;
   /** Unsaved edits since the last successful save — surfaces an indicator. */
   dirty?: boolean;
@@ -247,6 +252,10 @@ export default function DocxToolbar({
   editor,
   onSave,
   onDownload,
+  terminalAction,
+  onTerminalAction,
+  terminalActionDisabled,
+  terminalActionLoading,
   saving,
   dirty,
   readOnly
@@ -342,6 +351,7 @@ export default function DocxToolbar({
   const filteredFonts = FONTS.filter((f) =>
     f.toLowerCase().includes(fontQuery.toLowerCase())
   );
+  const terminalDisabled = !!terminalActionDisabled || !!terminalActionLoading;
 
   // Tool groups. Essential ones stay inline; the rest collapse into "More".
   const historyGroup = (
@@ -840,7 +850,7 @@ export default function DocxToolbar({
         </div>
       </div>
 
-      {/* Save / Download (pinned right) */}
+      {/* Save / Download / Sign (pinned right) */}
       <div
         css={{
           display: 'flex',
@@ -897,6 +907,41 @@ export default function DocxToolbar({
           >
             <DownloadIcon width={16} height={16} />
             Export
+          </button>
+        )}
+        {terminalAction && onTerminalAction && (
+          <button
+            type='button'
+            css={{
+              display: 'flex',
+              height: 32,
+              alignItems: 'center',
+              gap: 6,
+              borderRadius: 6,
+              border: 'none',
+              background: FEATHERY_RED,
+              padding: '0 10px',
+              fontSize: 14,
+              fontWeight: 500,
+              color: '#fff',
+              cursor: terminalDisabled ? 'default' : 'pointer',
+              opacity: terminalDisabled ? 0.5 : 1,
+              '&:hover': terminalDisabled
+                ? {}
+                : { background: FEATHERY_RED_HOVER }
+            }}
+            disabled={terminalDisabled}
+            onClick={onTerminalAction}
+            title='Saves changes before continuing'
+          >
+            {terminalActionLoading ? (
+              <SpinnerIcon width={16} height={16} />
+            ) : terminalAction === 'download' ? (
+              <DownloadIcon width={16} height={16} />
+            ) : (
+              <SignatureIcon width={16} height={16} />
+            )}
+            {terminalAction === 'download' ? 'Download' : 'Sign'}
           </button>
         )}
         {onSave && (
