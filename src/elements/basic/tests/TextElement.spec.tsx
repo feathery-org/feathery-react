@@ -34,6 +34,91 @@ const ruleFor = (el: Element | null) => {
 };
 
 describe('TextElement', () => {
+  it('applies independently configured border sides to prefixed states', () => {
+    const element = {
+      styles: {
+        hover_border_left_color: '00287A',
+        hover_border_left_pattern: 'dashed',
+        hover_border_left_width: 2
+      },
+      mobile_styles: {}
+    };
+    const responsiveStyles = new ResponsiveStyles(
+      element,
+      ['borderHover'],
+      true
+    );
+
+    expect(
+      responsiveStyles.applyBorders({
+        target: 'borderHover',
+        prefix: 'hover_'
+      })
+    ).toBe(true);
+    expect(responsiveStyles.getTarget('borderHover', true)).toEqual({
+      borderLeftColor: '#00287A !important',
+      borderLeftStyle: 'dashed !important',
+      borderLeftWidth: '2px !important'
+    });
+  });
+
+  it('removes an inherited desktop border when mobile explicitly clears it', () => {
+    const element = {
+      styles: {
+        border_left_color: '00287A',
+        border_left_pattern: 'solid',
+        border_left_width: 3
+      },
+      mobile_styles: {
+        border_left_color: '',
+        border_left_pattern: '',
+        border_left_width: 0
+      }
+    };
+    const responsiveStyles = new ResponsiveStyles(
+      element,
+      ['border'],
+      true
+    );
+
+    expect(responsiveStyles.applyBorders({ target: 'border' })).toBe(true);
+    expect(responsiveStyles.getTarget('border')).toEqual({
+      borderLeftColor: '#00287A',
+      borderLeftStyle: 'solid',
+      borderLeftWidth: '3px',
+      '@media (max-width: 478px)': {
+        borderLeftWidth: '0px'
+      }
+    });
+  });
+
+  it('renders a left border without requiring the other border sides', async () => {
+    const TextElement = (await import('../TextElement')).default;
+    const element = {
+      id: 'text-left-border',
+      properties: {},
+      styles: {
+        border_left_color: '00287A',
+        border_left_pattern: 'solid',
+        border_left_width: 3
+      },
+      mobile_styles: {}
+    };
+    const responsiveStyles = new ResponsiveStyles(element, [], true);
+
+    const { container } = render(
+      <TextElement element={element} responsiveStyles={responsiveStyles} />
+    );
+
+    const rule = ruleFor(container.querySelector('#bb-text-left-border'));
+    expect(rule).toContain('border-left-color: #00287A');
+    expect(rule).toContain('border-left-style: solid');
+    expect(rule).toContain('border-left-width: 3px');
+    expect(rule).not.toContain('border-top-');
+    expect(rule).not.toContain('border-right-');
+    expect(rule).not.toContain('border-bottom-');
+  });
+
   it('renders inner padding and corners inside the element width', async () => {
     const TextElement = (await import('../TextElement')).default;
     const element = {
