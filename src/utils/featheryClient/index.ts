@@ -851,6 +851,27 @@ export default class FeatheryClient extends IntegrationClient {
     return submission;
   }
 
+  // Submit only specific file/signature servars without submitting the rest of
+  // the step. Used to auto-submit an AI extraction's file field(s) on trigger,
+  // independent of the button's "Validate & Submit Step" toggle. Re-submitting
+  // an already-submitted file is a safe no-op (deduped client-side by field and
+  // server-side by S3 path).
+  // fileEntries = [{servar: {key, <type>: <value>}, stepKey}]
+  async submitFiles(fileEntries: { servar: any; stepKey: string }[]) {
+    if (this.draft || this.getNoSave()) return;
+    if (!fileEntries.length) return;
+
+    await this.handleInteraction();
+    const submission = Promise.all([
+      this.submitQueue.catch(() => undefined),
+      ...fileEntries.map(({ servar, stepKey }) =>
+        this._submitFileData(servar, stepKey)
+      )
+    ]);
+    this.submitQueue = submission;
+    return submission;
+  }
+
   async registerEvent(eventData: any) {
     if (this.draft) return;
 
