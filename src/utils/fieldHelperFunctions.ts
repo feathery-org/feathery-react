@@ -154,6 +154,14 @@ export function getDefaultFieldValue(field: any) {
     if (['multiselect', 'dropdown_multi'].includes(servar.type)) {
       return meta.default_value.split(',').map((val: string) => val.trim());
     }
+    if (servar.type === 'button_group') {
+      // For button_group, always return an array since it's an ARRAY_FIELD_TYPE
+      // Handle both single and multiple selection
+      if (meta.multiple) {
+        return meta.default_value.split(',').map((val: string) => val.trim());
+      }
+      return [meta.default_value];
+    }
     return meta.default_value;
   }
   if (servar.type === 'date_selector' && meta.default_date_today)
