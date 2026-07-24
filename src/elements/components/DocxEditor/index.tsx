@@ -216,14 +216,32 @@ function DocxEditor({
             width: '100%',
             height: '100%',
             // Syncfusion's status-bar page control renders the "Page" label,
-            // the number input, and "of N" with mismatched vertical alignment.
-            // Center them (scoped to this editor's DOM).
+            // the number input, and "of N" on a line but the input box is
+            // taller than the text and sits low. Flex-center the whole control
+            // and normalize the input box (height/line-height/margin) so all
+            // three align on one baseline. Scoped to this editor's DOM.
             '& .e-de-ctnr-pagenumber': {
               display: 'inline-flex',
-              alignItems: 'center'
+              alignItems: 'center',
+              gap: 4
             },
-            '& .e-de-pagenumber-input, & .e-de-pagenumber-text': {
-              verticalAlign: 'middle'
+            '& .e-de-ctnr-pagenumber .e-input-group': {
+              margin: 0,
+              alignSelf: 'center'
+            },
+            '& .e-de-pagenumber-input': {
+              height: 22,
+              minHeight: 22,
+              lineHeight: '22px',
+              padding: '0 4px',
+              margin: 0,
+              boxSizing: 'border-box',
+              textAlign: 'center'
+            },
+            '& .e-de-pagenumber-text': {
+              display: 'inline-flex',
+              alignItems: 'center',
+              lineHeight: '22px'
             }
           }}
         />
