@@ -869,13 +869,17 @@ export default function DocxToolbar({
         padding: '0 12px'
       }}
     >
-      {/* Tool row: centered when it fits; non-essential groups collapse into a
-          "More" dropdown when the container is too narrow. Save/Download pinned.
-          The wrapper is the positioning context for the edge shadows. */}
+      {/* Left spacer balances the right action group so the tool cluster stays
+          horizontally centered on the page (which is centered in the editor
+          below). Both regions grow equally, so the tools sit at true center. */}
+      <div aria-hidden css={{ flex: '1 1 0', minWidth: 0 }} />
+      {/* Tool row: content-sized and centered by the flanking spacers;
+          non-essential groups collapse into a "More" dropdown when the space is
+          too narrow. The wrapper is the positioning context for the shadows. */}
       <div
         css={{
           position: 'relative',
-          flex: '1 1 auto',
+          flex: '0 1 auto',
           minWidth: 0,
           display: 'flex'
         }}
@@ -993,11 +997,12 @@ export default function DocxToolbar({
         />
       </div>
 
-      {/* Save / Download / Sign (pinned right) */}
+      {/* Save / Download / Sign — right-aligned within a region that grows to
+          match the left spacer, keeping the tool cluster centered. */}
       <div
         css={{
           display: 'flex',
-          flex: '0 0 auto',
+          flex: '1 1 0',
           alignItems: 'center',
           paddingLeft: 8,
           justifyContent: 'flex-end',
