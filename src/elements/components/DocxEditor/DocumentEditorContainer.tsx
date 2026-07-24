@@ -1,15 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
-import {
-  downloadAllFileUrls,
-  featheryWindow,
-  openTab
-} from '../../../utils/browser';
+import { featheryWindow, openTab } from '../../../utils/browser';
 import { initInfo, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
-import { replaceTextVariables } from '../TextNodes';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -278,24 +273,15 @@ export default function DocumentEditorContainer({
     [client, envelope, targetAction]
   );
 
-  const runTerminalAction = useCallback(
-    async (saveResult?: unknown) => {
-      const savedFileUrl =
-        (saveResult as { file?: string } | undefined)?.file ?? envelope?.file;
-      if (!savedFileUrl || !terminalAction) return;
-      if (terminalAction === 'download') {
-        await downloadAllFileUrls(
-          [savedFileUrl],
-          replaceTextVariables(targetAction?.envelope_zip_name)
-        );
-      } else if (terminalAction === 'sign') {
-        const url = getSignUrl(targetAction?.redirect);
-        if (targetAction?.redirect) featheryWindow().location.href = url;
-        else openTab(url);
-      }
-    },
-    [envelope?.file, targetAction, terminalAction]
-  );
+  // Only the sign action is handled here — the download action downloads the
+  // freshly-saved bytes directly in DocxEditor, so it never re-fetches a
+  // (possibly cache-stale) envelope file URL.
+  const runTerminalAction = useCallback(async () => {
+    if (terminalAction !== 'sign') return;
+    const url = getSignUrl(targetAction?.redirect);
+    if (targetAction?.redirect) featheryWindow().location.href = url;
+    else openTab(url);
+  }, [targetAction, terminalAction]);
 
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 

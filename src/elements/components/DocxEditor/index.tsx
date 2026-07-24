@@ -115,11 +115,13 @@ function DocxEditor({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const saveCurrentDocument = async () => {
+  // Persist the given (already-exported) bytes to the host. Reuses the caller's
+  // blob so download/terminal flows export exactly once and save the same bytes
+  // they hand back to the user.
+  const saveCurrentDocument = async (blob: Blob) => {
     if (!onSave) return;
     setSaving(true);
     try {
-      const blob = await exportDoc();
       const result = await onSave(blob);
       dirtyRef.current = false;
       setDirty(false);
@@ -132,7 +134,7 @@ function DocxEditor({
 
   const handleSave = async () => {
     try {
-      await saveCurrentDocument();
+      await saveCurrentDocument(await exportDoc());
     } catch (err) {
       onError?.((err as Error).message || String(err));
     }
@@ -140,20 +142,32 @@ function DocxEditor({
 
   const handleDownload = async () => {
     try {
-      triggerDownload(await exportDoc());
+      // Write the current edits to the envelope BEFORE downloading, then hand
+      // back the exact bytes we exported — never a re-fetched (and possibly
+      // cache-stale) file URL.
+      const blob = await exportDoc();
+      if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
+      triggerDownload(blob);
     } catch (err) {
       onError?.((err as Error).message || String(err));
     }
   };
 
   const handleTerminalAction = async () => {
-    if (!onTerminalAction) return;
     setTerminalRunning(true);
     try {
-      const saveResult = dirtyRef.current
-        ? await saveCurrentDocument()
-        : undefined;
-      await onTerminalAction(saveResult);
+      const blob = await exportDoc();
+      const saveResult =
+        onSave && dirtyRef.current
+          ? await saveCurrentDocument(blob)
+          : undefined;
+      if (terminalAction === 'download') {
+        // Download the just-saved bytes directly (avoids the stale-URL issue
+        // of re-fetching an overwritten envelope file).
+        triggerDownload(blob);
+      } else {
+        await onTerminalAction?.(saveResult);
+      }
     } catch (err) {
       onError?.((err as Error).message || String(err));
     } finally {
