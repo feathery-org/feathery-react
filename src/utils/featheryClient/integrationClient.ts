@@ -449,7 +449,14 @@ export default class IntegrationClient {
 
   async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
-    const signer = fieldValues[action.envelope_signer_field_key];
+    // Editor flow: the backend converts a docx envelope to PDF at generation
+    // whenever a signer is present, which would make the draft uneditable in
+    // the targeted document-editor container. Hold the signer back here — the
+    // editor's Sign action forwards it at finalize time (finalizeEnvelope),
+    // when that conversion is meant to happen.
+    const signer = action.view_draft_container
+      ? undefined
+      : fieldValues[action.envelope_signer_field_key];
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
