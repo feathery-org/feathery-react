@@ -3125,7 +3125,6 @@ function Form({
     setCardElement,
     visiblePositions,
     calendly: integrations?.calendly?.metadata,
-    syncfusion: integrations?.syncfusion?.metadata,
     featheryContext: getFormContext(_internalId),
     assistantClient: internalState[_internalId]?.assistantClient
   };
