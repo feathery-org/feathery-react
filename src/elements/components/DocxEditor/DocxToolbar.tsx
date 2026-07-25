@@ -172,6 +172,23 @@ const downloadBtn = {
   cursor: 'pointer',
   '&:hover': { background: ZINC[50] }
 };
+// Primary (red) terminal-action button: Download / Sign.
+const terminalBtn = (disabled = false) => ({
+  display: 'flex',
+  height: 32,
+  alignItems: 'center',
+  gap: 6,
+  borderRadius: 6,
+  border: 'none',
+  background: FEATHERY_RED,
+  padding: '0 10px',
+  fontSize: 14,
+  fontWeight: 500,
+  color: '#fff',
+  cursor: disabled ? 'default' : 'pointer',
+  opacity: disabled ? 0.5 : 1,
+  '&:hover': disabled ? {} : { background: FEATHERY_RED_HOVER }
+});
 const textInput = {
   display: 'block',
   width: '100%',
@@ -340,6 +357,9 @@ export interface DocxToolbarProps {
   onDownloadPdf?: () => void;
   /** True while a download/export is running (disables the control). */
   downloadBusy?: boolean;
+  /** PDF variant of the 'download' terminal action. When provided, the red
+   *  terminal Download button becomes a DOCX / PDF menu. */
+  onTerminalActionPdf?: () => void;
   terminalAction?: 'download' | 'sign';
   onTerminalAction?: () => void;
   terminalActionDisabled?: boolean;
@@ -363,6 +383,7 @@ export default function DocxToolbar({
   downloadBusy,
   terminalAction,
   onTerminalAction,
+  onTerminalActionPdf,
   terminalActionDisabled,
   terminalActionLoading,
   saving,
@@ -1182,41 +1203,72 @@ export default function DocxToolbar({
             Download
           </button>
         ) : null}
-        {terminalAction && onTerminalAction && (
-          <button
-            type='button'
-            css={{
-              display: 'flex',
-              height: 32,
-              alignItems: 'center',
-              gap: 6,
-              borderRadius: 6,
-              border: 'none',
-              background: FEATHERY_RED,
-              padding: '0 10px',
-              fontSize: 14,
-              fontWeight: 500,
-              color: '#fff',
-              cursor: terminalDisabled ? 'default' : 'pointer',
-              opacity: terminalDisabled ? 0.5 : 1,
-              '&:hover': terminalDisabled
-                ? {}
-                : { background: FEATHERY_RED_HOVER }
-            }}
-            disabled={terminalDisabled}
-            onClick={onTerminalAction}
-            title='Saves changes before continuing'
-          >
-            {terminalActionLoading ? (
-              <SpinnerIcon width={16} height={16} />
-            ) : terminalAction === 'download' ? (
-              <DownloadIcon width={16} height={16} />
-            ) : (
-              <SignatureIcon width={16} height={16} />
-            )}
-            {terminalAction === 'download' ? 'Download' : 'Sign'}
-          </button>
-        )}
+        {terminalAction &&
+          onTerminalAction &&
+          (terminalAction === 'download' && onTerminalActionPdf ? (
+            <Menu
+              align='end'
+              trigger={({ toggle }) => (
+                <button
+                  type='button'
+                  css={terminalBtn(terminalDisabled)}
+                  disabled={terminalDisabled}
+                  onClick={toggle}
+                  title='Saves changes before downloading'
+                >
+                  {terminalActionLoading ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <DownloadIcon width={16} height={16} />
+                  )}
+                  Download
+                  <ChevronDownIcon width={14} height={14} />
+                </button>
+              )}
+            >
+              {(close) => (
+                <div css={{ width: 200 }}>
+                  <button
+                    type='button'
+                    css={menuItem()}
+                    onClick={() => {
+                      onTerminalAction();
+                      close();
+                    }}
+                  >
+                    Download as DOCX
+                  </button>
+                  <button
+                    type='button'
+                    css={menuItem()}
+                    onClick={() => {
+                      onTerminalActionPdf();
+                      close();
+                    }}
+                  >
+                    Download as PDF
+                  </button>
+                </div>
+              )}
+            </Menu>
+          ) : (
+            <button
+              type='button'
+              css={terminalBtn(terminalDisabled)}
+              disabled={terminalDisabled}
+              onClick={onTerminalAction}
+              title='Saves changes before continuing'
+            >
+              {terminalActionLoading ? (
+                <SpinnerIcon width={16} height={16} />
+              ) : terminalAction === 'download' ? (
+                <DownloadIcon width={16} height={16} />
+              ) : (
+                <SignatureIcon width={16} height={16} />
+              )}
+              {terminalAction === 'download' ? 'Download' : 'Sign'}
+            </button>
+          ))}
         {onSave && (
           <button
             type='button'

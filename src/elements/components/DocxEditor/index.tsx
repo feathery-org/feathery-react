@@ -198,6 +198,17 @@ function DocxEditor({
     }
   };
 
+  // PDF variant of the 'download' terminal action — same save-first flow,
+  // then the host-converted PDF bytes.
+  const handleTerminalActionPdf = async () => {
+    setTerminalRunning(true);
+    try {
+      await handleDownloadPdf();
+    } finally {
+      setTerminalRunning(false);
+    }
+  };
+
   if (!visible) return null;
 
   return (
@@ -216,16 +227,26 @@ function DocxEditor({
       {editor && (
         <DocxToolbar
           editor={editor}
-          onSave={onSave && !terminalAction ? handleSave : undefined}
-          // Always available (unless explicitly hidden) — even alongside a
-          // Sign/Download terminal action, so drafts can be exported anytime.
-          onDownload={hideDownload ? undefined : handleDownload}
+          // Save stays visible even alongside a terminal action so users can
+          // persist edits without committing to download/sign.
+          onSave={onSave ? handleSave : undefined}
+          // Secondary Download only when no terminal action owns downloading.
+          onDownload={
+            hideDownload || terminalAction ? undefined : handleDownload
+          }
           onDownloadPdf={
-            hideDownload || !onExportPdf ? undefined : handleDownloadPdf
+            hideDownload || terminalAction || !onExportPdf
+              ? undefined
+              : handleDownloadPdf
           }
           downloadBusy={exportingPdf}
           terminalAction={terminalAction}
           onTerminalAction={onTerminalAction ? handleTerminalAction : undefined}
+          onTerminalActionPdf={
+            terminalAction === 'download' && onExportPdf
+              ? handleTerminalActionPdf
+              : undefined
+          }
           terminalActionDisabled={
             !!terminalActionDisabled || saving || terminalRunning
           }
