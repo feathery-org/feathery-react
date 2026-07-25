@@ -520,6 +520,25 @@ export default class IntegrationClient {
     });
   }
 
+  // Download the envelope as PDF bytes. Docx envelopes are converted
+  // server-side on the fly WITHOUT being persisted — unlike finalize, the
+  // envelope stays an editable docx.
+  downloadEnvelopePdf(envelopeId: string): Promise<Blob> {
+    const { userId } = initInfo();
+    const url = `${API_URL}document/envelope/${envelopeId}/pdf/`;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fuser_key: userId ?? '' }),
+      keepalive: false
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (!response) throw Error('PDF export failed');
+      if (response.ok) return await response.blob();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
   // The newest envelope for this submission + document, loaded by the in-form
   // document editor container. Returns {id, file, type, signed} or {}.
   getCurrentEnvelope(documentId: string) {

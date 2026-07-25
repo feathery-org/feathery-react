@@ -353,6 +353,9 @@ export default function DocumentEditorContainer({
       onTerminalAction={terminalAction ? runTerminalAction : undefined}
       terminalActionDisabled={!envelope.file}
       onSave={saveEnvelope}
+      // Server-side docx→pdf conversion (doc-conversion Lambda); does not
+      // persist anything — the envelope stays an editable docx.
+      onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
     />
   );
 }

@@ -23,6 +23,10 @@ export interface DocxEditorProps {
   visible?: boolean;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
+  /** Returns the current document as PDF bytes (converted by the host, e.g.
+   *  the Feathery backend). When provided, Download becomes a DOCX/PDF menu.
+   *  Current edits are saved via `onSave` before this is called. */
+  onExportPdf?: () => Promise<Blob>;
   terminalAction?: 'download' | 'sign';
   onTerminalAction?: (saveResult?: unknown) => void | Promise<void>;
   terminalActionDisabled?: boolean;
@@ -67,6 +71,7 @@ function DocxEditor({
   readOnly,
   visible = true,
   hideDownload,
+  onExportPdf,
   terminalAction,
   onTerminalAction,
   terminalActionDisabled,
@@ -83,6 +88,7 @@ function DocxEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [terminalRunning, setTerminalRunning] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const { containerRef, editor, loading, error, exportDoc } = useDocxEditor({
     source,
@@ -103,12 +109,13 @@ function DocxEditor({
     onError
   });
 
-  const triggerDownload = (blob: Blob) => {
+  const triggerDownload = (blob: Blob, extension: 'docx' | 'pdf' = 'docx') => {
     const doc = featheryDoc();
     const url = URL.createObjectURL(blob);
     const a = doc.createElement('a');
+    const base = fileName.replace(/\.(docx|pdf)$/i, '');
     a.href = url;
-    a.download = fileName.endsWith('.docx') ? fileName : `${fileName}.docx`;
+    a.download = `${base}.${extension}`;
     doc.body.appendChild(a);
     a.click();
     a.remove();
@@ -153,6 +160,22 @@ function DocxEditor({
     }
   };
 
+  const handleDownloadPdf = async () => {
+    if (!onExportPdf) return;
+    setExportingPdf(true);
+    try {
+      // The host converts the SAVED document, so persist current edits first —
+      // the PDF must match what's on screen.
+      const blob = await exportDoc();
+      if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
+      triggerDownload(await onExportPdf(), 'pdf');
+    } catch (err) {
+      onError?.((err as Error).message || String(err));
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const handleTerminalAction = async () => {
     setTerminalRunning(true);
     try {
@@ -194,9 +217,13 @@ function DocxEditor({
         <DocxToolbar
           editor={editor}
           onSave={onSave && !terminalAction ? handleSave : undefined}
-          onDownload={
-            hideDownload || terminalAction ? undefined : handleDownload
+          // Always available (unless explicitly hidden) — even alongside a
+          // Sign/Download terminal action, so drafts can be exported anytime.
+          onDownload={hideDownload ? undefined : handleDownload}
+          onDownloadPdf={
+            hideDownload || !onExportPdf ? undefined : handleDownloadPdf
           }
+          downloadBusy={exportingPdf}
           terminalAction={terminalAction}
           onTerminalAction={onTerminalAction ? handleTerminalAction : undefined}
           terminalActionDisabled={

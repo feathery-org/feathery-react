@@ -156,6 +156,22 @@ const menuItem = (active = false) => ({
   cursor: 'pointer',
   '&:hover': { background: ZINC[100] }
 });
+// Secondary action button (Download) pinned in the toolbar's right region.
+const downloadBtn = {
+  display: 'flex',
+  height: 32,
+  alignItems: 'center',
+  gap: 6,
+  borderRadius: 6,
+  border: `1px solid ${ZINC[300]}`,
+  background: '#fff',
+  padding: '0 10px',
+  fontSize: 14,
+  fontWeight: 500,
+  color: ZINC[700],
+  cursor: 'pointer',
+  '&:hover': { background: ZINC[50] }
+};
 const textInput = {
   display: 'block',
   width: '100%',
@@ -320,6 +336,10 @@ export interface DocxToolbarProps {
   editor: any;
   onSave?: () => void;
   onDownload?: () => void;
+  /** When provided, Download becomes a DOCX / PDF menu. */
+  onDownloadPdf?: () => void;
+  /** True while a download/export is running (disables the control). */
+  downloadBusy?: boolean;
   terminalAction?: 'download' | 'sign';
   onTerminalAction?: () => void;
   terminalActionDisabled?: boolean;
@@ -339,6 +359,8 @@ export default function DocxToolbar({
   editor,
   onSave,
   onDownload,
+  onDownloadPdf,
+  downloadBusy,
   terminalAction,
   onTerminalAction,
   terminalActionDisabled,
@@ -1108,30 +1130,58 @@ export default function DocxToolbar({
             Unsaved changes
           </span>
         )}
-        {onDownload && (
-          <button
-            type='button'
-            css={{
-              display: 'flex',
-              height: 32,
-              alignItems: 'center',
-              gap: 6,
-              borderRadius: 6,
-              border: `1px solid ${ZINC[300]}`,
-              background: '#fff',
-              padding: '0 10px',
-              fontSize: 14,
-              fontWeight: 500,
-              color: ZINC[700],
-              cursor: 'pointer',
-              '&:hover': { background: ZINC[50] }
-            }}
-            onClick={onDownload}
+        {onDownload && onDownloadPdf ? (
+          <Menu
+            align='end'
+            trigger={({ toggle }) => (
+              <button
+                type='button'
+                css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
+                onClick={toggle}
+                disabled={downloadBusy}
+                title={downloadBusy ? 'Preparing download…' : 'Download'}
+              >
+                {downloadBusy ? (
+                  <SpinnerIcon width={16} height={16} />
+                ) : (
+                  <DownloadIcon width={16} height={16} />
+                )}
+                Download
+                <ChevronDownIcon width={14} height={14} />
+              </button>
+            )}
           >
+            {(close) => (
+              <div css={{ width: 200 }}>
+                <button
+                  type='button'
+                  css={menuItem()}
+                  onClick={() => {
+                    onDownload();
+                    close();
+                  }}
+                >
+                  Download as DOCX
+                </button>
+                <button
+                  type='button'
+                  css={menuItem()}
+                  onClick={() => {
+                    onDownloadPdf();
+                    close();
+                  }}
+                >
+                  Download as PDF
+                </button>
+              </div>
+            )}
+          </Menu>
+        ) : onDownload ? (
+          <button type='button' css={downloadBtn} onClick={onDownload}>
             <DownloadIcon width={16} height={16} />
             Download
           </button>
-        )}
+        ) : null}
         {terminalAction && onTerminalAction && (
           <button
             type='button'
