@@ -48,7 +48,6 @@ const ZINC = {
   700: '#3f3f46',
   900: '#18181b'
 };
-const INDIGO = '#6366f1';
 // Feathery primary button colors (matches the dashboard Core Button default).
 const FEATHERY_RED = '#e2626e';
 const FEATHERY_RED_HOVER = '#dc3a4b';
@@ -132,13 +131,21 @@ const menuItem = (active = false) => ({
   '&:hover': { background: ZINC[100] }
 });
 const textInput = {
+  display: 'block',
   width: '100%',
-  borderRadius: 6,
+  boxSizing: 'border-box' as const,
+  borderRadius: 8,
   border: `1px solid ${ZINC[300]}`,
-  padding: '6px 8px',
+  background: '#fff',
+  padding: '8px 12px',
   fontSize: 14,
+  color: ZINC[900],
   outline: 'none',
-  '&:focus': { borderColor: INDIGO }
+  '&::placeholder': { color: ZINC[400] },
+  '&:focus': {
+    borderColor: FEATHERY_RED,
+    boxShadow: `0 0 0 1px ${FEATHERY_RED}`
+  }
 };
 
 function Divider() {
@@ -261,8 +268,8 @@ function TableGridPicker({
                 height: 18,
                 borderRadius: 2,
                 cursor: 'pointer',
-                border: `1px solid ${active ? INDIGO : ZINC[300]}`,
-                background: active ? `${INDIGO}33` : '#fff'
+                border: `1px solid ${active ? FEATHERY_RED : ZINC[300]}`,
+                background: active ? `${FEATHERY_RED}33` : '#fff'
               }}
             />
           );
@@ -316,9 +323,9 @@ export default function DocxToolbar({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [scrollable, setScrollable] = useState(false);
   // Which edges have more tools beyond them, so a shadow can hint at the
-  // scrollable overflow on that side. Both false until the row overflows.
+  // scrollable overflow on that side. Both true (= no shadows) until the row
+  // actually overflows.
   const [scrollEdges, setScrollEdges] = useState({
     atStart: true,
     atEnd: true
@@ -374,21 +381,8 @@ export default function DocxToolbar({
     if (el.scrollWidth > el.clientWidth + 1) setCollapsed(true);
   }, []);
 
-  // Minimum-width floor: if even the collapsed row can't fit, fall back to
-  // horizontal scrolling so every inline tool stays reachable. Also runs
-  // pre-paint (state set in the effect above flushes before painting).
-  useLayoutEffect(() => {
-    if (!collapsed) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    if (el.scrollWidth > el.clientWidth + 1) {
-      setScrollable(true);
-      updateScrollEdges();
-    }
-  }, [collapsed]);
-
-  // +1 tolerance for sub-pixel rounding. Called on mount-to-scrollable and on
-  // every scroll so the edge shadows track the current position.
+  // +1 tolerance for sub-pixel rounding. When the row doesn't overflow,
+  // maxScrollLeft is 0 so both edges read "at" and the shadows stay hidden.
   const updateScrollEdges = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -401,6 +395,22 @@ export default function DocxToolbar({
         : { atStart, atEnd }
     );
   };
+
+  // Track overflow from the live scroll metrics — on scroll and on any resize
+  // of the row or its content. In hosted forms the editor's container can get
+  // its final (narrower) size after this mounts, so a mount-time measurement
+  // alone goes stale and would leave overflowing tools without shadows.
+  // Observing is safe here: updateScrollEdges only toggles shadow opacity
+  // (absolutely positioned), which can't change layout and re-trigger it.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollEdges();
+    const observer = new ResizeObserver(updateScrollEdges);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
 
   const applyZoom = (pct: number) => {
     editor.zoomFactor = Math.min(500, Math.max(50, pct)) / 100;
@@ -602,7 +612,7 @@ export default function DocxToolbar({
         )}
       >
         {(close) => (
-          <div css={{ width: 224, maxHeight: 320, overflowY: 'auto' }}>
+          <div css={{ width: 224 }}>
             <input
               css={{ ...textInput, marginBottom: 4 }}
               placeholder='Search fonts'
@@ -611,25 +621,29 @@ export default function DocxToolbar({
               onChange={(e) => setFontQuery(e.target.value)}
               onKeyDown={(e) => e.stopPropagation()}
             />
-            {filteredFonts.map((f) => (
-              <button
-                type='button'
-                key={f}
-                css={menuItem(f === fontFamily)}
-                style={{ fontFamily: f }}
-                onClick={() => {
-                  editor.selection.characterFormat.fontFamily = f;
-                  close();
-                }}
-              >
-                {f}
-              </button>
-            ))}
-            {filteredFonts.length === 0 && (
-              <div css={{ padding: '6px 8px', fontSize: 14, color: ZINC[400] }}>
-                No fonts
-              </div>
-            )}
+            <div css={{ maxHeight: 284, overflowY: 'auto' }}>
+              {filteredFonts.map((f) => (
+                <button
+                  type='button'
+                  key={f}
+                  css={{ ...menuItem(f === fontFamily), minHeight: 32 }}
+                  style={{ fontFamily: f }}
+                  onClick={() => {
+                    editor.selection.characterFormat.fontFamily = f;
+                    close();
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
+              {filteredFonts.length === 0 && (
+                <div
+                  css={{ padding: '6px 8px', fontSize: 14, color: ZINC[400] }}
+                >
+                  No fonts
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Menu>
@@ -890,28 +904,30 @@ export default function DocxToolbar({
           css={{
             flex: '1 1 auto',
             minWidth: 0,
-            overflowX: scrollable ? 'auto' : 'hidden',
+            // Always keep the row bounded to the container: scroll horizontally
+            // when the tools overflow rather than spilling past the editor —
+            // never gated on a mount-time measurement, which goes stale when
+            // the container gets its final size after mount (hosted forms).
+            overflowX: 'auto',
             overflowY: 'hidden',
             display: 'flex',
             alignItems: 'center',
-            ...(scrollable && {
-              scrollbarWidth: 'thin' as const,
-              '&::-webkit-scrollbar': { height: 6 },
-              '&::-webkit-scrollbar-thumb': {
-                background: ZINC[300],
-                borderRadius: 3
-              }
-            })
+            scrollbarWidth: 'thin' as const,
+            '&::-webkit-scrollbar': { height: 6 },
+            '&::-webkit-scrollbar-thumb': {
+              background: ZINC[300],
+              borderRadius: 3
+            }
           }}
         >
           <div
             css={{
               display: 'flex',
               alignItems: 'center',
-              gap: 2,
-              // Centered when there's room; when scrolling, auto margins would
-              // make the overflowing left edge unreachable, so left-align.
-              margin: scrollable ? undefined : '0 auto'
+              gap: 2
+              // No auto-margin centering here: the toolbar's outer spacers
+              // center this row, and auto margins inside a scroll container
+              // would make the overflowing left edge unreachable.
             }}
           >
             {renderRow(visibleGroups)}
@@ -976,7 +992,7 @@ export default function DocxToolbar({
             pointerEvents: 'none',
             background:
               'linear-gradient(to right, rgba(0, 0, 51, 0.1), transparent)',
-            opacity: scrollable && !scrollEdges.atStart ? 1 : 0,
+            opacity: scrollEdges.atStart ? 0 : 1,
             transition: 'opacity 120ms ease'
           }}
         />
@@ -991,7 +1007,7 @@ export default function DocxToolbar({
             pointerEvents: 'none',
             background:
               'linear-gradient(to left, rgba(0, 0, 51, 0.1), transparent)',
-            opacity: scrollable && !scrollEdges.atEnd ? 1 : 0,
+            opacity: scrollEdges.atEnd ? 0 : 1,
             transition: 'opacity 120ms ease'
           }}
         />

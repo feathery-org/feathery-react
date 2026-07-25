@@ -16,6 +16,35 @@ function loadStyles() {
     link.href = href;
     doc.head.appendChild(link);
   });
+  loadAccentOverride();
+}
+
+// The Syncfusion tailwind3 theme's accent is indigo (--color-sf-primary
+// #6366f1). Retint the primary family to the Feathery red so the editor's
+// accents — context menus, primary buttons, focus rings, selection highlight,
+// title bar — match the rest of the product. Applied at :root because the
+// context menu renders in a portal on <body>, out of the editor's subtree.
+const ACCENT_STYLE_ID = 'feathery-docx-accent';
+function loadAccentOverride() {
+  const doc = featheryDoc();
+  if (doc.getElementById(ACCENT_STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = ACCENT_STYLE_ID;
+  style.textContent = `:root{
+    --color-sf-primary:#e2626e;
+    --color-sf-primary-bg-color:#e2626e;
+    --color-sf-primary-bg-color-hover:#dc3a4b;
+    --color-sf-primary-bg-color-focus:#dc3a4b;
+    --color-sf-primary-bg-color-pressed:#c9313f;
+    --color-sf-primary-outline:#e2626e;
+    --color-sf-primary-border-color:#e2626e;
+    --color-sf-primary-border-color-hover:#dc3a4b;
+    --color-sf-primary-border-color-focus:#dc3a4b;
+    --color-sf-primary-border-color-pressed:#c9313f;
+    --color-sf-primary-dark:#dc3a4b;
+    --color-sf-primary-darker:#c9313f;
+  }`;
+  doc.head.appendChild(style);
 }
 
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
