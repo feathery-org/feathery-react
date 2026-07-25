@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
-import { initInfo, initState, setFieldValues } from '../../../utils/init';
+import {
+  fieldValues,
+  initInfo,
+  initState,
+  setFieldValues
+} from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
 
@@ -138,6 +143,10 @@ export default function DocumentEditorContainer({
   // NOT bumped on save (so saving doesn't reload the document out from under
   // the user).
   const [reloadKey, setReloadKey] = useState(0);
+  // Envelope that was finalized for signing (docx → signable PDF) this
+  // session. Keyed by id so a regenerated envelope is editable again without
+  // any reset wiring.
+  const [finalizedId, setFinalizedId] = useState<string | null>(null);
 
   // Read from window each render. Do NOT useMemo([]) — on Next.js SSR
   // featheryWindow() is {} so a mount-once memo freezes serviceUrl as
@@ -232,7 +241,8 @@ export default function DocumentEditorContainer({
     typeof targetAction?.view_draft_read_only === 'boolean'
       ? targetAction.view_draft_read_only
       : false;
-  const readOnly = !!envelope?.signed || !!actionReadOnly;
+  const finalized = !!envelope && envelope.id === finalizedId;
+  const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
   const terminalAction = targetAction
     ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
       ? 'sign'
@@ -278,10 +288,22 @@ export default function DocumentEditorContainer({
   // (possibly cache-stale) envelope file URL.
   const runTerminalAction = useCallback(async () => {
     if (terminalAction !== 'sign') return;
+    // The sign ceremony expects a PDF with signature fields. Generation
+    // skipped that conversion so the docx stayed editable — run it now,
+    // against the just-saved edits (DocxEditor saves before this fires).
+    // One-way: this draft stops being editable; regenerating produces a
+    // fresh editable one. Throws on failure so the sign page never opens
+    // against an unfinalized envelope.
+    if (envelope && envelope.type === 'docx' && !envelope.signed) {
+      const signerKey = targetAction?.envelope_signer_field_key;
+      const signer = signerKey ? fieldValues[signerKey] : undefined;
+      await client.finalizeEnvelope(envelope.id, signer?.toString() ?? '');
+      setFinalizedId(envelope.id);
+    }
     const url = getSignUrl(targetAction?.redirect);
     if (targetAction?.redirect) featheryWindow().location.href = url;
     else openTab(url);
-  }, [targetAction, terminalAction]);
+  }, [client, envelope, targetAction, terminalAction]);
 
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 

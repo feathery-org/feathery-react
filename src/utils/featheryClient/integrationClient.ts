@@ -496,6 +496,30 @@ export default class IntegrationClient {
     });
   }
 
+  // Finalize an edited docx envelope for signing: the backend converts it to
+  // PDF and injects signature fields (the same pipeline generation runs when
+  // a signer is known up front). One-way — the envelope stops being editable.
+  finalizeEnvelope(envelopeId: string, signerEmail = '') {
+    const { userId } = initInfo();
+    const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fuser_key: userId ?? '',
+        signer_email: signerEmail
+      }),
+      keepalive: false
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      // Surface swallowed network errors — the sign page must never open
+      // against an unfinalized envelope.
+      if (!response) throw Error('Document finalization failed');
+      if (response.ok) return await response.json();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
   // The newest envelope for this submission + document, loaded by the in-form
   // document editor container. Returns {id, file, type, signed} or {}.
   getCurrentEnvelope(documentId: string) {
