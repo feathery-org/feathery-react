@@ -479,12 +479,20 @@ export default class IntegrationClient {
     formData.append('fuser_key', userId ?? '');
     formData.append('file', file, fileName);
     const url = `${API_URL}document/envelope/${envelopeId}/file/`;
-    const options = { method: 'PATCH', body: formData };
+    const options = {
+      method: 'PATCH',
+      body: formData,
+      // apiFetch defaults PATCH to keepalive, and Chromium rejects keepalive
+      // requests whose body exceeds 64kb — exported .docx files routinely do.
+      keepalive: false
+    };
     return this._fetch(url, options, false).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
-      }
+      // _fetch resolves undefined on swallowed network errors — surface that
+      // as a failure so callers never treat an unsaved document as saved
+      // (e.g. the sign flow must not open against a stale envelope).
+      if (!response) throw Error('Document save failed');
+      if (response.ok) return await response.json();
+      throw Error(parseAPIError(await response.json()));
     });
   }
 
