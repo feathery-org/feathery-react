@@ -352,6 +352,9 @@ export default function DocumentEditorContainer({
       terminalAction={terminalAction}
       onTerminalAction={terminalAction ? runTerminalAction : undefined}
       terminalActionDisabled={!envelope.file}
+      // Save-to-field flow: the document's destination is a form field (set
+      // on every save), not the user's machine — no Download button.
+      hideDownload={targetAction?.envelope_action === 'save'}
       onSave={saveEnvelope}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not
       // persist anything — the envelope stays an editable docx.
