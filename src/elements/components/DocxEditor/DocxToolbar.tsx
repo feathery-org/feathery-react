@@ -65,6 +65,31 @@ const ALIGNMENTS = [
   { value: 'Justify', Icon: AlignJustifyIcon }
 ] as const;
 
+// Inline order of the tool groups, mirroring Word/Google Docs compact
+// toolbars. When the row runs out of space, groups collapse tail-first into
+// the "More" dropdown — so the most essential controls come first.
+const GROUP_KEYS = [
+  'history',
+  'zoom',
+  'style',
+  'font',
+  'format',
+  'align',
+  'insert',
+  'lists'
+] as const;
+type GroupKey = typeof GROUP_KEYS[number];
+// Slot key for the More trigger in the measurement row.
+const MORE_KEY = '__more';
+// Gap between group spans in the tool row (and between controls in a group).
+const ROW_GAP = 2;
+const groupSpan = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: ROW_GAP,
+  flex: '0 0 auto'
+};
+
 const iconBtn = (active = false, disabled = false) => ({
   display: 'flex',
   height: 32,
@@ -113,6 +138,7 @@ const menuPanel = (align: 'start' | 'center' | 'end') => ({
   borderRadius: 8,
   boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
   padding: 4,
+  maxWidth: 'calc(100vw - 16px)',
   zIndex: 10000
 });
 const menuItem = (active = false) => ({
@@ -306,8 +332,9 @@ export interface DocxToolbarProps {
 
 // Flat toolbar driving the Syncfusion documentEditor API directly (the built-in
 // toolbar is disabled on the container). Active states track the editor's
-// selectionChange / zoomFactorChange events. When the toolbar is too narrow the
-// non-essential groups collapse into a "More" dropdown.
+// selectionChange / zoomFactorChange events. When the toolbar is too narrow,
+// tool groups collapse tail-first into a "More" dropdown, and they return
+// inline as space allows (measured against a hidden copy of the full row).
 export default function DocxToolbar({
   editor,
   onSave,
@@ -321,15 +348,16 @@ export default function DocxToolbar({
   readOnly
 }: DocxToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
-  // Which edges have more tools beyond them, so a shadow can hint at the
-  // scrollable overflow on that side. Both true (= no shadows) until the row
-  // actually overflows.
-  const [scrollEdges, setScrollEdges] = useState({
-    atStart: true,
-    atEnd: true
-  });
+  const centerRef = useRef<HTMLDivElement | null>(null);
+  const actionRef = useRef<HTMLDivElement | null>(null);
+  const measureRowRef = useRef<HTMLDivElement | null>(null);
+  // Group spans in the hidden measurement row, keyed by group key (plus
+  // MORE_KEY for the More trigger). Elements rather than widths — widths are
+  // read fresh on every recompute so in-place resizes can't go stale.
+  const measureElsRef = useRef(new Map<string, HTMLElement>());
+  const [actionWidth, setActionWidth] = useState(0);
+  // How many leading tool groups render inline; the rest live in "More".
+  const [visibleCount, setVisibleCount] = useState(GROUP_KEYS.length);
   const [zoom, setZoom] = useState(100);
   const [zoomInput, setZoomInput] = useState('100');
   const [bold, setBold] = useState(false);
@@ -371,44 +399,66 @@ export default function DocxToolbar({
     };
   }, [editor]);
 
-  // Collapse non-essential groups into "More" if the full tool row doesn't fit.
-  // Measured once, synchronously before paint — the editor's container has a
-  // fixed size once placed, so no resize observation is needed (and observing
-  // caused collapse→expand render loops).
   useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    if (el.scrollWidth > el.clientWidth + 1) setCollapsed(true);
-  }, []);
+    const el = actionRef.current;
+    if (!el) {
+      setActionWidth(0);
+      return;
+    }
+    const updateActionWidth = () =>
+      setActionWidth(Math.ceil(el.getBoundingClientRect().width));
+    updateActionWidth();
+    const observer = new ResizeObserver(updateActionWidth);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [dirty, onDownload, onSave, terminalAction, onTerminalAction]);
 
-  // +1 tolerance for sub-pixel rounding. When the row doesn't overflow,
-  // maxScrollLeft is 0 so both edges read "at" and the shadows stay hidden.
-  const updateScrollEdges = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const maxScrollLeft = el.scrollWidth - el.clientWidth;
-    const atStart = el.scrollLeft <= 1;
-    const atEnd = el.scrollLeft >= maxScrollLeft - 1;
-    setScrollEdges((current) =>
-      current.atStart === atStart && current.atEnd === atEnd
-        ? current
-        : { atStart, atEnd }
+  // How many leading groups fit in the centered layer, keeping room for the
+  // More trigger whenever anything is hidden. Widths come from the hidden
+  // measurement row (which always renders every group at natural size), so
+  // the result is a pure function of observed sizes — rendering fewer groups
+  // can never feed back into the inputs and loop.
+  const recompute = () => {
+    const center = centerRef.current;
+    if (!center) return;
+    // -1 tolerance for sub-pixel rounding: err toward collapsing a group one
+    // pixel early rather than ever overlapping the action buttons.
+    const available = center.getBoundingClientRect().width - 1;
+    const els = measureElsRef.current;
+    const widths = GROUP_KEYS.map(
+      (k) => els.get(k)?.getBoundingClientRect().width ?? 0
     );
+    const moreWidth = els.get(MORE_KEY)?.getBoundingClientRect().width ?? 0;
+    const rowWidth = (count: number) => {
+      let w = 0;
+      for (let i = 0; i < count; i++) w += widths[i] + (i > 0 ? ROW_GAP : 0);
+      if (count < GROUP_KEYS.length) {
+        w += (count > 0 ? ROW_GAP : 0) + moreWidth;
+      }
+      return w;
+    };
+    let n = GROUP_KEYS.length;
+    while (n > 0 && rowWidth(n) > available) n--;
+    setVisibleCount((current) => (current === n ? current : n));
   };
 
-  // Track overflow from the live scroll metrics — on scroll and on any resize
-  // of the row or its content. In hosted forms the editor's container can get
-  // its final (narrower) size after this mounts, so a mount-time measurement
-  // alone goes stale and would leave overflowing tools without shadows.
-  // Observing is safe here: updateScrollEdges only toggles shadow opacity
-  // (absolutely positioned), which can't change layout and re-trigger it.
+  // Runs pre-paint on mount and again when the action inset lands (at mount
+  // the centered layer is measured before actionWidth has flushed, i.e. too
+  // wide), so the first paint already shows the fitted row — no overflow
+  // flash. In hosted forms the container often gets its final size only
+  // after mount, so a one-shot measurement is not enough:
   useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    updateScrollEdges();
-    const observer = new ResizeObserver(updateScrollEdges);
-    observer.observe(el);
-    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    recompute();
+  }, [actionWidth]);
+
+  // ...the ResizeObserver keeps the row fitted from then on. The centered
+  // layer tracks container/window resizes; the hidden row tracks natural
+  // width changes of the tools themselves (e.g. the font-size trigger's
+  // label). Neither size depends on visibleCount, so this cannot loop.
+  useLayoutEffect(() => {
+    const observer = new ResizeObserver(recompute);
+    if (centerRef.current) observer.observe(centerRef.current);
+    if (measureRowRef.current) observer.observe(measureRowRef.current);
     return () => observer.disconnect();
   }, []);
 
@@ -753,17 +803,6 @@ export default function DocxToolbar({
       >
         <InsertImageIcon width={16} height={16} />
       </button>
-      <input
-        ref={fileInputRef}
-        type='file'
-        accept='image/*'
-        css={{ display: 'none' }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) insertImageFile(file);
-          e.target.value = '';
-        }}
-      />
       <Menu
         trigger={({ toggle }) => (
           <button
@@ -848,181 +887,201 @@ export default function DocxToolbar({
     </Menu>
   );
 
-  // Grouping mirrors Word/Google Docs compact toolbars: navigation (zoom) and
-  // core text controls (style, font, format, alignment) stay inline; insert
-  // actions and lists collapse into "More" first when space runs out.
-  const groups = [
-    { key: 'history', essential: true, node: historyGroup },
-    { key: 'zoom', essential: true, node: zoomGroup },
-    { key: 'style', essential: true, node: styleGroup },
-    { key: 'font', essential: true, node: fontGroup },
-    { key: 'format', essential: true, node: formatGroup },
-    { key: 'align', essential: true, node: alignGroup },
-    { key: 'insert', essential: false, node: insertGroup },
-    { key: 'lists', essential: false, node: listsGroup }
-  ];
-  const overflowGroups = groups.filter((g) => !g.essential);
-  const visibleGroups = collapsed ? groups.filter((g) => g.essential) : groups;
-  const renderRow = (gs: typeof groups) =>
-    gs.map((g, i) => (
-      <React.Fragment key={g.key}>
+  const groupNodes: Record<GroupKey, ReactNode> = {
+    history: historyGroup,
+    zoom: zoomGroup,
+    style: styleGroup,
+    font: fontGroup,
+    format: formatGroup,
+    align: alignGroup,
+    insert: insertGroup,
+    lists: listsGroup
+  };
+
+  const setMeasureEl = (key: string) => (el: HTMLSpanElement | null) => {
+    if (el) measureElsRef.current.set(key, el);
+  };
+  // Shared by the visible row and the hidden measurement row so their
+  // structures (spans, dividers, gaps) can never drift apart. Collapse is
+  // tail-first, so the visible subset is always a prefix of GROUP_KEYS and
+  // the index-based leading dividers line up in both rows.
+  const renderGroupRow = (keys: readonly GroupKey[], measure: boolean) =>
+    keys.map((k, i) => (
+      <span key={k} css={groupSpan} ref={measure ? setMeasureEl(k) : undefined}>
         {i > 0 && <Divider />}
-        {g.node}
-      </React.Fragment>
+        {groupNodes[k]}
+      </span>
     ));
+  // Breathing room at both toolbar edges so pinned buttons never sit flush
+  // against the border. The centered layer mirrors the action side's full
+  // clearance (edge padding + action width + gap) on the left, keeping the
+  // tool cluster centered.
+  const EDGE_PAD = 12;
+  const centerSideInset = EDGE_PAD + (actionWidth ? actionWidth + 8 : 0);
 
   return (
     <div
       css={{
-        display: 'flex',
+        position: 'relative',
         height: 44,
         flex: '0 0 auto',
-        alignItems: 'center',
         borderBottom: `1px solid ${ZINC[200]}`,
-        background: '#fff',
-        padding: '0 12px'
+        background: '#fff'
       }}
     >
-      {/* Left spacer balances the right action group so the tool cluster stays
-          horizontally centered on the page (which is centered in the editor
-          below). Both regions grow equally, so the tools sit at true center. */}
-      <div aria-hidden css={{ flex: '1 1 0', minWidth: 0 }} />
-      {/* Tool row: content-sized and centered by the flanking spacers;
-          non-essential groups collapse into a "More" dropdown when the space is
-          too narrow. The wrapper is the positioning context for the shadows. */}
+      {/* Center the editing controls against the editor itself. The right-side
+          terminal action is pinned independently, so it gets mirrored as a safe
+          inset on the left and cannot pull the tool cluster off-center. */}
       <div
+        ref={centerRef}
         css={{
-          position: 'relative',
-          flex: '0 1 auto',
-          minWidth: 0,
-          display: 'flex'
+          position: 'absolute',
+          left: centerSideInset,
+          right: centerSideInset,
+          top: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minWidth: 0
         }}
       >
+        {/* Hidden measurement row: always renders every group (plus the More
+            trigger) at natural width so recompute() can read true sizes even
+            while the visible row shows fewer. width: max-content is
+            load-bearing — without it this absolutely-positioned row would
+            shrink-to-fit and squeeze the spans, corrupting the measurements.
+            The clip wrapper keeps the overflowing copy out of the document's
+            scrollable area. */}
         <div
-          ref={scrollRef}
-          onScroll={updateScrollEdges}
+          aria-hidden
           css={{
-            flex: '1 1 auto',
-            minWidth: 0,
-            // Always keep the row bounded to the container: scroll horizontally
-            // when the tools overflow rather than spilling past the editor —
-            // never gated on a mount-time measurement, which goes stale when
-            // the container gets its final size after mount (hosted forms).
-            overflowX: 'auto',
-            overflowY: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            scrollbarWidth: 'thin' as const,
-            '&::-webkit-scrollbar': { height: 6 },
-            '&::-webkit-scrollbar-thumb': {
-              background: ZINC[300],
-              borderRadius: 3
-            }
+            position: 'absolute',
+            inset: 0,
+            overflow: 'hidden',
+            visibility: 'hidden',
+            pointerEvents: 'none'
           }}
         >
           <div
+            ref={measureRowRef}
             css={{
               display: 'flex',
               alignItems: 'center',
-              gap: 2
-              // No auto-margin centering here: the toolbar's outer spacers
-              // center this row, and auto margins inside a scroll container
-              // would make the overflowing left edge unreachable.
+              gap: ROW_GAP,
+              width: 'max-content'
             }}
           >
-            {renderRow(visibleGroups)}
-            {collapsed && (
-              <>
-                <Divider />
-                <Menu
-                  align='end'
-                  trigger={({ toggle }) => (
-                    <button
-                      type='button'
-                      css={triggerBtn}
-                      onClick={toggle}
-                      title='More tools'
-                      disabled={readOnly}
-                    >
-                      <MoreIcon width={16} height={16} />
-                      <ChevronDownIcon width={14} height={14} />
-                    </button>
-                  )}
-                >
-                  {() => (
-                    <div
-                      css={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                        minWidth: 220
-                      }}
-                    >
-                      {overflowGroups.map((g) => (
-                        <div
-                          key={g.key}
-                          css={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 2,
-                            flexWrap: 'wrap'
-                          }}
-                        >
-                          {g.node}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Menu>
-              </>
-            )}
+            {renderGroupRow(GROUP_KEYS, true)}
+            <span css={groupSpan} ref={setMeasureEl(MORE_KEY)}>
+              <Divider />
+              <button type='button' css={triggerBtn} tabIndex={-1}>
+                <MoreIcon width={16} height={16} />
+                <ChevronDownIcon width={14} height={14} />
+              </button>
+            </span>
           </div>
         </div>
-        {/* Edge shadows: hint at scrollable overflow on whichever side still
-            has tools beyond it. Pinned to the wrapper, outside the scroll area
-            so they don't move with the content. */}
+
+        {/* Visible row: the first visibleCount groups; the rest render inside
+            "More". overflow: clip is a safety net only (recompute keeps the
+            content within bounds) — clip rather than hidden because a hidden
+            box is still programmatically scrollable, so focusing a sub-pixel
+            clipped button would shift scrollLeft and misalign the row. */}
         <div
-          aria-hidden
           css={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 24,
-            pointerEvents: 'none',
-            background:
-              'linear-gradient(to right, rgba(0, 0, 51, 0.1), transparent)',
-            opacity: scrollEdges.atStart ? 0 : 1,
-            transition: 'opacity 120ms ease'
+            display: 'flex',
+            alignItems: 'center',
+            gap: ROW_GAP,
+            maxWidth: '100%',
+            overflow: 'clip'
           }}
-        />
-        <div
-          aria-hidden
-          css={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: 24,
-            pointerEvents: 'none',
-            background:
-              'linear-gradient(to left, rgba(0, 0, 51, 0.1), transparent)',
-            opacity: scrollEdges.atEnd ? 0 : 1,
-            transition: 'opacity 120ms ease'
-          }}
-        />
+        >
+          {renderGroupRow(GROUP_KEYS.slice(0, visibleCount), false)}
+          {visibleCount < GROUP_KEYS.length && (
+            <span css={groupSpan}>
+              {visibleCount > 0 && <Divider />}
+              {/* Remount when membership changes mid-resize: the panel's
+                  fixed position is captured at open time and would go stale
+                  (and list the wrong groups) otherwise. */}
+              <Menu
+                key={visibleCount}
+                align='end'
+                trigger={({ toggle }) => (
+                  <button
+                    type='button'
+                    css={triggerBtn}
+                    onClick={toggle}
+                    title='More tools'
+                  >
+                    <MoreIcon width={16} height={16} />
+                    <ChevronDownIcon width={14} height={14} />
+                  </button>
+                )}
+              >
+                {() => (
+                  <div
+                    css={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                      minWidth: 220,
+                      maxHeight: 'min(60vh, 480px)',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    {GROUP_KEYS.slice(visibleCount).map((k) => (
+                      <div
+                        key={k}
+                        css={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          flexWrap: 'wrap'
+                        }}
+                      >
+                        {groupNodes[k]}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Menu>
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Save / Download / Sign — right-aligned within a region that grows to
-          match the left spacer, keeping the tool cluster centered. */}
+      {/* Hoisted out of insertGroup: that group renders in both the hidden
+          measurement row and the visible row/More panel, and two mounted
+          copies would fight over this single ref. */}
+      <input
+        ref={fileInputRef}
+        type='file'
+        accept='image/*'
+        css={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) insertImageFile(file);
+          e.target.value = '';
+        }}
+      />
+
+      {/* Save / Download / Sign — pinned to the right and measured above so the
+          centered editor controls get symmetric clearance on both sides. */}
       <div
+        ref={actionRef}
         css={{
+          position: 'absolute',
+          right: EDGE_PAD,
+          top: 0,
+          bottom: 0,
           display: 'flex',
-          flex: '1 1 0',
           alignItems: 'center',
           paddingLeft: 8,
           justifyContent: 'flex-end',
-          gap: 8
+          gap: 8,
+          background: '#fff',
+          zIndex: 1
         }}
       >
         {dirty && (
