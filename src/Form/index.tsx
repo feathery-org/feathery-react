@@ -906,8 +906,29 @@ function Form({
     const targets: { type: string; id: string }[] = [];
     if (formId) targets.push({ type: 'panel', id: formId });
     if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
+    // ai-services mounts the live document tools only when it receives this
+    // target. The container is the in-form document surface; its id is stable
+    // even before a fresh envelope has been generated.
+    const documentContainer = (activeStep?.subgrids ?? []).find(
+      (subgrid: any) => subgrid?.properties?.document_editor
+    );
+    if (documentContainer?.id) {
+      const documentAction = (activeStep?.buttons ?? [])
+        .flatMap((button: any) => button?.properties?.actions ?? [])
+        .find(
+          (action: any) =>
+            action?.type === ACTION_GENERATE_ENVELOPES &&
+            action?.view_draft_container === documentContainer.id
+        );
+      // generated_document accepts a document-template id. Fall back to the
+      // container id before generation so the live tools still mount.
+      targets.push({
+        type: 'generated_document',
+        id: documentAction?.documents?.[0] ?? documentContainer.id
+      });
+    }
     return targets;
-  }, [formId]);
+  }, [formId, activeStep]);
 
   useEffect(() => {
     return () => {

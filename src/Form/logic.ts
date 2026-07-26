@@ -20,7 +20,14 @@ import {
   ServerSideLogicRule
 } from '../types/Form';
 import Field from '../utils/entities/Field';
-import { FormInternalState } from '../utils/internalState';
+import internalStateStore, { FormInternalState } from '../utils/internalState';
+import { getFormContext } from '../utils/formContext';
+import { getPrivateActions } from '../utils/sensitiveActions';
+import {
+  ChangedFieldDetail,
+  composeDerivedRuleUpdates,
+  DerivedRuleUpdate
+} from '../assistant/tools/assistantToolDispatch';
 
 export function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
@@ -544,8 +551,11 @@ export const runClientSideLogic = async (
   extractedSharedCodeInfo: ExtractedSharedCodeInfo[],
   internalState: FormInternalState,
   connectorFields: any,
-  props: Record<string, any>
-) => {
+  props: Record<string, any>,
+  // Tool inputs exposed to the rule code as `feathery.params`. Omitted for
+  // ordinary event-triggered rule execution.
+  inputParams?: Record<string, any>
+): Promise<any> => {
   let logicRuleCode = logicRule.code;
 
   if (extractedSharedCodeInfo.length > 0) {
@@ -583,12 +593,198 @@ export const runClientSideLogic = async (
     ...Object.keys(injectableFields),
     asyncWrappedCode
   );
-  await fn(
-    { ...props, http: httpHelpers(client, connectorFields) },
-    ...Object.values(injectableFields)
-  ).catch((e: any) => {
+  // Capture the rule code's resolved return value so callers (e.g. Robin tool
+  // dispatch via runLogicRuleById) can use it; ordinary event execution simply
+  // ignores it. Tool execution must propagate failures to its caller.
+  let returnValue: any;
+  try {
+    returnValue = await fn(
+      {
+        ...props,
+        http: httpHelpers(client, connectorFields),
+        params: inputParams ?? {}
+      },
+      ...Object.values(injectableFields)
+    );
+  } catch (e: any) {
     // catch unhandled rejections in async user code (if a promise is returned)
     // handle any errors in async code that actually returns a promise
     handleRuleError(e.message, logicRule);
+    throw e;
+  }
+  return returnValue;
+};
+
+export type RunLogicRuleResult = {
+  changedFields: string[];
+  // Old->new per changed field (oldValue from the pre-invoke snapshot, so it
+  // is available for BOTH client- and server-side rules). Parallel to
+  // changedFields, which is kept as-is for existing readers.
+  changedFieldDetails?: ChangedFieldDetail[];
+  // Server-side path only: document updates derived from field_data + the
+  // pre-invoke snapshot ({ field, previous, value }), since the lambda's
+  // return value never reaches the client in v1.
+  derivedUpdates?: DerivedRuleUpdate[];
+  returnValue?: any;
+  error?: string;
+};
+
+// Snapshot every field's value (JSON-serialized) so we can diff after a rule
+// runs and report which fields it actually touched. Serialized (not live
+// references) so in-place mutations by rule code can't corrupt the snapshot.
+const snapshotFieldValues = (
+  state: FormInternalState
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  Object.entries(state?.fields ?? {}).forEach(([key, field]) => {
+    try {
+      out[key] = JSON.stringify((field as any)?.value ?? null);
+    } catch {
+      out[key] = '';
+    }
   });
+  return out;
+};
+
+// Recover a plain value from a snapshot entry (inverse of snapshotFieldValues'
+// JSON.stringify; '' marks an unserializable value and maps to null).
+const parseSnapshotValue = (serialized: string | undefined): any => {
+  if (!serialized) return null;
+  try {
+    return JSON.parse(serialized);
+  } catch {
+    return null;
+  }
+};
+
+const diffChangedFieldDetails = (
+  before: Record<string, string>,
+  after: Record<string, string>
+): ChangedFieldDetail[] => {
+  const changed: ChangedFieldDetail[] = [];
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  keys.forEach((key) => {
+    if (before[key] !== after[key])
+      changed.push({
+        key,
+        oldValue: parseSnapshotValue(before[key]),
+        newValue: parseSnapshotValue(after[key])
+      });
+  });
+  return changed;
+};
+
+// Execute a single logic rule on demand by its id - the entrypoint the
+// assistant uses to invoke designer-defined `trigger_event === 'tool'` rules.
+// Resolves the rule from internalState.logicRules and branches on server_side:
+//   - server_side: true  -> featheryClient.runServerSideLogicRule(id, {input_params})
+//                           (returnValue stays undefined in v1)
+//   - server_side: false -> runClientSideLogic with params exposed to the rule
+//                           code as `feathery.params`, capturing its return value
+// Returns the set of field keys the rule changed (plus per-field old->new
+// details from the pre-invoke snapshot, and - server-side only - document
+// updates derived from field_data) plus the client-side rule's resolved
+// return value. Never throws - failures surface via the `error` field.
+export const runLogicRuleById = async (
+  ruleId: string,
+  inputParams: Record<string, any> = {},
+  formUuid?: string
+): Promise<RunLogicRuleResult> => {
+  // Resolve the owning form. When no uuid is given, fall back to the only
+  // loaded form (the common single-form host case).
+  const uuids = Object.keys(internalStateStore);
+  const resolvedUuid =
+    formUuid && internalStateStore[formUuid]
+      ? formUuid
+      : !formUuid && uuids.length === 1
+      ? uuids[0]
+      : formUuid;
+  const state = resolvedUuid ? internalStateStore[resolvedUuid] : undefined;
+
+  if (!state) {
+    return { changedFields: [], error: 'Form has not loaded yet.' };
+  }
+
+  const rule = (state.logicRules ?? []).find((r) => r.id === ruleId);
+  if (!rule) {
+    return {
+      changedFields: [],
+      error: `Logic rule '${ruleId}' was not found on this form.`
+    };
+  }
+
+  const before = snapshotFieldValues(state);
+
+  try {
+    if (rule.server_side) {
+      const response = await (state.client as any).runServerSideLogicRule(
+        rule.id,
+        {
+          input_params: inputParams
+        }
+      );
+      if (response?.field_data) {
+        setFieldValues(response.field_data, true, true);
+      }
+      if (response?.file_values) {
+        processFileValues(response.file_values);
+        rerenderAllForms();
+      }
+      if (response?.error) {
+        handleRuleError(response.error, rule);
+        return { changedFields: [], error: String(response.error) };
+      }
+      // Prefer the backend's authoritative field_data (new values) paired
+      // with the pre-invoke snapshot (old values); fall back to a diff.
+      const fieldData = response?.field_data as Record<string, any> | undefined;
+      const changedFieldDetails: ChangedFieldDetail[] = fieldData
+        ? Object.keys(fieldData).map((key) => ({
+            key,
+            oldValue: parseSnapshotValue(before[key]),
+            newValue: fieldData[key]
+          }))
+        : diffChangedFieldDetails(before, snapshotFieldValues(state));
+      // A server-side rule has no returnValue to hand back, so instead derive
+      // document updates ({ field, previous, value }) from the field diff. That
+      // makes old->new exact-replace work without the rule returning { updates }.
+      const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails);
+      return {
+        changedFields: changedFieldDetails.map((d) => d.key),
+        changedFieldDetails,
+        ...(derivedUpdates.length > 0 ? { derivedUpdates } : {})
+      };
+    }
+
+    const props = {
+      ...getFormContext(resolvedUuid as string),
+      ...getPrivateActions(resolvedUuid as string)
+    };
+    const returnValue = await runClientSideLogic(
+      rule,
+      state.client,
+      (state as any).extractedSharedCodeInfo ?? [],
+      state,
+      (state as any).connectorFields,
+      props,
+      inputParams
+    );
+    const changedFieldDetails = diffChangedFieldDetails(
+      before,
+      snapshotFieldValues(state)
+    );
+    // Client rules may change fields without returning an explicit updates
+    // payload. Derive the same safe old→new document updates as the server
+    // path so Robin does not claim success while leaving the document stale.
+    const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails);
+    return {
+      changedFields: changedFieldDetails.map((d) => d.key),
+      changedFieldDetails,
+      ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
+      returnValue
+    };
+  } catch (e: any) {
+    const message = e?.reason?.message ?? e?.error?.message ?? e?.message;
+    handleRuleError(message, rule);
+    return { changedFields: [], error: message ?? 'Logic rule failed.' };
+  }
 };
