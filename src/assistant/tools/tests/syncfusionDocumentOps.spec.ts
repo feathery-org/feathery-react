@@ -16,6 +16,7 @@ import {
   findDocumentOccurrences,
   readSelection,
   applyDocumentEdits,
+  getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
   LiveEditor
 } from '../syncfusionDocumentOps';
@@ -2194,15 +2195,20 @@ class RevisionMockEditor implements LiveEditor {
 
   serialize() {
     return JSON.stringify({
-      // Model the current-text projection that a real tracked SFDT exposes:
-      // deletion runs retain their revision but are not live visible text.
-      revisions: [{ revisionID: 'mock-deletion', revisionType: 'Deletion' }],
+      // Model the projections a real tracked SFDT exposes: deletion runs retain
+      // their revision but are not live visible text, and insertion runs carry
+      // their revision id so the reject projection can drop them.
+      revisions: [
+        { revisionID: 'mock-deletion', revisionType: 'Deletion' },
+        { revisionID: 'mock-insertion', revisionType: 'Insertion' }
+      ],
       sections: [
         {
           blocks: this.blocksRuns.map((runs) => ({
             inlines: runs.map((run) => ({
               text: run.text,
-              ...(run.state === 'del' ? { revisionIds: ['mock-deletion'] } : {})
+              ...(run.state === 'del' ? { revisionIds: ['mock-deletion'] } : {}),
+              ...(run.state === 'ins' ? { revisionIds: ['mock-insertion'] } : {})
             }))
           }))
         }
@@ -2483,5 +2489,383 @@ describe('optimized-SFDT tables (row key r)', () => {
       ]
     });
     expect(res.results[0].error).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Table rows: insert a row and fill its cells.
+//
+// The captain's report was "for a brief second I saw a new row being added but
+// it could not add data". Every cell of a freshly inserted row is empty, and
+// overwriting an empty cell makes SyncFusion author an Insertion with no
+// Deletion; the old revision-type assertion demanded the pair for every
+// `set_cell_text`, so the fill was reported `untracked_write` and the
+// compensating rollback then rejected the row insertion itself.
+// ---------------------------------------------------------------------------
+
+function locationScheduleCell(text: string) {
+  return { cellFormat: {}, blocks: [{ inlines: [{ text }] }] };
+}
+
+function locationScheduleSfdt() {
+  return {
+    sections: [
+      {
+        blocks: [
+          { inlines: [{ text: 'Location Schedule' }] },
+          {
+            tableFormat: {},
+            rows: [
+              {
+                rowFormat: {},
+                cells: [
+                  locationScheduleCell('Loc #'),
+                  locationScheduleCell('Address'),
+                  locationScheduleCell('City')
+                ]
+              },
+              {
+                rowFormat: {},
+                cells: [
+                  locationScheduleCell('0093'),
+                  locationScheduleCell('1 King St W'),
+                  locationScheduleCell('Toronto')
+                ]
+              }
+            ]
+          },
+          { inlines: [{ text: 'End' }] }
+        ]
+      }
+    ]
+  };
+}
+
+const blockTexts = (editor: DocumentEditor) =>
+  flattenSfdt(JSON.parse(editor.serialize())).map((block) => block.text);
+
+const revisionTypes = (editor: DocumentEditor) =>
+  realRevisions(editor).map((revision) => revision.revisionType);
+
+describe('table rows: insert a row and fill its cells', () => {
+  it('real SDK: fills every cell of a row it just inserted, in one change set, as one rejectable card', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'location-schedule-row',
+        edits: [
+          { op: 'insert_row', anchor: '0;1;1;0;0' },
+          { op: 'set_cell_text', anchor: '0;1;2;0;0', text: '0094' },
+          { op: 'set_cell_text', anchor: '0;1;2;1;0', text: '111 Bathurst St' },
+          { op: 'set_cell_text', anchor: '0;1;2;2;0', text: 'Toronto' }
+        ]
+      });
+
+      expect(result.results.map((r) => r.error)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined
+      ]);
+      expect(result.results.every((r) => r.ok)).toBe(true);
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+
+      // The row is present WITH its values.
+      expect(blockTexts(ed)).toEqual([
+        'Location Schedule',
+        'Loc #',
+        'Address',
+        'City',
+        '0093',
+        '1 King St W',
+        'Toronto',
+        '0094',
+        '111 Bathurst St',
+        'Toronto',
+        'End'
+      ]);
+
+      // ...and the whole thing is one rejectable tracked card.
+      expect(realRevisions(ed).length).toBeGreaterThan(0);
+      expect(
+        realRevisions(ed).every(
+          (revision) => typeof revision.reject === 'function'
+        )
+      ).toBe(true);
+      rejectEveryRealRevision(ed);
+      expect(ed.revisions.length).toBe(0);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: fills the cells of an already-inserted row on a later call (two-phase)', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      const inserted = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'row-only',
+        edits: [{ op: 'insert_row', anchor: '0;1;1;0;0' }]
+      });
+      expect(inserted.results[0]).toMatchObject({ ok: true, op: 'insert_row' });
+
+      // The new row's cells are addressable from a fresh inventory read.
+      const inventory = getDocumentInventory(ed as unknown as LiveEditor, {
+        scope: 'full'
+      });
+      expect(inventory.inventory?.map((entry) => entry.anchor)).toEqual(
+        expect.arrayContaining(['0;1;2;0;0', '0;1;2;1;0', '0;1;2;2;0'])
+      );
+
+      const filled = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'row-fill',
+        edits: [
+          { op: 'set_cell_text', anchor: '0;1;2;0;0', text: '0094' },
+          { op: 'set_cell_text', anchor: '0;1;2;1;0', text: '111 Bathurst St' },
+          { op: 'set_cell_text', anchor: '0;1;2;2;0', text: 'Toronto' }
+        ]
+      });
+      expect(filled.results.map((r) => r.error)).toEqual([
+        undefined,
+        undefined,
+        undefined
+      ]);
+      expect(filled.changeSet).toMatchObject({ status: 'applied' });
+      expect(blockTexts(ed).slice(7, 10)).toEqual([
+        '0094',
+        '111 Bathurst St',
+        'Toronto'
+      ]);
+
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a row insert and a row delete each produce a rejectable tracked revision of the right kind', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      expect(
+        applyDocumentEdits(ed as unknown as LiveEditor, {
+          changeSetId: 'row-insert-tracked',
+          edits: [{ op: 'insert_row', anchor: '0;1;1;0;0' }]
+        }).results[0]
+      ).toMatchObject({ ok: true });
+      expect(revisionTypes(ed)).toEqual(['Insertion']);
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+
+      expect(
+        applyDocumentEdits(ed as unknown as LiveEditor, {
+          changeSetId: 'row-delete-tracked',
+          edits: [{ op: 'delete_row', anchor: '0;1;1;0;0' }]
+        }).results[0]
+      ).toMatchObject({ ok: true });
+      expect(revisionTypes(ed)).toEqual(['Deletion']);
+      expect(
+        realRevisions(ed).every((r) => typeof r.reject === 'function')
+      ).toBe(true);
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: insert_row honours above and count instead of silently dropping them', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      expect(
+        applyDocumentEdits(ed as unknown as LiveEditor, {
+          changeSetId: 'above-count',
+          edits: [
+            { op: 'insert_row', anchor: '0;1;1;0;0', above: true, count: 2 }
+          ]
+        }).results[0]
+      ).toMatchObject({ ok: true });
+      // Two empty rows sit between the header row and the pre-existing 0093 row.
+      expect(blockTexts(ed)).toEqual([
+        'Location Schedule',
+        'Loc #',
+        'Address',
+        'City',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '0093',
+        '1 King St W',
+        'Toronto',
+        'End'
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a deferred cell anchor which lands on existing content is refused and the row insert is rolled back', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      // Inserting ABOVE shifts the pre-existing 0093 row down into index 2, so
+      // the deferred anchor now points at real content rather than a new cell.
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'deferred-occupied',
+        edits: [
+          { op: 'insert_row', anchor: '0;1;1;0;0', above: true },
+          { op: 'set_cell_text', anchor: '0;1;2;0;0', text: '0094' }
+        ]
+      });
+
+      expect(result.results[1]).toMatchObject({
+        ok: false,
+        error: 'deferred_anchor_occupied'
+      });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      // Nothing partially applied: the row insert was rejected with the set.
+      expect(ed.revisions.length).toBe(0);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a deferred cell anchor the structural op never creates fails the whole set', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'deferred-missing',
+        edits: [
+          { op: 'insert_row', anchor: '0;1;1;0;0' },
+          { op: 'set_cell_text', anchor: '0;1;9;0;0', text: 'nope' }
+        ]
+      });
+      expect(result.results[1]).toMatchObject({
+        ok: false,
+        error: 'anchor_not_found'
+      });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      expect(ed.revisions.length).toBe(0);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a row insert which bypasses track changes is refused (structural changes must be rejectable)', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const untrackedEditor = new Proxy(ed as unknown as LiveEditor, {
+        get(target, property, receiver) {
+          if (property === 'editor') {
+            const realEditor: any = Reflect.get(target, property, receiver);
+            return new Proxy(realEditor, {
+              get(inner, method, innerReceiver) {
+                const value = Reflect.get(inner, method, innerReceiver);
+                if (method !== 'insertRow' || typeof value !== 'function')
+                  return typeof value === 'function'
+                    ? value.bind(inner)
+                    : value;
+                return (...args: any[]) => {
+                  (target as any).enableTrackChanges = false;
+                  try {
+                    return value.apply(inner, args);
+                  } finally {
+                    (target as any).enableTrackChanges = true;
+                  }
+                };
+              }
+            });
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+      });
+
+      const result = applyDocumentEdits(untrackedEditor, {
+        changeSetId: 'untracked-row-insert',
+        edits: [{ op: 'insert_row', anchor: '0;1;1;0;0' }]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'untracked_write'
+      });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a cell write which bypasses track changes is still refused as an untracked write', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      // Narrowly-scoped fault injector over a real DocumentEditor: the write
+      // itself is a genuine SyncFusion operation, performed with track changes
+      // silently switched off so it produces no rejectable revision at all.
+      const untrackedEditor = new Proxy(ed as unknown as LiveEditor, {
+        get(target, property, receiver) {
+          if (property === 'editor') {
+            const realEditor: any = Reflect.get(target, property, receiver);
+            return new Proxy(realEditor, {
+              get(inner, method, innerReceiver) {
+                const value = Reflect.get(inner, method, innerReceiver);
+                if (method !== 'insertText' || typeof value !== 'function')
+                  return typeof value === 'function'
+                    ? value.bind(inner)
+                    : value;
+                return (...args: any[]) => {
+                  (target as any).enableTrackChanges = false;
+                  try {
+                    return value.apply(inner, args);
+                  } finally {
+                    (target as any).enableTrackChanges = true;
+                  }
+                };
+              }
+            });
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+      });
+
+      const result = applyDocumentEdits(untrackedEditor, {
+        changeSetId: 'untracked-cell-write',
+        edits: [{ op: 'set_cell_text', anchor: '0;1;1;0;0', text: '9999' }]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'untracked_write'
+      });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      // The untracked write is not recoverable through revisions, so the guard
+      // exists precisely to stop it being reported as a successful edit.
+      expect(ed.serialize()).not.toBe(before);
+      expect(blockTexts(ed)).toContain('9999');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
   });
 });

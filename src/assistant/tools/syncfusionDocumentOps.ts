@@ -273,20 +273,31 @@ function getRows(block: any): any[] | undefined {
   return Array.isArray(rows) ? rows : undefined;
 }
 
-function deletedRevisionIds(sfdt: any): Set<string> {
-  const deleted = new Set<string>();
+// SyncFusion serializes a revision type as a number in optimized SFDT and as a
+// string in full SFDT: Insertion is 1/"Insertion", Deletion is 2/"Deletion".
+function revisionIdsOfType(sfdt: any, code: number, name: string): Set<string> {
+  const ids = new Set<string>();
   const revisions = pick(sfdt, 'revisions', 'r');
-  if (!Array.isArray(revisions)) return deleted;
+  if (!Array.isArray(revisions)) return ids;
   for (const revision of revisions) {
     const type = pick(revision, 'revisionType', 'rt');
-    // SyncFusion serializes Deletion as 2 in optimized SFDT and as the string
-    // "Deletion" in full SFDT. Exclude it from the bridge's current-text view
-    // while retaining the tracked revision itself for Accept/Reject.
-    if (type !== 2 && String(type).toLowerCase() !== 'deletion') continue;
+    if (type !== code && String(type).toLowerCase() !== name) continue;
     const id = pick(revision, 'revisionID', 'revisionId', 'rid');
-    if (id != null) deleted.add(String(id));
+    if (id != null) ids.add(String(id));
   }
-  return deleted;
+  return ids;
+}
+
+// Exclude pending deletions from the bridge's current-text view while retaining
+// the tracked revision itself for Accept/Reject.
+function deletedRevisionIds(sfdt: any): Set<string> {
+  return revisionIdsOfType(sfdt, 2, 'deletion');
+}
+
+// The mirror image: dropping pending insertions (and keeping pending deletions)
+// projects what the document would read if every revision were rejected.
+function insertedRevisionIds(sfdt: any): Set<string> {
+  return revisionIdsOfType(sfdt, 1, 'insertion');
 }
 
 function inlineText(
@@ -454,10 +465,13 @@ function headingLevel(fmt: DocFormat | undefined): number {
 // Walk the SFDT into a flat, in-order list of addressable blocks. Paragraphs
 // (top-level and inside table cells) become blocks; a table contributes its
 // cell paragraphs. Anchors follow the SyncFusion hierarchical scheme.
-export function flattenSfdt(sfdt: any): FlatBlock[] {
+export function flattenSfdt(
+  sfdt: any,
+  dropRevisionIds?: Set<string>
+): FlatBlock[] {
   const out: FlatBlock[] = [];
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const deletedIds = deletedRevisionIds(sfdt);
+  const deletedIds = dropRevisionIds ?? deletedRevisionIds(sfdt);
 
   sections.forEach((section, si) => {
     getBlocks(section).forEach((block, bi) => {
@@ -1066,6 +1080,23 @@ function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
   );
 }
 
+// What the document would read at `anchor` if every revision were rejected:
+// pending insertions dropped, pending deletions restored. This is the exact
+// projection the byte-for-byte integrity tests assert globally, evaluated for
+// one block so a single write can be proven reversible the moment it lands.
+// `undefined` means the anchor is not addressable in serialized SFDT at all
+// (live story ranges - text frames, page-specific headers/footers).
+function rejectProjectionText(
+  editor: LiveEditor,
+  anchor: string
+): string | undefined {
+  if (!anchor) return undefined;
+  const sfdt = parseSfdt(editor.serialize());
+  return flattenSfdt(sfdt, insertedRevisionIds(sfdt)).find(
+    (block) => block.anchor === anchor
+  )?.text;
+}
+
 interface LiveStoryTarget {
   anchor: string;
   startOffset: string;
@@ -1372,6 +1403,12 @@ function verifyWrittenText(
   }
 }
 
+// SyncFusion's table structure methods default a missing/invalid count to 1.
+function positiveCount(value: unknown): number {
+  const n = typeof value === 'number' ? Math.floor(value) : Number.NaN;
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 function insertionPoint(op: EditOp, block: FlatBlock): number {
   const position =
     typeof op.position === 'string' ? op.position.toLowerCase() : '';
@@ -1620,6 +1657,37 @@ function applyAnchoredOp(
     case 'insert_page_number': {
       selectBlock(editor, block);
       callEditor(editor, 'insertPageNumber', op.numberFormat);
+      return;
+    }
+    // Table structure. These reached `attemptGenericOp`, which calls the
+    // SyncFusion method with no arguments at all, so `above`, `count`, `rows`
+    // and `columns` were advertised in the tool schema and silently dropped:
+    // every insert_row was one row below, every insert_table was 1x1.
+    case 'insert_row': {
+      callEditor(
+        editor,
+        'insertRow',
+        op.above === true,
+        positiveCount(op.count)
+      );
+      return;
+    }
+    case 'insert_column': {
+      callEditor(
+        editor,
+        'insertColumn',
+        op.left === true,
+        positiveCount(op.count)
+      );
+      return;
+    }
+    case 'insert_table': {
+      callEditor(
+        editor,
+        'insertTable',
+        positiveCount(op.rows),
+        positiveCount(op.columns)
+      );
       return;
     }
     default:
@@ -2144,53 +2212,90 @@ function createdRevisions(
   );
 }
 
-// A text replacement is reviewable only when SyncFusion created the native
-// revision cards which can undo it. This check intentionally runs immediately
-// after the public write, before an op can be reported successful.
-function assertTrackedTextMutation(
+const TRACKED_TEXT_OPS = new Set([
+  'replace_text',
+  'delete_text',
+  'insert_text',
+  'set_cell_text',
+  'change_case'
+]);
+
+// A structural table edit is content just as much as text is, so it carries the
+// same requirement: SyncFusion must author a rejectable card of the right kind.
+const TRACKED_STRUCTURAL_OPS = new Map([
+  ['insert_row', 'insertion'],
+  ['delete_row', 'deletion']
+]);
+
+// A write is reviewable only when it can be undone from the Changes pane. This
+// check runs immediately after the public write, before an op is reported
+// successful.
+//
+// For text ops the property asserted is the one that actually matters and the
+// one the byte-for-byte integrity tests assert globally: *rejecting every
+// revision must restore exactly what this anchor read before the write*. The
+// previous formulation guessed at that property from revision types instead,
+// demanding an Insertion/Deletion pair for `set_cell_text`. SyncFusion authors
+// no Deletion when the cell was empty and no revision at all when the text
+// being overwritten is itself an unaccepted insertion, so writing into a row the
+// assistant had just inserted was always reported `untracked_write` even though
+// the write was fully tracked - and the compensating rollback then rejected the
+// row insertion, making the new row appear and vanish.
+function assertTrackedMutation(
   editor: LiveEditor,
   before: LiveRevision[],
-  op: EditOp
+  op: EditOp,
+  priorRejectText?: string
 ): void {
+  const structural = TRACKED_STRUCTURAL_OPS.get(op.op);
   if (
-    ![
-      'replace_text',
-      'delete_text',
-      'insert_text',
-      'set_cell_text',
-      'change_case'
-    ].includes(op.op) ||
+    (!TRACKED_TEXT_OPS.has(op.op) && !structural) ||
     !revisionCollectionIsObservable(editor)
   )
     return;
   const revisions = createdRevisions(editor, before);
-  if (
-    !revisions.length ||
-    revisions.some((revision) => typeof revision.reject !== 'function')
-  )
+  if (revisions.some((revision) => typeof revision.reject !== 'function'))
     throw new OpError(
       'untracked_write',
-      `SyncFusion did not create rejectable tracked revisions for ${op.op}.`
+      `SyncFusion created a revision for ${op.op} which cannot be rejected.`
     );
   const types = new Set(
     revisions.map((revision) =>
       String(revision.revisionType ?? '').toLowerCase()
     )
   );
-  const replacement = String(op.replace ?? op.text ?? op.newText ?? '');
-  const needsInsertion =
-    op.op === 'insert_text' ||
-    op.op === 'change_case' ||
-    ((op.op === 'replace_text' || op.op === 'set_cell_text') &&
-      replacement.length > 0);
-  const needsDeletion =
-    op.op === 'delete_text' ||
-    op.op === 'change_case' ||
-    op.op === 'replace_text' ||
-    op.op === 'set_cell_text';
+
+  if (structural) {
+    if (!revisions.length || !types.has(structural))
+      throw new OpError(
+        'untracked_write',
+        `SyncFusion did not create a rejectable tracked ${structural} for ${op.op}.`
+      );
+    return;
+  }
+
+  if (priorRejectText !== undefined) {
+    const nowRejectsTo = rejectProjectionText(editor, String(op.anchor ?? ''));
+    if (nowRejectsTo !== priorRejectText)
+      throw new OpError(
+        'untracked_write',
+        `${op.op} changed text which rejecting the tracked revisions would not restore.`,
+        [
+          `rejects to: ${JSON.stringify(nowRejectsTo)}`,
+          `expected: ${JSON.stringify(priorRejectText)}`
+        ]
+      );
+    return;
+  }
+
+  // Live story ranges (text frames, page-specific headers/footers) are absent
+  // from serialized SFDT, so the projection above cannot be evaluated for them.
+  // Those anchors keep the revision-type assertion.
   if (
-    (needsInsertion && !types.has('insertion')) ||
-    (needsDeletion && !types.has('deletion'))
+    !revisions.length ||
+    (!types.has('insertion') &&
+      String(op.replace ?? op.text ?? op.newText ?? '').length > 0) ||
+    !types.has('deletion')
   )
     throw new OpError(
       'untracked_write',
@@ -2285,6 +2390,44 @@ interface ChangeSetPlan {
   source?: FlatBlock;
   inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
   targetBefore?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
+  // A `set_cell_text` whose cell does not exist yet because an earlier op in the
+  // same change set creates it. It has no preflight target by definition.
+  deferredNewCell?: boolean;
+}
+
+// Table ops which bring new, empty cells into existence WITHOUT shifting block
+// indices. `insert_table` is deliberately excluded: it adds a block, so every
+// later anchor in the batch shifts and a computed cell anchor could name a cell
+// of an entirely different table. Filling a brand new table stays a second call
+// against a re-read inventory.
+const CELL_CREATING_OPS = new Set(['insert_row', 'insert_column']);
+
+// The single concession the preflight makes to a not-yet-existing anchor. It
+// stays honest because the deferred anchor was absent from the pre-edit block
+// map (so it cannot shadow an existing block) and must resolve, at write time,
+// to a cell which is still empty. Anything else - the structural op did not
+// create it, or index arithmetic landed on real content - fails the op, which
+// fails the change set, which rejects every revision it created. Nothing
+// partially applies.
+function assertDeferredAnchorIsNewEmptyCell(
+  plan: ChangeSetPlan,
+  target: FlatBlock
+): void {
+  if (!plan.deferredNewCell) return;
+  if (target.kind !== 'table_cell')
+    throw new OpError(
+      'deferred_anchor_not_a_cell',
+      `Anchor "${plan.op.anchor}" did not resolve to a table cell after the structural edit.`
+    );
+  if (target.text.length)
+    throw new OpError(
+      'deferred_anchor_occupied',
+      `Anchor "${
+        plan.op.anchor
+      }" resolved to a cell which already reads ${JSON.stringify(
+        target.text
+      )}; refusing to overwrite existing content through a deferred anchor.`
+    );
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
@@ -2366,17 +2509,28 @@ export function applyDocumentEdits(
       : 'document-edit-change-set';
   const priorTrackChanges = editor.enableTrackChanges;
   editor.enableTrackChanges = true;
-  let blocks = flattenSfdt(parseSfdt(editor.serialize()));
-  let byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
+  let blocks: FlatBlock[] = [];
+  let byAnchor = new Map<string, FlatBlock>();
+  // Per-anchor "what this would read if every revision were rejected", kept
+  // alongside the live block map so a tracked write can be proven reversible
+  // without a second serialize per op.
+  let rejectByAnchor = new Map<string, string>();
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();
   const resolvedFormatTargets = new Map<number, FlatBlock>();
   let anchorsMayHaveShifted = false;
   const refresh = () => {
-    blocks = flattenSfdt(parseSfdt(editor.serialize()));
+    const sfdt = parseSfdt(editor.serialize());
+    blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
+    rejectByAnchor = new Map(
+      flattenSfdt(sfdt, insertedRevisionIds(sfdt)).map(
+        (block) => [block.anchor, block.text] as const
+      )
+    );
   };
+  refresh();
   const fail = (index: number, op: EditOp, err: unknown) => {
     results[index] = {
       ok: false,
@@ -2459,7 +2613,20 @@ export function applyDocumentEdits(
         return;
       }
     }
-    if (!target && (!FORMAT_OPS.has(name) || !hasStructuralEdits)) {
+    // `set_cell_text` may address a cell an earlier op in this same change set
+    // is about to create, so a row insert and its cell values are one atomic,
+    // single-card edit instead of two calls with a stray empty row between them.
+    const deferredNewCell =
+      !target &&
+      name === 'set_cell_text' &&
+      edits
+        .slice(0, index)
+        .some((earlier) => earlier?.op && CELL_CREATING_OPS.has(earlier.op));
+    if (
+      !target &&
+      !deferredNewCell &&
+      (!FORMAT_OPS.has(name) || !hasStructuralEdits)
+    ) {
       results[index] = {
         ok: false,
         op: name,
@@ -2517,6 +2684,7 @@ export function applyDocumentEdits(
         op,
         target,
         source,
+        ...(deferredNewCell ? { deferredNewCell: true } : {}),
         ...(source
           ? { inherited: readEffectiveSourceFormat(editor, source) }
           : {}),
@@ -2545,6 +2713,8 @@ export function applyDocumentEdits(
         const { op, index } = plan;
         if (results[index] || FORMAT_OPS.has(op.op)) continue;
         const revisionsBeforeOp = snapshotRevisions(editor);
+        let writtenOp = op;
+        let priorRejectText: string | undefined;
         try {
           if (op.op === 'replace_all') {
             const count = applyReplaceAll(editor, op);
@@ -2566,16 +2736,23 @@ export function applyDocumentEdits(
                 plan.target,
                 anchorsMayHaveShifted
               );
-              applyAnchoredOp(
-                editor,
-                { ...op, anchor: target.anchor },
-                target,
-                byAnchor
-              );
+              assertDeferredAnchorIsNewEmptyCell(plan, target);
+              writtenOp = { ...op, anchor: target.anchor };
+              // The reversibility baseline at the anchor actually written, after
+              // any relocation. Read from the map the last refresh built, so a
+              // tracked write costs no extra serialize before it lands.
+              if (TRACKED_TEXT_OPS.has(op.op))
+                priorRejectText = rejectByAnchor.get(target.anchor);
+              applyAnchoredOp(editor, writtenOp, target, byAnchor);
             }
             if (mayShiftAnchors(op)) anchorsMayHaveShifted = true;
           }
-          assertTrackedTextMutation(editor, revisionsBeforeOp, op);
+          assertTrackedMutation(
+            editor,
+            revisionsBeforeOp,
+            writtenOp,
+            priorRejectText
+          );
           refresh();
           results[index] = { ok: true, op: op.op, anchor: op.anchor };
         } catch (err) {
