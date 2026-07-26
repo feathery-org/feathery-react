@@ -909,6 +909,87 @@ describe('live occurrence search and scoped replacement', () => {
     }
   });
 
+  it('real SDK: replaces a rendered TOC field using its serialized public offsets', () => {
+    // Word TOC entries serialize their field instructions alongside their
+    // rendered text. SyncFusion Search reports offsets in that serialized
+    // coordinate space, while Selection exposes only "Our Mission\\t5".
+    const ed = makeRealDocumentEditor({
+      optimizeSfdt: true,
+      sec: [
+        {
+          b: [
+            { pf: {}, i: [{ cf: {}, tlp: 'Before the table of contents' }] },
+            { pf: {}, i: [{ cf: {}, tlp: 'Contents' }] },
+            {
+              pf: { stn: 'TOC 1' },
+              i: [
+                { cf: {}, ft: 0, hfe: true },
+                { cf: {}, tlp: 'HYPERLINK \\l "_Toc216275880"' },
+                { cf: {}, ft: 2 },
+                { cf: {}, tlp: 'Our Mission' },
+                { cf: {}, tlp: '\\t' },
+                { cf: {}, ft: 0, hfe: true },
+                { cf: {}, tlp: ' PAGEREF _Toc216275880 \\h ' },
+                { cf: {}, ft: 2 },
+                { cf: {}, tlp: '5' },
+                { cf: {}, ft: 1 },
+                { cf: {}, ft: 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const found = findDocumentOccurrences(ed as unknown as LiveEditor, {
+        text: 'Our Mission',
+        matchCase: true,
+        maxResults: 10
+      });
+      expect(found.occurrences).toEqual([
+        expect.objectContaining({ anchor: '0;2', start: 30, end: 41 })
+      ]);
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'toc-field-replace',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;2',
+            expect:
+              'HYPERLINK \\l "_Toc216275880"Our Mission\\t PAGEREF _Toc216275880 \\h 5',
+            find: 'Our Mission',
+            replace: 'Our Purpose',
+            start: 30,
+            end: 41
+          }
+        ]
+      });
+
+      expect(result).toMatchObject({
+        results: [expect.objectContaining({ ok: true, anchor: '0;2' })],
+        changeSet: { status: 'applied', revisionGrouping: 'bridge_bound_revision_cards' }
+      });
+      expect(flattenSfdt(JSON.parse(ed.serialize()))).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            anchor: '0;2',
+            text:
+              'HYPERLINK \\l "_Toc216275880"Our Purpose\\t PAGEREF _Toc216275880 \\h 5'
+          })
+        ])
+      );
+
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: replaces a text-frame occurrence with body and table occurrences through their live search ranges', () => {
     const ed = makeRealDocumentEditor({
       sections: [
