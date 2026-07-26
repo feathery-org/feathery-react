@@ -93,6 +93,7 @@ import {
   readDocxSelection
 } from './tools/docxEditorBridge';
 import { getDocxEditor } from './tools/docxEditorRegistry';
+import { useDocumentIndex } from './tools/documentIndex';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
 
@@ -304,6 +305,13 @@ const AssistantChat = ({
   const formKey = !getJwt
     ? getTargets().find((t) => t.type === 'panel')?.id
     : undefined;
+
+  // ai-services requires a populated semantic index before every bulk document
+  // edit and nothing else fills it on the in-form path, so the index POST lives
+  // here: this is the one place that already holds the chat's target manifest and
+  // its auth, guaranteeing the index is keyed and authenticated exactly like the
+  // query that reads it. Fire-and-forget - it never gates the chat or the editor.
+  useDocumentIndex({ baseUrl, getTargets, headers });
 
   const buildChatBody = (): Record<string, unknown> => {
     // ai-services reads assistant scope exclusively from body.context;
