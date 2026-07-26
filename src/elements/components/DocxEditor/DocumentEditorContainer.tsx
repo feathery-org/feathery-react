@@ -5,6 +5,10 @@ import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
+import {
+  registerDocxEditor,
+  unregisterDocxEditor
+} from '../../../assistant/tools/docxEditorRegistry';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -303,6 +307,14 @@ export default function DocumentEditorContainer({
     else openTab(url);
   }, [client, envelope, targetAction, terminalAction]);
 
+  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
+  // point. Register it for the assistant and clear it when the container
+  // unmounts so tools never mutate a stale editor.
+  const onEditorReady = useCallback((editor: any) => {
+    registerDocxEditor(undefined, editor);
+  }, []);
+  useEffect(() => () => unregisterDocxEditor(undefined), []);
+
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
@@ -354,6 +366,7 @@ export default function DocumentEditorContainer({
       // on every save), not the user's machine — no Download button.
       hideDownload={targetAction?.envelope_action === 'save'}
       onSave={saveEnvelope}
+      onEditorReady={onEditorReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not
       // persist anything — the envelope stays an editable docx.
       onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
