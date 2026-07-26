@@ -2869,3 +2869,119 @@ describe('table rows: insert a row and fill its cells', () => {
     }
   });
 });
+
+// The captain asked for "a page saying Thank you in the middle of the page, all
+// caps and bold in bigger format". The page landed and the text never did: the
+// text half was refused upstream, and batching it with the break was refused
+// here too, because preflight demanded that `insert_text`'s anchor already
+// exist when the break in the same batch is what creates it.
+const closingSfdt = () => ({
+  sections: [
+    {
+      blocks: [
+        { inlines: [{ text: 'Closing Summary' }] },
+        { inlines: [{ text: 'We appreciate your business.' }] },
+        { inlines: [] }
+      ],
+      sectionFormat: { pageWidth: 612, pageHeight: 792 }
+    }
+  ]
+});
+
+describe('new page: add a page and put formatted text on it', () => {
+  it('real SDK: page break plus centred bold enlarged text, in one change set', () => {
+    const ed = makeRealDocumentEditor(closingSfdt());
+    try {
+      ed.enableTrackChanges = true;
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'thank-you-page',
+        edits: [
+          { op: 'insert_page_break', anchor: '0;2' },
+          { op: 'insert_text', anchor: '0;3', text: 'THANK YOU' },
+          {
+            op: 'set_char_format',
+            anchor: '0;3',
+            expect: 'THANK YOU',
+            bold: true,
+            allCaps: true,
+            fontSize: 28
+          },
+          {
+            op: 'set_para_format',
+            anchor: '0;3',
+            expect: 'THANK YOU',
+            alignment: 'Center',
+            beforeSpacing: 260
+          }
+        ]
+      });
+
+      expect(result.results.map((r) => r.error)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined
+      ]);
+      expect(result.results.every((r) => r.ok)).toBe(true);
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+
+      // A new final page carrying the text.
+      expect(blockTexts(ed)).toEqual([
+        'Closing Summary',
+        'We appreciate your business.',
+        '\f',
+        'THANK YOU'
+      ]);
+
+      // Centred, bold, bigger - on the inserted paragraph itself.
+      ed.selection.select('0;3;0', '0;3;9');
+      expect(ed.selection.text).toBe('THANK YOU');
+      expect(ed.selection.characterFormat.bold).toBe(true);
+      expect(ed.selection.characterFormat.allCaps).toBe(true);
+      expect(ed.selection.characterFormat.fontSize).toBe(28);
+      expect(ed.selection.paragraphFormat.textAlignment).toBe('Center');
+
+      // ...and the text is a rejectable tracked card.
+      expect(revisionTypes(ed)).toContain('Insertion');
+      expect(
+        realRevisions(ed).every(
+          (revision) => typeof revision.reject === 'function'
+        )
+      ).toBe(true);
+      rejectEveryRealRevision(ed);
+      expect(blockTexts(ed)).toEqual([
+        'Closing Summary',
+        'We appreciate your business.',
+        ''
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: refuses a deferred paragraph anchor that lands on existing content', () => {
+    const ed = makeRealDocumentEditor(closingSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      // `0;1` already reads "We appreciate your business."; the break creates
+      // `0;3`, so this deferred anchor is not the paragraph it names.
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'wrong-deferred-anchor',
+        edits: [
+          { op: 'insert_page_break', anchor: '0;2' },
+          { op: 'insert_text', anchor: '0;4', text: 'THANK YOU' }
+        ]
+      });
+
+      expect(result.results[1]).toMatchObject({ ok: false });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      // Nothing partially applies: the break it created is rolled back too.
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});

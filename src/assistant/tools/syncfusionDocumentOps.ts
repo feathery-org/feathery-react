@@ -2393,6 +2393,9 @@ interface ChangeSetPlan {
   // A `set_cell_text` whose cell does not exist yet because an earlier op in the
   // same change set creates it. It has no preflight target by definition.
   deferredNewCell?: boolean;
+  // An `insert_text` whose paragraph does not exist yet because an earlier break
+  // in the same change set creates it. Same contract as deferredNewCell.
+  deferredNewParagraph?: boolean;
 }
 
 // Table ops which bring new, empty cells into existence WITHOUT shifting block
@@ -2402,29 +2405,44 @@ interface ChangeSetPlan {
 // against a re-read inventory.
 const CELL_CREATING_OPS = new Set(['insert_row', 'insert_column']);
 
-// The single concession the preflight makes to a not-yet-existing anchor. It
-// stays honest because the deferred anchor was absent from the pre-edit block
-// map (so it cannot shadow an existing block) and must resolve, at write time,
-// to a cell which is still empty. Anything else - the structural op did not
-// create it, or index arithmetic landed on real content - fails the op, which
-// fails the change set, which rejects every revision it created. Nothing
-// partially applies.
-function assertDeferredAnchorIsNewEmptyCell(
+// Breaks which end the current paragraph and so bring exactly one new, empty
+// paragraph into existence at the next block index. Text destined for that new
+// paragraph has nowhere else to go, and requiring a second call for it leaves a
+// blank page behind whenever the text half then fails - which is exactly what
+// the captain saw when asking for a "THANK YOU" page.
+const PARAGRAPH_CREATING_OPS = new Set([
+  'insert_page_break',
+  'insert_column_break'
+]);
+
+// The concessions the preflight makes to a not-yet-existing anchor. They stay
+// honest because the deferred anchor was absent from the pre-edit block map (so
+// it cannot shadow an existing block) and must resolve, at write time, to a
+// block of the expected kind which is still empty. Anything else - the
+// structural op did not create it, or index arithmetic landed on real content -
+// fails the op, which fails the change set, which rejects every revision it
+// created. Nothing partially applies.
+function assertDeferredAnchorIsNewAndEmpty(
   plan: ChangeSetPlan,
   target: FlatBlock
 ): void {
-  if (!plan.deferredNewCell) return;
-  if (target.kind !== 'table_cell')
+  if (!plan.deferredNewCell && !plan.deferredNewParagraph) return;
+  if (plan.deferredNewCell && target.kind !== 'table_cell')
     throw new OpError(
       'deferred_anchor_not_a_cell',
       `Anchor "${plan.op.anchor}" did not resolve to a table cell after the structural edit.`
+    );
+  if (plan.deferredNewParagraph && target.kind === 'table_cell')
+    throw new OpError(
+      'deferred_anchor_not_a_paragraph',
+      `Anchor "${plan.op.anchor}" resolved to a table cell, not the paragraph the break was expected to create.`
     );
   if (target.text.length)
     throw new OpError(
       'deferred_anchor_occupied',
       `Anchor "${
         plan.op.anchor
-      }" resolved to a cell which already reads ${JSON.stringify(
+      }" resolved to a block which already reads ${JSON.stringify(
         target.text
       )}; refusing to overwrite existing content through a deferred anchor.`
     );
@@ -2622,9 +2640,22 @@ export function applyDocumentEdits(
       edits
         .slice(0, index)
         .some((earlier) => earlier?.op && CELL_CREATING_OPS.has(earlier.op));
+    // `insert_text` may address the empty paragraph an earlier break in this
+    // same change set is about to create, so a new page and the text on it are
+    // one atomic, single-card edit instead of two calls with a stray blank page
+    // between them when the second one fails.
+    const deferredNewParagraph =
+      !target &&
+      name === 'insert_text' &&
+      edits
+        .slice(0, index)
+        .some(
+          (earlier) => earlier?.op && PARAGRAPH_CREATING_OPS.has(earlier.op)
+        );
     if (
       !target &&
       !deferredNewCell &&
+      !deferredNewParagraph &&
       (!FORMAT_OPS.has(name) || !hasStructuralEdits)
     ) {
       results[index] = {
@@ -2685,6 +2716,7 @@ export function applyDocumentEdits(
         target,
         source,
         ...(deferredNewCell ? { deferredNewCell: true } : {}),
+        ...(deferredNewParagraph ? { deferredNewParagraph: true } : {}),
         ...(source
           ? { inherited: readEffectiveSourceFormat(editor, source) }
           : {}),
@@ -2736,7 +2768,7 @@ export function applyDocumentEdits(
                 plan.target,
                 anchorsMayHaveShifted
               );
-              assertDeferredAnchorIsNewEmptyCell(plan, target);
+              assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
               // The reversibility baseline at the anchor actually written, after
               // any relocation. Read from the map the last refresh built, so a
