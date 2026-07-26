@@ -84,6 +84,17 @@ import {
   dispatchDeleteTableRow,
   dispatchSetTableCellValue
 } from './tools/tableMutations';
+import {
+  buildCallableRules,
+  dispatchAssistantTool
+} from './tools/assistantToolDispatch';
+import {
+  createDocxEditorBridge,
+  readDocxSelection
+} from './tools/docxEditorBridge';
+import { getDocxEditor } from './tools/docxEditorRegistry';
+import { runLogicRuleById } from '../Form/logic';
+import internalState from '../utils/internalState';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -295,15 +306,24 @@ const AssistantChat = ({
     : undefined;
 
   const buildChatBody = (): Record<string, unknown> => {
+    // ai-services reads assistant scope exclusively from body.context;
+    // form_key stays top-level because backend form auth reads body params.
     const body: Record<string, unknown> = {};
     if (formKey) body.form_key = formKey;
+    const context: Record<string, unknown> = {};
     const targets = getTargets();
-    if (targets.length > 0) body.targets = targets;
+    if (targets.length > 0) context.targets = targets;
 
     if (instanceId) {
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
-      if (panelRuntime) body.panel_runtime = panelRuntime;
+      if (panelRuntime) context.panel_runtime = panelRuntime;
+      context.selection = readDocxSelection(getDocxEditor(instanceId));
+      const callableRules = buildCallableRules(
+        internalState[instanceId]?.logicRules ?? []
+      );
+      if (callableRules.length > 0) context.callable_rules = callableRules;
     }
+    body.context = context;
     return body;
   };
 
@@ -550,6 +570,26 @@ const AssistantChat = ({
         voiceDataRef.current?.(part);
       },
       onToolCall: async ({ toolCall }: any) => {
+        const dispatched = await dispatchAssistantTool(
+          toolCall.toolName,
+          toolCall.input ?? {},
+          {
+            docxBridge: createDocxEditorBridge(() => getDocxEditor(instanceId)),
+            callableRules: buildCallableRules(
+              internalState[instanceId ?? '']?.logicRules ?? []
+            ),
+            runLogicRule: (ruleId, inputParams) =>
+              runLogicRuleById(ruleId, inputParams, instanceId)
+          }
+        );
+        if (dispatched.handled) {
+          chat.addToolOutput({
+            tool: toolCall.toolName,
+            toolCallId: toolCall.toolCallId,
+            output: dispatched.output
+          });
+          return;
+        }
         if (toolCall.dynamic) return;
 
         if (toolCall.toolName === 'setFieldValue') {
