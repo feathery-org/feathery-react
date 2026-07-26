@@ -1275,7 +1275,8 @@ function selectExactMatch(
   editor: LiveEditor,
   block: FlatBlock,
   find: string,
-  index: number
+  index: number,
+  op: EditOp
 ): boolean {
   let search: any;
   try {
@@ -1298,6 +1299,8 @@ function selectExactMatch(
 
   try {
     search.findAll(find, 'CaseSensitive');
+    const hasExactPublicRange =
+      typeof op.start === 'number' && typeof op.end === 'number';
     const match = (
       search.searchResults.getTextSearchResultsOffset() ?? []
     ).find((result: any) => {
@@ -1306,7 +1309,9 @@ function selectExactMatch(
       return (
         start.anchor === block.anchor &&
         end.anchor === block.anchor &&
-        start.offset === index
+        (hasExactPublicRange
+          ? start.offset === op.start && end.offset === op.end
+          : start.offset === index)
       );
     });
     if (!match)
@@ -1417,7 +1422,11 @@ function applyAnchoredOp(
 
   // Compare-and-swap guard: `expect` is the whole-block text the model believes
   // is still present. On mismatch we write nothing.
-  if (op.expect != null && liveText !== op.expect) {
+  if (
+    op.expect != null &&
+    liveText !== op.expect &&
+    block.text !== String(op.expect)
+  ) {
     throw new OpError(
       'stale_anchor',
       'The text at this anchor changed since it was read. Re-read the inventory and retry.'
@@ -1445,11 +1454,26 @@ function applyAnchoredOp(
       const idx = liveText.indexOf(find);
       if (idx < 0)
         throw new OpError('text_not_found', `"${find}" not found at anchor.`);
-      const hasLiveSearchRange = selectExactMatch(editor, block, find, idx);
+      const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
+      // A field paragraph has two valid projections: serialized SFDT includes
+      // its field instructions while Selection exposes the rendered result.
+      // The public search offsets select the latter; retain the former for the
+      // CAS/post-write proof so a TOC/hyperlink field is never misclassified as
+      // a stale document merely because those projections differ.
+      const serializedIndex =
+        typeof op.start === 'number' &&
+        block.text.slice(op.start, op.start + find.length) === find
+          ? op.start
+          : block.text.indexOf(find);
+      if (serializedIndex < 0)
+        throw new OpError(
+          'text_not_found',
+          `"${find}" not found in the serialized block at anchor.`
+        );
       const next =
-        liveText.slice(0, idx) +
+        block.text.slice(0, serializedIndex) +
         String(replacement ?? '') +
-        liveText.slice(idx + find.length);
+        block.text.slice(serializedIndex + find.length);
       if (!hasLiveSearchRange) {
         // Test doubles and older integrations without SyncFusion Search retain
         // their legacy selected-range replacement primitive. Production search
