@@ -1229,10 +1229,47 @@ class OpError extends Error {
     retry?: 'never'
   ) {
     super(message ?? code);
+    // The shipped ES5 emit runs `Error.call(this, message) || this`, and
+    // Error-as-a-function returns a fresh plain Error, so without this the
+    // constructed object is not an OpError instance at runtime and every
+    // structured code degrades to a bare `op_failed` in the browser.
+    Object.setPrototypeOf(this, OpError.prototype);
+    this.name = 'OpError';
     this.code = code;
     this.details = details;
     this.retry = retry;
   }
+}
+
+// instanceof alone is not trusted for OpError: the ES5 build defect above
+// shipped exactly that way, and a double-loaded module (cjs + esm) breaks
+// instanceof across copies too. The name+code brand survives both.
+function isOpError(err: unknown): err is OpError {
+  return (
+    err instanceof OpError ||
+    (err instanceof Error &&
+      err.name === 'OpError' &&
+      typeof (err as OpError).code === 'string')
+  );
+}
+
+// A non-OpError throw is a defect surfacing through SyncFusion or the engine
+// itself. The result must still carry enough to diagnose and adapt - the
+// error's type and message - without leaking a stack trace into a prompt.
+const UNEXPECTED_ERROR_MESSAGE_LIMIT = 300;
+function describeUnexpectedError(err: unknown): string {
+  const name =
+    err instanceof Error && err.name && err.name !== 'Error'
+      ? `${err.name}: `
+      : '';
+  const message =
+    err instanceof Error
+      ? err.message || 'unknown error'
+      : String(err ?? 'unknown error');
+  const described = `${name}${message.split('\n', 1)[0]}`;
+  return described.length > UNEXPECTED_ERROR_MESSAGE_LIMIT
+    ? `${described.slice(0, UNEXPECTED_ERROR_MESSAGE_LIMIT - 1)}…`
+    : described;
 }
 
 // Selects the whole block described by a FlatBlock and returns the live text.
@@ -1270,21 +1307,55 @@ function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
   );
 }
 
-// What the document would read at `anchor` if every revision were rejected:
-// pending insertions dropped, pending deletions restored. This is the exact
-// projection the byte-for-byte integrity tests assert globally, evaluated for
-// one block so a single write can be proven reversible the moment it lands.
-// `undefined` means the anchor is not addressable in serialized SFDT at all
-// (live story ranges - text frames, page-specific headers/footers).
-function rejectProjectionText(
-  editor: LiveEditor,
-  anchor: string
-): string | undefined {
-  if (!anchor) return undefined;
-  const sfdt = parseSfdt(editor.serialize());
-  return flattenSfdt(sfdt, insertedRevisionIds(sfdt)).find(
-    (block) => block.anchor === anchor
-  )?.text;
+// What the whole document would read if every revision were rejected: pending
+// insertions dropped, pending deletions restored, and a paragraph whose mark is
+// itself a pending insertion merged into its successor - because that is what
+// rejecting the mark does. This is the exact projection the byte-for-byte
+// integrity tests assert globally, evaluated as one content stream so a single
+// write can be proven reversible the moment it lands. A per-anchor comparison
+// is NOT equivalent: a paragraph-splitting insert (position "before" / any
+// offset short of the block end) legitimately moves the pre-existing text off
+// its index, so the anchor's new occupant is a different logical block.
+function rejectProjectionStream(sfdt: any): string {
+  const dropIds = insertedRevisionIds(sfdt);
+  const allDropped = (rids: unknown): boolean =>
+    Array.isArray(rids) &&
+    rids.length > 0 &&
+    rids.every((id) => dropIds.has(String(id)));
+  const out: string[] = [];
+  const pushParagraph = (block: any) => {
+    out.push(inlineText(getInlines(block), dropIds));
+    const markRevisionIds = pick(
+      pick(block, 'characterFormat', 'cf'),
+      'revisionIds',
+      'rids'
+    );
+    // Rejecting an inserted paragraph mark joins this paragraph with the next
+    // one, so an inserted mark contributes no separator to the projection.
+    if (!allDropped(markRevisionIds)) out.push('\n');
+  };
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  for (const section of sections) {
+    for (const block of getBlocks(section)) {
+      const rows = getRows(block);
+      if (rows) {
+        for (const row of rows) {
+          const cells: any[] = pick(row, 'cells', 'c') ?? [];
+          for (const cell of cells) {
+            for (const cellBlock of getBlocks(cell)) pushParagraph(cellBlock);
+            // Word's cell-end control character: keeps a moved cell boundary
+            // from reading as an unchanged text stream.
+            out.push('\u0007');
+          }
+          out.push('\r');
+        }
+      } else {
+        pushParagraph(block);
+      }
+    }
+    out.push('\f');
+  }
+  return out.join('');
 }
 
 interface LiveStoryTarget {
@@ -1394,7 +1465,7 @@ function resolveLiveStoryTarget(
       text
     };
   } catch (error) {
-    if (error instanceof OpError) throw error;
+    if (isOpError(error)) throw error;
     throw new OpError(
       'search_failed',
       `SyncFusion could not resolve the searched story range for "${find}".`
@@ -1557,7 +1628,7 @@ function selectExactMatch(
       );
     return true;
   } catch (error) {
-    if (error instanceof OpError) throw error;
+    if (isOpError(error)) throw error;
     throw new OpError(
       'search_failed',
       `SyncFusion could not resolve an exact selected range for "${find}".`
@@ -2577,6 +2648,22 @@ function createdRevisions(
   );
 }
 
+// A full-document projection would drown the model; report only the first
+// divergence with enough surrounding context to identify the location.
+function describeStreamDivergence(expected: string, actual: string): string[] {
+  let start = 0;
+  const comparable = Math.min(expected.length, actual.length);
+  while (start < comparable && expected[start] === actual[start]) start++;
+  const from = Math.max(0, start - 60);
+  const excerpt = (stream: string) =>
+    JSON.stringify(stream.slice(from, start + 80));
+  return [
+    `after rejecting every revision the document would read ${excerpt(
+      actual
+    )} where it previously read ${excerpt(expected)}`
+  ];
+}
+
 const TRACKED_TEXT_OPS = new Set([
   'replace_text',
   'delete_text',
@@ -2610,7 +2697,7 @@ function assertTrackedMutation(
   editor: LiveEditor,
   before: LiveRevision[],
   op: EditOp,
-  priorRejectText?: string
+  priorRejectStream?: string
 ): void {
   const structural = TRACKED_STRUCTURAL_OPS.get(op.op);
   if (
@@ -2639,16 +2726,13 @@ function assertTrackedMutation(
     return;
   }
 
-  if (priorRejectText !== undefined) {
-    const nowRejectsTo = rejectProjectionText(editor, String(op.anchor ?? ''));
-    if (nowRejectsTo !== priorRejectText)
+  if (priorRejectStream !== undefined) {
+    const nowRejectsTo = rejectProjectionStream(parseSfdt(editor.serialize()));
+    if (nowRejectsTo !== priorRejectStream)
       throw new OpError(
         'untracked_write',
         `${op.op} changed text which rejecting the tracked revisions would not restore.`,
-        [
-          `rejects to: ${JSON.stringify(nowRejectsTo)}`,
-          `expected: ${JSON.stringify(priorRejectText)}`
-        ]
+        describeStreamDivergence(priorRejectStream, nowRejectsTo)
       );
     return;
   }
@@ -3164,10 +3248,10 @@ export function applyDocumentEdits(
   editor.enableTrackChanges = true;
   let blocks: FlatBlock[] = [];
   let byAnchor = new Map<string, FlatBlock>();
-  // Per-anchor "what this would read if every revision were rejected", kept
-  // alongside the live block map so a tracked write can be proven reversible
-  // without a second serialize per op.
-  let rejectByAnchor = new Map<string, string>();
+  // "What the whole document would read if every revision were rejected",
+  // kept alongside the live block map so a tracked write can be proven
+  // reversible without a second serialize per op.
+  let rejectStream = '';
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();
@@ -3177,11 +3261,7 @@ export function applyDocumentEdits(
     const sfdt = parseSfdt(editor.serialize());
     blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
-    rejectByAnchor = new Map(
-      flattenSfdt(sfdt, insertedRevisionIds(sfdt)).map(
-        (block) => [block.anchor, block.text] as const
-      )
-    );
+    rejectStream = rejectProjectionStream(sfdt);
   };
   refresh();
   const fail = (index: number, op: EditOp, err: unknown) => {
@@ -3189,11 +3269,13 @@ export function applyDocumentEdits(
       ok: false,
       op: op?.op ?? '',
       anchor: op?.anchor,
-      error: err instanceof OpError ? err.code : 'op_failed',
-      ...(err instanceof OpError && err.details
-        ? { details: err.details }
-        : {}),
-      ...(err instanceof OpError && err.retry ? { retry: err.retry } : {})
+      error: isOpError(err) ? err.code : 'op_failed',
+      ...(isOpError(err)
+        ? err.details
+          ? { details: err.details }
+          : {}
+        : { details: [describeUnexpectedError(err)] }),
+      ...(isOpError(err) && err.retry ? { retry: err.retry } : {})
     };
   };
 
@@ -3399,7 +3481,7 @@ export function applyDocumentEdits(
         if (results[index] || FORMAT_OPS.has(op.op)) continue;
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
-        let priorRejectText: string | undefined;
+        let priorRejectStream: string | undefined;
         let insertInheritance: PlannedInsertInheritance[] | undefined;
         try {
           if (op.op === 'replace_all') {
@@ -3428,11 +3510,13 @@ export function applyDocumentEdits(
               );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
-              // The reversibility baseline at the anchor actually written, after
-              // any relocation. Read from the map the last refresh built, so a
-              // tracked write costs no extra serialize before it lands.
-              if (TRACKED_TEXT_OPS.has(op.op))
-                priorRejectText = rejectByAnchor.get(target.anchor);
+              // The reversibility baseline: the whole-document reject
+              // projection the last refresh built, so a tracked write costs no
+              // extra serialize before it lands. Never a per-anchor text - a
+              // paragraph-splitting insert moves the pre-existing content off
+              // its index by design, so the anchor's occupant after the write
+              // is a different logical block.
+              if (TRACKED_TEXT_OPS.has(op.op)) priorRejectStream = rejectStream;
               // Decide the inserted paragraphs' formatting BEFORE the write,
               // while the reference blocks and their formats are readable in
               // their pre-insert positions. An explicit inheritFormatFrom on
@@ -3466,7 +3550,7 @@ export function applyDocumentEdits(
             editor,
             revisionsBeforeOp,
             writtenOp,
-            priorRejectText
+            priorRejectStream
           );
           refresh();
           if (insertInheritance) {
