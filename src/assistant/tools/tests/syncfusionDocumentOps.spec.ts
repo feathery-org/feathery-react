@@ -2985,3 +2985,188 @@ describe('new page: add a page and put formatted text on it', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Explicit structural table ops and section breaks. These previously fell to a
+// generic zero-argument snake_case->camelCase dispatch; each now has its own
+// case, and an op outside the vocabulary is refused immediately with
+// retry:'never' instead of being guessed at.
+// ---------------------------------------------------------------------------
+
+// The live editor serializes optimized SFDT with abbreviated keys
+// (sections -> sec, sectionFormat -> secpr, breakCode -> bc); accept both.
+const serializedSections = (editor: DocumentEditor): any[] => {
+  const parsed = JSON.parse(editor.serialize());
+  return parsed.sections ?? parsed.sec ?? [];
+};
+
+const serializedBreakCode = (section: any): string | undefined => {
+  const format = section.sectionFormat ?? section.secpr;
+  return format?.breakCode ?? format?.bc;
+};
+
+describe('explicit table structure and section break ops', () => {
+  it('real SDK: delete_table marks the whole anchored table as a tracked deletion; accepting removes it', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'table-delete',
+        edits: [{ op: 'delete_table', anchor: '0;1;0;0;0' }]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'delete_table' });
+      expect(revisionTypes(ed)).toContain('Deletion');
+
+      ed.revisions.acceptAll();
+      expect(blockTexts(ed)).toEqual(['Location Schedule', 'End']);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: delete_row deletes the anchored row; rejecting restores the document byte-for-byte', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'row-delete',
+        edits: [{ op: 'delete_row', anchor: '0;1;1;0;0' }]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'delete_row' });
+      expect(revisionTypes(ed)).toEqual(['Deletion']);
+
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  // SyncFusion cannot delete a column or merge cells as a tracked change: both
+  // sit behind a blocking "wont be marked as change" confirmation dialog, and a
+  // human clicking OK would produce an UNTRACKED change that survives
+  // reject-all. This engine applies every change set tracked, so the ops are
+  // out of the vocabulary and must refuse loudly instead of reporting ok:true
+  // while doing nothing.
+  it.each(['delete_column', 'merge_cells'])(
+    'real SDK: %s is refused as outside the vocabulary, never as a false success',
+    (op) => {
+      const ed = makeRealDocumentEditor(locationScheduleSfdt());
+      try {
+        ed.enableTrackChanges = true;
+        const before = ed.serialize();
+
+        const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+          changeSetId: `${op}-refused`,
+          edits: [{ op, anchor: '0;1;0;0;0' }]
+        });
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          op,
+          error: 'unsupported_op',
+          retry: 'never'
+        });
+        expect(ed.serialize()).toBe(before);
+      } finally {
+        destroyRealDocumentEditor(ed);
+      }
+    }
+  );
+
+  it('real SDK: insert_section_break passes sectionBreakType (Continuous) instead of dropping it', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Alpha' }] },
+            { inlines: [{ text: 'Beta' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'continuous-break',
+        edits: [
+          {
+            op: 'insert_section_break',
+            anchor: '0;1',
+            sectionBreakType: 'Continuous'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'insert_section_break'
+      });
+
+      const sections = serializedSections(ed);
+      expect(sections).toHaveLength(2);
+      // SyncFusion spells the Word "Continuous" break "NoBreak" at runtime.
+      expect(sections.map(serializedBreakCode)).toContain('NoBreak');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: insert_section_break without a type keeps the NewPage default', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Alpha' }] },
+            { inlines: [{ text: 'Beta' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'default-break',
+        edits: [{ op: 'insert_section_break', anchor: '0;1' }]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'insert_section_break'
+      });
+
+      const sections = serializedSections(ed);
+      expect(sections).toHaveLength(2);
+      expect(sections.map(serializedBreakCode)).not.toContain('NoBreak');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: an op outside the vocabulary fails immediately with unsupported_op and retry:never', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'unknown-op',
+        edits: [
+          { op: 'set_cell_shading', anchor: '0;1;0;0;0', color: '#D3D3D3' }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'set_cell_shading',
+        error: 'unsupported_op',
+        retry: 'never'
+      });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});
