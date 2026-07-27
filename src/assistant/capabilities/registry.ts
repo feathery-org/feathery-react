@@ -537,3 +537,66 @@ export const DOCUMENT_EDITOR_CAPABILITIES: readonly CapabilityEntry[] = [
     example: { op: 'reject_all_revisions' }
   }
 ];
+
+// ---------------------------------------------------------------------------
+// Read capabilities (S3): the retrieval legs this engine executes client-side.
+// ---------------------------------------------------------------------------
+
+/**
+ * One read leg of the retrieval ladder. Reads are declared separately from
+ * ops: they mutate nothing, need no `tracked`/`anchorKind` contract, and are
+ * dispatched by `getDocumentInventory` scope / `findDocumentOccurrences`
+ * rather than the edit switches (so the op<->switch-case parity test does not
+ * apply to them). Param types use the same mini-language as `CapabilityEntry`.
+ */
+export interface ReadCapabilityEntry {
+  /** Read name; inventory scopes keep their scope name. */
+  read: string;
+  params: Record<string, string>;
+  summary: string;
+}
+
+// Ordered cheapest-first: this order IS the retrieval ladder the model should
+// walk down, and the too-large refusal names `structure` as its remedy.
+export const DOCUMENT_EDITOR_READS: readonly ReadCapabilityEntry[] = [
+  {
+    // getDocumentInventory scope 'structure' (buildInventoryFromBlocks)
+    read: 'structure',
+    params: { maxEntries: 'int>0?' },
+    summary:
+      'The document skeleton: headings, tables (anchor, rows, columns, headerCells) and section boundaries, no body text. Cheapest way to answer "where is X" and to find a table.'
+  },
+  {
+    // getDocumentInventory scope 'outline' (buildInventoryFromBlocks)
+    read: 'outline',
+    params: { maxEntries: 'int>0?' },
+    summary:
+      'Table of contents: headings with anchor, level and the block count each governs.'
+  },
+  {
+    // getDocumentInventory scope 'section' (buildInventoryFromBlocks)
+    read: 'section',
+    params: { sectionAnchor: 'string', maxEntries: 'int>0?' },
+    summary:
+      'The blocks under one heading (anchor from a structure/outline read), with text and format.'
+  },
+  {
+    // getDocumentInventory scope 'full' (buildInventoryFromBlocks)
+    read: 'full',
+    params: { maxEntries: 'int>0?' },
+    summary:
+      'Every block. Hard-limited by limits.fullInventoryBlocks; past it the refusal names structure+section as the remedy.'
+  },
+  {
+    // findDocumentOccurrences (live SyncFusion search)
+    read: 'occurrences',
+    params: {
+      text: 'string',
+      matchCase: 'boolean?',
+      wholeWord: 'boolean?',
+      maxResults: 'int>0?'
+    },
+    summary:
+      'Exact search over the live editor - the only authoritative source for edit anchors. Bounded by limits.liveSearchQueries / limits.liveOccurrencesPerQuery.'
+  }
+];

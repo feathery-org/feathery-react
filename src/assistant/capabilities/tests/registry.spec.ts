@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { DOCUMENT_EDITOR_CAPABILITIES } from '../registry';
+import { DOCUMENT_EDITOR_CAPABILITIES, DOCUMENT_EDITOR_READS } from '../registry';
 
 // ---------------------------------------------------------------------------
 // Registry <-> dispatch parity, both directions.
@@ -103,6 +103,54 @@ function matchesType(value: unknown, type: string): boolean {
     );
   throw new Error(`Unknown param type "${type}"`);
 }
+
+// ---------------------------------------------------------------------------
+// Read capabilities <-> retrieval surface parity (S3). Reads are dispatched by
+// getDocumentInventory's scope switch and findDocumentOccurrences, not the
+// edit switches - so their parity check reads the scope union and the search
+// export instead of case labels. Same failure classes as ops: a declared read
+// with no implementation is a lie, an implemented scope nobody declares is
+// invisible capability.
+// ---------------------------------------------------------------------------
+
+const PARAM_TYPE_LANGUAGE =
+  /^(string|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
+
+describe('read capabilities <-> retrieval surface parity', () => {
+  it('read names are unique and entries fit the declaration envelope', () => {
+    const names = DOCUMENT_EDITOR_READS.map((entry) => entry.read);
+    expect(new Set(names).size).toBe(names.length);
+    for (const entry of DOCUMENT_EDITOR_READS) {
+      expect(entry.summary.trim().length).toBeGreaterThan(0);
+      expect(entry.summary.length).toBeLessThanOrEqual(400);
+      for (const type of Object.values(entry.params)) {
+        expect(type).toMatch(PARAM_TYPE_LANGUAGE);
+      }
+    }
+  });
+
+  it('inventory-scope reads match the InventoryScope union exactly, both directions', () => {
+    const union = DISPATCH_SOURCE.match(
+      /export type InventoryScope = ([^;]+);/
+    );
+    expect(union).toBeTruthy();
+    const implementedScopes = [...union![1].matchAll(/'([a-z_]+)'/g)].map(
+      (match) => match[1]
+    );
+    // Guard against a vacuous match on a moved/renamed type.
+    expect(implementedScopes).toContain('outline');
+
+    const declaredScopes = DOCUMENT_EDITOR_READS.filter(
+      (entry) => entry.read !== 'occurrences'
+    ).map((entry) => entry.read);
+
+    expect([...declaredScopes].sort()).toEqual([...implementedScopes].sort());
+  });
+
+  it('the occurrences read has a live implementation', () => {
+    expect(DISPATCH_SOURCE).toContain('export function findDocumentOccurrences');
+  });
+});
 
 describe('capability entries are self-consistent', () => {
   it.each(DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const))(
