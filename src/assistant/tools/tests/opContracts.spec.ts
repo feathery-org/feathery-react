@@ -152,6 +152,27 @@ const pageOpsFixture = () => ({
   sections: [{ blocks: [para('Intro paragraph.'), para('')] }]
 });
 
+// The captain's document shape: multiple sections, and a target block with
+// real content both above and below it. Every position variant of insert_text
+// must work here in ONE attempt - the shipped `before` regression failed
+// exactly this shape while the happy-path contract (append into the final
+// empty paragraph) stayed green.
+const multiSectionFixture = () => ({
+  sections: [
+    { blocks: [para('Cover Title'), para('Cover subtitle.')] },
+    { blocks: [para('Middle Section'), para('Middle body.')] },
+    {
+      blocks: [
+        para('Closing Heading'), // 2;0
+        para('Closing body A.'), // 2;1
+        para('Closing body B.'), // 2;2 <- content above AND below
+        para('Closing body C.'), // 2;3
+        para('') // 2;4
+      ]
+    }
+  ]
+});
+
 // --- Contract cases ----------------------------------------------------------
 
 interface ContractCase {
@@ -548,7 +569,282 @@ const CONTRACTS: Record<string, ContractCase> = {
   }
 };
 
+// --- Parameter variants -------------------------------------------------------
+//
+// One happy-path call per op proves the op exists; it does not prove its
+// parameters work. `insert_text` shipped with a `position` whose `before`
+// value failed on every real document while its contract test (an append into
+// an empty final paragraph) stayed green. Each advertised parameter value that
+// selects a different execution shape gets its own contract here, on the
+// document shape where the difference shows (content above AND below the
+// target, multiple sections, table cells).
+//
+// Deliberately not exhaustive: formatting value matrices (bold vs italic vs
+// fontSize all walk the same property-write path), header/footer targets
+// (refused by design, asserted in the engine spec), and payload-only variants
+// (bookmark names, hyperlink addresses) add cases without adding execution
+// shapes.
+
+const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
+  [
+    'insert_text',
+    'position "before" a block with content above and below (multi-section)',
+    {
+      fixture: multiSectionFixture,
+      edits: [
+        {
+          op: 'insert_text',
+          anchor: '2;2',
+          position: 'before',
+          text: 'Inserted between.'
+        }
+      ],
+      verify: (ed) => {
+        const texts = blockTexts(ed);
+        // The insert lands as its own paragraph BETWEEN the neighbours, in one
+        // attempt, with both neighbours byte-identical.
+        expect(texts.slice(5, 9)).toEqual([
+          'Closing body A.',
+          'Inserted between.',
+          'Closing body B.',
+          'Closing body C.'
+        ]);
+      }
+    }
+  ],
+  [
+    'insert_text',
+    'position "after" the same surrounded block',
+    {
+      fixture: multiSectionFixture,
+      edits: [
+        {
+          op: 'insert_text',
+          anchor: '2;2',
+          position: 'after',
+          text: 'Inserted between.'
+        }
+      ],
+      verify: (ed) => {
+        expect(blockTexts(ed).slice(5, 9)).toEqual([
+          'Closing body A.',
+          'Closing body B.',
+          'Inserted between.',
+          'Closing body C.'
+        ]);
+      }
+    }
+  ],
+  [
+    'insert_text',
+    'multi-line text at offset 0 of a non-empty block (no position field)',
+    {
+      // The exact live shape from the captain's session: heading + body +
+      // trailing break, anchored at a non-empty paragraph, no `position`.
+      fixture: multiSectionFixture,
+      edits: [
+        {
+          op: 'insert_text',
+          anchor: '2;2',
+          text: 'Our Commitment\nWe remain dedicated to our clients.\n'
+        }
+      ],
+      verify: (ed) => {
+        expect(blockTexts(ed).slice(5, 10)).toEqual([
+          'Closing body A.',
+          'Our Commitment',
+          'We remain dedicated to our clients.',
+          'Closing body B.',
+          'Closing body C.'
+        ]);
+      }
+    }
+  ],
+  [
+    'insert_text',
+    'position "start" splices into the same paragraph',
+    {
+      fixture: multiSectionFixture,
+      edits: [
+        { op: 'insert_text', anchor: '2;2', position: 'start', text: 'NEW: ' }
+      ],
+      verify: (ed) => {
+        expect(blockTexts(ed)[6]).toBe('NEW: Closing body B.');
+        expect(blockTexts(ed)).toHaveLength(9);
+      }
+    }
+  ],
+  [
+    'insert_text',
+    'position "end" splices into the same paragraph',
+    {
+      fixture: multiSectionFixture,
+      edits: [
+        { op: 'insert_text', anchor: '2;2', position: 'end', text: ' (updated)' }
+      ],
+      verify: (ed) => {
+        expect(blockTexts(ed)[6]).toBe('Closing body B. (updated)');
+        expect(blockTexts(ed)).toHaveLength(9);
+      }
+    }
+  ],
+  [
+    'insert_text',
+    'numeric offset splices mid-paragraph',
+    {
+      fixture: multiSectionFixture,
+      edits: [
+        { op: 'insert_text', anchor: '2;2', offset: 8, text: 'brand new ' }
+      ],
+      verify: (ed) => {
+        expect(blockTexts(ed)[6]).toBe('Closing brand new body B.');
+      }
+    }
+  ],
+  [
+    'insert_text',
+    'position "before" inside a table cell',
+    {
+      fixture: tableFixture,
+      edits: [
+        {
+          op: 'insert_text',
+          anchor: '0;1;1;0;0',
+          position: 'before',
+          text: 'Site'
+        }
+      ],
+      verify: (ed) => {
+        const cellTexts = flattenSfdt(JSON.parse(ed.serialize()))
+          .filter((b) => b.anchor.startsWith('0;1;1;0;'))
+          .map((b) => b.text);
+        expect(cellTexts).toEqual(['Site', '0093']);
+      }
+    }
+  ],
+  [
+    'insert_row',
+    'above: true inserts the new row ABOVE the anchored row',
+    {
+      fixture: tableFixture,
+      edits: [
+        { op: 'insert_row', anchor: '0;1;1;0;0', above: true, count: 1 }
+      ],
+      verify: (ed) => {
+        const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
+          (b) => b.kind === 'table_cell'
+        );
+        expect(cells).toHaveLength(6);
+        const byAnchor = new Map(cells.map((b) => [b.anchor, b.text]));
+        // The new row takes the anchored row's index; the anchored row's
+        // content moves DOWN one row, and the header row is untouched.
+        expect(byAnchor.get('0;1;0;0;0')).toBe('Loc #');
+        expect(byAnchor.get('0;1;1;0;0')).toBe('');
+        expect(byAnchor.get('0;1;1;1;0')).toBe('');
+        expect(byAnchor.get('0;1;2;0;0')).toBe('0093');
+        expect(byAnchor.get('0;1;2;1;0')).toBe('1 King St W');
+      }
+    }
+  ],
+  [
+    'insert_row',
+    'count: 2 inserts two rows below',
+    {
+      fixture: tableFixture,
+      edits: [
+        { op: 'insert_row', anchor: '0;1;1;0;0', above: false, count: 2 }
+      ],
+      verify: (ed) => {
+        const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
+          (b) => b.kind === 'table_cell'
+        );
+        expect(cells).toHaveLength(8);
+        const byAnchor = new Map(cells.map((b) => [b.anchor, b.text]));
+        expect(byAnchor.get('0;1;1;0;0')).toBe('0093');
+        expect(byAnchor.get('0;1;2;0;0')).toBe('');
+        expect(byAnchor.get('0;1;3;0;0')).toBe('');
+      }
+    }
+  ],
+  [
+    'change_case',
+    'caseType "lowercase"',
+    {
+      fixture: proseFixture,
+      edits: [{ op: 'change_case', anchor: '0;0', caseType: 'lowercase' }],
+      verify: (ed) => {
+        expect(blockTexts(ed)[0]).toBe('executive summary');
+      }
+    }
+  ],
+  [
+    'indent_step',
+    'direction "decrease" removes an indent step',
+    {
+      fixture: proseFixture,
+      setup: (ed) => {
+        ed.selection.select('0;1;0', '0;1;5');
+        ed.selection.paragraphFormat.leftIndent = 36;
+      },
+      edits: [{ op: 'indent_step', anchor: '0;1', direction: 'decrease' }],
+      verify: (ed) => {
+        expect(
+          selectBlockFormat(ed, '0;1', 5).paragraphFormat.leftIndent
+        ).toBeLessThan(36);
+      }
+    }
+  ]
+  // insert_section_break's sectionBreakType ('Continuous' -> runtime
+  // 'NoBreak') is deliberately absent: the break KIND is not observable in
+  // jsdom-serialized SFDT (breakCode serializes null for every kind, probed
+  // empirically), so no assertion on it can fail when the mapping breaks.
+  // A test that cannot bite would only certify the mapping falsely.
+];
+
 // --- The contract ------------------------------------------------------------
+
+// One contract execution: the op's real route, the `tracked` promise, and the
+// op-specific semantic proof. Shared by the per-op happy paths and every
+// parameter variant so a variant can never assert less than the base contract.
+function runContractCase(op: string, contract: ContractCase): void {
+  const entry = DOCUMENT_EDITOR_CAPABILITIES.find((e) => e.op === op);
+  expect(entry).toBeDefined();
+  const editor = makeEditor(contract.fixture());
+  try {
+    contract.setup?.(editor);
+    const revisionsBefore = editor.revisions.length;
+    const result = applyDocumentEdits(editor as any, {
+      edits: contract.edits,
+      changeSetId: `contract-${op}`
+    });
+
+    expect(
+      result.results.map(({ ok, error, details }) => ({ ok, error, details }))
+    ).toEqual(
+      contract.edits.map(() => ({
+        ok: true,
+        error: undefined,
+        details: undefined
+      }))
+    );
+    expect(result.changeSet?.status).toBe('applied');
+
+    const created = editor.revisions.length - revisionsBefore;
+    if (contract.assertRevisions) {
+      contract.assertRevisions(created, editor);
+    } else if (entry!.tracked) {
+      // The registry promises the user an individually rejectable change.
+      expect(created).toBeGreaterThan(0);
+    } else {
+      // The registry says so honestly: no revision, applies immediately.
+      expect(created).toBe(0);
+    }
+
+    contract.verify(editor, result);
+  } finally {
+    destroyEditor(editor);
+  }
+}
 
 describe('op contracts: every advertised op works over its real route', () => {
   it('every registry op has a contract case, and no case is orphaned', () => {
@@ -558,42 +854,103 @@ describe('op contracts: every advertised op works over its real route', () => {
 
   it.each(
     DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
-  )(
-    '%s: applies through applyDocumentEdits and honours `tracked`',
-    (op, entry) => {
-      const contract = CONTRACTS[op];
-      expect(contract).toBeDefined();
-      const editor = makeEditor(contract.fixture());
-      try {
-        contract.setup?.(editor);
-        const revisionsBefore = editor.revisions.length;
-        const result = applyDocumentEdits(editor as any, {
-          edits: contract.edits,
-          changeSetId: `contract-${op}`
-        });
+  )('%s: applies through applyDocumentEdits and honours `tracked`', (op) => {
+    const contract = CONTRACTS[op];
+    expect(contract).toBeDefined();
+    runContractCase(op, contract);
+  });
 
-        expect(result.results.map(({ ok, error }) => ({ ok, error }))).toEqual(
-          contract.edits.map(() => ({ ok: true, error: undefined }))
-        );
-        expect(result.changeSet?.status).toBe('applied');
-
-        const created = editor.revisions.length - revisionsBefore;
-        if (contract.assertRevisions) {
-          contract.assertRevisions(created, editor);
-        } else if (entry.tracked) {
-          // The registry promises the user an individually rejectable change.
-          expect(created).toBeGreaterThan(0);
-        } else {
-          // The registry says so honestly: no revision, applies immediately.
-          expect(created).toBe(0);
-        }
-
-        contract.verify(editor, result);
-      } finally {
-        destroyEditor(editor);
-      }
+  it.each(PARAMETER_VARIANTS)(
+    '%s variant: %s',
+    (op, _variant, contract) => {
+      runContractCase(op, contract);
     }
   );
+
+  it('a non-OpError throw surfaces its type and message, never a bare op_failed', () => {
+    const editor = makeEditor(proseFixture());
+    try {
+      const throwingEditor = new Proxy(editor as any, {
+        get(target, property, receiver) {
+          if (property === 'editor') {
+            const realEditor: any = Reflect.get(target, property, receiver);
+            return new Proxy(realEditor, {
+              get(inner, method, innerReceiver) {
+                if (method === 'insertText')
+                  return () => {
+                    // The shape a raw SyncFusion defect actually takes.
+                    throw new TypeError(
+                      "Cannot read properties of undefined (reading 'ownerBase')"
+                    );
+                  };
+                const value = Reflect.get(inner, method, innerReceiver);
+                return typeof value === 'function' ? value.bind(inner) : value;
+              }
+            });
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+      });
+      const result = applyDocumentEdits(throwingEditor, {
+        edits: [{ op: 'insert_text', anchor: '0;1', text: 'x' }]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'op_failed',
+        details: [
+          "TypeError: Cannot read properties of undefined (reading 'ownerBase')"
+        ]
+      });
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('an OpError that lost its prototype chain (ES5 bundle) still reports its code', () => {
+    // The shipped ES5 emit constructs OpError through `Error.call(this) ||
+    // this`, which returns a plain Error carrying OpError's fields but not its
+    // prototype - `instanceof` is false in the bundle. The dispatch must
+    // recognise the brand, not the prototype.
+    const editor = makeEditor(proseFixture());
+    try {
+      const throwingEditor = new Proxy(editor as any, {
+        get(target, property, receiver) {
+          if (property === 'editor') {
+            const realEditor: any = Reflect.get(target, property, receiver);
+            return new Proxy(realEditor, {
+              get(inner, method, innerReceiver) {
+                if (method === 'insertText')
+                  return () => {
+                    const stripped: any = new Error(
+                      'The text at this anchor changed since it was read.'
+                    );
+                    stripped.name = 'OpError';
+                    stripped.code = 'stale_anchor';
+                    stripped.details = ['detail preserved'];
+                    throw stripped;
+                  };
+                const value = Reflect.get(inner, method, innerReceiver);
+                return typeof value === 'function' ? value.bind(inner) : value;
+              }
+            });
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+      });
+      const result = applyDocumentEdits(throwingEditor, {
+        edits: [{ op: 'insert_text', anchor: '0;1', text: 'x' }]
+      });
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'stale_anchor',
+        details: ['detail preserved']
+      });
+    } finally {
+      destroyEditor(editor);
+    }
+  });
 
   it('insert_column stays withdrawn: refused as unknown, document untouched', () => {
     const editor = makeEditor(tableFixture());
