@@ -1,52 +1,32 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { DOCUMENT_EDITOR_CAPABILITIES, DOCUMENT_EDITOR_READS } from '../registry';
+import {
+  DOCUMENT_EDITOR_CAPABILITIES,
+  DOCUMENT_EDITOR_READS
+} from '../registry';
+import {
+  ANCHORED_OP_HANDLERS,
+  ANCHORLESS_OP_HANDLERS
+} from '../../tools/syncfusionDocumentOps';
 
 // ---------------------------------------------------------------------------
 // Registry <-> dispatch parity, both directions.
 //
-// The registry is the advertised surface; the switch cases in
-// syncfusionDocumentOps.ts are the implemented surface. The whole point of S2
-// is that these two can never silently diverge again:
-//   - a registry entry with no switch case advertises a capability that will
-//     hard-fail (a lie to the model);
-//   - a switch case with no registry entry implements a capability nobody can
-//     reach (dead surface, or an op sneaked in without being declared).
-// The dispatch is a switch statement, not data, so the comparison reads the
-// source. The slice markers are asserted so a refactor that moves the
-// functions fails this test loudly instead of matching nothing.
+// Since S5 this agreement is primarily the COMPILER's: the handler tables in
+// syncfusionDocumentOps.ts are mapped types over the registry-derived op-name
+// unions, so a registry entry with no handler, a handler with no entry, or a
+// handler consuming an undeclared param fails `yarn typecheck` / the build.
+// This spec re-asserts the same parity at runtime over the emitted JS - a
+// cheap second alarm that also guards against the tables being cast loose in
+// a future refactor - and pins the executor's two special cases (replace_all,
+// and the undo/redo refusal) that live outside the tables.
 // ---------------------------------------------------------------------------
 
 const DISPATCH_SOURCE = fs.readFileSync(
   path.join(__dirname, '../../tools/syncfusionDocumentOps.ts'),
   'utf8'
 );
-
-function dispatchSlice(): string {
-  const start = DISPATCH_SOURCE.indexOf('function applyAnchoredOp(');
-  const end = DISPATCH_SOURCE.indexOf('function fmtField(');
-  expect(start).toBeGreaterThan(-1);
-  expect(end).toBeGreaterThan(start);
-  return DISPATCH_SOURCE.slice(start, end);
-}
-
-// `undo`/`redo` have switch cases but are intentionally not advertised: the
-// executor refuses them before dispatch (unsafe_global_history_op, see
-// UNSAFE_CHANGE_SET_OPS) because they act on global human/editor history.
-const HANDLED_BUT_UNADVERTISED = ['undo', 'redo'];
-
-function switchCaseOps(): string[] {
-  const slice = dispatchSlice();
-  const cases = [...slice.matchAll(/case '([a-z][a-z0-9_]*)':/g)].map(
-    (match) => match[1]
-  );
-  // The slice must contain both dispatch switches; spot-check one op from
-  // each so a partial slice cannot pass vacuously.
-  expect(cases).toContain('replace_text'); // applyAnchoredOp
-  expect(cases).toContain('enter_header'); // applyAnchorlessOp
-  return cases;
-}
 
 describe('capabilities registry <-> dispatch parity', () => {
   it('op names are unique', () => {
@@ -57,26 +37,49 @@ describe('capabilities registry <-> dispatch parity', () => {
   it('every registry op has a handler, and every handler is registered', () => {
     const registered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op);
 
-    const cases = switchCaseOps();
-    for (const op of HANDLED_BUT_UNADVERTISED) expect(cases).toContain(op);
-
     // replace_all is dispatched by the executor itself (applyReplaceAll), not
-    // by either switch; assert that special case still exists in the source.
-    expect(DISPATCH_SOURCE).toContain("name === 'replace_all'");
+    // by either handler table; assert that special case still exists.
+    expect(DISPATCH_SOURCE).toContain("op.op === 'replace_all'");
     expect(DISPATCH_SOURCE).toContain('function applyReplaceAll(');
 
     const handled = [
-      ...cases.filter((op) => !HANDLED_BUT_UNADVERTISED.includes(op)),
+      ...Object.keys(ANCHORED_OP_HANDLERS),
+      ...Object.keys(ANCHORLESS_OP_HANDLERS),
       'replace_all'
     ];
+    expect(new Set(handled).size).toBe(handled.length);
 
     const lies = registered.filter((op) => !handled.includes(op));
-    const unreachable = handled.filter((op) => !registered.includes(op));
+    const unreachable = handled.filter(
+      (op) => !registered.includes(op as typeof registered[number])
+    );
 
     expect({
       registeredButNoHandler: lies,
       handledButNotRegistered: unreachable
     }).toEqual({ registeredButNoHandler: [], handledButNotRegistered: [] });
+  });
+
+  it("anchored/anchorless table membership matches each entry's requiresAnchor", () => {
+    for (const entry of DOCUMENT_EDITOR_CAPABILITIES) {
+      if (entry.op === 'replace_all') continue; // executor special case
+      const table = entry.requiresAnchor
+        ? ANCHORED_OP_HANDLERS
+        : ANCHORLESS_OP_HANDLERS;
+      expect(Object.keys(table)).toContain(entry.op);
+    }
+  });
+
+  it('undo/redo are unhandled and refused upstream, not silently dropped', () => {
+    // They act on global human/editor history, so they are intentionally not
+    // advertised and have no handlers; the executor refuses them before any
+    // dispatch. Pin the refusal wiring so removing it cannot go unnoticed.
+    expect(Object.keys(ANCHORED_OP_HANDLERS)).not.toContain('undo');
+    expect(Object.keys(ANCHORLESS_OP_HANDLERS)).not.toContain('undo');
+    expect(Object.keys(ANCHORLESS_OP_HANDLERS)).not.toContain('redo');
+    expect(DISPATCH_SOURCE).toContain(
+      "const UNSAFE_CHANGE_SET_OPS = new Set(['undo', 'redo'])"
+    );
   });
 });
 
@@ -98,9 +101,7 @@ function matchesType(value: unknown, type: string): boolean {
     return typeof value === 'number' && Number.isInteger(value) && value >= 0;
   const enumMatch = base.match(/^enum\[(.*)\]$/);
   if (enumMatch)
-    return (
-      typeof value === 'string' && enumMatch[1].split(',').includes(value)
-    );
+    return typeof value === 'string' && enumMatch[1].split(',').includes(value);
   throw new Error(`Unknown param type "${type}"`);
 }
 
@@ -148,12 +149,16 @@ describe('read capabilities <-> retrieval surface parity', () => {
   });
 
   it('the occurrences read has a live implementation', () => {
-    expect(DISPATCH_SOURCE).toContain('export function findDocumentOccurrences');
+    expect(DISPATCH_SOURCE).toContain(
+      'export function findDocumentOccurrences'
+    );
   });
 });
 
 describe('capability entries are self-consistent', () => {
-  it.each(DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const))(
+  it.each(
+    DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
+  )(
     '%s: example validates against declared params and anchor contract',
     (op, entry) => {
       expect(entry.example.op).toBe(op);
