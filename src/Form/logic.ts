@@ -26,7 +26,8 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import {
   ChangedFieldDetail,
   composeDerivedRuleUpdates,
-  DerivedRuleUpdate
+  DerivedRuleUpdate,
+  RULE_FIELDS_CHANGED_NOTE
 } from '../assistant/tools/assistantToolDispatch';
 
 export function getAcornParsedNodes(input: string): Program | null {
@@ -621,10 +622,16 @@ export type RunLogicRuleResult = {
   // is available for BOTH client- and server-side rules). Parallel to
   // changedFields, which is kept as-is for existing readers.
   changedFieldDetails?: ChangedFieldDetail[];
-  // Server-side path only: document updates derived from field_data + the
-  // pre-invoke snapshot ({ field, previous, value }), since the lambda's
-  // return value never reaches the client in v1.
+  // Document updates derived from the rule's field changes on BOTH paths
+  // ({ field, previous?, value, describes? }): the server lambda's return
+  // value never reaches the client (v1), and a client rule may mutate fields
+  // without returning { updates }. Deduped against returnValue.updates.
   derivedUpdates?: DerivedRuleUpdate[];
+  // Always false when present (rules never edit the open document), attached
+  // with `note` whenever the rule changed form fields so the model keeps
+  // "the rule ran" and "the document shows it" as two separate facts.
+  documentEdited?: false;
+  note?: string;
   returnValue?: any;
   error?: string;
 };
@@ -655,6 +662,33 @@ const parseSnapshotValue = (serialized: string | undefined): any => {
   } catch {
     return null;
   }
+};
+
+// Name a changed field for the document-reflection fallback: the field key
+// plus its admin-authored label when the form declares one. Used as the
+// `describes` semantic-search query when the pre-rule text isn't found in the
+// document (the document may hold an older rendering of the field).
+const describeFieldForDocument = (
+  state: FormInternalState,
+  key: string
+): string => {
+  let label: string | undefined;
+  try {
+    for (const step of Object.values((state as any)?.steps ?? {})) {
+      const match = ((step as any)?.servar_fields ?? []).find(
+        (f: any) => f?.servar?.key === key
+      );
+      if (match) {
+        if (typeof match?.servar?.name === 'string') label = match.servar.name;
+        break;
+      }
+    }
+  } catch {
+    // Hidden fields and partially-seeded forms have no servar; the key-only
+    // description below still names the field.
+  }
+  const labelPart = label && label !== key ? ` ("${label}")` : '';
+  return `the rendered value of form field '${key}'${labelPart}`;
 };
 
 const diffChangedFieldDetails = (
@@ -735,23 +769,38 @@ export const runLogicRuleById = async (
         return { changedFields: [], error: String(response.error) };
       }
       // Prefer the backend's authoritative field_data (new values) paired
-      // with the pre-invoke snapshot (old values); fall back to a diff.
+      // with the pre-invoke snapshot (old values); fall back to a diff. A
+      // field_data entry echoing the pre-rule value is not a change - only
+      // fields the rule actually moved are surfaced.
       const fieldData = response?.field_data as Record<string, any> | undefined;
       const changedFieldDetails: ChangedFieldDetail[] = fieldData
-        ? Object.keys(fieldData).map((key) => ({
-            key,
-            oldValue: parseSnapshotValue(before[key]),
-            newValue: fieldData[key]
-          }))
+        ? Object.keys(fieldData)
+            .filter((key) => {
+              let serialized = '';
+              try {
+                serialized = JSON.stringify(fieldData[key] ?? null);
+              } catch {}
+              return serialized !== (before[key] ?? JSON.stringify(null));
+            })
+            .map((key) => ({
+              key,
+              oldValue: parseSnapshotValue(before[key]),
+              newValue: fieldData[key]
+            }))
         : diffChangedFieldDetails(before, snapshotFieldValues(state));
       // A server-side rule has no returnValue to hand back, so instead derive
       // document updates ({ field, previous, value }) from the field diff. That
       // makes old->new exact-replace work without the rule returning { updates }.
-      const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails);
+      const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails, {
+        describeField: (key) => describeFieldForDocument(state, key)
+      });
       return {
         changedFields: changedFieldDetails.map((d) => d.key),
         changedFieldDetails,
-        ...(derivedUpdates.length > 0 ? { derivedUpdates } : {})
+        ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
+        ...(changedFieldDetails.length > 0
+          ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
+          : {})
       };
     }
 
@@ -773,13 +822,21 @@ export const runLogicRuleById = async (
       snapshotFieldValues(state)
     );
     // Client rules may change fields without returning an explicit updates
-    // payload. Derive the same safe old→new document updates as the server
+    // payload. Derive the same safe old->new document updates as the server
     // path so Robin does not claim success while leaving the document stale.
-    const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails);
+    // A field the rule ALSO covered in an explicitly returned updates array
+    // is deduped so the same edit is never applied twice.
+    const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails, {
+      explicitUpdates: (returnValue as any)?.updates,
+      describeField: (key) => describeFieldForDocument(state, key)
+    });
     return {
       changedFields: changedFieldDetails.map((d) => d.key),
       changedFieldDetails,
       ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
+      ...(changedFieldDetails.length > 0
+        ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
+        : {}),
       returnValue
     };
   } catch (e: any) {
