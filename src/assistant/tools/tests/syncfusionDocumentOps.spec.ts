@@ -640,6 +640,10 @@ describe('applyDocumentEdits', () => {
     });
   });
 
+  // Direct formatting FIELDS on insert_text stay structural-only: ai-services
+  // splits them into follow-up formatting ops before they reach the engine.
+  // (`inheritFormatFrom` is different: the engine now honours it for the
+  // paragraphs an insert creates - covered by the real-SDK S4b tests below.)
   it('keeps insert_text structural-only when formatting fields are present', () => {
     const ed = make([
       para('Existing peer', 'Normal', {
@@ -654,7 +658,6 @@ describe('applyDocumentEdits', () => {
           anchor: '0;0',
           position: 'after',
           text: 'Inserted subsection',
-          inheritFormatFrom: '0;0',
           styleName: 'Heading 2',
           fontName: 'Courier New',
           fontSize: 20,
@@ -3331,5 +3334,571 @@ describe('retrieval refusals carry their remedy', () => {
       input: { scope: 'structure' }
     });
     expect(notFound.retry).toBe('after_remedy');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inheritance by default (S4b): paragraphs an insert creates are formatted to
+// match their neighbors by the engine itself, in the same change set - the
+// captain's "they are not even concerned about formatting" requirement. Every
+// case runs the real DocumentEditor; resolved formats are read off the live
+// selection, exactly what the user sees.
+// ---------------------------------------------------------------------------
+
+describe('inheritance by default (S4b)', () => {
+  const hilbStyles = [
+    {
+      type: 'Paragraph',
+      name: 'headingNoToc',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: {
+        bold: true,
+        fontFamily: 'Arial',
+        fontSize: 14,
+        fontColor: '#1F4E79'
+      },
+      paragraphFormat: {
+        beforeSpacing: 12,
+        afterSpacing: 6,
+        lineSpacing: 1,
+        lineSpacingType: 'Multiple'
+      }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Body Text',
+      basedOn: 'Normal',
+      next: 'Body Text',
+      characterFormat: { fontFamily: 'Georgia', fontSize: 10.5 },
+      paragraphFormat: {
+        afterSpacing: 8,
+        lineSpacing: 1.15,
+        lineSpacingType: 'Multiple'
+      }
+    }
+  ];
+
+  // Mirror of the captain's live document around "Our Values": a custom
+  // heading style with a direct fontSize override, a Body Text paragraph, and
+  // the empty separator paragraph where the prompt recipe anchors inserts.
+  const hilbSfdt = () => ({
+    sections: [
+      {
+        blocks: [
+          {
+            paragraphFormat: { styleName: 'headingNoToc' },
+            inlines: [
+              { text: 'Our Approach', characterFormat: { fontSize: 12 } }
+            ]
+          },
+          {
+            paragraphFormat: { styleName: 'Body Text' },
+            inlines: [
+              {
+                text: 'We believe effective insurance strategies start with understanding.'
+              }
+            ]
+          },
+          { inlines: [{ text: '' }] },
+          {
+            paragraphFormat: { styleName: 'Body Text' },
+            inlines: [{ text: 'How We Support Clients' }]
+          }
+        ]
+      }
+    ],
+    styles: hilbStyles
+  });
+
+  const scheduleTableSfdt = () => ({
+    sections: [
+      {
+        blocks: [
+          {
+            paragraphFormat: { styleName: 'headingNoToc' },
+            inlines: [{ text: 'Location Schedule' }]
+          },
+          {
+            tableFormat: {},
+            rows: [
+              {
+                rowFormat: {},
+                cells: [
+                  {
+                    cellFormat: {},
+                    blocks: [
+                      {
+                        paragraphFormat: {
+                          textAlignment: 'Center',
+                          styleName: 'Body Text'
+                        },
+                        inlines: [
+                          {
+                            text: 'Loc #',
+                            characterFormat: { bold: true, fontSize: 12 }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    cellFormat: {},
+                    blocks: [
+                      {
+                        paragraphFormat: {
+                          textAlignment: 'Center',
+                          styleName: 'Body Text'
+                        },
+                        inlines: [
+                          {
+                            text: 'Address',
+                            characterFormat: { bold: true, fontSize: 12 }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                rowFormat: {},
+                cells: [
+                  {
+                    cellFormat: {},
+                    blocks: [
+                      {
+                        paragraphFormat: { styleName: 'Body Text' },
+                        inlines: [{ text: '0001' }]
+                      }
+                    ]
+                  },
+                  {
+                    cellFormat: {},
+                    blocks: [
+                      {
+                        paragraphFormat: { styleName: 'Body Text' },
+                        inlines: [{ text: '' }]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            paragraphFormat: { styleName: 'Body Text' },
+            inlines: [{ text: 'Trailing body paragraph.' }]
+          }
+        ]
+      }
+    ],
+    styles: hilbStyles
+  });
+
+  const CELL_PARA_PROPS = [
+    'textAlignment',
+    'leftIndent',
+    'beforeSpacing',
+    'afterSpacing',
+    'lineSpacing',
+    'contextualSpacing',
+    'bidi'
+  ] as const;
+
+  function readCellParaFormat(editor: DocumentEditor, anchor: string, len: number) {
+    editor.selection.select(`${anchor};0`, `${anchor};${len + 1}`);
+    const out: Record<string, any> = {};
+    for (const prop of CELL_PARA_PROPS)
+      out[prop] = (editor.selection.paragraphFormat as any)[prop];
+    return out;
+  }
+
+  it('real SDK: a plain section insert matches its neighbors per paragraph role, no second change set', () => {
+    const ed = makeRealDocumentEditor(hilbSfdt());
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'insert-our-values-default',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;2',
+            text: 'Our Values\nOur values guide how we serve clients every day.'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'insert_text' });
+      expect(res.changeSet).toMatchObject({ status: 'applied' });
+
+      // The heading paragraph matched the heading reference - including the
+      // 12 pt DIRECT override the named style alone would have hidden.
+      const heading = selectRealBlock(ed, '0;2', 'Our Values');
+      expect((heading.paragraphFormat.styleName as any)?.name ?? heading.paragraphFormat.styleName).toBe('headingNoToc');
+      expect(heading.characterFormat.fontFamily).toBe('Arial');
+      expect(heading.characterFormat.fontSize).toBe(12);
+      expect(heading.characterFormat.bold).toBe(true);
+
+      // The body paragraph matched the body reference, not the heading.
+      const body = selectRealBlock(
+        ed,
+        '0;3',
+        'Our values guide how we serve clients every day.'
+      );
+      expect(body.characterFormat.fontFamily).toBe('Georgia');
+      expect(body.characterFormat.fontSize).toBe(10.5);
+      expect(body.characterFormat.bold).toBe(false);
+      expect(body.paragraphFormat.afterSpacing).toBe(8);
+      expect(body.paragraphFormat.lineSpacing).toBeCloseTo(1.15, 5);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a mid-paragraph insert is left to SyncFusion run inheritance', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              paragraphFormat: { styleName: 'Body Text' },
+              inlines: [
+                { text: 'The quick ' },
+                {
+                  text: 'brown',
+                  characterFormat: { bold: true, fontColor: '#AA0000' }
+                },
+                { text: ' fox jumps.' }
+              ]
+            }
+          ]
+        }
+      ],
+      styles: hilbStyles
+    });
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'mid-paragraph-insert',
+        edits: [{ op: 'insert_text', anchor: '0;0', offset: 15, text: 'ish' }]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true });
+      // The inserted run adopted the run before the caret - the correct
+      // behavior the computed default must not disturb.
+      ed.selection.select('0;0;15', '0;0;18');
+      expect(ed.selection.text).toBe('ish');
+      expect(ed.selection.characterFormat.bold).toBe(true);
+      expect(ed.selection.characterFormat.fontColor).toBe('#AA0000');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a paragraph split off a heading falls back to the document default, not the heading dress', () => {
+    const ed = makeRealDocumentEditor(hilbSfdt());
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'split-off-heading',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;0',
+            position: 'after',
+            text: 'New Section'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true });
+      const inserted = selectRealBlock(ed, '0;1', 'New Section');
+      expect(
+        (inserted.paragraphFormat.styleName as any)?.name ??
+          inserted.paragraphFormat.styleName
+      ).toBe('Normal');
+      expect(inserted.characterFormat.bold).toBe(false);
+      // The heading itself is untouched.
+      const heading = selectRealBlock(ed, '0;0', 'Our Approach');
+      expect(
+        (heading.paragraphFormat.styleName as any)?.name ??
+          heading.paragraphFormat.styleName
+      ).toBe('headingNoToc');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: inheritFormatFrom into a table cell applies and verifies (cell-toggle write path fixed)', () => {
+    const ed = makeRealDocumentEditor(scheduleTableSfdt());
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'cell-inherit-header',
+        edits: [
+          {
+            op: 'apply_style',
+            anchor: '0;1;1;0;0',
+            expect: '0001',
+            inheritFormatFrom: '0;1;0;0;0'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'apply_style' });
+      expect(res.changeSet).toMatchObject({ status: 'applied' });
+      const cell = selectRealBlock(ed, '0;1;1;0;0', '0001');
+      expect(cell.characterFormat.bold).toBe(true);
+      expect(cell.characterFormat.fontSize).toBe(12);
+      const para = readCellParaFormat(ed, '0;1;1;0;0', 4);
+      expect(para.textAlignment).toBe('Center');
+      // The two toggle-semantics properties stayed put.
+      expect(para.bidi).toBe(false);
+      expect(para.contextualSpacing).toBe(false);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a body source formats a cell target cleanly too', () => {
+    const ed = makeRealDocumentEditor(scheduleTableSfdt());
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'body-to-cell-inherit',
+        edits: [
+          {
+            op: 'apply_style',
+            anchor: '0;1;1;0;0',
+            expect: '0001',
+            inheritFormatFrom: '0;2'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true });
+      const cell = selectRealBlock(ed, '0;1;1;0;0', '0001');
+      expect(cell.characterFormat.fontFamily).toBe('Georgia');
+      expect(readCellParaFormat(ed, '0;1;1;0;0', 4).bidi).toBe(false);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a failed sibling rolls a cell inherit back to its exact prior paragraph format', () => {
+    const ed = makeRealDocumentEditor(scheduleTableSfdt());
+    try {
+      const before = readCellParaFormat(ed, '0;1;1;0;0', 4);
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'cell-inherit-sibling-fails',
+        edits: [
+          {
+            op: 'apply_style',
+            anchor: '0;1;1;0;0',
+            expect: '0001',
+            inheritFormatFrom: '0;1;0;0;0'
+          },
+          // Fails at apply time (missing_format), AFTER the cell inherit has
+          // already written - exactly the shape that used to corrupt
+          // textAlignment through the toggle-semantics restore path.
+          { op: 'set_char_format', anchor: '0;2' }
+        ]
+      });
+      expect(res.changeSet).toMatchObject({ status: 'failed' });
+      expect(res.results[1]).toMatchObject({
+        ok: false,
+        error: 'missing_format'
+      });
+      expect(readCellParaFormat(ed, '0;1;1;0;0', 4)).toEqual(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: insert_text honours an explicit inheritFormatFrom for the paragraph it fills', () => {
+    const ed = makeRealDocumentEditor(hilbSfdt());
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'insert-with-explicit-inherit',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;2',
+            text: 'Our Values',
+            // The computed default would pick the BODY reference for a
+            // single-paragraph insert; the explicit source must win.
+            inheritFormatFrom: '0;0'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'insert_text' });
+      const inserted = selectRealBlock(ed, '0;2', 'Our Values');
+      expect(
+        (inserted.paragraphFormat.styleName as any)?.name ??
+          inserted.paragraphFormat.styleName
+      ).toBe('headingNoToc');
+      expect(inserted.characterFormat.fontSize).toBe(12);
+      expect(inserted.characterFormat.bold).toBe(true);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: inheritFormatFrom on a mid-text insert is refused, not silently ignored', () => {
+    const ed = makeRealDocumentEditor(hilbSfdt());
+    try {
+      const before = ed.serialize();
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'inherit-mid-text-insert',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;1',
+            offset: 10,
+            text: 'truly ',
+            inheritFormatFrom: '0;0'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({
+        ok: false,
+        error: 'inherit_requires_new_paragraph'
+      });
+      expect(res.changeSet).toMatchObject({ status: 'failed' });
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: an empty inheritFormatFrom source is refused at preflight with nothing written', () => {
+    const ed = makeRealDocumentEditor(hilbSfdt());
+    try {
+      const before = ed.serialize();
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'inherit-from-empty-separator',
+        edits: [
+          {
+            op: 'apply_style',
+            anchor: '0;0',
+            expect: 'Our Approach',
+            inheritFormatFrom: '0;2'
+          }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({
+        ok: false,
+        error: 'inherit_source_empty'
+      });
+      expect(ed.serialize()).toBe(before);
+      const heading = selectRealBlock(ed, '0;0', 'Our Approach');
+      expect(
+        (heading.paragraphFormat.styleName as any)?.name ??
+          heading.paragraphFormat.styleName
+      ).toBe('headingNoToc');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: inserting into an empty document succeeds with document defaults', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [{ blocks: [{ inlines: [{ text: '' }] }] }]
+    });
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'empty-document-insert',
+        edits: [
+          { op: 'insert_text', anchor: '0;0', text: 'Hello\nWorld follows.' }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true });
+      expect(res.changeSet).toMatchObject({ status: 'applied' });
+      const first = selectRealBlock(ed, '0;0', 'Hello');
+      expect(
+        (first.paragraphFormat.styleName as any)?.name ??
+          first.paragraphFormat.styleName
+      ).toBe('Normal');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a cell insert with no in-cell reference is left to SyncFusion cell defaults', () => {
+    const ed = makeRealDocumentEditor(scheduleTableSfdt());
+    try {
+      // The empty Address cell has no preceding non-empty block INSIDE the
+      // cell; the computed default must not reach across the cell boundary to
+      // the header row or the body heading.
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'cell-insert-no-reference',
+        edits: [
+          { op: 'insert_text', anchor: '0;1;1;1;0', text: '111 Bathurst St' }
+        ]
+      });
+      expect(res.results[0]).toMatchObject({ ok: true });
+      const cell = selectRealBlock(ed, '0;1;1;1;0', '111 Bathurst St');
+      expect(cell.characterFormat.bold).toBe(false);
+      expect(cell.characterFormat.fontSize).not.toBe(12);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: explicit formatting in the same change set wins over the computed default', () => {
+    const ed = makeRealDocumentEditor(hilbSfdt());
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'explicit-beats-inherited',
+        edits: [
+          { op: 'insert_text', anchor: '0;2', text: 'Closing note' },
+          {
+            op: 'set_para_format',
+            anchor: '0;2',
+            expect: 'Closing note',
+            alignment: 'Center'
+          }
+        ]
+      });
+      expect(res.results.every((result) => result.ok)).toBe(true);
+      const inserted = selectRealBlock(ed, '0;2', 'Closing note');
+      // Computed default matched the body neighbor (Georgia)...
+      expect(inserted.characterFormat.fontFamily).toBe('Georgia');
+      // ...and the explicit paragraph op overrode alignment on top of it.
+      ed.selection.select('0;2;0', `0;2;13`);
+      expect(ed.selection.paragraphFormat.textAlignment).toBe('Center');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: text on a page added in the same change set inherits the preceding body look', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              paragraphFormat: { styleName: 'headingNoToc' },
+              inlines: [{ text: 'Closing Summary' }]
+            },
+            {
+              paragraphFormat: { styleName: 'Body Text' },
+              inlines: [{ text: 'We appreciate your business.' }]
+            },
+            {
+              paragraphFormat: { styleName: 'Body Text' },
+              inlines: [{ text: '' }]
+            }
+          ]
+        }
+      ],
+      styles: hilbStyles
+    });
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'thank-you-computed-default',
+        edits: [
+          { op: 'insert_page_break', anchor: '0;2' },
+          { op: 'insert_text', anchor: '0;3', text: 'THANK YOU' }
+        ]
+      });
+      expect(res.results.every((result) => result.ok)).toBe(true);
+      const thanks = selectRealBlock(ed, '0;3', 'THANK YOU');
+      expect(thanks.characterFormat.fontFamily).toBe('Georgia');
+      expect(thanks.characterFormat.fontSize).toBe(10.5);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
   });
 });

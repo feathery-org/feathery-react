@@ -109,7 +109,7 @@ export const DOCUMENT_EDITOR_CAPABILITIES: readonly CapabilityEntry[] = [
     anchorKind: 'block',
     tracked: true,
     summary:
-      'Insert `text` at the anchored block (default at its start; `position`/`offset` refine).',
+      'Insert `text` at the anchored block (default at its start; `position`/`offset` refine). Paragraphs the insert creates are automatically formatted to match their nearest preceding neighbors (headings match headings, body matches body); `inheritFormatFrom` overrides that computed reference and is refused for inserts inside existing text.',
     example: {
       op: 'insert_text',
       anchor: '0;3',
