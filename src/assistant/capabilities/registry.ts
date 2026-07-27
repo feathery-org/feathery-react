@@ -298,6 +298,22 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     summary: 'Delete the row containing the anchored cell.',
     example: { op: 'delete_row', anchor: '0;7;2;0;0' }
   },
+  {
+    // handler: applyAnchoredOp case 'set_cell_computed'
+    op: 'set_cell_computed',
+    params: {
+      operation: 'enum[sum,average,min,max,count]?',
+      column: 'int>=0?',
+      startRow: 'int>=0?',
+      endRow: 'int>=0?'
+    },
+    requiresAnchor: true,
+    anchorKind: 'table_cell',
+    tracked: true,
+    summary:
+      "Overwrite the anchored table cell with a value the ENGINE computes from a column of the same table - deterministic code, never model arithmetic. Defaults: operation sum, the anchored cell's own column, rows 1..last (row 0 = header), always excluding the anchored row. The result is rendered in the anchored cell's own number format and verified by re-reading; relay the returned receipt.",
+    example: { op: 'set_cell_computed', anchor: '0;7;94;3;0', operation: 'sum' }
+  },
   // `insert_column` was withdrawn in S5: probed on a real DocumentEditor, it
   // reports ok:true and genuinely mutates the table (4 -> 6 cells) while
   // recording ZERO revisions, so the change survives reject-all and can never
@@ -665,6 +681,18 @@ export const DOCUMENT_EDITOR_READS: readonly ReadCapabilityEntry[] = [
     params: { sectionAnchor: 'string', maxEntries: 'int>0?' },
     summary:
       'The blocks under one heading (anchor from a structure/outline read), with text and format.'
+  },
+  {
+    // getDocumentInventory scope 'table_column' (buildInventoryFromBlocks /
+    // collectTableColumnCells)
+    read: 'table_column',
+    params: {
+      tableAnchor: 'string',
+      column: 'int>=0',
+      maxEntries: 'int>0?'
+    },
+    summary:
+      'Every cell of one table column as data: row index, cell anchor and verbatim text, complete and in row order. Always reports the true rowCount; a maxEntries-capped read says "returned N of M" instead of truncating silently. The read to use before any per-row or numeric work on a table.'
   },
   {
     // getDocumentInventory scope 'full' (buildInventoryFromBlocks)
