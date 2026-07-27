@@ -621,7 +621,9 @@ export function computeColumn(
     targetCellText != null && targetCellText.trim()
       ? parseNumericCell(targetCellText)
       : null;
-  let format = targetParsed ? targetParsed.format : columnMajorityFormat(parsed);
+  let format = targetParsed
+    ? targetParsed.format
+    : columnMajorityFormat(parsed);
   const formatSource: ColumnComputationSuccess['formatSource'] = targetParsed
     ? 'target_cell'
     : 'column_majority';

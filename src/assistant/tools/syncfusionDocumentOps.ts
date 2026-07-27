@@ -942,7 +942,9 @@ export function buildInventoryFromBlocks(
     if (column >= collected.columns) {
       return {
         error: 'column_out_of_range',
-        message: `The table at "${tableAnchor}" has ${collected.columns} columns (0-${
+        message: `The table at "${tableAnchor}" has ${
+          collected.columns
+        } columns (0-${
           collected.columns - 1
         }); column ${column} does not exist.`,
         remedy: {
@@ -2147,7 +2149,9 @@ function describeSkippedCells(skipped: SkippedCell[]): string {
   }: ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
 }
 
-function buildComputedReceipt(report: Omit<ComputedCellReport, 'receipt'>): string {
+function buildComputedReceipt(
+  report: Omit<ComputedCellReport, 'receipt'>
+): string {
   const headerName = report.header?.trim();
   const columnName = headerName
     ? `the "${headerName}" column`
@@ -2245,7 +2249,11 @@ function runComputedCellWrite(
 
   const computation = computeColumn(range, operation, block.text);
   if (!computation.ok) {
-    throw new OpError(computation.error, computation.message, computation.details);
+    throw new OpError(
+      computation.error,
+      computation.message,
+      computation.details
+    );
   }
 
   selectBlock(editor, block);
@@ -2257,7 +2265,11 @@ function runComputedCellWrite(
   // parses back to the exact computed value - a write that landed in the
   // wrong cell fails one of the two.
   const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
-  const freshCollected = collectTableColumnCells(freshBlocks, tableAnchor, column);
+  const freshCollected = collectTableColumnCells(
+    freshBlocks,
+    tableAnchor,
+    column
+  );
   const recheck =
     freshCollected && freshCollected.rowCount === collected.rowCount
       ? computeColumn(
