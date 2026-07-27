@@ -151,16 +151,13 @@ export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
   if (meta.default_value) {
-    if (['multiselect', 'dropdown_multi'].includes(servar.type)) {
-      return meta.default_value.split(',').map((val: string) => val.trim());
-    }
-    if (servar.type === 'button_group') {
-      // For button_group, always return an array since it's an ARRAY_FIELD_TYPE
-      // Handle both single and multiple selection
-      if (meta.multiple) {
-        return meta.default_value.split(',').map((val: string) => val.trim());
+    if (['multiselect', 'dropdown_multi', 'button_group'].includes(servar.type)) {
+      // For button_group single selection, wrap in array since it's an ARRAY_FIELD_TYPE
+      if (servar.type === 'button_group' && !meta.multiple) {
+        return [meta.default_value];
       }
-      return [meta.default_value];
+      // For multi-select fields, split comma-separated values into array
+      return meta.default_value.split(',').map((val: string) => val.trim());
     }
     return meta.default_value;
   }
