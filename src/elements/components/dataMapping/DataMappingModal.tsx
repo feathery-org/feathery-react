@@ -20,6 +20,8 @@ import {
 } from './types';
 
 const MAX_PREVIEW_ROWS = 5;
+// Below this viewport offset there isn't room to render a tooltip above its icon.
+const TOOLTIP_FLIP_THRESHOLD = 140;
 // Delimiter for internal error-map keys only (never used in DOM values).
 const SEP = '\u001f';
 
@@ -65,6 +67,110 @@ function autoMap(
     }
   });
   return mapping;
+}
+
+// Hoverable "i" surfacing the field's data hub description. Renders nothing
+// when the field has no description, so rows stay clean. The tip is
+// position:fixed so it escapes the modal's scrolling panes instead of being
+// clipped by them (no ancestor creates a fixed containing block here).
+function FieldInfoTip({
+  field,
+  fontFamily
+}: {
+  field: HubFieldSchema;
+  fontFamily: string;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [tip, setTip] = useState<{
+    top: number;
+    left: number;
+    below: boolean;
+  } | null>(null);
+
+  const description = (field.description ?? '').trim();
+
+  const show = () => {
+    const rect = btnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Flip below the icon when there isn't room for the tip above it.
+    const below = rect.top < TOOLTIP_FLIP_THRESHOLD;
+    setTip({
+      top: below ? rect.bottom + 8 : rect.top - 8,
+      left: rect.left + rect.width / 2,
+      below
+    });
+  };
+
+  if (!description) return null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type='button'
+        aria-label={`About ${field.key}`}
+        title=''
+        // Presentational only: hover/focus reveals the tip, click does nothing.
+        onClick={(e) => e.preventDefault()}
+        onMouseEnter={show}
+        onMouseLeave={() => setTip(null)}
+        onFocus={show}
+        onBlur={() => setTip(null)}
+        css={{
+          flexShrink: 0,
+          marginLeft: '6px',
+          width: '16px',
+          height: '16px',
+          padding: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '9999px',
+          border: '1px solid #d4d4d8',
+          backgroundColor: '#fff',
+          color: '#71717a',
+          fontSize: '11px',
+          fontWeight: 600,
+          lineHeight: 1,
+          fontFamily,
+          cursor: 'help',
+          '&:hover': { borderColor: '#a1a1aa', color: '#3f3f46' }
+        }}
+      >
+        i
+      </button>
+      {tip && (
+        <div
+          role='tooltip'
+          css={{
+            position: 'fixed',
+            top: `${tip.top}px`,
+            left: `${tip.left}px`,
+            transform: tip.below
+              ? 'translateX(-50%)'
+              : 'translate(-50%, -100%)',
+            zIndex: MODAL_Z_INDEX + 1,
+            backgroundColor: '#18181b',
+            color: '#fff',
+            padding: '8px 10px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: 400,
+            lineHeight: 1.4,
+            fontFamily,
+            width: 'max-content',
+            maxWidth: '280px',
+            whiteSpace: 'normal',
+            textAlign: 'left',
+            pointerEvents: 'none',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+          }}
+        >
+          {description}
+        </div>
+      )}
+    </>
+  );
 }
 
 function DataMappingModal({
@@ -482,10 +588,10 @@ function DataMappingModal({
           position: 'relative',
           backgroundColor: '#fff',
           borderRadius: '14px',
-          width: compact ? 'auto' : '85vw',
-          maxWidth: compact ? '600px' : '1600px',
-          height: compact ? 'auto' : '85vh',
-          maxHeight: '85vh',
+          width: compact ? 'auto' : '90vw',
+          maxWidth: compact ? '600px' : '90vw',
+          height: compact ? 'auto' : '90vh',
+          maxHeight: '90vh',
           display: 'flex',
           flexDirection: 'column',
           boxShadow: '0 10px 40px rgba(0,0,0,0.15)',
@@ -825,6 +931,7 @@ function DataMappingModal({
                   >
                     {f.key}
                     {f.required && <span css={{ color: '#ef4444' }}> *</span>}
+                    <FieldInfoTip field={f} fontFamily={fontFamily} />
                   </th>
                 ))}
                 <th
@@ -1163,9 +1270,10 @@ function DataMappingModal({
         <div
           css={{
             flex: '0 0 620px',
+            minWidth: 0,
             minHeight: 0,
             overflowY: 'auto',
-            overflowX: 'auto',
+            overflowX: 'hidden',
             paddingRight: '4px'
           }}
         >
@@ -1187,8 +1295,7 @@ function DataMappingModal({
               display: 'flex',
               flexDirection: 'column',
               gap: '10px',
-              width: 'max-content',
-              minWidth: '100%'
+              width: '100%'
             }}
           >
             <div
@@ -1200,7 +1307,7 @@ function DataMappingModal({
                 color: '#3f3f46'
               }}
             >
-              <div css={{ flexShrink: 0, minWidth: 320, padding: '0 10px' }}>
+              <div css={{ flex: '1 1 auto', minWidth: 0, padding: '0 10px' }}>
                 Data Hub
               </div>
               <span css={{ color: 'transparent' }}>=</span>
@@ -1223,19 +1330,31 @@ function DataMappingModal({
                   <div
                     title={field.key}
                     css={{
-                      flexShrink: 0,
-                      minWidth: 320,
-                      whiteSpace: 'nowrap',
+                      flex: '1 1 auto',
+                      minWidth: 0,
+                      display: 'flex',
+                      alignItems: 'center',
                       padding: '8px 10px',
                       border: '1px solid #e4e4e7',
                       borderRadius: '6px',
                       backgroundColor: '#fafafa'
                     }}
                   >
-                    {field.key}
+                    <span
+                      css={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {field.key}
+                    </span>
                     {field.required && (
-                      <span css={{ color: '#ef4444' }}> *</span>
+                      <span css={{ color: '#ef4444', flexShrink: 0 }}>
+                        &nbsp;*
+                      </span>
                     )}
+                    <FieldInfoTip field={field} fontFamily={fontFamily} />
                   </div>
                   <span css={{ color: '#a1a1aa' }}>=</span>
                   <select
