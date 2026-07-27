@@ -1,10 +1,10 @@
 // Deterministic numeric-cell parsing, arithmetic and rendering for the
-// document engine's computed table writes (`set_cell_computed`).
+// document engine's computed table writes (`set_cell_formula`).
 //
 // The contract this module exists to keep: THE ENGINE COMPUTES, NOT THE MODEL.
-// The model chooses which table, which column and which target cell; every
-// numeric decision below - what a cell is worth, what the total is, and what
-// bytes land in the target cell - is deterministic code with unit tests.
+// The model supplies a formula naming cells and ranges; every numeric decision
+// below - what a cell is worth, and what bytes land in the target cell - is
+// deterministic code with unit tests.
 //
 // Format is inherited from the document by construction, never guessed: a cell
 // is parsed into (value, format descriptor) and results are re-rendered
@@ -15,7 +15,8 @@
 // Arithmetic is exact scaled-integer arithmetic on JS safe integers (the repo
 // targets ES5, so BigInt is unavailable): a value is `units * 10^-scale` with
 // `units` a safe integer. Anything that would leave the safe range is a
-// refusal, never a silently-wrong float.
+// refusal, never a silently-wrong float. `cellFormula.ts` lifts these values
+// into exact rationals so division is exact too.
 
 export interface NumericValue {
   /** Signed integer count of 10^-scale units. Always a JS safe integer. */
@@ -109,7 +110,7 @@ function allSame(list: string[]): boolean {
 }
 
 /** The unit token adjacent to the number, for mixed-unit refusals only. */
-function unitToken(prefix: string, suffix: string): string {
+export function unitToken(prefix: string, suffix: string): string {
   const prefixWords = prefix.trim().split(/\s+/).filter(Boolean);
   const lastPrefixWord = prefixWords[prefixWords.length - 1] ?? '';
   const prefixUnit = lastPrefixWord.length <= 4 ? lastPrefixWord : '';
@@ -247,6 +248,67 @@ export function parseNumericCell(rawText: string): ParsedNumericCell | null {
   };
 }
 
+/**
+ * How much a cell's text looks like a NUMBER rather than prose that happens to
+ * contain digits, and - if it is a number - whether it is an AMOUNT or an
+ * identifier. Used by the `table_facts` read (so a model interpreting a table
+ * can tell an id column from a money column) and by the engine's gate against
+ * model-authored numbers.
+ *
+ * Three tiers, each read off the document's own notation:
+ *
+ * - not numeric: `parseNumericCell` cannot read it at all, OR its decoration
+ *   carries real prose. `parseNumericCell` is deliberately permissive so that a
+ *   label survives a rewrite ("Total: $1,284,350" keeps its prefix), which also
+ *   means "1 King St W" parses as 1. For CLASSIFICATION that permissiveness is
+ *   wrong, so more than three letters of decoration disqualifies a cell here.
+ *   The classification is therefore strictly narrower than what the compute path
+ *   will parse - a cell can never be advertised as numeric and then refused.
+ * - numeric but not a quantity: an identifier. A zero-padded integer (`0093`)
+ *   can only be an id, and a bare unpadded integer (`9999`) carries no evidence
+ *   either way, so it is treated as an id too.
+ * - a quantity: numeric AND carrying a unit, decimal places, or observed
+ *   thousands grouping - `$36,803`, `984.00`, `12.5%`, `1,284,350`.
+ */
+export interface NumericTextClass {
+  numeric: boolean;
+  quantity: boolean;
+  /** Present when numeric: the unit token ('' for a bare number). */
+  unit?: string;
+  /** Present when numeric: decimal places as written. */
+  decimals?: number;
+}
+
+const MAX_DECORATION_LETTERS = 3; // "USD", "EUR", "CAD"
+
+export function classifyNumericText(rawText: string): NumericTextClass {
+  const text = String(rawText ?? '').trim();
+  if (!text || !/\d/.test(text)) return { numeric: false, quantity: false };
+  const parsed = parseNumericCell(text);
+  if (!parsed) return { numeric: false, quantity: false };
+  const { format } = parsed;
+  const decorationLetters = `${format.prefix}${format.suffix}`.replace(
+    /[^A-Za-z]/g,
+    ''
+  );
+  if (decorationLetters.length > MAX_DECORATION_LETTERS)
+    return { numeric: false, quantity: false };
+  const base = {
+    numeric: true,
+    unit: parsed.unit,
+    decimals: format.decimals
+  };
+  // A zero-padded leading digit run is an identifier, never an amount.
+  const firstRun = /\d+/.exec(text)?.[0] ?? '';
+  if (firstRun.length > 1 && firstRun.startsWith('0'))
+    return { ...base, quantity: false };
+  const hasUnit = `${format.prefix}${format.suffix}`.trim() !== '';
+  const hasDecimals = format.decimals > 0;
+  const hasGrouping =
+    format.groupingObserved && format.thousandsSeparator !== '';
+  return { ...base, quantity: hasUnit || hasDecimals || hasGrouping };
+}
+
 // ---------------------------------------------------------------------------
 // Exact scaled-integer arithmetic
 // ---------------------------------------------------------------------------
@@ -291,16 +353,6 @@ function toCommonScale(values: NumericValue[]): NumericValue[] | null {
   }
   return out;
 }
-
-export type ComputeOperation = 'sum' | 'average' | 'min' | 'max' | 'count';
-
-export const COMPUTE_OPERATIONS: readonly ComputeOperation[] = [
-  'sum',
-  'average',
-  'min',
-  'max',
-  'count'
-];
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -373,25 +425,6 @@ export interface SkippedCell {
   reason: 'blank' | 'non_numeric' | 'missing_cell';
 }
 
-export interface ColumnComputationSuccess {
-  ok: true;
-  operation: ComputeOperation;
-  /** Exact result, rescaled to the resolved format's decimals. */
-  value: NumericValue;
-  /** The result rendered in the target cell's shape - the bytes to write. */
-  renderedValue: string;
-  format: CellNumberFormat;
-  /** Where the render format came from: the target cell itself, or the
-   * column's dominant format when the target was blank/non-numeric. */
-  formatSource: 'target_cell' | 'column_majority';
-  /** Cells whose parsed values entered the arithmetic. */
-  counted: number;
-  /** Every considered cell that did NOT enter the arithmetic, named. */
-  skipped: SkippedCell[];
-  /** True when `average` rounding changed the exact quotient. */
-  rounded: boolean;
-}
-
 export interface ColumnComputationFailure {
   ok: false;
   error:
@@ -405,16 +438,23 @@ export interface ColumnComputationFailure {
   details?: string[];
 }
 
-export type ColumnComputationResult =
-  | ColumnComputationSuccess
-  | ColumnComputationFailure;
+/**
+ * Where a rendered result's number format came from. Either way it came from
+ * the DOCUMENT: there is no "plain number" mode in the render path.
+ */
+export type RenderFormatSource = 'target_cell' | 'column_majority';
 
-interface ParsedColumnCell {
+export interface ParsedColumnCell {
   row: number;
   anchor?: string;
   text: string;
   parsed: ParsedNumericCell;
 }
+
+// A separator no cell prefix/suffix can contain, so two distinct formats can
+// never collide into one signature. Written as an escape rather than a literal
+// NUL byte, which would make this whole source file binary to grep.
+const SIGNATURE_SEPARATOR = '\u0000';
 
 function formatSignature(format: CellNumberFormat): string {
   return [
@@ -423,7 +463,7 @@ function formatSignature(format: CellNumberFormat): string {
     format.thousandsSeparator,
     format.decimalSeparator,
     String(format.decimals)
-  ].join(' ');
+  ].join(SIGNATURE_SEPARATOR);
 }
 
 /**
@@ -489,7 +529,7 @@ function upgradeUnobservedGrouping(
 }
 
 /** Borrow a negative style for a format that never showed one. */
-function upgradeNegativeStyle(
+export function upgradeNegativeStyle(
   format: CellNumberFormat,
   inputs: ParsedColumnCell[]
 ): CellNumberFormat {
@@ -510,32 +550,60 @@ const shortText = (text: string, limit = 40): string =>
   text.length > limit ? `${text.slice(0, limit)}...` : text;
 
 /**
- * Compute one operation over a table column's cells, deterministically.
- *
- * Skip-and-report policy (the decided behaviour for unparseable cells): a
- * blank / non-numeric / missing cell is EXCLUDED from the arithmetic and NAMED
- * in `skipped`, never treated as zero (zero-defaulting is a wrong-total
- * generator) - real schedules legitimately contain "Included"/"N/A" rows, so
- * refusing outright would make the tool useless on the documents it exists
- * for. The honesty valve: when non-blank cells are MOSTLY unparseable the
- * column was probably the wrong pick, and the engine refuses
- * (`column_not_numeric`) instead of summing a minority and calling it a total.
+ * Resolve the format a result is rendered in: the target cell's own parsed
+ * format when it parses, otherwise the dominant format of the cells that fed
+ * the computation. Either way the format comes from the DOCUMENT - there is no
+ * "plain number" mode, which is why `$36,803` can never come back as `36803`.
+ * Shared by every render path in the formula evaluator.
  */
-export function computeColumn(
-  cells: ColumnCellInput[],
-  operation: ComputeOperation,
-  targetCellText: string | null
-): ColumnComputationResult {
-  if (!COMPUTE_OPERATIONS.includes(operation)) {
-    return {
-      ok: false,
-      error: 'unsupported_operation',
-      message: `Unsupported operation "${operation}". Supported: ${COMPUTE_OPERATIONS.join(
-        ', '
-      )}.`
-    };
-  }
+export function resolveRenderFormat(
+  targetCellText: string | null,
+  inputs: ParsedColumnCell[]
+): {
+  format: CellNumberFormat;
+  formatSource: RenderFormatSource;
+} {
+  const targetParsed =
+    targetCellText != null && targetCellText.trim()
+      ? parseNumericCell(targetCellText)
+      : null;
+  const base = targetParsed
+    ? targetParsed.format
+    : columnMajorityFormat(inputs);
+  return {
+    format: upgradeUnobservedGrouping(base, inputs),
+    formatSource: targetParsed ? 'target_cell' : 'column_majority'
+  };
+}
 
+export interface CollectedNumericCells {
+  ok: true;
+  /** Cells whose values may enter arithmetic, in row order. */
+  parsed: ParsedColumnCell[];
+  /** Every considered cell excluded from the arithmetic, named. */
+  skipped: SkippedCell[];
+  /** The single explicit unit the cells agree on ('' when all bare). */
+  unit: string;
+}
+
+/**
+ * Parse a set of cells, apply the skip-and-name policy, the majority backstop
+ * and the unit-compatibility check - the stage every formula range aggregate
+ * shares, so there is exactly ONE implementation of "which cells count and
+ * which are named as skipped" in the engine.
+ *
+ * Skip-and-report policy: a blank / non-numeric / missing cell is EXCLUDED
+ * from the arithmetic and NAMED in `skipped`, never treated as zero
+ * (zero-defaulting is a wrong-total generator) - real schedules legitimately
+ * contain "Included"/"N/A" rows, so refusing outright would make the engine
+ * useless on the documents it exists for. The honesty valve: when non-blank
+ * cells are MOSTLY unparseable the range was probably the wrong pick, and the
+ * engine refuses (`column_not_numeric`) instead of aggregating a minority and
+ * calling it a total.
+ */
+export function collectNumericCells(
+  cells: ColumnCellInput[]
+): CollectedNumericCells | ColumnComputationFailure {
   const parsed: ParsedColumnCell[] = [];
   const skipped: SkippedCell[] = [];
   for (const cell of cells) {
@@ -571,15 +639,17 @@ export function computeColumn(
   }
 
   const nonNumeric = skipped.filter((s) => s.reason === 'non_numeric');
+  const nameRows = (list: SkippedCell[]) =>
+    list
+      .slice(0, 10)
+      .map((s) => `row ${s.row}: ${JSON.stringify(shortText(s.text ?? ''))}`);
   if (!parsed.length) {
     return {
       ok: false,
       error: 'no_numeric_cells',
       message:
         'No cell in the requested column range parses as a number; there is nothing to compute. Re-check the column and row range.',
-      details: nonNumeric
-        .slice(0, 10)
-        .map((s) => `row ${s.row}: ${JSON.stringify(shortText(s.text ?? ''))}`)
+      details: nameRows(nonNumeric)
     };
   }
   if (nonNumeric.length > parsed.length) {
@@ -587,14 +657,12 @@ export function computeColumn(
       ok: false,
       error: 'column_not_numeric',
       message: `Most non-blank cells in this column do not parse as numbers (${nonNumeric.length} non-numeric vs ${parsed.length} numeric); this does not look like a numeric column. Refusing to compute a misleading result - re-check the column index.`,
-      details: nonNumeric
-        .slice(0, 10)
-        .map((s) => `row ${s.row}: ${JSON.stringify(shortText(s.text ?? ''))}`)
+      details: nameRows(nonNumeric)
     };
   }
 
   // Unit compatibility: bare numbers ride along with one explicit unit, but
-  // two DIFFERENT explicit units (or % against a currency) never sum.
+  // two DIFFERENT explicit units (or % against a currency) never combine.
   const units = new Map<string, number>(); // unit -> example row
   for (const cell of parsed) {
     if (cell.parsed.unit && !units.has(cell.parsed.unit)) {
@@ -615,113 +683,10 @@ export function computeColumn(
     };
   }
 
-  // Resolve the render format: the target cell itself when it parses,
-  // otherwise the column's dominant format.
-  const targetParsed =
-    targetCellText != null && targetCellText.trim()
-      ? parseNumericCell(targetCellText)
-      : null;
-  let format = targetParsed
-    ? targetParsed.format
-    : columnMajorityFormat(parsed);
-  const formatSource: ColumnComputationSuccess['formatSource'] = targetParsed
-    ? 'target_cell'
-    : 'column_majority';
-  format = upgradeUnobservedGrouping(format, parsed);
-
-  const values = parsed.map((cell) => cell.parsed.value);
-  const overflow = (): ColumnComputationFailure => ({
-    ok: false,
-    error: 'magnitude_overflow',
-    message:
-      'The exact computation exceeds the safe integer range and cannot be performed without precision loss. Refusing to write an approximate number.'
-  });
-
-  let result: NumericValue;
-  let rounded = false;
-  if (operation === 'count') {
-    result = { units: parsed.length, scale: 0 };
-  } else {
-    const common = toCommonScale(values);
-    if (!common) return overflow();
-    if (operation === 'sum' || operation === 'average') {
-      let total = 0;
-      for (const v of common) {
-        total += v.units;
-        if (!safeUnits(total)) return overflow();
-      }
-      if (operation === 'sum') {
-        result = { units: total, scale: common[0].scale };
-      } else {
-        // Average: exact quotient when it terminates within the target's
-        // decimals, else round half away from zero to the target's decimals
-        // (an average is a derived statistic, so rounding is inherent to
-        // asking for it; the rounding is reported, never silent).
-        const targetScale = Math.max(format.decimals, common[0].scale);
-        const scaledUp = rescaleExact(
-          { units: total, scale: common[0].scale },
-          targetScale
-        );
-        if (!scaledUp) return overflow();
-        const n = parsed.length;
-        const q = scaledUp.units / n;
-        const truncated = q < 0 ? Math.ceil(q) : Math.floor(q);
-        const remainder = scaledUp.units - truncated * n;
-        let quotient = truncated;
-        if (Math.abs(remainder) * 2 >= n) quotient += q < 0 ? -1 : 1;
-        rounded = remainder !== 0;
-        if (!safeUnits(quotient)) return overflow();
-        result = { units: quotient, scale: targetScale };
-      }
-    } else {
-      let extreme = common[0].units;
-      for (const v of common) {
-        if (operation === 'min') extreme = Math.min(extreme, v.units);
-        else extreme = Math.max(extreme, v.units);
-      }
-      result = { units: extreme, scale: common[0].scale };
-    }
-  }
-
-  // Count renders as a bare integer: inheriting a currency prefix onto a row
-  // count would be a plausible-looking lie.
-  if (operation === 'count') {
-    format = {
-      prefix: '',
-      suffix: '',
-      thousandsSeparator: format.thousandsSeparator,
-      groupingObserved: format.groupingObserved,
-      decimalSeparator: format.decimalSeparator,
-      decimals: 0,
-      negativeStyle: 'none',
-      minusAfterPrefix: false
-    };
-  }
-
-  const finalValue = rescaleExact(result, format.decimals);
-  if (!finalValue) {
-    return {
-      ok: false,
-      error: 'precision_loss',
-      message: `The exact ${operation} has more decimal places than the target cell's format (${format.decimals}); writing it would silently change the value. Refusing to approximate - widen the target format or pick a different target cell.`,
-      details: [
-        `exact result: ${result.units} x 10^-${result.scale}`,
-        `target decimals: ${format.decimals}`
-      ]
-    };
-  }
-
-  if (finalValue.units < 0) format = upgradeNegativeStyle(format, parsed);
-
   return {
     ok: true,
-    operation,
-    value: finalValue,
-    renderedValue: renderNumericCell(finalValue, format),
-    format,
-    formatSource,
-    counted: parsed.length,
+    parsed,
     skipped,
-    rounded
+    unit: Array.from(units.keys())[0] ?? ''
   };
 }
