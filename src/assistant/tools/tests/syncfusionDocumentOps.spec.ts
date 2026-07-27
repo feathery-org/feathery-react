@@ -3876,10 +3876,10 @@ describe('inheritance by default (S4b)', () => {
               paragraphFormat: { styleName: 'Body Text' },
               inlines: [{ text: 'We appreciate your business.' }]
             },
-            {
-              paragraphFormat: { styleName: 'Body Text' },
-              inlines: [{ text: '' }]
-            }
+            // The separator the break will split is plain Normal, so the
+            // SyncFusion clone alone would give Calibri/Normal - only the
+            // computed default can produce the Body Text look asserted below.
+            { inlines: [{ text: '' }] }
           ]
         }
       ],
