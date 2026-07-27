@@ -2,12 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
-import {
-  fieldValues,
-  initInfo,
-  initState,
-  setFieldValues
-} from '../../../utils/init';
+import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
 
@@ -156,7 +151,10 @@ export default function DocumentEditorContainer({
   // tests; licenseKey is optional (server license lives on the Word Processor).
   const syncfusion = (featheryWindow() as any).featherySyncfusion ?? {};
   const serviceUrl = syncfusion.serviceUrl || `${API_URL}document/editor/`;
-  const { sdkKey } = initInfo();
+  // Read initState directly instead of initInfo() — initInfo() throws when the
+  // SDK isn't initialized, but in editMode (designer preview, tests) this
+  // component renders a placeholder and never needs the key.
+  const { sdkKey } = initState;
   const serviceHeaders = useMemo(() => {
     if (syncfusion.headers) return syncfusion.headers;
     if (sdkKey) return [{ Authorization: `Token ${sdkKey}` }];
