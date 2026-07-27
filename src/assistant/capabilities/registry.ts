@@ -31,6 +31,13 @@
  * `inheritFormatFrom`, `changeSetId`) are reserved keys with one canonical
  * meaning and are not repeated per entry; `requiresAnchor`/`anchorKind`
  * declare the anchor contract instead.
+ *
+ * `expect` is the compare-and-swap guard: the text the op believes is still
+ * there, which the model COPIES from a read. `start`/`end` only disambiguate
+ * between several occurrences of one `find` spelling in the same block; they
+ * are never a validity test on a range the editor has already resolved,
+ * because they are values the model would have to COUNT and it cannot count
+ * (see pickOffsetDisambiguatedMatch).
  */
 export interface CapabilityEntry {
   /** Op name as the model sends it. */
@@ -80,6 +87,42 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       anchor: '0;3',
       find: 'Quote: 5,500',
       replace: 'Quote: 6,000'
+    }
+  },
+  {
+    // handler: ANCHORED_OP_HANDLERS.replace_selection
+    //
+    // The op for "the user selected this and told us to rewrite it". Everything
+    // else in this vocabulary addresses text by searching for it, which is the
+    // wrong primitive for a selection: the user has already pointed at the
+    // target precisely, and a search can miss it or hit the wrong instance. It
+    // is also the only op that can express a selection spanning paragraphs -
+    // `find` cannot, because SyncFusion search does not match across a
+    // paragraph mark.
+    //
+    // `startOffset`/`endOffset` are copied verbatim from `context.selection`;
+    // omit them and the op rewrites the whole anchored block. The guard is
+    // `expect` (the selected text) or, when the delivered selection text was
+    // truncated, `expectLength` beside the prefix - never a counted offset.
+    op: 'replace_selection',
+    params: {
+      replace: 'string',
+      startOffset: 'string?',
+      endOffset: 'string?',
+      expectLength: 'int>=0?'
+    },
+    requiresAnchor: true,
+    anchorKind: 'block',
+    tracked: true,
+    summary:
+      "Replace the user's selected range with `replace`, as one tracked revision. Prefer it over replace_text whenever a selection is present. `anchor` is the selection's start block; copy `startOffset`/`endOffset` verbatim from the selection context (they may span runs or paragraphs; omit them to rewrite the whole block). Guard with `expect` (the selected text) or `expectLength`.",
+    example: {
+      op: 'replace_selection',
+      anchor: '2;14',
+      startOffset: '2;14;0',
+      endOffset: '2;16;23',
+      replace: 'One statement instead of three.',
+      expectLength: 457
     }
   },
   {

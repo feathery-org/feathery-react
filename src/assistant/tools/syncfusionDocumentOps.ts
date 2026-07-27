@@ -439,6 +439,22 @@ export interface SelectionContext {
   anchor: string;
   text: string;
   isCollapsed: boolean;
+  // The selection's full extent. `anchor` alone is only the block the selection
+  // STARTS in, so on its own it describes a multi-paragraph or cross-cell
+  // selection as if it were a single block - the model then has no way to name
+  // what the user actually pointed at. These are the public offsets verbatim;
+  // `replace_selection` takes them back verbatim, so the model copies rather
+  // than counts.
+  startOffset: string;
+  endOffset: string;
+  endAnchor: string;
+  // `text` is capped at SELECTION_TEXT_LIMIT for prompt budget. When it is
+  // capped the model cannot supply the whole selected text as `expect`, so it
+  // sends `expectLength` (this number, copied) alongside the prefix it does
+  // have and the compare-and-swap runs on prefix + exact length.
+  textLength: number;
+  truncated: boolean;
+  spansBlocks: boolean;
 }
 
 export interface DocumentOccurrence {
@@ -1845,16 +1861,34 @@ export function anchorFromOffset(offset: string): string {
 }
 
 // Selection context sent with an assistant request: the caret's anchor, up to
-// 500 characters of selected text, and whether the selection is collapsed.
+// 500 characters of selected text, whether the selection is collapsed, and the
+// selection's full public extent (start/end offsets, end block, untruncated
+// length). The extent is what makes a selection addressable: a selection is the
+// strongest statement of intent a user can make, and reporting only its start
+// block reduced "these three paragraphs" to "somewhere in this one".
 export function readSelection(editor: LiveEditor): SelectionContext | null {
   const sel = editor?.selection;
   if (!sel || typeof sel.startOffset !== 'string') return null;
   const anchor = anchorFromOffset(sel.startOffset);
   if (!anchor) return null;
   const text = typeof sel.text === 'string' ? sel.text : '';
+  const startOffset = sel.startOffset;
+  const endOffset =
+    typeof sel.endOffset === 'string' ? sel.endOffset : startOffset;
+  const endAnchor = anchorFromOffset(endOffset) || anchor;
   const isCollapsed =
-    sel.isEmpty != null ? !!sel.isEmpty : sel.startOffset === sel.endOffset;
-  return { anchor, text: text.slice(0, SELECTION_TEXT_LIMIT), isCollapsed };
+    sel.isEmpty != null ? !!sel.isEmpty : startOffset === endOffset;
+  return {
+    anchor,
+    text: text.slice(0, SELECTION_TEXT_LIMIT),
+    isCollapsed,
+    startOffset,
+    endOffset,
+    endAnchor,
+    textLength: text.length,
+    truncated: text.length > SELECTION_TEXT_LIMIT,
+    spansBlocks: endAnchor !== anchor
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2108,20 +2142,38 @@ function resolveLiveStoryTarget(
       .filter(
         (range: any) =>
           range.start.anchor === anchor && range.end.anchor === anchor
-      )
-      .filter(
-        (range: any) =>
-          (typeof op.start !== 'number' || range.start.offset === op.start) &&
-          (typeof op.end !== 'number' || range.end.offset === op.end)
       );
-    if (matches.length !== 1)
+    if (!matches.length)
       throw new OpError(
-        matches.length ? 'story_range_ambiguous' : 'stale_anchor',
-        matches.length
-          ? `Story anchor "${anchor}" has ${matches.length} matching public search ranges.`
-          : `The searched range at story anchor "${anchor}" changed since it was read.`
+        'stale_anchor',
+        `The searched range at story anchor "${anchor}" changed since it was read.`
       );
-    const match = matches[0];
+    // Same rule as the body path: `start` separates several occurrences of one
+    // spelling, it does not invalidate the single range search resolved. `end`
+    // is fully determined by `find` and the match start, so a model-counted
+    // `end` never gets a vote. See pickOffsetDisambiguatedMatch.
+    const match =
+      matches.length === 1
+        ? matches[0]
+        : (() => {
+            const byModelStart =
+              typeof op.start === 'number'
+                ? matches.filter(
+                    (range: any) => range.start.offset === op.start
+                  )
+                : ([] as any[]);
+            if (byModelStart.length === 1) return byModelStart[0];
+            throw new OpError(
+              'story_range_ambiguous',
+              `Story anchor "${anchor}" has ${matches.length} matching public search ranges.`,
+              [
+                `candidate start offsets: ${matches
+                  .map((range: any) => range.start.offset)
+                  .join(', ')}`,
+                'Send `start` set to the character offset of the occurrence you mean, or narrow `find` until it is unique in this story.'
+              ]
+            );
+          })();
     editor.selection.select(match.startOffset, match.endOffset);
     const text = String(editor.selection.text ?? '');
     if (text !== find)
@@ -2239,6 +2291,44 @@ function replaceSelectedText(editor: LiveEditor, replacement: string): void {
   editor.editor.insertText(replacement);
 }
 
+// `start`/`end` are a DISAMBIGUATOR among several matches of the same spelling,
+// never a validity test on a match SyncFusion already resolved.
+//
+// They used to be an equality filter, and that is what killed the captain's
+// selection rewrite (2026-07-27 14:2x EDT, ai-services-3002.log line 26661):
+// the model sent a 457-character `find` with `end: 0` on the first attempt
+// (the tool schema fills every field, so an unset `end` arrives as 0) and
+// `end: 451` on the two retries - it tried to count the characters and was off
+// by six. Search had found the range perfectly, at 0..457, all three times.
+// The filter threw it away and reported `exact_match_range_not_found`, so a
+// paragraph that was sitting right there under the user's own selection was
+// declared missing three times and the turn ended in "please do it by hand".
+//
+// A character offset is a value the model has to COUNT, and it cannot count.
+// The live search result is authoritative for WHERE the text is; `expect` -
+// which the model COPIES, and which stays exactly as strict as it was - remains
+// the guard for WHETHER the text is still what it thought. So a single
+// candidate wins outright, and several occurrences of one spelling are
+// separated by `start` if it names one of them, otherwise by the offset
+// preflight itself found. `end` never gets a vote: it is fully determined by
+// `find` plus the match start, so a model-counted `end` can only ever be noise.
+function pickOffsetDisambiguatedMatch(
+  candidates: any[],
+  index: number,
+  op: EditOp
+): any {
+  if (candidates.length <= 1) return candidates[0];
+  const startsAt = (offset: number) =>
+    candidates.find(
+      (result: any) =>
+        offsetParts(String(result?.startOffset ?? '')).offset === offset
+    );
+  return (
+    (typeof op.start === 'number' ? startsAt(op.start) : undefined) ??
+    startsAt(index)
+  );
+}
+
 // SyncFusion's public search result offsets are the only reliable way to
 // select an exact match which crosses text runs. Constructing an end offset
 // from a string length is not equivalent in every story/run shape (and can
@@ -2273,21 +2363,14 @@ function selectExactMatch(
 
   try {
     search.findAll(find, 'CaseSensitive');
-    const hasExactPublicRange =
-      typeof op.start === 'number' && typeof op.end === 'number';
-    const match = (
+    const candidates = (
       search.searchResults.getTextSearchResultsOffset() ?? []
-    ).find((result: any) => {
+    ).filter((result: any) => {
       const start = offsetParts(String(result?.startOffset ?? ''));
       const end = offsetParts(String(result?.endOffset ?? ''));
-      return (
-        start.anchor === block.anchor &&
-        end.anchor === block.anchor &&
-        (hasExactPublicRange
-          ? start.offset === op.start && end.offset === op.end
-          : start.offset === index)
-      );
+      return start.anchor === block.anchor && end.anchor === block.anchor;
     });
+    const match = pickOffsetDisambiguatedMatch(candidates, index, op);
     if (!match)
       throw new OpError(
         'exact_match_range_not_found',
@@ -2316,6 +2399,227 @@ function selectExactMatch(
       `SyncFusion could not resolve an exact selected range for "${find}".`
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// replace_selection: the user's own range as the edit target.
+// ---------------------------------------------------------------------------
+
+interface SelectionRange {
+  startOffset: string;
+  endOffset: string;
+  startAnchor: string;
+  endAnchor: string;
+  text: string;
+}
+
+// Numeric, part-by-part comparison of two hierarchical indices. Lexicographic
+// string comparison is wrong here ("0;10" sorts before "0;9").
+function compareOffsets(left: string, right: string): number {
+  const a = String(left).split(';').map(Number);
+  const b = String(right).split(';').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? -1;
+    const y = b[i] ?? -1;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+// A cell anchor is `section;block;row;cell;paragraph`; a body block is
+// `section;block`. The container is what a text range may not cross: SyncFusion
+// has no tracked, reversible way to replace a span that swallows a cell or table
+// boundary, so those shapes are refused by name instead of written and hoped for.
+function rangeContainer(anchor: string): string {
+  const parts = String(anchor).split(';');
+  return parts.length >= 5 ? parts.slice(0, 4).join(';') : parts[0] ?? '';
+}
+
+function offsetString(value: unknown): string {
+  return typeof value === 'string' && /^\d+(;\d+)+$/.test(value.trim())
+    ? value.trim()
+    : '';
+}
+
+function resolveSelectionRange(
+  editor: LiveEditor,
+  op: EditOp,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): SelectionRange {
+  // Schema-shaped tool calls carry every field on every op, so an unusable
+  // offset (empty string, or a malformed one) means "not supplied" rather than
+  // "supplied wrongly". Falling back to the anchored block is the honest
+  // reading: that block IS the selection when the selection sits inside one.
+  const startOffset = offsetString(op.startOffset) || `${block.anchor};0`;
+  const endOffset =
+    offsetString(op.endOffset) || `${block.anchor};${block.length}`;
+  const start = offsetParts(startOffset);
+  const end = offsetParts(endOffset);
+  if (start.anchor !== block.anchor)
+    throw new OpError(
+      'selection_anchor_mismatch',
+      `startOffset "${startOffset}" is in block "${start.anchor}", but the op's anchor is "${block.anchor}".`,
+      [
+        "Set `anchor` to the selection's start block - the `anchor` field of the selection context - and `startOffset`/`endOffset` to its offsets, all copied verbatim."
+      ]
+    );
+  const endBlock =
+    end.anchor === block.anchor ? block : byAnchor.get(end.anchor);
+  if (!endBlock)
+    throw new OpError(
+      'selection_range_unresolvable',
+      `endOffset "${endOffset}" names block "${end.anchor}", which is not in the document.`,
+      [
+        'Re-read the selection context (or the section inventory) and resend `startOffset`/`endOffset` copied verbatim from it.'
+      ]
+    );
+  if (compareOffsets(startOffset, endOffset) > 0)
+    throw new OpError(
+      'selection_range_unresolvable',
+      `startOffset "${startOffset}" comes after endOffset "${endOffset}".`,
+      [
+        'Send the offsets in document order, copied verbatim from the selection.'
+      ]
+    );
+  // The paragraph mark is a legal end position, hence length + 1.
+  if (start.offset < 0 || start.offset > block.length)
+    throw new OpError(
+      'selection_range_unresolvable',
+      `startOffset "${startOffset}" is outside block "${block.anchor}" (length ${block.length}).`,
+      ['Re-read the selection and resend its offsets verbatim.']
+    );
+  if (end.offset < 0 || end.offset > endBlock.length + 1)
+    throw new OpError(
+      'selection_range_unresolvable',
+      `endOffset "${endOffset}" is outside block "${end.anchor}" (length ${endBlock.length}).`,
+      ['Re-read the selection and resend its offsets verbatim.']
+    );
+  if (rangeContainer(block.anchor) !== rangeContainer(endBlock.anchor))
+    throw new OpError(
+      'selection_spans_table_boundary',
+      `The selection runs from "${block.anchor}" to "${endBlock.anchor}", crossing a table-cell boundary. SyncFusion cannot replace such a span as one reversible tracked range.`,
+      [
+        `selection start block: "${block.anchor}"; selection end block: "${endBlock.anchor}"`,
+        'Rewrite one cell at a time: use replace_selection (or set_cell_text) per cell anchor.',
+        'A selection that starts in the body and ends inside a table - or spans two cells - has to be split this way; there is no single tracked range that covers it.'
+      ]
+    );
+  editor.selection.select(startOffset, endOffset);
+  const text = String(editor.selection.text ?? '');
+  if (!text)
+    throw new OpError(
+      'selection_empty',
+      `The range ${startOffset}..${endOffset} selects no text.`,
+      [
+        'Select the text to rewrite before asking for a rewrite, or use insert_text at this anchor to add text instead of replacing it.'
+      ]
+    );
+  return {
+    startOffset,
+    endOffset,
+    startAnchor: block.anchor,
+    endAnchor: endBlock.anchor,
+    text
+  };
+}
+
+// The compare-and-swap for a selection range. It is exactly as strict as the
+// block-level `expect` guard, just scoped to the range the user actually
+// selected rather than to the start block (whose text is not the selection when
+// the selection spans paragraphs).
+//
+// `expectLength` exists because the selection text delivered to the model is
+// capped at SELECTION_TEXT_LIMIT: past that the model CANNOT supply the whole
+// text, and a guard nothing can satisfy is the defect this whole change is
+// about. Prefix + exact length is still a real compare-and-swap - it pins every
+// delivered character and the total size - not a wildcard.
+function assertSelectionGuard(op: EditOp, range: SelectionRange): void {
+  const expect =
+    op.expect != null && String(op.expect) !== '' ? String(op.expect) : null;
+  // A schema-filled 0 is indistinguishable from an unset length, and a
+  // zero-length range is already refused as selection_empty.
+  const expectLength =
+    typeof op.expectLength === 'number' && op.expectLength > 0
+      ? op.expectLength
+      : null;
+  if (expect == null && expectLength == null)
+    throw new OpError(
+      'missing_selection_guard',
+      'replace_selection must state what it believes it is replacing.',
+      [
+        `live text at this range: ${JSON.stringify(
+          range.text.length > STALE_TEXT_EXCERPT_LIMIT
+            ? `${range.text.slice(0, STALE_TEXT_EXCERPT_LIMIT - 1)}…`
+            : range.text
+        )}`,
+        "Resend with `expect` set to the selected text (copy it from the selection context), or with `expectLength` set to the selection's `textLength` when that text was truncated."
+      ]
+    );
+  if (expectLength != null && range.text.length !== expectLength)
+    throw new OpError(
+      'stale_anchor',
+      `The selected range is ${range.text.length} characters; \`expectLength\` says ${expectLength}.`,
+      [
+        `the selected range is ${range.text.length} characters, \`expectLength\` says ${expectLength}`,
+        ...staleAnchorDetails(
+          expect ?? `<${expectLength} characters>`,
+          range.text
+        )
+      ]
+    );
+  if (expect == null) return;
+  // With a length pin the delivered prefix is authoritative for its own extent;
+  // without one the whole text must match exactly, as it always has.
+  const matches =
+    expectLength != null
+      ? range.text.startsWith(expect)
+      : range.text === expect;
+  if (!matches)
+    throw new OpError(
+      'stale_anchor',
+      'The live text in the selected range does not match `expect`.',
+      staleAnchorDetails(expect, range.text)
+    );
+}
+
+// Proof the replacement is readable in the document after the write. A range
+// that spanned paragraphs collapses them, so the text may land on any block of
+// the original span (SyncFusion keeps the deleted paragraph marks as tracked
+// deletions until the revision is accepted) - the span, not one anchor, is what
+// can be asserted. Reversibility itself is proven separately and globally by
+// assertTrackedMutation's reject-projection comparison.
+function verifySelectionWrite(
+  editor: LiveEditor,
+  range: SelectionRange,
+  replacement: string
+): void {
+  if (!replacement) return;
+  const blocks = flattenSfdt(parseSfdt(editor.serialize()));
+  const startIndex = blocks.findIndex(
+    (block) => block.anchor === range.startAnchor
+  );
+  if (startIndex < 0)
+    throw new OpError(
+      'post_write_anchor_not_found',
+      `The edited anchor "${range.startAnchor}" disappeared after the write.`
+    );
+  const endIndex = blocks.findIndex(
+    (block) => block.anchor === range.endAnchor
+  );
+  const span = blocks
+    .slice(startIndex, Math.max(endIndex, startIndex) + 1)
+    .map((block) => block.text)
+    .join('\n');
+  if (!span.includes(replacement))
+    throw new OpError(
+      'text_verification_failed',
+      `Text verification failed across "${range.startAnchor}".."${range.endAnchor}".`,
+      [
+        `expected to contain: ${JSON.stringify(replacement)}`,
+        `actual: ${JSON.stringify(span)}`
+      ]
+    );
 }
 
 function verifyWrittenText(
@@ -2981,6 +3285,24 @@ export const ANCHORED_OP_HANDLERS: {
     replaceSelectedText(editor, String(replacement ?? ''));
     verifyWrittenText(editor, block.anchor, next);
   },
+  replace_selection: ({ editor, op, block, byAnchor }) => {
+    const replacement = op.replace ?? (op as any).text ?? (op as any).newText;
+    if (replacement == null)
+      throw new OpError(
+        'missing_replace',
+        'replace_selection needs `replace`.',
+        [
+          'Send `replace` set to the text that should stand in place of the selection.'
+        ]
+      );
+    const range = resolveSelectionRange(editor, op, block, byAnchor);
+    assertSelectionGuard(op, range);
+    // resolveSelectionRange left exactly this range selected. One selected-range
+    // insertText, so SyncFusion authors the paired deletion/insertion revisions
+    // atomically - see replaceSelectedText on why this must not be split.
+    replaceSelectedText(editor, String(replacement));
+    verifySelectionWrite(editor, range, String(replacement));
+  },
   delete_text: ({ editor, op, block, liveText }) => {
     const find = String(op.find ?? '');
     if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
@@ -3222,7 +3544,14 @@ function applyAnchoredOp(
 
   // Compare-and-swap guard: `expect` is the whole-block text the model believes
   // is still present. On mismatch we write nothing.
+  //
+  // replace_selection is exempt because for it `expect` means the SELECTED
+  // text, which is not the block's text whenever the selection is a sub-range
+  // or spans paragraphs. Its guard is not weaker - assertSelectionGuard applies
+  // the same compare-and-swap to the range the user actually selected, and
+  // refuses outright when the op supplies no guard at all.
   if (
+    op.op !== 'replace_selection' &&
     op.expect != null &&
     liveText !== op.expect &&
     block.text !== String(op.expect)
@@ -3797,6 +4126,7 @@ function describeStreamDivergence(expected: string, actual: string): string[] {
 
 const TRACKED_TEXT_OPS = new Set([
   'replace_text',
+  'replace_selection',
   'delete_text',
   'insert_text',
   'set_cell_text',
@@ -4060,6 +4390,9 @@ function assertDeferredAnchorIsNewAndEmpty(
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
+  // A selection replacement can swallow paragraph marks, so treat it as always
+  // shifting: the anchors after it must be re-resolved, never reused.
+  if (op.op === 'replace_selection') return true;
   if (op.op === 'insert_text') return /[\r\n]/.test(String(op.text ?? ''));
   if (op.op === 'replace_text' || op.op === 'set_cell_text')
     return /[\r\n]/.test(String(op.replace ?? op.text ?? op.newText ?? ''));
@@ -4591,6 +4924,9 @@ export function applyDocumentEdits(
     if (
       target &&
       !isLiveStoryTarget(target) &&
+      // See applyAnchoredOp: replace_selection's `expect` describes the selected
+      // range, not the start block, so it is checked by assertSelectionGuard.
+      name !== 'replace_selection' &&
       op.expect != null &&
       target.text !== String(op.expect)
     ) {

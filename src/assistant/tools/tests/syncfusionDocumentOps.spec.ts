@@ -465,7 +465,16 @@ describe('anchorFromOffset + readSelection', () => {
     expect(sel).toEqual({
       anchor: '0;1',
       text: 'x'.repeat(500),
-      isCollapsed: true
+      isCollapsed: true,
+      // The selection's extent, so a selection spanning blocks is addressable
+      // rather than collapsed to its start block. `truncated` + `textLength`
+      // are what let a guard exist for a selection too long to send whole.
+      startOffset: '0;1;3',
+      endOffset: '0;1;3',
+      endAnchor: '0;1',
+      textLength: 900,
+      truncated: true,
+      spansBlocks: false
     });
   });
 });
