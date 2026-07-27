@@ -2,6 +2,7 @@ import { act, render, renderHook } from '@testing-library/react';
 import {
   getDocumentIndexFreshness,
   INDEX_POLL_MS,
+  INDEX_STABLE_POLLS,
   postDocumentIndex,
   REINDEX_DEBOUNCE_MS,
   useDocumentIndex,
@@ -199,9 +200,11 @@ describe('useDocumentIndex', () => {
     });
     expect(indexPosts()).toHaveLength(0);
 
+    // Content must hold still for INDEX_STABLE_POLLS ticks before the poll
+    // vouches for it - a growing mid-load model must never be posted.
     editor.loaded = true;
     await act(async () => {
-      jest.advanceTimersByTime(INDEX_POLL_MS);
+      jest.advanceTimersByTime(INDEX_POLL_MS * INDEX_STABLE_POLLS);
     });
 
     expect(indexPosts()).toHaveLength(1);
@@ -316,6 +319,157 @@ describe('useDocumentIndex', () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('gave up indexing')
     );
+  });
+});
+
+// S7 gate §4: a generated document loads progressively (SyncFusion openAsync
+// lays out section by section), and the model grows WITHOUT contentChange
+// events until `documentChange` fires at load completion. The index must not
+// certify a mid-load snapshot as the whole document: "confirmed POST and no
+// contentChange since" must imply "the index matches the live document".
+describe('index-on-load: a progressively loading document must not be certified fresh while partial', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const mount = (documentId?: string) =>
+    renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets: targets(documentId),
+        headers
+      })
+    );
+
+  const paragraph = (text: string) => ({ inlines: [{ text }] });
+  const TOC_SECTION = {
+    blocks: [paragraph('Table of Contents'), paragraph('Umbrella ... 12')]
+  };
+  const BODY_SECTIONS = [
+    { blocks: [paragraph('General Liability limits and exclusions')] },
+    { blocks: [paragraph('Umbrella coverage: $5,000,000 aggregate')] }
+  ];
+
+  // The serialized model grows as openAsync lays the document out; no events
+  // fire until the load completes.
+  const streamingEditor = () => {
+    const listeners: Record<string, (() => void)[]> = {};
+    return {
+      sections: [] as any[],
+      serialize() {
+        return JSON.stringify({ sections: this.sections });
+      },
+      addEventListener(event: string, fn: () => void) {
+        (listeners[event] ||= []).push(fn);
+      },
+      removeEventListener(event: string, fn: () => void) {
+        listeners[event] = (listeners[event] ?? []).filter((f) => f !== fn);
+      },
+      emit(event: string) {
+        (listeners[event] ?? []).forEach((fn) => fn());
+      }
+    };
+  };
+
+  const lastPost = () => JSON.parse(indexPosts()[indexPosts().length - 1][1].body);
+
+  it('indexes the full document, not the first partial snapshot, when sections stream in without contentChange', async () => {
+    const editor = streamingEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+
+    // Registration happens at SyncFusion `created`, before the .docx opens:
+    // blank model, nothing may be posted.
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    expect(indexPosts()).toHaveLength(0);
+
+    // The TOC section lands first (exactly what the S7 gate observed live:
+    // 212 TOC-only blocks in the model while the body was still loading).
+    editor.sections = [TOC_SECTION];
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+
+    // The rest of the body arrives on later layout ticks - still no events.
+    editor.sections = [TOC_SECTION, ...BODY_SECTIONS];
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS * 6);
+    });
+
+    // The index the server ends up holding must contain the document body.
+    expect(indexPosts().length).toBeGreaterThan(0);
+    const finalBody = lastPost();
+    const indexedText = JSON.stringify(finalBody.blocks);
+    expect(indexedText).toContain('General Liability');
+    expect(indexedText).toContain('$5,000,000');
+
+    // And the freshness certificate must vouch for THAT index - the full one.
+    const fresh = getDocumentIndexFreshness(DOC_ID);
+    expect(fresh.indexDirty).toBe(false);
+    expect(fresh.indexHash).toBe(finalBody.contentHash);
+
+    // Cost guard: the load must not burn an embedding run per layout tick.
+    expect(indexPosts()).toHaveLength(1);
+  });
+
+  it('re-indexes on documentChange when a slow load stalls long enough to fool the poll', async () => {
+    const editor = streamingEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+
+    // The TOC alone sits in the model across many ticks (a stalled/slow
+    // conversion) - long enough that any snapshot heuristic certifies it.
+    editor.sections = [TOC_SECTION];
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS * 8);
+    });
+
+    // Load completes: the body lands and SyncFusion fires `documentChange`
+    // (its single per-open load-complete signal, viewer.js executeAfterLayout).
+    editor.sections = [TOC_SECTION, ...BODY_SECTIONS];
+    editor.emit('documentChange');
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+
+    const finalBody = lastPost();
+    expect(JSON.stringify(finalBody.blocks)).toContain('General Liability');
+    const fresh = getDocumentIndexFreshness(DOC_ID);
+    expect(fresh.indexDirty).toBe(false);
+    expect(fresh.indexHash).toBe(finalBody.contentHash);
+  });
+
+  it('documentChange on a still-blank editor posts nothing (the clobber guard holds)', async () => {
+    const editor = streamingEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+
+    editor.emit('documentChange');
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS * 2);
+    });
+    expect(indexPosts()).toHaveLength(0);
+  });
+
+  it('documentChange with content the server already holds does not re-POST', async () => {
+    const editor = streamingEditor();
+    editor.sections = [TOC_SECTION, ...BODY_SECTIONS];
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS * 4);
+    });
+    const posted = indexPosts().length;
+    expect(posted).toBeGreaterThan(0);
+
+    // E.g. a reopen of the identical document into the same editor instance.
+    editor.emit('documentChange');
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    expect(indexPosts()).toHaveLength(posted);
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(false);
   });
 });
 
