@@ -28,6 +28,12 @@ import {
   DOCUMENT_EDITOR_CAPABILITIES,
   OpParams
 } from '../capabilities/registry';
+import {
+  computeColumn,
+  ComputeOperation,
+  COMPUTE_OPERATIONS,
+  SkippedCell
+} from './numericCells';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
@@ -36,7 +42,12 @@ export const SELECTION_TEXT_LIMIT = 500;
 // Public types
 // ---------------------------------------------------------------------------
 
-export type InventoryScope = 'outline' | 'structure' | 'section' | 'full';
+export type InventoryScope =
+  | 'outline'
+  | 'structure'
+  | 'section'
+  | 'full'
+  | 'table_column';
 
 export interface DocFormat {
   styleName?: string;
@@ -126,10 +137,42 @@ export interface DocumentStructure {
   sections: StructureSectionBoundary[];
 }
 
+// The completeness contract for capped reads: a clipped list must say how
+// many of how many, in data. A partial read that looks complete is how a
+// 94-row table got summed from 60 rows and an anchor got guessed.
+export interface InventoryTruncation {
+  returned: number;
+  total: number;
+  message: string;
+}
+
+// One cell of a table column, as data: its row, its first paragraph's anchor
+// (the writable locator) and its verbatim text. `text: null` with no anchor
+// means the row has no cell at that column (short/merged row) - reported,
+// never silently skipped.
+export interface TableColumnCell {
+  row: number;
+  anchor?: string;
+  text: string | null;
+}
+
+// A whole table column returned as data. `rowCount` is the table's true row
+// count; `returned` and `truncated` make any capped read visibly partial.
+export interface TableColumnRead {
+  tableAnchor: string;
+  column: number;
+  columns: number;
+  rowCount: number;
+  returned: number;
+  truncated: boolean;
+  cells: TableColumnCell[];
+}
+
 export type InventoryResult =
-  | { sections: OutlineSection[] }
-  | { structure: DocumentStructure }
-  | { inventory: InventoryEntry[] }
+  | { sections: OutlineSection[]; truncation?: InventoryTruncation }
+  | { structure: DocumentStructure; truncation?: InventoryTruncation }
+  | { inventory: InventoryEntry[]; truncation?: InventoryTruncation }
+  | { column: TableColumnRead; truncation?: InventoryTruncation }
   | InventoryRefusal;
 
 export interface EditOp {
@@ -137,6 +180,41 @@ export interface EditOp {
   anchor?: string;
   expect?: string;
   [field: string]: any;
+}
+
+// The auditable record of one engine-computed cell write. `receipt` is the
+// one-line summary the assistant relays to the user; the structured fields
+// are the same facts as data. The trust signal is `rowsRead` of `rowCount` -
+// coverage of the read - plus the NAMED skipped cells, never a wall of the
+// values themselves (available via a table_column read on request).
+export interface ComputedCellReport {
+  operation: ComputeOperation;
+  tableAnchor: string;
+  column: number;
+  /** The column's header cell text (row 0), when it has one. */
+  header: string | null;
+  /** The exact bytes written to the target cell. */
+  renderedValue: string;
+  /** Cells whose values entered the arithmetic. */
+  counted: number;
+  /** Column rows actually read by the engine - always all of them. */
+  rowsRead: number;
+  /** The table's true row count. */
+  rowCount: number;
+  /** The computed range (inclusive), after defaults. */
+  startRow: number;
+  endRow: number;
+  /** The anchored (target) row, excluded from the range when it fell inside. */
+  excludedTargetRow: number | null;
+  /** Every considered cell excluded from the arithmetic, named. */
+  skipped: SkippedCell[];
+  /** Where the render format came from. */
+  formatSource: 'target_cell' | 'column_majority';
+  /** True when `average` rounding changed the exact quotient. */
+  rounded: boolean;
+  /** The post-write re-read reproduced the same value and bytes. */
+  verifiedByReRead: true;
+  receipt: string;
 }
 
 export interface EditResult {
@@ -151,6 +229,9 @@ export interface EditResult {
   // 'never' marks a failure no retry can fix (the op is not in the vocabulary),
   // so the assistant stops resending it instead of looping.
   retry?: 'never';
+  // Present on a successful `set_cell_computed`: what was computed, from what,
+  // and the receipt line to relay.
+  computed?: ComputedCellReport;
 }
 
 export interface ApplyEditsResult {
@@ -689,17 +770,98 @@ function collectSectionBoundaries(
   return order;
 }
 
+/**
+ * Every cell of one table column, complete and in row order. Shared by the
+ * `table_column` inventory scope and the `set_cell_computed` engine
+ * computation, so what the model reads and what the engine sums are the same
+ * cells by construction. Returns null when no table answers to `tableAnchor`.
+ */
+export function collectTableColumnCells(
+  blocks: FlatBlock[],
+  tableAnchor: string,
+  column: number
+): { columns: number; rowCount: number; cells: TableColumnCell[] } | null {
+  let rowCount = 0;
+  let columns = 0;
+  // (row -> cell paragraphs in order) for the requested column only.
+  const paragraphsByRow = new Map<number, FlatBlock[]>();
+  let found = false;
+  for (const b of blocks) {
+    if (b.kind !== 'table_cell') continue;
+    const parts = b.anchor.split(';');
+    if (parts.length !== 5) continue;
+    if (`${parts[0]};${parts[1]}` !== tableAnchor) continue;
+    const row = Number(parts[2]);
+    const cell = Number(parts[3]);
+    if (!Number.isInteger(row) || !Number.isInteger(cell)) continue;
+    found = true;
+    rowCount = Math.max(rowCount, row + 1);
+    columns = Math.max(columns, cell + 1);
+    if (cell !== column) continue;
+    const list = paragraphsByRow.get(row) ?? [];
+    list.push(b);
+    paragraphsByRow.set(row, list);
+  }
+  if (!found) return null;
+  const cells: TableColumnCell[] = [];
+  for (let row = 0; row < rowCount; row++) {
+    const paragraphs = paragraphsByRow.get(row);
+    if (!paragraphs?.length) {
+      cells.push({ row, text: null });
+      continue;
+    }
+    cells.push({
+      row,
+      anchor: paragraphs[0].anchor,
+      text: paragraphs.map((p) => p.text).join('\n')
+    });
+  }
+  return { columns, rowCount, cells };
+}
+
+/** `0;7`, or any cell anchor `0;7;r;c;p`, names the table at `0;7`. */
+function normalizeTableAnchor(raw: unknown): string | null {
+  const parts = String(raw ?? '')
+    .trim()
+    .split(';');
+  if (parts.length !== 2 && parts.length !== 5) return null;
+  if (parts.slice(0, 2).some((p) => !/^\d+$/.test(p))) return null;
+  return `${parts[0]};${parts[1]}`;
+}
+
+const partialReadMessage = (returned: number, total: number): string =>
+  `PARTIAL READ: returned ${returned} of ${total} entries (maxEntries cap). ` +
+  'Do not treat this as the complete list - re-read with a larger maxEntries or omit maxEntries.';
+
 // Build the response for a given scope from an already-parsed SFDT.
 export function buildInventoryFromBlocks(
   blocks: FlatBlock[],
-  input: { scope: InventoryScope; sectionAnchor?: string; maxEntries?: number }
+  input: {
+    scope: InventoryScope;
+    sectionAnchor?: string;
+    maxEntries?: number;
+    tableAnchor?: string;
+    column?: number;
+  }
 ): InventoryResult {
   const { scope, sectionAnchor, maxEntries } = input;
   const cap = <T>(list: T[]): T[] =>
     maxEntries && maxEntries > 0 ? list.slice(0, maxEntries) : list;
 
   if (scope === 'outline') {
-    return { sections: cap(collectOutlineSections(blocks)) };
+    const sections = collectOutlineSections(blocks);
+    const capped = cap(sections);
+    if (capped.length < sections.length) {
+      return {
+        sections: capped,
+        truncation: {
+          returned: capped.length,
+          total: sections.length,
+          message: partialReadMessage(capped.length, sections.length)
+        }
+      };
+    }
+    return { sections: capped };
   }
 
   if (scope === 'structure') {
@@ -707,14 +869,112 @@ export function buildInventoryFromBlocks(
     // token cost that is a rounding error next to the content. This is the
     // cheap leg for navigation questions and the remedy the too-large refusal
     // names, so it must stay text-free apart from headings and header cells.
-    return {
+    const headings = collectOutlineSections(blocks);
+    const tables = collectStructureTables(blocks);
+    const cappedHeadings = cap(headings);
+    const cappedTables = cap(tables);
+    const result: InventoryResult = {
       structure: {
         blockCount: blocks.length,
-        headings: cap(collectOutlineSections(blocks)),
-        tables: cap(collectStructureTables(blocks)),
+        headings: cappedHeadings,
+        tables: cappedTables,
         sections: collectSectionBoundaries(blocks)
       }
     };
+    const clipped =
+      cappedHeadings.length < headings.length ||
+      cappedTables.length < tables.length;
+    if (clipped) {
+      result.truncation = {
+        returned: cappedHeadings.length + cappedTables.length,
+        total: headings.length + tables.length,
+        message: `PARTIAL READ: returned ${cappedHeadings.length} of ${headings.length} headings and ${cappedTables.length} of ${tables.length} tables (maxEntries cap). Re-read with a larger maxEntries or omit it.`
+      };
+    }
+    return result;
+  }
+
+  if (scope === 'table_column') {
+    const tableAnchor = normalizeTableAnchor(input.tableAnchor);
+    if (!tableAnchor) {
+      return {
+        error: 'missing_table_anchor',
+        message:
+          'scope "table_column" requires `tableAnchor` (the table anchor from a structure read, e.g. "0;7", or any of its cell anchors).',
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'modified_input'
+      };
+    }
+    const column =
+      typeof input.column === 'number' && Number.isInteger(input.column)
+        ? input.column
+        : -1;
+    if (column < 0) {
+      return {
+        error: 'missing_column',
+        message:
+          'scope "table_column" requires `column`, the 0-based column index (match it against the table\'s headerCells from a structure read).',
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'modified_input'
+      };
+    }
+    const collected = collectTableColumnCells(blocks, tableAnchor, column);
+    if (!collected) {
+      return {
+        error: 'table_not_found',
+        message: `No table found at anchor "${tableAnchor}". The document may have changed since it was read; re-read the structure and use a current table anchor.`,
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'after_remedy'
+      };
+    }
+    if (column >= collected.columns) {
+      return {
+        error: 'column_out_of_range',
+        message: `The table at "${tableAnchor}" has ${collected.columns} columns (0-${
+          collected.columns - 1
+        }); column ${column} does not exist.`,
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'modified_input'
+      };
+    }
+    const capped = cap(collected.cells);
+    const truncated = capped.length < collected.rowCount;
+    const columnRead: TableColumnRead = {
+      tableAnchor,
+      column,
+      columns: collected.columns,
+      rowCount: collected.rowCount,
+      returned: capped.length,
+      truncated,
+      cells: capped
+    };
+    if (truncated) {
+      return {
+        column: columnRead,
+        truncation: {
+          returned: capped.length,
+          total: collected.rowCount,
+          message: `PARTIAL COLUMN: returned ${capped.length} of ${collected.rowCount} rows (maxEntries cap). Any total or anchor derived from this read covers only these rows - re-read with maxEntries >= ${collected.rowCount} or omit maxEntries.`
+        }
+      };
+    }
+    return { column: columnRead };
   }
 
   if (scope === 'section') {
@@ -751,8 +1011,20 @@ export function buildInventoryFromBlocks(
         break;
       }
     }
-    let slice = blocks.slice(start, end);
-    if (maxEntries && maxEntries > 0) slice = slice.slice(0, maxEntries);
+    const section = blocks.slice(start, end);
+    const slice = cap(section);
+    if (slice.length < section.length) {
+      // The live bug this guards: a 94-row table read at maxEntries 60 looked
+      // complete, so the model summed 60 rows and GUESSED the last anchor.
+      return {
+        inventory: slice.map(toInventoryEntry),
+        truncation: {
+          returned: slice.length,
+          total: section.length,
+          message: partialReadMessage(slice.length, section.length)
+        }
+      };
+    }
     return { inventory: slice.map(toInventoryEntry) };
   }
 
@@ -773,8 +1045,17 @@ export function buildInventoryFromBlocks(
       retry: 'after_remedy'
     };
   }
-  let all = blocks;
-  if (maxEntries && maxEntries > 0) all = all.slice(0, maxEntries);
+  const all = cap(blocks);
+  if (all.length < blocks.length) {
+    return {
+      inventory: all.map(toInventoryEntry),
+      truncation: {
+        returned: all.length,
+        total: blocks.length,
+        message: partialReadMessage(all.length, blocks.length)
+      }
+    };
+  }
   return { inventory: all.map(toInventoryEntry) };
 }
 
@@ -818,7 +1099,13 @@ function parseSfdt(raw: string): any {
 
 export function getDocumentInventory(
   editor: LiveEditor,
-  input: { scope: InventoryScope; sectionAnchor?: string; maxEntries?: number }
+  input: {
+    scope: InventoryScope;
+    sectionAnchor?: string;
+    maxEntries?: number;
+    tableAnchor?: string;
+    column?: number;
+  }
 ): InventoryResult {
   const blocks = flattenSfdt(parseSfdt(editor.serialize()));
   return buildInventoryFromBlocks(blocks, input);
@@ -1788,9 +2075,18 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
   liveText: string;
 }
 
+/**
+ * Extra success payload a handler may attach to its ok result (receipts and
+ * structured computation reports). Most handlers return nothing.
+ */
+interface OpSuccessExtras {
+  details?: string[];
+  computed?: ComputedCellReport;
+}
+
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
   ctx: AnchoredOpContext<K>
-) => void;
+) => OpSuccessExtras | void;
 
 interface AnchorlessOpContext<K extends AnchorlessDocumentOp> {
   editor: LiveEditor;
@@ -1823,6 +2119,202 @@ function insertionText(op: TypedEditOp<'insert_text'>): string {
   if (position === 'before' && text && !/[\r\n]$/.test(text))
     text = `${text}\n`;
   return text;
+}
+
+// ---------------------------------------------------------------------------
+// Engine-computed cell writes (set_cell_computed)
+//
+// The model chooses which table, which column and which target cell; the
+// ENGINE reads the column, does the arithmetic (numericCells: exact
+// scaled-integer, format-preserving) and writes the result rendered in the
+// target cell's own format. After the write it re-reads the column and
+// recomputes - a write that landed in the wrong cell fails here and rolls the
+// change set back instead of reporting success.
+// ---------------------------------------------------------------------------
+
+const COMPUTED_SKIP_NAME_LIMIT = 8;
+
+function describeSkippedCells(skipped: SkippedCell[]): string {
+  if (!skipped.length) return '';
+  const named = skipped.slice(0, COMPUTED_SKIP_NAME_LIMIT).map((s) => {
+    if (s.reason === 'missing_cell') return `row ${s.row} (no cell)`;
+    if (s.reason === 'blank') return `row ${s.row} (blank)`;
+    return `row ${s.row} (${JSON.stringify(s.text)})`;
+  });
+  const more = skipped.length - named.length;
+  return `; skipped ${skipped.length} non-numeric cell${
+    skipped.length === 1 ? '' : 's'
+  }: ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
+}
+
+function buildComputedReceipt(report: Omit<ComputedCellReport, 'receipt'>): string {
+  const headerName = report.header?.trim();
+  const columnName = headerName
+    ? `the "${headerName}" column`
+    : `column ${report.column}`;
+  const action =
+    report.operation === 'sum'
+      ? `Re-totalled ${columnName}`
+      : `Computed the ${report.operation} of ${columnName}`;
+  const roundedClause = report.rounded
+    ? '; average rounded to the target format'
+    : '';
+  return (
+    `${action}: ${report.renderedValue} from ${report.counted} line items ` +
+    `(${report.rowsRead} of ${report.rowCount} column rows read` +
+    describeSkippedCells(report.skipped) +
+    `${roundedClause}). Post-write re-read reproduced this exact value.`
+  );
+}
+
+function runComputedCellWrite(
+  editor: LiveEditor,
+  op: TypedEditOp<'set_cell_computed'>,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): OpSuccessExtras {
+  const parts = block.anchor.split(';');
+  if (block.kind !== 'table_cell' || parts.length !== 5) {
+    throw new OpError(
+      'not_a_table_cell',
+      'set_cell_computed must anchor the target table cell (section;block;row;cell;paragraph).'
+    );
+  }
+  const tableAnchor = `${parts[0]};${parts[1]}`;
+  const targetRow = Number(parts[2]);
+  const targetColumn = Number(parts[3]);
+  const operation = (op.operation ?? 'sum') as ComputeOperation;
+  if (!COMPUTE_OPERATIONS.includes(operation)) {
+    throw new OpError(
+      'unsupported_operation',
+      `Unsupported operation "${String(
+        op.operation
+      )}". Supported: ${COMPUTE_OPERATIONS.join(', ')}.`
+    );
+  }
+  const column =
+    op.column != null && Number.isInteger(op.column) && op.column >= 0
+      ? op.column
+      : targetColumn;
+
+  // The same collection the table_column read serves: what the model read and
+  // what the engine computes are the same cells by construction.
+  const blocks = Array.from(byAnchor.values());
+  const collected = collectTableColumnCells(blocks, tableAnchor, column);
+  if (!collected) {
+    throw new OpError(
+      'table_not_found',
+      `No table found at anchor "${tableAnchor}".`
+    );
+  }
+  if (column >= collected.columns) {
+    throw new OpError(
+      'column_out_of_range',
+      `The table at "${tableAnchor}" has ${collected.columns} columns (0-${
+        collected.columns - 1
+      }); column ${column} does not exist.`
+    );
+  }
+
+  const lastRow = collected.rowCount - 1;
+  const startRow = op.startRow != null ? op.startRow : Math.min(1, lastRow);
+  const endRow = op.endRow != null ? op.endRow : lastRow;
+  if (
+    !Number.isInteger(startRow) ||
+    !Number.isInteger(endRow) ||
+    startRow < 0 ||
+    endRow > lastRow ||
+    startRow > endRow
+  ) {
+    throw new OpError(
+      'row_range_invalid',
+      `Rows must satisfy 0 <= startRow <= endRow <= ${lastRow}; got ${startRow}..${endRow}.`
+    );
+  }
+  // The target row never feeds its own computation: a totals row's other
+  // cells are labels, not data.
+  const inRange = (row: number) =>
+    row >= startRow && row <= endRow && row !== targetRow;
+  const range = collected.cells.filter((cellEntry) => inRange(cellEntry.row));
+  if (!range.length) {
+    throw new OpError(
+      'row_range_invalid',
+      'The requested row range contains no rows besides the target row; there is nothing to compute.'
+    );
+  }
+
+  const computation = computeColumn(range, operation, block.text);
+  if (!computation.ok) {
+    throw new OpError(computation.error, computation.message, computation.details);
+  }
+
+  selectBlock(editor, block);
+  replaceSelectedText(editor, computation.renderedValue);
+  verifyWrittenText(editor, block.anchor, computation.renderedValue);
+
+  // Self-verification: re-read the column from the post-write document and
+  // recompute. This proves the input cells are untouched AND the written cell
+  // parses back to the exact computed value - a write that landed in the
+  // wrong cell fails one of the two.
+  const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
+  const freshCollected = collectTableColumnCells(freshBlocks, tableAnchor, column);
+  const recheck =
+    freshCollected && freshCollected.rowCount === collected.rowCount
+      ? computeColumn(
+          freshCollected.cells.filter((cellEntry) => inRange(cellEntry.row)),
+          operation,
+          computation.renderedValue
+        )
+      : null;
+  if (
+    !recheck ||
+    !recheck.ok ||
+    recheck.value.units !== computation.value.units ||
+    recheck.value.scale !== computation.value.scale ||
+    recheck.renderedValue !== computation.renderedValue
+  ) {
+    throw new OpError(
+      'post_write_verification_failed',
+      'Re-reading the column after the write did not reproduce the computed value; the write may have landed in the wrong cell. Nothing is reported as success.',
+      [
+        `computed: ${JSON.stringify(computation.renderedValue)}`,
+        `re-read: ${
+          !recheck
+            ? 'the column shape changed during the write'
+            : recheck.ok
+            ? JSON.stringify(recheck.renderedValue)
+            : recheck.message
+        }`
+      ]
+    );
+  }
+
+  const headerCell = collected.cells.find((cellEntry) => cellEntry.row === 0);
+  const withoutReceipt: Omit<ComputedCellReport, 'receipt'> = {
+    operation,
+    tableAnchor,
+    column,
+    header: headerCell?.text ?? null,
+    renderedValue: computation.renderedValue,
+    counted: computation.counted,
+    // The engine enumerates every row index of the column; a row with no cell
+    // at this column is still accounted for (skipped: missing_cell).
+    rowsRead: collected.cells.length,
+    rowCount: collected.rowCount,
+    startRow,
+    endRow,
+    excludedTargetRow:
+      targetRow >= startRow && targetRow <= endRow ? targetRow : null,
+    skipped: computation.skipped,
+    formatSource: computation.formatSource,
+    rounded: computation.rounded,
+    verifiedByReRead: true
+  };
+  const report: ComputedCellReport = {
+    ...withoutReceipt,
+    receipt: buildComputedReceipt(withoutReceipt)
+  };
+  return { computed: report };
 }
 
 // Exported for the registry parity spec: the spec re-asserts at runtime what
@@ -1903,6 +2395,8 @@ export const ANCHORED_OP_HANDLERS: {
     replaceSelectedText(editor, replacement);
     verifyWrittenText(editor, block.anchor, replacement);
   },
+  set_cell_computed: ({ editor, op, block, byAnchor }) =>
+    runComputedCellWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
     selectBlock(editor, block);
     editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
@@ -2112,7 +2606,7 @@ function applyAnchoredOp(
   op: EditOp,
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>
-): void {
+): OpSuccessExtras | void {
   const liveText = selectBlock(editor, block);
 
   // Compare-and-swap guard: `expect` is the whole-block text the model believes
@@ -2140,14 +2634,14 @@ function applyAnchoredOp(
   // The single untyped->typed boundary for anchored ops: `op` is model-authored
   // JSON. The handlers are compile-time-locked to the registry; runtime
   // validity of each field value remains the handler's own defensive job.
-  (
+  return (
     handler as unknown as (ctx: {
       editor: LiveEditor;
       op: EditOp;
       block: FlatBlock;
       byAnchor: Map<string, FlatBlock>;
       liveText: string;
-    }) => void
+    }) => OpSuccessExtras | void
   )({ editor, op, block, byAnchor, liveText });
 }
 
@@ -2695,6 +3189,7 @@ const TRACKED_TEXT_OPS = new Set([
   'delete_text',
   'insert_text',
   'set_cell_text',
+  'set_cell_computed',
   'change_case'
 ]);
 
@@ -3440,7 +3935,7 @@ export function applyDocumentEdits(
     // range is deferred even when a block answers to it today - the write-time
     // guard still requires the resolved cell to be brand new and empty.
     const deferredNewCell =
-      name === 'set_cell_text' &&
+      (name === 'set_cell_text' || name === 'set_cell_computed') &&
       (target
         ? !isLiveStoryTarget(target) &&
           target.kind === 'table_cell' &&
@@ -3577,6 +4072,7 @@ export function applyDocumentEdits(
         let writtenOp = op;
         let priorRejectStream: string | undefined;
         let insertInheritance: PlannedInsertInheritance[] | undefined;
+        let opExtras: OpSuccessExtras | void;
         try {
           if (op.op === 'replace_all') {
             // Untyped->typed boundary, same contract as the dispatch sites.
@@ -3636,7 +4132,7 @@ export function applyDocumentEdits(
                     : undefined
                 );
               }
-              applyAnchoredOp(editor, writtenOp, target, byAnchor);
+              opExtras = applyAnchoredOp(editor, writtenOp, target, byAnchor);
             }
             if (mayShiftAnchors(op)) anchorsMayHaveShifted = true;
           }
@@ -3651,7 +4147,12 @@ export function applyDocumentEdits(
             applyInsertInheritance(editor, insertInheritance, byAnchor);
             refresh();
           }
-          results[index] = { ok: true, op: op.op, anchor: op.anchor };
+          results[index] = {
+            ok: true,
+            op: op.op,
+            anchor: op.anchor,
+            ...(opExtras ?? {})
+          };
         } catch (err) {
           fail(index, op, err);
         }
