@@ -32,6 +32,7 @@ describe('capabilities declaration byte stability (prompt-cache guard)', () => {
       'structure',
       'outline',
       'section',
+      'table_facts',
       'table_column',
       'full',
       'occurrences'
@@ -52,8 +53,8 @@ describe('capabilities declaration byte stability (prompt-cache guard)', () => {
     expect(
       Object.isFrozen(CAPABILITIES_DECLARATION.surfaces[0].ops[0].params)
     ).toBe(true);
-    expect(
-      Object.isFrozen(CAPABILITIES_DECLARATION.surfaces[0].reads[0])
-    ).toBe(true);
+    expect(Object.isFrozen(CAPABILITIES_DECLARATION.surfaces[0].reads[0])).toBe(
+      true
+    );
   });
 });
