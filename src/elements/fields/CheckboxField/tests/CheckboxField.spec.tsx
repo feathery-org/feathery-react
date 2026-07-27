@@ -15,7 +15,8 @@ import {
 } from './test-utils';
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import CheckboxField from '../index';
+import ResponsiveStyles from '../../../styles';
+import CheckboxField, { applyCheckableInputStyles } from '../index';
 
 describe('CheckboxField - Base Functionality', () => {
   const checkbox = () => getCheckboxElement();
@@ -74,6 +75,56 @@ describe('CheckboxField - Base Functionality', () => {
       render(<CheckboxField {...props} />);
 
       expectCheckboxToBeUnchecked();
+    });
+  });
+
+  describe('Label Gap Styling', () => {
+    it('uses label_gap as the space between the checkbox and its label', () => {
+      const element = createCheckboxElement(
+        'checkbox',
+        {},
+        { width: 20, width_unit: 'px', label_gap: 24 }
+      );
+      const responsiveStyles = new ResponsiveStyles(element, []);
+
+      applyCheckableInputStyles(element, responsiveStyles);
+
+      expect(responsiveStyles.getTarget('checkbox').marginRight).toBe('24px');
+    });
+
+    it('preserves size-based label spacing when label_gap is unset', () => {
+      const element = createCheckboxElement(
+        'checkbox',
+        {},
+        { width: 20, width_unit: 'px' }
+      );
+      const responsiveStyles = new ResponsiveStyles(element, []);
+
+      applyCheckableInputStyles(element, responsiveStyles);
+
+      expect(responsiveStyles.getTarget('checkbox').marginRight).toBe('8px');
+    });
+
+    it('keeps the base label_gap when mobile overrides the checkbox size', () => {
+      const element = {
+        ...createCheckboxElement(
+          'checkbox',
+          {},
+          { width: 20, width_unit: 'px', label_gap: 24 }
+        ),
+        mobile_styles: { width: 40, width_unit: 'px' }
+      };
+      const responsiveStyles = new ResponsiveStyles(element, [], true);
+
+      applyCheckableInputStyles(element, responsiveStyles);
+
+      const checkboxStyles = responsiveStyles.getTarget('checkbox');
+      expect(checkboxStyles.marginRight).toBe('24px');
+      expect(
+        checkboxStyles[
+          `@media (max-width: ${responsiveStyles.getMobileBreakpoint()}px)`
+        ].marginRight
+      ).toBe('24px');
     });
   });
 

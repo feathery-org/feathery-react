@@ -101,7 +101,7 @@ describe('responsiveStyles', () => {
   // Mirrors how applyFieldStyles (src/elements/fields/index.tsx) builds the
   // 'fieldLabel' target so the label can be styled independently of the field.
   describe('fieldLabel target (label styling)', () => {
-    const buildFieldLabelTarget = (styles) => {
+    const buildFieldLabelTarget = (styles, fieldType = 'text_field') => {
       const rs = new ResponsiveStyles(
         { styles },
         [],
@@ -111,7 +111,9 @@ describe('responsiveStyles', () => {
       rs.addTargets('fieldLabel');
       rs.applyFontStyles('fieldLabel', false, true, 'label_', true);
       rs.apply('fieldLabel', 'label_gap', (a) =>
-        a === undefined ? {} : { marginBottom: `${a}px` }
+        a === undefined || fieldType === 'checkbox'
+          ? {}
+          : { marginBottom: `${a}px` }
       );
       rs.apply('fieldLabel', 'label_text_align', (a) =>
         a === undefined
@@ -145,6 +147,12 @@ describe('responsiveStyles', () => {
 
       // Assert
       expect(actual.marginBottom).toBe('24px');
+    });
+
+    it('does not apply checkbox label_gap on the vertical axis', () => {
+      const actual = buildFieldLabelTarget({ label_gap: 24 }, 'checkbox');
+
+      expect(actual.marginBottom).toBeUndefined();
     });
 
     it('is backwards compatible: unset label_gap emits no margin so the hardcoded default survives', () => {
