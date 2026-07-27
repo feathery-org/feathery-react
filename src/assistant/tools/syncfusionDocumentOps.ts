@@ -21,6 +21,14 @@
 // This module is the only document-editing engine that ships in the SDK. Keep
 // fixes here rather than forking a copy into a host application, so the in-form
 // editor container and every assistant tool stay on one implementation.
+import {
+  AdvertisedDocumentOp,
+  AnchoredDocumentOp,
+  AnchorlessDocumentOp,
+  DOCUMENT_EDITOR_CAPABILITIES,
+  OpParams
+} from '../capabilities/registry';
+
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
 
@@ -1190,20 +1198,18 @@ export function readSelection(editor: LiveEditor): SelectionContext | null {
 // Live apply engine
 // ---------------------------------------------------------------------------
 
-const ANCHORLESS_OPS = new Set([
+// Anchorless ops, derived from the registry (requiresAnchor: false) minus the
+// executor-special-cased replace_all. The two unadvertised global-history ops
+// keep their membership by hand: the executor refuses undo/redo before any
+// dispatch (UNSAFE_CHANGE_SET_OPS), but batch-shape classification
+// (hasStructuralEdits) still consults this set for every submitted op, so
+// dropping them would relabel preflight failures in batches that contain one.
+const ANCHORLESS_OPS: ReadonlySet<string> = new Set<string>([
   'undo',
   'redo',
-  'enter_header',
-  'enter_footer',
-  'go_to_body',
-  'set_orientation',
-  'set_page_size',
-  'set_page_margins',
-  'set_track_changes',
-  'accept_all_revisions',
-  'reject_all_revisions',
-  'delete_all_comments',
-  'delete_bookmark'
+  ...DOCUMENT_EDITOR_CAPABILITIES.filter(
+    (entry) => !entry.requiresAnchor && entry.op !== 'replace_all'
+  ).map((entry) => entry.op)
 ]);
 
 // This executor is exposed only to the assistant tool bridge. SyncFusion undo
@@ -1593,27 +1599,6 @@ function positiveCount(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-function insertionPoint(op: EditOp, block: FlatBlock): number {
-  const position =
-    typeof op.position === 'string' ? op.position.toLowerCase() : '';
-  if (position === 'after' || position === 'end') return block.length;
-  if (position === 'before' || position === 'start') return 0;
-  if (typeof op.offset === 'number' && Number.isFinite(op.offset)) {
-    return Math.max(0, Math.min(block.length, Math.floor(op.offset)));
-  }
-  return 0;
-}
-
-function insertionText(op: EditOp): string {
-  let text = String(op.text ?? '');
-  const position =
-    typeof op.position === 'string' ? op.position.toLowerCase() : '';
-  if (position === 'after' && text && !/^[\r\n]/.test(text)) text = `\n${text}`;
-  if (position === 'before' && text && !/[\r\n]$/.test(text))
-    text = `${text}\n`;
-  return text;
-}
-
 function changeCase(text: string, caseType: string): string {
   switch (caseType) {
     case 'uppercase':
@@ -1630,6 +1615,400 @@ function changeCase(text: string, caseType: string): string {
       return text;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Typed op handlers (S5)
+//
+// One handler per registry entry, typed against that entry: the handler's op
+// parameter is derived from the entry's `params` block, so a handler that
+// consumes a param the registry does not declare - or a registry entry with no
+// handler, or a handler for an op the registry does not advertise - fails to
+// compile. The registry is the single source of truth; before S5 the dispatch
+// switch was a parallel universe kept in agreement only by a test.
+//
+// Ops still arrive at the executor as untyped model-authored JSON (EditOp).
+// The untyped->typed transition happens once, at each dispatch site, behind
+// the runtime `unknown op` refusal - handlers stay defensive about field
+// VALUES (String(...)/coercions), while field NAMES and declared types are the
+// compiler's job.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cross-op fields every op may carry, per the registry's reserved-key list:
+ * they have one canonical meaning and are deliberately not repeated in each
+ * entry's `params`.
+ */
+interface ReservedOpFields {
+  anchor?: string;
+  expect?: string;
+  start?: number;
+  end?: number;
+  inheritFormatFrom?: string;
+  /**
+   * Belt-and-braces nested variant tolerated for model variance: when a flat
+   * formatting field is absent, fmtField also reads `op.format.<key>`. Not
+   * advertised in the registry.
+   */
+  format?: Record<string, unknown>;
+  /**
+   * Engine-internal: the preflight-captured source-format snapshot the
+   * executor attaches to a formatting op before phase-3 dispatch.
+   */
+  __inheritedFormat?: {
+    characterFormat?: FormatBag;
+    paragraphFormat?: FormatBag;
+  };
+}
+
+/**
+ * Runtime tolerance BEYOND the declaration, spelled out per op so it stays
+ * visible in the type system instead of hiding behind an index signature.
+ * These fields are not advertised: the registry remains the declared truth,
+ * and this interface is the complete list of undeclared fields any handler
+ * consumes.
+ */
+interface RuntimeToleratedFields {
+  /** Model-variance aliases for `replace`; `replace` wins when present. */
+  replace_text: { text?: unknown; newText?: unknown };
+}
+
+type ToleratedFields<K extends AdvertisedDocumentOp> =
+  K extends keyof RuntimeToleratedFields ? RuntimeToleratedFields[K] : unknown;
+
+/** One op as its registry entry declares it, plus the reserved fields. */
+export type TypedEditOp<K extends AdvertisedDocumentOp> = {
+  op: K;
+} & OpParams<K> &
+  ToleratedFields<K> &
+  ReservedOpFields;
+
+interface AnchoredOpContext<K extends AnchoredDocumentOp> {
+  editor: LiveEditor;
+  op: TypedEditOp<K>;
+  /** The freshly-resolved target block. */
+  block: FlatBlock;
+  byAnchor: Map<string, FlatBlock>;
+  /** The block's live selection text, read by the CAS guard before dispatch. */
+  liveText: string;
+}
+
+type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
+  ctx: AnchoredOpContext<K>
+) => void;
+
+interface AnchorlessOpContext<K extends AnchorlessDocumentOp> {
+  editor: LiveEditor;
+  op: TypedEditOp<K>;
+}
+
+type AnchorlessOpHandler<K extends AnchorlessDocumentOp> = (
+  ctx: AnchorlessOpContext<K>
+) => void;
+
+function insertionPoint(
+  op: TypedEditOp<'insert_text'>,
+  block: FlatBlock
+): number {
+  const position =
+    typeof op.position === 'string' ? op.position.toLowerCase() : '';
+  if (position === 'after' || position === 'end') return block.length;
+  if (position === 'before' || position === 'start') return 0;
+  if (typeof op.offset === 'number' && Number.isFinite(op.offset)) {
+    return Math.max(0, Math.min(block.length, Math.floor(op.offset)));
+  }
+  return 0;
+}
+
+function insertionText(op: TypedEditOp<'insert_text'>): string {
+  let text = String(op.text ?? '');
+  const position =
+    typeof op.position === 'string' ? op.position.toLowerCase() : '';
+  if (position === 'after' && text && !/^[\r\n]/.test(text)) text = `\n${text}`;
+  if (position === 'before' && text && !/[\r\n]$/.test(text))
+    text = `${text}\n`;
+  return text;
+}
+
+// Exported for the registry parity spec: the spec re-asserts at runtime what
+// the mapped types already guarantee at compile time, guarding the emitted JS
+// against an `as any` regression at the table itself.
+export const ANCHORED_OP_HANDLERS: {
+  [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
+} = {
+  replace_text: ({ editor, op, block, liveText }) => {
+    const find = op.find != null ? String(op.find) : '';
+    const replacement = op.replace ?? op.text ?? op.newText;
+    if (!find) {
+      // No `find`: if a full replacement value was given, overwrite the whole
+      // anchored block with it. Otherwise the op has no actionable content.
+      if (replacement != null) {
+        selectBlock(editor, block);
+        replaceSelectedText(editor, String(replacement));
+        verifyWrittenText(editor, block.anchor, String(replacement));
+        return;
+      }
+      throw new OpError(
+        'missing_find',
+        'replace_text needs `find` and `replace`.'
+      );
+    }
+    const idx = liveText.indexOf(find);
+    if (idx < 0)
+      throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+    const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
+    // A field paragraph has two valid projections: serialized SFDT includes
+    // its field instructions while Selection exposes the rendered result.
+    // The public search offsets select the latter; retain the former for the
+    // CAS/post-write proof so a TOC/hyperlink field is never misclassified as
+    // a stale document merely because those projections differ.
+    const serializedIndex =
+      typeof op.start === 'number' &&
+      block.text.slice(op.start, op.start + find.length) === find
+        ? op.start
+        : block.text.indexOf(find);
+    if (serializedIndex < 0)
+      throw new OpError(
+        'text_not_found',
+        `"${find}" not found in the serialized block at anchor.`
+      );
+    const next =
+      block.text.slice(0, serializedIndex) +
+      String(replacement ?? '') +
+      block.text.slice(serializedIndex + find.length);
+    if (!hasLiveSearchRange) {
+      // Test doubles and older integrations without SyncFusion Search retain
+      // their legacy selected-range replacement primitive. Production search
+      // is required and always takes the guarded delete/read/insert path.
+      editor.editor.insertText(String(replacement ?? ''));
+      verifyWrittenText(editor, block.anchor, next);
+      return;
+    }
+    replaceSelectedText(editor, String(replacement ?? ''));
+    verifyWrittenText(editor, block.anchor, next);
+  },
+  delete_text: ({ editor, op, block, liveText }) => {
+    const find = String(op.find ?? '');
+    if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
+    const idx = liveText.indexOf(find);
+    if (idx < 0)
+      throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+    selectRange(editor, block.anchor, idx, idx + find.length);
+    editor.editor.delete();
+  },
+  insert_text: ({ editor, op, block }) => {
+    const offset = insertionPoint(op, block);
+    selectRange(editor, block.anchor, offset, offset);
+    editor.editor.insertText(insertionText(op));
+  },
+  set_cell_text: ({ editor, op, block }) => {
+    // Overwrite the (cell) block's content.
+    selectBlock(editor, block);
+    const replacement = String(op.text ?? '');
+    replaceSelectedText(editor, replacement);
+    verifyWrittenText(editor, block.anchor, replacement);
+  },
+  change_case: ({ editor, op, block, liveText }) => {
+    selectBlock(editor, block);
+    editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
+  },
+  apply_style: ({ editor, op, block, byAnchor }) => {
+    const styleName = fmtField(op, 'styleName');
+    const inheritAnchor =
+      typeof op.inheritFormatFrom === 'string'
+        ? op.inheritFormatFrom.trim()
+        : '';
+    if (!inheritAnchor && !isMeaningfulFormatValue(styleName))
+      throw new OpError('missing_style_name', 'apply_style needs a styleName.');
+    applyInheritedFormat(editor, op, byAnchor, {
+      styleName: isMeaningfulFormatValue(styleName)
+        ? String(styleName)
+        : undefined
+    });
+    if (!inheritAnchor && isMeaningfulFormatValue(styleName)) {
+      // Non-inheriting styles still need paragraph selection semantics.
+      selectParagraph(editor, block);
+      callEditor(editor, 'applyStyle', String(styleName));
+    }
+  },
+  clear_formatting: ({ editor, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'clearFormatting');
+  },
+  set_char_format: ({ editor, op, block, byAnchor }) => {
+    selectBlock(editor, block);
+    const inherited = applyInheritedFormat(editor, op, byAnchor);
+    applyCharFormat(editor, op, { requireField: !inherited });
+  },
+  set_para_format: ({ editor, op, block, byAnchor }) => {
+    selectBlock(editor, block);
+    const inherited = applyInheritedFormat(editor, op, byAnchor);
+    applyParaFormat(editor, op, { requireField: !inherited });
+  },
+  indent_step: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    if (op.direction === 'decrease') callEditor(editor, 'decreaseIndent');
+    else callEditor(editor, 'increaseIndent');
+  },
+  apply_bullets: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'applyBullet', String(op.bullet ?? '•'), 'Arial');
+  },
+  apply_numbering: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    callEditor(
+      editor,
+      'applyNumbering',
+      String(op.numberFormat ?? '%1.'),
+      'Arabic'
+    );
+  },
+  clear_list: ({ editor, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'clearList');
+  },
+  insert_comment: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'insertComment', String(op.text ?? ''));
+  },
+  insert_bookmark: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'insertBookmark', String(op.name ?? ''));
+  },
+  insert_hyperlink: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    callEditor(
+      editor,
+      'insertHyperlink',
+      String(op.address ?? ''),
+      String(op.displayText ?? op.address ?? ''),
+      op.screenTip
+    );
+  },
+  remove_hyperlink: ({ editor, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'removeHyperlink');
+  },
+  insert_page_break: ({ editor, block }) => {
+    selectRange(editor, block.anchor, 0, 0);
+    callEditor(editor, 'insertPageBreak');
+  },
+  insert_column_break: ({ editor, block }) => {
+    selectRange(editor, block.anchor, 0, 0);
+    callEditor(editor, 'insertColumnBreak');
+  },
+  insert_page_number: ({ editor, op, block }) => {
+    selectBlock(editor, block);
+    callEditor(editor, 'insertPageNumber', op.numberFormat);
+  },
+  // Table structure. These once fell to a generic snake_case->camelCase
+  // dispatch that called the SyncFusion method with no arguments at all, so
+  // `above`, `count`, `rows` and `columns` were advertised in the tool schema
+  // and silently dropped: every insert_row was one row below, every
+  // insert_table was 1x1. Every op maps its arguments explicitly now.
+  insert_row: ({ editor, op }) => {
+    callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
+  },
+  insert_column: ({ editor, op }) => {
+    callEditor(
+      editor,
+      'insertColumn',
+      op.left === true,
+      positiveCount(op.count)
+    );
+  },
+  insert_table: ({ editor, op }) => {
+    callEditor(
+      editor,
+      'insertTable',
+      positiveCount(op.rows),
+      positiveCount(op.columns)
+    );
+  },
+  // Structural table removal. SyncFusion operates on the table or row
+  // containing the selection, which selectBlock placed at the anchor.
+  // `delete_column` and `merge_cells` are deliberately absent: SyncFusion
+  // refuses both under track changes (a blocking "wont be marked as change"
+  // confirmation dialog; the change would be untracked), and this engine
+  // applies every change set tracked, so they fall to the vocabulary refusal
+  // in the dispatch wrapper instead of reporting success while doing nothing.
+  delete_table: ({ editor }) => {
+    callEditor(editor, 'deleteTable');
+  },
+  delete_row: ({ editor }) => {
+    callEditor(editor, 'deleteRow');
+  },
+  insert_section_break: ({ editor, op }) => {
+    callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
+  }
+};
+
+// SyncFusion's SectionBreakType enum spells the Word "Continuous" break
+// "NoBreak" at runtime; accept both. An absent/blank type falls through to
+// SyncFusion's own default (NewPage).
+function sectionBreakType(
+  op: TypedEditOp<'insert_section_break'>
+): string | undefined {
+  const raw =
+    typeof op.sectionBreakType === 'string' ? op.sectionBreakType.trim() : '';
+  if (!raw) return undefined;
+  return raw === 'Continuous' ? 'NoBreak' : raw;
+}
+
+function requireSectionFormat(editor: LiveEditor): any {
+  const sf = editor.selection?.sectionFormat;
+  if (!sf) throw new OpError('unsupported_op', 'Section format unavailable.');
+  return sf;
+}
+
+// Exported for the registry parity spec, like ANCHORED_OP_HANDLERS above.
+// `undo`/`redo` have no handlers on purpose: they are unadvertised global
+// history ops the executor refuses before dispatch (UNSAFE_CHANGE_SET_OPS).
+export const ANCHORLESS_OP_HANDLERS: {
+  [K in AnchorlessDocumentOp]: AnchorlessOpHandler<K>;
+} = {
+  set_track_changes: ({ editor, op }) => {
+    editor.enableTrackChanges = op.enabled !== false;
+  },
+  accept_all_revisions: ({ editor }) => {
+    if (editor.revisions?.acceptAll) editor.revisions.acceptAll();
+    else throw new OpError('unsupported_op', 'No revisions to accept.');
+  },
+  reject_all_revisions: ({ editor }) => {
+    if (editor.revisions?.rejectAll) editor.revisions.rejectAll();
+    else throw new OpError('unsupported_op', 'No revisions to reject.');
+  },
+  go_to_body: ({ editor }) => {
+    callSelection(editor, 'goToBody');
+  },
+  enter_header: ({ editor }) => {
+    callSelection(editor, 'goToHeader');
+  },
+  enter_footer: ({ editor }) => {
+    callSelection(editor, 'goToFooter');
+  },
+  delete_bookmark: ({ editor, op }) => {
+    callEditor(editor, 'deleteBookmark', String(op.name ?? ''));
+  },
+  delete_all_comments: ({ editor }) => {
+    callEditor(editor, 'deleteAllComments');
+  },
+  set_orientation: ({ editor, op }) => {
+    const sf = requireSectionFormat(editor);
+    if (op.orientation) sf.pageOrientation = op.orientation;
+  },
+  set_page_size: ({ editor, op }) => {
+    const sf = requireSectionFormat(editor);
+    if (op.width != null) sf.pageWidth = Number(op.width);
+    if (op.height != null) sf.pageHeight = Number(op.height);
+  },
+  set_page_margins: ({ editor, op }) => {
+    const sf = requireSectionFormat(editor);
+    if (op.left != null) sf.leftMargin = Number(op.left);
+    if (op.right != null) sf.rightMargin = Number(op.right);
+    if (op.top != null) sf.topMargin = Number(op.top);
+    if (op.bottom != null) sf.bottomMargin = Number(op.bottom);
+  }
+};
 
 // Applies one anchored op. `block` is the freshly-resolved block. Throws OpError
 // on a recoverable failure (surfaced as {ok:false, error}).
@@ -1654,322 +2033,55 @@ function applyAnchoredOp(
     );
   }
 
-  switch (op.op) {
-    case 'replace_text': {
-      const find = op.find != null ? String(op.find) : '';
-      const replacement = op.replace ?? op.text ?? op.newText;
-      if (!find) {
-        // No `find`: if a full replacement value was given, overwrite the whole
-        // anchored block with it. Otherwise the op has no actionable content.
-        if (replacement != null) {
-          selectBlock(editor, block);
-          replaceSelectedText(editor, String(replacement));
-          verifyWrittenText(editor, block.anchor, String(replacement));
-          return;
-        }
-        throw new OpError(
-          'missing_find',
-          'replace_text needs `find` and `replace`.'
-        );
-      }
-      const idx = liveText.indexOf(find);
-      if (idx < 0)
-        throw new OpError('text_not_found', `"${find}" not found at anchor.`);
-      const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
-      // A field paragraph has two valid projections: serialized SFDT includes
-      // its field instructions while Selection exposes the rendered result.
-      // The public search offsets select the latter; retain the former for the
-      // CAS/post-write proof so a TOC/hyperlink field is never misclassified as
-      // a stale document merely because those projections differ.
-      const serializedIndex =
-        typeof op.start === 'number' &&
-        block.text.slice(op.start, op.start + find.length) === find
-          ? op.start
-          : block.text.indexOf(find);
-      if (serializedIndex < 0)
-        throw new OpError(
-          'text_not_found',
-          `"${find}" not found in the serialized block at anchor.`
-        );
-      const next =
-        block.text.slice(0, serializedIndex) +
-        String(replacement ?? '') +
-        block.text.slice(serializedIndex + find.length);
-      if (!hasLiveSearchRange) {
-        // Test doubles and older integrations without SyncFusion Search retain
-        // their legacy selected-range replacement primitive. Production search
-        // is required and always takes the guarded delete/read/insert path.
-        editor.editor.insertText(String(replacement ?? ''));
-        verifyWrittenText(editor, block.anchor, next);
-        return;
-      }
-      replaceSelectedText(editor, String(replacement ?? ''));
-      verifyWrittenText(editor, block.anchor, next);
-      return;
-    }
-    case 'delete_text': {
-      const find = String(op.find ?? '');
-      if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
-      const idx = liveText.indexOf(find);
-      if (idx < 0)
-        throw new OpError('text_not_found', `"${find}" not found at anchor.`);
-      selectRange(editor, block.anchor, idx, idx + find.length);
-      editor.editor.delete();
-      return;
-    }
-    case 'insert_text': {
-      const offset = insertionPoint(op, block);
-      selectRange(editor, block.anchor, offset, offset);
-      editor.editor.insertText(insertionText(op));
-      return;
-    }
-    case 'set_cell_text': {
-      // Overwrite the (cell) block's content.
-      selectBlock(editor, block);
-      const replacement = String(op.text ?? '');
-      replaceSelectedText(editor, replacement);
-      verifyWrittenText(editor, block.anchor, replacement);
-      return;
-    }
-    case 'change_case': {
-      selectBlock(editor, block);
-      editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
-      return;
-    }
-    case 'apply_style': {
-      const styleName = fmtField(op, 'styleName');
-      const inheritAnchor =
-        typeof op.inheritFormatFrom === 'string'
-          ? op.inheritFormatFrom.trim()
-          : '';
-      if (!inheritAnchor && !isMeaningfulFormatValue(styleName))
-        throw new OpError(
-          'missing_style_name',
-          'apply_style needs a styleName.'
-        );
-      applyInheritedFormat(editor, op, byAnchor, {
-        styleName: isMeaningfulFormatValue(styleName)
-          ? String(styleName)
-          : undefined
-      });
-      if (!inheritAnchor && isMeaningfulFormatValue(styleName)) {
-        // Non-inheriting styles still need paragraph selection semantics.
-        selectParagraph(editor, block);
-        callEditor(editor, 'applyStyle', String(styleName));
-      }
-      return;
-    }
-    case 'clear_formatting': {
-      selectBlock(editor, block);
-      callEditor(editor, 'clearFormatting');
-      return;
-    }
-    case 'set_char_format': {
-      selectBlock(editor, block);
-      const inherited = applyInheritedFormat(editor, op, byAnchor);
-      applyCharFormat(editor, op, { requireField: !inherited });
-      return;
-    }
-    case 'set_para_format': {
-      selectBlock(editor, block);
-      const inherited = applyInheritedFormat(editor, op, byAnchor);
-      applyParaFormat(editor, op, { requireField: !inherited });
-      return;
-    }
-    case 'indent_step': {
-      selectBlock(editor, block);
-      if (op.direction === 'decrease') callEditor(editor, 'decreaseIndent');
-      else callEditor(editor, 'increaseIndent');
-      return;
-    }
-    case 'apply_bullets': {
-      selectBlock(editor, block);
-      callEditor(editor, 'applyBullet', String(op.bullet ?? '•'), 'Arial');
-      return;
-    }
-    case 'apply_numbering': {
-      selectBlock(editor, block);
-      callEditor(
-        editor,
-        'applyNumbering',
-        String(op.numberFormat ?? '%1.'),
-        'Arabic'
-      );
-      return;
-    }
-    case 'clear_list': {
-      selectBlock(editor, block);
-      callEditor(editor, 'clearList');
-      return;
-    }
-    case 'insert_comment': {
-      selectBlock(editor, block);
-      callEditor(editor, 'insertComment', String(op.text ?? ''));
-      return;
-    }
-    case 'insert_bookmark': {
-      selectBlock(editor, block);
-      callEditor(editor, 'insertBookmark', String(op.name ?? ''));
-      return;
-    }
-    case 'insert_hyperlink': {
-      selectBlock(editor, block);
-      callEditor(
-        editor,
-        'insertHyperlink',
-        String(op.address ?? ''),
-        String(op.displayText ?? op.address ?? ''),
-        op.screenTip
-      );
-      return;
-    }
-    case 'remove_hyperlink': {
-      selectBlock(editor, block);
-      callEditor(editor, 'removeHyperlink');
-      return;
-    }
-    case 'insert_page_break': {
-      selectRange(editor, block.anchor, 0, 0);
-      callEditor(editor, 'insertPageBreak');
-      return;
-    }
-    case 'insert_column_break': {
-      selectRange(editor, block.anchor, 0, 0);
-      callEditor(editor, 'insertColumnBreak');
-      return;
-    }
-    case 'insert_page_number': {
-      selectBlock(editor, block);
-      callEditor(editor, 'insertPageNumber', op.numberFormat);
-      return;
-    }
-    // Table structure. These once fell to a generic snake_case->camelCase
-    // dispatch that called the SyncFusion method with no arguments at all, so
-    // `above`, `count`, `rows` and `columns` were advertised in the tool schema
-    // and silently dropped: every insert_row was one row below, every
-    // insert_table was 1x1. Every op maps its arguments explicitly now.
-    case 'insert_row': {
-      callEditor(
-        editor,
-        'insertRow',
-        op.above === true,
-        positiveCount(op.count)
-      );
-      return;
-    }
-    case 'insert_column': {
-      callEditor(
-        editor,
-        'insertColumn',
-        op.left === true,
-        positiveCount(op.count)
-      );
-      return;
-    }
-    case 'insert_table': {
-      callEditor(
-        editor,
-        'insertTable',
-        positiveCount(op.rows),
-        positiveCount(op.columns)
-      );
-      return;
-    }
-    // Structural table removal. SyncFusion operates on the table or row
-    // containing the selection, which selectBlock placed at the anchor.
-    // `delete_column` and `merge_cells` are deliberately absent: SyncFusion
-    // refuses both under track changes (a blocking "wont be marked as change"
-    // confirmation dialog; the change would be untracked), and this engine
-    // applies every change set tracked, so they fall to the vocabulary refusal
-    // below instead of reporting success while doing nothing.
-    case 'delete_table': {
-      callEditor(editor, 'deleteTable');
-      return;
-    }
-    case 'delete_row': {
-      callEditor(editor, 'deleteRow');
-      return;
-    }
-    case 'insert_section_break': {
-      callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
-      return;
-    }
-    default:
-      throw new OpError(
-        'unsupported_op',
-        `Unknown op "${op.op}". It is not in the document-edit vocabulary.`,
-        undefined,
-        'never'
-      );
-  }
-}
-
-// SyncFusion's SectionBreakType enum spells the Word "Continuous" break
-// "NoBreak" at runtime; accept both. An absent/blank type falls through to
-// SyncFusion's own default (NewPage).
-function sectionBreakType(op: EditOp): string | undefined {
-  const raw =
-    typeof op.sectionBreakType === 'string' ? op.sectionBreakType.trim() : '';
-  if (!raw) return undefined;
-  return raw === 'Continuous' ? 'NoBreak' : raw;
+  const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
+  if (!handler)
+    throw new OpError(
+      'unsupported_op',
+      `Unknown op "${op.op}". It is not in the document-edit vocabulary.`,
+      undefined,
+      'never'
+    );
+  // The single untyped->typed boundary for anchored ops: `op` is model-authored
+  // JSON. The handlers are compile-time-locked to the registry; runtime
+  // validity of each field value remains the handler's own defensive job.
+  (
+    handler as unknown as (ctx: {
+      editor: LiveEditor;
+      op: EditOp;
+      block: FlatBlock;
+      byAnchor: Map<string, FlatBlock>;
+      liveText: string;
+    }) => void
+  )({ editor, op, block, byAnchor, liveText });
 }
 
 function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
-  switch (op.op) {
-    case 'set_track_changes':
-      editor.enableTrackChanges = op.enabled !== false;
-      return;
-    case 'accept_all_revisions':
-      if (editor.revisions?.acceptAll) editor.revisions.acceptAll();
-      else throw new OpError('unsupported_op', 'No revisions to accept.');
-      return;
-    case 'reject_all_revisions':
-      if (editor.revisions?.rejectAll) editor.revisions.rejectAll();
-      else throw new OpError('unsupported_op', 'No revisions to reject.');
-      return;
-    case 'undo':
-      if (editor.editorHistory?.undo) editor.editorHistory.undo();
-      else callEditor(editor, 'undo');
-      return;
-    case 'redo':
-      if (editor.editorHistory?.redo) editor.editorHistory.redo();
-      else callEditor(editor, 'redo');
-      return;
-    case 'go_to_body':
-      callSelection(editor, 'goToBody');
-      return;
-    case 'enter_header':
-      callSelection(editor, 'goToHeader');
-      return;
-    case 'enter_footer':
-      callSelection(editor, 'goToFooter');
-      return;
-    case 'delete_bookmark':
-      callEditor(editor, 'deleteBookmark', String(op.name ?? ''));
-      return;
-    case 'delete_all_comments':
-      callEditor(editor, 'deleteAllComments');
-      return;
-    case 'set_orientation':
-    case 'set_page_size':
-    case 'set_page_margins':
-      applySectionFormat(editor, op);
-      return;
-    default:
-      throw new OpError(
-        'unsupported_op',
-        `Unknown anchorless op "${op.op}". It is not in the document-edit vocabulary.`,
-        undefined,
-        'never'
-      );
-  }
+  const handler = ANCHORLESS_OP_HANDLERS[op.op as AnchorlessDocumentOp];
+  if (!handler)
+    throw new OpError(
+      'unsupported_op',
+      `Unknown anchorless op "${op.op}". It is not in the document-edit vocabulary.`,
+      undefined,
+      'never'
+    );
+  // The single untyped->typed boundary for anchorless ops (see above).
+  (handler as unknown as (ctx: { editor: LiveEditor; op: EditOp }) => void)({
+    editor,
+    op
+  });
 }
 
 // Read a formatting field from the flat op (`op.bold`) or, as a belt-and-braces
 // fallback against model variance, from a nested `op.format` object
-// (`op.format.bold`). The flat value wins when both are present.
-function fmtField(op: EditOp, key: string): any {
-  if (op[key] != null) return op[key];
+// (`op.format.bold`). The flat value wins when both are present. The key is
+// constrained to the op's own (registry-derived) keys, so a handler cannot
+// read a field its registry entry does not declare.
+function fmtField<T extends { format?: Record<string, unknown> }>(
+  op: T,
+  key: keyof T & string
+): any {
+  const record = op as Record<string, unknown>;
+  if (record[key] != null) return record[key];
   const nested = op.format;
   if (nested && typeof nested === 'object' && nested[key] != null)
     return nested[key];
@@ -1997,7 +2109,10 @@ function isMeaningfulInheritedFormatValue(prop: string, value: any): boolean {
   return true;
 }
 
-function fmtMeaningfulField(op: EditOp, key: string): any {
+function fmtMeaningfulField<T extends { format?: Record<string, unknown> }>(
+  op: T,
+  key: keyof T & string
+): any {
   const value = fmtField(op, key);
   return isMeaningfulFormatValue(value) ? value : undefined;
 }
@@ -2191,9 +2306,20 @@ function applyResolvedInheritedFormat(
   verifyInheritedFormat(editor, source, target, inherited);
 }
 
+// The reserved cross-op fields explicit format inheritance consumes; every
+// TypedEditOp satisfies this structurally.
+interface InheritSourcedOp {
+  anchor?: string;
+  inheritFormatFrom?: string;
+  __inheritedFormat?: {
+    characterFormat?: FormatBag;
+    paragraphFormat?: FormatBag;
+  };
+}
+
 function applyInheritedFormat(
   editor: LiveEditor,
-  op: EditOp,
+  op: InheritSourcedOp,
   byAnchor: Map<string, FlatBlock>,
   options: {
     styleName?: string;
@@ -2224,7 +2350,7 @@ function applyInheritedFormat(
   // before any structural mutation can shift a source or alter selection state.
   const inherited =
     options.inherited ??
-    (op as any).__inheritedFormat ??
+    op.__inheritedFormat ??
     readEffectiveSourceFormat(editor, source);
   const targetAnchor = op.anchor;
   if (!targetAnchor)
@@ -2249,7 +2375,7 @@ function applyInheritedFormat(
 
 function applyCharFormat(
   editor: LiveEditor,
-  op: EditOp,
+  op: TypedEditOp<'set_char_format'>,
   options: { requireField?: boolean } = {}
 ): boolean {
   const bold = fmtMeaningfulField(op, 'bold');
@@ -2305,7 +2431,7 @@ function applyCharFormat(
 
 function applyParaFormat(
   editor: LiveEditor,
-  op: EditOp,
+  op: TypedEditOp<'set_para_format'>,
   options: { requireField?: boolean } = {}
 ): boolean {
   const styleName = fmtMeaningfulField(op, 'styleName');
@@ -2361,26 +2487,12 @@ function readPostEditInventory(
   return undefined;
 }
 
-function applySectionFormat(editor: LiveEditor, op: EditOp): void {
-  const sf = editor.selection?.sectionFormat;
-  if (!sf) throw new OpError('unsupported_op', 'Section format unavailable.');
-  if (op.op === 'set_orientation' && op.orientation)
-    sf.pageOrientation = op.orientation;
-  if (op.op === 'set_page_size') {
-    if (op.width != null) sf.pageWidth = Number(op.width);
-    if (op.height != null) sf.pageHeight = Number(op.height);
-  }
-  if (op.op === 'set_page_margins') {
-    if (op.left != null) sf.leftMargin = Number(op.left);
-    if (op.right != null) sf.rightMargin = Number(op.right);
-    if (op.top != null) sf.topMargin = Number(op.top);
-    if (op.bottom != null) sf.bottomMargin = Number(op.bottom);
-  }
-}
-
 // replace_all runs across the whole document via the search module (anchorless
 // in effect - it ignores the op's anchor by design).
-function applyReplaceAll(editor: LiveEditor, op: EditOp): number {
+function applyReplaceAll(
+  editor: LiveEditor,
+  op: TypedEditOp<'replace_all'>
+): number {
   const find = String(op.find ?? '');
   if (!find) throw new OpError('missing_find', 'replace_all needs `find`.');
   const search = editor.search;
@@ -2864,7 +2976,7 @@ function findComputedReference(
 // for mid-text inserts (and for cell text), so the default must not interfere.
 function planInsertInheritance(
   editor: LiveEditor,
-  op: EditOp,
+  op: TypedEditOp<'insert_text'>,
   target: FlatBlock,
   blocks: FlatBlock[],
   explicit?: {
@@ -3292,7 +3404,11 @@ export function applyDocumentEdits(
         let insertInheritance: PlannedInsertInheritance[] | undefined;
         try {
           if (op.op === 'replace_all') {
-            const count = applyReplaceAll(editor, op);
+            // Untyped->typed boundary, same contract as the dispatch sites.
+            const count = applyReplaceAll(
+              editor,
+              op as TypedEditOp<'replace_all'>
+            );
             if (!count) warnings.push(`replace_all: "${op.find}" not found.`);
           } else if (ANCHORLESS_OPS.has(op.op)) {
             applyAnchorlessOp(editor, op);
@@ -3334,7 +3450,8 @@ export function applyDocumentEdits(
                   : undefined;
                 insertInheritance = planInsertInheritance(
                   editor,
-                  writtenOp,
+                  // Untyped->typed boundary, same contract as dispatch sites.
+                  writtenOp as TypedEditOp<'insert_text'>,
                   target,
                   blocks,
                   explicitSource
