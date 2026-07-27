@@ -1969,7 +1969,66 @@ function describeUnexpectedError(err: unknown): string {
     : described;
 }
 
-// A stale_anchor refusal must name what actually mismatched, or the model
+// ---------------------------------------------------------------------------
+// The `expect` compare-and-swap guard
+// ---------------------------------------------------------------------------
+//
+// `expect` is the text the model believes is still at an anchor. On mismatch the
+// op writes nothing, so an edit cannot land on content that moved or changed
+// under it. That protection is the point and is not relaxed here.
+//
+// What IS fixed is two ways the guard refused correct work, plus its name.
+// Live evidence (2026-07-27): every refusal in a 30-minute window but one was a
+// misfire, and the name sent three investigations hunting positional anchor
+// drift that this module has never measured - there is no anchor-revision map
+// anywhere in it. Worse, the name made the advice wrong: the model was told to
+// re-read the inventory and correct the anchor, which cannot help when the anchor
+// was right, so it burned round trips re-reading unchanged content.
+
+/**
+ * A paragraph mark is not content.
+ *
+ * `editor.selection.text` for a whole-paragraph selection ends with `\r`;
+ * inventory/block text never does. So the selection the client hands the model -
+ * the designed zero-read fast path for "rewrite this" - produced an `expect`
+ * that could not satisfy the guard no matter how faithfully it was copied.
+ *
+ * Only trailing paragraph marks are normalised. A trailing SPACE is real content
+ * and still counts as a difference; forgiving whitespace generally would be
+ * weakening the guard rather than un-breaking it.
+ */
+const withoutParagraphMark = (text: string): string =>
+  text.replace(/[\r\n]+$/, '');
+
+const expectTextMatches = (expected: unknown, live: string): boolean =>
+  withoutParagraphMark(String(expected)) === withoutParagraphMark(live);
+
+/**
+ * Whether the compare-and-swap must refuse this write.
+ *
+ * One decision function for every guard site, because four hand-copied
+ * conditions is how they drift apart.
+ *
+ * An empty `expect` is treated as ABSENT. The declared op object carries every
+ * field on every op, so the model fills the ones an op does not use with neutral
+ * placeholders, and `expect: ""` arrived on structural ops that have no
+ * expectation to state - refusing them against any non-empty reference block.
+ * This module already accepted that reasoning for formatting ops (see the
+ * `formatExpectMismatch` branch below, whose comment says exactly this); the
+ * same placeholder now means the same thing everywhere. Note that an empty
+ * `expect` against a genuinely empty block passed before and passes now, so no
+ * satisfiable expectation is being discarded - and the surviving guards
+ * (anchor resolution, the `find`-text check, and the tracked-write reject
+ * projection) are untouched.
+ */
+function expectGuardRefuses(expected: unknown, live: string): boolean {
+  if (expected == null) return false;
+  const wanted = String(expected);
+  if (wanted === '') return false;
+  return !expectTextMatches(wanted, live);
+}
+
+// An expect_mismatch refusal must name what actually mismatched, or the model
 // re-reads the inventory, gets the same anchor back, and re-sends the same
 // request forever (observed live: 7+ identical round trips). The live text is
 // the one fact that lets the next attempt differ.
@@ -2090,6 +2149,7 @@ function isUnverifiedStoryWriteAnchor(anchor: string): boolean {
   return marker === 'H' || marker === 'F';
 }
 
+
 function isLiveStoryTarget(
   target: FlatBlock | LiveStoryTarget
 ): target is LiveStoryTarget {
@@ -2183,9 +2243,9 @@ function resolveLiveStoryTarget(
           text
         )} instead of ${JSON.stringify(find)} at "${anchor}".`
       );
-    if (op.expect != null && text !== String(op.expect))
+    if (expectGuardRefuses(op.expect, text))
       throw new OpError(
-        'stale_anchor',
+        'expect_mismatch',
         'The live text at this anchor does not match `expect`.',
         staleAnchorDetails(op.expect, text)
       );
@@ -2266,6 +2326,12 @@ function applyLiveStoryTextOp(
 
   // Select the search range that preflight read. This is the public
   // Selection API counterpart of the exact range, not an SFDT-derived range.
+  //
+  // This one keeps the name `stale_anchor`, and now deserves it: both sides of
+  // this comparison are read by the engine itself - what preflight resolved
+  // versus what is there at write time - so a mismatch really is the target
+  // moving underneath a resolved range. It is never a model-supplied value, so
+  // it cannot misfire the way the `expect` guard did.
   editor.selection.select(target.startOffset, target.endOffset);
   if (String(editor.selection.text ?? '') !== target.text)
     throw new OpError(
@@ -3552,12 +3618,11 @@ function applyAnchoredOp(
   // refuses outright when the op supplies no guard at all.
   if (
     op.op !== 'replace_selection' &&
-    op.expect != null &&
-    liveText !== op.expect &&
-    block.text !== String(op.expect)
+    expectGuardRefuses(op.expect, liveText) &&
+    expectGuardRefuses(op.expect, block.text)
   ) {
     throw new OpError(
-      'stale_anchor',
+      'expect_mismatch',
       'The live text at this anchor does not match `expect`.',
       staleAnchorDetails(op.expect, liveText)
     );
@@ -4838,20 +4903,24 @@ export function applyDocumentEdits(
       FORMAT_OPS.has(name) &&
       op.expect != null &&
       indexedTarget != null &&
-      indexedTarget.text !== String(op.expect);
+      !expectTextMatches(op.expect, indexedTarget.text);
     if (formatExpectMismatch && !hasStructuralEdits) {
       if (String(op.expect) === '') {
         // Schema-shaped tool calls carry every field on every op, so an EMPTY
         // expect aimed at real content in a shift-free set is an artifact of
         // the op schema, not an expectation; drop it rather than refuse the
-        // block the anchor plainly names.
+        // block the anchor plainly names. `expectGuardRefuses` now applies this
+        // same reading to every op, but the deletion stays: in a batch WITH
+        // structural edits the empty placeholder still defers this op's anchor
+        // resolution below, which is what keeps formatting landing on the
+        // paragraphs an insert just created.
         delete (op as { expect?: unknown }).expect;
       } else {
         results[index] = {
           ok: false,
           op: name,
           anchor: op.anchor,
-          error: 'stale_anchor',
+          error: 'expect_mismatch',
           details: staleAnchorDetails(op.expect, indexedTarget.text)
         };
         return;
@@ -4927,14 +4996,13 @@ export function applyDocumentEdits(
       // See applyAnchoredOp: replace_selection's `expect` describes the selected
       // range, not the start block, so it is checked by assertSelectionGuard.
       name !== 'replace_selection' &&
-      op.expect != null &&
-      target.text !== String(op.expect)
+      expectGuardRefuses(op.expect, target.text)
     ) {
       results[index] = {
         ok: false,
         op: name,
         anchor: op.anchor,
-        error: 'stale_anchor',
+        error: 'expect_mismatch',
         details: staleAnchorDetails(op.expect, target.text)
       };
       return;
