@@ -2089,7 +2089,18 @@ function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
 // is NOT equivalent: a paragraph-splitting insert (position "before" / any
 // offset short of the block end) legitimately moves the pre-existing text off
 // its index, so the anchor's new occupant is a different logical block.
-function rejectProjectionStream(sfdt: any): string {
+//
+// Text-frame content is included. It lives in the serialized SFDT exactly like
+// any other content - as `inline.textFrame.blocks`, which is where
+// currentTextFrameText already reads it - but this walk used to skip it, so a
+// text-frame write had no projection to be proven by and fell back to a
+// revision-type guess: the very heuristic this projection was introduced to
+// replace, carrying the very false negative it was introduced to fix.
+// Exported for its own test: this projection IS the tracked-write proof, so
+// "does it actually see the content it claims to cover" has to be assertable
+// directly. A projection blind to a story would pass every write in it
+// vacuously - which is exactly how text-frame writes went unverified.
+export function rejectProjectionStream(sfdt: any): string {
   const dropIds = insertedRevisionIds(sfdt);
   const allDropped = (rids: unknown): boolean =>
     Array.isArray(rids) &&
@@ -2097,7 +2108,8 @@ function rejectProjectionStream(sfdt: any): string {
     rids.every((id) => dropIds.has(String(id)));
   const out: string[] = [];
   const pushParagraph = (block: any) => {
-    out.push(inlineText(getInlines(block), dropIds));
+    const inlines = getInlines(block);
+    out.push(inlineText(inlines, dropIds));
     const markRevisionIds = pick(
       pick(block, 'characterFormat', 'cf'),
       'revisionIds',
@@ -2106,6 +2118,17 @@ function rejectProjectionStream(sfdt: any): string {
     // Rejecting an inserted paragraph mark joins this paragraph with the next
     // one, so an inserted mark contributes no separator to the projection.
     if (!allDropped(markRevisionIds)) out.push('\n');
+    // A shape anchored in this paragraph carries its own block stream. Emitted
+    // after the host paragraph and fenced by a control character, so frame
+    // content can never read as body content and a frame boundary that moved
+    // cannot look like an unchanged stream.
+    for (const inline of inlines) {
+      const textFrame = pick(inline, 'textFrame', 'tf');
+      if (!textFrame) continue;
+      out.push('\u000e');
+      for (const frameBlock of getBlocks(textFrame)) pushParagraph(frameBlock);
+      out.push('\u000e');
+    }
   };
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   for (const section of sections) {
@@ -2149,6 +2172,12 @@ function isUnverifiedStoryWriteAnchor(anchor: string): boolean {
   return marker === 'H' || marker === 'F';
 }
 
+// A shape/text-frame anchor. Its content is serialized into the SFDT (as
+// `inline.textFrame.blocks`), so unlike other live stories it can be proven
+// reversible by the whole-document reject projection.
+function isTextFrameAnchor(anchor: string): boolean {
+  return liveStoryMarker(anchor) === 'S';
+}
 
 function isLiveStoryTarget(
   target: FlatBlock | LiveStoryTarget
@@ -5108,6 +5137,21 @@ export function applyDocumentEdits(
                 'Structural edit needs an anchor.'
               );
             if (plan.target && isLiveStoryTarget(plan.target)) {
+              // A text frame's content IS in the serialized SFDT, so the reject
+              // projection covers it and proves the write reversible exactly as
+              // it does for a body or table anchor. Before this, story writes
+              // were the last users of the revision-type guess, which reports
+              // `untracked_write` whenever SyncFusion produces no NEW revision
+              // pair - and it produces none when the text being overwritten is
+              // itself a still-pending insertion. That is why the captain's
+              // second advisor-title edit failed on the cover page while the
+              // first succeeded, and why the table edit beside it was fine.
+              //
+              // Stories the projection genuinely cannot see (footnote/endnote
+              // markers) keep the revision assertion; headers/footers never get
+              // this far (`story_write_unverified` refuses them at preflight).
+              if (isTextFrameAnchor(op.anchor))
+                priorRejectStream = rejectStream;
               applyLiveStoryTextOp(editor, op, plan.target);
             } else {
               const target = resolveChangeSetBlock(
