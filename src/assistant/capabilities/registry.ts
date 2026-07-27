@@ -58,7 +58,13 @@ export interface CapabilityEntry {
 
 // Entries are ordered exactly like ai-services' DOCUMENT_EDIT_OPS so a
 // name-by-name comparison of the two lists reads as a clean diff.
-export const DOCUMENT_EDITOR_CAPABILITIES: readonly CapabilityEntry[] = [
+//
+// The array is const-asserted so every entry survives as a literal type: the
+// typed handler tables in `../tools/syncfusionDocumentOps.ts` derive each
+// handler's parameter type from its entry here (S5). `satisfies` would be the
+// idiomatic spelling, but the repo pins TypeScript 4.7, so the entry-shape
+// check is the explicit assignability statement after the array instead.
+export const DOCUMENT_EDITOR_CAPABILITIES = [
   // --- Text -----------------------------------------------------------------
   {
     // handler: applyAnchoredOp case 'replace_text'
@@ -536,7 +542,93 @@ export const DOCUMENT_EDITOR_CAPABILITIES: readonly CapabilityEntry[] = [
     summary: 'Reject every tracked revision in the document.',
     example: { op: 'reject_all_revisions' }
   }
-];
+] as const;
+
+// The 4.7-compatible `satisfies`: every literal entry must still be a valid
+// CapabilityEntry, without widening the literal types the handler tables need.
+type AssertCapabilityEntries<T extends readonly CapabilityEntry[]> = T;
+export type CapabilityEntriesWellFormed = AssertCapabilityEntries<
+  typeof DOCUMENT_EDITOR_CAPABILITIES
+>;
+
+// ---------------------------------------------------------------------------
+// Types derived from the registry (S5): the compiler half of the contract.
+//
+// Before S5 the registry and the dispatch switches were kept in agreement by a
+// test. A test can be deleted, skipped, or pass vacuously; these types cannot.
+// Every op handler in `../tools/syncfusionDocumentOps.ts` is typed against its
+// entry here, so a handler that consumes a param the entry does not declare -
+// or an entry that declares an op no handler implements - fails to compile.
+// ---------------------------------------------------------------------------
+
+/** `'a,b,c'` -> `'a' | 'b' | 'c'` (the member list of an `enum[...]` type). */
+type EnumMembers<S extends string> = S extends `${infer Head},${infer Rest}`
+  ? Head | EnumMembers<Rest>
+  : S;
+
+/** One non-optional param-language type to its TypeScript type. */
+type ParamBase<S extends string> = S extends 'string'
+  ? string
+  : S extends 'number' | 'int>0' | 'int>=0'
+  ? number
+  : S extends 'boolean'
+  ? boolean
+  : S extends `enum[${infer Members}]`
+  ? EnumMembers<Members>
+  : never;
+
+/** One param-language type (optionally `?`-suffixed) to its TypeScript type. */
+export type ParamValue<S extends string> = S extends `${infer Base}?`
+  ? ParamBase<Base>
+  : ParamBase<S>;
+
+/**
+ * A `params` block to its TypeScript object shape: `?`-suffixed params become
+ * optional properties, everything else is required. There is deliberately no
+ * index signature - an undeclared param is a compile error, which is the whole
+ * point.
+ */
+export type ParamsShape<P extends Record<string, string>> = {
+  [K in keyof P as P[K] extends `${string}?` ? never : K]: ParamValue<
+    P[K] & string
+  >;
+} & {
+  [K in keyof P as P[K] extends `${string}?` ? K : never]?: ParamValue<
+    P[K] & string
+  >;
+};
+
+type DocumentCapability = typeof DOCUMENT_EDITOR_CAPABILITIES[number];
+
+/** Every advertised op name, derived from the registry. */
+export type AdvertisedDocumentOp = DocumentCapability['op'];
+
+/** The registry entry for one op, as a literal type. */
+export type CapabilityOf<Name extends AdvertisedDocumentOp> = Extract<
+  DocumentCapability,
+  { op: Name }
+>;
+
+/** The typed op-specific params of one op, derived from its registry entry. */
+export type OpParams<Name extends AdvertisedDocumentOp> = ParamsShape<
+  CapabilityOf<Name>['params']
+>;
+
+/** Ops dispatched through the anchored handler table (requiresAnchor: true). */
+export type AnchoredDocumentOp = Extract<
+  DocumentCapability,
+  { requiresAnchor: true }
+>['op'];
+
+/**
+ * Ops dispatched through the anchorless handler table. `replace_all` is
+ * anchorless on the wire but is the executor's own special case (it runs
+ * through the search module, not either handler table), so it is excluded.
+ */
+export type AnchorlessDocumentOp = Exclude<
+  Extract<DocumentCapability, { requiresAnchor: false }>['op'],
+  'replace_all'
+>;
 
 // ---------------------------------------------------------------------------
 // Read capabilities (S3): the retrieval legs this engine executes client-side.
