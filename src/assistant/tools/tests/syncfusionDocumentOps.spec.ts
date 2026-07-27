@@ -3816,21 +3816,69 @@ describe('inheritance by default (S4b)', () => {
   });
 
   it('real SDK: a cell insert with no in-cell reference is left to SyncFusion cell defaults', () => {
-    const ed = makeRealDocumentEditor(scheduleTableSfdt());
+    // A dedicated shape: the empty data cell sits DIRECTLY under the bold
+    // 12 pt header cell, so any reference walk that crosses the cell boundary
+    // is visible as bold/12 leaking into the data cell.
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              tableFormat: {},
+              rows: [
+                {
+                  rowFormat: {},
+                  cells: [
+                    {
+                      cellFormat: {},
+                      blocks: [
+                        {
+                          paragraphFormat: {
+                            textAlignment: 'Center',
+                            styleName: 'Body Text'
+                          },
+                          inlines: [
+                            {
+                              text: 'Loc #',
+                              characterFormat: { bold: true, fontSize: 12 }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  rowFormat: {},
+                  cells: [
+                    {
+                      cellFormat: {},
+                      blocks: [
+                        {
+                          paragraphFormat: { styleName: 'Body Text' },
+                          inlines: [{ text: '' }]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      styles: hilbStyles
+    });
     try {
-      // The empty Address cell has no preceding non-empty block INSIDE the
-      // cell; the computed default must not reach across the cell boundary to
-      // the header row or the body heading.
       const res = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'cell-insert-no-reference',
-        edits: [
-          { op: 'insert_text', anchor: '0;1;1;1;0', text: '111 Bathurst St' }
-        ]
+        edits: [{ op: 'insert_text', anchor: '0;0;1;0;0', text: '0002' }]
       });
       expect(res.results[0]).toMatchObject({ ok: true });
-      const cell = selectRealBlock(ed, '0;1;1;1;0', '111 Bathurst St');
+      const cell = selectRealBlock(ed, '0;0;1;0;0', '0002');
       expect(cell.characterFormat.bold).toBe(false);
       expect(cell.characterFormat.fontSize).not.toBe(12);
+      expect(readCellParaFormat(ed, '0;0;1;0;0', 4).textAlignment).toBe('Left');
     } finally {
       destroyRealDocumentEditor(ed);
     }
