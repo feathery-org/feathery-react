@@ -3385,13 +3385,38 @@ export function applyDocumentEdits(
     // A formatting op can intentionally point at the future anchor created by
     // an earlier insert. Its expect value identifies that future paragraph and
     // prevents today's occupant of the same hierarchical index being captured
-    // as the preflight target.
-    let target: FlatBlock | LiveStoryTarget | undefined =
+    // as the preflight target. That deferral only means something in a change
+    // set whose structural ops can shift anchors: in a formatting-only set no
+    // anchor can move, so today's occupant IS the block the model named, and
+    // an expect discrepancy must be reported as what it is - stale expect
+    // text - never as a missing anchor (observed live: a follow-up formatting
+    // set styling freshly inserted paragraphs died anchor_not_found 18 times
+    // on anchors that existed).
+    const formatExpectMismatch =
       FORMAT_OPS.has(name) &&
       op.expect != null &&
-      indexedTarget?.text !== String(op.expect)
-        ? undefined
-        : indexedTarget;
+      indexedTarget != null &&
+      indexedTarget.text !== String(op.expect);
+    if (formatExpectMismatch && !hasStructuralEdits) {
+      if (String(op.expect) === '') {
+        // Schema-shaped tool calls carry every field on every op, so an EMPTY
+        // expect aimed at real content in a shift-free set is an artifact of
+        // the op schema, not an expectation; drop it rather than refuse the
+        // block the anchor plainly names.
+        delete (op as { expect?: unknown }).expect;
+      } else {
+        results[index] = {
+          ok: false,
+          op: name,
+          anchor: op.anchor,
+          error: 'stale_anchor',
+          details: staleAnchorDetails(op.expect, indexedTarget.text)
+        };
+        return;
+      }
+    }
+    let target: FlatBlock | LiveStoryTarget | undefined =
+      formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
     // flatten (notably text frames and page-specific headers/footers). Text
     // mutations for those anchors preflight against that same live range.
