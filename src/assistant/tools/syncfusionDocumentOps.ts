@@ -1272,6 +1272,23 @@ function describeUnexpectedError(err: unknown): string {
     : described;
 }
 
+// A stale_anchor refusal must name what actually mismatched, or the model
+// re-reads the inventory, gets the same anchor back, and re-sends the same
+// request forever (observed live: 7+ identical round trips). The live text is
+// the one fact that lets the next attempt differ.
+const STALE_TEXT_EXCERPT_LIMIT = 300;
+function staleAnchorDetails(expected: unknown, live: string): string[] {
+  const cap = (text: string) =>
+    text.length > STALE_TEXT_EXCERPT_LIMIT
+      ? `${text.slice(0, STALE_TEXT_EXCERPT_LIMIT - 1)}…`
+      : text;
+  return [
+    `expect: ${JSON.stringify(cap(String(expected)))}`,
+    `live text at this anchor: ${JSON.stringify(cap(live))}`,
+    'The live text is authoritative. If this edit is still intended, resend it with `expect` copied from the live text above (or omit `expect`). Re-sending the same `expect` will fail identically every time.'
+  ];
+}
+
 // Selects the whole block described by a FlatBlock and returns the live text.
 function selectBlock(editor: LiveEditor, block: FlatBlock): string {
   editor.selection.select(
@@ -1454,7 +1471,8 @@ function resolveLiveStoryTarget(
     if (op.expect != null && text !== String(op.expect))
       throw new OpError(
         'stale_anchor',
-        'The text at this anchor changed since it was read. Re-read the inventory and retry.'
+        'The live text at this anchor does not match `expect`.',
+        staleAnchorDetails(op.expect, text)
       );
     return {
       anchor,
@@ -1537,7 +1555,8 @@ function applyLiveStoryTextOp(
   if (String(editor.selection.text ?? '') !== target.text)
     throw new OpError(
       'stale_anchor',
-      'The text at this anchor changed since it was read. Re-read the inventory and retry.'
+      'The text at this anchor changed between preflight and the write.',
+      staleAnchorDetails(target.text, String(editor.selection.text ?? ''))
     );
   const replacement =
     op.op === 'delete_text'
@@ -2099,7 +2118,8 @@ function applyAnchoredOp(
   ) {
     throw new OpError(
       'stale_anchor',
-      'The text at this anchor changed since it was read. Re-read the inventory and retry.'
+      'The live text at this anchor does not match `expect`.',
+      staleAnchorDetails(op.expect, liveText)
     );
   }
 
@@ -2854,6 +2874,36 @@ interface ChangeSetPlan {
 // against a re-read inventory.
 const CELL_CREATING_OPS = new Set(['insert_row']);
 
+// The rows every earlier `insert_row` in this batch brings into existence,
+// keyed "section;block;row". A mid-table insert creates rows at indices that
+// are OCCUPIED at preflight time - the rows below the anchor shift down to
+// make room - so the batch's fill anchors for the new row resolve to a real,
+// populated block today. Without this carve-out those fills relocate onto the
+// shifted OLD row at apply time and overwrite existing data (or die
+// `anchor_relocation_ambiguous` on repeated cell text); only end-of-table
+// appends worked, because only there the computed anchors were vacant. Cell
+// anchors inside a created-row range therefore mean "the row the insert
+// creates", exactly as the tool vocabulary teaches, regardless of what
+// occupies that index before the insert runs.
+function rowsCreatedByEarlierInserts(
+  edits: EditOp[],
+  index: number
+): Set<string> {
+  const created = new Set<string>();
+  for (const earlier of edits.slice(0, index)) {
+    if (earlier?.op !== 'insert_row') continue;
+    const parts = String(earlier.anchor ?? '').split(';');
+    if (parts.length !== 5) continue;
+    const row = Number(parts[2]);
+    if (!Number.isInteger(row) || row < 0) continue;
+    const count = positiveCount(earlier.count);
+    const first = earlier.above === true ? row : row + 1;
+    for (let offset = 0; offset < count; offset++)
+      created.add(`${parts[0]};${parts[1]};${first + offset}`);
+  }
+  return created;
+}
+
 // Breaks which end the current paragraph and so bring exactly one new, empty
 // paragraph into existence at the next block index. Text destined for that new
 // paragraph has nowhere else to go, and requiring a second call for it leaves a
@@ -3353,13 +3403,25 @@ export function applyDocumentEdits(
     }
     // `set_cell_text` may address a cell an earlier op in this same change set
     // is about to create, so a row insert and its cell values are one atomic,
-    // single-card edit instead of two calls with a stray empty row between them.
+    // single-card edit instead of two calls with a stray empty row between
+    // them. Mid-table, the created row's indices are occupied at preflight (the
+    // old rows shift down to make room), so an anchor inside a created-row
+    // range is deferred even when a block answers to it today - the write-time
+    // guard still requires the resolved cell to be brand new and empty.
     const deferredNewCell =
-      !target &&
       name === 'set_cell_text' &&
-      edits
-        .slice(0, index)
-        .some((earlier) => earlier?.op && CELL_CREATING_OPS.has(earlier.op));
+      (target
+        ? !isLiveStoryTarget(target) &&
+          target.kind === 'table_cell' &&
+          rowsCreatedByEarlierInserts(edits, index).has(
+            String(op.anchor).split(';').slice(0, 3).join(';')
+          )
+        : edits
+            .slice(0, index)
+            .some(
+              (earlier) => earlier?.op && CELL_CREATING_OPS.has(earlier.op)
+            ));
+    if (deferredNewCell) target = undefined;
     // `insert_text` may address the empty paragraph an earlier break in this
     // same change set is about to create, so a new page and the text on it are
     // one atomic, single-card edit instead of two calls with a stray blank page
@@ -3396,7 +3458,8 @@ export function applyDocumentEdits(
         ok: false,
         op: name,
         anchor: op.anchor,
-        error: 'stale_anchor'
+        error: 'stale_anchor',
+        details: staleAnchorDetails(op.expect, target.text)
       };
       return;
     }
