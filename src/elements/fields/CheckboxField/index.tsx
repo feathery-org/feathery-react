@@ -172,8 +172,11 @@ export function applyCheckableInputStyles(element: any, responsiveStyles: any) {
     responsiveStyles.applyWidth('checkboxCheckmarkHover');
     responsiveStyles.apply(
       'checkbox',
-      ['width', 'width_unit'],
-      (width: any, widthUnit: any) => {
+      ['width', 'width_unit', 'label_gap'],
+      (width: any, widthUnit: any, labelGap: any) => {
+        if (labelGap !== undefined) {
+          return { marginRight: `${labelGap}px` };
+        }
         if (widthUnit !== 'px' || !width) return {};
         // Scale spacing up between checkbox and label as checkbox size
         // increases. Minimum space of 5px.

@@ -279,8 +279,9 @@ function applyFieldStyles(field: any, styles: any) {
   // unset, nothing is applied and the label inherits the field's font from its
   // container ('fc'), preserving prior behavior.
   applyLabelFontStyles(styles);
+  // Single checkboxes render their label inline, so CheckboxField owns that gap.
   styles.apply('fieldLabel', 'label_gap', (a: any) =>
-    a === undefined ? {} : { marginBottom: `${a}px` }
+    a === undefined || type === 'checkbox' ? {} : { marginBottom: `${a}px` }
   );
   styles.apply('fieldLabel', 'label_text_align', (a: any) =>
     a === undefined ? { textAlign: LABEL_TEXT_ALIGN_DEFAULT } : { textAlign: a }
