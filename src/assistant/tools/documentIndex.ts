@@ -22,10 +22,22 @@ import { subscribeDocxEditors } from './docxEditorRegistry';
 // converted server-side and opened. At that moment the editor holds a blank
 // document, so its inventory is empty. Poll until content appears instead of
 // giving up: an empty POST would embed nothing and clobber the index.
-// Serializing a blank document is cheap, so the expensive full serialize happens
-// exactly once, on the tick that finds content.
+//
+// Content appearing is NOT the same as the document having loaded. `openAsync`
+// lays the document out section by section, and the serialized model grows with
+// it - with no contentChange along the way - so the first tick that sees
+// content may hold only the leading sections (live failure: a generated
+// proposal's index held nothing but its TOC, and the freshness gate certified
+// it). Two guards close that hole:
+//   - the poll POSTs only a snapshot whose fingerprint held still for
+//     INDEX_STABLE_POLLS consecutive ticks, so a mid-load model is never
+//     mistaken for the document;
+//   - `documentChange` - Syncfusion's once-per-open signal, fired after the
+//     full layout in both the sync and async open paths - forces a re-index,
+//     catching a load that pauses long enough to fool the stability check.
 export const INDEX_POLL_MS = 500;
 export const INDEX_MAX_POLLS = 40; // 20s of headroom for a large docx conversion
+export const INDEX_STABLE_POLLS = 2;
 
 // Re-index this long after content settles. Robin's own bulk edits, a user's
 // typing and a regenerate (which re-opens a new document into the same editor
@@ -203,40 +215,50 @@ const warn = (message: string, detail?: unknown) =>
     ? console.warn(`Feathery: ${message}`)
     : console.warn(`Feathery: ${message}`, detail);
 
-// Read the editor and sync the index. Returns true once indexing has been
-// initiated for the scope (content existed), which is the poll loop's stop
-// signal.
-const indexNow = (
-  editor: any,
-  baseUrl: string,
-  generatedDocumentId: string,
-  headers: () => Record<string, string>
-): boolean => {
+// Serialized inventory of the editor at one instant, with its digest computed
+// once so the poll's stability check and the POST share the same reading.
+interface IndexSnapshot {
+  blocks: IndexBlock[];
+  digest: string;
+}
+
+// Read the editor's current inventory. null means unreadable or no content
+// yet - never POST either.
+const readSnapshot = (editor: any): IndexSnapshot | null => {
   let blocks: IndexBlock[];
   try {
     blocks = buildIndexBlocks(editor);
   } catch (err) {
     warn('could not read the document for indexing', err);
-    return false;
+    return null;
   }
-  if (blocks.length === 0) return false;
+  if (blocks.length === 0) return null;
+  return { blocks, digest: fingerprint(blocks) };
+};
 
+// Sync a snapshot to the server (no-op when the server already holds it).
+const syncSnapshot = (
+  { blocks, digest }: IndexSnapshot,
+  baseUrl: string,
+  generatedDocumentId: string,
+  headers: () => Record<string, string>
+): void => {
   const state = stateFor(generatedDocumentId);
-  const digest = fingerprint(blocks);
   // The change generation this snapshot represents. Captured before the async
   // POST so an edit that lands mid-flight keeps the scope dirty.
   const seqAtBuild = state.changeSeq;
 
   if (state.postedHash === digest) {
     // The server already holds exactly this content - e.g. a burst of edits
-    // that netted out to no change. The index is fresh again; say so.
+    // that netted out to no change, or a reopen of the same document. The
+    // index is fresh again; say so.
     state.postedSeq = seqAtBuild;
     if (state.changeSeq === seqAtBuild) state.dirtySince = null;
-    return true;
+    return;
   }
   // Claim the digest before the request so two overlapping triggers cannot
   // both POST the same content; drop the claim when the POST settles.
-  if (state.inFlightHash === digest) return true;
+  if (state.inFlightHash === digest) return;
   state.inFlightHash = digest;
 
   postDocumentIndex({
@@ -284,6 +306,19 @@ const indexNow = (
         err
       );
     });
+};
+
+// Read the editor and sync the index. Returns true once indexing has been
+// initiated for the scope (content existed).
+const indexNow = (
+  editor: any,
+  baseUrl: string,
+  generatedDocumentId: string,
+  headers: () => Record<string, string>
+): boolean => {
+  const snapshot = readSnapshot(editor);
+  if (!snapshot) return false;
+  syncSnapshot(snapshot, baseUrl, generatedDocumentId, headers);
   return true;
 };
 
@@ -332,19 +367,40 @@ export function useDocumentIndex({
       watched.add(editor);
 
       let polls = 0;
+      let lastDigest: string | null = null;
+      let stablePolls = 0;
+      // Set once the initial index has been initiated (by a stable poll or by
+      // documentChange); stops the poll loop.
+      let settled = false;
       const poll = () => {
+        if (settled) return;
         const generatedDocumentId = scopeId();
         // No document target yet (the generate action has not run): there is
         // nothing to key an index on, so keep waiting rather than guessing an id.
-        if (
-          generatedDocumentId &&
-          indexNow(editor, baseUrl, generatedDocumentId, headers)
-        )
-          return;
+        if (generatedDocumentId) {
+          const snapshot = readSnapshot(editor);
+          if (snapshot) {
+            if (snapshot.digest === lastDigest) stablePolls++;
+            else {
+              // Content present but still growing (a progressive openAsync
+              // load) - wait for it to hold still before vouching for it.
+              lastDigest = snapshot.digest;
+              stablePolls = 1;
+            }
+            if (stablePolls >= INDEX_STABLE_POLLS) {
+              settled = true;
+              syncSnapshot(snapshot, baseUrl, generatedDocumentId, headers);
+              return;
+            }
+          } else {
+            lastDigest = null;
+            stablePolls = 0;
+          }
+        }
         if (++polls < INDEX_MAX_POLLS) later(poll, INDEX_POLL_MS);
         else
           warn(
-            'gave up indexing the in-form document: no content after ' +
+            'gave up indexing the in-form document: no stable content after ' +
               `${(INDEX_MAX_POLLS * INDEX_POLL_MS) / 1000}s`
           );
       };
@@ -352,6 +408,28 @@ export function useDocumentIndex({
       // first paint, then start immediately - the sooner the index lands, the
       // smaller the window in which a Robin request sees a cold index.
       later(poll, 0);
+
+      // Syncfusion fires `documentChange` exactly once per open, after the
+      // FULL layout completes (sync and async paths alike) - the authoritative
+      // load-complete signal. It covers what the stability poll cannot: a load
+      // that pauses mid-way for longer than the stability window, and it also
+      // usually lands the index sooner than the next poll tick would. The
+      // dirty mark is synchronous (a newly opened document is not the document
+      // the server indexed until proven otherwise); the serialize + POST are
+      // deferred off Syncfusion's dispatch stack. A reopen of unchanged
+      // content heals instantly without a POST via the digest match.
+      const onDocumentChange = () => {
+        const changedScopeId = scopeId();
+        if (changedScopeId) markScopeDirty(changedScopeId);
+        later(() => {
+          const generatedDocumentId = scopeId();
+          if (
+            generatedDocumentId &&
+            indexNow(editor, baseUrl, generatedDocumentId, headers)
+          )
+            settled = true;
+        }, 0);
+      };
 
       // Keep the index current: a regenerate re-opens a new document into this
       // same editor instance, so no fresh registration fires and this is the
@@ -372,9 +450,11 @@ export function useDocumentIndex({
       };
       try {
         editor.addEventListener?.('contentChange', onContentChange);
-        detach.push(() =>
-          editor.removeEventListener?.('contentChange', onContentChange)
-        );
+        editor.addEventListener?.('documentChange', onDocumentChange);
+        detach.push(() => {
+          editor.removeEventListener?.('contentChange', onContentChange);
+          editor.removeEventListener?.('documentChange', onDocumentChange);
+        });
       } catch (err) {
         warn('could not watch the document for re-indexing', err);
       }
