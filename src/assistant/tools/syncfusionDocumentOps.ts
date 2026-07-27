@@ -94,6 +94,9 @@ export interface EditResult {
   // Keep any mismatch evidence on the affected op so a caller can retry the
   // precise anchor without having to re-inventory the whole document.
   details?: string[];
+  // 'never' marks a failure no retry can fix (the op is not in the vocabulary),
+  // so the assistant stops resending it instead of looping.
+  retry?: 'never';
 }
 
 export interface ApplyEditsResult {
@@ -1038,10 +1041,17 @@ const UNSAFE_CHANGE_SET_OPS = new Set(['undo', 'redo']);
 class OpError extends Error {
   code: string;
   details?: string[];
-  constructor(code: string, message?: string, details?: string[]) {
+  retry?: 'never';
+  constructor(
+    code: string,
+    message?: string,
+    details?: string[],
+    retry?: 'never'
+  ) {
     super(message ?? code);
     this.code = code;
     this.details = details;
+    this.retry = retry;
   }
 }
 
@@ -1659,10 +1669,11 @@ function applyAnchoredOp(
       callEditor(editor, 'insertPageNumber', op.numberFormat);
       return;
     }
-    // Table structure. These reached `attemptGenericOp`, which calls the
-    // SyncFusion method with no arguments at all, so `above`, `count`, `rows`
-    // and `columns` were advertised in the tool schema and silently dropped:
-    // every insert_row was one row below, every insert_table was 1x1.
+    // Table structure. These once fell to a generic snake_case->camelCase
+    // dispatch that called the SyncFusion method with no arguments at all, so
+    // `above`, `count`, `rows` and `columns` were advertised in the tool schema
+    // and silently dropped: every insert_row was one row below, every
+    // insert_table was 1x1. Every op maps its arguments explicitly now.
     case 'insert_row': {
       callEditor(
         editor,
@@ -1690,11 +1701,43 @@ function applyAnchoredOp(
       );
       return;
     }
+    // Structural table removal. SyncFusion operates on the table or row
+    // containing the selection, which selectBlock placed at the anchor.
+    // `delete_column` and `merge_cells` are deliberately absent: SyncFusion
+    // refuses both under track changes (a blocking "wont be marked as change"
+    // confirmation dialog; the change would be untracked), and this engine
+    // applies every change set tracked, so they fall to the vocabulary refusal
+    // below instead of reporting success while doing nothing.
+    case 'delete_table': {
+      callEditor(editor, 'deleteTable');
+      return;
+    }
+    case 'delete_row': {
+      callEditor(editor, 'deleteRow');
+      return;
+    }
+    case 'insert_section_break': {
+      callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
+      return;
+    }
     default:
-      // Structural table/image/section ops we do not (yet) special-case. Attempt
-      // a best-effort camelCase editor method; report clearly if unavailable.
-      attemptGenericOp(editor, op);
+      throw new OpError(
+        'unsupported_op',
+        `Unknown op "${op.op}". It is not in the document-edit vocabulary.`,
+        undefined,
+        'never'
+      );
   }
+}
+
+// SyncFusion's SectionBreakType enum spells the Word "Continuous" break
+// "NoBreak" at runtime; accept both. An absent/blank type falls through to
+// SyncFusion's own default (NewPage).
+function sectionBreakType(op: EditOp): string | undefined {
+  const raw =
+    typeof op.sectionBreakType === 'string' ? op.sectionBreakType.trim() : '';
+  if (!raw) return undefined;
+  return raw === 'Continuous' ? 'NoBreak' : raw;
 }
 
 function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
@@ -1739,7 +1782,12 @@ function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
       applySectionFormat(editor, op);
       return;
     default:
-      throw new OpError('unsupported_op', `Unknown anchorless op "${op.op}".`);
+      throw new OpError(
+        'unsupported_op',
+        `Unknown anchorless op "${op.op}". It is not in the document-edit vocabulary.`,
+        undefined,
+        'never'
+      );
   }
 }
 
@@ -2148,16 +2196,6 @@ function callSelection(
   fn.apply(editor.selection, args);
 }
 
-// Convert snake_case op -> camelCase editor method as a last resort so newly
-// added SyncFusion capabilities work without a code change here.
-function attemptGenericOp(editor: LiveEditor, op: EditOp): void {
-  const method = op.op.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-  const fn = (editor.editor as any)?.[method];
-  if (typeof fn !== 'function')
-    throw new OpError('unsupported_op', `Unsupported op "${op.op}".`);
-  fn.call(editor.editor);
-}
-
 // ---------------------------------------------------------------------------
 // Atomic revision grouping (content-loss guard)
 // ---------------------------------------------------------------------------
@@ -2555,7 +2593,10 @@ export function applyDocumentEdits(
       op: op?.op ?? '',
       anchor: op?.anchor,
       error: err instanceof OpError ? err.code : 'op_failed',
-      ...(err instanceof OpError && err.details ? { details: err.details } : {})
+      ...(err instanceof OpError && err.details
+        ? { details: err.details }
+        : {}),
+      ...(err instanceof OpError && err.retry ? { retry: err.retry } : {})
     };
   };
 
