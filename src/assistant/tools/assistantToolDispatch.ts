@@ -13,16 +13,22 @@ export type ChangedFieldDetail = {
   newValue: any;
 };
 
-// A document-reflectable update derived from a rule's field changes. Used for
-// server-side rules, whose lambda return value never reaches the client (v1):
-// `previous`/`value` are the exact old/new texts for a deterministic
-// findExactOccurrences-based replace, and `field` is the backing form field
-// key. Shape-compatible with the ai-services rule-update contract
+// A document-reflectable update derived from a rule's field changes, for any
+// rule (client- or server-side) that mutates form fields without returning an
+// explicit { updates } payload. `previous`/`value` are the exact old/new texts
+// for a deterministic occurrence-based replace; `describes` carries what the
+// text is (field key + admin label) so reflection can fall back to semantic
+// search when `previous` is not in the document - the document may hold an
+// OLDER rendering of the field than the pre-rule value. Shape-compatible with
+// the ai-services rule-update contract
 // ({ value, previous?, field?, describes?, anchor? }).
 export type DerivedRuleUpdate = {
   field: string;
-  previous: string;
+  // Omitted when the pre-rule value was not usable search text (empty field,
+  // object value); reflection then relies on `describes`.
+  previous?: string;
   value: string;
+  describes?: string;
 };
 
 export type RunLogicRuleResult = {
@@ -30,12 +36,31 @@ export type RunLogicRuleResult = {
   // Old->new per changed field; parallel to changedFields (richer shape kept
   // separate so existing changedFields readers stay untouched).
   changedFieldDetails?: ChangedFieldDetail[];
-  // Present only on the server-side path when scalar old->new pairs could be
-  // derived (client rules opt in by returning { updates } themselves).
+  // Present when scalar old->new pairs could be derived from the rule's field
+  // changes, on both the client- and server-side paths. Deduped against an
+  // explicitly returned returnValue.updates array.
   derivedUpdates?: DerivedRuleUpdate[];
+  // Present (always false) whenever the rule changed at least one form field:
+  // running a rule NEVER edits the open document by itself, so "the rule ran"
+  // and "the document shows it" stay two separate facts for the model.
+  documentEdited?: false;
+  note?: string;
   returnValue?: any;
   error?: string;
 };
+
+// Travels on every rule result that changed form fields. This is the
+// data-level counterweight to designer-authored rule descriptions that
+// (wrongly) claim field writes propagate to an already-generated document.
+export const RULE_FIELDS_CHANGED_NOTE =
+  'This rule updated form fields but did NOT edit the open document. ' +
+  'Reflect each derivedUpdates entry into the document as targeted tracked ' +
+  'edits: search for its `previous` text; if that returns nothing the ' +
+  'document may hold an older rendering of the field, so locate it via ' +
+  '`describes`/semantic search instead. For any changed field you cannot ' +
+  'locate in the document, tell the user the form field was updated but the ' +
+  'document could not be; only report the document as updated after an edit ' +
+  'has actually applied.';
 
 // Values that can appear verbatim in a document: strings and stringified
 // scalars. Objects/arrays/empties can't drive an exact-text replace.
@@ -46,21 +71,53 @@ const asUpdateText = (v: any): string | null => {
 };
 
 // Compose document updates from a rule's changed-field details: one
-// { field, previous, value } per field whose old AND new values are usable
-// exact texts. This is how server-side rules (returnValue undefined in v1)
-// still drive old->new document edits - the pre-invoke snapshot supplies
-// `previous`, the backend's field_data supplies `value`.
+// { field, previous?, value, describes? } per field whose NEW value is usable
+// exact text. `previous` (from the pre-invoke snapshot) rides along when it
+// is usable search text; `describes` (via opts.describeField) names what the
+// text is for the semantic-search fallback. Fields already covered by the
+// rule's explicitly returned updates (opts.explicitUpdates) are skipped so
+// the same edit is never surfaced twice.
 export const composeDerivedRuleUpdates = (
-  details: ChangedFieldDetail[]
+  details: ChangedFieldDetail[],
+  opts: {
+    explicitUpdates?: unknown;
+    describeField?: (key: string) => string | undefined;
+  } = {}
 ): DerivedRuleUpdate[] => {
+  const explicit = Array.isArray(opts.explicitUpdates)
+    ? opts.explicitUpdates
+    : [];
+  const coveredFields = new Set(
+    explicit
+      .map((u: any) => u?.field)
+      .filter((f: any): f is string => typeof f === 'string')
+  );
+  const coveredPairs = new Set(
+    explicit
+      .filter((u: any) => typeof u?.value === 'string')
+      .map((u: any) => `${u.previous ?? ''}\u0000${u.value}`)
+  );
   const updates: DerivedRuleUpdate[] = [];
   for (const d of details) {
-    const previous = asUpdateText(d.oldValue);
     const value = asUpdateText(d.newValue);
-    if (previous == null || value == null) continue;
-    if (previous.trim() === '' || value.trim() === '') continue;
+    // A cleared field or an object value can't drive an exact-text write; the
+    // change still reaches the model via changedFieldDetails + note.
+    if (value == null || value.trim() === '') continue;
+    const previousText = asUpdateText(d.oldValue);
+    const previous =
+      previousText != null && previousText.trim() !== ''
+        ? previousText
+        : undefined;
     if (previous === value) continue;
-    updates.push({ field: d.key, previous, value });
+    if (coveredFields.has(d.key)) continue;
+    if (coveredPairs.has(`${previous ?? ''}\u0000${value}`)) continue;
+    const describes = opts.describeField?.(d.key);
+    updates.push({
+      field: d.key,
+      ...(previous !== undefined ? { previous } : {}),
+      value,
+      ...(describes ? { describes } : {})
+    });
   }
   return updates;
 };

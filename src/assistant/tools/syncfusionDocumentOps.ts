@@ -1032,7 +1032,13 @@ function findOneDocumentOccurrences(
     // Always obtain public, selection-ready candidate ranges without the word
     // constraint, then evaluate word boundaries against current SFDT text.
     search.findAll(text, findOption(matchCase, false));
-    const offsets = search.searchResults.getTextSearchResultsOffset() ?? [];
+    // A zero-match findAll never populates the internal result list, and on a
+    // fresh editor getTextSearchResultsOffset() then crashes on the undefined
+    // list. An unpopulated list is an honest zero-occurrence result, not a
+    // search failure.
+    const offsets = (search as any).textSearchResults?.innerList
+      ? search.searchResults.getTextSearchResultsOffset() ?? []
+      : [];
     const sfdt = parseSfdt(editor.serialize());
     const byAnchor = new Map(
       flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
