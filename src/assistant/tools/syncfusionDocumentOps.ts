@@ -28,7 +28,7 @@ export const SELECTION_TEXT_LIMIT = 500;
 // Public types
 // ---------------------------------------------------------------------------
 
-export type InventoryScope = 'outline' | 'section' | 'full';
+export type InventoryScope = 'outline' | 'structure' | 'section' | 'full';
 
 export interface DocFormat {
   styleName?: string;
@@ -73,10 +73,56 @@ export interface IndexBlock {
   format?: DocFormat;
 }
 
+// A refusal that names what to do instead of what went wrong. `retry` is the
+// loop breaker: 'never' means resending cannot succeed, 'after_remedy' means
+// retry only after performing the named remedy, 'modified_input' means the
+// input itself was wrong. Every refusal this module returns must carry one -
+// a refusal without a remedy is an invitation to resend the identical call.
+export interface InventoryRemedy {
+  action: string;
+  tool: string;
+  input?: Record<string, unknown>;
+}
+
+export interface InventoryRefusal {
+  error: string;
+  message: string;
+  remedy?: InventoryRemedy;
+  retry?: 'never' | 'after_remedy' | 'modified_input';
+}
+
+// One table in the document skeleton: where it is and its shape, no cell text
+// beyond the header row (enough to recognise "the Location Schedule table").
+export interface StructureTable {
+  anchor: string;
+  rows: number;
+  columns: number;
+  headerCells: string[];
+  headerCellsTruncated?: boolean;
+}
+
+// One SFDT section (the spans between section breaks), by 0-based index.
+export interface StructureSectionBoundary {
+  section: number;
+  firstAnchor: string;
+  blockCount: number;
+}
+
+// The document's skeleton: headings, tables and section boundaries, no body
+// text. A navigation answer ("where is the Location Schedule") costs this
+// instead of a full read.
+export interface DocumentStructure {
+  blockCount: number;
+  headings: OutlineSection[];
+  tables: StructureTable[];
+  sections: StructureSectionBoundary[];
+}
+
 export type InventoryResult =
   | { sections: OutlineSection[] }
+  | { structure: DocumentStructure }
   | { inventory: InventoryEntry[] }
-  | { error: string; message: string };
+  | InventoryRefusal;
 
 export interface EditOp {
   op: string;
@@ -530,31 +576,137 @@ function toInventoryEntry(b: FlatBlock): InventoryEntry {
   return entry;
 }
 
+// Headings with the block count each governs - the outline walk, shared by
+// the `outline` and `structure` scopes.
+function collectOutlineSections(blocks: FlatBlock[]): OutlineSection[] {
+  const sections: OutlineSection[] = [];
+  const headingIdx: number[] = [];
+  blocks.forEach((b, i) => {
+    if (b.isHeading) headingIdx.push(i);
+  });
+  headingIdx.forEach((idx, n) => {
+    const next = headingIdx[n + 1] ?? blocks.length;
+    sections.push({
+      anchor: blocks[idx].anchor,
+      heading: blocks[idx].text,
+      level: blocks[idx].level,
+      blockCount: next - idx - 1
+    });
+  });
+  return sections;
+}
+
+// Cell text kept per header cell; a header longer than this is recognisable
+// from its prefix and not worth the context.
+const STRUCTURE_HEADER_CELL_CHARS = 60;
+const STRUCTURE_MAX_HEADER_CELLS = 16;
+
+interface TableAccumulator {
+  anchor: string;
+  rows: number;
+  columns: number;
+  headerByCell: Map<number, string[]>;
+}
+
+function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
+  const order: TableAccumulator[] = [];
+  const byAnchor = new Map<string, TableAccumulator>();
+  for (const b of blocks) {
+    if (b.kind !== 'table_cell') continue;
+    const parts = b.anchor.split(';');
+    if (parts.length !== 5) continue;
+    const tableAnchor = `${parts[0]};${parts[1]}`;
+    const row = Number(parts[2]);
+    const cell = Number(parts[3]);
+    if (!Number.isInteger(row) || !Number.isInteger(cell)) continue;
+    let table = byAnchor.get(tableAnchor);
+    if (!table) {
+      table = {
+        anchor: tableAnchor,
+        rows: 0,
+        columns: 0,
+        headerByCell: new Map()
+      };
+      byAnchor.set(tableAnchor, table);
+      order.push(table);
+    }
+    table.rows = Math.max(table.rows, row + 1);
+    table.columns = Math.max(table.columns, cell + 1);
+    if (row === 0 && b.text.trim()) {
+      const texts = table.headerByCell.get(cell) ?? [];
+      texts.push(b.text.trim());
+      table.headerByCell.set(cell, texts);
+    }
+  }
+  return order.map((t) => {
+    const cellCount = Math.min(t.columns, STRUCTURE_MAX_HEADER_CELLS);
+    const headerCells: string[] = [];
+    for (let ci = 0; ci < cellCount; ci++) {
+      const text = (t.headerByCell.get(ci) ?? []).join(' ');
+      headerCells.push(
+        text.length > STRUCTURE_HEADER_CELL_CHARS
+          ? `${text.slice(0, STRUCTURE_HEADER_CELL_CHARS)}...`
+          : text
+      );
+    }
+    const table: StructureTable = {
+      anchor: t.anchor,
+      rows: t.rows,
+      columns: t.columns,
+      headerCells
+    };
+    // Never truncate silently: a capped header row must say it is capped.
+    if (t.columns > STRUCTURE_MAX_HEADER_CELLS)
+      table.headerCellsTruncated = true;
+    return table;
+  });
+}
+
+function collectSectionBoundaries(
+  blocks: FlatBlock[]
+): StructureSectionBoundary[] {
+  const order: StructureSectionBoundary[] = [];
+  const bySection = new Map<number, StructureSectionBoundary>();
+  for (const b of blocks) {
+    const section = Number(b.anchor.split(';')[0]);
+    if (!Number.isInteger(section)) continue;
+    const existing = bySection.get(section);
+    if (existing) existing.blockCount++;
+    else {
+      const boundary = { section, firstAnchor: b.anchor, blockCount: 1 };
+      bySection.set(section, boundary);
+      order.push(boundary);
+    }
+  }
+  return order;
+}
+
 // Build the response for a given scope from an already-parsed SFDT.
 export function buildInventoryFromBlocks(
   blocks: FlatBlock[],
   input: { scope: InventoryScope; sectionAnchor?: string; maxEntries?: number }
 ): InventoryResult {
   const { scope, sectionAnchor, maxEntries } = input;
+  const cap = <T>(list: T[]): T[] =>
+    maxEntries && maxEntries > 0 ? list.slice(0, maxEntries) : list;
 
   if (scope === 'outline') {
-    const sections: OutlineSection[] = [];
-    const headingIdx: number[] = [];
-    blocks.forEach((b, i) => {
-      if (b.isHeading) headingIdx.push(i);
-    });
-    headingIdx.forEach((idx, n) => {
-      const next = headingIdx[n + 1] ?? blocks.length;
-      sections.push({
-        anchor: blocks[idx].anchor,
-        heading: blocks[idx].text,
-        level: blocks[idx].level,
-        blockCount: next - idx - 1
-      });
-    });
-    const capped =
-      maxEntries && maxEntries > 0 ? sections.slice(0, maxEntries) : sections;
-    return { sections: capped };
+    return { sections: cap(collectOutlineSections(blocks)) };
+  }
+
+  if (scope === 'structure') {
+    // The document's skeleton - headings, tables, section boundaries - at a
+    // token cost that is a rounding error next to the content. This is the
+    // cheap leg for navigation questions and the remedy the too-large refusal
+    // names, so it must stay text-free apart from headings and header cells.
+    return {
+      structure: {
+        blockCount: blocks.length,
+        headings: cap(collectOutlineSections(blocks)),
+        tables: cap(collectStructureTables(blocks)),
+        sections: collectSectionBoundaries(blocks)
+      }
+    };
   }
 
   if (scope === 'section') {
@@ -562,14 +714,26 @@ export function buildInventoryFromBlocks(
       return {
         error: 'missing_section_anchor',
         message:
-          'scope "section" requires a sectionAnchor from a prior outline read.'
+          'scope "section" requires a sectionAnchor from a prior outline or structure read.',
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'modified_input'
       };
     }
     const start = blocks.findIndex((b) => b.anchor === sectionAnchor);
     if (start < 0) {
       return {
         error: 'section_not_found',
-        message: `No block found for sectionAnchor "${sectionAnchor}". Re-read the outline.`
+        message: `No block found for sectionAnchor "${sectionAnchor}". The document may have changed since it was read; re-read the structure and use a current heading anchor.`,
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'after_remedy'
       };
     }
     let end = blocks.length;
@@ -584,11 +748,21 @@ export function buildInventoryFromBlocks(
     return { inventory: slice.map(toInventoryEntry) };
   }
 
-  // full
+  // full - the whole-document path keeps its hard limit, and past it the
+  // refusal is honest and carries its remedy: reading a fraction and answering
+  // confidently would be a wrong answer that looks right.
   if (blocks.length > FULL_INVENTORY_BLOCK_LIMIT) {
     return {
       error: 'document_too_large',
-      message: `Document has ${blocks.length} blocks (> ${FULL_INVENTORY_BLOCK_LIMIT}). Use scope "outline" then "section" instead of "full".`
+      message:
+        `Document has ${blocks.length} blocks (> ${FULL_INVENTORY_BLOCK_LIMIT}); reading it whole would exceed what fits. ` +
+        'Read scope "structure" for the skeleton (headings, tables, section boundaries), then scope "section" with a heading anchor for the parts you need. Do not retry scope "full".',
+      remedy: {
+        action: 'narrow',
+        tool: 'getDocumentInventory',
+        input: { scope: 'structure' }
+      },
+      retry: 'after_remedy'
     };
   }
   let all = blocks;

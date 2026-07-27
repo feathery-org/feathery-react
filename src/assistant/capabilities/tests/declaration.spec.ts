@@ -26,6 +26,15 @@ describe('capabilities declaration byte stability (prompt-cache guard)', () => {
     const surface = CAPABILITIES_DECLARATION.surfaces[0];
     expect(surface.surface).toBe('document_editor');
     expect(surface.ops).toHaveLength(38);
+    // The retrieval ladder (S3), cheapest first - `structure` leads because it
+    // is the leg the too-large refusal names as its remedy.
+    expect(surface.reads.map((read) => read.read)).toEqual([
+      'structure',
+      'outline',
+      'section',
+      'full',
+      'occurrences'
+    ]);
     // The backend forwards the declaration with a 64 KB cap; staying well
     // under it here means the cap can never silently drop a real declaration.
     expect(JSON.stringify(CAPABILITIES_DECLARATION).length).toBeLessThan(
@@ -41,6 +50,9 @@ describe('capabilities declaration byte stability (prompt-cache guard)', () => {
     );
     expect(
       Object.isFrozen(CAPABILITIES_DECLARATION.surfaces[0].ops[0].params)
+    ).toBe(true);
+    expect(
+      Object.isFrozen(CAPABILITIES_DECLARATION.surfaces[0].reads[0])
     ).toBe(true);
   });
 });

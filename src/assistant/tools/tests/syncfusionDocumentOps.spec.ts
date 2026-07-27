@@ -3170,3 +3170,166 @@ describe('explicit table structure and section break ops', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// S3: the structure leg. A document's skeleton - headings, tables, section
+// boundaries - answers most navigation questions ("where is the Location
+// Schedule") at a token cost that is a rounding error next to the content,
+// and it must keep working exactly where `full` is refused.
+// ---------------------------------------------------------------------------
+
+describe('structure scope (the cheap navigation leg)', () => {
+  const structuredDoc = {
+    sections: [
+      {
+        blocks: [
+          para('Executive Summary', 'Heading 1'),
+          para('This is the intro.'),
+          {
+            rows: [
+              {
+                cells: [
+                  { blocks: [para('Loc #')] },
+                  { blocks: [para('Address'), para('(line 2)')] }
+                ]
+              },
+              {
+                cells: [
+                  { blocks: [para('1')] },
+                  { blocks: [para('111 Bathurst St')] }
+                ]
+              }
+            ]
+          },
+          para('Pricing', 'Heading 1'),
+          para('Quote: $5,500')
+        ]
+      },
+      {
+        blocks: [para('Appendix', 'Heading 1'), para('The fine print.')]
+      }
+    ]
+  };
+
+  it('returns headings, tables and section boundaries - and no body text', () => {
+    const blocks = flattenSfdt(structuredDoc);
+    const res = buildInventoryFromBlocks(blocks, { scope: 'structure' }) as any;
+    const structure = res.structure;
+
+    expect(structure.blockCount).toBe(blocks.length);
+    expect(structure.headings.map((h: any) => h.heading)).toEqual([
+      'Executive Summary',
+      'Pricing',
+      'Appendix'
+    ]);
+    // The table is located by its anchor and recognisable from its header row.
+    expect(structure.tables).toEqual([
+      {
+        anchor: '0;2',
+        rows: 2,
+        columns: 2,
+        headerCells: ['Loc #', 'Address (line 2)']
+      }
+    ]);
+    expect(structure.sections).toEqual([
+      { section: 0, firstAnchor: '0;0', blockCount: 9 },
+      { section: 1, firstAnchor: '1;0', blockCount: 2 }
+    ]);
+
+    // The skeleton must stay a skeleton: body text and non-header cell values
+    // do not ride along.
+    const serialized = JSON.stringify(res);
+    expect(serialized).not.toContain('Quote: $5,500');
+    expect(serialized).not.toContain('111 Bathurst St');
+    expect(serialized).not.toContain('This is the intro.');
+  });
+
+  it('keeps working past the block limit where full is refused', () => {
+    const many = Array.from({ length: FULL_INVENTORY_BLOCK_LIMIT + 1 }, (_, i) =>
+      para(`p${i}`, i % 100 === 0 ? 'Heading 1' : undefined)
+    );
+    const blocks = flattenSfdt({ sections: [{ blocks: many }] });
+
+    expect(
+      (buildInventoryFromBlocks(blocks, { scope: 'full' }) as any).error
+    ).toBe('document_too_large');
+
+    const res = buildInventoryFromBlocks(blocks, { scope: 'structure' }) as any;
+    expect(res.structure.blockCount).toBe(FULL_INVENTORY_BLOCK_LIMIT + 1);
+    expect(res.structure.headings).toHaveLength(9);
+  });
+
+  it('caps headings and tables with maxEntries', () => {
+    const blocks = flattenSfdt(structuredDoc);
+    const res = buildInventoryFromBlocks(blocks, {
+      scope: 'structure',
+      maxEntries: 1
+    }) as any;
+    expect(res.structure.headings).toHaveLength(1);
+    expect(res.structure.tables).toHaveLength(1);
+  });
+
+  it('is reachable through the live getDocumentInventory read', () => {
+    const editor = make([
+      para('Coverage', 'Heading 1'),
+      para('General Liability: included.')
+    ]);
+    const res = getDocumentInventory(editor, { scope: 'structure' }) as any;
+    expect(res.structure.headings).toEqual([
+      { anchor: '0;0', heading: 'Coverage', level: 1, blockCount: 1 }
+    ]);
+    expect(res.structure.tables).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S3: refusal with remedy. A refusal that names only the prohibition is an
+// invitation to resend the identical call (the 17x retry); every retrieval
+// refusal must carry what to do instead, machine-readable.
+// ---------------------------------------------------------------------------
+
+describe('retrieval refusals carry their remedy', () => {
+  it('document_too_large keeps its hard limit and names structure as the way in', () => {
+    const many = Array.from({ length: FULL_INVENTORY_BLOCK_LIMIT + 1 }, (_, i) =>
+      para(`p${i}`)
+    );
+    const blocks = flattenSfdt({ sections: [{ blocks: many }] });
+    const res = buildInventoryFromBlocks(blocks, { scope: 'full' }) as any;
+
+    expect(res.error).toBe('document_too_large');
+    expect(res.remedy).toEqual({
+      action: 'narrow',
+      tool: 'getDocumentInventory',
+      input: { scope: 'structure' }
+    });
+    expect(res.retry).toBe('after_remedy');
+    // The prose half must also say what to do, not only what failed.
+    expect(res.message).toContain('structure');
+    expect(res.message).toContain('section');
+  });
+
+  it('missing_section_anchor and section_not_found point back to a structure read', () => {
+    const blocks = flattenSfdt({
+      sections: [{ blocks: [para('Only paragraph')] }]
+    });
+
+    const missing = buildInventoryFromBlocks(blocks, {
+      scope: 'section'
+    }) as any;
+    expect(missing.error).toBe('missing_section_anchor');
+    expect(missing.remedy).toMatchObject({ tool: 'getDocumentInventory' });
+    expect(missing.retry).toBe('modified_input');
+
+    const notFound = buildInventoryFromBlocks(blocks, {
+      scope: 'section',
+      sectionAnchor: '9;9'
+    }) as any;
+    expect(notFound.error).toBe('section_not_found');
+    expect(notFound.remedy).toEqual({
+      action: 're-read',
+      tool: 'getDocumentInventory',
+      input: { scope: 'structure' }
+    });
+    expect(notFound.retry).toBe('after_remedy');
+  });
+});

@@ -93,7 +93,11 @@ import {
   readDocxSelection
 } from './tools/docxEditorBridge';
 import { getDocxEditor } from './tools/docxEditorRegistry';
-import { useDocumentIndex } from './tools/documentIndex';
+import {
+  GENERATED_DOCUMENT_TARGET_TYPE,
+  getDocumentIndexFreshness,
+  useDocumentIndex
+} from './tools/documentIndex';
 import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
@@ -338,6 +342,17 @@ const AssistantChat = ({
       // declare nothing.
       context.capabilities = CAPABILITIES_DECLARATION;
     }
+    // How fresh the semantic index is for the open document, re-read on every
+    // request (each tool round trip rebuilds this body, so the answer tracks
+    // edits within a turn). ai-services refuses semantic search when the index
+    // is dirty or holds someone else's content - stale hits must fail loud,
+    // not read plausible (S3). Never rendered into the prompt, so its
+    // per-request variation cannot break prompt caching.
+    const documentTarget = targets.find(
+      (t) => t.type === GENERATED_DOCUMENT_TARGET_TYPE
+    );
+    if (documentTarget)
+      context.document_state = getDocumentIndexFreshness(documentTarget.id);
     body.context = context;
     return body;
   };
