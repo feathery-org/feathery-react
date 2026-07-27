@@ -126,11 +126,12 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   {
     // handler: applyAnchoredOp case 'set_cell_text'
     op: 'set_cell_text',
-    params: { text: 'string' },
+    params: { text: 'string', literal: 'boolean?' },
     requiresAnchor: true,
     anchorKind: 'table_cell',
     tracked: true,
-    summary: 'Overwrite the anchored table cell content with `text`.',
+    summary:
+      'Overwrite the anchored table cell content with `text`. A purely numeric `text` aimed at a numeric slot in a numeric column is REFUSED (`model_authored_number`): a derived value must go through `set_cell_formula` so the ENGINE computes it. `literal: true` is the narrow exception for a figure the user dictated verbatim, and records the write as user-stated rather than computed.',
     example: { op: 'set_cell_text', anchor: '0;7;2;1;0', text: 'Toronto' }
   },
   {
@@ -299,20 +300,32 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     example: { op: 'delete_row', anchor: '0;7;2;0;0' }
   },
   {
-    // handler: applyAnchoredOp case 'set_cell_computed'
-    op: 'set_cell_computed',
+    // handler: applyAnchoredOp case 'set_cell_formula'
+    //
+    // The general form of set_cell_computed: the model supplies a FORMULA over
+    // cell references and the engine supplies every number. A named-operation
+    // list could only ever move the wall (the first request past sum/average/
+    // min/max/count - "add 13% tax, then re-total" - had no route, so the model
+    // wrote "$95,139.18" into a cell as a string).
+    op: 'set_cell_formula',
     params: {
-      operation: 'enum[sum,average,min,max,count]?',
-      column: 'int>=0?',
-      startRow: 'int>=0?',
-      endRow: 'int>=0?'
+      formula: 'string',
+      label: 'string?',
+      round: 'enum[half_up,half_even,toward_zero,away_from_zero]?',
+      decimals: 'int>=0?'
     },
     requiresAnchor: true,
     anchorKind: 'table_cell',
     tracked: true,
     summary:
-      "Overwrite the anchored table cell with a value the ENGINE computes from a column of the same table - deterministic code, never model arithmetic. Defaults: operation sum, the anchored cell's own column, rows 1..last (row 0 = header), always excluding the anchored row. The result is rendered in the anchored cell's own number format and verified by re-reading; relay the returned receipt.",
-    example: { op: 'set_cell_computed', anchor: '0;7;94;3;0', operation: 'sum' }
+      'Overwrite the anchored cell with the result of `formula`, which the ENGINE evaluates - never model arithmetic. Grammar: + - * / ( ), literals (1.13, 13%), cell refs [sec;blk;row;cell;para], column ranges [sec;blk;a..b;col], sum/average/min/max/count over a range; no reference = refused. Renders in the cell own format, verified by re-read. Rounding is explicit: set `round` or be refused.',
+    example: {
+      op: 'set_cell_formula',
+      anchor: '0;7;5;4;0',
+      formula: '[0;7;5;3;0] * 1.13',
+      label: 'the proposed premium plus 13% tax',
+      round: 'half_up'
+    }
   },
   // `insert_column` was withdrawn in S5: probed on a real DocumentEditor, it
   // reports ok:true and genuinely mutates the table (4 -> 6 cells) while
@@ -666,7 +679,7 @@ export const DOCUMENT_EDITOR_READS: readonly ReadCapabilityEntry[] = [
     read: 'structure',
     params: { maxEntries: 'int>0?' },
     summary:
-      'The document skeleton: headings, tables (anchor, rows, columns, headerCells) and section boundaries, no body text. Cheapest way to answer "where is X" and to find a table.'
+      'The document skeleton: headings, tables (anchor, rows, columns, firstRowCells) and section boundaries, no body text. Cheapest way to answer "where is X" and to find a table. firstRowCells is the text of row 0, NOT a declared header - read `table_facts` before choosing any row range.'
   },
   {
     // getDocumentInventory scope 'outline' (buildInventoryFromBlocks)
@@ -681,6 +694,13 @@ export const DOCUMENT_EDITOR_READS: readonly ReadCapabilityEntry[] = [
     params: { sectionAnchor: 'string', maxEntries: 'int>0?' },
     summary:
       'The blocks under one heading (anchor from a structure/outline read), with text and format.'
+  },
+  {
+    // getDocumentInventory scope 'table_facts' (collectTableFacts)
+    read: 'table_facts',
+    params: { tableAnchor: 'string' },
+    summary:
+      'One table LAYOUT FACTS, complete and never capped: dimensions, per-row cell counts (short rows), merged cells and spans, per-cell text/blank/bold/style, which cells parse as numbers and which are formatted amounts, per-column numeric/quantity tallies with units and decimals. States NO header row, NO data range, NO subtotal - you interpret those. READ IT BEFORE any set_cell_formula range.'
   },
   {
     // getDocumentInventory scope 'table_column' (buildInventoryFromBlocks /

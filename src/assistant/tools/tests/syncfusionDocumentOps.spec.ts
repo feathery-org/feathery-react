@@ -3231,7 +3231,7 @@ describe('structure scope (the cheap navigation leg)', () => {
         anchor: '0;2',
         rows: 2,
         columns: 2,
-        headerCells: ['Loc #', 'Address (line 2)']
+        firstRowCells: ['Loc #', 'Address (line 2)']
       }
     ]);
     expect(structure.sections).toEqual([
