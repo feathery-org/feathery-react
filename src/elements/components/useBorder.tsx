@@ -25,12 +25,11 @@ export default function useBorder({
     if (corners) styles.applyCorners('border');
     styles.applyBorders({ target: 'border' });
 
-    if (element.styles.hover_border_top_color) {
-      styles.applyBorders({
-        target: 'borderHover',
-        prefix: 'hover_'
-      });
-    } else if (defaultHover) {
+    const hoverBorderApplied = styles.applyBorders({
+      target: 'borderHover',
+      prefix: 'hover_'
+    });
+    if (!hoverBorderApplied && defaultHover) {
       // default hover effect
       styles.apply('borderHover', borderColorProps, (...colors: any) => {
         const newStyles: Record<string, string> = {};

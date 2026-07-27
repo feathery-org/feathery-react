@@ -173,42 +173,45 @@ export default class ResponsiveStyles {
   }
 
   applyBorders({ target = '', prefix = '', important = true }) {
-    // If color isn't defined on one of the sides, that means there's no border
     if (!this.styles) return false;
-    if (!this.styles[`${prefix}border_top_color`]) return false;
 
-    const i = prefix && important ? '!important' : '';
-    this.apply(
-      target,
-      borderColorProps.map((prop) => `${prefix}${prop}`),
-      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      (a, b, c, d) => ({
-        borderColor: `#${a} #${b} #${c} #${d} ${i}`
-      })
-    );
-    this.apply(
-      target,
-      [
-        `${prefix}border_top_pattern`,
-        `${prefix}border_right_pattern`,
-        `${prefix}border_bottom_pattern`,
-        `${prefix}border_left_pattern`
-      ],
-      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      (a, b, c, d) => ({
-        borderStyle: `${a} ${b} ${c} ${d} ${i}`
-      })
-    );
-    this.apply(
-      target,
-      borderWidthProps.map((prop) => `${prefix}${prop}`),
-      // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
-      (a, b, c, d) => ({
-        borderWidth: `${a}px ${b}px ${c}px ${d}px ${i}`
-      })
-    );
+    let borderApplied = false;
+    const importantSuffix = prefix && important ? ' !important' : '';
 
-    return true;
+    ['top', 'right', 'bottom', 'left'].forEach((side) => {
+      const sideName = `${side[0].toUpperCase()}${side.slice(1)}`;
+      this.apply(
+        target,
+        [
+          `${prefix}border_${side}_color`,
+          `${prefix}border_${side}_pattern`,
+          `${prefix}border_${side}_width`
+        ],
+        (color: any, pattern: any, width: any) => {
+          if (!color && !pattern && isNum(width) && parseFloat(width) === 0) {
+            borderApplied = true;
+            return {
+              [`border${sideName}Width`]: `0px${importantSuffix}`
+            };
+          }
+          if (!color || !pattern || !isNum(width)) return {};
+
+          borderApplied = true;
+          const formattedColor =
+            color === 'transparent' || color.startsWith('#')
+              ? color
+              : `#${color}`;
+
+          return {
+            [`border${sideName}Color`]: `${formattedColor}${importantSuffix}`,
+            [`border${sideName}Style`]: `${pattern}${importantSuffix}`,
+            [`border${sideName}Width`]: `${width}px${importantSuffix}`
+          };
+        }
+      );
+    });
+
+    return borderApplied;
   }
 
   applySelectorStyles(

@@ -408,6 +408,12 @@ function Form({
   const [connectorFields, setConnectorFields] = useState<any>();
   const [logicRules, setLogicRules] = useState<LogicRule[]>([]);
   const [sharedCodes, setSharedCodes] = useState<SharedCodeInfo[]>([]);
+  // Per-extraction (and per-variant) file-upload field keys this form should
+  // auto-submit before running the extraction, provided by the backend in the
+  // panel config. Shape: { [extractionId]: { '' (default) | variantId: keys } }
+  const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
+    {}
+  );
   const [inlineErrors, setInlineErrors] = useState<
     Record<string, { message: string; index: number }>
   >({});
@@ -434,6 +440,53 @@ function Form({
       if (match) return match.servar;
     }
     return null;
+  };
+
+  // Like getServarByFieldKey, but also returns the step the field lives on so
+  // the file can be submitted with the correct step key.
+  const getServarAndStepByFieldKey = (fieldKey: string) => {
+    for (const step of Object.values(steps) as any[]) {
+      if (!step?.servar_fields) continue;
+      const match = step.servar_fields.find(
+        ({ servar }: any) => servar.key === fieldKey
+      );
+      if (match) return { servar: match.servar, step };
+    }
+    return null;
+  };
+
+  // Force-submit the file-upload field(s) an AI extraction reads before it
+  // runs, regardless of the triggering button's "Validate & Submit Step"
+  // toggle. The backend tells us (per extraction + variant) which of this
+  // form's file fields feed the extraction; we submit any that currently have
+  // a value. Already-submitted files are safe no-ops (deduped client- and
+  // server-side). Only the extraction triggered here submits — downstream
+  // chained extractions run server-side and inherit its files.
+  const submitExtractionFiles = async (
+    extractionId: string,
+    variantId = ''
+  ) => {
+    const entry = extractionFileFields.current[extractionId];
+    if (!entry) return;
+    // A variant overrides the extraction's file sources, so an absent variant
+    // entry means it reads no file field present on this form.
+    const fieldKeys = variantId ? entry[variantId] ?? [] : entry[''] ?? [];
+    if (!fieldKeys.length) return;
+
+    const fileEntries: { servar: any; stepKey: string }[] = [];
+    for (const fieldKey of fieldKeys) {
+      const found = getServarAndStepByFieldKey(fieldKey);
+      if (!found) continue;
+      const { servar, step } = found;
+      if (servar.type !== 'file_upload' && servar.type !== 'signature')
+        continue;
+      if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
+      fileEntries.push({
+        servar: { key: servar.key, [servar.type]: fieldValues[fieldKey] },
+        stepKey: step.key
+      });
+    }
+    if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 
   // Collects file/signature fields that are still waiting to upload.
@@ -1282,6 +1335,18 @@ function Form({
             return;
           }
 
+          // Auto-submit the extraction's file field(s) before running. Resilient
+          // by design: a failure here shouldn't break a user's logic rule — the
+          // extraction still runs against whatever's already been submitted.
+          try {
+            await submitExtractionFiles(
+              extractionId,
+              (typeof options === 'object' && options.variantId) || ''
+            );
+          } catch (e) {
+            console.warn('Failed to auto-submit AI extraction files', e);
+          }
+
           const data = await client.runAIExtraction({
             extractionId,
             options,
@@ -1466,6 +1531,7 @@ function Form({
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
+        extractionFileFields.current = res.extraction_file_fields || {};
         trackHashes.current =
           hashNavigation !== undefined ? hashNavigation : res.track_hashes;
 
@@ -2622,6 +2688,12 @@ function Form({
               // process the first extraction and any after if not run_sequential
               (extractions.length === 0 || !curAction.run_sequential)
             ) {
+              // Auto-submit the extraction's file field(s) before running,
+              // regardless of this button's "Validate & Submit Step" toggle.
+              await submitExtractionFiles(
+                curAction.extraction_id,
+                curAction.variant_id || ''
+              );
               extractions.push(
                 client.runAIExtraction({
                   extractionId: curAction.extraction_id,
