@@ -1,5 +1,6 @@
 import { act, render, renderHook } from '@testing-library/react';
 import {
+  getDocumentIndexFreshness,
   INDEX_POLL_MS,
   postDocumentIndex,
   REINDEX_DEBOUNCE_MS,
@@ -8,6 +9,20 @@ import {
 } from '../documentIndex';
 import { registerDocxEditor, _clearDocxEditors } from '../docxEditorRegistry';
 import AssistantChat from '../../AssistantChat';
+
+// Capture the chat transport options so tests can invoke the real `body()`
+// AssistantChat wires up - that is the exact payload a chat request carries,
+// so asserting on it tests the call site, not a helper. (The real `ai`
+// package is already mocked away globally in setupTests.ts; this narrows that
+// mock to capture instead of discard.)
+jest.mock('ai', () => ({
+  DefaultChatTransport: class {
+    constructor(opts: any) {
+      (globalThis as any).__capturedTransportOpts = opts;
+    }
+  },
+  lastAssistantMessageIsCompleteWithToolCalls: jest.fn()
+}));
 
 // The assistant panel pulls in the AI SDK transport and the voice pipeline;
 // neither is part of this wiring and neither runs in jsdom.
@@ -105,7 +120,7 @@ describe('postDocumentIndex', () => {
       blocks: [{ anchor: 's0:b0', kind: 'paragraph', text: 'hi' }],
       headers
     });
-    expect(sent).toBe(true);
+    expect(sent.posted).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.test/agent/assistant/document-index');
@@ -133,7 +148,7 @@ describe('postDocumentIndex', () => {
         blocks: [{ anchor: 's0:b0', kind: 'paragraph', text: 'hi' }],
         headers
       })
-    ).toBe(false);
+    ).toEqual({ posted: false });
     // An empty inventory would embed nothing and clobber the existing index.
     expect(
       await postDocumentIndex({
@@ -142,7 +157,7 @@ describe('postDocumentIndex', () => {
         blocks: [],
         headers
       })
-    ).toBe(false);
+    ).toEqual({ posted: false });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -355,5 +370,204 @@ describe('AssistantChat wiring (the regression guard)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS * 4);
     });
     expect(indexPosts()).toHaveLength(0);
+  });
+});
+
+// S3: staleness must be detectable, not silent. A stale index returning
+// plausible-but-wrong anchors is strictly worse than an empty one - these
+// tests pin the client half of that contract: the dirty mark is synchronous
+// with the edit, the POST carries the document-level hash the server stores,
+// and nothing ever reports "fresh" that the server has not confirmed.
+describe('index freshness (S3 staleness detection)', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const mount = (documentId?: string) =>
+    renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets: targets(documentId),
+        headers
+      })
+    );
+
+  const loadedEditor = () => {
+    const editor = fakeEditor();
+    editor.loaded = true;
+    return editor;
+  };
+
+  it('reports dirty until the first POST is confirmed, then fresh with the posted hash', async () => {
+    const editor = loadedEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+
+    // Before the index lands, this client cannot vouch for whatever the
+    // server holds (an earlier session, another submitter) - so: dirty.
+    expect(getDocumentIndexFreshness(DOC_ID)).toEqual({
+      indexHash: null,
+      indexDirty: true
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    const fresh = getDocumentIndexFreshness(DOC_ID);
+    expect(fresh.indexDirty).toBe(false);
+    expect(fresh.indexHash).toEqual(expect.any(String));
+    // The freshness hash IS the hash the server stored with the index.
+    const body = JSON.parse(indexPosts()[0][1].body);
+    expect(body.contentHash).toBe(fresh.indexHash);
+    expect(body.blockCount).toBe(body.blocks.length);
+  });
+
+  it('an edit marks the index stale IMMEDIATELY, before the re-index debounce', async () => {
+    const editor = loadedEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(false);
+
+    editor.text = 'Total premium: $9,999';
+    editor.emit('contentChange');
+    // No timers advanced: the very next chat request must already see stale.
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(true);
+
+    // The debounced re-index repairs it.
+    await act(async () => {
+      jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
+    });
+    expect(indexPosts()).toHaveLength(2);
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(false);
+    expect(JSON.parse(indexPosts()[1][1].body).contentHash).toBe(
+      getDocumentIndexFreshness(DOC_ID).indexHash
+    );
+  });
+
+  it('a burst of edits that nets out to no change clears dirty without a POST', async () => {
+    const editor = loadedEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+
+    editor.emit('contentChange');
+    editor.emit('contentChange');
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(true);
+    await act(async () => {
+      jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
+    });
+    // Content matches what the server already holds: fresh again, no re-POST.
+    expect(indexPosts()).toHaveLength(1);
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(false);
+  });
+
+  it('a failed POST leaves the scope dirty - never fresh on hope', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchMock.mockResolvedValue({ ok: false, status: 500 });
+    const editor = loadedEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    expect(indexPosts()).toHaveLength(1);
+    expect(getDocumentIndexFreshness(DOC_ID)).toEqual({
+      indexHash: null,
+      indexDirty: true
+    });
+  });
+
+  it('an incomplete index (failed embeds) warns loud and refuses to report fresh', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        indexed: 0,
+        updated: 0,
+        removed: 0,
+        failed: 1,
+        storedBlocks: 0
+      })
+    });
+    const editor = loadedEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    expect(indexPosts()).toHaveLength(1);
+    expect(getDocumentIndexFreshness(DOC_ID).indexDirty).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('document index for doc-template-123 is incomplete')
+    );
+  });
+});
+
+// S3: the freshness signal is only worth anything if every chat request
+// carries it. These exercise the REAL transport body AssistantChat builds -
+// the exact bytes a request would send - not a helper in isolation.
+describe('AssistantChat sends document_state (the staleness signal call site)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    delete (globalThis as any).__capturedTransportOpts;
+  });
+  afterEach(() => jest.useRealTimers());
+
+  const transportBody = (): any => {
+    const opts = (globalThis as any).__capturedTransportOpts;
+    expect(opts).toBeDefined();
+    return opts.body();
+  };
+
+  it('carries the live freshness answer, re-read on every request', async () => {
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={targets(DOC_ID)}
+        getJwt={() => 'JWT'}
+      />
+    );
+    const editor = fakeEditor();
+    editor.loaded = true;
+    registerDocxEditor(undefined, editor);
+
+    // Before the index is confirmed: the request already says so.
+    expect(transportBody().context.document_state).toEqual({
+      indexHash: null,
+      indexDirty: true
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    expect(transportBody().context.document_state).toEqual({
+      indexHash: expect.any(String),
+      indexDirty: false
+    });
+
+    // An edit flips the very next request to stale - each tool round trip
+    // rebuilds this body, so mid-turn staleness is visible mid-turn.
+    editor.emit('contentChange');
+    expect(transportBody().context.document_state).toMatchObject({
+      indexDirty: true
+    });
+  });
+
+  it('sends no document_state when the form has no document target', () => {
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={targets(undefined)}
+        getJwt={() => 'JWT'}
+      />
+    );
+    expect(transportBody().context.document_state).toBeUndefined();
   });
 });

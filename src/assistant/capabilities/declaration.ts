@@ -3,7 +3,12 @@ import {
   MAX_LIVE_OCCURRENCE_QUERIES,
   MAX_LIVE_OCCURRENCES_PER_QUERY
 } from '../tools/syncfusionDocumentOps';
-import { CapabilityEntry, DOCUMENT_EDITOR_CAPABILITIES } from './registry';
+import {
+  CapabilityEntry,
+  DOCUMENT_EDITOR_CAPABILITIES,
+  DOCUMENT_EDITOR_READS,
+  ReadCapabilityEntry
+} from './registry';
 
 // The wire form of the declaration, sent as `context.capabilities` on every
 // assistant chat request from a document-editor surface and forwarded verbatim
@@ -31,6 +36,9 @@ export interface CapabilitiesDeclaration {
       liveSearchQueries: number;
       liveOccurrencesPerQuery: number;
     };
+    // The retrieval legs, cheapest first (S3): the declared counterpart of the
+    // ops list, so what the client can READ is as visible as what it can edit.
+    reads: ReadCapabilityEntry[];
     ops: CapabilityEntry[];
   }>;
 }
@@ -48,6 +56,7 @@ export function buildCapabilitiesDeclaration(): CapabilitiesDeclaration {
           liveSearchQueries: MAX_LIVE_OCCURRENCE_QUERIES,
           liveOccurrencesPerQuery: MAX_LIVE_OCCURRENCES_PER_QUERY
         },
+        reads: DOCUMENT_EDITOR_READS.map((entry) => ({ ...entry })),
         ops: DOCUMENT_EDITOR_CAPABILITIES.map((entry) => ({ ...entry }))
       }
     ]
