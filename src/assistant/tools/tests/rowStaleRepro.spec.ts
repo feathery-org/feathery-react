@@ -253,7 +253,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
     }
   });
 
-  it('real SDK: a stale `expect` on insert_row refuses stale_anchor at preflight and names both texts (the live log shape, made actionable)', () => {
+  it('real SDK: a stale `expect` on insert_row refuses expect_mismatch at preflight and names both texts (the live log shape, made actionable)', () => {
     const ed = makeRealDocumentEditor(bigTableSfdt(112));
     try {
       ed.enableTrackChanges = true;
@@ -279,7 +279,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
         ok: false,
         op: 'insert_row',
         anchor: '0;1;93;0;0',
-        error: 'stale_anchor'
+        error: 'expect_mismatch'
       });
       // The refusal must let the next attempt differ: it names the mismatched
       // expect, the authoritative live text, and the correction.

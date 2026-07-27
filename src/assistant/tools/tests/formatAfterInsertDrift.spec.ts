@@ -224,7 +224,7 @@ describe('formatting the paragraphs a structural insert created', () => {
     }
   });
 
-  it('real SDK: a WRONG non-empty expect on an existing block reports stale_anchor with the live text, never anchor_not_found', () => {
+  it('real SDK: a WRONG non-empty expect on an existing block reports expect_mismatch with the live text, never anchor_not_found', () => {
     const ed = makeRealDocumentEditor(baseDoc());
     try {
       ed.enableTrackChanges = true;
@@ -246,7 +246,7 @@ describe('formatting the paragraphs a structural insert created', () => {
         ok: false,
         op: 'apply_style',
         anchor: '0;2',
-        error: 'stale_anchor'
+        error: 'expect_mismatch'
       });
       // The details carry the live text so ONE informed retry can fix expect,
       // instead of the model re-hunting for a "missing" anchor.
