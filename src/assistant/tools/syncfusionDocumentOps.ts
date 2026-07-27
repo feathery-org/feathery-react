@@ -2132,6 +2132,65 @@ function verifyInheritedFormat(
   }
 }
 
+// SyncFusion's selection format setters do not ASSIGN every property inside a
+// table cell: `bidi` and `contextualSpacing` TOGGLE there, so writing the value
+// a cell paragraph already has flips it to the opposite (verified on a real
+// DocumentEditor; body paragraphs assign normally). That toggle is what made
+// every cell-target inherit fail verification and corrupted cell alignment
+// during the compensating rollback. Writing only real differences sidesteps the
+// toggle - a differing value still lands correctly in a cell - and is a pure
+// no-op everywhere else.
+function writeFormatPropIfDifferent(bag: any, prop: string, value: any): void {
+  if (!bag) return;
+  if (formatValuesMatch(value, bag[prop])) return;
+  bag[prop] = value;
+}
+
+// The write half of format inheritance, after source/target/inherited have been
+// resolved. Shared by the explicit `inheritFormatFrom` ops and the computed
+// insert-time default so both go through the identical guarded write path and
+// the identical read-back verification.
+function applyResolvedInheritedFormat(
+  editor: LiveEditor,
+  source: FlatBlock,
+  target: FlatBlock,
+  inherited: { characterFormat?: FormatBag; paragraphFormat?: FormatBag },
+  options: { styleName?: string } = {}
+): void {
+  // Styles are resolved last by SyncFusion. Apply the chosen paragraph style
+  // first, then restore the reference paragraph's resolved/direct properties so
+  // a 20 pt named style cannot overwrite its visible 11 pt override.
+  const sourceStyleName = inherited.paragraphFormat?.styleName;
+  const styleName = options.styleName ?? sourceStyleName;
+  if (typeof styleName === 'string' && styleName.trim()) {
+    selectParagraph(editor, target);
+    callEditor(editor, 'applyStyle', styleName);
+  }
+
+  // Character properties must be applied to text only; paragraph properties
+  // must include the paragraph mark (see selectParagraph above).
+  selectBlock(editor, target);
+  const cf = editor.selection.characterFormat;
+  for (const [prop, value] of Object.entries(inherited.characterFormat ?? {})) {
+    if (!isMeaningfulInheritedFormatValue(prop, value)) continue;
+    writeFormatPropIfDifferent(
+      cf,
+      prop,
+      normalizeInheritedCharValue(prop, value)
+    );
+  }
+
+  selectParagraph(editor, target);
+  const pf = editor.selection.paragraphFormat;
+  for (const [prop, value] of Object.entries(inherited.paragraphFormat ?? {})) {
+    if (!isMeaningfulInheritedFormatValue(prop, value)) continue;
+    if (prop === 'styleName') continue;
+    writeFormatPropIfDifferent(pf, prop, value);
+  }
+
+  verifyInheritedFormat(editor, source, target, inherited);
+}
+
 function applyInheritedFormat(
   editor: LiveEditor,
   op: EditOp,
@@ -2150,6 +2209,14 @@ function applyInheritedFormat(
     throw new OpError(
       'inherit_anchor_not_found',
       `No block found for inheritFormatFrom "${inheritAnchor}". Re-read the inventory and retry.`
+    );
+  }
+  // An empty paragraph is not a format reference: copying it verbatim restyles
+  // real content down to document defaults (the silent heading->Normal case).
+  if (!source.text.trim()) {
+    throw new OpError(
+      'inherit_source_empty',
+      `inheritFormatFrom "${inheritAnchor}" is an empty block; it carries no formatting worth copying. Choose a non-empty reference block.`
     );
   }
 
@@ -2173,34 +2240,9 @@ function applyInheritedFormat(
     );
   }
 
-  // Styles are resolved last by SyncFusion. Apply the chosen paragraph style
-  // first, then restore the reference paragraph's resolved/direct properties so
-  // a 20 pt named style cannot overwrite its visible 11 pt override.
-  const sourceStyleName = inherited.paragraphFormat?.styleName;
-  const styleName = options.styleName ?? sourceStyleName;
-  if (typeof styleName === 'string' && styleName.trim()) {
-    selectParagraph(editor, target);
-    callEditor(editor, 'applyStyle', styleName);
-  }
-
-  // Character properties must be applied to text only; paragraph properties
-  // must include the paragraph mark (see selectParagraph above).
-  selectBlock(editor, target);
-  const cf = editor.selection.characterFormat;
-  for (const [prop, value] of Object.entries(inherited.characterFormat ?? {})) {
-    if (!isMeaningfulInheritedFormatValue(prop, value)) continue;
-    if (cf) cf[prop] = normalizeInheritedCharValue(prop, value);
-  }
-
-  selectParagraph(editor, target);
-  const pf = editor.selection.paragraphFormat;
-  for (const [prop, value] of Object.entries(inherited.paragraphFormat ?? {})) {
-    if (!isMeaningfulInheritedFormatValue(prop, value)) continue;
-    if (prop === 'styleName') continue;
-    if (pf) pf[prop] = value;
-  }
-
-  verifyInheritedFormat(editor, source, target, inherited);
+  applyResolvedInheritedFormat(editor, source, target, inherited, {
+    styleName: options.styleName
+  });
 
   return true;
 }
@@ -2710,15 +2752,285 @@ function restoreCapturedFormat(
   selectBlock(editor, target);
   for (const [prop, value] of Object.entries(captured.characterFormat ?? {})) {
     if (isMeaningfulInheritedFormatValue(prop, value))
-      editor.selection.characterFormat[prop] = normalizeInheritedCharValue(
+      writeFormatPropIfDifferent(
+        editor.selection.characterFormat,
         prop,
-        value
+        normalizeInheritedCharValue(prop, value)
       );
   }
   selectParagraph(editor, target);
   for (const [prop, value] of Object.entries(captured.paragraphFormat ?? {})) {
     if (prop !== 'styleName' && isMeaningfulInheritedFormatValue(prop, value))
-      editor.selection.paragraphFormat[prop] = value;
+      writeFormatPropIfDifferent(editor.selection.paragraphFormat, prop, value);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Computed format inheritance for inserted paragraphs
+// ---------------------------------------------------------------------------
+//
+// SyncFusion formats an insertion from its insertion POINT, so a section added
+// through the common anchoring - an empty separator paragraph - comes out as
+// plain Normal/Calibri regardless of what the surrounding document looks like.
+// The recipe that fixed this (a second change set carrying `inheritFormatFrom`)
+// is a step the model can skip, so the engine now computes the reference
+// itself: every paragraph an insert CREATES inherits the visible format of the
+// nearest preceding non-empty block in its own container, per paragraph role.
+// Mid-text inserts and cell text writes are untouched - SyncFusion's own
+// inheritance is correct there.
+
+// One paragraph the insert brings into existence, with the reference that will
+// format it. `fallbackStyleName` marks the no-reference case: the paragraph is
+// set to the document default style instead of wearing whatever format the
+// split donor happened to carry (e.g. a heading's).
+interface PlannedInsertInheritance {
+  anchor: string;
+  expectedText: string;
+  source?: FlatBlock;
+  inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
+  fallbackStyleName?: string;
+}
+
+const INSERTED_HEADING_MAX_CHARS = 80;
+// The block map's isHeading covers only built-in "Heading N"/Title styles;
+// real documents carry custom heading styles (the live document's headings are
+// "headingNoToc"). Reference selection must recognise those too.
+const HEADING_LIKE_STYLE = /heading|title/i;
+
+function isHeadingLikeBlock(block: FlatBlock): boolean {
+  return (
+    block.isHeading || HEADING_LIKE_STYLE.test(block.format?.styleName ?? '')
+  );
+}
+
+// Containers for reference resolution: a table cell is its own container; the
+// body story is one container across SFDT sections (a section break changes
+// page geometry, not what body text looks like).
+function inSameContainer(
+  targetAnchor: string,
+  candidateAnchor: string
+): boolean {
+  const target = targetAnchor.split(';');
+  const candidate = candidateAnchor.split(';');
+  if (target.length !== candidate.length) return false;
+  if (target.length === 5)
+    return target.slice(0, 4).join(';') === candidate.slice(0, 4).join(';');
+  return target.length === 2;
+}
+
+// Insert-shape role inference. A short line without terminal punctuation that
+// is followed by more inserted content reads as a heading; everything else is
+// body. A single-paragraph insert is always body - there is nothing following
+// it to head.
+function segmentLooksLikeHeading(segments: string[], index: number): boolean {
+  const trimmed = segments[index].trim();
+  if (!trimmed || trimmed.length > INSERTED_HEADING_MAX_CHARS) return false;
+  if (/[.!?:;,]$/.test(trimmed)) return false;
+  return segments.slice(index + 1).some((segment) => segment.trim().length > 0);
+}
+
+// Nearest preceding block in the target's container that can serve as a format
+// reference for the given role: non-empty (an empty paragraph carries no
+// formatting worth copying), heading-like for heading paragraphs, non-heading
+// for body paragraphs. Walking a body target skips embedded table cells and
+// keeps climbing; walking a cell target stops at the cell boundary.
+function findComputedReference(
+  blocks: FlatBlock[],
+  targetIndex: number,
+  targetAnchor: string,
+  includeTarget: boolean,
+  role: 'heading' | 'body'
+): FlatBlock | undefined {
+  const isCellTarget = targetAnchor.split(';').length === 5;
+  for (let i = includeTarget ? targetIndex : targetIndex - 1; i >= 0; i--) {
+    const candidate = blocks[i];
+    if (!inSameContainer(targetAnchor, candidate.anchor)) {
+      if (isCellTarget) return undefined;
+      continue;
+    }
+    if (!candidate.text.trim()) continue;
+    if (role === 'heading' && !isHeadingLikeBlock(candidate)) continue;
+    if (role === 'body' && isHeadingLikeBlock(candidate)) continue;
+    return candidate;
+  }
+  return undefined;
+}
+
+// Decide, BEFORE the insert runs, which created paragraphs will need a format
+// and from which reference. `explicit` carries a model-chosen source (an
+// `inheritFormatFrom` on the insert op itself), which replaces the computed
+// reference for every created paragraph. Returns undefined when the insert
+// creates no paragraphs - SyncFusion's insertion-point inheritance is correct
+// for mid-text inserts (and for cell text), so the default must not interfere.
+function planInsertInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  target: FlatBlock,
+  blocks: FlatBlock[],
+  explicit?: {
+    source: FlatBlock;
+    inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
+  }
+): PlannedInsertInheritance[] | undefined {
+  if (isLiveStoryAnchor(target.anchor)) return undefined;
+  const text = insertionText(op);
+  if (!text) return undefined;
+  const segments = text.split(/\r\n|\r|\n/);
+  const offset = insertionPoint(op, target);
+  const createsParagraphs = segments.length > 1;
+  // Filling a previously-empty paragraph IS creating the paragraph in every
+  // sense that matters for formatting: its only insertion-point donor is the
+  // meaningless empty separator.
+  const fillsEmptyParagraph = target.length === 0;
+  if (!createsParagraphs && !fillsEmptyParagraph) {
+    if (explicit)
+      throw new OpError(
+        'inherit_requires_new_paragraph',
+        'inheritFormatFrom on insert_text formats the paragraphs the insert creates; this insert lands inside existing text. Format existing content with apply_style, set_char_format or set_para_format.'
+      );
+    return undefined;
+  }
+
+  const lastIndex = segments.length - 1;
+  const anchorParts = target.anchor.split(';');
+  const blockIndexBase = Number(anchorParts.pop());
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (targetIndex < 0 || !Number.isInteger(blockIndexBase)) return undefined;
+  // When the insertion point sits after existing target text (position
+  // "after"/"end"), the target block itself precedes the new paragraphs and is
+  // a legitimate reference candidate.
+  const includeTarget =
+    offset > 0 && target.text.slice(0, offset).trim().length > 0;
+  const isBodyTarget = anchorParts.length === 1;
+
+  const inheritedBySource = new Map<
+    string,
+    { characterFormat?: FormatBag; paragraphFormat?: FormatBag }
+  >();
+  const readInherited = (source: FlatBlock) => {
+    let inherited = inheritedBySource.get(source.anchor);
+    if (!inherited) {
+      inherited = readEffectiveSourceFormat(editor, source);
+      inheritedBySource.set(source.anchor, inherited);
+    }
+    return inherited;
+  };
+
+  const planned: PlannedInsertInheritance[] = [];
+  segments.forEach((segment, index) => {
+    // The current-text projection drops tab inlines, so compare without them.
+    const expectedText = segment.replace(/\t/g, '');
+    if (!expectedText.trim()) return;
+    // Only paragraphs consisting solely of inserted content are formatted; a
+    // paragraph that merges with existing text keeps that text's format.
+    const hasLeadingExistingText =
+      index === 0 && offset > 0 && target.length > 0;
+    const hasTrailingExistingText =
+      index === lastIndex && offset < target.length;
+    if (hasLeadingExistingText || hasTrailingExistingText) return;
+    const anchor = [...anchorParts, blockIndexBase + index].join(';');
+
+    if (explicit) {
+      planned.push({
+        anchor,
+        expectedText,
+        source: explicit.source,
+        inherited: explicit.inherited
+      });
+      return;
+    }
+
+    const role = segmentLooksLikeHeading(segments, index) ? 'heading' : 'body';
+    let source =
+      role === 'heading'
+        ? findComputedReference(
+            blocks,
+            targetIndex,
+            target.anchor,
+            includeTarget,
+            'heading'
+          )
+        : undefined;
+    if (!source)
+      source = findComputedReference(
+        blocks,
+        targetIndex,
+        target.anchor,
+        includeTarget,
+        'body'
+      );
+    if (source) {
+      planned.push({
+        anchor,
+        expectedText,
+        source,
+        inherited: readInherited(source)
+      });
+    } else if (isBodyTarget) {
+      // No reference in the container: fall back to the document default
+      // style rather than let the paragraph wear the split donor's format
+      // (a body paragraph split off a heading must not stay a heading).
+      planned.push({ anchor, expectedText, fallbackStyleName: 'Normal' });
+    }
+    // A cell with no in-cell reference is left alone: SyncFusion's cell
+    // defaults are the honest answer there.
+  });
+  return planned.length ? planned : undefined;
+}
+
+// Format the paragraphs a just-applied insert created, from the plan computed
+// before the write. Read-back verification (verifyInheritedFormat / the style
+// check on the fallback) is the success criterion; a mismatch fails the op and
+// with it the change set.
+function applyInsertInheritance(
+  editor: LiveEditor,
+  planned: PlannedInsertInheritance[],
+  byAnchor: Map<string, FlatBlock>
+): void {
+  for (const paragraph of planned) {
+    const target = byAnchor.get(paragraph.anchor);
+    if (!target || target.text !== paragraph.expectedText) {
+      // Lightweight test doubles do not split paragraphs on newline inserts; a
+      // mounted DocumentEditor always does. Skip quietly for doubles, fail
+      // loudly when the real editor's split did not land where computed.
+      if (!(editor as any).element && !(editor as any).documentHelper) return;
+      throw new OpError(
+        'inherited_paragraph_not_found',
+        `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
+        [
+          `expected: ${JSON.stringify(paragraph.expectedText)}`,
+          `actual: ${JSON.stringify(target?.text)}`
+        ]
+      );
+    }
+    if (paragraph.source) {
+      applyResolvedInheritedFormat(
+        editor,
+        paragraph.source,
+        target,
+        paragraph.inherited ??
+          readEffectiveSourceFormat(editor, paragraph.source)
+      );
+    } else if (paragraph.fallbackStyleName) {
+      selectParagraph(editor, target);
+      callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
+      selectParagraph(editor, target);
+      const resolved = comparableFormatValue(
+        editor.selection?.paragraphFormat?.styleName
+      );
+      if (resolved !== paragraph.fallbackStyleName)
+        throw new OpError(
+          'inherited_format_mismatch',
+          `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
+          [
+            `paragraphFormat.styleName: expected ${JSON.stringify(
+              paragraph.fallbackStyleName
+            )}, got ${JSON.stringify(resolved)}`
+          ]
+        );
+    }
   }
 }
 
@@ -2924,6 +3236,21 @@ export function applyDocumentEdits(
       };
       return;
     }
+    // Refuse a meaningless reference before anything writes: an empty
+    // paragraph accepted as a source restyles real content down to document
+    // defaults (verified live: a heading silently became Normal/Calibri 11).
+    if (source && !source.text.trim()) {
+      results[index] = {
+        ok: false,
+        op: name,
+        anchor: op.anchor,
+        error: 'inherit_source_empty',
+        details: [
+          `inheritFormatFrom "${inheritAnchor}" is an empty block; it carries no formatting worth copying. Choose a non-empty reference block.`
+        ]
+      };
+      return;
+    }
     try {
       plans.push({
         index,
@@ -2962,6 +3289,7 @@ export function applyDocumentEdits(
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
         let priorRejectText: string | undefined;
+        let insertInheritance: PlannedInsertInheritance[] | undefined;
         try {
           if (op.op === 'replace_all') {
             const count = applyReplaceAll(editor, op);
@@ -2990,6 +3318,30 @@ export function applyDocumentEdits(
               // tracked write costs no extra serialize before it lands.
               if (TRACKED_TEXT_OPS.has(op.op))
                 priorRejectText = rejectByAnchor.get(target.anchor);
+              // Decide the inserted paragraphs' formatting BEFORE the write,
+              // while the reference blocks and their formats are readable in
+              // their pre-insert positions. An explicit inheritFormatFrom on
+              // the op replaces the computed reference (its source and format
+              // snapshot were captured at preflight).
+              if (op.op === 'insert_text') {
+                const explicitSource = plan.source
+                  ? resolveChangeSetBlock(
+                      blocks,
+                      String(op.inheritFormatFrom),
+                      plan.source,
+                      anchorsMayHaveShifted
+                    )
+                  : undefined;
+                insertInheritance = planInsertInheritance(
+                  editor,
+                  writtenOp,
+                  target,
+                  blocks,
+                  explicitSource
+                    ? { source: explicitSource, inherited: plan.inherited }
+                    : undefined
+                );
+              }
               applyAnchoredOp(editor, writtenOp, target, byAnchor);
             }
             if (mayShiftAnchors(op)) anchorsMayHaveShifted = true;
@@ -3001,6 +3353,10 @@ export function applyDocumentEdits(
             priorRejectText
           );
           refresh();
+          if (insertInheritance) {
+            applyInsertInheritance(editor, insertInheritance, byAnchor);
+            refresh();
+          }
           results[index] = { ok: true, op: op.op, anchor: op.anchor };
         } catch (err) {
           fail(index, op, err);
