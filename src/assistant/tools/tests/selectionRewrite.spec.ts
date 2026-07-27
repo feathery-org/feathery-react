@@ -301,7 +301,10 @@ describe('the root failure: a model-counted offset must not invalidate a resolve
       });
       expect(result.results[0]).toMatchObject({
         ok: false,
-        error: 'stale_anchor'
+        // Renamed, not relaxed: this is the model-supplied `expect`
+        // compare-and-swap, which is what expect_mismatch names. The refusal
+        // itself is unchanged - no revision, and the document is byte-identical.
+        error: 'expect_mismatch'
       });
       expect(ed.revisions.length).toBe(0);
       expect(ed.serialize()).toBe(before);
