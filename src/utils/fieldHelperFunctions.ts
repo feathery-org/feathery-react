@@ -151,7 +151,9 @@ export function getDefaultFieldValue(field: any) {
   const servar = field.servar;
   const meta = servar.metadata;
   if (meta.default_value) {
-    if (['multiselect', 'dropdown_multi', 'button_group'].includes(servar.type)) {
+    if (
+      ['multiselect', 'dropdown_multi', 'button_group'].includes(servar.type)
+    ) {
       // For button_group single selection, wrap in array since it's an ARRAY_FIELD_TYPE
       if (servar.type === 'button_group' && !meta.multiple) {
         return [meta.default_value];
