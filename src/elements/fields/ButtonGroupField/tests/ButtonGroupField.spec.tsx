@@ -346,4 +346,76 @@ describe('ButtonGroupField', () => {
       expectButtonToHaveTooltip('opt2', 'Tooltip 2');
     });
   });
+
+  describe('Default Values', () => {
+    it('renders with default value in single selection mode', () => {
+      const element = createButtonGroupElement('button_group', {
+        options: ['Option 1', 'Option 2', 'Option 3'],
+        default_value: 'Option 2'
+      });
+      const props = createButtonGroupProps(element, {
+        fieldVal: ['Option 2']
+      });
+
+      setMockFieldValue(['Option 2']);
+      render(<ButtonGroupField {...props} />);
+
+      expectButtonToBeUnselected('Option 1');
+      expectButtonToBeSelected('Option 2');
+      expectButtonToBeUnselected('Option 3');
+    });
+
+    it('renders with multiple default values in multiple selection mode', () => {
+      const element = createButtonGroupElement('button_group', {
+        options: ['Option 1', 'Option 2', 'Option 3'],
+        default_value: 'Option 1, Option 3',
+        multiple: true
+      });
+      const props = createButtonGroupProps(element, {
+        fieldVal: ['Option 1', 'Option 3']
+      });
+
+      setMockFieldValue(['Option 1', 'Option 3']);
+      render(<ButtonGroupField {...props} />);
+
+      expectButtonToBeSelected('Option 1');
+      expectButtonToBeUnselected('Option 2');
+      expectButtonToBeSelected('Option 3');
+    });
+
+    it('handles default value with whitespace in comma-separated list', () => {
+      const element = createButtonGroupElement('button_group', {
+        options: ['Apple', 'Banana', 'Cherry'],
+        default_value: 'Apple , Cherry',
+        multiple: true
+      });
+      const props = createButtonGroupProps(element, {
+        fieldVal: ['Apple', 'Cherry']
+      });
+
+      setMockFieldValue(['Apple', 'Cherry']);
+      render(<ButtonGroupField {...props} />);
+
+      expectButtonToBeSelected('Apple');
+      expectButtonToBeUnselected('Banana');
+      expectButtonToBeSelected('Cherry');
+    });
+
+    it('renders with no selection when default_value is empty', () => {
+      const element = createButtonGroupElement('button_group', {
+        options: ['Option 1', 'Option 2', 'Option 3'],
+        default_value: ''
+      });
+      const props = createButtonGroupProps(element, {
+        fieldVal: []
+      });
+
+      setMockFieldValue([]);
+      render(<ButtonGroupField {...props} />);
+
+      expectButtonToBeUnselected('Option 1');
+      expectButtonToBeUnselected('Option 2');
+      expectButtonToBeUnselected('Option 3');
+    });
+  });
 });
