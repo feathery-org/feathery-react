@@ -298,17 +298,13 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     summary: 'Delete the row containing the anchored cell.',
     example: { op: 'delete_row', anchor: '0;7;2;0;0' }
   },
-  {
-    // handler: applyAnchoredOp case 'insert_column'
-    op: 'insert_column',
-    params: { left: 'boolean?', count: 'int>0?' },
-    requiresAnchor: true,
-    anchorKind: 'table_cell',
-    tracked: false,
-    summary:
-      'Insert column(s) next to the anchored cell (default right; `left: true` for left). Applies untracked: SyncFusion records no revision for column insertion.',
-    example: { op: 'insert_column', anchor: '0;7;0;1;0', left: false, count: 1 }
-  },
+  // `insert_column` was withdrawn in S5: probed on a real DocumentEditor, it
+  // reports ok:true and genuinely mutates the table (4 -> 6 cells) while
+  // recording ZERO revisions, so the change survives reject-all and can never
+  // be reviewed or undone from the Changes pane - the same no-tracked-route
+  // SyncFusion class as the withdrawn delete_column/merge_cells, except the
+  // mutation applies silently instead of popping the blocking dialog. It now
+  // falls to the vocabulary refusal like the rest of the parked table ops.
   // --- Links / bookmarks / comments ------------------------------------------
   {
     // handler: applyAnchoredOp case 'insert_hyperlink'
@@ -495,13 +491,11 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     example: { op: 'enter_footer' }
   },
   {
-    // handler: applyAnchorlessOp case 'go_to_body'
-    // KNOWN BROKEN (pre-existing, found by the S2 tracked-revision probe):
-    // the handler calls selection.goToBody, which does not exist in
-    // ej2-documenteditor 34.1.31, so this op always fails with
-    // `unsupported_op: selection.goToBody unavailable.` The working route is
-    // selection.closeHeaderFooter(). Repairing handlers is S5 work; the entry
-    // stays because the op is advertised today and S2 changes no behaviour.
+    // handler: ANCHORLESS_OP_HANDLERS.go_to_body
+    // Repaired in S5: the handler had called selection.goToBody, which does
+    // not exist in ej2-documenteditor 34.1.31, so the op failed with
+    // unsupported_op since it shipped (found by the S2 tracked-revision
+    // probe). It now routes through selection.closeHeaderFooter().
     op: 'go_to_body',
     params: {},
     requiresAnchor: false,

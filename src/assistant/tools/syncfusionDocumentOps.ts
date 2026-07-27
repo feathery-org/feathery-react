@@ -1908,14 +1908,6 @@ export const ANCHORED_OP_HANDLERS: {
   insert_row: ({ editor, op }) => {
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
   },
-  insert_column: ({ editor, op }) => {
-    callEditor(
-      editor,
-      'insertColumn',
-      op.left === true,
-      positiveCount(op.count)
-    );
-  },
   insert_table: ({ editor, op }) => {
     callEditor(
       editor,
@@ -1926,11 +1918,13 @@ export const ANCHORED_OP_HANDLERS: {
   },
   // Structural table removal. SyncFusion operates on the table or row
   // containing the selection, which selectBlock placed at the anchor.
-  // `delete_column` and `merge_cells` are deliberately absent: SyncFusion
-  // refuses both under track changes (a blocking "wont be marked as change"
-  // confirmation dialog; the change would be untracked), and this engine
-  // applies every change set tracked, so they fall to the vocabulary refusal
-  // in the dispatch wrapper instead of reporting success while doing nothing.
+  // `delete_column`, `merge_cells` and `insert_column` are deliberately
+  // absent: SyncFusion has no tracked route for any of them under track
+  // changes (the first two pop a blocking "wont be marked as change" dialog;
+  // insert_column silently applies with ZERO revisions, so it survives
+  // reject-all - probed on a real DocumentEditor, S5). This engine applies
+  // every change set tracked, so all three fall to the vocabulary refusal in
+  // the dispatch wrapper instead of mutating without a reviewable card.
   delete_table: ({ editor }) => {
     callEditor(editor, 'deleteTable');
   },
@@ -1978,7 +1972,12 @@ export const ANCHORLESS_OP_HANDLERS: {
     else throw new OpError('unsupported_op', 'No revisions to reject.');
   },
   go_to_body: ({ editor }) => {
-    callSelection(editor, 'goToBody');
+    // selection.goToBody does not exist in ej2-documenteditor (verified on
+    // 34.1.31: absent from Selection.prototype and selection.d.ts), so this
+    // op failed with unsupported_op since the day it shipped - found by the
+    // S2 tracked-revision probe, repaired in S5. closeHeaderFooter is the
+    // public route back to the body story.
+    callSelection(editor, 'closeHeaderFooter');
   },
   enter_header: ({ editor }) => {
     callSelection(editor, 'goToHeader');
@@ -2769,7 +2768,7 @@ interface ChangeSetPlan {
 // later anchor in the batch shifts and a computed cell anchor could name a cell
 // of an entirely different table. Filling a brand new table stays a second call
 // against a re-read inventory.
-const CELL_CREATING_OPS = new Set(['insert_row', 'insert_column']);
+const CELL_CREATING_OPS = new Set(['insert_row']);
 
 // Breaks which end the current paragraph and so bring exactly one new, empty
 // paragraph into existence at the next block index. Text destined for that new

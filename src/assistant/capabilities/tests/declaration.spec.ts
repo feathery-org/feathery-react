@@ -25,7 +25,7 @@ describe('capabilities declaration byte stability (prompt-cache guard)', () => {
     expect(CAPABILITIES_DECLARATION.surfaces).toHaveLength(1);
     const surface = CAPABILITIES_DECLARATION.surfaces[0];
     expect(surface.surface).toBe('document_editor');
-    expect(surface.ops).toHaveLength(38);
+    expect(surface.ops).toHaveLength(37);
     // The retrieval ladder (S3), cheapest first - `structure` leads because it
     // is the leg the too-large refusal names as its remedy.
     expect(surface.reads.map((read) => read.read)).toEqual([
