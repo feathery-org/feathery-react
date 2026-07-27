@@ -9,6 +9,9 @@ export interface HubFieldSchema {
   id: string;
   key: string;
   type: string;
+  // Author-provided help text from the data hub field. Surfaced on the
+  // hoverable info button next to each field.
+  description?: string;
   required: boolean;
   unique: boolean;
   metadata?: Record<string, any>;
