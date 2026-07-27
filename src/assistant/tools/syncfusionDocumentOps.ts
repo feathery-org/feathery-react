@@ -29,11 +29,19 @@ import {
   OpParams
 } from '../capabilities/registry';
 import {
-  computeColumn,
-  ComputeOperation,
-  COMPUTE_OPERATIONS,
+  classifyNumericText,
+  parseNumericCell,
   SkippedCell
 } from './numericCells';
+import {
+  evaluateFormula,
+  FormulaEvaluationSuccess,
+  FormulaReference,
+  FormulaResolver,
+  renderFormulaResult,
+  ROUNDING_MODES,
+  RoundingMode
+} from './cellFormula';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
@@ -47,6 +55,7 @@ export type InventoryScope =
   | 'structure'
   | 'section'
   | 'full'
+  | 'table_facts'
   | 'table_column';
 
 export interface DocFormat {
@@ -110,14 +119,20 @@ export interface InventoryRefusal {
   retry?: 'never' | 'after_remedy' | 'modified_input';
 }
 
-// One table in the document skeleton: where it is and its shape, no cell text
-// beyond the header row (enough to recognise "the Location Schedule table").
+// One table in the document skeleton: where it is and its shape, plus the text
+// of its FIRST ROW (enough to recognise "the Location Schedule table").
+//
+// The field is `firstRowCells`, not `headerCells`, deliberately: row 0 being a
+// header is an INTERPRETATION, and plenty of real documents put a title row, a
+// merged banner or immediate data there. The engine states which row it read;
+// deciding what that row means - and therefore which rows are data - is the
+// model's job, from a `table_facts` read.
 export interface StructureTable {
   anchor: string;
   rows: number;
   columns: number;
-  headerCells: string[];
-  headerCellsTruncated?: boolean;
+  firstRowCells: string[];
+  firstRowCellsTruncated?: boolean;
 }
 
 // One SFDT section (the spans between section breaks), by 0-based index.
@@ -168,11 +183,121 @@ export interface TableColumnRead {
   cells: TableColumnCell[];
 }
 
+// ---------------------------------------------------------------------------
+// table_facts: observable facts about ONE table's layout, and nothing else.
+//
+// The three-way split this read exists to enforce:
+//   1. the ENGINE reports FACTS - dimensions, which rows are short, which cells
+//      are merged, which cells are bold, which are blank, which parse as
+//      numbers, what each cell says;
+//   2. the MODEL INTERPRETS - "row 0 and row 1 are stacked header rows", "this
+//      bold row at 47 is a regional subtotal so exclude it", "Premium is
+//      column 3", "the data is rows 2..93";
+//   3. the ENGINE COMPUTES over exactly the ranges the model then names.
+//
+// So there is deliberately NO `headerRow`, NO `dataRows`, NO `subtotalRows` and
+// no "is this a total?" arithmetic anywhere in this result. Guessing a header
+// row is how a 94-row schedule gets summed from row 1 when its data starts at
+// row 2; inferring a subtotal arithmetically is how a subtotal gets counted
+// twice. Facts are cheap and cannot be wrong; interpretation belongs to the one
+// participant that can read the document's language.
+// ---------------------------------------------------------------------------
+
+/** Per-cell text is bounded so one prose-heavy table cannot blow the turn. */
+export const TABLE_FACTS_CELL_TEXT_CHARS = 200;
+
+export interface TableCellFact {
+  row: number;
+  column: number;
+  /** Anchor of the cell's first paragraph - the anchor a formula references. */
+  anchor: string;
+  /** Verbatim text (multi-paragraph cells joined with \n), possibly clipped. */
+  text: string;
+  /** Present only when `text` was clipped at TABLE_FACTS_CELL_TEXT_CHARS. */
+  textTruncated?: true;
+  /** More than one paragraph in the cell. */
+  paragraphs: number;
+  blank: boolean;
+  /** Parses as a single number under the engine's numeric grammar. */
+  numeric: boolean;
+  /**
+   * Numeric AND formatted as an amount - carries a unit, decimals or observed
+   * thousands grouping. `$36,803` and `12.5%` are quantities; `0093` and `9999`
+   * are numeric but not quantities (identifier shape).
+   */
+  quantity: boolean;
+  /** The unit token, when numeric ('' for a bare number). */
+  unit?: string;
+  /** Decimal places as written, when numeric. */
+  decimals?: number;
+  /** Only when > 1. A horizontally merged cell. */
+  columnSpan?: number;
+  /** Only when > 1. A vertically merged cell. */
+  rowSpan?: number;
+  bold?: true;
+  italic?: true;
+  styleName?: string;
+}
+
+export interface TableRowFact {
+  row: number;
+  /** Cells physically present in this row (a short/merged row has fewer). */
+  cellCount: number;
+  /** Cells with any non-whitespace text. */
+  filledCells: number;
+  /** Every present cell is blank. */
+  blankRow?: true;
+  /** Every non-blank cell in the row is bold. A FACT, not "this is a header". */
+  allBold?: true;
+  /** Some cell in this row spans columns or rows. */
+  hasMergedCells?: true;
+  cells: TableCellFact[];
+}
+
+export interface TableColumnFact {
+  column: number;
+  /** Rows that actually have a cell at this column. */
+  presentCells: number;
+  filledCells: number;
+  numericCells: number;
+  quantityCells: number;
+  /** Distinct unit tokens observed, in first-seen order. */
+  units: string[];
+  /** Distinct decimal widths observed, ascending. */
+  decimals: number[];
+}
+
+export interface TableFacts {
+  tableAnchor: string;
+  rowCount: number;
+  /** The widest row's cell count; shorter rows exist and are listed as such. */
+  columnCount: number;
+  /** True when every row has exactly `columnCount` cells. */
+  uniformRows: boolean;
+  /** Every cell whose columnSpan/rowSpan exceeds 1, named. */
+  mergedCells: Array<{
+    row: number;
+    column: number;
+    anchor: string;
+    columnSpan: number;
+    rowSpan: number;
+  }>;
+  rows: TableRowFact[];
+  columns: TableColumnFact[];
+  /**
+   * Always false. A facts read has no maxEntries and is never capped: layout
+   * facts are small even for a table whose contents are not, and a partial
+   * layout is exactly what makes a model guess a range.
+   */
+  truncated: false;
+}
+
 export type InventoryResult =
   | { sections: OutlineSection[]; truncation?: InventoryTruncation }
   | { structure: DocumentStructure; truncation?: InventoryTruncation }
   | { inventory: InventoryEntry[]; truncation?: InventoryTruncation }
   | { column: TableColumnRead; truncation?: InventoryTruncation }
+  | { table: TableFacts }
   | InventoryRefusal;
 
 export interface EditOp {
@@ -182,39 +307,91 @@ export interface EditOp {
   [field: string]: any;
 }
 
-// The auditable record of one engine-computed cell write. `receipt` is the
-// one-line summary the assistant relays to the user; the structured fields
-// are the same facts as data. The trust signal is `rowsRead` of `rowCount` -
-// coverage of the read - plus the NAMED skipped cells, never a wall of the
-// values themselves (available via a table_column read on request).
-export interface ComputedCellReport {
-  operation: ComputeOperation;
-  tableAnchor: string;
-  column: number;
-  /** The column's header cell text (row 0), when it has one. */
-  header: string | null;
+/**
+ * The auditable record of one engine-evaluated formula write. Same trust
+ * design as the retired set_cell_computed report: the receipt is the one line to relay, the
+ * signal is coverage plus NAMED skips plus the resolved references, and the
+ * rounding - if any - is stated, never inferred.
+ */
+/**
+ * What one reference resolved to, in resolved terms - the receipt's evidence.
+ * A range states its span and its coverage; a single cell states the verbatim
+ * text that was read, because for `[cell] * 1.13` the only way to see that the
+ * engine read the WRONG cell is to see what it read.
+ */
+export type FormulaResolvedTerm =
+  | {
+      kind: 'cell';
+      reference: string;
+      tableAnchor: string;
+      row: number;
+      column: number;
+      /** Verbatim text of the cell, as read from the document. */
+      text: string;
+      description: string;
+    }
+  | {
+      kind: 'range';
+      reference: string;
+      operation: string;
+      tableAnchor: string;
+      column: number;
+      startRow: number;
+      endRow: number;
+      /** Cells in the span (every row is accounted for). */
+      cellsRead: number;
+      /** Cells whose values entered the arithmetic. */
+      counted: number;
+      description: string;
+    };
+
+export interface FormulaCellReport {
+  /** The formula as the model sent it, verbatim. */
+  formula: string;
+  /**
+   * The model's own plain-English description of what it computed, echoed back
+   * unchanged beside the resolved facts so a wrong INTERPRETATION ("the Premium
+   * column") is checkable against what was actually read (column 3, rows 2-93).
+   */
+  label?: string;
+  /** Every reference the engine resolved, as text, in source order. */
+  references: string[];
+  /** What each reference resolved to - the anti-"wrong cells" evidence. */
+  resolved: FormulaResolvedTerm[];
+  /** The cell the result was written into. */
+  targetAnchor: string;
   /** The exact bytes written to the target cell. */
   renderedValue: string;
   /** Cells whose values entered the arithmetic. */
   counted: number;
-  /** Column rows actually read by the engine - always all of them. */
-  rowsRead: number;
-  /** The table's true row count. */
-  rowCount: number;
-  /** The computed range (inclusive), after defaults. */
-  startRow: number;
-  endRow: number;
-  /** The anchored (target) row, excluded from the range when it fell inside. */
-  excludedTargetRow: number | null;
   /** Every considered cell excluded from the arithmetic, named. */
   skipped: SkippedCell[];
   /** Where the render format came from. */
   formatSource: 'target_cell' | 'column_majority';
-  /** True when `average` rounding changed the exact quotient. */
+  /** Decimal places the result was written at. */
+  decimals: number;
+  /** True when the exact result did not fit `decimals` and was rounded. */
   rounded: boolean;
+  /** The mode that did the rounding; null when the result was exact. */
+  roundingMode: RoundingMode | null;
+  /** True when the formula reads the cell it writes (read-then-write). */
+  selfReferencing: boolean;
   /** The post-write re-read reproduced the same value and bytes. */
   verifiedByReRead: true;
   receipt: string;
+}
+
+/**
+ * A numeric `set_cell_text` that got through the model-authored-number gate by
+ * declaring `literal: true`. Recorded on the result so the exception is
+ * auditable in the change set instead of being indistinguishable from a
+ * computed write.
+ */
+export interface LiteralNumberWrite {
+  text: string;
+  /** What the cell held before, when it held a number. */
+  previousText: string;
+  note: string;
 }
 
 export interface EditResult {
@@ -222,6 +399,12 @@ export interface EditResult {
   anchor?: string;
   op: string;
   error?: string;
+  /**
+   * The refusal's own words: what went wrong and what to do instead. Codes are
+   * for branching, this is the remedy - a refusal the model cannot read is a
+   * refusal it will simply retry, so it travels with every failed result.
+   */
+  message?: string;
   // Formatting inheritance is resolved by SyncFusion after styles are applied.
   // Keep any mismatch evidence on the affected op so a caller can retry the
   // precise anchor without having to re-inventory the whole document.
@@ -229,9 +412,13 @@ export interface EditResult {
   // 'never' marks a failure no retry can fix (the op is not in the vocabulary),
   // so the assistant stops resending it instead of looping.
   retry?: 'never';
-  // Present on a successful `set_cell_computed`: what was computed, from what,
-  // and the receipt line to relay.
-  computed?: ComputedCellReport;
+  // Present on a successful `set_cell_formula`: the formula, the references it
+  // resolved, where it rounded, and the receipt line to relay.
+  formula?: FormulaCellReport;
+  // Present on a `set_cell_text` that wrote a number verbatim under the
+  // user-dictated exception: the engine's record that this number was NOT
+  // engine-computed, so a reviewer can see which is which.
+  literalNumber?: LiteralNumberWrite;
 }
 
 export interface ApplyEditsResult {
@@ -729,10 +916,10 @@ function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
   }
   return order.map((t) => {
     const cellCount = Math.min(t.columns, STRUCTURE_MAX_HEADER_CELLS);
-    const headerCells: string[] = [];
+    const firstRowCells: string[] = [];
     for (let ci = 0; ci < cellCount; ci++) {
       const text = (t.headerByCell.get(ci) ?? []).join(' ');
-      headerCells.push(
+      firstRowCells.push(
         text.length > STRUCTURE_HEADER_CELL_CHARS
           ? `${text.slice(0, STRUCTURE_HEADER_CELL_CHARS)}...`
           : text
@@ -742,11 +929,11 @@ function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
       anchor: t.anchor,
       rows: t.rows,
       columns: t.columns,
-      headerCells
+      firstRowCells
     };
     // Never truncate silently: a capped header row must say it is capped.
     if (t.columns > STRUCTURE_MAX_HEADER_CELLS)
-      table.headerCellsTruncated = true;
+      table.firstRowCellsTruncated = true;
     return table;
   });
 }
@@ -772,7 +959,7 @@ function collectSectionBoundaries(
 
 /**
  * Every cell of one table column, complete and in row order. Shared by the
- * `table_column` inventory scope and the `set_cell_computed` engine
+ * `table_column` inventory scope and the `set_cell_formula` engine
  * computation, so what the model reads and what the engine sums are the same
  * cells by construction. Returns null when no table answers to `tableAnchor`.
  */
@@ -819,6 +1006,144 @@ export function collectTableColumnCells(
   return { columns, rowCount, cells };
 }
 
+/**
+ * Observable facts about one table. Reads the RAW SFDT (not just the flattened
+ * block stream) because merge spans live on `cellFormat.columnSpan` /
+ * `rowSpan`, and a merged cell is precisely the layout fact a model cannot
+ * infer from cell text - it is why a row has fewer cells than the table has
+ * columns.
+ *
+ * Reports facts only. Anything that would amount to an opinion about the
+ * table's meaning - which row is a header, which row is a subtotal, where the
+ * data starts - is deliberately absent.
+ */
+export function collectTableFacts(
+  blocks: FlatBlock[],
+  sfdt: any,
+  tableAnchor: string
+): TableFacts | null {
+  const [sectionIndex, blockIndex] = tableAnchor.split(';').map(Number);
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const tableBlock = getBlocks(sections[sectionIndex] ?? {})[blockIndex];
+  const rawRows = tableBlock ? getRows(tableBlock) : undefined;
+  if (!rawRows) return null;
+
+  const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
+  const rows: TableRowFact[] = [];
+  const mergedCells: TableFacts['mergedCells'] = [];
+  let columnCount = 0;
+
+  rawRows.forEach((rawRow: any, row: number) => {
+    const rawCells: any[] = pick(rawRow, 'cells', 'c') ?? [];
+    columnCount = Math.max(columnCount, rawCells.length);
+    const cells: TableCellFact[] = [];
+    rawCells.forEach((rawCell: any, column: number) => {
+      const anchor = `${sectionIndex};${blockIndex};${row};${column};0`;
+      // A cell's paragraphs are separate flattened blocks; join them the same
+      // way collectTableColumnCells does so text is identical across reads.
+      const paragraphs: FlatBlock[] = [];
+      for (let p = 0; ; p++) {
+        const paragraph = byAnchor.get(
+          `${sectionIndex};${blockIndex};${row};${column};${p}`
+        );
+        if (!paragraph) break;
+        paragraphs.push(paragraph);
+      }
+      const fullText = paragraphs.map((paragraph) => paragraph.text).join('\n');
+      const clipped = fullText.length > TABLE_FACTS_CELL_TEXT_CHARS;
+      const classified = classifyNumericText(fullText);
+      const cellFormat = pick(rawCell, 'cellFormat', 'cf') ?? {};
+      const columnSpan = Number(pick(cellFormat, 'columnSpan', 'colSpan') ?? 1);
+      const rowSpan = Number(pick(cellFormat, 'rowSpan') ?? 1);
+      const first = paragraphs[0];
+      const fact: TableCellFact = {
+        row,
+        column,
+        anchor,
+        text: clipped
+          ? `${fullText.slice(0, TABLE_FACTS_CELL_TEXT_CHARS)}...`
+          : fullText,
+        ...(clipped ? { textTruncated: true as const } : {}),
+        paragraphs: paragraphs.length,
+        blank: fullText.trim() === '',
+        numeric: classified.numeric,
+        quantity: classified.quantity,
+        ...(classified.numeric
+          ? { unit: classified.unit ?? '', decimals: classified.decimals ?? 0 }
+          : {}),
+        ...(Number.isFinite(columnSpan) && columnSpan > 1
+          ? { columnSpan }
+          : {}),
+        ...(Number.isFinite(rowSpan) && rowSpan > 1 ? { rowSpan } : {}),
+        ...(first?.characterFormat?.bold ? { bold: true as const } : {}),
+        ...(first?.characterFormat?.italic ? { italic: true as const } : {}),
+        ...(first?.format?.styleName
+          ? { styleName: first.format.styleName }
+          : {})
+      };
+      if (fact.columnSpan || fact.rowSpan) {
+        mergedCells.push({
+          row,
+          column,
+          anchor,
+          columnSpan: fact.columnSpan ?? 1,
+          rowSpan: fact.rowSpan ?? 1
+        });
+      }
+      cells.push(fact);
+    });
+    const filled = cells.filter((cell) => !cell.blank);
+    rows.push({
+      row,
+      cellCount: cells.length,
+      filledCells: filled.length,
+      ...(filled.length === 0 ? { blankRow: true as const } : {}),
+      ...(filled.length > 0 && filled.every((cell) => cell.bold)
+        ? { allBold: true as const }
+        : {}),
+      ...(cells.some((cell) => cell.columnSpan || cell.rowSpan)
+        ? { hasMergedCells: true as const }
+        : {}),
+      cells
+    });
+  });
+
+  const columns: TableColumnFact[] = [];
+  for (let column = 0; column < columnCount; column++) {
+    const present = rows
+      .map((row) => row.cells[column])
+      .filter((cell): cell is TableCellFact => cell != null);
+    const units: string[] = [];
+    const decimals: number[] = [];
+    for (const cell of present) {
+      if (cell.unit != null && units.indexOf(cell.unit) < 0)
+        units.push(cell.unit);
+      if (cell.decimals != null && decimals.indexOf(cell.decimals) < 0)
+        decimals.push(cell.decimals);
+    }
+    columns.push({
+      column,
+      presentCells: present.length,
+      filledCells: present.filter((cell) => !cell.blank).length,
+      numericCells: present.filter((cell) => cell.numeric).length,
+      quantityCells: present.filter((cell) => cell.quantity).length,
+      units,
+      decimals: decimals.sort((a, b) => a - b)
+    });
+  }
+
+  return {
+    tableAnchor,
+    rowCount: rows.length,
+    columnCount,
+    uniformRows: rows.every((row) => row.cellCount === columnCount),
+    mergedCells,
+    rows,
+    columns,
+    truncated: false
+  };
+}
+
 /** `0;7`, or any cell anchor `0;7;r;c;p`, names the table at `0;7`. */
 function normalizeTableAnchor(raw: unknown): string | null {
   const parts = String(raw ?? '')
@@ -842,7 +1167,10 @@ export function buildInventoryFromBlocks(
     maxEntries?: number;
     tableAnchor?: string;
     column?: number;
-  }
+  },
+  // The `table_facts` scope needs the raw SFDT: merge spans live on cellFormat
+  // and do not survive flattening. Every other scope reads only `blocks`.
+  sfdt?: any
 ): InventoryResult {
   const { scope, sectionAnchor, maxEntries } = input;
   const cap = <T>(list: T[]): T[] =>
@@ -894,6 +1222,46 @@ export function buildInventoryFromBlocks(
     return result;
   }
 
+  if (scope === 'table_facts') {
+    const tableAnchor = normalizeTableAnchor(input.tableAnchor);
+    if (!tableAnchor) {
+      return {
+        error: 'missing_table_anchor',
+        message:
+          'scope "table_facts" requires `tableAnchor` (a table anchor from a structure read, e.g. "0;7", or any of its cell anchors).',
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'modified_input'
+      };
+    }
+    if (!sfdt) {
+      return {
+        error: 'table_facts_unavailable',
+        message:
+          'scope "table_facts" needs the live document and cannot be served from a pre-flattened block list. This is an engine wiring fault, not a bad request.',
+        retry: 'never'
+      };
+    }
+    const facts = collectTableFacts(blocks, sfdt, tableAnchor);
+    if (!facts) {
+      return {
+        error: 'table_not_found',
+        message: `No table found at anchor "${tableAnchor}". The document may have changed since it was read; re-read the structure and use a current table anchor.`,
+        remedy: {
+          action: 're-read',
+          tool: 'getDocumentInventory',
+          input: { scope: 'structure' }
+        },
+        retry: 'after_remedy'
+      };
+    }
+    // Deliberately no `cap()`: see TableFacts.truncated.
+    return { table: facts };
+  }
+
   if (scope === 'table_column') {
     const tableAnchor = normalizeTableAnchor(input.tableAnchor);
     if (!tableAnchor) {
@@ -917,7 +1285,7 @@ export function buildInventoryFromBlocks(
       return {
         error: 'missing_column',
         message:
-          'scope "table_column" requires `column`, the 0-based column index (match it against the table\'s headerCells from a structure read).',
+          'scope "table_column" requires `column`, the 0-based column index (match it against the column facts from a table_facts read).',
         remedy: {
           action: 're-read',
           tool: 'getDocumentInventory',
@@ -1109,8 +1477,8 @@ export function getDocumentInventory(
     column?: number;
   }
 ): InventoryResult {
-  const blocks = flattenSfdt(parseSfdt(editor.serialize()));
-  return buildInventoryFromBlocks(blocks, input);
+  const sfdt = parseSfdt(editor.serialize());
+  return buildInventoryFromBlocks(flattenSfdt(sfdt), input, sfdt);
 }
 
 export function buildIndexBlocks(editor: LiveEditor): IndexBlock[] {
@@ -2083,7 +2451,8 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
  */
 interface OpSuccessExtras {
   details?: string[];
-  computed?: ComputedCellReport;
+  formula?: FormulaCellReport;
+  literalNumber?: LiteralNumberWrite;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -2124,21 +2493,73 @@ function insertionText(op: TypedEditOp<'insert_text'>): string {
 }
 
 // ---------------------------------------------------------------------------
-// Engine-computed cell writes (set_cell_computed)
+// Engine-evaluated formula writes (set_cell_formula)
 //
-// The model chooses which table, which column and which target cell; the
-// ENGINE reads the column, does the arithmetic (numericCells: exact
-// scaled-integer, format-preserving) and writes the result rendered in the
-// target cell's own format. After the write it re-reads the column and
-// recomputes - a write that landed in the wrong cell fails here and rolls the
-// change set back instead of reporting success.
+// The model supplies an expression over cell REFERENCES; the engine resolves
+// them against the live document, reads the verbatim text, evaluates in exact
+// rational arithmetic (cellFormula.ts) and writes the result rendered in the
+// target cell's own number format. Chaining is free: the executor refreshes the
+// block map after every write, so a formula whose range covers a cell an
+// earlier op in the same change set wrote resolves to the NEW text.
 // ---------------------------------------------------------------------------
 
-const COMPUTED_SKIP_NAME_LIMIT = 8;
+/** Reference resolution against a block map - the whole "no hallucinated
+ * value can enter the calculation" guarantee lives here: the model supplies
+ * only anchors, and every number is read out of `blocks`. */
+function makeFormulaResolver(blocks: FlatBlock[]): FormulaResolver {
+  const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
+  return {
+    cell: (anchor) => {
+      const block = byAnchor.get(anchor);
+      if (!block || block.kind !== 'table_cell') return null;
+      return block.text;
+    },
+    range: (reference) => {
+      const collected = collectTableColumnCells(
+        blocks,
+        reference.tableAnchor,
+        reference.column
+      );
+      if (!collected) return null;
+      return {
+        cells: collected.cells.filter(
+          (cellEntry) =>
+            cellEntry.row >= reference.startRow &&
+            cellEntry.row <= reference.endRow
+        ),
+        rowCount: collected.rowCount,
+        columns: collected.columns
+      };
+    }
+  };
+}
 
+const referenceText = (reference: FormulaReference): string =>
+  reference.kind === 'cell'
+    ? `[${reference.anchor}]`
+    : `[${reference.tableAnchor};${reference.startRow}..${reference.endRow};${reference.column}]`;
+
+/** True when `anchor` is a cell the reference covers. */
+function referenceCovers(reference: FormulaReference, anchor: string): boolean {
+  if (reference.kind === 'cell') return reference.anchor === anchor;
+  const parts = anchor.split(';');
+  if (parts.length !== 5) return false;
+  return (
+    `${parts[0]};${parts[1]}` === reference.tableAnchor &&
+    Number(parts[3]) === reference.column &&
+    Number(parts[2]) >= reference.startRow &&
+    Number(parts[2]) <= reference.endRow
+  );
+}
+
+const SKIP_NAME_LIMIT = 8;
+
+/** Name the cells that did NOT enter the arithmetic, up to a limit, then say
+ * how many more - a hidden skip is the wrong-total generator this engine
+ * exists to prevent, so it is never merely counted. */
 function describeSkippedCells(skipped: SkippedCell[]): string {
   if (!skipped.length) return '';
-  const named = skipped.slice(0, COMPUTED_SKIP_NAME_LIMIT).map((s) => {
+  const named = skipped.slice(0, SKIP_NAME_LIMIT).map((s) => {
     if (s.reason === 'missing_cell') return `row ${s.row} (no cell)`;
     if (s.reason === 'blank') return `row ${s.row} (blank)`;
     return `row ${s.row} (${JSON.stringify(s.text)})`;
@@ -2149,184 +2570,358 @@ function describeSkippedCells(skipped: SkippedCell[]): string {
   }: ${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
 }
 
-function buildComputedReceipt(
-  report: Omit<ComputedCellReport, 'receipt'>
+/**
+ * Resolve the evaluator's reads into the terms the receipt states. A range
+ * describes its own span; a single cell quotes what it held.
+ */
+function resolveFormulaTerms(
+  evaluation: FormulaEvaluationSuccess
+): FormulaResolvedTerm[] {
+  return evaluation.reads.map((read): FormulaResolvedTerm => {
+    if (read.reference.kind === 'cell') {
+      const parts = read.reference.anchor.split(';');
+      const text = read.readCells[0]?.text ?? '';
+      return {
+        kind: 'cell',
+        reference: read.text,
+        tableAnchor: `${parts[0]};${parts[1]}`,
+        row: Number(parts[2]),
+        column: Number(parts[3]),
+        text,
+        description: `cell ${read.reference.anchor} (row ${parts[2]}, column ${
+          parts[3]
+        }) read ${JSON.stringify(text)}`
+      };
+    }
+    const { tableAnchor, column, startRow, endRow } = read.reference;
+    const operation = read.fn ?? 'sum';
+    const span =
+      startRow === endRow ? `row ${startRow}` : `rows ${startRow}-${endRow}`;
+    return {
+      kind: 'range',
+      reference: read.text,
+      operation,
+      tableAnchor,
+      column,
+      startRow,
+      endRow,
+      cellsRead: read.readCells.length,
+      counted: read.counted,
+      description:
+        `${operation} over ${span} of column ${column} of the table at ` +
+        `${tableAnchor} - ${read.readCells.length} cell${
+          read.readCells.length === 1 ? '' : 's'
+        } read, ${read.counted} numeric`
+    };
+  });
+}
+
+/**
+ * The one line to relay. It states, in this order: what the model said it was
+ * computing, the value, and then what the engine ACTUALLY resolved and read.
+ *
+ * That last part is the whole point. A total that is arithmetically perfect over
+ * the wrong rows looks exactly like a correct one, so the receipt never merely
+ * announces the answer: it names the resolved span, the coverage, every skipped
+ * cell, and any rounding, so the failure mode is visible without re-reading the
+ * document.
+ */
+function buildFormulaReceipt(
+  report: Omit<FormulaCellReport, 'receipt'>
 ): string {
-  const headerName = report.header?.trim();
-  const columnName = headerName
-    ? `the "${headerName}" column`
-    : `column ${report.column}`;
-  const action =
-    report.operation === 'sum'
-      ? `Re-totalled ${columnName}`
-      : `Computed the ${report.operation} of ${columnName}`;
-  const roundedClause = report.rounded
-    ? '; average rounded to the target format'
+  const roundingClause = report.rounded
+    ? `; rounded ${String(report.roundingMode).replace(/_/g, '-')} to ${
+        report.decimals
+      } decimal place${report.decimals === 1 ? '' : 's'}`
     : '';
+  const selfClause = report.selfReferencing
+    ? "; the formula read this cell's own previous value before overwriting it"
+    : '';
+  const what = report.label?.trim()
+    ? `${report.label.trim()} (${report.formula})`
+    : report.formula;
+  const resolved = report.resolved
+    .map((term) => term.description)
+    .join('; then ');
   return (
-    `${action}: ${report.renderedValue} from ${report.counted} line items ` +
-    `(${report.rowsRead} of ${report.rowCount} column rows read` +
+    `Computed ${what} = ${report.renderedValue} into cell ${report.targetAnchor}. ` +
+    `Resolved: ${resolved}` +
     describeSkippedCells(report.skipped) +
-    `${roundedClause}). Post-write re-read reproduced this exact value.`
+    `${roundingClause}${selfClause}. ` +
+    'Post-write re-read reproduced this exact value.'
   );
 }
 
-function runComputedCellWrite(
+function runFormulaCellWrite(
   editor: LiveEditor,
-  op: TypedEditOp<'set_cell_computed'>,
+  op: TypedEditOp<'set_cell_formula'>,
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>
 ): OpSuccessExtras {
-  const parts = block.anchor.split(';');
-  if (block.kind !== 'table_cell' || parts.length !== 5) {
+  if (block.kind !== 'table_cell' || block.anchor.split(';').length !== 5) {
     throw new OpError(
       'not_a_table_cell',
-      'set_cell_computed must anchor the target table cell (section;block;row;cell;paragraph).'
+      'set_cell_formula must anchor the target table cell (section;block;row;cell;paragraph).'
     );
   }
-  const tableAnchor = `${parts[0]};${parts[1]}`;
-  const targetRow = Number(parts[2]);
-  const targetColumn = Number(parts[3]);
-  const operation = (op.operation ?? 'sum') as ComputeOperation;
-  if (!COMPUTE_OPERATIONS.includes(operation)) {
+  const formulaText = String(op.formula ?? '').trim();
+  const round = op.round != null ? String(op.round) : '';
+  if (round && ROUNDING_MODES.indexOf(round as RoundingMode) < 0) {
     throw new OpError(
-      'unsupported_operation',
-      `Unsupported operation "${String(
-        op.operation
-      )}". Supported: ${COMPUTE_OPERATIONS.join(', ')}.`
+      'unsupported_rounding_mode',
+      `Unsupported rounding mode "${round}". Supported: ${ROUNDING_MODES.join(
+        ', '
+      )}.`
     );
   }
-  const column =
-    op.column != null && Number.isInteger(op.column) && op.column >= 0
-      ? op.column
-      : targetColumn;
+  const roundingMode = (round || null) as RoundingMode | null;
 
-  // The same collection the table_column read serves: what the model read and
-  // what the engine computes are the same cells by construction.
   const blocks = Array.from(byAnchor.values());
-  const collected = collectTableColumnCells(blocks, tableAnchor, column);
-  if (!collected) {
-    throw new OpError(
-      'table_not_found',
-      `No table found at anchor "${tableAnchor}".`
-    );
-  }
-  if (column >= collected.columns) {
-    throw new OpError(
-      'column_out_of_range',
-      `The table at "${tableAnchor}" has ${collected.columns} columns (0-${
-        collected.columns - 1
-      }); column ${column} does not exist.`
-    );
+  const evaluation = evaluateFormula(formulaText, makeFormulaResolver(blocks));
+  if (!evaluation.ok) {
+    throw new OpError(evaluation.error, evaluation.message, evaluation.details);
   }
 
-  const lastRow = collected.rowCount - 1;
-  const startRow = op.startRow != null ? op.startRow : Math.min(1, lastRow);
-  const endRow = op.endRow != null ? op.endRow : lastRow;
-  if (
-    !Number.isInteger(startRow) ||
-    !Number.isInteger(endRow) ||
-    startRow < 0 ||
-    endRow > lastRow ||
-    startRow > endRow
-  ) {
+  // Circularity. A single-cell self-reference is well defined - read the cell,
+  // compute, write it back - and is how "add 13% to this premium" reads in
+  // place, so it is allowed (with a narrowed post-write proof, below). A
+  // reference RANGE that covers the target is not: the aggregate would change
+  // the moment the write lands, so no value written could be the value of the
+  // formula.
+  const coveringRanges = evaluation.references.filter(
+    (reference) =>
+      reference.kind === 'range' && referenceCovers(reference, block.anchor)
+  );
+  if (coveringRanges.length) {
     throw new OpError(
-      'row_range_invalid',
-      `Rows must satisfy 0 <= startRow <= endRow <= ${lastRow}; got ${startRow}..${endRow}.`
+      'circular_reference',
+      `The formula aggregates a range that includes the target cell "${
+        block.anchor
+      }" (${coveringRanges
+        .map(referenceText)
+        .join(
+          ', '
+        )}), so writing the result would change the very range it was computed from. Narrow the row range to exclude the target row.`
     );
   }
-  // The target row never feeds its own computation: a totals row's other
-  // cells are labels, not data.
-  const inRange = (row: number) =>
-    row >= startRow && row <= endRow && row !== targetRow;
-  const range = collected.cells.filter((cellEntry) => inRange(cellEntry.row));
-  if (!range.length) {
-    throw new OpError(
-      'row_range_invalid',
-      'The requested row range contains no rows besides the target row; there is nothing to compute.'
-    );
+  const selfReferencing = evaluation.references.some((reference) =>
+    referenceCovers(reference, block.anchor)
+  );
+
+  const rendered = renderFormulaResult(evaluation, block.text, {
+    round: roundingMode,
+    ...(op.decimals != null ? { decimals: op.decimals } : {})
+  });
+  if (!rendered.ok) {
+    throw new OpError(rendered.error, rendered.message, rendered.details);
   }
 
-  const computation = computeColumn(range, operation, block.text);
-  if (!computation.ok) {
-    throw new OpError(
-      computation.error,
-      computation.message,
-      computation.details
-    );
+  // Snapshot every cell the formula READ, so the post-write check can prove no
+  // input moved under the write.
+  const readBefore = new Map<string, string | null>();
+  for (const read of evaluation.reads) {
+    for (const cellRead of read.readCells) {
+      if (cellRead.anchor) readBefore.set(cellRead.anchor, cellRead.text);
+    }
   }
 
   selectBlock(editor, block);
-  replaceSelectedText(editor, computation.renderedValue);
-  verifyWrittenText(editor, block.anchor, computation.renderedValue);
+  replaceSelectedText(editor, rendered.renderedValue);
+  verifyWrittenText(editor, block.anchor, rendered.renderedValue);
 
-  // Self-verification: re-read the column from the post-write document and
-  // recompute. This proves the input cells are untouched AND the written cell
-  // parses back to the exact computed value - a write that landed in the
-  // wrong cell fails one of the two.
+  // Self-verification, in two parts.
+  //
+  // 1. Input integrity: re-read every referenced cell from the post-write
+  //    document. Any of them (other than the target itself) reading differently
+  //    than it did pre-write means the write landed in the wrong place or an
+  //    input changed under us.
+  // 2. Reproduction: when the formula does NOT read its own target, re-evaluate
+  //    the whole formula against the post-write document - it must reproduce the
+  //    identical value and identical bytes. When it DOES read its own target, a
+  //    re-evaluation would legitimately differ (the input just changed), so the
+  //    proof is instead that the written bytes parse back to exactly the value
+  //    that was computed - which, together with (1), is the same guarantee.
   const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
-  const freshCollected = collectTableColumnCells(
-    freshBlocks,
-    tableAnchor,
-    column
+  const freshResolver = makeFormulaResolver(freshBlocks);
+  const freshByAnchor = new Map(
+    freshBlocks.map((freshBlock) => [freshBlock.anchor, freshBlock])
   );
-  const recheck =
-    freshCollected && freshCollected.rowCount === collected.rowCount
-      ? computeColumn(
-          freshCollected.cells.filter((cellEntry) => inRange(cellEntry.row)),
-          operation,
-          computation.renderedValue
-        )
-      : null;
-  if (
-    !recheck ||
-    !recheck.ok ||
-    recheck.value.units !== computation.value.units ||
-    recheck.value.scale !== computation.value.scale ||
-    recheck.renderedValue !== computation.renderedValue
-  ) {
-    throw new OpError(
-      'post_write_verification_failed',
-      'Re-reading the column after the write did not reproduce the computed value; the write may have landed in the wrong cell. Nothing is reported as success.',
-      [
-        `computed: ${JSON.stringify(computation.renderedValue)}`,
-        `re-read: ${
-          !recheck
-            ? 'the column shape changed during the write'
-            : recheck.ok
-            ? JSON.stringify(recheck.renderedValue)
-            : recheck.message
-        }`
-      ]
+  for (const [anchor, before] of Array.from(readBefore.entries())) {
+    if (anchor === block.anchor) continue;
+    const after = freshByAnchor.get(anchor)?.text ?? null;
+    if (after !== before) {
+      throw new OpError(
+        'post_write_verification_failed',
+        'A cell the formula read changed while the result was being written, so the written value is no longer the value of the formula. Nothing is reported as success.',
+        [
+          `reference cell: ${anchor}`,
+          `read before the write: ${JSON.stringify(before)}`,
+          `read after the write: ${JSON.stringify(after)}`
+        ]
+      );
+    }
+  }
+  if (selfReferencing) {
+    const written = parseNumericCell(
+      freshByAnchor.get(block.anchor)?.text ?? ''
     );
+    if (
+      !written ||
+      written.value.units !== rendered.value.units ||
+      written.value.scale !== rendered.value.scale
+    ) {
+      throw new OpError(
+        'post_write_verification_failed',
+        'The value written into the target cell does not parse back to the computed result. Nothing is reported as success.',
+        [
+          `computed: ${JSON.stringify(rendered.renderedValue)}`,
+          `parsed back: ${JSON.stringify(
+            freshByAnchor.get(block.anchor)?.text ?? null
+          )}`
+        ]
+      );
+    }
+  } else {
+    const recheck = evaluateFormula(formulaText, freshResolver);
+    const reRendered = recheck.ok
+      ? renderFormulaResult(recheck, block.text, {
+          round: roundingMode,
+          ...(op.decimals != null ? { decimals: op.decimals } : {})
+        })
+      : null;
+    if (
+      !recheck.ok ||
+      !reRendered?.ok ||
+      reRendered.value.units !== rendered.value.units ||
+      reRendered.value.scale !== rendered.value.scale ||
+      reRendered.renderedValue !== rendered.renderedValue
+    ) {
+      throw new OpError(
+        'post_write_verification_failed',
+        'Re-reading the referenced cells after the write did not reproduce the computed value; the write may have landed in the wrong cell. Nothing is reported as success.',
+        [
+          `computed: ${JSON.stringify(rendered.renderedValue)}`,
+          `re-read: ${
+            !recheck.ok
+              ? recheck.message
+              : reRendered?.ok
+              ? JSON.stringify(reRendered.renderedValue)
+              : reRendered?.message ?? 'the result could not be re-rendered'
+          }`
+        ]
+      );
+    }
   }
 
-  const headerCell = collected.cells.find((cellEntry) => cellEntry.row === 0);
-  const withoutReceipt: Omit<ComputedCellReport, 'receipt'> = {
-    operation,
-    tableAnchor,
-    column,
-    header: headerCell?.text ?? null,
-    renderedValue: computation.renderedValue,
-    counted: computation.counted,
-    // The engine enumerates every row index of the column; a row with no cell
-    // at this column is still accounted for (skipped: missing_cell).
-    rowsRead: collected.cells.length,
-    rowCount: collected.rowCount,
-    startRow,
-    endRow,
-    excludedTargetRow:
-      targetRow >= startRow && targetRow <= endRow ? targetRow : null,
-    skipped: computation.skipped,
-    formatSource: computation.formatSource,
-    rounded: computation.rounded,
+  const label = typeof op.label === 'string' ? op.label.trim() : '';
+  const withoutReceipt: Omit<FormulaCellReport, 'receipt'> = {
+    formula: formulaText,
+    ...(label ? { label } : {}),
+    references: evaluation.references.map(referenceText),
+    resolved: resolveFormulaTerms(evaluation),
+    targetAnchor: block.anchor,
+    renderedValue: rendered.renderedValue,
+    counted: evaluation.counted,
+    skipped: evaluation.skipped,
+    formatSource: rendered.formatSource,
+    decimals: rendered.decimals,
+    rounded: rendered.rounded,
+    roundingMode: rendered.roundingMode,
+    selfReferencing,
     verifiedByReRead: true
   };
-  const report: ComputedCellReport = {
-    ...withoutReceipt,
-    receipt: buildComputedReceipt(withoutReceipt)
+  return {
+    formula: { ...withoutReceipt, receipt: buildFormulaReceipt(withoutReceipt) }
   };
-  return { computed: report };
+}
+
+// ---------------------------------------------------------------------------
+// The model-authored-number gate on set_cell_text
+//
+// A prompt instruction is not a guarantee - proven on this very stack, where
+// the "always name the rule you are invoking" instruction went live and the
+// model ignored it. So the engine, not the prompt, refuses the route that let
+// "$95,139.18" into a document: a numeric `set_cell_text` aimed at a numeric
+// slot in a numeric column is rejected, and the refusal names set_cell_formula.
+// ---------------------------------------------------------------------------
+
+/**
+ * The gate's quantity test: see `classifyNumericText` for the three-tier
+ * classification and why an identifier is deliberately not a quantity.
+ */
+function isQuantityText(text: string): boolean {
+  return classifyNumericText(text).quantity;
+}
+
+/**
+ * How many cells of the target's own column are quantity-formatted. Two is the
+ * threshold for calling the column a quantity column: one lone formatted cell
+ * could be the header or a stray.
+ */
+function quantitySiblingCount(blocks: FlatBlock[], cellAnchor: string): number {
+  const parts = cellAnchor.split(';');
+  if (parts.length !== 5) return 0;
+  const collected = collectTableColumnCells(
+    blocks,
+    `${parts[0]};${parts[1]}`,
+    Number(parts[3])
+  );
+  if (!collected) return 0;
+  return collected.cells.filter(
+    (cellEntry) =>
+      cellEntry.anchor !== cellAnchor &&
+      cellEntry.text != null &&
+      isQuantityText(cellEntry.text)
+  ).length;
+}
+
+const LITERAL_NUMBER_NOTE =
+  'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
+
+/**
+ * The gate. Returns the audit record when a numeric write is allowed through
+ * the user-dictated exception, `undefined` when the write is not numeric at
+ * all, and throws the refusal otherwise.
+ */
+function guardModelAuthoredNumber(
+  op: TypedEditOp<'set_cell_text'>,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): LiteralNumberWrite | undefined {
+  const text = String(op.text ?? '');
+  if (block.kind !== 'table_cell') return undefined;
+  if (!isQuantityText(text)) return undefined;
+  // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
+  // quantity, or it is empty and sits in a column that plainly holds them - the
+  // freshly-inserted Total cell, which is exactly where a fabricated total
+  // lands, so leaving the empty case open would leave the gate open.
+  const existing = block.text.trim();
+  const existingIsQuantity = existing !== '' && isQuantityText(existing);
+  const emptyInQuantityColumn =
+    existing === '' &&
+    quantitySiblingCount(Array.from(byAnchor.values()), block.anchor) >= 2;
+  if (!existingIsQuantity && !emptyInQuantityColumn) return undefined;
+  if (op.literal === true) {
+    return {
+      text: text.trim(),
+      previousText: existing,
+      note: LITERAL_NUMBER_NOTE
+    };
+  }
+  throw new OpError(
+    'model_authored_number',
+    `Refusing to write the number ${JSON.stringify(text.trim())} into ${
+      existingIsQuantity
+        ? 'a cell that already holds a formatted amount'
+        : 'an empty cell in a column of formatted amounts'
+    } as literal text: a value in a quantity column is almost always derived from other cells, and a number in the response body is unverifiable - the engine cannot tell a correct total from a plausible one. Use set_cell_formula with a \`formula\` that REFERENCES the cells the value comes from (e.g. "[${
+      block.anchor
+    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived - the user dictated this exact number - re-send the same set_cell_text with \`literal: true\`, which records it as a verbatim user-stated figure rather than a computed one.`,
+    [
+      `target cell: ${block.anchor}`,
+      `current content: ${JSON.stringify(block.text)}`
+    ]
+  );
 }
 
 // Exported for the registry parity spec: the spec re-asserts at runtime what
@@ -2400,15 +2995,19 @@ export const ANCHORED_OP_HANDLERS: {
     selectRange(editor, block.anchor, offset, offset);
     editor.editor.insertText(insertionText(op));
   },
-  set_cell_text: ({ editor, op, block }) => {
+  set_cell_text: ({ editor, op, block, byAnchor }) => {
+    // The engine, not the prompt, keeps model arithmetic out of numeric cells.
+    // This runs BEFORE any write, so a refused numeric write costs no revision.
+    const literalNumber = guardModelAuthoredNumber(op, block, byAnchor);
     // Overwrite the (cell) block's content.
     selectBlock(editor, block);
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
     verifyWrittenText(editor, block.anchor, replacement);
+    return literalNumber ? { literalNumber } : undefined;
   },
-  set_cell_computed: ({ editor, op, block, byAnchor }) =>
-    runComputedCellWrite(editor, op, block, byAnchor),
+  set_cell_formula: ({ editor, op, block, byAnchor }) =>
+    runFormulaCellWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
     selectBlock(editor, block);
     editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
@@ -3201,7 +3800,7 @@ const TRACKED_TEXT_OPS = new Set([
   'delete_text',
   'insert_text',
   'set_cell_text',
-  'set_cell_computed',
+  'set_cell_formula',
   'change_case'
 ]);
 
@@ -3833,6 +4432,9 @@ export function applyDocumentEdits(
       op: op?.op ?? '',
       anchor: op?.anchor,
       error: isOpError(err) ? err.code : 'op_failed',
+      ...(isOpError(err) && err.message && err.message !== err.code
+        ? { message: err.message }
+        : {}),
       ...(isOpError(err)
         ? err.details
           ? { details: err.details }
@@ -3947,7 +4549,7 @@ export function applyDocumentEdits(
     // range is deferred even when a block answers to it today - the write-time
     // guard still requires the resolved cell to be brand new and empty.
     const deferredNewCell =
-      (name === 'set_cell_text' || name === 'set_cell_computed') &&
+      (name === 'set_cell_text' || name === 'set_cell_formula') &&
       (target
         ? !isLiveStoryTarget(target) &&
           target.kind === 'table_cell' &&
