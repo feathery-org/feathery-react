@@ -132,7 +132,7 @@ describe('read capabilities <-> retrieval surface parity', () => {
 
   it('inventory-scope reads match the InventoryScope union exactly, both directions', () => {
     const union = DISPATCH_SOURCE.match(
-      /export type InventoryScope = ([^;]+);/
+      /export type InventoryScope =([^;]+);/
     );
     expect(union).toBeTruthy();
     const implementedScopes = [...union![1].matchAll(/'([a-z_]+)'/g)].map(
