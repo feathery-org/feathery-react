@@ -231,6 +231,27 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(blockTexts(ed)[1]).not.toContain('5,500');
     }
   },
+  // The user selects from the middle of 0;1 through the end of 0;2 and asks for
+  // one statement. The offsets are the public ones a real selection reports.
+  replace_selection: {
+    fixture: proseFixture,
+    edits: [
+      {
+        op: 'replace_selection',
+        anchor: '0;1',
+        startOffset: '0;1;0',
+        endOffset: '0;2;35',
+        replace: 'Acme Corp must confirm the 5,500 dollar quote.',
+        expect:
+          'The quote total is 5,500 dollars for Acme Corp.\rDRAFT note: Acme Corp must confirm.'
+      }
+    ],
+    verify: (ed) => {
+      const texts = blockTexts(ed).join('\n');
+      expect(texts).toContain('Acme Corp must confirm the 5,500 dollar quote.');
+      expect(texts).not.toContain('DRAFT note: Acme Corp must confirm.');
+    }
+  },
   replace_all: {
     fixture: proseFixture,
     edits: [{ op: 'replace_all', find: 'Acme Corp', replace: 'Acme Inc' }],
