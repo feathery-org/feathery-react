@@ -94,6 +94,7 @@ import {
 } from './tools/docxEditorBridge';
 import { getDocxEditor } from './tools/docxEditorRegistry';
 import { useDocumentIndex } from './tools/documentIndex';
+import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
 
@@ -330,6 +331,12 @@ const AssistantChat = ({
         internalState[instanceId]?.logicRules ?? []
       );
       if (callableRules.length > 0) context.callable_rules = callableRules;
+      // What this client's document engine can actually do, declared to
+      // ai-services on every editor-surface request (S2 drift alarm; frozen
+      // constant so the serialised bytes are identical turn to turn and stay
+      // inside the prompt cache). Form-only chats have no document editor and
+      // declare nothing.
+      context.capabilities = CAPABILITIES_DECLARATION;
     }
     body.context = context;
     return body;

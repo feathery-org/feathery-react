@@ -646,8 +646,8 @@ export function buildIndexBlocks(editor: LiveEditor): IndexBlock[] {
   return buildIndexBlocksFromBlocks(flattenSfdt(parseSfdt(editor.serialize())));
 }
 
-const MAX_LIVE_OCCURRENCE_QUERIES = 20;
-const MAX_LIVE_OCCURRENCES_PER_QUERY = 200;
+export const MAX_LIVE_OCCURRENCE_QUERIES = 20;
+export const MAX_LIVE_OCCURRENCES_PER_QUERY = 200;
 
 function findOption(matchCase: boolean, wholeWord: boolean): string {
   if (matchCase && wholeWord) return 'CaseSensitiveWholeWord';
