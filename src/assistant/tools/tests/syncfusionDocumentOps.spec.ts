@@ -536,7 +536,7 @@ describe('applyDocumentEdits', () => {
     ]);
   });
 
-  it('expect CAS guard: stale text fails with stale_anchor and writes nothing', () => {
+  it('expect CAS guard: stale text fails with expect_mismatch and writes nothing', () => {
     const ed = make([para('Quote: $5,500')]);
     const res = applyDocumentEdits(ed, {
       edits: [
@@ -549,7 +549,10 @@ describe('applyDocumentEdits', () => {
         }
       ]
     });
-    expect(res.results[0]).toMatchObject({ ok: false, error: 'stale_anchor' });
+    expect(res.results[0]).toMatchObject({
+      ok: false,
+      error: 'expect_mismatch'
+    });
     expect(ed.doc.sections[0].blocks[0].inlines[0].text).toBe('Quote: $5,500');
   });
 
