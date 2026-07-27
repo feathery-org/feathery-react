@@ -171,6 +171,9 @@ export type AssistantToolContext = {
     ruleId: string,
     inputParams: Record<string, any>
   ) => Promise<RunLogicRuleResult>;
+  // Live form field/hidden-field lookup (the `getFormFields` tool). Supplied by
+  // the host so this module stays free of form-runtime imports.
+  getFormFields?: (input: any) => any;
 };
 
 export type ToolDispatchResult = { handled: boolean; output?: any };
@@ -182,6 +185,27 @@ const syntheticError = (error: string, message: string) => ({
   error,
   message
 });
+
+/**
+ * The output for a streamed tool call nothing on the client can execute.
+ *
+ * This is the durable fix for a whole class of dead turn, not for one tool. The
+ * model's tool list is built server-side; whenever it contains something this
+ * build cannot run - a tool added to ai-services ahead of the client, a
+ * client-forwarded tool whose handler was never written (`getFormFields`, live on
+ * 2026-07-27), a handler removed in a refactor - the turn used to hang forever
+ * with no error at all, because `lastAssistantMessageIsCompleteWithToolCalls`
+ * only fires once every tool call has an output.
+ *
+ * An error output ends the turn visibly and tells the model something it can act
+ * on, which is strictly better than silence in every case.
+ */
+export const unhandledToolOutput = (toolName: string) =>
+  syntheticError(
+    'unhandled_tool',
+    `This client has no handler for the tool "${toolName}", so it cannot be executed here. ` +
+      'Do not retry it; use a different tool, or tell the user what you could not do.'
+  );
 
 // Race a handler against a timeout. On timeout we RESOLVE (never reject) with a
 // synthetic error so addToolOutput always fires and the model can recover.
@@ -336,7 +360,25 @@ export async function dispatchAssistantTool(
     return { handled: true, output };
   }
 
-  // 3) Designer-defined logic-rule tools.
+  // 3) Live form field lookup. Declared client-forwarded by ai-services with no
+  // server execute, so with no handler here the turn hangs forever rather than
+  // failing - the wedge behind two of the captain's three 2026-07-27 "hangs".
+  if (toolName === 'getFormFields' || toolName === 'get_form_fields') {
+    const handler = ctx.getFormFields;
+    const output = handler
+      ? await withToolTimeout(
+          () => Promise.resolve(handler(input)),
+          TOOL_TIMEOUT_READ_MS,
+          toolName
+        )
+      : syntheticError(
+          'handler_unavailable',
+          'No live form is connected, so field values cannot be read.'
+        );
+    return { handled: true, output };
+  }
+
+  // 4) Designer-defined logic-rule tools.
   if (isRuleTool(toolName)) {
     const callableRules = ctx.callableRules ?? [];
     const ruleId = resolveRuleId(toolName, input, callableRules);
