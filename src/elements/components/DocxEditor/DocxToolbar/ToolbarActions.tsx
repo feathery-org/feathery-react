@@ -34,6 +34,9 @@ export interface ToolbarActionsProps {
   saving?: boolean;
   /** Unsaved edits since the last successful save — surfaces an indicator. */
   dirty?: boolean;
+  /** Narrow-toolbar mode: verbose content (the "Unsaved changes" label)
+   *  collapses to keep room for the tool row. Set by useToolbarOverflow. */
+  compact?: boolean;
 }
 
 // Save / Download / Sign — pinned to the toolbar's right edge. The forwarded
@@ -52,7 +55,8 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
       terminalActionDisabled,
       terminalActionLoading,
       saving,
-      dirty
+      dirty,
+      compact
     },
     ref
   ) {
@@ -97,7 +101,9 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 flex: '0 0 auto'
               }}
             />
-            Unsaved changes
+            {/* On narrow toolbars the dot alone carries the state (with the
+                tooltip); the label would crowd out the tool row. */}
+            {!compact && 'Unsaved changes'}
           </span>
         )}
         {onDownload && onDownloadPdf ? (

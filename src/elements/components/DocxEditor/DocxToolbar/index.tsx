@@ -62,12 +62,15 @@ export default function DocxToolbar({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const format = useEditorFormatState(editor);
   const {
-    centerRef,
+    rootRef,
     measureRowRef,
     setMeasureEl,
     visibleCount,
+    centered,
+    layerLeft,
+    layerRight,
     actionRef,
-    centerSideInset
+    compact
   } = useToolbarOverflow();
 
   const insertImageFile = (file: File) => {
@@ -149,6 +152,7 @@ export default function DocxToolbar({
 
   return (
     <div
+      ref={rootRef}
       css={{
         position: 'relative',
         height: 44,
@@ -157,20 +161,22 @@ export default function DocxToolbar({
         background: '#fff'
       }}
     >
-      {/* Center the editing controls against the editor itself. The right-side
-          terminal action is pinned independently, so it gets mirrored as a safe
-          inset on the left and cannot pull the tool cluster off-center. */}
+      {/* Tool row layer. While everything fits, the pinned action region's
+          clearance is mirrored on the left so the tools center against the
+          page below. When space runs short the left inset collapses to the
+          edge padding and the row anchors left — showing more tools always
+          beats keeping them centered, and the More trigger at the row's head
+          can never be squeezed out of view. */}
       <div
-        ref={centerRef}
         css={{
           position: 'absolute',
-          left: centerSideInset,
-          right: centerSideInset,
+          left: layerLeft,
+          right: layerRight,
           top: 0,
           bottom: 0,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent: centered ? 'center' : 'flex-start',
           minWidth: 0
         }}
       >
@@ -295,7 +301,7 @@ export default function DocxToolbar({
         }}
       />
 
-      <ToolbarActions ref={actionRef} {...actionProps} />
+      <ToolbarActions ref={actionRef} {...actionProps} compact={compact} />
     </div>
   );
 }
