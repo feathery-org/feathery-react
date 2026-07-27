@@ -157,8 +157,14 @@ const premiumTableFixture = () => ({
         {
           tableFormat: {},
           rows: [
-            { rowFormat: {}, cells: [cell('Line of Business'), cell('Premium')] },
-            { rowFormat: {}, cells: [cell('General Liability'), cell('$36,803')] },
+            {
+              rowFormat: {},
+              cells: [cell('Line of Business'), cell('Premium')]
+            },
+            {
+              rowFormat: {},
+              cells: [cell('General Liability'), cell('$36,803')]
+            },
             { rowFormat: {}, cells: [cell('Property'), cell('$12,450')] },
             { rowFormat: {}, cells: [cell('Cyber'), cell('Included')] },
             { rowFormat: {}, cells: [cell('Auto'), cell('$1,200')] },
@@ -257,37 +263,41 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(blockTexts(ed)).toContain('Toronto');
     }
   },
-  set_cell_computed: {
+  set_cell_formula: {
     fixture: premiumTableFixture,
     edits: [
-      { op: 'set_cell_computed', anchor: '0;1;5;1;0', operation: 'sum' }
+      {
+        op: 'set_cell_formula',
+        anchor: '0;1;5;1;0',
+        formula: 'sum([0;1;1..4;1])'
+      }
     ],
     verify: (ed, result) => {
-      // 36,803 + 12,450 + 1,200; the engine computed it, in the target format.
+      // The engine read rows 1..4 of column 1 and summed 36,803 + 12,450 +
+      // 1,200 ("Included" is skipped AND named, never zero).
       expect(blockTexts(ed)).toContain('$50,453');
       expect(blockTexts(ed)).not.toContain('$99,999');
-      const computed = result.results[0].computed!;
-      expect(computed).toMatchObject({
-        operation: 'sum',
-        tableAnchor: '0;1',
-        column: 1,
-        header: 'Premium',
+      const formula = result.results[0].formula!;
+      expect(formula).toMatchObject({
+        formula: 'sum([0;1;1..4;1])',
+        references: ['[0;1;1..4;1]'],
         renderedValue: '$50,453',
         counted: 3,
-        rowsRead: 6,
-        rowCount: 6,
-        excludedTargetRow: 5,
         formatSource: 'target_cell',
+        decimals: 0,
+        rounded: false,
+        roundingMode: null,
+        selfReferencing: false,
         verifiedByReRead: true
       });
-      expect(computed.skipped).toEqual([
+      expect(formula.skipped).toEqual([
         expect.objectContaining({ row: 3, text: 'Included' })
       ]);
-      // The receipt carries the trust signal: coverage plus named skips.
-      expect(computed.receipt).toContain('$50,453');
-      expect(computed.receipt).toContain('3 line items');
-      expect(computed.receipt).toContain('6 of 6 column rows read');
-      expect(computed.receipt).toContain('"Included"');
+      expect(formula.receipt).toContain('sum([0;1;1..4;1]) = $50,453');
+      expect(formula.receipt).toContain('"Included"');
+      expect(formula.receipt).toContain(
+        'Post-write re-read reproduced this exact value.'
+      );
     }
   },
   change_case: {
@@ -738,7 +748,12 @@ const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
     {
       fixture: multiSectionFixture,
       edits: [
-        { op: 'insert_text', anchor: '2;2', position: 'end', text: ' (updated)' }
+        {
+          op: 'insert_text',
+          anchor: '2;2',
+          position: 'end',
+          text: ' (updated)'
+        }
       ],
       verify: (ed) => {
         expect(blockTexts(ed)[6]).toBe('Closing body B. (updated)');
@@ -785,9 +800,7 @@ const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
     'above: true inserts the new row ABOVE the anchored row',
     {
       fixture: tableFixture,
-      edits: [
-        { op: 'insert_row', anchor: '0;1;1;0;0', above: true, count: 1 }
-      ],
+      edits: [{ op: 'insert_row', anchor: '0;1;1;0;0', above: true, count: 1 }],
       verify: (ed) => {
         const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
           (b) => b.kind === 'table_cell'
@@ -825,72 +838,175 @@ const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
     }
   ],
   [
-    'set_cell_computed',
-    'operation "count" writes a bare integer, never a currency-prefixed count',
-    {
-      fixture: premiumTableFixture,
-      edits: [
-        { op: 'set_cell_computed', anchor: '0;1;5;1;0', operation: 'count' }
-      ],
-      verify: (ed, result) => {
-        expect(result.results[0].computed?.renderedValue).toBe('3');
-        expect(blockTexts(ed)).toContain('3');
-      }
-    }
-  ],
-  [
-    'set_cell_computed',
-    'operation "min"/"max" via explicit column and row range',
+    'set_cell_formula',
+    'a single-cell reference times a plain literal (the 13% tax shape)',
     {
       fixture: premiumTableFixture,
       edits: [
         {
-          op: 'set_cell_computed',
+          op: 'set_cell_formula',
           anchor: '0;1;5;1;0',
-          operation: 'max',
-          column: 1,
-          startRow: 1,
-          endRow: 4
+          formula: '[0;1;1;1;0] * 1.13',
+          round: 'half_up'
         }
       ],
       verify: (ed, result) => {
-        expect(result.results[0].computed?.renderedValue).toBe('$36,803');
+        // 36,803 x 1.13 = 41,587.39 exactly; the target shows 0 decimals, so
+        // the declared half_up rounding applies and is REPORTED.
+        expect(result.results[0].formula).toMatchObject({
+          renderedValue: '$41,587',
+          counted: 1,
+          rounded: true,
+          roundingMode: 'half_up',
+          decimals: 0
+        });
+        expect(result.results[0].formula?.receipt).toContain(
+          'rounded half-up to 0 decimal places'
+        );
+        expect(blockTexts(ed)).toContain('$41,587');
       }
     }
   ],
   [
-    'set_cell_computed',
-    'average rounds to the target format and says so',
+    'set_cell_formula',
+    'a percent literal inside parentheses, and `decimals` widening the target format',
     {
       fixture: premiumTableFixture,
       edits: [
-        { op: 'set_cell_computed', anchor: '0;1;5;1;0', operation: 'average' }
+        {
+          op: 'set_cell_formula',
+          anchor: '0;1;5;1;0',
+          formula: '[0;1;1;1;0] * (1 + 13%)',
+          decimals: 2
+        }
       ],
       verify: (ed, result) => {
-        // (36,803 + 12,450 + 1,200) / 3 = 16,817.666..., target shows 0
-        // decimals -> rounded half away from zero, and the receipt says so.
-        expect(result.results[0].computed?.renderedValue).toBe('$16,818');
-        expect(result.results[0].computed?.rounded).toBe(true);
-        expect(result.results[0].computed?.receipt).toContain('rounded');
+        // 36,803 x 1.13 = 41,587.39 fits two decimals exactly, so NO rounding
+        // is needed and none is claimed.
+        expect(result.results[0].formula).toMatchObject({
+          renderedValue: '$41,587.39',
+          decimals: 2,
+          rounded: false,
+          roundingMode: null
+        });
+        expect(blockTexts(ed)).toContain('$41,587.39');
       }
     }
   ],
   [
-    'set_cell_computed',
+    'set_cell_formula',
+    'operator precedence, parentheses, unary minus and division in one expression',
+    {
+      fixture: premiumTableFixture,
+      edits: [
+        {
+          op: 'set_cell_formula',
+          anchor: '0;1;5;1;0',
+          formula: '(sum([0;1;1..4;1]) - [0;1;4;1;0]) / 2 + -100',
+          round: 'half_up'
+        }
+      ],
+      verify: (ed, result) => {
+        // (50,453 - 1,200) / 2 - 100 = 24,626.5 - 100 = 24,526.5 -> half_up at
+        // 0 decimals -> 24,527 (half away from zero).
+        expect(result.results[0].formula?.renderedValue).toBe('$24,527');
+        expect(result.results[0].formula?.rounded).toBe(true);
+      }
+    }
+  ],
+  [
+    'set_cell_formula',
+    'average/min/max/count over a range, each exact and each rendered honestly',
+    {
+      fixture: premiumTableFixture,
+      edits: [
+        {
+          op: 'set_cell_formula',
+          anchor: '0;1;5;1;0',
+          formula:
+            'min([0;1;1..4;1]) + max([0;1;1..4;1]) + count([0;1;1..4;1])',
+          round: 'half_up'
+        }
+      ],
+      verify: (_ed, result) => {
+        // 1,200 + 36,803 + 3 = 38,006, exact, so `rounded` stays false even
+        // though a rounding mode was offered.
+        expect(result.results[0].formula).toMatchObject({
+          renderedValue: '$38,006',
+          rounded: false,
+          roundingMode: null
+        });
+      }
+    }
+  ],
+  [
+    'set_cell_formula',
+    'a formula that reads the cell it writes (in-place increase) keeps its own format',
+    {
+      fixture: premiumTableFixture,
+      edits: [
+        {
+          op: 'set_cell_formula',
+          anchor: '0;1;1;1;0',
+          formula: '[0;1;1;1;0] * (1 + 13%)',
+          round: 'half_up'
+        }
+      ],
+      verify: (ed, result) => {
+        expect(result.results[0].formula).toMatchObject({
+          renderedValue: '$41,587',
+          selfReferencing: true,
+          verifiedByReRead: true
+        });
+        expect(result.results[0].formula?.receipt).toContain(
+          "the formula read this cell's own previous value"
+        );
+        expect(blockTexts(ed)).toContain('$41,587');
+        expect(blockTexts(ed)).not.toContain('$36,803');
+      }
+    }
+  ],
+  [
+    'set_cell_formula',
     'expect CAS guards the target cell like any other tracked edit',
     {
       fixture: premiumTableFixture,
       edits: [
         {
-          op: 'set_cell_computed',
+          op: 'set_cell_formula',
           anchor: '0;1;5;1;0',
-          operation: 'sum',
+          formula: 'sum([0;1;1..4;1])',
           expect: '$99,999'
         }
       ],
-      verify: (ed, result) => {
+      verify: (_ed, result) => {
         expect(result.results[0].ok).toBe(true);
-        expect(result.results[0].computed?.renderedValue).toBe('$50,453');
+        expect(result.results[0].formula?.renderedValue).toBe('$50,453');
+      }
+    }
+  ],
+  [
+    'set_cell_text',
+    'a user-dictated figure writes verbatim under `literal: true` and is recorded as such',
+    {
+      fixture: premiumTableFixture,
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;1;1;1;0',
+          text: '$13,000',
+          literal: true
+        }
+      ],
+      verify: (ed, result) => {
+        expect(blockTexts(ed)).toContain('$13,000');
+        expect(result.results[0].literalNumber).toMatchObject({
+          text: '$13,000',
+          previousText: '$36,803'
+        });
+        expect(result.results[0].literalNumber?.note).toContain(
+          'NOT computed by the engine'
+        );
       }
     }
   ],
@@ -988,12 +1104,9 @@ describe('op contracts: every advertised op works over its real route', () => {
     runContractCase(op, contract);
   });
 
-  it.each(PARAMETER_VARIANTS)(
-    '%s variant: %s',
-    (op, _variant, contract) => {
-      runContractCase(op, contract);
-    }
-  );
+  it.each(PARAMETER_VARIANTS)('%s variant: %s', (op, _variant, contract) => {
+    runContractCase(op, contract);
+  });
 
   it('a non-OpError throw surfaces its type and message, never a bare op_failed', () => {
     const editor = makeEditor(proseFixture());

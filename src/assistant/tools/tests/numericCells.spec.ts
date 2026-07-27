@@ -1,10 +1,11 @@
 import {
-  computeColumn,
+  collectNumericCells,
   parseNumericCell,
   renderNumericCell,
   rescaleExact,
   ColumnCellInput
 } from '../numericCells';
+import { columnFormula } from './formulaHarness';
 
 // ---------------------------------------------------------------------------
 // parseNumericCell: each notation the format contract promises, as its own
@@ -179,9 +180,9 @@ describe('renderNumericCell', () => {
 
   it('renders a new value in the target format, not the model format', () => {
     const target = parseNumericCell('$36,803')!;
-    expect(
-      renderNumericCell({ units: 1284350, scale: 0 }, target.format)
-    ).toBe('$1,284,350');
+    expect(renderNumericCell({ units: 1284350, scale: 0 }, target.format)).toBe(
+      '$1,284,350'
+    );
   });
 
   it('renders negatives with a minus by default when the target never showed one', () => {
@@ -214,7 +215,9 @@ describe('rescaleExact', () => {
 });
 
 // ---------------------------------------------------------------------------
-// computeColumn: arithmetic, skip-and-report, refusals.
+// collectNumericCells: the shared "which cells count" stage. Every formula
+// range aggregate goes through it, so its skip-and-name policy, its
+// majority backstop and its unit check are pinned here once.
 // ---------------------------------------------------------------------------
 
 const col = (texts: Array<string | null>, startRow = 1): ColumnCellInput[] =>
@@ -224,14 +227,68 @@ const col = (texts: Array<string | null>, startRow = 1): ColumnCellInput[] =>
     text
   }));
 
-describe('computeColumn', () => {
+describe('collectNumericCells', () => {
+  it('skips and NAMES non-numeric, blank and missing cells instead of zeroing them', () => {
+    const result = collectNumericCells([
+      ...col(['$100', 'Included', '$200', 'N/A', '']),
+      { row: 6, text: null }
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.parsed.map((cell) => cell.text)).toEqual(['$100', '$200']);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({
+        row: 2,
+        text: 'Included',
+        reason: 'non_numeric'
+      }),
+      expect.objectContaining({ row: 4, text: 'N/A', reason: 'non_numeric' }),
+      expect.objectContaining({ row: 5, text: '', reason: 'blank' }),
+      expect.objectContaining({ row: 6, reason: 'missing_cell' })
+    ]);
+  });
+
+  it('refuses a mostly-non-numeric column instead of aggregating the minority', () => {
+    expect(
+      collectNumericCells(col(['$100', 'Included', 'N/A', 'TBD']))
+    ).toMatchObject({ ok: false, error: 'column_not_numeric' });
+  });
+
+  it('refuses an all-blank/non-numeric range rather than returning zero', () => {
+    expect(collectNumericCells(col(['', 'N/A']))).toMatchObject({
+      ok: false,
+      error: 'no_numeric_cells'
+    });
+  });
+
+  it('refuses mixed currencies, naming both units and an example row each', () => {
+    const result = collectNumericCells(col(['$100', '€100']));
+    expect(result).toMatchObject({ ok: false, error: 'mixed_units' });
+    if (result.ok) throw new Error('unreachable');
+    expect(result.message).toContain('$');
+    expect(result.message).toContain('€');
+    expect(result.message).toContain('row 1');
+    expect(result.message).toContain('row 2');
+  });
+
+  it('lets bare numbers ride along with one explicit unit', () => {
+    const result = collectNumericCells(col(['$100', '250']));
+    expect(result).toMatchObject({ ok: true, unit: '$' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The same arithmetic/format contract, now expressed through the formula op
+// that replaced `set_cell_computed`. Every case the named operations covered
+// still has a home; the differences (explicit rounding, the count-into-money
+// refusal) are asserted as the new behaviour, not dropped.
+// ---------------------------------------------------------------------------
+
+describe('formula aggregates over a column', () => {
   it('sums a currency column exactly and renders in the target format', () => {
-    const result = computeColumn(
-      col(['$36,803', '$1,200', '$999']),
-      'sum',
-      '$12,000'
-    );
-    expect(result).toMatchObject({
+    expect(
+      columnFormula(['$36,803', '$1,200', '$999'], 'sum', '$12,000')
+    ).toMatchObject({
       ok: true,
       renderedValue: '$39,002',
       counted: 3,
@@ -241,87 +298,26 @@ describe('computeColumn', () => {
   });
 
   it('is exact on cents where floats are not (0.1 + 0.2)', () => {
-    const result = computeColumn(col(['$0.10', '$0.20']), 'sum', '$0.00');
-    expect(result).toMatchObject({ ok: true, renderedValue: '$0.30' });
-  });
-
-  it('skips and NAMES non-numeric cells instead of zeroing them', () => {
-    const result = computeColumn(
-      col(['$100', 'Included', '$200', 'N/A', '']),
-      'sum',
-      '$0'
-    );
-    expect(result).toMatchObject({ ok: true, renderedValue: '$300', counted: 2 });
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.skipped).toEqual([
-      expect.objectContaining({ row: 2, text: 'Included', reason: 'non_numeric' }),
-      expect.objectContaining({ row: 4, text: 'N/A', reason: 'non_numeric' }),
-      expect.objectContaining({ row: 5, text: '', reason: 'blank' })
-    ]);
-  });
-
-  it('reports a missing cell (short/merged row) as missing, not zero', () => {
-    const result = computeColumn(
-      [
-        { row: 1, anchor: '0;7;1;3;0', text: '$10' },
-        { row: 2, text: null }
-      ],
-      'sum',
-      '$0'
-    );
-    expect(result).toMatchObject({ ok: true, renderedValue: '$10' });
-    if (!result.ok) throw new Error('unreachable');
-    expect(result.skipped).toEqual([
-      expect.objectContaining({ row: 2, reason: 'missing_cell' })
-    ]);
-  });
-
-  it('refuses a mostly-non-numeric column instead of summing the minority', () => {
-    const result = computeColumn(
-      col(['$100', 'Included', 'N/A', 'TBD']),
-      'sum',
-      '$0'
-    );
-    expect(result).toMatchObject({ ok: false, error: 'column_not_numeric' });
-  });
-
-  it('refuses an all-blank/non-numeric range', () => {
-    expect(computeColumn(col(['', 'N/A']), 'sum', '$0')).toMatchObject({
-      ok: false,
-      error: 'no_numeric_cells'
+    expect(columnFormula(['$0.10', '$0.20'], 'sum', '$0.00')).toMatchObject({
+      ok: true,
+      renderedValue: '$0.30'
     });
-  });
-
-  it('refuses mixed currencies rather than adding dollars to euros', () => {
-    const result = computeColumn(col(['$100', '€100']), 'sum', '$0');
-    expect(result).toMatchObject({ ok: false, error: 'mixed_units' });
-    if (result.ok) throw new Error('unreachable');
-    expect(result.message).toContain('$');
-    expect(result.message).toContain('€');
-  });
-
-  it('lets bare numbers ride along with one explicit unit', () => {
-    const result = computeColumn(col(['$100', '250']), 'sum', '$0');
-    expect(result).toMatchObject({ ok: true, renderedValue: '$350' });
-  });
-
-  it('refuses precision loss: cents that do not fit a 0-decimal target', () => {
-    const result = computeColumn(col(['$10.50', '$20.25']), 'sum', '$31');
-    expect(result).toMatchObject({ ok: false, error: 'precision_loss' });
+    // The float trap this exists to avoid.
+    expect(0.1 + 0.2).not.toBe(0.3);
   });
 
   it('sums cents into a 2-decimal target exactly', () => {
-    const result = computeColumn(col(['$10.50', '$20.25']), 'sum', '$0.00');
-    expect(result).toMatchObject({ ok: true, renderedValue: '$30.75' });
+    expect(columnFormula(['$10.50', '$20.25'], 'sum', '$0.00')).toMatchObject({
+      ok: true,
+      renderedValue: '$30.75',
+      rounded: false
+    });
   });
 
   it('falls back to the column-majority format when the target is blank', () => {
-    const result = computeColumn(
-      col(['$1,200.00', '$3,400.00', '984']),
-      'sum',
-      ''
-    );
-    expect(result).toMatchObject({
+    expect(
+      columnFormula(['$1,200.00', '$3,400.00', '984'], 'sum', '')
+    ).toMatchObject({
       ok: true,
       renderedValue: '$5,584.00',
       formatSource: 'column_majority'
@@ -329,90 +325,119 @@ describe('computeColumn', () => {
   });
 
   it('upgrades an unobserved grouping separator from the column, never guesses', () => {
-    // Target `$984` is too short to show grouping; the column groups with '.'
-    // and a ',' decimal, so the result must too.
-    const result = computeColumn(
-      col(['1.200,00 €', '3.400,00 €']),
-      'sum',
-      '984,00 €'
-    );
-    expect(result).toMatchObject({ ok: true, renderedValue: '4.600,00 €' });
+    // Target `984,00 €` is too short to show grouping; the column groups with
+    // '.' and a ',' decimal, so the result must too.
+    expect(
+      columnFormula(['1.200,00 €', '3.400,00 €'], 'sum', '984,00 €')
+    ).toMatchObject({ ok: true, renderedValue: '4.600,00 €' });
   });
 
   it('sums European-formatted values exactly', () => {
-    const result = computeColumn(
-      col(['1.234,56 €', '765,44 €']),
-      'sum',
-      '0,00 €'
-    );
-    expect(result).toMatchObject({ ok: true, renderedValue: '2.000,00 €' });
+    expect(
+      columnFormula(['1.234,56 €', '765,44 €'], 'sum', '0,00 €')
+    ).toMatchObject({ ok: true, renderedValue: '2.000,00 €' });
   });
 
   it('sums percentages as percentages', () => {
-    const result = computeColumn(col(['12.5%', '7.5%']), 'sum', '0%');
-    expect(result).toMatchObject({ ok: true, renderedValue: '20%' });
+    expect(columnFormula(['12.5%', '7.5%'], 'sum', '0%')).toMatchObject({
+      ok: true,
+      renderedValue: '20%'
+    });
   });
 
   it('handles negatives in both notations inside one column', () => {
-    const result = computeColumn(
-      col(['$1,000', '($250)', '-$150']),
-      'sum',
-      '$0'
-    );
-    expect(result).toMatchObject({ ok: true, renderedValue: '$600' });
+    expect(
+      columnFormula(['$1,000', '($250)', '-$150'], 'sum', '$0')
+    ).toMatchObject({ ok: true, renderedValue: '$600' });
   });
 
   it('renders a negative total in the column negative style', () => {
-    const result = computeColumn(col(['$100', '($500)']), 'sum', '$0');
-    expect(result).toMatchObject({ ok: true, renderedValue: '($400)' });
-  });
-
-  it('count renders as a bare integer, never inheriting a currency prefix', () => {
-    const result = computeColumn(col(['$100', 'N/A', '$300']), 'count', '$0');
-    expect(result).toMatchObject({ ok: true, renderedValue: '2', counted: 2 });
+    expect(columnFormula(['$100', '($500)'], 'sum', '$0')).toMatchObject({
+      ok: true,
+      renderedValue: '($400)'
+    });
   });
 
   it('min/max compare exactly across mixed decimal widths', () => {
     expect(
-      computeColumn(col(['$10.05', '$10.2', '$9']), 'min', '$0.00')
+      columnFormula(['$10.05', '$10.2', '$9'], 'min', '$0.00')
     ).toMatchObject({ ok: true, renderedValue: '$9.00' });
     expect(
-      computeColumn(col(['$10.05', '$10.2', '$9']), 'max', '$0.00')
+      columnFormula(['$10.05', '$10.2', '$9'], 'max', '$0.00')
     ).toMatchObject({ ok: true, renderedValue: '$10.20' });
   });
 
-  it('average reports rounding when the quotient does not terminate', () => {
-    const exact = computeColumn(col(['$10.00', '$20.00']), 'average', '$0.00');
-    expect(exact).toMatchObject({
+  it('average is exact when it terminates, and reports rounding when it does not', () => {
+    expect(
+      columnFormula(['$10.00', '$20.00'], 'average', '$0.00')
+    ).toMatchObject({
       ok: true,
       renderedValue: '$15.00',
-      rounded: false
+      rounded: false,
+      roundingMode: null
     });
-    const roundedResult = computeColumn(
-      col(['$10.00', '$10.00', '$10.01']),
+    expect(
+      columnFormula(['$10.00', '$10.00', '$10.01'], 'average', '$0.00', {
+        round: 'half_up'
+      })
+    ).toMatchObject({
+      ok: true,
+      renderedValue: '$10.00',
+      rounded: true,
+      roundingMode: 'half_up'
+    });
+  });
+
+  it('a non-terminating average with NO rounding declared is refused, never trimmed', () => {
+    const result = columnFormula(
+      ['$10.00', '$10.00', '$10.01'],
       'average',
       '$0.00'
     );
-    expect(roundedResult).toMatchObject({
-      ok: true,
-      renderedValue: '$10.00',
-      rounded: true
+    expect(result).toMatchObject({ ok: false, error: 'rounding_required' });
+    expect(result.message).toContain('half_up');
+  });
+
+  it('cents that do not fit a 0-decimal target are refused, not silently rounded', () => {
+    expect(columnFormula(['$10.50', '$20.25'], 'sum', '$31')).toMatchObject({
+      ok: false,
+      error: 'rounding_required'
     });
   });
 
-  it('refuses magnitude overflow instead of losing precision', () => {
-    const big = '999,999,999,999,999';
-    const result = computeColumn(
-      col(Array.from({ length: 11 }, () => big)),
-      'sum',
-      '0'
+  it('count is a tally, refused into a money-formatted cell and written bare otherwise', () => {
+    expect(columnFormula(['$100', 'N/A', '$300'], 'count', '$0')).toMatchObject(
+      { ok: false, error: 'result_unit_mismatch' }
     );
-    expect(result).toMatchObject({ ok: false, error: 'magnitude_overflow' });
+    expect(columnFormula(['$100', 'N/A', '$300'], 'count', '0')).toMatchObject({
+      ok: true,
+      renderedValue: '2',
+      counted: 2,
+      tally: true
+    });
   });
 
-  it('refuses an unknown operation by name', () => {
+  it('reports a missing cell (short/merged row) as missing, not zero', () => {
+    const result = columnFormula(['$10', null], 'sum', '$0');
+    expect(result).toMatchObject({ ok: true, renderedValue: '$10' });
+    expect(result.skipped).toEqual([
+      expect.objectContaining({ row: 2, reason: 'missing_cell' })
+    ]);
+  });
+
+  it('refuses magnitude overflow instead of losing precision', () => {
     expect(
-      computeColumn(col(['$1']), 'median' as any, '$0')
-    ).toMatchObject({ ok: false, error: 'unsupported_operation' });
+      columnFormula(
+        Array.from({ length: 11 }, () => '999,999,999,999,999'),
+        'sum',
+        '0'
+      )
+    ).toMatchObject({ ok: false, error: 'magnitude_overflow' });
+  });
+
+  it('refuses an unknown function by name at parse time', () => {
+    const result = columnFormula(['$1'], 'median' as any, '$0');
+    expect(result).toMatchObject({ ok: false, error: 'unknown_function' });
+    expect(result.message).toContain('sum, average, min, max, count');
   });
 });
