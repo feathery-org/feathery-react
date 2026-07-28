@@ -1,4 +1,7 @@
-import { dispatchAssistantTool } from '../assistantToolDispatch';
+import {
+  buildCallableRules,
+  dispatchAssistantTool
+} from '../assistantToolDispatch';
 
 describe('document tool dispatch', () => {
   it.each(['findDocumentOccurrences', 'find_document_occurrences'])(
@@ -19,4 +22,25 @@ describe('document tool dispatch', () => {
       expect(findDocumentOccurrences).toHaveBeenCalledWith({ text: 'Robin' });
     }
   );
+});
+
+describe('callable rule catalog', () => {
+  it('does not mount server-side logic rules as browser tools', () => {
+    const callable = buildCallableRules([
+      {
+        id: 'browser-rule',
+        name: 'Browser rule',
+        trigger_event: 'tool',
+        server_side: false
+      },
+      {
+        id: 'server-rule',
+        name: 'Server rule',
+        trigger_event: 'tool',
+        server_side: true
+      }
+    ]);
+
+    expect(callable.map((rule) => rule.id)).toEqual(['browser-rule']);
+  });
 });
