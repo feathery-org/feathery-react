@@ -56,6 +56,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       viewportOnly = false,
       editMode = false,
       breakpoint,
+      stepId,
       ...props
     },
     ref
@@ -130,6 +131,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
         <DocumentEditorContainer
           key={`docx:${node.id}`}
           containerId={node.id}
+          stepId={stepId}
           editMode={editMode}
         />
       );

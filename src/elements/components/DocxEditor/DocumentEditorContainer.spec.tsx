@@ -33,9 +33,10 @@ jest.mock('./index', () => {
 const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
 
 const schemaFor = (containerIds: string[]) => ({
-  steps: [
-    {
-      buttons: containerIds.map((containerId) => ({
+  steps: containerIds.map((containerId, index) => ({
+    id: `step-${index}`,
+    buttons: [
+      {
         properties: {
           actions: [
             {
@@ -45,9 +46,9 @@ const schemaFor = (containerIds: string[]) => ({
             }
           ]
         }
-      }))
-    }
-  ]
+      }
+    ]
+  }))
 });
 
 const draftFor = (containerId: string) => ({
@@ -82,39 +83,86 @@ describe('DocumentEditorContainer registry lifecycle', () => {
     jest.restoreAllMocks();
   });
 
-  it('rejects a second mounted editor and its unmount cannot clear the first', async () => {
+  it('keeps both same-step editors usable and silently selects one assistant target', async () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     const first = render(
-      <DocumentEditorContainer containerId='document-container-a' />
+      <DocumentEditorContainer
+        containerId='document-container-b'
+        stepId='step-same'
+      />
     );
 
+    await waitFor(() =>
+      expect(getDocxEditor()).toMatchObject({
+        sourceUrl: 'https://example.com/document-container-b.docx'
+      })
+    );
+
+    const second = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        stepId='step-same'
+      />
+    );
+
+    await waitFor(() => {
+      expect(
+        second.getByTestId(
+          'editor:https://example.com/document-container-a.docx'
+        )
+      ).toBeInTheDocument();
+      expect(
+        first.getByTestId(
+          'editor:https://example.com/document-container-b.docx'
+        )
+      ).toBeInTheDocument();
+      expect(getDocxEditor()).toMatchObject({
+        sourceUrl: 'https://example.com/document-container-a.docx'
+      });
+    });
+    expect(error).not.toHaveBeenCalled();
+
+    second.unmount();
+    expect(getDocxEditor()).toMatchObject({
+      sourceUrl: 'https://example.com/document-container-b.docx'
+    });
+
+    first.unmount();
+    expect(getDocxEditor()).toBeUndefined();
+  });
+
+  it('hands off to the next step before the previous step unmounts', async () => {
+    const outgoing = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        stepId='step-a'
+      />
+    );
     await waitFor(() =>
       expect(getDocxEditor()).toMatchObject({
         sourceUrl: 'https://example.com/document-container-a.docx'
       })
     );
 
-    const second = render(
-      <DocumentEditorContainer containerId='document-container-b' />
+    // This is React's real transition ordering: incoming mount first.
+    const incoming = render(
+      <DocumentEditorContainer
+        containerId='document-container-b'
+        stepId='step-b'
+      />
     );
-
     await waitFor(() =>
-      expect(error).toHaveBeenCalledWith(
-        'Feathery: only one document editor is supported per form. ' +
-          'Ignored "document-container-b" because ' +
-          '"document-container-a" is already registered.'
-      )
+      expect(getDocxEditor()).toMatchObject({
+        sourceUrl: 'https://example.com/document-container-b.docx'
+      })
     );
-    expect(getDocxEditor()).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-a.docx'
-    });
 
-    second.unmount();
+    // Then the outgoing cleanup arrives late.
+    outgoing.unmount();
     expect(getDocxEditor()).toMatchObject({
-      sourceUrl: 'https://example.com/document-container-a.docx'
+      sourceUrl: 'https://example.com/document-container-b.docx'
     });
-
-    first.unmount();
+    incoming.unmount();
     expect(getDocxEditor()).toBeUndefined();
   });
 });

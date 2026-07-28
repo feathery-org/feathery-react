@@ -8,7 +8,12 @@ import {
   useDocumentIndex,
   _resetDocumentIndexState
 } from '../documentIndex';
-import { registerDocxEditor, _clearDocxEditors } from '../docxEditorRegistry';
+import {
+  getActiveDocxEditorTarget,
+  registerDocxEditor,
+  unregisterDocxEditor,
+  _clearDocxEditors
+} from '../docxEditorRegistry';
 import AssistantChat from '../../AssistantChat';
 
 // Capture the chat transport options so tests can invoke the real `body()`
@@ -72,6 +77,14 @@ const targets = (documentId?: string) => () =>
         { type: 'generated_document', id: documentId }
       ]
     : [{ type: 'panel', id: 'panel-1' }];
+
+const mountedEditorTargets = () => {
+  const documentTarget = getActiveDocxEditorTarget();
+  return [
+    { type: 'panel', id: 'panel-1' },
+    ...(documentTarget ? [documentTarget] : [])
+  ];
+};
 
 // Stands in for the live SyncFusion DocumentEditor: `serialize()` returns a blank
 // document until the source finishes opening, exactly as the real one does.
@@ -524,6 +537,109 @@ describe('AssistantChat wiring (the regression guard)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS * 4);
     });
     expect(indexPosts()).toHaveLength(0);
+  });
+
+  it('cold start gains the mounted editor target, indexes it, and sends it to chat', async () => {
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={mountedEditorTargets}
+        getJwt={() => 'JWT'}
+      />
+    );
+    const transportBody = () =>
+      (globalThis as any).__capturedTransportOpts.body();
+
+    expect(transportBody().context.targets).toEqual([
+      { type: 'panel', id: 'panel-1' }
+    ]);
+    expect(transportBody().context.document_state).toBeUndefined();
+
+    const editor = fakeEditor();
+    editor.loaded = true;
+    registerDocxEditor('editor-a', editor, {
+      stepId: 'edit-proposal',
+      documentId: DOC_ID
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+
+    expect(transportBody().context.targets).toEqual([
+      { type: 'panel', id: 'panel-1' },
+      DOCUMENT_TARGET
+    ]);
+    expect(transportBody().context.document_state).toMatchObject({
+      indexDirty: false,
+      indexHash: expect.any(String)
+    });
+    expect(JSON.parse(indexPosts()[0][1].body).targets).toEqual(
+      mountedEditorTargets()
+    );
+  });
+
+  it('indexes the incoming step under mount-before-unmount ordering and preserves the outgoing index', async () => {
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={mountedEditorTargets}
+        getJwt={() => 'JWT'}
+      />
+    );
+    const outgoing = fakeEditor();
+    outgoing.loaded = true;
+    registerDocxEditor('editor-a', outgoing, {
+      stepId: 'step-a',
+      documentId: 'document-a'
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+
+    const incoming = fakeEditor();
+    incoming.loaded = true;
+    incoming.text = 'Second document only';
+    // React mounts the incoming step first.
+    registerDocxEditor('editor-b', incoming, {
+      stepId: 'step-b',
+      documentId: 'document-b'
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    // Then the outgoing effect cleans up late.
+    unregisterDocxEditor('editor-a', outgoing);
+
+    expect(
+      indexPosts().map(
+        ([, init]) =>
+          JSON.parse(init.body).targets.find(
+            (target: any) => target.type === 'generated_document'
+          ).id
+      )
+    ).toEqual(['document-a', 'document-b']);
+    expect(
+      getDocumentIndexFreshness({
+        type: 'generated_document',
+        id: 'document-a'
+      }).indexDirty
+    ).toBe(false);
+    expect(
+      getDocumentIndexFreshness({
+        type: 'generated_document',
+        id: 'document-b'
+      }).indexDirty
+    ).toBe(false);
+
+    // A stale event from the outgoing editor cannot be mislabeled as B.
+    outgoing.text = 'stale outgoing edit';
+    outgoing.emit('contentChange');
+    await act(async () => {
+      jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
+    });
+    expect(indexPosts()).toHaveLength(2);
   });
 });
 
