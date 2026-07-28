@@ -219,6 +219,24 @@ const irregularSfdt = (overrides: Record<number, string> = {}) => ({
   ]
 });
 
+const numericHeaderSfdt = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Year Projection'),
+        {
+          tableFormat: {},
+          rows: [
+            textRow('2025', '2026'),
+            textRow('100', '0')
+          ]
+        },
+        para('End')
+      ]
+    }
+  ]
+});
+
 // ---------------------------------------------------------------------------
 // 1. A no-op write must not produce a tracked change - universally.
 // ---------------------------------------------------------------------------
@@ -451,18 +469,17 @@ describe('set_column_formula: recompute the column, write only what moved', () =
         label: 'the Tax column at 13%',
         tableAnchor: '0;1',
         column: 2,
-        startRow: 0,
+        startRow: 1,
         endRow: 4,
         wholeTable: true,
-        rowsEvaluated: 5,
+        rowsEvaluated: 4,
         rowsChanged: 2,
         rowsUnchanged: 2,
-        rowsSkipped: 1,
+        rowsSkipped: 0,
         verifiedByReRead: true
       });
       // Every row is accounted for, by name.
       expect(report.rows.map((entry) => entry.outcome)).toEqual([
-        'skipped', // row 0: the header cell says "Premium", not a number
         'written', // $0.00 -> $130.00
         'written', // $99.00 -> $260.00
         'unchanged', // $390.00 was already right
@@ -510,10 +527,10 @@ describe('set_column_formula: recompute the column, write only what moved', () =
       });
       const report = result.results[0].column!;
       expect(report).toMatchObject({
-        rowsEvaluated: 5,
+        rowsEvaluated: 4,
         rowsChanged: 4,
         rowsUnchanged: 0,
-        rowsSkipped: 1
+        rowsSkipped: 0
       });
       expect(changedCells(before, ed.serialize())).toEqual([
         '0;1;1;2;0',
@@ -546,10 +563,10 @@ describe('set_column_formula: recompute the column, write only what moved', () =
       });
       const report = result.results[0].column!;
       expect(report).toMatchObject({
-        rowsEvaluated: 5,
+        rowsEvaluated: 4,
         rowsChanged: 0,
         rowsUnchanged: 4,
-        rowsSkipped: 1
+        rowsSkipped: 0
       });
       // A whole-column recompute over a correct column is reported as the
       // no-op it is, so the model says "already correct" not "recomputed".
@@ -580,20 +597,16 @@ describe('set_column_formula: recompute the column, write only what moved', () =
       });
       const receipt = result.results[0].column!.receipt;
       expect(receipt).toContain(
-        'Recomputed 5 rows of the Tax column at 13% ' +
+        'Recomputed 4 rows of the Tax column at 13% ' +
           '(column 2 of the table at 0;1), 2 changed.'
       );
       expect(receipt).toContain(
-        'evaluated over rows 0-4 (every row of the table): 2 written, ' +
-          '2 already correct and left untouched, 1 skipped.'
+        'evaluated over rows 1-4 (every data row; row 0 is the header): 2 written, ' +
+          '2 already correct and left untouched, 0 skipped.'
       );
       // What moved, named cell by cell.
       expect(receipt).toContain('Changed: row 1 ("$0.00" -> "$130.00")');
       expect(receipt).toContain('row 2 ("$99.00" -> "$260.00")');
-      // What could not be computed, named too - never silently zeroed.
-      expect(receipt).toContain(
-        'Skipped (no value could be computed): row 0 (cell_not_numeric)'
-      );
       expect(receipt).toContain('the unchanged cells produced no revision');
     } finally {
       destroyRealDocumentEditor(ed);
@@ -738,6 +751,68 @@ describe('set_column_formula: recompute the column, write only what moved', () =
   });
 });
 
+describe('set_column_formula: row 0 is explicitly the header', () => {
+  it('real SDK: a numeric 2025 | 2026 header is not treated as data by default', () => {
+    const ed = makeRealDocumentEditor(numericHeaderSfdt());
+    try {
+      const before = ed.serialize();
+      const result = run(ed, {
+        edits: [
+          {
+            op: 'set_column_formula',
+            anchor: '0;1;1;1;0',
+            formula: '[0;1;{row};0;0] * 13%',
+            round: 'half_up'
+          }
+        ]
+      });
+
+      expect(result.results[0].column).toMatchObject({
+        startRow: 1,
+        endRow: 1,
+        wholeTable: true,
+        rowsEvaluated: 1,
+        rowsChanged: 1
+      });
+      expect(cellTextAt(ed, '0;1;0;1;0')).toBe('2026');
+      expect(cellTextAt(ed, '0;1;0;1;0')).not.toBe('263');
+      expect(cellTextAt(ed, '0;1;1;1;0')).toBe('13');
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: startRow 0 explicitly opts a headerless table into row 0', () => {
+    const ed = makeRealDocumentEditor(numericHeaderSfdt());
+    try {
+      const result = run(ed, {
+        edits: [
+          {
+            op: 'set_column_formula',
+            anchor: '0;1;0;1;0',
+            formula: '[0;1;{row};0;0] * 13%',
+            startRow: 0,
+            endRow: 0,
+            round: 'half_up'
+          }
+        ]
+      });
+
+      expect(result.results[0].column).toMatchObject({
+        startRow: 0,
+        endRow: 0,
+        wholeTable: false,
+        rowsEvaluated: 1
+      });
+      expect(cellTextAt(ed, '0;1;0;1;0')).toBe('263');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 3. The irregular table: the bounds really do stop mattering.
 // ---------------------------------------------------------------------------
@@ -759,13 +834,13 @@ describe('an irregular schedule (merged banner, stacked headers, separators, sec
       });
       const report = result.results[0].column!;
       expect(report).toMatchObject({
-        startRow: 0,
+        startRow: 1,
         endRow: 12,
         wholeTable: true,
-        rowsEvaluated: 13,
+        rowsEvaluated: 12,
         rowsChanged: 0,
         rowsUnchanged: 5,
-        rowsSkipped: 8
+        rowsSkipped: 7
       });
       // The rows that CANNOT produce a value, and why - every one of them a
       // layout feature the engine deliberately does not try to recognise.
@@ -774,7 +849,6 @@ describe('an irregular schedule (merged banner, stacked headers, separators, sec
           .filter((entry) => entry.outcome === 'skipped')
           .map((entry) => [entry.row, entry.reason])
       ).toEqual([
-        [0, 'cell_not_numeric'], // merged title banner
         [1, 'cell_not_numeric'], // header row A ("Premium")
         [2, 'cell_not_numeric'], // header row B ("(USD)")
         [3, 'cell_not_numeric'], // blank separator
@@ -813,10 +887,10 @@ describe('an irregular schedule (merged banner, stacked headers, separators, sec
       });
       const report = result.results[0].column!;
       expect(report).toMatchObject({
-        rowsEvaluated: 13,
+        rowsEvaluated: 12,
         rowsChanged: 1,
         rowsUnchanged: 4,
-        rowsSkipped: 8
+        rowsSkipped: 7
       });
       expect(changedCells(before, ed.serialize())).toEqual(['0;1;6;3;0']);
       expect(cellTextAt(ed, '0;1;6;3;0')).toBe('$1,618.50');

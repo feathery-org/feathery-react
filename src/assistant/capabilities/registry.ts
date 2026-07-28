@@ -377,9 +377,9 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // exists because picking row ranges is what the model gets wrong: live it
     // totalled rows 1..3 of one column and rows 1..4 of the column beside it,
     // in the same table, in the same turn. Here the bounds stop mattering - the
-    // default span is every row, rows that cannot produce a value are skipped
-    // and named, and (the no-op rule) only the cells whose value actually
-    // moves become tracked changes.
+    // default span is every DATA row (row 0 is the explicit header row), rows
+    // that cannot produce a value are skipped and named, and (the no-op rule)
+    // only the cells whose value actually moves become tracked changes.
     op: 'set_column_formula',
     params: {
       formula: 'string',
@@ -393,7 +393,7 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     anchorKind: 'table_cell',
     tracked: true,
     summary:
-      'Recompute a WHOLE COLUMN instead of guessing a row range: `formula` runs once per row with `{row}` standing for that row. Anchor ANY cell of the target column. Omit startRow/endRow to cover every row - rows whose inputs are not numeric (headers, separators) are skipped and named, and rows already holding the computed value get NO change card. The receipt states coverage and what moved.',
+      'Recompute a whole data column with `formula`, substituting `{row}` per row. Anchor any target-column cell. Omit bounds to reserve row 0 as the header and cover rows 1 through the end; send startRow: 0 explicitly for headerless data. Non-numeric rows are skipped and named; cells already correct produce no change card. The receipt states coverage and writes.',
     example: {
       op: 'set_column_formula',
       anchor: '0;7;1;2;0',

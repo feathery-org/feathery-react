@@ -372,28 +372,21 @@ const CONTRACTS: Record<string, ContractCase> = {
     ],
     verify: (ed, result) => {
       const report = result.results[0].column!;
-      // Every row of the table was evaluated - no row range was guessed.
+      // Every data row was evaluated - row 0 is the explicit header.
       expect(report).toMatchObject({
         tableAnchor: '0;1',
         column: 2,
-        startRow: 0,
+        startRow: 1,
         endRow: 3,
         wholeTable: true,
-        rowsEvaluated: 4,
+        rowsEvaluated: 3,
         rowsChanged: 2,
         rowsUnchanged: 1,
-        rowsSkipped: 1,
+        rowsSkipped: 0,
         verifiedByReRead: true
       });
-      // Row 0 is the header: "Premium" is not a number, so no value can be
-      // computed and the row is skipped and named - never zeroed.
-      expect(report.rows[0]).toMatchObject({
-        row: 0,
-        outcome: 'skipped',
-        reason: 'cell_not_numeric'
-      });
       // Row 3's tax was already exactly right: no write, no change card.
-      expect(report.rows[3]).toMatchObject({
+      expect(report.rows[2]).toMatchObject({
         row: 3,
         outcome: 'unchanged',
         previousText: '$390.00',
@@ -405,7 +398,7 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(texts).toContain('$390.00');
       expect(texts).not.toContain('$99.00');
       expect(report.receipt).toContain(
-        'Recomputed 4 rows of the Tax column at 13% ' +
+        'Recomputed 3 rows of the Tax column at 13% ' +
           '(column 2 of the table at 0;1), 2 changed.'
       );
     }
