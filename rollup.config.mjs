@@ -60,7 +60,12 @@ export default {
     replace({
       preventAssignment: true,
       values: {
-        __PACKAGE_VERSION__: JSON.stringify(pkg.version)
+        __PACKAGE_VERSION__: JSON.stringify(pkg.version),
+        // The EJ2 editor validates its license in the browser, so inject the
+        // CI/build environment value without committing it to source.
+        __SYNCFUSION_LICENSE_KEY__: JSON.stringify(
+          process.env.SYNCFUSION_LICENSE_KEY || ''
+        )
       }
     }),
     // @segment/analytics-next's `browser` field swaps its deprecated Node
