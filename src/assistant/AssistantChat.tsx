@@ -338,11 +338,9 @@ const AssistantChat = ({
         internalState[instanceId]?.logicRules ?? []
       );
       if (callableRules.length > 0) context.callable_rules = callableRules;
-      // What this client's document engine can actually do, declared to
-      // ai-services on every editor-surface request (S2 drift alarm; frozen
-      // constant so the serialised bytes are identical turn to turn and stay
-      // inside the prompt cache). Form-only chats have no document editor and
-      // declare nothing.
+      // Machine-only executor facts: protocol version and operation names.
+      // ai-services intersects these names with its canonical server enum and
+      // owns every description, example, payload rule, and result shape.
       context.capabilities = CAPABILITIES_DECLARATION;
     }
     // How fresh the semantic index is for the open document, re-read on every
