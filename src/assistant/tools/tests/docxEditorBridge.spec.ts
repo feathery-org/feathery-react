@@ -1,0 +1,121 @@
+import {
+  createDocxEditorBridge,
+  readDocxSelection
+} from '../docxEditorBridge';
+import {
+  applyDocumentEdits,
+  buildIndexBlocks,
+  findDocumentOccurrences,
+  getDocumentInventory
+} from '../syncfusionDocumentOps';
+
+jest.mock('../syncfusionDocumentOps', () => ({
+  ...jest.requireActual('../syncfusionDocumentOps'),
+  applyDocumentEdits: jest.fn(),
+  findDocumentOccurrences: jest.fn(),
+  getDocumentInventory: jest.fn()
+}));
+
+const applyDocumentEditsMock = applyDocumentEdits as jest.Mock;
+const findDocumentOccurrencesMock = findDocumentOccurrences as jest.Mock;
+const getDocumentInventoryMock = getDocumentInventory as jest.Mock;
+
+describe('createDocxEditorBridge', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('forwards inventory reads to the hardened engine and returns its result', async () => {
+    const editor = { id: 'editor' };
+    const input = { scope: 'section', sectionAnchor: '0;2' };
+    const output = { inventory: [{ anchor: '0;2', text: 'Details' }] };
+    getDocumentInventoryMock.mockReturnValue(output);
+
+    const bridge = createDocxEditorBridge(() => editor);
+
+    await expect(bridge.getDocumentInventory!(input)).resolves.toBe(output);
+    expect(getDocumentInventoryMock).toHaveBeenCalledWith(editor, input);
+  });
+
+  it('forwards edit batches to the hardened engine and returns its result', async () => {
+    const editor = { id: 'editor' };
+    const input = {
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;1',
+          find: '$5,500',
+          replace: '$6,000'
+        }
+      ]
+    };
+    const output = { results: [{ ok: true, op: 'replace_text' }] };
+    applyDocumentEditsMock.mockReturnValue(output);
+
+    const bridge = createDocxEditorBridge(() => editor);
+
+    await expect(bridge.applyDocumentEdits!(input)).resolves.toBe(output);
+    expect(applyDocumentEditsMock).toHaveBeenCalledWith(editor, input);
+  });
+
+  it('forwards occurrence reads to the hardened engine and returns its result', async () => {
+    const editor = { id: 'editor' };
+    const input = { queries: ['premium'] };
+    const output = { results: [{ query: 'premium', occurrences: [] }] };
+    findDocumentOccurrencesMock.mockReturnValue(output);
+
+    const bridge = createDocxEditorBridge(() => editor);
+
+    await expect(bridge.findDocumentOccurrences!(input)).resolves.toBe(output);
+    expect(findDocumentOccurrencesMock).toHaveBeenCalledWith(editor, input);
+  });
+
+  it('resolves the live editor for every call and normalizes missing input', async () => {
+    const firstEditor = { id: 'first' };
+    const secondEditor = { id: 'second' };
+    let editor = firstEditor;
+    const getEditor = jest.fn(() => editor);
+    const bridge = createDocxEditorBridge(getEditor);
+
+    await bridge.getDocumentInventory!(undefined);
+    editor = secondEditor;
+    await bridge.applyDocumentEdits!(undefined);
+
+    expect(getEditor).toHaveBeenCalledTimes(2);
+    expect(getDocumentInventoryMock).toHaveBeenCalledWith(firstEditor, {});
+    expect(applyDocumentEditsMock).toHaveBeenCalledWith(secondEditor, {});
+  });
+
+  it.each([
+    'getDocumentInventory',
+    'applyDocumentEdits',
+    'findDocumentOccurrences'
+  ] as const)(
+    'reports editor_unavailable without invoking the engine for %s',
+    async (method) => {
+      const bridge = createDocxEditorBridge(() => undefined);
+
+      await expect(bridge[method]!({})).resolves.toEqual({
+        ok: false,
+        error: 'editor_unavailable',
+        message: 'No in-form document editor is ready.'
+      });
+      expect(getDocumentInventoryMock).not.toHaveBeenCalled();
+      expect(applyDocumentEditsMock).not.toHaveBeenCalled();
+      expect(findDocumentOccurrencesMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('returns null when the live editor has no usable selection', () => {
+    expect(readDocxSelection(undefined as any)).toBeNull();
+    expect(readDocxSelection({} as any)).toBeNull();
+    expect(readDocxSelection({ selection: {} } as any)).toBeNull();
+    expect(
+      readDocxSelection({ selection: { startOffset: 42 } } as any)
+    ).toBeNull();
+  });
+
+  it('returns no index blocks when the editor document cannot be parsed', () => {
+    const editor = { serialize: () => '{not valid sfdt' };
+
+    expect(buildIndexBlocks(editor as any)).toEqual([]);
+  });
+});
