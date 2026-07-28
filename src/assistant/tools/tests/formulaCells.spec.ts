@@ -731,6 +731,34 @@ describe('the engine refuses a model-authored number', () => {
     }
   });
 
+  it('real SDK: replace_text cannot bypass the number-provenance gate', () => {
+    const ed = makeRealDocumentEditor(proposalSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;1;2;2;0',
+            find: '$95,139.21',
+            replace: '$99,117.00',
+            expect: '$95,139.21'
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'model_authored_number'
+      });
+      expect(ed.revisions.length).toBe(0);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: a fabricated total cannot hide in a freshly inserted total row either', () => {
     const sfdt = proposalSfdt();
     sfdt.sections[0].blocks[1].rows.pop();

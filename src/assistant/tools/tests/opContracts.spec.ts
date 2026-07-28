@@ -30,10 +30,12 @@ import {
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
 import {
+  _setMutationGuardObserver,
   applyDocumentEdits,
   flattenSfdt,
   ApplyEditsResult,
-  EditOp
+  EditOp,
+  MutationGuardCoverage
 } from '../syncfusionDocumentOps';
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../capabilities/registry';
 
@@ -1206,11 +1208,45 @@ describe('op contracts: every advertised op works over its real route', () => {
 
   it.each(
     DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
-  )('%s: applies through applyDocumentEdits and honours `tracked`', (op) => {
-    const contract = CONTRACTS[op];
-    expect(contract).toBeDefined();
-    runContractCase(op, contract);
-  });
+  )(
+    '%s: applies through the shared mutation guards and honours `tracked`',
+    (op, entry) => {
+      const contract = CONTRACTS[op];
+      expect(contract).toBeDefined();
+      const observed: MutationGuardCoverage[] = [];
+      _setMutationGuardObserver((coverage) => observed.push(coverage));
+      try {
+        runContractCase(op, contract);
+      } finally {
+        _setMutationGuardObserver();
+      }
+
+      const coverage = observed.find((item) => item.op === op);
+      expect(coverage).toBeDefined();
+      expect(coverage?.cas).toBe(
+        op === 'replace_all'
+          ? 'find_content'
+          : !entry.requiresAnchor
+          ? 'not_applicable'
+          : op === 'replace_selection'
+          ? 'selection_content'
+          : 'block_expect'
+      );
+      expect(coverage?.numberProvenance).toBe(
+        ['set_cell_formula', 'set_column_formula'].includes(op)
+          ? 'engine_computed'
+          : [
+              'replace_text',
+              'replace_selection',
+              'replace_all',
+              'insert_text',
+              'set_cell_text'
+            ].includes(op)
+          ? 'model_authored_text_checked'
+          : 'not_applicable'
+      );
+    }
+  );
 
   it.each(PARAMETER_VARIANTS)('%s variant: %s', (op, _variant, contract) => {
     runContractCase(op, contract);
