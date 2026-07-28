@@ -64,13 +64,12 @@ export type CallableRule = {
     description?: string;
     required?: boolean;
     // The form field this parameter feeds (metadata.tool.parameters[].field),
-    // forwarded so Robin can ground/clarify against the field's current value.
+    // forwarded so Robin can ground/clarify against the latest live state.
     field?: string;
     [key: string]: any;
   }>;
   // The form fields the rule reads/writes (metadata.tool.allowed_fields),
-  // forwarded as description context so Robin can look up current values via
-  // getFormFields before/while invoking the rule.
+  // forwarded as description context so Robin can match current live values.
   allowed_fields?: string[];
   // Preserve the server-provided rule metadata so ai-services receives the
   // complete host catalog without a discovery round trip.
@@ -85,9 +84,6 @@ export type AssistantToolContext = {
     ruleId: string,
     inputParams: Record<string, any>
   ) => Promise<RunLogicRuleResult>;
-  // Live form field/hidden-field lookup (the `getFormFields` tool). Supplied by
-  // the host so this module stays free of form-runtime imports.
-  getFormFields?: (input: any) => any;
 };
 
 export type ToolDispatchResult = { handled: boolean; output?: any };
@@ -106,8 +102,8 @@ const syntheticError = (error: string, message: string) => ({
  * This is the durable fix for a whole class of dead turn, not for one tool. The
  * model's tool list is built server-side; whenever it contains something this
  * build cannot run - a tool added to ai-services ahead of the client, a
- * client-forwarded tool whose handler was never written (`getFormFields`, live on
- * 2026-07-27), a handler removed in a refactor - the turn used to hang forever
+ * client-forwarded tool whose handler has not landed yet, or a handler removed
+ * in a refactor - the turn used to hang forever
  * with no error at all, because `lastAssistantMessageIsCompleteWithToolCalls`
  * only fires once every tool call has an output.
  *
@@ -265,25 +261,7 @@ export async function dispatchAssistantTool(
     return { handled: true, output };
   }
 
-  // 3) Live form field lookup. Declared client-forwarded by ai-services with no
-  // server execute, so with no handler here the turn hangs forever rather than
-  // failing - the wedge behind two of the captain's three 2026-07-27 "hangs".
-  if (toolName === 'getFormFields') {
-    const handler = ctx.getFormFields;
-    const output = handler
-      ? await withToolTimeout(
-          () => Promise.resolve(handler(input)),
-          TOOL_TIMEOUT_READ_MS,
-          toolName
-        )
-      : syntheticError(
-          'handler_unavailable',
-          'No live form is connected, so field values cannot be read.'
-        );
-    return { handled: true, output };
-  }
-
-  // 4) Designer-defined logic-rule tools.
+  // 3) Designer-defined logic-rule tools.
   if (isRuleTool(toolName)) {
     const callableRules = ctx.callableRules ?? [];
     const ruleId = resolveRuleId(toolName, input, callableRules);

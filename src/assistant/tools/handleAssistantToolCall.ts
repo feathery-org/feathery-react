@@ -7,15 +7,12 @@
 // lastAssistantMessageIsCompleteWithToolCalls` only fires once every tool call in
 // the assistant message has an output, so a single unanswered call leaves the
 // conversation permanently stuck - no error, no answer, no way for the user to
-// tell it apart from a slow model. Live on 2026-07-27 this happened twice with
-// `getFormFields`, a tool ai-services forwards to the client that no browser
-// build had ever implemented: the chain of `else if`s below simply ended, and the
-// turn fell off it in silence.
+// tell it apart from a slow model. A server tool landing before its browser
+// handler can otherwise make the chain of `else if`s simply end in silence.
 //
 // The fix is structural rather than per-tool: the chain now terminates in an
 // `unhandled` branch, so a tool this build cannot run ends the turn with a
-// visible error. `getFormFields` was today's instance of the class; the guard is
-// what stops the next one.
+// visible error, which is what stops the next version-skewed tool from hanging.
 import type { ToolDispatchResult } from './assistantToolDispatch';
 
 export type StreamedToolCall = {
@@ -44,7 +41,7 @@ export type NativeToolHandlers = {
 };
 
 export type AssistantToolCallDeps = {
-  /** Central dispatch (custom handlers, docx bridge, form fields, rule tools). */
+  /** Central dispatch (custom handlers, docx bridge, rule tools). */
   dispatch: (toolName: string, input: any) => Promise<ToolDispatchResult>;
   native: NativeToolHandlers;
   /** Output for a tool nothing here can execute. */

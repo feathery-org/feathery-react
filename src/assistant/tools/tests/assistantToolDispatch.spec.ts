@@ -28,8 +28,7 @@ describe('document tool dispatch', () => {
   it.each([
     'get_document_inventory',
     'find_document_occurrences',
-    'apply_document_edits',
-    'get_form_fields'
+    'apply_document_edits'
   ])('does not claim unreachable snake_case alias %s', async (toolName) => {
     const handler = jest.fn();
     const result = await dispatchAssistantTool(toolName, {}, {
@@ -37,8 +36,7 @@ describe('document tool dispatch', () => {
         getDocumentInventory: handler,
         findDocumentOccurrences: handler,
         applyDocumentEdits: handler
-      },
-      getFormFields: handler
+      }
     });
 
     expect(result).toEqual({ handled: false });

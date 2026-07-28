@@ -2,14 +2,12 @@
 //
 // Live evidence (captain, 2026-07-27): `sendAutomaticallyWhen:
 // lastAssistantMessageIsCompleteWithToolCalls` fires only once EVERY tool call in
-// the assistant message has an output. `getFormFields` is forwarded to the client
-// by ai-services and had no handler in any browser build, so the `else if` chain
-// in AssistantChat's onToolCall simply ran out and the handler returned having
-// emitted nothing. Result: no error, no answer, forever - two of that day's three
-// "hangs", including turn A4 "increment it by one".
+// the assistant message has an output. A server tool arriving before its browser
+// handler can otherwise make AssistantChat's onToolCall chain emit nothing:
+// no error, no answer, forever.
 //
-// So the invariant under test is not "getFormFields works". It is: NO tool call,
-// whatever it is named, can leave this handler without exactly one output.
+// The invariant is: NO tool call, whatever it is named, can leave this handler
+// without exactly one output.
 import {
   handleAssistantToolCall,
   NativeToolHandlers
@@ -59,14 +57,14 @@ describe('every streamed tool call produces exactly one output', () => {
     const h = harness();
 
     await handleAssistantToolCall(
-      { toolName: 'getFormFields', toolCallId: 'call_a4', input: {} },
+      { toolName: 'futureServerTool', toolCallId: 'call_a4', input: {} },
       h.deps
     );
 
     // Before the fix this array was EMPTY, and that emptiness was the hang.
     expect(h.emitted).toHaveLength(1);
     expect(h.emitted[0]).toMatchObject({
-      tool: 'getFormFields',
+      tool: 'futureServerTool',
       toolCallId: 'call_a4',
       output: { ok: false, error: 'unhandled_tool' }
     });
@@ -144,8 +142,7 @@ describe('every streamed tool call produces exactly one output', () => {
       'addTableRow',
       'deleteTableRow',
       'setTableCellValue',
-      'getFormFields',
-      'get_form_fields',
+      'futureServerTool',
       'getDocumentInventory',
       'applyDocumentEdits',
       'queryOutput',
