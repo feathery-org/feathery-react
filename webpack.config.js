@@ -15,7 +15,11 @@ module.exports = {
   plugins: [
     new CleanWebpackPlugin(),
     new webpack.DefinePlugin({
-      __PACKAGE_VERSION__: JSON.stringify(pkg.version)
+      __PACKAGE_VERSION__: JSON.stringify(pkg.version),
+      // Keep the UMD build aligned with the Rollup ESM/CJS builds.
+      __SYNCFUSION_LICENSE_KEY__: JSON.stringify(
+        process.env.SYNCFUSION_LICENSE_KEY || ''
+      )
     })
   ],
   module: {

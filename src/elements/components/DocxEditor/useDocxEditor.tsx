@@ -4,6 +4,15 @@ import { dynamicImport } from '../../../integrations/utils';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
 
+// Replaced by Rollup/Webpack from SYNCFUSION_LICENSE_KEY at package build
+// time. The typeof guard keeps source-level test/dev transforms safe when they
+// do not run either bundler.
+declare const __SYNCFUSION_LICENSE_KEY__: string;
+const BUILT_IN_SYNCFUSION_LICENSE_KEY =
+  typeof __SYNCFUSION_LICENSE_KEY__ === 'undefined'
+    ? ''
+    : __SYNCFUSION_LICENSE_KEY__;
+
 // Inject the Syncfusion theme CSS once (deduped across all editor instances).
 const LOADED_STYLES = new Set<string>();
 function loadStyles() {
@@ -139,6 +148,10 @@ export function useDocxEditor({
   );
 
   const headersKey = JSON.stringify(headers ?? []);
+  // A caller may still override the package-bundled key explicitly. Normal
+  // Feathery form usage needs no license configuration when the package was
+  // built with SYNCFUSION_LICENSE_KEY.
+  const resolvedLicenseKey = licenseKey || BUILT_IN_SYNCFUSION_LICENSE_KEY;
 
   // Load the CDN assets and instantiate the editor. Recreated only if license
   // or serviceUrl changes — NOT on readOnly toggles (those update in place).
@@ -162,7 +175,9 @@ export function useDocxEditor({
         }
         if (!containerRef.current) return;
 
-        if (licenseKey) ej.base.registerLicense(licenseKey);
+        if (resolvedLicenseKey) {
+          ej.base.registerLicense(resolvedLicenseKey);
+        }
         ej.documenteditor.DocumentEditorContainer.Inject(
           ej.documenteditor.Toolbar
         );
@@ -228,7 +243,7 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [licenseKey, serviceUrl, headersKey]);
+  }, [resolvedLicenseKey, serviceUrl, headersKey]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
