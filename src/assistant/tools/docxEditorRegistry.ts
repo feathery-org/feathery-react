@@ -2,7 +2,11 @@
 // The assistant bridge stays SyncFusion-free and resolves this opaque instance
 // only when a document tool is called.
 type EditorInstanceId = string | object;
-const editors = new Map<EditorInstanceId, any>();
+type EditorRegistration = {
+  instanceId: EditorInstanceId;
+  editor: any;
+};
+let registration: EditorRegistration | undefined;
 
 const resolveEditorInstanceId = (
   editorInstanceId: string | undefined,
@@ -17,7 +21,7 @@ const describeEditorInstance = (editorInstanceId: EditorInstanceId): string =>
 // Consumers that need to react to an editor appearing, not just resolve one on
 // demand (the document indexer). Registration order is not controllable - the
 // editor can register before or after a subscriber mounts - so `subscribe`
-// replays every editor already registered. Subscribers must therefore be
+// replays the editor already registered. Subscribers must therefore be
 // idempotent for a given editor.
 type DocxEditorListener = (editor: any) => void;
 const listeners = new Set<DocxEditorListener>();
@@ -26,13 +30,13 @@ export const subscribeDocxEditors = (
   listener: DocxEditorListener
 ): (() => void) => {
   listeners.add(listener);
-  editors.forEach((editor) => {
+  if (registration) {
     try {
-      listener(editor);
+      listener(registration.editor);
     } catch {
       /* a broken subscriber must never break editor registration */
     }
-  });
+  }
   return () => listeners.delete(listener);
 };
 
@@ -42,21 +46,17 @@ export const registerDocxEditor = (
 ): boolean => {
   if (!editor) return false;
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
-  const activeInstanceId = editors.keys().next().value as
-    | EditorInstanceId
-    | undefined;
-  if (
-    activeInstanceId !== undefined &&
-    activeInstanceId !== resolvedInstanceId
-  ) {
+  if (registration && registration.instanceId !== resolvedInstanceId) {
     console.error(
       'Feathery: only one document editor is supported per form. ' +
         `Ignored ${describeEditorInstance(resolvedInstanceId)} because ` +
-        `${describeEditorInstance(activeInstanceId)} is already registered.`
+        `${describeEditorInstance(
+          registration.instanceId
+        )} is already registered.`
     );
     return false;
   }
-  editors.set(resolvedInstanceId, editor);
+  registration = { instanceId: resolvedInstanceId, editor };
   listeners.forEach((listener) => {
     try {
       listener(editor);
@@ -72,18 +72,23 @@ export const unregisterDocxEditor = (
   editor: any
 ) => {
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
-  if (editors.get(resolvedInstanceId) !== editor) return;
-  editors.delete(resolvedInstanceId);
+  if (
+    registration?.instanceId !== resolvedInstanceId ||
+    registration.editor !== editor
+  ) {
+    return;
+  }
+  registration = undefined;
 };
 
-export const getDocxEditor = (editorInstanceId?: string): any => {
-  if (editorInstanceId && editors.has(editorInstanceId)) {
-    return editors.get(editorInstanceId);
-  }
-  return editors.size === 1 ? editors.values().next().value : undefined;
-};
+// Existing assistant callers pass a form instance id. It is intentionally not
+// a selector now that this registry permits exactly one editor.
+export function getDocxEditor(editorInstanceId?: string): any;
+export function getDocxEditor(): any {
+  return registration?.editor;
+}
 
 export const _clearDocxEditors = (): void => {
-  editors.clear();
+  registration = undefined;
   listeners.clear();
 };
