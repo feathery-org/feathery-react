@@ -315,6 +315,54 @@ export interface EditOp {
   [field: string]: any;
 }
 
+export type MutationGuardCoverage = {
+  op: string;
+  cas: 'block_expect' | 'selection_content' | 'find_content' | 'not_applicable';
+  numberProvenance:
+    | 'model_authored_text_checked'
+    | 'engine_computed'
+    | 'not_applicable';
+};
+
+// Test-only observation point for the registry-exhaustive contract suite. The
+// production path never installs one; keeping the hook at the common boundary
+// lets the suite prove every advertised op actually crosses it.
+let mutationGuardObserver:
+  | ((coverage: MutationGuardCoverage) => void)
+  | undefined;
+export const _setMutationGuardObserver = (
+  observer?: (coverage: MutationGuardCoverage) => void
+): void => {
+  mutationGuardObserver = observer;
+};
+
+const MODEL_AUTHORED_CELL_TEXT_OPS = new Set([
+  'replace_text',
+  'replace_selection',
+  'replace_all',
+  'insert_text',
+  'set_cell_text'
+]);
+const ENGINE_COMPUTED_CELL_TEXT_OPS = new Set([
+  'set_cell_formula',
+  'set_column_formula'
+]);
+
+function observeMutationGuardBoundary(
+  op: EditOp,
+  cas: MutationGuardCoverage['cas']
+): void {
+  mutationGuardObserver?.({
+    op: op.op,
+    cas,
+    numberProvenance: MODEL_AUTHORED_CELL_TEXT_OPS.has(op.op)
+      ? 'model_authored_text_checked'
+      : ENGINE_COMPUTED_CELL_TEXT_OPS.has(op.op)
+      ? 'engine_computed'
+      : 'not_applicable'
+  });
+}
+
 /**
  * The auditable record of one engine-evaluated formula write. Same trust
  * design as the retired set_cell_computed report: the receipt is the one line to relay, the
@@ -2424,6 +2472,7 @@ function applyLiveStoryTextOp(
   op: EditOp,
   target: LiveStoryTarget
 ): void {
+  observeMutationGuardBoundary(op, 'find_content');
   if (op.op !== 'replace_text' && op.op !== 'delete_text')
     throw new OpError(
       'unsupported_story_op',
@@ -3710,13 +3759,14 @@ function runColumnFormulaWrite(
 }
 
 // ---------------------------------------------------------------------------
-// The model-authored-number gate on set_cell_text
+// The model-authored-number gate at the common anchored-write boundary
 //
 // A prompt instruction is not a guarantee - proven on this very stack, where
 // the "always name the rule you are invoking" instruction went live and the
 // model ignored it. So the engine, not the prompt, refuses the route that let
-// "$95,139.18" into a document: a numeric `set_cell_text` aimed at a numeric
-// slot in a numeric column is rejected, and the refusal names set_cell_formula.
+// "$95,139.18" into a document: any caller-authored numeric replacement aimed
+// at a numeric slot in a numeric column is rejected, and the refusal names the
+// engine-computed route.
 // ---------------------------------------------------------------------------
 
 /**
@@ -3757,12 +3807,28 @@ const LITERAL_NUMBER_NOTE =
  * the user-dictated exception, `undefined` when the write is not numeric at
  * all, and throws the refusal otherwise.
  */
+function modelAuthoredCellText(op: EditOp): string | undefined {
+  switch (op.op) {
+    case 'set_cell_text':
+      return String(op.text ?? '');
+    case 'replace_text':
+    case 'replace_selection':
+    case 'replace_all':
+      return String(op.replace ?? op.text ?? op.newText ?? '');
+    case 'insert_text':
+      return insertionText(op as TypedEditOp<'insert_text'>);
+    default:
+      return undefined;
+  }
+}
+
 function guardModelAuthoredNumber(
-  op: TypedEditOp<'set_cell_text'>,
+  op: EditOp,
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>
 ): LiteralNumberWrite | undefined {
-  const text = String(op.text ?? '');
+  const text = modelAuthoredCellText(op);
+  if (text === undefined) return undefined;
   if (block.kind !== 'table_cell') return undefined;
   if (!isQuantityText(text)) return undefined;
   // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
@@ -3775,7 +3841,7 @@ function guardModelAuthoredNumber(
     existing === '' &&
     quantitySiblingCount(Array.from(byAnchor.values()), block.anchor) >= 2;
   if (!existingIsQuantity && !emptyInQuantityColumn) return undefined;
-  if (op.literal === true) {
+  if (op.op === 'set_cell_text' && op.literal === true) {
     return {
       text: text.trim(),
       previousText: existing,
@@ -3788,9 +3854,11 @@ function guardModelAuthoredNumber(
       existingIsQuantity
         ? 'a cell that already holds a formatted amount'
         : 'an empty cell in a column of formatted amounts'
-    } as literal text: a value in a quantity column is almost always derived from other cells, and a number in the response body is unverifiable - the engine cannot tell a correct total from a plausible one. Use set_cell_formula with a \`formula\` that REFERENCES the cells the value comes from (e.g. "[${
+    } through ${
+      op.op
+    }: a value in a quantity column is almost always derived from other cells, and a number in the response body is unverifiable - the engine cannot tell a correct total from a plausible one. Use set_cell_formula with a \`formula\` that REFERENCES the cells the value comes from (e.g. "[${
       block.anchor
-    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived - the user dictated this exact number - re-send the same set_cell_text with \`literal: true\`, which records it as a verbatim user-stated figure rather than a computed one.`,
+    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived - the user dictated this exact number - use set_cell_text with \`literal: true\`, which records it as a verbatim user-stated figure rather than a computed one.`,
     [
       `target cell: ${block.anchor}`,
       `current content: ${JSON.stringify(block.text)}`
@@ -3887,16 +3955,12 @@ export const ANCHORED_OP_HANDLERS: {
     selectRange(editor, block.anchor, offset, offset);
     editor.editor.insertText(insertionText(op));
   },
-  set_cell_text: ({ editor, op, block, byAnchor }) => {
-    // The engine, not the prompt, keeps model arithmetic out of numeric cells.
-    // This runs BEFORE any write, so a refused numeric write costs no revision.
-    const literalNumber = guardModelAuthoredNumber(op, block, byAnchor);
+  set_cell_text: ({ editor, op, block }) => {
     // Overwrite the (cell) block's content.
     selectBlock(editor, block);
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
     verifyWrittenText(editor, block.anchor, replacement);
-    return literalNumber ? { literalNumber } : undefined;
   },
   set_cell_formula: ({ editor, op, block, byAnchor }) =>
     runFormulaCellWrite(editor, op, block, byAnchor),
@@ -4167,6 +4231,10 @@ function applyAnchoredOp(
   byAnchor: Map<string, FlatBlock>
 ): OpSuccessExtras | void {
   const liveText = selectBlock(editor, block);
+  observeMutationGuardBoundary(
+    op,
+    op.op === 'replace_selection' ? 'selection_content' : 'block_expect'
+  );
 
   // Compare-and-swap guard: `expect` is the whole-block text the model believes
   // is still present. On mismatch we write nothing.
@@ -4200,6 +4268,11 @@ function applyAnchoredOp(
     };
   }
 
+  // The engine, not an individual handler, keeps model arithmetic out of
+  // numeric cells. Every registered anchored op crosses this point before its
+  // handler can write.
+  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor);
+
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
   if (!handler)
     throw new OpError(
@@ -4211,7 +4284,7 @@ function applyAnchoredOp(
   // The single untyped->typed boundary for anchored ops: `op` is model-authored
   // JSON. The handlers are compile-time-locked to the registry; runtime
   // validity of each field value remains the handler's own defensive job.
-  return (
+  const extras = (
     handler as unknown as (ctx: {
       editor: LiveEditor;
       op: EditOp;
@@ -4220,9 +4293,11 @@ function applyAnchoredOp(
       liveText: string;
     }) => OpSuccessExtras | void
   )({ editor, op, block, byAnchor, liveText });
+  return literalNumber ? { ...(extras ?? {}), literalNumber } : extras;
 }
 
 function applyAnchorlessOp(editor: LiveEditor, op: EditOp): void {
+  observeMutationGuardBoundary(op, 'not_applicable');
   const handler = ANCHORLESS_OP_HANDLERS[op.op as AnchorlessDocumentOp];
   if (!handler)
     throw new OpError(
@@ -4658,10 +4733,22 @@ function readPostEditInventory(
 // in effect - it ignores the op's anchor by design).
 function applyReplaceAll(
   editor: LiveEditor,
-  op: TypedEditOp<'replace_all'>
+  op: TypedEditOp<'replace_all'>,
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>
 ): number {
+  observeMutationGuardBoundary(op, 'find_content');
   const find = String(op.find ?? '');
   if (!find) throw new OpError('missing_find', 'replace_all needs `find`.');
+  // replace_all is the one executor-special-cased mutation. Preflight every
+  // matching table block through the same number-provenance gate before the
+  // search module can write any of them.
+  if (String(op.replace ?? '') !== find) {
+    for (const block of blocks) {
+      if (block.text.includes(find))
+        guardModelAuthoredNumber(op, block, byAnchor);
+    }
+  }
   const search = editor.search;
   if (!search?.findAll)
     throw new OpError('unsupported_op', 'Search module unavailable.');
@@ -5959,7 +6046,9 @@ export function applyDocumentEdits(
             // Untyped->typed boundary, same contract as the dispatch sites.
             const count = applyReplaceAll(
               editor,
-              op as TypedEditOp<'replace_all'>
+              op as TypedEditOp<'replace_all'>,
+              blocks,
+              byAnchor
             );
             if (!count) warnings.push(`replace_all: "${op.find}" not found.`);
           } else if (ANCHORLESS_OPS.has(op.op)) {
