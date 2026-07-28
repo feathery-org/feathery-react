@@ -158,6 +158,7 @@ import {
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
   ACTION_GENERATE_ENVELOPES,
+  ACTION_SIGN_DOCUMENTS,
   ACTION_GENERATE_QUIK_DOCUMENTS,
   ACTION_INVITE_COLLABORATOR,
   ACTION_LOGOUT,
@@ -2756,38 +2757,75 @@ function Form({
             break;
           }
           updateEnvelopeGeneration(envelopeId, { status: 'complete' });
-          const envAction = action.envelope_action;
-          if (!envAction) {
-            // Sign files
-            const url = getSignUrl(action.redirect);
-            if (action.redirect) {
-              const eventData: Record<string, any> = {
-                step_key: activeStep.key,
-                next_step_key: '',
-                event: submit ? 'complete' : 'skip',
-                completed: true
-              };
-              await client.registerEvent(eventData);
-              featheryWindow().location.href = url;
-            } else openTab(url);
-          } else if (envAction === 'download' && data.files) {
-            // Download files directly
-            await downloadAllFileUrls(
-              data.files,
-              replaceTextVariables(action.envelope_zip_name)
+          if (action.view_draft_container) {
+            const refreshDetail = {
+              containerId: action.view_draft_container,
+              documents: action.documents ?? [],
+              envelopes: data.envelopes ?? []
+            };
+            const win = featheryWindow() as any;
+            win.__featheryDocxEditorDrafts = {
+              ...(win.__featheryDocxEditorDrafts ?? {}),
+              [action.view_draft_container ?? '']: refreshDetail
+            };
+            // Tell any mounted document-editor container to reload the freshly
+            // generated envelope (needed when the editor is on the same step as
+            // the button; a different-step editor consumes the stored draft on
+            // mount).
+            win.dispatchEvent(
+              new CustomEvent('feathery-docx-editor-refresh', {
+                detail: refreshDetail
+              })
             );
-          } else if (envAction === 'save') {
-            let files = data.files;
-            if (files.length === 1) files = files[0];
-            const newValues = { [action.save_document_field_key]: files };
-            updateFieldValues(newValues);
-            client.submitCustom(newValues);
+          }
+          if (!action.view_draft_container) {
+            const envAction = action.envelope_action;
+            if (!envAction || envAction === 'sign') {
+              // Sign files
+              const url = getSignUrl(action.redirect);
+              if (action.redirect) {
+                const eventData: Record<string, any> = {
+                  step_key: activeStep.key,
+                  next_step_key: '',
+                  event: submit ? 'complete' : 'skip',
+                  completed: true
+                };
+                await client.registerEvent(eventData);
+                featheryWindow().location.href = url;
+              } else openTab(url);
+            } else if (envAction === 'download' && data.files) {
+              // Download files directly
+              await downloadAllFileUrls(
+                data.files,
+                replaceTextVariables(action.envelope_zip_name)
+              );
+            } else if (envAction === 'save') {
+              let files = data.files;
+              if (files.length === 1) files = files[0];
+              const newValues = { [action.save_document_field_key]: files };
+              updateFieldValues(newValues);
+              client.submitCustom(newValues);
+            }
           }
         } catch (e: any) {
           updateEnvelopeGeneration(envelopeId, { status: 'error' });
           setElementError((e as Error).message);
           break;
         }
+      } else if (type === ACTION_SIGN_DOCUMENTS) {
+        // Enter the existing envelope sign flow for this submission's
+        // documents WITHOUT regenerating (which would overwrite editor edits).
+        // Same redirect/openTab behavior as the generate 'sign' branch above.
+        const url = getSignUrl(action.redirect);
+        if (action.redirect) {
+          await client.registerEvent({
+            step_key: activeStep.key,
+            next_step_key: '',
+            event: submit ? 'complete' : 'skip',
+            completed: true
+          });
+          featheryWindow().location.href = url;
+        } else openTab(url);
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         try {

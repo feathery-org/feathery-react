@@ -449,11 +449,19 @@ export default class IntegrationClient {
 
   async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
-    const signer = fieldValues[action.envelope_signer_field_key];
+    // Editor flow: the backend converts a docx envelope to PDF at generation
+    // whenever a signer is present, which would make the draft uneditable in
+    // the targeted document-editor container. Hold the signer back here — the
+    // editor's Sign action forwards it at finalize time (finalizeEnvelope),
+    // when that conversion is meant to happen.
+    const signer = action.view_draft_container
+      ? undefined
+      : fieldValues[action.envelope_signer_field_key];
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
+    const runAsync = action.run_async ?? true;
 
     return await apiGenerateFormDocuments({
       sdkKey,
@@ -462,10 +470,96 @@ export default class IntegrationClient {
       userId,
       signerEmail: signer?.toString() ?? '',
       repeatable: action.repeatable ?? false,
-      runAsync: action.run_async ?? true,
+      runAsync,
       envelopeAction,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
       maxTime: this.ENVELOPE_MAX_TIME
+    });
+  }
+
+  // Replace a generated envelope's file with an edited version, e.g. from the
+  // in-form document editor. Returns { id, file, updated_at } with a fresh
+  // signed file URL.
+  saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    formData.append('file', file, fileName);
+    const url = `${API_URL}document/envelope/${envelopeId}/file/`;
+    const options = {
+      method: 'PATCH',
+      body: formData,
+      // apiFetch defaults PATCH to keepalive, and Chromium rejects keepalive
+      // requests whose body exceeds 64kb — exported .docx files routinely do.
+      keepalive: false
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      // _fetch resolves undefined on swallowed network errors — surface that
+      // as a failure so callers never treat an unsaved document as saved
+      // (e.g. the sign flow must not open against a stale envelope).
+      if (!response) throw Error('Document save failed');
+      if (response.ok) return await response.json();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
+  // Finalize an edited docx envelope for signing: the backend converts it to
+  // PDF and injects signature fields (the same pipeline generation runs when
+  // a signer is known up front). One-way — the envelope stops being editable.
+  finalizeEnvelope(envelopeId: string, signerEmail = '') {
+    const { userId } = initInfo();
+    const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fuser_key: userId ?? '',
+        signer_email: signerEmail
+      }),
+      keepalive: false
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      // Surface swallowed network errors — the sign page must never open
+      // against an unfinalized envelope.
+      if (!response) throw Error('Document finalization failed');
+      if (response.ok) return await response.json();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
+  // Download the envelope as PDF bytes. Docx envelopes are converted
+  // server-side on the fly WITHOUT being persisted — unlike finalize, the
+  // envelope stays an editable docx.
+  downloadEnvelopePdf(envelopeId: string): Promise<Blob> {
+    const { userId } = initInfo();
+    const url = `${API_URL}document/envelope/${envelopeId}/pdf/`;
+    const options = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fuser_key: userId ?? '' }),
+      keepalive: false
+    };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (!response) throw Error('PDF export failed');
+      if (response.ok) return await response.blob();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
+  // The newest envelope for this submission + document, loaded by the in-form
+  // document editor container. Returns {id, file, type, signed} or {}.
+  getCurrentEnvelope(documentId: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      fuser_key: userId,
+      document_id: documentId
+    });
+    const url = `${API_URL}document/current-envelope/?${params}`;
+    return this._fetch(url, {}, false).then(async (response) => {
+      if (response) {
+        if (response.ok) return await response.json();
+        else throw Error(parseAPIError(await response.json()));
+      }
     });
   }
 

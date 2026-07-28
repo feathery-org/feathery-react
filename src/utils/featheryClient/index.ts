@@ -478,6 +478,11 @@ export default class FeatheryClient extends IntegrationClient {
       }
       initState.defaultErrors = res.default_errors;
       initState.isTestEnv = !res.production;
+      // Cache the loaded schema so in-form consumers can scan it — e.g. the
+      // document-editor container resolves its document from the Generate
+      // Documents button action that targets it. Otherwise formSchemas is only
+      // populated via init({ preloadForms }), which hosted forms don't use.
+      if (res.steps) initState.formSchemas[this.formKey] = res;
       return res;
     });
   }
