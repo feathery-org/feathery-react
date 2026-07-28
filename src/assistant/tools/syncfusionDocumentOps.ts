@@ -447,8 +447,8 @@ export interface ColumnRowOutcome {
    *   nothing was written (the no-op rule; this is what makes bulk safe).
    * `skipped` - the formula could not be evaluated for this row because a cell
    *   it references is blank, missing or not a number. A header row, a blank
-   *   separator and a section-label row all land here, which is why the row
-   *   bounds of a column recompute stop mattering.
+   *   separator and a section-label row all land here. Row 0 is excluded as
+   *   the explicit header by default rather than inferred from parseability.
    */
   outcome: 'written' | 'unchanged' | 'skipped';
   /** Verbatim text before the op ran. */
@@ -473,10 +473,10 @@ export interface ColumnFormulaReport {
   tableAnchor: string;
   /** The column every write landed in. */
   column: number;
-  /** The row span actually evaluated, after defaulting to the whole table. */
+  /** The row span actually evaluated, after defaulting to data rows 1..end. */
   startRow: number;
   endRow: number;
-  /** True when the span was the whole table because no `rows` was given. */
+  /** True when the default whole-data-body span was used. */
   wholeTable: boolean;
   /** Rows evaluated = rowsChanged + rowsUnchanged + rowsSkipped. */
   rowsEvaluated: number;
@@ -3431,14 +3431,14 @@ function runFormulaCellWrite(
 // the one beside it. One of those is wrong by construction, and nothing in the
 // output said which.
 //
-// So let a formula apply down a WHOLE column. The engine evaluates it for every
-// row in the span and - because of the no-op rule - writes only the cells whose
-// value actually moves. That is what makes bulk safe: without no-op skipping a
-// column recompute would produce a change card per row and drown the review
-// pane; with it you get exactly the cells that moved. It also removes the
-// range-guessing failure outright, because the bounds stop mattering: the
-// default span is the whole table, and a header row, a blank separator or a
-// section label simply cannot produce a value, so it is skipped and named.
+// So let a formula apply down a WHOLE DATA column. The engine evaluates it for
+// every row in the span and - because of the no-op rule - writes only the cells
+// whose value actually moves. That is what makes bulk safe: without no-op
+// skipping a column recompute would produce a change card per row and drown the
+// review pane; with it you get exactly the cells that moved. It also removes
+// the range-guessing failure outright: row 0 is the explicit header by default,
+// while blank separators and section labels in the data body are skipped and
+// named.
 //
 // `{row}` in the formula is substituted with each row index before parsing, so
 // the grammar itself is untouched: one notation, evaluated N times.
@@ -3449,7 +3449,7 @@ const ROW_PLACEHOLDER = '{row}';
 /**
  * Formula refusals that describe ONE ROW rather than the request. A header cell
  * holding "Coverage", a blank separator and a short row all land here; skipping
- * and naming them is what lets the span default to the whole table. Every other
+ * and naming them lets the span safely cover the whole data body. Every other
  * refusal - a syntax error, mixed currencies, an undeclared rounding decision,
  * an overflow, a circular range - is about the FORMULA, so it fails the whole
  * op rather than quietly thinning the column.
@@ -3511,7 +3511,7 @@ function buildColumnFormulaReceipt(
       report.rowsEvaluated === 1 ? '' : 's'
     } of ${scope}, ${report.rowsChanged} changed. ` +
     `Formula ${report.formula} evaluated over ${span}${
-      report.wholeTable ? ' (every row of the table)' : ''
+      report.wholeTable ? ' (every data row; row 0 is the header)' : ''
     }: ${report.rowsChanged} written, ${
       report.rowsUnchanged
     } already correct and left untouched, ${report.rowsSkipped} skipped.` +
@@ -3530,7 +3530,7 @@ function integerParam(value: unknown, name: string): number | null {
       'bad_row_bound',
       `\`${name}\` must be a whole row index (0 or greater); received ${JSON.stringify(
         value
-      )}. Omit both \`startRow\` and \`endRow\` to recompute every row of the table - rows that cannot produce a value are skipped and named.`
+      )}. Omit both \`startRow\` and \`endRow\` to recompute every data row while reserving row 0 as the header - rows that cannot produce a value are skipped and named.`
     );
   return n;
 }
@@ -3602,8 +3602,16 @@ function runColumnFormulaWrite(
   const requestedStart = integerParam(op.startRow, 'startRow');
   const requestedEnd = integerParam(op.endRow, 'endRow');
   const wholeTable = requestedStart == null && requestedEnd == null;
-  const startRow = requestedStart ?? 0;
+  // Row roles are explicit, never inferred from whether row 0 happens to parse
+  // as a number. With no bounds, row 0 is the header and rows 1..end are data;
+  // callers with a headerless table can opt in to row 0 via startRow: 0.
+  const startRow = requestedStart ?? 1;
   const endRow = requestedEnd ?? collected.rowCount - 1;
+  if (wholeTable && collected.rowCount <= 1)
+    throw new OpError(
+      'no_data_rows',
+      `The table at ${tableAnchor} contains only row 0, which the default column span reserves as the header. Send \`startRow: 0\` and \`endRow: 0\` only if that row is actually data.`
+    );
   if (endRow < startRow)
     throw new OpError(
       'bad_row_bound',
@@ -3618,7 +3626,7 @@ function runColumnFormulaWrite(
         collected.rowCount === 1 ? '' : 's'
       } (0-${
         collected.rowCount - 1
-      }); the requested span ends at row ${endRow}. Re-read table_facts, or omit \`startRow\`/\`endRow\` to cover every row.`
+      }); the requested span ends at row ${endRow}. Re-read table_facts, or omit \`startRow\`/\`endRow\` to cover every data row while reserving row 0 as the header.`
     );
 
   const rows: ColumnRowOutcome[] = [];
