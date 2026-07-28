@@ -5,13 +5,10 @@
 // a document opened in the form). So when the in-form document editor comes up
 // with a loaded document, POST its block inventory to /assistant/document-index.
 //
-// Keying: the index is scoped by the `generated_document` target id the chat
-// sends. ai-services stores chunks under `envelope_id` and resolves the query
-// scope with `resolveDocumentScopeId(targets) = envelopeId ?? documentId`; the
-// in-form path emits no `envelope` target, so the `generated_document` id IS the
-// scope key. It is read here from the very same `getTargets()` the chat body uses
-// rather than re-derived, because an index keyed on a different id than the query
-// silently returns nothing - which is indistinguishable from not indexing at all.
+// Trust boundary: the browser sends the same target manifest as chat, never a
+// storage key. feathery-backend validates the panel/template relationship,
+// derives the newest-created envelope from the authenticated fuser, and sends a
+// typed server-only scope to ai-services.
 
 import { useEffect } from 'react';
 import { buildIndexBlocks, IndexBlock } from './syncfusionDocumentOps';
@@ -46,7 +43,15 @@ export const REINDEX_DEBOUNCE_MS = 5000;
 
 export const GENERATED_DOCUMENT_TARGET_TYPE = 'generated_document';
 
-type Target = { type: string; id: string };
+export type DocumentIndexTarget = { type: string; id: string };
+
+const getDocumentTarget = (
+  targets: DocumentIndexTarget[]
+): DocumentIndexTarget | undefined =>
+  targets.find((target) => target.type === GENERATED_DOCUMENT_TARGET_TYPE);
+
+const documentTargetKey = (target: DocumentIndexTarget): string =>
+  `${target.type}:${target.id}`;
 
 // Per-scope index sync state. Module scope, not component state, on purpose: a
 // remount of the chat, a re-render, or a second Robin request must not re-POST
@@ -78,8 +83,9 @@ interface ScopeIndexState {
 
 const scopeState = new Map<string, ScopeIndexState>();
 
-const stateFor = (scopeId: string): ScopeIndexState => {
-  let state = scopeState.get(scopeId);
+const stateFor = (target: DocumentIndexTarget): ScopeIndexState => {
+  const targetKey = documentTargetKey(target);
+  let state = scopeState.get(targetKey);
   if (!state) {
     state = {
       postedHash: null,
@@ -89,7 +95,7 @@ const stateFor = (scopeId: string): ScopeIndexState => {
       dirtySince: null,
       inFlightHash: null
     };
-    scopeState.set(scopeId, state);
+    scopeState.set(targetKey, state);
   }
   return state;
 };
@@ -108,9 +114,9 @@ export interface DocumentIndexFreshness {
 }
 
 export const getDocumentIndexFreshness = (
-  scopeId: string
+  target: DocumentIndexTarget
 ): DocumentIndexFreshness => {
-  const state = scopeState.get(scopeId);
+  const state = scopeState.get(documentTargetKey(target));
   // No confirmed POST yet this session: the server may hold an index from an
   // earlier session or another submitter, and this client cannot vouch for it.
   if (!state || state.postedHash === null)
@@ -129,8 +135,8 @@ export const getDocumentIndexFreshness = (
 
 // The instant-staleness half of the contract: called synchronously from the
 // editor's contentChange, before any debounce.
-const markScopeDirty = (scopeId: string): void => {
-  const state = stateFor(scopeId);
+const markTargetDirty = (target: DocumentIndexTarget): void => {
+  const state = stateFor(target);
   state.changeSeq++;
   if (state.dirtySince === null) state.dirtySince = Date.now();
 };
@@ -149,8 +155,9 @@ const fingerprint = (blocks: IndexBlock[]): string => {
 export type PostDocumentIndexArgs = {
   // `${origin}/agent/assistant/` - the same base the chat posts to.
   baseUrl: string;
-  // The `generated_document` target id; the index scope key.
-  generatedDocumentId: string;
+  // The authenticated chat target manifest. It identifies the user's current
+  // resource but cannot select ai-services persistence.
+  targets: DocumentIndexTarget[];
   blocks: IndexBlock[];
   headers: () => Record<string, string>;
   // Document-level digest of `blocks`; the server stores it with the index so
@@ -168,25 +175,21 @@ export interface PostDocumentIndexResult {
 }
 
 // POST the block inventory. Returns { posted: false } (nothing sent) when the
-// scope key or the blocks are missing - never POST an empty inventory.
+// generated-document target or blocks are missing - never POST an empty inventory.
 export const postDocumentIndex = async ({
   baseUrl,
-  generatedDocumentId,
+  targets,
   blocks,
   headers,
   contentHash
 }: PostDocumentIndexArgs): Promise<PostDocumentIndexResult> => {
-  if (!baseUrl || !generatedDocumentId || !blocks?.length)
+  if (!baseUrl || !getDocumentTarget(targets) || !blocks?.length)
     return { posted: false };
   const res = await fetch(`${baseUrl}document-index`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers() },
-    // Both fields carry the same id: ai-services takes
-    // `envelopeId?.trim() || documentId?.trim()` as the scope key, and the
-    // in-form document has no envelope of its own.
     body: JSON.stringify({
-      envelopeId: generatedDocumentId,
-      documentId: generatedDocumentId,
+      targets,
       blocks,
       ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
     })
@@ -240,15 +243,18 @@ const readSnapshot = (editor: any): IndexSnapshot | null => {
 const syncSnapshot = (
   { blocks, digest }: IndexSnapshot,
   baseUrl: string,
-  generatedDocumentId: string,
-  headers: () => Record<string, string>
+  targets: DocumentIndexTarget[],
+  headers: () => Record<string, string>,
+  force = false
 ): void => {
-  const state = stateFor(generatedDocumentId);
+  const target = getDocumentTarget(targets);
+  if (!target) return;
+  const state = stateFor(target);
   // The change generation this snapshot represents. Captured before the async
   // POST so an edit that lands mid-flight keeps the scope dirty.
   const seqAtBuild = state.changeSeq;
 
-  if (state.postedHash === digest) {
+  if (!force && state.postedHash === digest) {
     // The server already holds exactly this content - e.g. a burst of edits
     // that netted out to no change, or a reopen of the same document. The
     // index is fresh again; say so.
@@ -263,7 +269,7 @@ const syncSnapshot = (
 
   postDocumentIndex({
     baseUrl,
-    generatedDocumentId,
+    targets,
     blocks,
     headers,
     contentHash: digest
@@ -281,7 +287,7 @@ const syncSnapshot = (
         state.postedHash = null;
         if (state.dirtySince === null) state.dirtySince = Date.now();
         warn(
-          `document index for ${generatedDocumentId} is incomplete ` +
+          `document index for target ${target.id} is incomplete ` +
             `(sent ${blocks.length} blocks, stored ${
               storedBlocks ?? 'unknown'
             }, ` +
@@ -302,7 +308,7 @@ const syncSnapshot = (
       state.inFlightHash = null;
       if (state.dirtySince === null) state.dirtySince = Date.now();
       warn(
-        `document index POST failed for ${generatedDocumentId} - semantic document search will return nothing`,
+        `document index POST failed for target ${target.id} - semantic document search will return nothing`,
         err
       );
     });
@@ -313,19 +319,20 @@ const syncSnapshot = (
 const indexNow = (
   editor: any,
   baseUrl: string,
-  generatedDocumentId: string,
-  headers: () => Record<string, string>
+  targets: DocumentIndexTarget[],
+  headers: () => Record<string, string>,
+  force = false
 ): boolean => {
   const snapshot = readSnapshot(editor);
   if (!snapshot) return false;
-  syncSnapshot(snapshot, baseUrl, generatedDocumentId, headers);
+  syncSnapshot(snapshot, baseUrl, targets, headers, force);
   return true;
 };
 
 type UseDocumentIndexArgs = {
   baseUrl: string;
-  // The chat's own target builder, so index and query key on the same id.
-  getTargets: () => Target[];
+  // The chat's own target builder; backend resolves both requests identically.
+  getTargets: () => DocumentIndexTarget[];
   // The chat's own header factory, so index and chat authenticate identically.
   headers: () => Record<string, string>;
 };
@@ -359,9 +366,6 @@ export function useDocumentIndex({
       return timer;
     };
 
-    const scopeId = (): string | undefined =>
-      getTargets().find((t) => t.type === GENERATED_DOCUMENT_TARGET_TYPE)?.id;
-
     const onEditor = (editor: any) => {
       if (!editor || watched.has(editor)) return;
       watched.add(editor);
@@ -374,10 +378,11 @@ export function useDocumentIndex({
       let settled = false;
       const poll = () => {
         if (settled) return;
-        const generatedDocumentId = scopeId();
+        const targets = getTargets();
+        const documentTarget = getDocumentTarget(targets);
         // No document target yet (the generate action has not run): there is
-        // nothing to key an index on, so keep waiting rather than guessing an id.
-        if (generatedDocumentId) {
+        // nothing to authorize, so keep waiting rather than guessing a target.
+        if (documentTarget) {
           const snapshot = readSnapshot(editor);
           if (snapshot) {
             if (snapshot.digest === lastDigest) stablePolls++;
@@ -389,7 +394,7 @@ export function useDocumentIndex({
             }
             if (stablePolls >= INDEX_STABLE_POLLS) {
               settled = true;
-              syncSnapshot(snapshot, baseUrl, generatedDocumentId, headers);
+              syncSnapshot(snapshot, baseUrl, targets, headers);
               return;
             }
           } else {
@@ -416,16 +421,19 @@ export function useDocumentIndex({
       // usually lands the index sooner than the next poll tick would. The
       // dirty mark is synchronous (a newly opened document is not the document
       // the server indexed until proven otherwise); the serialize + POST are
-      // deferred off Syncfusion's dispatch stack. A reopen of unchanged
-      // content heals instantly without a POST via the digest match.
+      // deferred off Syncfusion's dispatch stack. Even unchanged content is
+      // posted because regeneration may have selected a new server envelope.
       const onDocumentChange = () => {
-        const changedScopeId = scopeId();
-        if (changedScopeId) markScopeDirty(changedScopeId);
+        const changedTarget = getDocumentTarget(getTargets());
+        if (changedTarget) markTargetDirty(changedTarget);
         later(() => {
-          const generatedDocumentId = scopeId();
+          const targets = getTargets();
           if (
-            generatedDocumentId &&
-            indexNow(editor, baseUrl, generatedDocumentId, headers)
+            getDocumentTarget(targets) &&
+            // A regeneration can produce byte-identical content under a new
+            // server-derived envelope. Force this load-complete sync so the new
+            // envelope never inherits a local "already posted" assumption.
+            indexNow(editor, baseUrl, targets, headers, true)
           )
             settled = true;
         }, 0);
@@ -439,13 +447,13 @@ export function useDocumentIndex({
       // means a settled edit that produced no net change costs nothing.
       let debounce: ReturnType<typeof setTimeout> | null = null;
       const onContentChange = () => {
-        const dirtyScopeId = scopeId();
-        if (dirtyScopeId) markScopeDirty(dirtyScopeId);
+        const dirtyTarget = getDocumentTarget(getTargets());
+        if (dirtyTarget) markTargetDirty(dirtyTarget);
         if (debounce) clearTimeout(debounce);
         debounce = later(() => {
-          const generatedDocumentId = scopeId();
-          if (generatedDocumentId)
-            indexNow(editor, baseUrl, generatedDocumentId, headers);
+          const targets = getTargets();
+          if (getDocumentTarget(targets))
+            indexNow(editor, baseUrl, targets, headers);
         }, REINDEX_DEBOUNCE_MS);
       };
       try {

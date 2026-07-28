@@ -355,7 +355,7 @@ const AssistantChat = ({
       (t) => t.type === GENERATED_DOCUMENT_TARGET_TYPE
     );
     if (documentTarget)
-      context.document_state = getDocumentIndexFreshness(documentTarget.id);
+      context.document_state = getDocumentIndexFreshness(documentTarget);
     body.context = context;
     return body;
   };
