@@ -9,6 +9,11 @@ const resolveEditorInstanceId = (
   editor: any
 ): EditorInstanceId => editorInstanceId ?? editor;
 
+const describeEditorInstance = (editorInstanceId: EditorInstanceId): string =>
+  typeof editorInstanceId === 'string'
+    ? `"${editorInstanceId}"`
+    : '<anonymous editor>';
+
 // Consumers that need to react to an editor appearing, not just resolve one on
 // demand (the document indexer). Registration order is not controllable - the
 // editor can register before or after a subscriber mounts - so `subscribe`
@@ -34,9 +39,24 @@ export const subscribeDocxEditors = (
 export const registerDocxEditor = (
   editorInstanceId: string | undefined,
   editor: any
-) => {
-  if (!editor) return;
-  editors.set(resolveEditorInstanceId(editorInstanceId, editor), editor);
+): boolean => {
+  if (!editor) return false;
+  const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
+  const activeInstanceId = editors.keys().next().value as
+    | EditorInstanceId
+    | undefined;
+  if (
+    activeInstanceId !== undefined &&
+    activeInstanceId !== resolvedInstanceId
+  ) {
+    console.error(
+      'Feathery: only one document editor is supported per form. ' +
+        `Ignored ${describeEditorInstance(resolvedInstanceId)} because ` +
+        `${describeEditorInstance(activeInstanceId)} is already registered.`
+    );
+    return false;
+  }
+  editors.set(resolvedInstanceId, editor);
   listeners.forEach((listener) => {
     try {
       listener(editor);
@@ -44,6 +64,7 @@ export const registerDocxEditor = (
       /* see above: registration is load-bearing for the document tools */
     }
   });
+  return true;
 };
 
 export const unregisterDocxEditor = (
