@@ -357,25 +357,3 @@ export const buildAssistantRequestBody = (
   thread_id: threadId || null,
   context: { ...context, threadId: threadId || null }
 });
-
-export type AssistantSelection = {
-  anchor: string;
-  text: string;
-  isCollapsed: boolean;
-};
-
-export const SELECTION_TEXT_LIMIT = 500;
-
-// Normalize a host getSelection() result into the request payload shape: text
-// clamped to 500 characters, or null when there's nothing usable.
-export const normalizeSelection = (
-  raw: AssistantSelection | null | undefined
-): AssistantSelection | null => {
-  if (!raw || typeof raw.anchor !== 'string') return null;
-  const text = typeof raw.text === 'string' ? raw.text : '';
-  return {
-    anchor: raw.anchor,
-    text: text.slice(0, SELECTION_TEXT_LIMIT),
-    isCollapsed: !!raw.isCollapsed
-  };
-};

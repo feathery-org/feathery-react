@@ -2,6 +2,7 @@ import {
   buildCallableRules,
   dispatchAssistantTool
 } from '../assistantToolDispatch';
+import * as assistantToolDispatchExports from '../assistantToolDispatch';
 
 describe('document tool dispatch', () => {
   it('routes findDocumentOccurrences to the live document bridge', async () => {
@@ -63,5 +64,13 @@ describe('callable rule catalog', () => {
     ]);
 
     expect(callable.map((rule) => rule.id)).toEqual(['browser-rule']);
+  });
+});
+
+describe('public dispatch surface', () => {
+  it('does not expose the retired selection shim', () => {
+    expect(assistantToolDispatchExports).not.toHaveProperty(
+      'normalizeSelection'
+    );
   });
 });
