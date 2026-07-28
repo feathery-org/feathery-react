@@ -334,10 +334,6 @@ const AssistantChat = ({
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
       if (panelRuntime) context.panel_runtime = panelRuntime;
       context.selection = readDocxSelection(getDocxEditor(instanceId));
-      const callableRules = buildCallableRules(
-        internalState[instanceId]?.logicRules ?? []
-      );
-      if (callableRules.length > 0) context.callable_rules = callableRules;
       // Machine-only executor facts: protocol version and operation names.
       // ai-services intersects these names with its canonical server enum and
       // owns every description, example, payload rule, and result shape.

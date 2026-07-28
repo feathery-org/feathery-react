@@ -1,7 +1,7 @@
 // Robin assistant tool dispatch for the docx-editor surface. This module is
 // deliberately SyncFusion-free: it never imports the editor. It only calls
 // handlers/objects the host hands in (a docx bridge, a custom-handler map, a
-// callable-rule catalog, and a runLogicRuleById fn), so @feathery/react stays
+// local rule execution allowlist, and a runLogicRuleById fn), so @feathery/react stays
 // decoupled from the editor implementation.
 
 import type {
@@ -50,8 +50,8 @@ export type DocxBridge = {
   findDocumentOccurrences?: (input: any) => Promise<any>;
 };
 
-// A designer-defined `trigger_event === 'tool'` rule, as it appears in the
-// request's callable_rules catalog.
+// A designer-defined `trigger_event === 'tool'` rule used only to authorize and
+// resolve a server-selected rule tool call back to a local rule id.
 export type CallableRule = {
   id: string;
   name: string;
@@ -313,8 +313,8 @@ export async function dispatchAssistantTool(
   return { handled: false };
 }
 
-// Build the callable_rules catalog from the form's logic rules - only
-// `trigger_event === 'tool'` rules, projected into the tool-facing shape.
+// Build the local execution allowlist from the form's current logic rules. This
+// is never sent to ai-services and never determines which tools the model sees.
 export const buildCallableRules = (logicRules: any[] = []): CallableRule[] =>
   logicRules
     .filter(
@@ -346,9 +346,8 @@ export const buildCallableRules = (logicRules: any[] = []): CallableRule[] =>
       return rule;
     });
 
-// Keep per-request metadata under `context`, where ai-services'
-// createAssistantContext reads targets, selection, callable_rules, and
-// panel_runtime. The backend adopts a new attachment session only from the
+// Keep per-request metadata under `context`, where ai-services reads targets,
+// selection, and panel_runtime. The backend adopts a new attachment session only from the
 // top-level `thread_id`, so mirror the resolved thread id in both places.
 export const buildAssistantRequestBody = (
   context: Record<string, unknown>,
