@@ -10,7 +10,10 @@ type ContainerProps = PropsWithChildren & {
   viewport: any;
   runElementActions?: any;
   selected?: boolean;
-  form: { formSettings: { mobileBreakpoint: number } };
+  form: {
+    activeStep?: { id?: string };
+    formSettings: { mobileBreakpoint: number };
+  };
 };
 
 /**
@@ -102,6 +105,7 @@ export const Container = ({
         onClick={handleClick}
         viewport={viewport}
         breakpoint={form.formSettings.mobileBreakpoint}
+        stepId={form.activeStep?.id}
         {...tooltipHoverProps}
       >
         {children}

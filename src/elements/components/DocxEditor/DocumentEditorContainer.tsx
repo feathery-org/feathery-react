@@ -112,9 +112,11 @@ const wrap = {
 // be added without changing this wiring.
 export default function DocumentEditorContainer({
   containerId,
+  stepId,
   editMode
 }: {
   containerId?: string;
+  stepId?: string;
   editMode?: boolean;
 }) {
   // saveEnvelopeFile/getCurrentEnvelope only use initInfo(), not the form key,
@@ -241,7 +243,10 @@ export default function DocumentEditorContainer({
     () => (sourceUrl ? { url: sourceUrl } : undefined),
     [sourceUrl]
   );
-  const activeDocumentId = documentId ?? envelope?.document;
+  // The loaded editor is authoritative. If a generate action contains several
+  // documents, the envelope actually displayed here wins over the action's
+  // first-document loading default.
+  const activeDocumentId = envelope?.document ?? documentId;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
   // `view_draft_read_only` (default: editable).
@@ -320,17 +325,24 @@ export default function DocumentEditorContainer({
   const registeredEditor = useRef<any>(undefined);
   const onEditorReady = useCallback(
     (editor: any) => {
-      if (!containerId) {
-        console.error(
-          'Feathery: document editor registration requires a container id'
-        );
-        return;
-      }
+      if (!containerId) return;
       registeredEditor.current = editor;
-      registerDocxEditor(containerId, editor);
+      registerDocxEditor(containerId, editor, {
+        stepId,
+        documentId: activeDocumentId
+      });
     },
-    [containerId]
+    [activeDocumentId, containerId, stepId]
   );
+  // Envelope identity can settle after SyncFusion's created callback. Refresh
+  // only the assistant registration; the editor itself stays mounted.
+  useEffect(() => {
+    if (!containerId || !registeredEditor.current) return;
+    registerDocxEditor(containerId, registeredEditor.current, {
+      stepId,
+      documentId: activeDocumentId
+    });
+  }, [activeDocumentId, containerId, stepId]);
   useEffect(
     () => () => {
       if (containerId && registeredEditor.current) {

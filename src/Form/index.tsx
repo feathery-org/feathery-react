@@ -241,6 +241,7 @@ import type {
   AssistantStepSettings
 } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
+import { getActiveDocxEditorTarget } from '../assistant/tools/docxEditorRegistry';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -906,32 +907,14 @@ function Form({
     const targets: { type: string; id: string }[] = [];
     if (formId) targets.push({ type: 'panel', id: formId });
     if (initState.userId) targets.push({ type: 'fuser', id: initState.userId });
-    // ai-services mounts the live document tools only when it receives this
-    // target. The container is the in-form document surface; its id is stable
-    // even before a fresh envelope has been generated.
-    const documentContainer = (activeStep?.subgrids ?? []).find(
-      (subgrid: any) => subgrid?.properties?.document_editor
-    );
-    if (documentContainer?.id) {
-      const documentAction = (activeStep?.buttons ?? [])
-        .flatMap((button: any) => button?.properties?.actions ?? [])
-        .find(
-          (action: any) =>
-            action?.type === ACTION_GENERATE_ENVELOPES &&
-            action?.view_draft_container === documentContainer.id
-        );
-      // This is a browser target, not an index key. The backend validates the
-      // template against this panel and derives the current envelope from the
-      // authenticated fuser. Never fall back to the container id.
-      const documentTemplateId = documentAction?.documents?.[0];
-      if (documentTemplateId)
-        targets.push({
-          type: 'generated_document',
-          id: documentTemplateId
-        });
-    }
+    // The mounted editor is the only source of truth. Generation commonly
+    // happens on a previous step, so scanning the current step's actions loses
+    // the document exactly when the editor is open. This is still only the
+    // document template target; backend auth derives the envelope scope.
+    const documentTarget = getActiveDocxEditorTarget();
+    if (documentTarget) targets.push(documentTarget);
     return targets;
-  }, [formId, activeStep]);
+  }, [formId]);
 
   useEffect(() => {
     return () => {

@@ -2,29 +2,76 @@
 // The assistant bridge stays SyncFusion-free and resolves this opaque instance
 // only when a document tool is called.
 type EditorInstanceId = string | object;
-type EditorRegistration = {
+
+export type DocxEditorRegistration = {
   instanceId: EditorInstanceId;
+  stepId: string;
+  documentId?: string;
   editor: any;
+  order: number;
 };
-let registration: EditorRegistration | undefined;
+
+export type DocxEditorContext = {
+  stepId?: string;
+  documentId?: string;
+};
+
+const DEFAULT_STEP_ID = '__legacy_document_step__';
+let nextOrder = 0;
+let registration: DocxEditorRegistration | undefined;
+let candidates = new Map<EditorInstanceId, DocxEditorRegistration>();
 
 const resolveEditorInstanceId = (
   editorInstanceId: string | undefined,
   editor: any
 ): EditorInstanceId => editorInstanceId ?? editor;
 
-const describeEditorInstance = (editorInstanceId: EditorInstanceId): string =>
-  typeof editorInstanceId === 'string'
-    ? `"${editorInstanceId}"`
-    : '<anonymous editor>';
+// One step may render several editors. They all remain mounted and usable, but
+// Robin needs exactly one target. Stable container ids sort before anonymous
+// instances, then lexical container order makes the winner independent of
+// React effect/mount order and therefore predictable from the schema.
+const compareCandidates = (
+  left: DocxEditorRegistration,
+  right: DocxEditorRegistration
+): number => {
+  if (
+    typeof left.instanceId === 'string' &&
+    typeof right.instanceId === 'string'
+  )
+    return left.instanceId.localeCompare(right.instanceId);
+  if (typeof left.instanceId === 'string') return -1;
+  if (typeof right.instanceId === 'string') return 1;
+  return left.order - right.order;
+};
 
-// Consumers that need to react to an editor appearing, not just resolve one on
-// demand (the document indexer). Registration order is not controllable - the
-// editor can register before or after a subscriber mounts - so `subscribe`
-// replays the editor already registered. Subscribers must therefore be
-// idempotent for a given editor.
-type DocxEditorListener = (editor: any) => void;
+const selectCandidate = (): DocxEditorRegistration | undefined =>
+  [...candidates.values()].sort(compareCandidates)[0];
+
+// Consumers that need to react to the assistant editor appearing or changing
+// (the document indexer). Replaying the current registration covers either
+// lifecycle order: chat-first or editor-first.
+type DocxEditorListener = (
+  registration: DocxEditorRegistration | undefined
+) => void;
 const listeners = new Set<DocxEditorListener>();
+
+const publish = (next: DocxEditorRegistration | undefined): void => {
+  if (
+    registration?.instanceId === next?.instanceId &&
+    registration?.editor === next?.editor &&
+    registration?.stepId === next?.stepId &&
+    registration?.documentId === next?.documentId
+  )
+    return;
+  registration = next;
+  listeners.forEach((listener) => {
+    try {
+      listener(registration);
+    } catch {
+      // An assistant subscriber must never affect editor/form registration.
+    }
+  });
+};
 
 export const subscribeDocxEditors = (
   listener: DocxEditorListener
@@ -32,9 +79,9 @@ export const subscribeDocxEditors = (
   listeners.add(listener);
   if (registration) {
     try {
-      listener(registration.editor);
+      listener(registration);
     } catch {
-      /* a broken subscriber must never break editor registration */
+      // An assistant subscriber must never affect editor/form registration.
     }
   }
   return () => listeners.delete(listener);
@@ -42,28 +89,31 @@ export const subscribeDocxEditors = (
 
 export const registerDocxEditor = (
   editorInstanceId: string | undefined,
-  editor: any
+  editor: any,
+  context: DocxEditorContext = {}
 ): boolean => {
   if (!editor) return false;
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
-  if (registration && registration.instanceId !== resolvedInstanceId) {
-    console.error(
-      'Feathery: only one document editor is supported per form. ' +
-        `Ignored ${describeEditorInstance(resolvedInstanceId)} because ` +
-        `${describeEditorInstance(
-          registration.instanceId
-        )} is already registered.`
-    );
-    return false;
+  const next: DocxEditorRegistration = {
+    instanceId: resolvedInstanceId,
+    stepId: context.stepId ?? DEFAULT_STEP_ID,
+    documentId: context.documentId,
+    editor,
+    order: candidates.get(resolvedInstanceId)?.order ?? nextOrder++
+  };
+
+  if (registration && registration.stepId !== next.stepId) {
+    // React mounts the incoming step before unmounting the outgoing one. A
+    // different step is therefore a handoff, not a simultaneous-editor error.
+    // Discard outgoing candidates so their late cleanup cannot resurrect or
+    // clear the incoming step.
+    candidates = new Map([[resolvedInstanceId, next]]);
+    publish(next);
+    return true;
   }
-  registration = { instanceId: resolvedInstanceId, editor };
-  listeners.forEach((listener) => {
-    try {
-      listener(editor);
-    } catch {
-      /* see above: registration is load-bearing for the document tools */
-    }
-  });
+
+  candidates.set(resolvedInstanceId, next);
+  publish(selectCandidate());
   return true;
 };
 
@@ -72,17 +122,26 @@ export const unregisterDocxEditor = (
   editor: any
 ) => {
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
+  const owned = candidates.get(resolvedInstanceId);
+  if (!owned || owned.editor !== editor) return;
+
+  candidates.delete(resolvedInstanceId);
   if (
-    registration?.instanceId !== resolvedInstanceId ||
-    registration.editor !== editor
-  ) {
-    return;
-  }
-  registration = undefined;
+    registration?.instanceId === resolvedInstanceId &&
+    registration.editor === editor
+  )
+    publish(selectCandidate());
 };
 
+export const getActiveDocxEditorTarget = ():
+  | { type: 'generated_document'; id: string }
+  | undefined =>
+  registration?.documentId
+    ? { type: 'generated_document', id: registration.documentId }
+    : undefined;
+
 // Existing assistant callers pass a form instance id. It is intentionally not
-// a selector now that this registry permits exactly one editor.
+// a selector: the current step's deterministic registration is authoritative.
 export function getDocxEditor(editorInstanceId?: string): any;
 export function getDocxEditor(): any {
   return registration?.editor;
@@ -90,5 +149,7 @@ export function getDocxEditor(): any {
 
 export const _clearDocxEditors = (): void => {
   registration = undefined;
+  candidates.clear();
   listeners.clear();
+  nextOrder = 0;
 };

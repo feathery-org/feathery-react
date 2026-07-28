@@ -12,7 +12,10 @@
 
 import { useEffect } from 'react';
 import { buildIndexBlocks, IndexBlock } from './syncfusionDocumentOps';
-import { subscribeDocxEditors } from './docxEditorRegistry';
+import {
+  DocxEditorRegistration,
+  subscribeDocxEditors
+} from './docxEditorRegistry';
 
 // The registry fires when DocxEditor hands over its live instance, which happens
 // as soon as Syncfusion finishes `created` - BEFORE the .docx is fetched,
@@ -353,9 +356,9 @@ export function useDocumentIndex({
     if (!baseUrl) return;
 
     const timers = new Set<ReturnType<typeof setTimeout>>();
-    const watched = new Set<any>();
     const detach: (() => void)[] = [];
     let cancelled = false;
+    let activeGeneration = 0;
 
     const later = (fn: () => void, ms: number) => {
       const timer = setTimeout(() => {
@@ -366,9 +369,22 @@ export function useDocumentIndex({
       return timer;
     };
 
-    const onEditor = (editor: any) => {
-      if (!editor || watched.has(editor)) return;
-      watched.add(editor);
+    const onEditor = (registration?: DocxEditorRegistration) => {
+      const generation = ++activeGeneration;
+      const editor = registration?.editor;
+      if (!editor) return;
+
+      // Every scheduled read/event is bound to the registration that caused
+      // it. A step handoff invalidates the outgoing callbacks immediately, so
+      // mount-before-unmount can never index document B from editor A.
+      const currentTargets = (): DocumentIndexTarget[] => {
+        if (generation !== activeGeneration) return [];
+        const targets = getTargets();
+        const target = getDocumentTarget(targets);
+        if (registration.documentId && target?.id !== registration.documentId)
+          return [];
+        return targets;
+      };
 
       let polls = 0;
       let lastDigest: string | null = null;
@@ -378,7 +394,7 @@ export function useDocumentIndex({
       let settled = false;
       const poll = () => {
         if (settled) return;
-        const targets = getTargets();
+        const targets = currentTargets();
         const documentTarget = getDocumentTarget(targets);
         // No document target yet (the generate action has not run): there is
         // nothing to authorize, so keep waiting rather than guessing a target.
@@ -424,10 +440,10 @@ export function useDocumentIndex({
       // deferred off Syncfusion's dispatch stack. Even unchanged content is
       // posted because regeneration may have selected a new server envelope.
       const onDocumentChange = () => {
-        const changedTarget = getDocumentTarget(getTargets());
+        const changedTarget = getDocumentTarget(currentTargets());
         if (changedTarget) markTargetDirty(changedTarget);
         later(() => {
-          const targets = getTargets();
+          const targets = currentTargets();
           if (
             getDocumentTarget(targets) &&
             // A regeneration can produce byte-identical content under a new
@@ -447,11 +463,11 @@ export function useDocumentIndex({
       // means a settled edit that produced no net change costs nothing.
       let debounce: ReturnType<typeof setTimeout> | null = null;
       const onContentChange = () => {
-        const dirtyTarget = getDocumentTarget(getTargets());
+        const dirtyTarget = getDocumentTarget(currentTargets());
         if (dirtyTarget) markTargetDirty(dirtyTarget);
         if (debounce) clearTimeout(debounce);
         debounce = later(() => {
-          const targets = getTargets();
+          const targets = currentTargets();
           if (getDocumentTarget(targets))
             indexNow(editor, baseUrl, targets, headers);
         }, REINDEX_DEBOUNCE_MS);
