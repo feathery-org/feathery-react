@@ -920,12 +920,15 @@ function Form({
             action?.type === ACTION_GENERATE_ENVELOPES &&
             action?.view_draft_container === documentContainer.id
         );
-      // generated_document accepts a document-template id. Fall back to the
-      // container id before generation so the live tools still mount.
-      targets.push({
-        type: 'generated_document',
-        id: documentAction?.documents?.[0] ?? documentContainer.id
-      });
+      // This is a browser target, not an index key. The backend validates the
+      // template against this panel and derives the current envelope from the
+      // authenticated fuser. Never fall back to the container id.
+      const documentTemplateId = documentAction?.documents?.[0];
+      if (documentTemplateId)
+        targets.push({
+          type: 'generated_document',
+          id: documentTemplateId
+        });
     }
     return targets;
   }, [formId, activeStep]);
