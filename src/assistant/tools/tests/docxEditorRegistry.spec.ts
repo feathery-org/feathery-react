@@ -46,4 +46,39 @@ describe('docx editor registry ownership', () => {
 
     error.mockRestore();
   });
+
+  it('uses editor identity for an anonymous registration and rejects a missing editor', () => {
+    const editor = {};
+
+    expect(registerDocxEditor(undefined, editor)).toBe(true);
+    expect(registerDocxEditor('document-container-a', null)).toBe(false);
+    expect(getDocxEditor()).toBe(editor);
+
+    unregisterDocxEditor(undefined, editor);
+    expect(getDocxEditor()).toBeUndefined();
+  });
+
+  it('returns the single editor regardless of the legacy lookup id', () => {
+    const editor = {};
+
+    registerDocxEditor('document-container-a', editor);
+
+    expect(getDocxEditor()).toBe(editor);
+    expect(getDocxEditor('document-container-a')).toBe(editor);
+    expect(getDocxEditor('some-other-container')).toBe(editor);
+  });
+
+  it('does not let a stale remount unregister the replacement editor', () => {
+    const staleEditor = {};
+    const currentEditor = {};
+
+    registerDocxEditor('document-container-a', staleEditor);
+    registerDocxEditor('document-container-a', currentEditor);
+
+    unregisterDocxEditor('document-container-a', staleEditor);
+    expect(getDocxEditor()).toBe(currentEditor);
+
+    unregisterDocxEditor('document-container-a', currentEditor);
+    expect(getDocxEditor()).toBeUndefined();
+  });
 });
