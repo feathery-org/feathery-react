@@ -1,5 +1,5 @@
-// The `expect` compare-and-swap guard: what it actually detects, and the two
-// ways it refused correct work.
+// The `expect` compare-and-swap guard: what it actually detects, including the
+// distinction between an omitted expectation and an expected empty value.
 //
 // Live evidence (captain's session, 2026-07-27, `data/hilb-live-perf/report.md`
 // sections 3-4): every `stale_anchor` in a 30-minute window but ONE was this
@@ -15,7 +15,7 @@
 // edit whose minimum is 2, and the identical edit succeeded the moment `expect`
 // happened to arrive without its paragraph mark.
 //
-// The two misfires:
+// The two regressions this suite pins:
 //
 //  1. A whole-paragraph selection's text ENDS WITH A PARAGRAPH MARK. `readSelection`
 //     returns `editor.selection.text` verbatim, and for a whole-paragraph drag
@@ -24,11 +24,9 @@
 //     satisfy the guard - the designed zero-read fast path for "rewrite this"
 //     could not validate.
 //
-//  2. `expect: ""` is a SCHEMA ARTIFACT, not an expectation. The declared op object
-//     carries every field on every op, so structural ops arrive with `expect: ""`
-//     and fail against any non-empty reference block. The executor already knew
-//     this - it deletes an empty `expect` for FORMAT ops, with a comment saying
-//     exactly why - but the same placeholder on any other op still refused.
+//  2. `expect: ""` was relaxed into "no expectation". For `set_cell_text`,
+//     which has no `find` check, this removed the only content CAS and allowed a
+//     stale empty-cell read to overwrite content inserted by another actor.
 //
 // The guard itself must survive: it exists so an edit cannot land on content that
 // moved under it. These tests pin that it still bites.
@@ -239,27 +237,70 @@ describe("misfire 1: a selection's own text could never satisfy the guard", () =
 });
 
 // ---------------------------------------------------------------------------
-// Misfire 2: the empty-string placeholder
+// Expected empty is not the same as no expectation
 // ---------------------------------------------------------------------------
-describe('misfire 2: an empty `expect` is a schema artifact, not an expectation', () => {
-  it("THE CAPTAIN'S A3 TURN: insert_row with the schema's empty `expect` now lands", () => {
+describe('an empty `expect` remains a strict compare-and-swap value', () => {
+  it('a stale expected-empty structural target is refused byte-for-byte', () => {
     withEditor(tableDoc(), (ed) => {
+      const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'add-location-row',
         edits: [
           {
             op: 'insert_row',
             anchor: '0;1;1;0;0',
-            // The declared op object carries every field on every op; the model
-            // filled the ones it does not use with neutral placeholders. Live,
-            // this refused twice in a row against the same unchanged document.
             expect: ''
           }
         ]
       });
 
-      expect(result.results[0]).toMatchObject({ ok: true, op: 'insert_row' });
-      expect(result.changeSet.status).toBe('applied');
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'insert_row',
+        error: 'expect_mismatch'
+      });
+      expect(ed.serialize()).toBe(before);
+    });
+  });
+
+  it('set_cell_text refuses expect empty at a now-populated cell, but omission permits the write', () => {
+    withEditor(tableDoc(), (ed) => {
+      const before = ed.serialize();
+      const stale = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'stale-empty-cell',
+        edits: [
+          {
+            op: 'set_cell_text',
+            anchor: '0;1;1;0;0',
+            text: 'Detroit',
+            expect: ''
+          }
+        ]
+      });
+
+      expect(stale.results[0]).toMatchObject({
+        ok: false,
+        op: 'set_cell_text',
+        error: 'expect_mismatch'
+      });
+      expect(ed.serialize()).toBe(before);
+      expect(textAt(ed, '0;1;1;0;0')).toBe('Cleveland');
+
+      const unguarded = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'explicitly-unguarded-cell',
+        edits: [
+          {
+            op: 'set_cell_text',
+            anchor: '0;1;1;0;0',
+            text: 'Detroit'
+          }
+        ]
+      });
+      expect(unguarded.results[0]).toMatchObject({
+        ok: true,
+        op: 'set_cell_text'
+      });
+      expect(textAt(ed, '0;1;1;0;0')).toBe('Detroit');
     });
   });
 
@@ -438,7 +479,7 @@ describe('the guard still stops an edit landing on changed content', () => {
     });
   });
 
-  it('an empty `expect` does not relax the find-text check either', () => {
+  it('an empty `expect` is checked before the independent find-text predicate', () => {
     withEditor(baseDoc(), (ed) => {
       const before = ed.serialize();
 
@@ -457,7 +498,7 @@ describe('the guard still stops an edit landing on changed content', () => {
 
       expect(result.results[0]).toMatchObject({
         ok: false,
-        error: 'text_not_found'
+        error: 'expect_mismatch'
       });
       expect(ed.serialize()).toBe(before);
     });

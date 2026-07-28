@@ -2136,23 +2136,15 @@ const expectTextMatches = (expected: unknown, live: string): boolean =>
  * One decision function for every guard site, because four hand-copied
  * conditions is how they drift apart.
  *
- * An empty `expect` is treated as ABSENT. The declared op object carries every
- * field on every op, so the model fills the ones an op does not use with neutral
- * placeholders, and `expect: ""` arrived on structural ops that have no
- * expectation to state - refusing them against any non-empty reference block.
- * This module already accepted that reasoning for formatting ops (see the
- * `formatExpectMismatch` branch below, whose comment says exactly this); the
- * same placeholder now means the same thing everywhere. Note that an empty
- * `expect` against a genuinely empty block passed before and passes now, so no
- * satisfiable expectation is being discarded - and the surviving guards
- * (anchor resolution, the `find`-text check, and the tracked-write reject
- * projection) are untouched.
+ * `undefined`/`null` means no expectation was supplied. Every other value,
+ * including the empty string, is a real expected value. In particular,
+ * `set_cell_text` has no separate `find` predicate: weakening `expect: ''`
+ * there would let a stale empty-cell read overwrite content inserted since
+ * that read.
  */
 function expectGuardRefuses(expected: unknown, live: string): boolean {
   if (expected == null) return false;
-  const wanted = String(expected);
-  if (wanted === '') return false;
-  return !expectTextMatches(wanted, live);
+  return !expectTextMatches(expected, live);
 }
 
 // An expect_mismatch refusal must name what actually mismatched, or the model
@@ -5863,26 +5855,14 @@ export function applyDocumentEdits(
       indexedTarget != null &&
       !expectTextMatches(op.expect, indexedTarget.text);
     if (formatExpectMismatch && !hasStructuralEdits) {
-      if (String(op.expect) === '') {
-        // Schema-shaped tool calls carry every field on every op, so an EMPTY
-        // expect aimed at real content in a shift-free set is an artifact of
-        // the op schema, not an expectation; drop it rather than refuse the
-        // block the anchor plainly names. `expectGuardRefuses` now applies this
-        // same reading to every op, but the deletion stays: in a batch WITH
-        // structural edits the empty placeholder still defers this op's anchor
-        // resolution below, which is what keeps formatting landing on the
-        // paragraphs an insert just created.
-        delete (op as { expect?: unknown }).expect;
-      } else {
-        results[index] = {
-          ok: false,
-          op: name,
-          anchor: op.anchor,
-          error: 'expect_mismatch',
-          details: staleAnchorDetails(op.expect, indexedTarget.text)
-        };
-        return;
-      }
+      results[index] = {
+        ok: false,
+        op: name,
+        anchor: op.anchor,
+        error: 'expect_mismatch',
+        details: staleAnchorDetails(op.expect, indexedTarget.text)
+      };
+      return;
     }
     let target: FlatBlock | LiveStoryTarget | undefined =
       formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;

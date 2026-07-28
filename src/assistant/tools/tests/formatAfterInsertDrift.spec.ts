@@ -196,11 +196,9 @@ describe('formatting the paragraphs a structural insert created', () => {
     }
   });
 
-  // The captain's exact failure shape: the op schema forces `expect` onto
-  // every op, so the formatting set arrives with expect:"" against real
-  // content. That is an artifact, not an expectation - the formatting must
-  // land, not die anchor_not_found on an anchor that exists.
-  it('real SDK: follow-up formatting set with schema-forced empty expect still lands', () => {
+  // A caller with no content expectation omits `expect`; an explicitly empty
+  // value remains a strict expected-empty CAS value.
+  it('real SDK: follow-up formatting with omitted expect lands', () => {
     const ed = makeRealDocumentEditor(baseDoc());
     try {
       ed.enableTrackChanges = true;
@@ -209,8 +207,8 @@ describe('formatting the paragraphs a structural insert created', () => {
       const style = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'style-empty-expect',
         edits: [
-          { op: 'apply_style', anchor: '0;2', styleName: 'Heading 2', expect: '' },
-          { op: 'set_char_format', anchor: '0;3', bold: true, expect: '' }
+          { op: 'apply_style', anchor: '0;2', styleName: 'Heading 2' },
+          { op: 'set_char_format', anchor: '0;3', bold: true }
         ]
       });
 
