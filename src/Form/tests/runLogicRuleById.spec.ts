@@ -242,6 +242,55 @@ describe('runLogicRuleById - client-side path', () => {
     );
   });
 
+  it('recursively round-trips non-cloneable values in a client rule return', async () => {
+    seed({
+      logicRules: [
+        {
+          id: 'c-file',
+          name: 'File Return',
+          trigger_event: 'tool',
+          server_side: false,
+          code:
+            'const file = new File(["policy"], "policy.pdf");\n' +
+            'return { file, nested: { pending: Promise.resolve("secret") } };'
+        }
+      ]
+    });
+
+    const res = await runLogicRuleById('c-file', {}, FORM);
+
+    expect(res.returnValue).toEqual({
+      file: {
+        kind: 'file',
+        present: true,
+        name: 'policy.pdf',
+        size: 6
+      },
+      nested: { pending: { kind: 'promise', present: true } }
+    });
+    expect(() => JSON.stringify(res.returnValue)).not.toThrow();
+  });
+
+  it('bounds a client rule return before it reaches the assistant transport', async () => {
+    seed({
+      logicRules: [
+        {
+          id: 'c-large',
+          name: 'Large Return',
+          trigger_event: 'tool',
+          server_side: false,
+          code: 'return { nested: { text: "x".repeat(20000) } };'
+        }
+      ]
+    });
+
+    const res = await runLogicRuleById('c-large', {}, FORM);
+
+    expect(typeof res.returnValue).toBe('string');
+    expect((res.returnValue as string).length).toBe(8001);
+    expect((res.returnValue as string).endsWith('…')).toBe(true);
+  });
+
   // The captain's live case: a rule that only mutates a form field and
   // returns nothing must surface the change as a document-reflectable update
   // with the field's before and after values, plus an explicit statement that

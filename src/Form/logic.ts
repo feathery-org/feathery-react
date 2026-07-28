@@ -23,6 +23,7 @@ import Field from '../utils/entities/Field';
 import internalStateStore, { FormInternalState } from '../utils/internalState';
 import { getFormContext } from '../utils/formContext';
 import { getPrivateActions } from '../utils/sensitiveActions';
+import { sanitizeTransportValue } from '../utils/transportValue';
 import {
   ChangedFieldDetail,
   composeDerivedRuleUpdates,
@@ -636,6 +637,16 @@ export type RunLogicRuleResult = {
   error?: string;
 };
 
+// A rule is user-authored JavaScript and may return any runtime value. Keep its
+// assistant-facing result bounded so one return cannot consume the turn, and
+// JSON-round-trip it so nested File/Promise/class instances never escape by
+// reference into addToolOutput.
+const LOGIC_RULE_RETURN_VALUE_LIMIT = 8_000;
+const sanitizeLogicRuleReturnValue = (value: unknown): unknown =>
+  value === undefined
+    ? undefined
+    : sanitizeTransportValue(value, LOGIC_RULE_RETURN_VALUE_LIMIT).value;
+
 // Snapshot every field's value (JSON-serialized) so we can diff after a rule
 // runs and report which fields it actually touched. Serialized (not live
 // references) so in-place mutations by rule code can't corrupt the snapshot.
@@ -837,7 +848,7 @@ export const runLogicRuleById = async (
       ...(changedFieldDetails.length > 0
         ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
         : {}),
-      returnValue
+      returnValue: sanitizeLogicRuleReturnValue(returnValue)
     };
   } catch (e: any) {
     const message = e?.reason?.message ?? e?.error?.message ?? e?.message;
