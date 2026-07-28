@@ -343,17 +343,6 @@ export function rescaleExact(
   return { units: value.units / factor, scale };
 }
 
-function toCommonScale(values: NumericValue[]): NumericValue[] | null {
-  const scale = values.reduce((max, v) => Math.max(max, v.scale), 0);
-  const out: NumericValue[] = [];
-  for (const v of values) {
-    const rescaled = rescaleExact(v, scale);
-    if (!rescaled) return null;
-    out.push(rescaled);
-  }
-  return out;
-}
-
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------

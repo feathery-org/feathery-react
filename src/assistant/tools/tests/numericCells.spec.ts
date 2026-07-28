@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+
 import {
   collectNumericCells,
   parseNumericCell,
@@ -211,6 +213,11 @@ describe('rescaleExact', () => {
       scale: 0
     });
     expect(rescaleExact({ units: 501, scale: 2 }, 0)).toBeNull();
+  });
+
+  it('is the sole exact-rescaling path in numericCells', () => {
+    const source = readFileSync(require.resolve('../numericCells'), 'utf8');
+    expect(source).not.toMatch(/\bfunction\s+toCommonScale\b/);
   });
 });
 
