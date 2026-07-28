@@ -89,7 +89,6 @@ import {
   dispatchAssistantTool,
   unhandledToolOutput
 } from './tools/assistantToolDispatch';
-import { dispatchGetFormFields } from './tools/getFormFields';
 import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
@@ -610,8 +609,6 @@ const AssistantChat = ({
                 runLogicRuleById(ruleId, inputParams, instanceId, {
                   documentPresent: Boolean(getDocxEditor(instanceId))
                 }),
-              getFormFields: (fieldInput) =>
-                dispatchGetFormFields(instanceId, fieldInput)
             }),
           native: {
             setFieldValue: (fields) =>
