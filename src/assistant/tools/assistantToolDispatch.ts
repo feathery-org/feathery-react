@@ -415,6 +415,7 @@ export const buildCallableRules = (logicRules: any[] = []): CallableRule[] =>
     .filter(
       (r) =>
         r?.trigger_event === 'tool' &&
+        r.server_side !== true &&
         typeof r.id === 'string' &&
         !!r.id &&
         r.enabled !== false &&
