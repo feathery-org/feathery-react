@@ -623,6 +623,39 @@ describe('IntegrationClient', () => {
       expect(body.ignore_template_field_mapping).toBe(true);
       expect(body.fill_data).toEqual({ some_field_key: 'a string' });
     });
+
+    it('forwards sendOnBehalfOf as send_on_behalf_of', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-2' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        sendOnBehalfOf: 'advisor@example.com'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.send_on_behalf_of).toBe('advisor@example.com');
+    });
+
+    it('omits send_on_behalf_of when not provided', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-3' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({ documents: ['doc-1'] });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect('send_on_behalf_of' in body).toBe(false);
+    });
   });
 
   describe('updateDocusignEnvelope', () => {

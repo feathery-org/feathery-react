@@ -93,9 +93,15 @@ export type SendDocusignParams = {
   // Fill documents only from fillData, ignoring the template's field mapping
   // to the fuser's stored field values
   ignoreTemplateFieldMapping?: boolean;
+  // Email of a user in the connected DocuSign account to send the envelope
+  // on behalf of (requires the admin connection + JWT consent)
+  sendOnBehalfOf?: string;
 };
 export type GetDocusignEnvelopeParams = {
   envelopeId: string;
+  // Access the envelope as this account user (when it was sent on their
+  // behalf and isn't visible to the admin connection)
+  sendOnBehalfOf?: string;
 };
 export type UpdateDocusignEnvelopeParams = {
   envelopeId: string;
@@ -103,6 +109,9 @@ export type UpdateDocusignEnvelopeParams = {
   // recycle bin, deleting a draft)
   status: 'sent' | 'voided' | 'discarded';
   voidedReason?: string; // required by the backend when status is 'voided'
+  // Act as this account user (when the envelope was sent on their behalf
+  // and isn't accessible to the admin connection)
+  sendOnBehalfOf?: string;
 };
 
 export interface FormInternalState {

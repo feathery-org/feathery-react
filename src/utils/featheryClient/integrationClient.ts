@@ -483,7 +483,8 @@ export default class IntegrationClient {
     notification,
     brandId,
     enforceSignerVisibility,
-    ignoreTemplateFieldMapping
+    ignoreTemplateFieldMapping,
+    sendOnBehalfOf
   }: SendDocusignParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -523,7 +524,8 @@ export default class IntegrationClient {
         notification,
         brand_id: brandId,
         enforce_signer_visibility: enforceSignerVisibility,
-        ignore_template_field_mapping: ignoreTemplateFieldMapping
+        ignore_template_field_mapping: ignoreTemplateFieldMapping,
+        send_on_behalf_of: sendOnBehalfOf
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
@@ -534,12 +536,16 @@ export default class IntegrationClient {
     });
   }
 
-  getDocusignEnvelope({ envelopeId }: GetDocusignEnvelopeParams) {
+  getDocusignEnvelope({
+    envelopeId,
+    sendOnBehalfOf
+  }: GetDocusignEnvelopeParams) {
     const { userId } = initInfo();
     const params = encodeGetParams({
       fuser_key: userId,
       form_key: this.formKey,
-      docusign_envelope_id: envelopeId
+      docusign_envelope_id: envelopeId,
+      ...(sendOnBehalfOf ? { send_on_behalf_of: sendOnBehalfOf } : {})
     });
     const url = `${API_URL}docusign/envelope/?${params}`;
     return this._fetch(url, {}, false).then(async (response) => {
@@ -553,7 +559,8 @@ export default class IntegrationClient {
   updateDocusignEnvelope({
     envelopeId,
     status,
-    voidedReason
+    voidedReason,
+    sendOnBehalfOf
   }: UpdateDocusignEnvelopeParams) {
     const { userId } = initInfo();
     const url = `${API_URL}docusign/envelope/`;
@@ -565,7 +572,8 @@ export default class IntegrationClient {
         form_key: this.formKey,
         docusign_envelope_id: envelopeId,
         status,
-        voided_reason: voidedReason
+        voided_reason: voidedReason,
+        send_on_behalf_of: sendOnBehalfOf
       })
     };
     return this._fetch(url, options, false).then(async (response) => {
