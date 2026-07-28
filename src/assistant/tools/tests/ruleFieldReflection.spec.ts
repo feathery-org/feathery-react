@@ -126,7 +126,7 @@ const dispatchTitleRule = (input: Record<string, any>) =>
       }
     ],
     runLogicRule: (ruleId, inputParams) =>
-      runLogicRuleById(ruleId, inputParams, FORM)
+      runLogicRuleById(ruleId, inputParams, FORM, { documentPresent: true })
   });
 
 afterEach(() => {

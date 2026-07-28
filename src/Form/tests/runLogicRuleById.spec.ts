@@ -22,6 +22,7 @@ jest.mock('../../utils/formHelperFunctions', () => ({
 }));
 
 const FORM = 'form-uuid-1';
+const WITH_DOCUMENT = { documentPresent: true };
 
 const seed = (over: Record<string, any> = {}) => {
   internalState[FORM] = {
@@ -121,7 +122,7 @@ describe('runLogicRuleById - server-side path', () => {
       ]
     });
 
-    const res = await runLogicRuleById('s1', {}, FORM);
+    const res = await runLogicRuleById('s1', {}, FORM, WITH_DOCUMENT);
 
     // Old->new details: oldValue from the snapshot taken BEFORE invocation,
     // newValue from the backend's authoritative field_data. A field the form
@@ -218,7 +219,8 @@ describe('runLogicRuleById - client-side path', () => {
     const res = await runLogicRuleById(
       'c1',
       { phoneNumber: '(519) 616-2709' },
-      FORM
+      FORM,
+      WITH_DOCUMENT
     );
 
     expect(res.returnValue).toBe('+10000000000');
@@ -319,7 +321,8 @@ describe('runLogicRuleById - client-side path', () => {
     const res = await runLogicRuleById(
       'c07cc11e',
       { title: 'Sr. Risk Advisor' },
-      FORM
+      FORM,
+      WITH_DOCUMENT
     );
 
     expect(res.returnValue).toBeUndefined();
@@ -361,7 +364,7 @@ describe('runLogicRuleById - client-side path', () => {
       ]
     });
 
-    const res = await runLogicRuleById('c5', {}, FORM);
+    const res = await runLogicRuleById('c5', {}, FORM, WITH_DOCUMENT);
 
     expect(res.derivedUpdates).toEqual([
       {
@@ -387,7 +390,7 @@ describe('runLogicRuleById - client-side path', () => {
       ]
     });
 
-    const res = await runLogicRuleById('c6', {}, FORM);
+    const res = await runLogicRuleById('c6', {}, FORM, WITH_DOCUMENT);
 
     expect(res.changedFieldDetails).toEqual([
       { key: 'matrix', oldValue: 'plain', newValue: { nested: true } }
@@ -419,7 +422,7 @@ describe('runLogicRuleById - client-side path', () => {
       ]
     });
 
-    const res = await runLogicRuleById('c7', {}, FORM);
+    const res = await runLogicRuleById('c7', {}, FORM, WITH_DOCUMENT);
 
     // PE_AETitle is covered by the rule's own updates entry (passed through
     // untouched on returnValue) and must not be double-applied; PE_Phone was
@@ -459,6 +462,33 @@ describe('runLogicRuleById - client-side path', () => {
     expect(res.returnValue).toBe(7);
     expect(res.changedFields).toEqual([]);
     // A rule that changes nothing produces no updates and no reflection note.
+    expect(res.derivedUpdates).toBeUndefined();
+    expect(res.documentEdited).toBeUndefined();
+    expect(res.note).toBeUndefined();
+  });
+
+  it('does not emit document updates or instructions for a form-only chat', async () => {
+    seed({
+      fields: { myField: { value: 'old' } },
+      logicRules: [
+        {
+          id: 'form-only',
+          name: 'Form-only Rule',
+          trigger_event: 'tool',
+          server_side: false,
+          code: 'myField.value = "new";'
+        }
+      ]
+    });
+
+    const res = await runLogicRuleById('form-only', {}, FORM, {
+      documentPresent: false
+    });
+
+    expect(res.changedFields).toEqual(['myField']);
+    expect(res.changedFieldDetails).toEqual([
+      { key: 'myField', oldValue: 'old', newValue: 'new' }
+    ]);
     expect(res.derivedUpdates).toBeUndefined();
     expect(res.documentEdited).toBeUndefined();
     expect(res.note).toBeUndefined();
