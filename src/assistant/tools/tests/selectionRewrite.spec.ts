@@ -835,10 +835,7 @@ describe('replace_selection refuses, by name and with a remedy, what it cannot w
       anchor: '0;1',
       startOffset: '0;1;0',
       endOffset: `0;1;${COMMITMENT.length}`,
-      replace: ONE_STATEMENT,
-      // Schema-filled empties: no real guard.
-      expect: '',
-      expectLength: 0
+      replace: ONE_STATEMENT
     });
     expect(result).toMatchObject({
       ok: false,
@@ -901,6 +898,38 @@ describe('replace_selection refuses, by name and with a remedy, what it cannot w
     const details = result.details.join(' ');
     expect(details).toContain(COMMITMENT.slice(0, 200));
     expect(details).not.toContain(COMMITMENT.slice(0, 240));
+    expect(revisions).toBe(0);
+    expect(unchanged).toBe(true);
+  });
+
+  it('real SDK: expectLength alone refuses a same-length concurrent content change', () => {
+    const concurrentlyChanged = COMMITMENT.replace(
+      'commitment',
+      'dedication'
+    );
+    expect(concurrentlyChanged).not.toBe(COMMITMENT);
+    expect(concurrentlyChanged).toHaveLength(COMMITMENT.length);
+    const changedDoc = onePargraphDoc();
+    changedDoc.sections[0].blocks[1] = para(concurrentlyChanged);
+
+    const { result, unchanged, revisions } = refusal(changedDoc, {
+      op: 'replace_selection',
+      anchor: '0;1',
+      startOffset: '0;1;0',
+      endOffset: `0;1;${concurrentlyChanged.length}`,
+      replace: ONE_STATEMENT,
+      // This is all a stale caller could prove from the earlier selection.
+      // It matches the new content's length but pins none of its characters.
+      expectLength: COMMITMENT.length
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'missing_selection_guard'
+    });
+    expect(result.details.join(' ')).toContain(
+      'length alone does not pin content'
+    );
     expect(revisions).toBe(0);
     expect(unchanged).toBe(true);
   });

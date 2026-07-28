@@ -2750,25 +2750,24 @@ function resolveSelectionRange(
 // about. Prefix + exact length is still a real compare-and-swap - it pins every
 // delivered character and the total size - not a wildcard.
 function assertSelectionGuard(op: EditOp, range: SelectionRange): void {
-  const expect =
-    op.expect != null && String(op.expect) !== '' ? String(op.expect) : null;
+  const expect = op.expect != null ? String(op.expect) : null;
   // A schema-filled 0 is indistinguishable from an unset length, and a
   // zero-length range is already refused as selection_empty.
   const expectLength =
     typeof op.expectLength === 'number' && op.expectLength > 0
       ? op.expectLength
       : null;
-  if (expect == null && expectLength == null)
+  if (expect == null)
     throw new OpError(
       'missing_selection_guard',
-      'replace_selection must state what it believes it is replacing.',
+      'replace_selection must pin the content it believes it is replacing.',
       [
         `live text at this range: ${JSON.stringify(
           range.text.length > STALE_TEXT_EXCERPT_LIMIT
             ? `${range.text.slice(0, STALE_TEXT_EXCERPT_LIMIT - 1)}…`
             : range.text
         )}`,
-        "Resend with `expect` set to the selected text (copy it from the selection context), or with `expectLength` set to the selection's `textLength` when that text was truncated."
+        "Resend with `expect` set to the selected text copied from the selection context. When that text was truncated, also set `expectLength` to the selection's `textLength`; length alone does not pin content."
       ]
     );
   if (expectLength != null && range.text.length !== expectLength)
@@ -2783,7 +2782,6 @@ function assertSelectionGuard(op: EditOp, range: SelectionRange): void {
         )
       ]
     );
-  if (expect == null) return;
   // With a length pin the delivered prefix is authoritative for its own extent;
   // without one the whole text must match exactly, as it always has.
   const matches =

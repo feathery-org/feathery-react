@@ -102,8 +102,9 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     //
     // `startOffset`/`endOffset` are copied verbatim from `context.selection`;
     // omit them and the op rewrites the whole anchored block. The guard is
-    // `expect` (the selected text) or, when the delivered selection text was
-    // truncated, `expectLength` beside the prefix - never a counted offset.
+    // `expect` (the selected text) and, when the delivered selection text was
+    // truncated, `expectLength` beside that required prefix - never a counted
+    // offset or a length-only guard.
     op: 'replace_selection',
     params: {
       replace: 'string',
@@ -115,13 +116,14 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     anchorKind: 'block',
     tracked: true,
     summary:
-      "Replace the user's selected range with `replace`, as one tracked revision. Prefer it over replace_text whenever a selection is present. `anchor` is the selection's start block; copy `startOffset`/`endOffset` verbatim from the selection context (they may span runs or paragraphs; omit them to rewrite the whole block). Guard with `expect` (the selected text) or `expectLength`.",
+      'Replace the selected range with `replace` as one tracked revision. Prefer this over replace_text when a selection exists. Copy `anchor`, `startOffset`, and `endOffset` from selection context; omit offsets to rewrite the whole block. Always guard content with `expect`; if selection text was truncated, also send `expectLength` to pin the full size.',
     example: {
       op: 'replace_selection',
       anchor: '2;14',
       startOffset: '2;14;0',
       endOffset: '2;16;23',
       replace: 'One statement instead of three.',
+      expect: 'We advocate at every stage of the policy lifecycle,',
       expectLength: 457
     }
   },
