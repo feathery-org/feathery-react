@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
@@ -308,12 +314,31 @@ export default function DocumentEditorContainer({
   }, [client, envelope, targetAction, terminalAction]);
 
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
-  // point. Register it for the assistant and clear it when the container
-  // unmounts so tools never mutate a stale editor.
-  const onEditorReady = useCallback((editor: any) => {
-    registerDocxEditor(undefined, editor);
-  }, []);
-  useEffect(() => () => unregisterDocxEditor(undefined), []);
+  // point. The schema container id is stable for this editor across renders;
+  // retain the editor object as well so cleanup can only remove this exact
+  // registration, never another mounted container's editor.
+  const registeredEditor = useRef<any>(undefined);
+  const onEditorReady = useCallback(
+    (editor: any) => {
+      if (!containerId) {
+        console.error(
+          'Feathery: document editor registration requires a container id'
+        );
+        return;
+      }
+      registeredEditor.current = editor;
+      registerDocxEditor(containerId, editor);
+    },
+    [containerId]
+  );
+  useEffect(
+    () => () => {
+      if (containerId && registeredEditor.current) {
+        unregisterDocxEditor(containerId, registeredEditor.current);
+      }
+    },
+    [containerId]
+  );
 
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 

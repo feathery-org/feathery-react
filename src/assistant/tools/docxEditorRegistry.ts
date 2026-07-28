@@ -1,10 +1,13 @@
 // Runtime registry for DocumentEditorContainer's live SyncFusion editor.
 // The assistant bridge stays SyncFusion-free and resolves this opaque instance
 // only when a document tool is called.
-const editors = new Map<string, any>();
-const DEFAULT_EDITOR_KEY = '__in_form_document_editor__';
+type EditorInstanceId = string | object;
+const editors = new Map<EditorInstanceId, any>();
 
-const editorKey = (formUuid?: string) => formUuid || DEFAULT_EDITOR_KEY;
+const resolveEditorInstanceId = (
+  editorInstanceId: string | undefined,
+  editor: any
+): EditorInstanceId => editorInstanceId ?? editor;
 
 // Consumers that need to react to an editor appearing, not just resolve one on
 // demand (the document indexer). Registration order is not controllable - the
@@ -29,11 +32,11 @@ export const subscribeDocxEditors = (
 };
 
 export const registerDocxEditor = (
-  formUuid: string | undefined,
+  editorInstanceId: string | undefined,
   editor: any
 ) => {
   if (!editor) return;
-  editors.set(editorKey(formUuid), editor);
+  editors.set(resolveEditorInstanceId(editorInstanceId, editor), editor);
   listeners.forEach((listener) => {
     try {
       listener(editor);
@@ -44,17 +47,18 @@ export const registerDocxEditor = (
 };
 
 export const unregisterDocxEditor = (
-  formUuid: string | undefined,
-  editor?: any
+  editorInstanceId: string | undefined,
+  editor: any
 ) => {
-  const key = editorKey(formUuid);
-  if (editor && editors.get(key) !== editor) return;
-  editors.delete(key);
+  const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
+  if (editors.get(resolvedInstanceId) !== editor) return;
+  editors.delete(resolvedInstanceId);
 };
 
-export const getDocxEditor = (formUuid?: string): any => {
-  if (formUuid && editors.has(formUuid)) return editors.get(formUuid);
-  if (editors.has(DEFAULT_EDITOR_KEY)) return editors.get(DEFAULT_EDITOR_KEY);
+export const getDocxEditor = (editorInstanceId?: string): any => {
+  if (editorInstanceId && editors.has(editorInstanceId)) {
+    return editors.get(editorInstanceId);
+  }
   return editors.size === 1 ? editors.values().next().value : undefined;
 };
 
