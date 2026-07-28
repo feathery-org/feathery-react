@@ -1077,6 +1077,30 @@ export default class FeatheryClient extends IntegrationClient {
     } else throw Error(parseAPIError(res));
   }
 
+  async createTask({
+    formKey,
+    fuserKey,
+    templateId,
+    collaboratorGroup
+  }: {
+    formKey?: string;
+    fuserKey?: string;
+    templateId: string;
+    collaboratorGroup: string;
+  }) {
+    const { userId, sdkKey } = initInfo();
+    const res = await apiInviteFormCollaborator(
+      sdkKey,
+      formKey ?? this.formKey,
+      templateId,
+      [collaboratorGroup],
+      fuserKey ?? userId
+    );
+
+    if (res && res.ok) return res.payload;
+    throw Error(parseAPIError(res));
+  }
+
   async rewindCollaboration(templateId: string, rewindEmailKey: string) {
     const { userId } = initInfo();
     const data: Record<string, any> = {

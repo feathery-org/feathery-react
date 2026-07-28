@@ -798,4 +798,123 @@ describe('FeatheryClient - using api helpers', () => {
       );
     });
   });
+
+  describe('createTask', () => {
+    const formKey = 'formKey';
+    const userId = 'userId';
+    let featheryClient: FeatheryClient;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = jest.fn();
+      (initInfo as jest.Mock).mockReturnValue({
+        sdkKey: 'sdkKey',
+        userId,
+        collaboratorId: 'collaboratorId'
+      });
+      featheryClient = new FeatheryClient(formKey);
+    });
+
+    afterEach(() => {
+      (global.fetch as jest.Mock).mockClear();
+    });
+
+    it('calls collaborator invite endpoint with defaults and returns payload', async () => {
+      // Arrange
+      const templateId = 'template_123';
+      const collaboratorGroup = 'group1@example.com';
+      const payload = {
+        collaborators: [{ email: collaboratorGroup, id: 'collab_1' }]
+      };
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 201,
+        json: jest.fn().mockResolvedValue(payload)
+      });
+
+      // Act
+      const result = await featheryClient.createTask({
+        templateId,
+        collaboratorGroup
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}collaborator/invite/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token sdkKey'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: userId,
+            users_groups: [collaboratorGroup],
+            template_id: templateId,
+            collaborator_user: undefined
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual(payload);
+    });
+
+    it('honors formKey and fuserKey overrides', async () => {
+      // Arrange
+      const templateId = 'template_456';
+      const collaboratorGroup = 'group2@example.com';
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 201,
+        json: jest.fn().mockResolvedValue({})
+      });
+
+      // Act
+      await featheryClient.createTask({
+        formKey: 'other_form',
+        fuserKey: 'other_fuser',
+        templateId,
+        collaboratorGroup
+      });
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}collaborator/invite/`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: 'other_form',
+            fuser_key: 'other_fuser',
+            users_groups: [collaboratorGroup],
+            template_id: templateId,
+            collaborator_user: undefined
+          })
+        })
+      );
+    });
+
+    it('throws error when invite returns error status', async () => {
+      // Arrange
+      const templateId = 'template_123';
+      const collaboratorGroup = 'group1@example.com';
+
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 400,
+        text: jest.fn().mockResolvedValue('Invalid template')
+      });
+
+      // Act & Assert
+      await expect(
+        featheryClient.createTask({ templateId, collaboratorGroup })
+      ).rejects.toThrow();
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}collaborator/invite/`,
+        expect.objectContaining({
+          method: 'POST'
+        })
+      );
+    });
+  });
 });
