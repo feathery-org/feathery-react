@@ -29,7 +29,7 @@ import {
   composeDerivedRuleUpdates,
   DerivedRuleUpdate,
   RULE_FIELDS_CHANGED_NOTE
-} from '../assistant/tools/assistantToolDispatch';
+} from '../utils/logicRuleResult';
 
 export function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
@@ -733,7 +733,8 @@ const diffChangedFieldDetails = (
 export const runLogicRuleById = async (
   ruleId: string,
   inputParams: Record<string, any> = {},
-  formUuid?: string
+  formUuid?: string,
+  options: { documentPresent?: boolean } = {}
 ): Promise<RunLogicRuleResult> => {
   // Resolve the owning form. When no uuid is given, fall back to the only
   // loaded form (the common single-form host case).
@@ -802,14 +803,16 @@ export const runLogicRuleById = async (
       // A server-side rule has no returnValue to hand back, so instead derive
       // document updates ({ field, previous, value }) from the field diff. That
       // makes old->new exact-replace work without the rule returning { updates }.
-      const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails, {
-        describeField: (key) => describeFieldForDocument(state, key)
-      });
+      const derivedUpdates = options.documentPresent
+        ? composeDerivedRuleUpdates(changedFieldDetails, {
+            describeField: (key) => describeFieldForDocument(state, key)
+          })
+        : [];
       return {
         changedFields: changedFieldDetails.map((d) => d.key),
         changedFieldDetails,
         ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
-        ...(changedFieldDetails.length > 0
+        ...(options.documentPresent && changedFieldDetails.length > 0
           ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
           : {})
       };
@@ -837,15 +840,17 @@ export const runLogicRuleById = async (
     // path so Robin does not claim success while leaving the document stale.
     // A field the rule ALSO covered in an explicitly returned updates array
     // is deduped so the same edit is never applied twice.
-    const derivedUpdates = composeDerivedRuleUpdates(changedFieldDetails, {
-      explicitUpdates: (returnValue as any)?.updates,
-      describeField: (key) => describeFieldForDocument(state, key)
-    });
+    const derivedUpdates = options.documentPresent
+      ? composeDerivedRuleUpdates(changedFieldDetails, {
+          explicitUpdates: (returnValue as any)?.updates,
+          describeField: (key) => describeFieldForDocument(state, key)
+        })
+      : [];
     return {
       changedFields: changedFieldDetails.map((d) => d.key),
       changedFieldDetails,
       ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
-      ...(changedFieldDetails.length > 0
+      ...(options.documentPresent && changedFieldDetails.length > 0
         ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
         : {}),
       returnValue: sanitizeLogicRuleReturnValue(returnValue)

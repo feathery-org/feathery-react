@@ -613,7 +613,9 @@ const AssistantChat = ({
                 internalState[instanceId ?? '']?.logicRules ?? []
               ),
               runLogicRule: (ruleId, inputParams) =>
-                runLogicRuleById(ruleId, inputParams, instanceId),
+                runLogicRuleById(ruleId, inputParams, instanceId, {
+                  documentPresent: Boolean(getDocxEditor(instanceId))
+                }),
               getFormFields: (fieldInput) =>
                 dispatchGetFormFields(instanceId, fieldInput)
             }),
