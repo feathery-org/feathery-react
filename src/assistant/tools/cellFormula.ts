@@ -598,6 +598,45 @@ function parseFormula(source: string): FormulaNode {
   return parseTokens(tokenize(text));
 }
 
+/** One aggregate call as written: the function and the range it spans. */
+export interface FormulaAggregate {
+  fn: FormulaFunction;
+  ref: RangeReference;
+}
+
+/**
+ * Every aggregate call a formula makes, WITHOUT evaluating it or touching a
+ * document. Used by the cross-op consistency check: two totals over the same
+ * table that span different rows cannot both be right, and that is knowable
+ * from the formula strings alone, before anything is written.
+ *
+ * Returns null for a formula that does not parse. A syntax error is the
+ * evaluator's refusal to make, with its own message and remedy; a preflight
+ * check must not pre-empt it with a worse one.
+ */
+export function collectFormulaAggregates(
+  source: string
+): FormulaAggregate[] | null {
+  let root: FormulaNode;
+  try {
+    root = parseFormula(source);
+  } catch (err) {
+    if (err instanceof FormulaRefusal) return null;
+    throw err;
+  }
+  const out: FormulaAggregate[] = [];
+  const walk = (current: FormulaNode): void => {
+    if (current.kind === 'call') out.push({ fn: current.fn, ref: current.ref });
+    else if (current.kind === 'neg') walk(current.operand);
+    else if (current.kind === 'binary') {
+      walk(current.left);
+      walk(current.right);
+    }
+  };
+  walk(root);
+  return out;
+}
+
 /** Every reference the AST mentions, in source order. */
 export function collectReferences(node: FormulaNode): FormulaReference[] {
   const out: FormulaReference[] = [];

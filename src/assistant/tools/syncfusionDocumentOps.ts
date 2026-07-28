@@ -34,14 +34,22 @@ import {
   SkippedCell
 } from './numericCells';
 import {
+  collectFormulaAggregates,
   evaluateFormula,
   FormulaEvaluationSuccess,
   FormulaReference,
+  FormulaRenderSuccess,
   FormulaResolver,
   renderFormulaResult,
   ROUNDING_MODES,
   RoundingMode
 } from './cellFormula';
+import {
+  buildNoOpWriteReport,
+  describeTextChange,
+  NoOpWriteReport,
+  writeIsNoOp
+} from './writeNoOp';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
@@ -381,6 +389,58 @@ export interface FormulaCellReport {
   receipt: string;
 }
 
+/** One row's outcome in a column-wide recompute. */
+export interface ColumnRowOutcome {
+  row: number;
+  anchor: string;
+  /**
+   * `written` - the computed value differed and a tracked revision was created.
+   * `unchanged` - the computed value was already there, byte for byte, so
+   *   nothing was written (the no-op rule; this is what makes bulk safe).
+   * `skipped` - the formula could not be evaluated for this row because a cell
+   *   it references is blank, missing or not a number. A header row, a blank
+   *   separator and a section-label row all land here, which is why the row
+   *   bounds of a column recompute stop mattering.
+   */
+  outcome: 'written' | 'unchanged' | 'skipped';
+  /** Verbatim text before the op ran. */
+  previousText: string;
+  /** The value computed for this row; absent when the row was skipped. */
+  renderedValue?: string;
+  /** Why the row was skipped: the refusal code and its message. */
+  reason?: string;
+  detail?: string;
+}
+
+/**
+ * The auditable record of one column-wide recompute. Coverage AND what moved:
+ * a bulk operation that reports only its writes hides the far more important
+ * number, which is how many rows it looked at.
+ */
+export interface ColumnFormulaReport {
+  /** The per-row formula template as the model sent it, verbatim. */
+  formula: string;
+  /** The model's own description of what the column holds. */
+  label?: string;
+  tableAnchor: string;
+  /** The column every write landed in. */
+  column: number;
+  /** The row span actually evaluated, after defaulting to the whole table. */
+  startRow: number;
+  endRow: number;
+  /** True when the span was the whole table because no `rows` was given. */
+  wholeTable: boolean;
+  /** Rows evaluated = rowsChanged + rowsUnchanged + rowsSkipped. */
+  rowsEvaluated: number;
+  rowsChanged: number;
+  rowsUnchanged: number;
+  rowsSkipped: number;
+  rows: ColumnRowOutcome[];
+  /** True for every written row: each was verified by post-write re-read. */
+  verifiedByReRead: true;
+  receipt: string;
+}
+
 /**
  * A numeric `set_cell_text` that got through the model-authored-number gate by
  * declaring `literal: true`. Recorded on the result so the exception is
@@ -419,6 +479,13 @@ export interface EditResult {
   // user-dictated exception: the engine's record that this number was NOT
   // engine-computed, so a reviewer can see which is which.
   literalNumber?: LiteralNumberWrite;
+  // Present on a successful `set_column_formula`: coverage (how many rows were
+  // recomputed) and what actually moved.
+  column?: ColumnFormulaReport;
+  // Present when the op wrote NOTHING because the value it would have written
+  // is already there, byte for byte. `ok` is still true - the requested state
+  // is the state - but there is no revision and no change card. See writeNoOp.
+  noOp?: NoOpWriteReport;
 }
 
 export interface ApplyEditsResult {
@@ -432,6 +499,18 @@ export interface ApplyEditsResult {
     // first-class grouped card in the revisions UI.
     revisionGrouping: 'bridge_bound_revision_cards' | 'no_revisions';
     uiGrouping: 'requires_cross_layer_group_card';
+    /**
+     * What this change set touched, in resolved terms, derived by the ENGINE
+     * from the ops. Always present, so "which columns moved" is a property of
+     * the result rather than something the model may forget to mention.
+     */
+    announcement: string;
+    /**
+     * The model's own statement of what it was about to do, echoed back.
+     * Required (and therefore always present) whenever the batch writes into
+     * more than one column of one table - see detectUnannouncedChain.
+     */
+    plan?: string;
   };
 }
 
@@ -2851,7 +2930,14 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
 interface OpSuccessExtras {
   details?: string[];
   formula?: FormulaCellReport;
+  column?: ColumnFormulaReport;
   literalNumber?: LiteralNumberWrite;
+  /**
+   * Set when the op wrote nothing because the value was already there. The
+   * executor reads this field to skip the tracked-mutation assertion (there IS
+   * no revision to assert) and to report the op as done-without-a-change.
+   */
+  noOp?: NoOpWriteReport;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -3051,6 +3137,130 @@ function buildFormulaReceipt(
   );
 }
 
+/**
+ * Write one evaluated formula result and prove it landed, in two parts.
+ *
+ * 1. Input integrity: re-read every referenced cell from the post-write
+ *    document. Any of them (other than the target itself) reading differently
+ *    than it did pre-write means the write landed in the wrong place or an
+ *    input changed under us.
+ * 2. Reproduction: when the formula does NOT read its own target, re-evaluate
+ *    the whole formula against the post-write document - it must reproduce the
+ *    identical value and identical bytes. When it DOES read its own target, a
+ *    re-evaluation would legitimately differ (the input just changed), so the
+ *    proof is instead that the written bytes parse back to exactly the value
+ *    that was computed - which, together with (1), is the same guarantee.
+ *
+ * Shared by the single-cell and the column-wide write so a column recompute
+ * proves every one of its writes exactly as strictly as one cell does. Returns
+ * the post-write block stream so a caller writing several cells can carry on
+ * from it instead of serializing again.
+ */
+function writeAndVerifyFormulaResult(
+  editor: LiveEditor,
+  args: {
+    formulaText: string;
+    evaluation: FormulaEvaluationSuccess;
+    rendered: FormulaRenderSuccess;
+    /** The freshly-resolved target cell block. */
+    target: FlatBlock;
+    selfReferencing: boolean;
+    round: RoundingMode | null;
+    decimals?: number;
+  }
+): FlatBlock[] {
+  const { formulaText, evaluation, rendered, target, selfReferencing } = args;
+  const targetAnchor = target.anchor;
+  const targetTextBefore = target.text;
+  const renderOptions = {
+    round: args.round,
+    ...(args.decimals != null ? { decimals: args.decimals } : {})
+  };
+
+  // Snapshot every cell the formula READ, so the post-write check can prove no
+  // input moved under the write.
+  const readBefore = new Map<string, string | null>();
+  for (const read of evaluation.reads) {
+    for (const cellRead of read.readCells) {
+      if (cellRead.anchor) readBefore.set(cellRead.anchor, cellRead.text);
+    }
+  }
+
+  selectBlock(editor, target);
+  replaceSelectedText(editor, rendered.renderedValue);
+  verifyWrittenText(editor, targetAnchor, rendered.renderedValue);
+
+  const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
+  const freshResolver = makeFormulaResolver(freshBlocks);
+  const freshByAnchor = new Map(
+    freshBlocks.map((block) => [block.anchor, block])
+  );
+  for (const [anchor, before] of Array.from(readBefore.entries())) {
+    if (anchor === targetAnchor) continue;
+    const after = freshByAnchor.get(anchor)?.text ?? null;
+    if (after !== before) {
+      throw new OpError(
+        'post_write_verification_failed',
+        'A cell the formula read changed while the result was being written, so the written value is no longer the value of the formula. Nothing is reported as success.',
+        [
+          `reference cell: ${anchor}`,
+          `read before the write: ${JSON.stringify(before)}`,
+          `read after the write: ${JSON.stringify(after)}`
+        ]
+      );
+    }
+  }
+  if (selfReferencing) {
+    const written = parseNumericCell(
+      freshByAnchor.get(targetAnchor)?.text ?? ''
+    );
+    if (
+      !written ||
+      written.value.units !== rendered.value.units ||
+      written.value.scale !== rendered.value.scale
+    ) {
+      throw new OpError(
+        'post_write_verification_failed',
+        'The value written into the target cell does not parse back to the computed result. Nothing is reported as success.',
+        [
+          `computed: ${JSON.stringify(rendered.renderedValue)}`,
+          `parsed back: ${JSON.stringify(
+            freshByAnchor.get(targetAnchor)?.text ?? null
+          )}`
+        ]
+      );
+    }
+  } else {
+    const recheck = evaluateFormula(formulaText, freshResolver);
+    const reRendered = recheck.ok
+      ? renderFormulaResult(recheck, targetTextBefore, renderOptions)
+      : null;
+    if (
+      !recheck.ok ||
+      !reRendered?.ok ||
+      reRendered.value.units !== rendered.value.units ||
+      reRendered.value.scale !== rendered.value.scale ||
+      reRendered.renderedValue !== rendered.renderedValue
+    ) {
+      throw new OpError(
+        'post_write_verification_failed',
+        'Re-reading the referenced cells after the write did not reproduce the computed value; the write may have landed in the wrong cell. Nothing is reported as success.',
+        [
+          `computed: ${JSON.stringify(rendered.renderedValue)}`,
+          `re-read: ${
+            !recheck.ok
+              ? recheck.message
+              : reRendered?.ok
+              ? JSON.stringify(reRendered.renderedValue)
+              : reRendered?.message ?? 'the result could not be re-rendered'
+          }`
+        ]
+      );
+    }
+  }
+  return freshBlocks;
+}
+
 function runFormulaCellWrite(
   editor: LiveEditor,
   op: TypedEditOp<'set_cell_formula'>,
@@ -3115,102 +3325,31 @@ function runFormulaCellWrite(
     throw new OpError(rendered.error, rendered.message, rendered.details);
   }
 
-  // Snapshot every cell the formula READ, so the post-write check can prove no
-  // input moved under the write.
-  const readBefore = new Map<string, string | null>();
-  for (const read of evaluation.reads) {
-    for (const cellRead of read.readCells) {
-      if (cellRead.anchor) readBefore.set(cellRead.anchor, cellRead.text);
-    }
-  }
-
-  selectBlock(editor, block);
-  replaceSelectedText(editor, rendered.renderedValue);
-  verifyWrittenText(editor, block.anchor, rendered.renderedValue);
-
-  // Self-verification, in two parts.
-  //
-  // 1. Input integrity: re-read every referenced cell from the post-write
-  //    document. Any of them (other than the target itself) reading differently
-  //    than it did pre-write means the write landed in the wrong place or an
-  //    input changed under us.
-  // 2. Reproduction: when the formula does NOT read its own target, re-evaluate
-  //    the whole formula against the post-write document - it must reproduce the
-  //    identical value and identical bytes. When it DOES read its own target, a
-  //    re-evaluation would legitimately differ (the input just changed), so the
-  //    proof is instead that the written bytes parse back to exactly the value
-  //    that was computed - which, together with (1), is the same guarantee.
-  const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
-  const freshResolver = makeFormulaResolver(freshBlocks);
-  const freshByAnchor = new Map(
-    freshBlocks.map((freshBlock) => [freshBlock.anchor, freshBlock])
-  );
-  for (const [anchor, before] of Array.from(readBefore.entries())) {
-    if (anchor === block.anchor) continue;
-    const after = freshByAnchor.get(anchor)?.text ?? null;
-    if (after !== before) {
-      throw new OpError(
-        'post_write_verification_failed',
-        'A cell the formula read changed while the result was being written, so the written value is no longer the value of the formula. Nothing is reported as success.',
-        [
-          `reference cell: ${anchor}`,
-          `read before the write: ${JSON.stringify(before)}`,
-          `read after the write: ${JSON.stringify(after)}`
-        ]
-      );
-    }
-  }
-  if (selfReferencing) {
-    const written = parseNumericCell(
-      freshByAnchor.get(block.anchor)?.text ?? ''
+  // THE NO-OP RULE at the point the formula's value first exists. `0.00`
+  // recomputed as `0.00` is not a change and must not become a change card;
+  // `$0.00` recomputed as `0.00` is, and is written. See writeNoOp.
+  if (writeIsNoOp(block.text, rendered.renderedValue)) {
+    const report = buildNoOpWriteReport(
+      'set_cell_formula',
+      block.anchor,
+      block.text,
+      `the result of ${formulaText}`
     );
-    if (
-      !written ||
-      written.value.units !== rendered.value.units ||
-      written.value.scale !== rendered.value.scale
-    ) {
-      throw new OpError(
-        'post_write_verification_failed',
-        'The value written into the target cell does not parse back to the computed result. Nothing is reported as success.',
-        [
-          `computed: ${JSON.stringify(rendered.renderedValue)}`,
-          `parsed back: ${JSON.stringify(
-            freshByAnchor.get(block.anchor)?.text ?? null
-          )}`
-        ]
-      );
-    }
-  } else {
-    const recheck = evaluateFormula(formulaText, freshResolver);
-    const reRendered = recheck.ok
-      ? renderFormulaResult(recheck, block.text, {
-          round: roundingMode,
-          ...(op.decimals != null ? { decimals: op.decimals } : {})
-        })
-      : null;
-    if (
-      !recheck.ok ||
-      !reRendered?.ok ||
-      reRendered.value.units !== rendered.value.units ||
-      reRendered.value.scale !== rendered.value.scale ||
-      reRendered.renderedValue !== rendered.renderedValue
-    ) {
-      throw new OpError(
-        'post_write_verification_failed',
-        'Re-reading the referenced cells after the write did not reproduce the computed value; the write may have landed in the wrong cell. Nothing is reported as success.',
-        [
-          `computed: ${JSON.stringify(rendered.renderedValue)}`,
-          `re-read: ${
-            !recheck.ok
-              ? recheck.message
-              : reRendered?.ok
-              ? JSON.stringify(reRendered.renderedValue)
-              : reRendered?.message ?? 'the result could not be re-rendered'
-          }`
-        ]
-      );
-    }
+    return {
+      noOp: report,
+      details: resolveFormulaTerms(evaluation).map((term) => term.description)
+    };
   }
+
+  writeAndVerifyFormulaResult(editor, {
+    formulaText,
+    evaluation,
+    rendered,
+    target: block,
+    selfReferencing,
+    round: roundingMode,
+    ...(op.decimals != null ? { decimals: op.decimals } : {})
+  });
 
   const label = typeof op.label === 'string' ? op.label.trim() : '';
   const withoutReceipt: Omit<FormulaCellReport, 'receipt'> = {
@@ -3232,6 +3371,342 @@ function runFormulaCellWrite(
   return {
     formula: { ...withoutReceipt, receipt: buildFormulaReceipt(withoutReceipt) }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Column-wide recompute (set_column_formula)
+//
+// The failure this exists to remove: the model picks the row range and gets it
+// wrong. Live on 2026-07-27 it wrote two totals into the same row of one table
+// over DIFFERENT spans - sum(rows 1..3) for one column and sum(rows 1..4) for
+// the one beside it. One of those is wrong by construction, and nothing in the
+// output said which.
+//
+// So let a formula apply down a WHOLE column. The engine evaluates it for every
+// row in the span and - because of the no-op rule - writes only the cells whose
+// value actually moves. That is what makes bulk safe: without no-op skipping a
+// column recompute would produce a change card per row and drown the review
+// pane; with it you get exactly the cells that moved. It also removes the
+// range-guessing failure outright, because the bounds stop mattering: the
+// default span is the whole table, and a header row, a blank separator or a
+// section label simply cannot produce a value, so it is skipped and named.
+//
+// `{row}` in the formula is substituted with each row index before parsing, so
+// the grammar itself is untouched: one notation, evaluated N times.
+// ---------------------------------------------------------------------------
+
+const ROW_PLACEHOLDER = '{row}';
+
+/**
+ * Formula refusals that describe ONE ROW rather than the request. A header cell
+ * holding "Coverage", a blank separator and a short row all land here; skipping
+ * and naming them is what lets the span default to the whole table. Every other
+ * refusal - a syntax error, mixed currencies, an undeclared rounding decision,
+ * an overflow, a circular range - is about the FORMULA, so it fails the whole
+ * op rather than quietly thinning the column.
+ */
+const ROW_SKIPPABLE_FORMULA_ERRORS: ReadonlyArray<string> = [
+  'reference_not_found',
+  'cell_not_numeric',
+  'no_numeric_cells',
+  'column_not_numeric'
+];
+
+const NAMED_ROW_LIMIT = 8;
+
+function nameRowOutcomes(
+  outcomes: ColumnRowOutcome[],
+  describe: (outcome: ColumnRowOutcome) => string
+): string {
+  const named = outcomes.slice(0, NAMED_ROW_LIMIT).map(describe);
+  const more = outcomes.length - named.length;
+  return `${named.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
+}
+
+/**
+ * Coverage first, then what moved. A bulk op that reports only its writes hides
+ * the more important number: how many rows it looked at. "recomputed 12 rows of
+ * the Tax column, 3 changed" is the shape - a reader can see both that the
+ * whole column was covered and that only three cells were touched.
+ */
+function buildColumnFormulaReceipt(
+  report: Omit<ColumnFormulaReport, 'receipt'>
+): string {
+  const scope = report.label
+    ? `${report.label} (column ${report.column} of the table at ${report.tableAnchor})`
+    : `column ${report.column} of the table at ${report.tableAnchor}`;
+  const span =
+    report.startRow === report.endRow
+      ? `row ${report.startRow}`
+      : `rows ${report.startRow}-${report.endRow}`;
+  const changed = report.rows.filter((row) => row.outcome === 'written');
+  const skipped = report.rows.filter((row) => row.outcome === 'skipped');
+  const changedClause = changed.length
+    ? ` Changed: ${nameRowOutcomes(
+        changed,
+        (row) =>
+          `row ${row.row} (${describeTextChange(
+            row.previousText,
+            row.renderedValue ?? ''
+          )})`
+      )}.`
+    : '';
+  const skippedClause = skipped.length
+    ? ` Skipped (no value could be computed): ${nameRowOutcomes(
+        skipped,
+        (row) => `row ${row.row} (${row.reason})`
+      )}.`
+    : '';
+  return (
+    `Recomputed ${report.rowsEvaluated} row${
+      report.rowsEvaluated === 1 ? '' : 's'
+    } of ${scope}, ${report.rowsChanged} changed. ` +
+    `Formula ${report.formula} evaluated over ${span}${
+      report.wholeTable ? ' (every row of the table)' : ''
+    }: ${report.rowsChanged} written, ${
+      report.rowsUnchanged
+    } already correct and left untouched, ${report.rowsSkipped} skipped.` +
+    changedClause +
+    skippedClause +
+    ' Every written cell keeps its own number format and was verified by ' +
+    'post-write re-read; the unchanged cells produced no revision.'
+  );
+}
+
+function integerParam(value: unknown, name: string): number | null {
+  if (value == null) return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(n) || n < 0)
+    throw new OpError(
+      'bad_row_bound',
+      `\`${name}\` must be a whole row index (0 or greater); received ${JSON.stringify(
+        value
+      )}. Omit both \`startRow\` and \`endRow\` to recompute every row of the table - rows that cannot produce a value are skipped and named.`
+    );
+  return n;
+}
+
+function runColumnFormulaWrite(
+  editor: LiveEditor,
+  op: TypedEditOp<'set_column_formula'>,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): OpSuccessExtras {
+  const parts = block.anchor.split(';');
+  if (block.kind !== 'table_cell' || parts.length !== 5) {
+    throw new OpError(
+      'not_a_table_cell',
+      'set_column_formula must anchor ANY cell of the column to recompute (section;block;row;cell;paragraph); the table and the column are read from that anchor.'
+    );
+  }
+  const tableAnchor = `${parts[0]};${parts[1]}`;
+  const column = Number(parts[3]);
+  const cellParagraph = parts[4];
+
+  const template = String(op.formula ?? '').trim();
+  if (!template)
+    throw new OpError(
+      'missing_formula',
+      `set_column_formula needs a \`formula\`: a per-row expression in which ${ROW_PLACEHOLDER} stands for the row being computed, e.g. "[${parts[0]};${parts[1]};${ROW_PLACEHOLDER};1;0] * 13%".`
+    );
+  // A template that does not vary by row would write one identical value down
+  // the whole column. That is never what "recompute this column" means, and it
+  // is cheap to catch here rather than after N identical writes.
+  if (template.indexOf(ROW_PLACEHOLDER) < 0)
+    throw new OpError(
+      'row_invariant_column_formula',
+      `The formula ${JSON.stringify(
+        template
+      )} does not mention ${ROW_PLACEHOLDER}, so it would write the same value into every row of the column. Put ${ROW_PLACEHOLDER} in the row slot of each reference that should follow the row being computed, e.g. "[${
+        parts[0]
+      };${
+        parts[1]
+      };${ROW_PLACEHOLDER};1;0] * 13%". For a single cell use set_cell_formula instead.`
+    );
+  const round = op.round != null ? String(op.round) : '';
+  if (round && ROUNDING_MODES.indexOf(round as RoundingMode) < 0) {
+    throw new OpError(
+      'unsupported_rounding_mode',
+      `Unsupported rounding mode "${round}". Supported: ${ROUNDING_MODES.join(
+        ', '
+      )}.`
+    );
+  }
+  const roundingMode = (round || null) as RoundingMode | null;
+  const decimals = op.decimals != null ? { decimals: op.decimals } : {};
+
+  let blocks = Array.from(byAnchor.values());
+  const collected = collectTableColumnCells(blocks, tableAnchor, column);
+  if (!collected)
+    throw new OpError(
+      'reference_not_found',
+      `No table answers to the anchor "${tableAnchor}". Copy a cell anchor of the target column from a current structure or table_facts read.`
+    );
+  if (column >= collected.columns)
+    throw new OpError(
+      'reference_not_found',
+      `The table at ${tableAnchor} has ${collected.columns} column${
+        collected.columns === 1 ? '' : 's'
+      } (0-${collected.columns - 1}); the anchor names column ${column}.`
+    );
+
+  const requestedStart = integerParam(op.startRow, 'startRow');
+  const requestedEnd = integerParam(op.endRow, 'endRow');
+  const wholeTable = requestedStart == null && requestedEnd == null;
+  const startRow = requestedStart ?? 0;
+  const endRow = requestedEnd ?? collected.rowCount - 1;
+  if (endRow < startRow)
+    throw new OpError(
+      'bad_row_bound',
+      `\`endRow\` (${endRow}) is before \`startRow\` (${startRow}).`
+    );
+  // An over-long span is never silently shortened - same contract as a range
+  // reference. It means the model is working from a stale row count.
+  if (endRow > collected.rowCount - 1)
+    throw new OpError(
+      'reference_not_found',
+      `The table at ${tableAnchor} has ${collected.rowCount} row${
+        collected.rowCount === 1 ? '' : 's'
+      } (0-${
+        collected.rowCount - 1
+      }); the requested span ends at row ${endRow}. Re-read table_facts, or omit \`startRow\`/\`endRow\` to cover every row.`
+    );
+
+  const rows: ColumnRowOutcome[] = [];
+  for (let row = startRow; row <= endRow; row++) {
+    const targetAnchor = `${tableAnchor};${row};${column};${cellParagraph}`;
+    const target = blocks.find(
+      (candidate) => candidate.anchor === targetAnchor
+    );
+    if (!target) {
+      // A short or merged row simply has no cell here. Reported, never guessed.
+      rows.push({
+        row,
+        anchor: targetAnchor,
+        outcome: 'skipped',
+        previousText: '',
+        reason: 'missing_cell',
+        detail: `The table at ${tableAnchor} has no cell at row ${row}, column ${column} (a short or merged row).`
+      });
+      continue;
+    }
+    const source = template.split(ROW_PLACEHOLDER).join(String(row));
+    const evaluation = evaluateFormula(source, makeFormulaResolver(blocks));
+    if (!evaluation.ok) {
+      if (ROW_SKIPPABLE_FORMULA_ERRORS.indexOf(evaluation.error) >= 0) {
+        rows.push({
+          row,
+          anchor: targetAnchor,
+          outcome: 'skipped',
+          previousText: target.text,
+          reason: evaluation.error,
+          detail: evaluation.message
+        });
+        continue;
+      }
+      throw new OpError(
+        evaluation.error,
+        `Row ${row} of the column recompute (${source}): ${evaluation.message}`,
+        evaluation.details
+      );
+    }
+    const coveringRanges = evaluation.references.filter(
+      (reference) =>
+        reference.kind === 'range' && referenceCovers(reference, targetAnchor)
+    );
+    if (coveringRanges.length)
+      throw new OpError(
+        'circular_reference',
+        `Row ${row} of the column recompute aggregates a range that includes the cell it writes ("${targetAnchor}": ${coveringRanges
+          .map(referenceText)
+          .join(
+            ', '
+          )}), so no value written could be the value of the formula. A column recompute must be a per-row expression; use set_cell_formula for a total.`
+      );
+    const rendered = renderFormulaResult(evaluation, target.text, {
+      round: roundingMode,
+      ...decimals
+    });
+    if (!rendered.ok)
+      throw new OpError(
+        rendered.error,
+        `Row ${row} of the column recompute (${source}): ${rendered.message}`,
+        rendered.details
+      );
+
+    // THE NO-OP RULE, per row. This is the line that makes a column recompute
+    // safe to run over a whole table: the rows that already hold the right
+    // value produce no revision and no change card.
+    if (writeIsNoOp(target.text, rendered.renderedValue)) {
+      rows.push({
+        row,
+        anchor: targetAnchor,
+        outcome: 'unchanged',
+        previousText: target.text,
+        renderedValue: rendered.renderedValue
+      });
+      continue;
+    }
+
+    const selfReferencing = evaluation.references.some((reference) =>
+      referenceCovers(reference, targetAnchor)
+    );
+    // Every write is proven exactly as strictly as a single-cell write, and the
+    // post-write stream becomes the input map for the next row - so a column
+    // whose formula reads an earlier row of itself still sees written values.
+    blocks = writeAndVerifyFormulaResult(editor, {
+      formulaText: source,
+      evaluation,
+      rendered,
+      target,
+      selfReferencing,
+      round: roundingMode,
+      ...decimals
+    });
+    rows.push({
+      row,
+      anchor: targetAnchor,
+      outcome: 'written',
+      previousText: target.text,
+      renderedValue: rendered.renderedValue
+    });
+  }
+
+  const label = typeof op.label === 'string' ? op.label.trim() : '';
+  const withoutReceipt: Omit<ColumnFormulaReport, 'receipt'> = {
+    formula: template,
+    ...(label ? { label } : {}),
+    tableAnchor,
+    column,
+    startRow,
+    endRow,
+    wholeTable,
+    rowsEvaluated: rows.length,
+    rowsChanged: rows.filter((row) => row.outcome === 'written').length,
+    rowsUnchanged: rows.filter((row) => row.outcome === 'unchanged').length,
+    rowsSkipped: rows.filter((row) => row.outcome === 'skipped').length,
+    rows,
+    verifiedByReRead: true
+  };
+  const report: ColumnFormulaReport = {
+    ...withoutReceipt,
+    receipt: buildColumnFormulaReceipt(withoutReceipt)
+  };
+  // Nothing moved: report it as the no-op it is, so the model says "already
+  // correct" rather than "recomputed" and no change card is implied.
+  if (!report.rowsChanged) {
+    return {
+      column: report,
+      noOp: {
+        anchor: `${tableAnchor} column ${column}`,
+        op: 'set_column_formula',
+        text: '',
+        skipped: true,
+        receipt: `Nothing written: ${report.receipt}`
+      }
+    };
+  }
+  return { column: report };
 }
 
 // ---------------------------------------------------------------------------
@@ -3425,6 +3900,8 @@ export const ANCHORED_OP_HANDLERS: {
   },
   set_cell_formula: ({ editor, op, block, byAnchor }) =>
     runFormulaCellWrite(editor, op, block, byAnchor),
+  set_column_formula: ({ editor, op, block, byAnchor }) =>
+    runColumnFormulaWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
     selectBlock(editor, block);
     editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
@@ -3627,6 +4104,60 @@ export const ANCHORLESS_OP_HANDLERS: {
   }
 };
 
+// ---------------------------------------------------------------------------
+// The universal no-op rule (see writeNoOp.ts for the rule itself)
+//
+// Every op whose complete post-write block text is knowable BEFORE the write is
+// checked here, centrally, so the rule is a property of the write path rather
+// than a feature of one op. `set_cell_formula` and `set_column_formula` cannot
+// be checked here - their value does not exist until the formula has been
+// evaluated - so they apply the same predicate at the point where it does
+// (runFormulaCellWrite / runColumnFormulaWrite).
+// ---------------------------------------------------------------------------
+
+/**
+ * The exact text this op would leave in `block`, or null when that is not
+ * knowable up front (in which case no central skip is attempted - the rule
+ * never guesses).
+ */
+function intendedBlockText(
+  op: EditOp,
+  block: FlatBlock,
+  liveText: string
+): string | null {
+  switch (op.op) {
+    case 'set_cell_text':
+      return String(op.text ?? '');
+    case 'replace_text': {
+      const find = op.find != null ? String(op.find) : '';
+      const replacement = op.replace ?? op.text ?? op.newText;
+      // No `find`: the handler overwrites the whole block with `replacement`.
+      if (!find) return replacement != null ? String(replacement) : null;
+      // With a `find`, only one occurrence is rewritten and which one depends
+      // on live search, so the resulting text is not knowable here - EXCEPT in
+      // the one case where it is: replacing a string with itself cannot change
+      // the block, whichever occurrence is chosen.
+      return replacement != null && String(replacement) === find
+        ? block.text
+        : null;
+    }
+    case 'change_case':
+      // Pending tracked deletions make the selection text (what the handler
+      // rewrites) differ from the block's projected text (what a no-op must
+      // preserve), so only the unambiguous case is judged.
+      return liveText === block.text
+        ? changeCase(block.text, String(op.caseType ?? ''))
+        : null;
+    case 'insert_text':
+      // Inserting nothing is the one insertion that changes nothing.
+      return insertionText(op as TypedEditOp<'insert_text'>) === ''
+        ? block.text
+        : null;
+    default:
+      return null;
+  }
+}
+
 // Applies one anchored op. `block` is the freshly-resolved block. Throws OpError
 // on a recoverable failure (surfaced as {ok:false, error}).
 function applyAnchoredOp(
@@ -3655,6 +4186,18 @@ function applyAnchoredOp(
       'The live text at this anchor does not match `expect`.',
       staleAnchorDetails(op.expect, liveText)
     );
+  }
+
+  // THE NO-OP RULE, before any handler runs and therefore before any write:
+  // a value identical to what is already there costs no revision and produces
+  // no change card. Deliberately ahead of the model-authored-number gate too -
+  // that gate exists to stop a fabricated number ENTERING the document, and a
+  // write that changes nothing enters nothing.
+  const intended = intendedBlockText(op, block, liveText);
+  if (intended !== null && writeIsNoOp(block.text, intended)) {
+    return {
+      noOp: buildNoOpWriteReport(op.op, block.anchor, block.text)
+    };
   }
 
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
@@ -4225,6 +4768,7 @@ const TRACKED_TEXT_OPS = new Set([
   'insert_text',
   'set_cell_text',
   'set_cell_formula',
+  'set_column_formula',
   'change_case'
 ]);
 
@@ -4818,13 +5362,278 @@ function applyInsertInheritance(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Batch-level integrity: what is only visible when the whole change set is read
+// at once, checked before anything is written.
+//
+// Two things live here, and both exist because they are invisible one op at a
+// time:
+//
+//   1. TWO TOTALS OVER THE SAME TABLE THAT SPAN DIFFERENT ROWS. Live on
+//      2026-07-27 the model wrote sum(rows 1..3) into one column's total and
+//      sum(rows 1..4) into the column beside it. Each op is individually
+//      perfect; together, one of them is wrong by construction. Nothing except
+//      a cross-op check can see it.
+//   2. THE DEPENDENCY CHAIN, ANNOUNCED. A person asks to re-total BECAUSE they
+//      changed an input, so when an input column changes the derived column and
+//      the totals are all stale and Robin should follow the chain rather than
+//      update the one cell it was told about and stop. Following it silently is
+//      worse than not following it: three columns move and the user was told
+//      about one. So a batch that touches more than one column of one table
+//      must carry `plan` - the announcement - and each derived write must carry
+//      its `label`. This is a gate in the engine, not a line in the prompt,
+//      because this stack has already proved that a prompt instruction
+//      ("always name the rule you are invoking") ships and is ignored.
+// ---------------------------------------------------------------------------
+
+const FORMULA_OPS = new Set(['set_cell_formula', 'set_column_formula']);
+
+/**
+ * Does this op put a QUANTITY into a table cell? A dependency chain is about
+ * amounts moving, so filling a freshly inserted row with "Annual Premium",
+ * "Toronto" or a location id `0093` is not part of one - only a computed write
+ * or a literal amount is.
+ */
+function writesCellQuantity(op: EditOp): boolean {
+  if (!op?.op) return false;
+  if (FORMULA_OPS.has(op.op)) return true;
+  return op.op === 'set_cell_text' && isQuantityText(String(op.text ?? ''));
+}
+
+interface ColumnTouch {
+  tableAnchor: string;
+  column: number;
+  /** Anchors written one at a time. */
+  cells: string[];
+  /** True when a set_column_formula covers the column. */
+  wholeColumn: boolean;
+  /** True when at least one write into this column is engine-computed. */
+  computed: boolean;
+  /** The model's own labels for the writes into this column, in order. */
+  labels: string[];
+}
+
+/** Every (table, column) this batch writes a quantity into. */
+function collectColumnTouches(edits: EditOp[]): ColumnTouch[] {
+  const touches = new Map<string, ColumnTouch>();
+  for (const op of edits) {
+    if (!writesCellQuantity(op)) continue;
+    const parts = String(op.anchor ?? '').split(';');
+    if (parts.length !== 5) continue;
+    const tableAnchor = `${parts[0]};${parts[1]}`;
+    const column = Number(parts[3]);
+    if (!Number.isInteger(column)) continue;
+    const key = `${tableAnchor};${column}`;
+    const touch = touches.get(key) ?? {
+      tableAnchor,
+      column,
+      cells: [],
+      wholeColumn: false,
+      computed: false,
+      labels: []
+    };
+    if (op.op === 'set_column_formula') touch.wholeColumn = true;
+    else touch.cells.push(String(op.anchor));
+    if (FORMULA_OPS.has(op.op)) touch.computed = true;
+    const label = typeof op.label === 'string' ? op.label.trim() : '';
+    if (label) touch.labels.push(label);
+    touches.set(key, touch);
+  }
+  return Array.from(touches.values());
+}
+
+/**
+ * What this change set is about to do, in resolved terms, built by the ENGINE
+ * from the ops themselves. Always computed and always returned on the change
+ * set, so "what was touched" is a fact of the result rather than something the
+ * model may or may not have mentioned. It is also the text a missing-`plan`
+ * refusal hands back, so the model can simply say it.
+ */
+function describeChangeSetTouches(touches: ColumnTouch[]): string {
+  if (!touches.length) return 'This change set writes no table-cell values.';
+  const byTable = new Map<string, ColumnTouch[]>();
+  for (const touch of touches) {
+    const list = byTable.get(touch.tableAnchor) ?? [];
+    list.push(touch);
+    byTable.set(touch.tableAnchor, list);
+  }
+  const describeColumn = (touch: ColumnTouch): string => {
+    const what = [
+      touch.wholeColumn ? 'the whole column recomputed' : '',
+      touch.cells.length
+        ? `${touch.cells.length} cell${
+            touch.cells.length === 1 ? '' : 's'
+          } (${touch.cells.join(', ')})`
+        : ''
+    ]
+      .filter(Boolean)
+      .join(' plus ');
+    const label = touch.labels.length ? ` - ${touch.labels.join('; ')}` : '';
+    return `column ${touch.column}${label}: ${what}`;
+  };
+  return Array.from(byTable.entries())
+    .map(
+      ([tableAnchor, list]) =>
+        `the table at ${tableAnchor}: ${list
+          .sort((a, b) => a.column - b.column)
+          .map(describeColumn)
+          .join('; ')}`
+    )
+    .join('. Then ');
+}
+
+/** A refusal that applies to the whole change set, before any write. */
+interface BatchRefusal {
+  code: string;
+  message: string;
+  details?: string[];
+  /** Indices of the ops the refusal is about; empty means all of them. */
+  indices: number[];
+}
+
+/**
+ * Two aggregates over one table that span DIFFERENT rows cannot both be right.
+ * The comparison is per column: aggregating one column over rows 1-5 and again
+ * over rows 1-10 is a legitimate subtotal-plus-grand-total, but two DIFFERENT
+ * columns of one table spanning different rows is the live defect - the rows of
+ * a table are shared, so the columns cannot honestly disagree about them.
+ */
+function detectInconsistentAggregateRanges(
+  edits: EditOp[]
+): BatchRefusal | null {
+  // table -> column -> the first op that aggregated it, and over which spans.
+  const byTable = new Map<
+    string,
+    Map<number, { spans: string; index: number; formula: string }>
+  >();
+  edits.forEach((op, index) => {
+    if (op?.op !== 'set_cell_formula') return;
+    const formula = String(op.formula ?? '');
+    const aggregates = collectFormulaAggregates(formula);
+    if (!aggregates?.length) return;
+    const spansByColumn = new Map<string, string[]>();
+    for (const { ref } of aggregates) {
+      const key = `${ref.tableAnchor}|${ref.column}`;
+      const list = spansByColumn.get(key) ?? [];
+      list.push(`${ref.startRow}..${ref.endRow}`);
+      spansByColumn.set(key, list);
+    }
+    for (const [key, spans] of Array.from(spansByColumn.entries())) {
+      const [tableAnchor, columnText] = key.split('|');
+      const columns = byTable.get(tableAnchor) ?? new Map();
+      const column = Number(columnText);
+      if (!columns.has(column))
+        columns.set(column, {
+          spans: spans.slice().sort().join(' + '),
+          index,
+          formula
+        });
+      byTable.set(tableAnchor, columns);
+    }
+  });
+  for (const [tableAnchor, columns] of Array.from(byTable.entries())) {
+    const entries = Array.from(columns.entries()).sort(
+      (a, b) => a[0] - b[0]
+    ) as Array<[number, { spans: string; index: number; formula: string }]>;
+    if (entries.length < 2) continue;
+    const [firstColumn, first] = entries[0];
+    const mismatch = entries.find(([, entry]) => entry.spans !== first.spans);
+    if (!mismatch) continue;
+    const [otherColumn, other] = mismatch;
+    return {
+      code: 'inconsistent_aggregate_ranges',
+      message:
+        `Two aggregates over the table at ${tableAnchor} span different rows: ` +
+        `column ${firstColumn} over rows ${first.spans} and column ${otherColumn} over rows ${other.spans}. ` +
+        'The rows of a table are shared, so totals of two columns of one table cannot honestly cover different rows - one of these is wrong by construction, and writing both would leave no way to tell which. ' +
+        'Nothing was written. Re-read `table_facts`, decide the data rows ONCE, and use that same span for every column of this table.',
+      details: [
+        `column ${firstColumn}: ${first.formula}`,
+        `column ${otherColumn}: ${other.formula}`
+      ],
+      indices: [first.index, other.index]
+    };
+  }
+  return null;
+}
+
+/**
+ * The announcement gate. A batch that writes into more than one column of one
+ * table is following a dependency chain, and must say so first.
+ */
+function detectUnannouncedChain(
+  edits: EditOp[],
+  touches: ColumnTouch[],
+  plan: string
+): BatchRefusal | null {
+  const byTable = new Map<string, ColumnTouch[]>();
+  for (const touch of touches) {
+    const list = byTable.get(touch.tableAnchor) ?? [];
+    list.push(touch);
+    byTable.set(touch.tableAnchor, list);
+  }
+  // A chain needs two things: more than one column of one table moving, and at
+  // least one of those values being DERIVED. Two literal amounts in two columns
+  // of a row the user dictated are two facts, not a chain.
+  const chained = Array.from(byTable.entries()).filter(
+    ([, list]) => list.length > 1 && list.some((touch) => touch.computed)
+  );
+  if (!chained.length) return null;
+  const indices = edits.reduce<number[]>((out, op, index) => {
+    if (writesCellQuantity(op)) out.push(index);
+    return out;
+  }, []);
+  const announcement = describeChangeSetTouches(touches);
+  if (!plan.trim()) {
+    const [tableAnchor, list] = chained[0];
+    return {
+      code: 'unannounced_dependency_chain',
+      message:
+        `This change set writes into ${
+          list.length
+        } columns of the table at ${tableAnchor} (${list
+          .map((touch) => `column ${touch.column}`)
+          .join(
+            ', '
+          )}), so it is following a dependency chain: an input changed and the values derived from it are being rewritten too. That is the right thing to do, and it is exactly the thing that must be SAID BEFORE it is done - a user who asked about one cell and silently got three columns cannot review what happened. ` +
+        'Send the identical edits again with `plan` set to the announcement you are making to the user, e.g. "The tax column and both totals depend on this premium change - recomputing all three." ' +
+        `In resolved terms this batch would write: ${announcement}. Nothing was written.`,
+      indices
+    };
+  }
+  // The announcement is only as good as the names in it, and the names are the
+  // per-op labels the engine echoes back beside what it actually resolved. In a
+  // chained batch they stop being optional.
+  const unlabelled = edits.reduce<number[]>((out, op, index) => {
+    if (
+      op?.op &&
+      FORMULA_OPS.has(op.op) &&
+      !(typeof op.label === 'string' && op.label.trim())
+    )
+      out.push(index);
+    return out;
+  }, []);
+  if (unlabelled.length) {
+    return {
+      code: 'unlabelled_chained_write',
+      message:
+        'Every computed write in a change set that follows a dependency chain must carry a `label`: your own short description of what that cell holds ("the Tax column at 13%", "the annual premium with tax"). The engine echoes each label back beside the rows and column it actually resolved, which is the only way a reader can check the interpretation against what was read - and with three columns moving at once there is no other way to tell them apart. Add a `label` to each computed op and re-send. Nothing was written.',
+      details: unlabelled.map(
+        (index) => `edit ${index} (${edits[index].op}) has no label`
+      ),
+      indices: unlabelled
+    };
+  }
+  return null;
+}
+
 // Applies a logical change set in deterministic phases. We preflight only the
 // relevant anchors, re-resolve them after structural writes, and verify only
 // each affected source/target pair; a large document never needs a full result
 // inventory to prove inherited formatting succeeded.
 export function applyDocumentEdits(
   editor: LiveEditor,
-  input: { edits: EditOp[]; changeSetId?: string }
+  input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
   const edits = Array.isArray(input?.edits) ? input.edits : [];
   const results: Array<EditResult | undefined> = new Array(edits.length);
@@ -4833,6 +5642,11 @@ export function applyDocumentEdits(
     typeof input?.changeSetId === 'string' && input.changeSetId.trim()
       ? input.changeSetId.trim()
       : 'document-edit-change-set';
+  const plan = typeof input?.plan === 'string' ? input.plan.trim() : '';
+  // What the engine, reading the ops, says this change set does. Always
+  // computed - it is a fact of the batch, not a claim by the model.
+  const columnTouches = collectColumnTouches(edits);
+  const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   editor.enableTrackChanges = true;
   let blocks: FlatBlock[] = [];
@@ -4871,12 +5685,32 @@ export function applyDocumentEdits(
     };
   };
 
+  // Phase 0: what only the whole batch can show. Both of these refuse BEFORE
+  // any anchor is resolved, so a refused change set costs nothing at all.
+  const batchRefusal =
+    detectInconsistentAggregateRanges(edits) ??
+    detectUnannouncedChain(edits, columnTouches, plan);
+  if (batchRefusal) {
+    for (const index of batchRefusal.indices) {
+      results[index] = {
+        ok: false,
+        op: edits[index]?.op ?? '',
+        ...(edits[index]?.anchor ? { anchor: edits[index].anchor } : {}),
+        error: batchRefusal.code,
+        message: batchRefusal.message,
+        ...(batchRefusal.details ? { details: batchRefusal.details } : {})
+      };
+    }
+  }
+
   // Phase 1: capture every pre-existing target/source before any write. Format
   // targets may be created by an earlier structural operation; sources may not.
   const hasStructuralEdits = edits.some(
     (op) => op?.op && !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op)
   );
   edits.forEach((op, index) => {
+    // Already refused by a batch-level check; do not re-diagnose it.
+    if (results[index]) return;
     const name = op?.op;
     if (!name) {
       results[index] = { ok: false, op: '', error: 'missing_op' };
@@ -5196,7 +6030,20 @@ export function applyDocumentEdits(
               }
               opExtras = applyAnchoredOp(editor, writtenOp, target, byAnchor);
             }
-            if (mayShiftAnchors(op)) anchorsMayHaveShifted = true;
+            // A skipped no-op wrote nothing, so it cannot have shifted anything.
+            if (mayShiftAnchors(op) && !(opExtras as OpSuccessExtras)?.noOp)
+              anchorsMayHaveShifted = true;
+          }
+          // A no-op left the document untouched: there is no revision to
+          // assert, nothing to refresh, and - the whole point - no change card.
+          if ((opExtras as OpSuccessExtras)?.noOp) {
+            results[index] = {
+              ok: true,
+              op: op.op,
+              anchor: op.anchor,
+              ...opExtras
+            };
+            continue;
           }
           assertTrackedMutation(
             editor,
@@ -5361,7 +6208,12 @@ export function applyDocumentEdits(
       revisionGrouping: revisionCount
         ? 'bridge_bound_revision_cards'
         : 'no_revisions',
-      uiGrouping: 'requires_cross_layer_group_card'
+      uiGrouping: 'requires_cross_layer_group_card',
+      // The engine's own account of what this batch touched, beside the
+      // model's announcement of what it was about to do. Two independent
+      // statements of the same thing: if they disagree, that is visible.
+      announcement,
+      ...(plan ? { plan } : {})
     }
   };
   if (inventory) response.inventory = inventory;

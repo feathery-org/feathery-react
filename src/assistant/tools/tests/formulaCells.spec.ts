@@ -110,7 +110,14 @@ const cellTextAt = (editor: DocumentEditor, anchor: string) =>
 //   3 Umbrella
 //   4 Annual Premium     <- the total row
 // Every money cell is $x,xxx.xx, so the 13% tax needs a rounding decision.
-const proposalSfdt = () => ({
+//
+// `propertyWithTax` is a parameter because the default document is internally
+// CONSISTENT: $84,193.99 x 1.13 is exactly $95,139.21, so recomputing that cell
+// writes the value already there and is - correctly - a no-op with no change
+// card (see writeNoOp.ts). A test that wants to observe the write itself passes
+// a stale figure, which is also the real-world shape: nobody asks to recompute
+// a column that is already right.
+const proposalSfdt = (propertyWithTax = '$95,139.21') => ({
   sections: [
     {
       blocks: [
@@ -124,7 +131,7 @@ const proposalSfdt = () => ({
               'Proposed Premium with Tax'
             ),
             tableRow('General Liability', '$36,803.00', '$41,587.39'),
-            tableRow('Property', '$84,193.99', '$95,139.21'),
+            tableRow('Property', '$84,193.99', propertyWithTax),
             tableRow('Umbrella', '$4,000.00', '$4,520.00'),
             tableRow('Annual Premium', '$125,000.00', '$141,250.00')
           ]
@@ -152,6 +159,10 @@ describe("the captain's case: 13% tax, then re-total", () => {
       // the literal exception); the two DERIVED values follow as formulas.
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'premium-tax-and-annual',
+        // Two columns of one table move, so the engine requires the chain to
+        // be announced before it will write anything (see
+        // detectUnannouncedChain). The announcement rides on the change set.
+        plan: 'The with-tax figure and the annual total depend on this premium change - recomputing both.',
         edits: [
           {
             op: 'set_cell_text',
@@ -270,8 +281,9 @@ describe("the captain's case: 13% tax, then re-total", () => {
   it('real SDK: the 13% tax rounds only when it has to, and says so', () => {
     // $84,193.99 x 1.13 = $95,139.2087 - the shape the model previously wrote
     // as "$95,139.18" out of its head. The engine gets it right to the cent and
-    // states where it rounded.
-    const ed = makeRealDocumentEditor(proposalSfdt());
+    // states where it rounded. The with-tax cell starts STALE, so this is a
+    // real change rather than a no-op.
+    const ed = makeRealDocumentEditor(proposalSfdt('$95,000.00'));
     try {
       ed.enableTrackChanges = true;
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
