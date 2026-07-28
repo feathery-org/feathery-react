@@ -67,7 +67,24 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
         run: yarn release -- --release-as ${{ inputs.release-type }}
 
+      # A missing secret would otherwise fall back to an empty key and publish a
+      # silently watermarked package, so fail the release instead. Presence is
+      # tested with -z; never echo the value (substrings are not log-masked).
+      - name: Verify Syncfusion license key is present
+        env:
+          SYNCFUSION_LICENSE_KEY: ${{ secrets.SYNCFUSION_LICENSE_KEY }}
+        run: |
+          if [ -z "$SYNCFUSION_LICENSE_KEY" ]; then
+            echo "::error::SYNCFUSION_LICENSE_KEY is not set - refusing to publish a watermarked build"
+            exit 1
+          fi
+
+      # The only build in this workflow runs inside `npm publish` via the
+      # prepublishOnly hook, so the key must be in scope on THIS step for
+      # rollup/webpack to bake it into the bundle.
       - name: Publish to NPM
+        env:
+          SYNCFUSION_LICENSE_KEY: ${{ secrets.SYNCFUSION_LICENSE_KEY }}
         run: npm publish
 
       - name: Push Changes
