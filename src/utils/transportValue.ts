@@ -14,9 +14,12 @@ export function sanitizeTransportValue(
   if (value === null || value === undefined)
     return { value: null, truncated: false };
   if (typeof value === 'string') {
-    return value.length > maxChars
-      ? { value: value.slice(0, maxChars), truncated: true }
-      : { value, truncated: false };
+    if (JSON.stringify(value).length <= maxChars)
+      return { value, truncated: false };
+    return {
+      value: truncateStringToJsonLimit(value, maxChars),
+      truncated: true
+    };
   }
 
   const seen =
@@ -65,7 +68,7 @@ export function sanitizeTransportValue(
 
   if (serialized.length > maxChars) {
     return {
-      value: `${serialized.slice(0, maxChars)}…`,
+      value: truncateStringToJsonLimit(serialized, maxChars),
       truncated: true
     };
   }
@@ -75,4 +78,24 @@ export function sanitizeTransportValue(
   } catch {
     return { value: serialized, truncated: false };
   }
+}
+
+/**
+ * Preserve a useful prefix while bounding the JSON representation of the
+ * returned string, including quotes and escapes. Measuring raw string length
+ * is insufficient because control characters may expand to six characters on
+ * the wire.
+ */
+function truncateStringToJsonLimit(value: string, maxChars: number): string {
+  const suffix = '…';
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (JSON.stringify(`${value.slice(0, middle)}${suffix}`).length <= maxChars)
+      low = middle;
+    else high = middle - 1;
+  }
+  const candidate = `${value.slice(0, low)}${suffix}`;
+  return JSON.stringify(candidate).length <= maxChars ? candidate : '';
 }

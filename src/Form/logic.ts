@@ -26,9 +26,10 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { sanitizeTransportValue } from '../utils/transportValue';
 import {
   ChangedFieldDetail,
-  composeDerivedRuleUpdates,
-  DerivedRuleUpdate,
-  RULE_FIELDS_CHANGED_NOTE
+  composeFieldChanges,
+  FieldChange,
+  LogicRuleTransportResult,
+  withoutEmbeddedFieldUpdates
 } from '../utils/logicRuleResult';
 
 export function getAcornParsedNodes(input: string): Program | null {
@@ -617,35 +618,82 @@ export const runClientSideLogic = async (
   return returnValue;
 };
 
-export type RunLogicRuleResult = {
-  changedFields: string[];
-  // Old->new per changed field (oldValue from the pre-invoke snapshot, so it
-  // is available for BOTH client- and server-side rules). Parallel to
-  // changedFields, which is kept as-is for existing readers.
-  changedFieldDetails?: ChangedFieldDetail[];
-  // Document updates derived from the rule's field changes on BOTH paths
-  // ({ field, previous?, value, describes? }): the server lambda's return
-  // value never reaches the client (v1), and a client rule may mutate fields
-  // without returning { updates }. Deduped against returnValue.updates.
-  derivedUpdates?: DerivedRuleUpdate[];
-  // Always false when present (rules never edit the open document), attached
-  // with `note` whenever the rule changed form fields so the model keeps
-  // "the rule ran" and "the document shows it" as two separate facts.
-  documentEdited?: false;
-  note?: string;
-  returnValue?: any;
-  error?: string;
-};
+export type RunLogicRuleResult = LogicRuleTransportResult;
 
-// A rule is user-authored JavaScript and may return any runtime value. Keep its
-// assistant-facing result bounded so one return cannot consume the turn, and
-// JSON-round-trip it so nested File/Promise/class instances never escape by
-// reference into addToolOutput.
+// A rule is user-authored JavaScript and may return any runtime value. Bound and
+// recursively sanitize every dynamic value before it reaches addToolOutput.
 const LOGIC_RULE_RETURN_VALUE_LIMIT = 8_000;
-const sanitizeLogicRuleReturnValue = (value: unknown): unknown =>
-  value === undefined
-    ? undefined
-    : sanitizeTransportValue(value, LOGIC_RULE_RETURN_VALUE_LIMIT).value;
+const LOGIC_RULE_FIELD_VALUE_LIMIT = 2_000;
+const LOGIC_RULE_FIELD_CHANGE_LIMIT = 100;
+const LOGIC_RULE_KEY_LIMIT = 160;
+const LOGIC_RULE_NAME_LIMIT = 400;
+const LOGIC_RULE_ERROR_LIMIT = 1_000;
+
+const boundedText = (value: unknown, limit: number): string =>
+  String(sanitizeTransportValue(String(value ?? ''), limit).value);
+
+const sanitizeFieldChanges = (changes: FieldChange[]): FieldChange[] =>
+  changes.slice(0, LOGIC_RULE_FIELD_CHANGE_LIMIT).map((change) => ({
+    key: boundedText(change.key, LOGIC_RULE_KEY_LIMIT),
+    before: sanitizeTransportValue(change.before, LOGIC_RULE_FIELD_VALUE_LIMIT)
+      .value,
+    after: sanitizeTransportValue(change.after, LOGIC_RULE_FIELD_VALUE_LIMIT)
+      .value,
+    ...(change.documentHint
+      ? {
+          documentHint: {
+            ...(change.documentHint.anchor
+              ? {
+                  anchor: boundedText(
+                    change.documentHint.anchor,
+                    LOGIC_RULE_KEY_LIMIT
+                  )
+                }
+              : {}),
+            ...(change.documentHint.describes
+              ? {
+                  describes: boundedText(
+                    change.documentHint.describes,
+                    LOGIC_RULE_NAME_LIMIT
+                  )
+                }
+              : {})
+          }
+        }
+      : {})
+  }));
+
+const logicRuleTransportResult = (input: {
+  ruleId: string;
+  ruleName: string;
+  returnValue?: unknown;
+  changedFieldDetails?: ChangedFieldDetail[];
+  documentPresent?: boolean;
+  describeField?: (key: string) => string | undefined;
+  error?: unknown;
+}): RunLogicRuleResult => {
+  const fieldChanges = composeFieldChanges(input.changedFieldDetails ?? [], {
+    explicitUpdates: (input.returnValue as any)?.updates,
+    includeDocumentHints: input.documentPresent === true,
+    describeField: input.describeField
+  });
+  return {
+    ok: !input.error,
+    rule: {
+      id: boundedText(input.ruleId, LOGIC_RULE_KEY_LIMIT) || 'unknown-rule',
+      name:
+        boundedText(input.ruleName, LOGIC_RULE_NAME_LIMIT) || 'Unavailable rule'
+    },
+    result: sanitizeTransportValue(
+      withoutEmbeddedFieldUpdates(input.returnValue),
+      LOGIC_RULE_RETURN_VALUE_LIMIT
+    ).value,
+    fieldChanges: sanitizeFieldChanges(fieldChanges),
+    ...(input.error
+      ? { error: boundedText(input.error, LOGIC_RULE_ERROR_LIMIT) }
+      : {})
+  };
+};
 
 // Snapshot every field's value (JSON-serialized) so we can diff after a rule
 // runs and report which fields it actually touched. Serialized (not live
@@ -748,15 +796,20 @@ export const runLogicRuleById = async (
   const state = resolvedUuid ? internalStateStore[resolvedUuid] : undefined;
 
   if (!state) {
-    return { changedFields: [], error: 'Form has not loaded yet.' };
+    return logicRuleTransportResult({
+      ruleId,
+      ruleName: 'Unavailable rule',
+      error: 'Form has not loaded yet.'
+    });
   }
 
   const rule = (state.logicRules ?? []).find((r) => r.id === ruleId);
   if (!rule) {
-    return {
-      changedFields: [],
+    return logicRuleTransportResult({
+      ruleId,
+      ruleName: 'Unavailable rule',
       error: `Logic rule '${ruleId}' was not found on this form.`
-    };
+    });
   }
 
   const before = snapshotFieldValues(state);
@@ -778,7 +831,11 @@ export const runLogicRuleById = async (
       }
       if (response?.error) {
         handleRuleError(response.error, rule);
-        return { changedFields: [], error: String(response.error) };
+        return logicRuleTransportResult({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          error: response.error
+        });
       }
       // Prefer the backend's authoritative field_data (new values) paired
       // with the pre-invoke snapshot (old values); fall back to a diff. A
@@ -800,22 +857,13 @@ export const runLogicRuleById = async (
               newValue: fieldData[key]
             }))
         : diffChangedFieldDetails(before, snapshotFieldValues(state));
-      // A server-side rule has no returnValue to hand back, so instead derive
-      // document updates ({ field, previous, value }) from the field diff. That
-      // makes old->new exact-replace work without the rule returning { updates }.
-      const derivedUpdates = options.documentPresent
-        ? composeDerivedRuleUpdates(changedFieldDetails, {
-            describeField: (key) => describeFieldForDocument(state, key)
-          })
-        : [];
-      return {
-        changedFields: changedFieldDetails.map((d) => d.key),
+      return logicRuleTransportResult({
+        ruleId: rule.id,
+        ruleName: rule.name,
         changedFieldDetails,
-        ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
-        ...(options.documentPresent && changedFieldDetails.length > 0
-          ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
-          : {})
-      };
+        documentPresent: options.documentPresent,
+        describeField: (key) => describeFieldForDocument(state, key)
+      });
     }
 
     const props = {
@@ -835,29 +883,21 @@ export const runLogicRuleById = async (
       before,
       snapshotFieldValues(state)
     );
-    // Client rules may change fields without returning an explicit updates
-    // payload. Derive the same safe old->new document updates as the server
-    // path so Robin does not claim success while leaving the document stale.
-    // A field the rule ALSO covered in an explicitly returned updates array
-    // is deduped so the same edit is never applied twice.
-    const derivedUpdates = options.documentPresent
-      ? composeDerivedRuleUpdates(changedFieldDetails, {
-          explicitUpdates: (returnValue as any)?.updates,
-          describeField: (key) => describeFieldForDocument(state, key)
-        })
-      : [];
-    return {
-      changedFields: changedFieldDetails.map((d) => d.key),
+    return logicRuleTransportResult({
+      ruleId: rule.id,
+      ruleName: rule.name,
+      returnValue,
       changedFieldDetails,
-      ...(derivedUpdates.length > 0 ? { derivedUpdates } : {}),
-      ...(options.documentPresent && changedFieldDetails.length > 0
-        ? { documentEdited: false as const, note: RULE_FIELDS_CHANGED_NOTE }
-        : {}),
-      returnValue: sanitizeLogicRuleReturnValue(returnValue)
-    };
+      documentPresent: options.documentPresent,
+      describeField: (key) => describeFieldForDocument(state, key)
+    });
   } catch (e: any) {
     const message = e?.reason?.message ?? e?.error?.message ?? e?.message;
     handleRuleError(message, rule);
-    return { changedFields: [], error: message ?? 'Logic rule failed.' };
+    return logicRuleTransportResult({
+      ruleId: rule.id,
+      ruleName: rule.name,
+      error: message ?? 'Logic rule failed.'
+    });
   }
 };

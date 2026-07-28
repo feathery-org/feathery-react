@@ -1,78 +1,119 @@
-// Shared result helpers for on-demand logic rules. This module deliberately
-// belongs to neither Form logic nor assistant dispatch so form execution does
-// not import assistant tooling.
+// Canonical transport contract for on-demand logic rules. Form execution owns
+// the facts; ai-services owns how the model is instructed to act on them.
 
 export type ChangedFieldDetail = {
   key: string;
-  oldValue: any;
-  newValue: any;
+  oldValue: unknown;
+  newValue: unknown;
 };
 
-export type DerivedRuleUpdate = {
-  field: string;
-  previous?: string;
-  value: string;
-  describes?: string;
+export type FieldChange = {
+  key: string;
+  before: unknown;
+  after: unknown;
+  documentHint?: {
+    anchor?: string;
+    describes?: string;
+  };
 };
 
-export const RULE_FIELDS_CHANGED_NOTE =
-  'This rule updated form fields but did NOT edit the open document. ' +
-  'Reflect each derivedUpdates entry into the document as targeted tracked ' +
-  'edits: search for its `previous` text; if that returns nothing the ' +
-  'document may hold an older rendering of the field, so locate it via ' +
-  '`describes`/semantic search instead. For any changed field you cannot ' +
-  'locate in the document, tell the user the form field was updated but the ' +
-  'document could not be; only report the document as updated after an edit ' +
-  'has actually applied.';
-
-// Values that can appear verbatim in a document: strings and stringified
-// scalars. Objects/arrays/empties cannot drive an exact-text replace.
-const asUpdateText = (value: any): string | null => {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean')
-    return String(value);
-  return null;
+export type LogicRuleTransportResult = {
+  ok: boolean;
+  rule: {
+    id: string;
+    name: string;
+  };
+  result: unknown;
+  fieldChanges: FieldChange[];
+  error?: string;
 };
 
-export const composeDerivedRuleUpdates = (
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Remove the retired embedded `updates` alias before the arbitrary return value
+ * is put under `result`. Its facts are merged into `fieldChanges` instead.
+ */
+export const withoutEmbeddedFieldUpdates = (value: unknown): unknown => {
+  if (
+    !isRecord(value) ||
+    !Object.prototype.hasOwnProperty.call(value, 'updates')
+  )
+    return value;
+  const result = { ...value };
+  delete result.updates;
+  return Object.keys(result).length > 0 ? result : null;
+};
+
+/**
+ * Merge the actual before/after diff with any legacy rule-authored update hints
+ * into one list, deduplicated by field key. Runtime field state wins over a
+ * returned hint's previous/value pair; the hint may only add a document locator.
+ */
+export const composeFieldChanges = (
   details: ChangedFieldDetail[],
   opts: {
     explicitUpdates?: unknown;
     describeField?: (key: string) => string | undefined;
+    includeDocumentHints?: boolean;
   } = {}
-): DerivedRuleUpdate[] => {
+): FieldChange[] => {
+  const changes = new Map<string, FieldChange>();
+  for (const detail of details) {
+    if (!detail.key) continue;
+    changes.set(detail.key, {
+      key: detail.key,
+      before: detail.oldValue,
+      after: detail.newValue
+    });
+  }
+
   const explicit = Array.isArray(opts.explicitUpdates)
     ? opts.explicitUpdates
     : [];
-  const coveredFields = new Set(
-    explicit
-      .map((update: any) => update?.field)
-      .filter((field: any): field is string => typeof field === 'string')
-  );
-  const coveredPairs = new Set(
-    explicit
-      .filter((update: any) => typeof update?.value === 'string')
-      .map((update: any) => `${update.previous ?? ''}\u0000${update.value}`)
-  );
-  const updates: DerivedRuleUpdate[] = [];
-  for (const detail of details) {
-    const value = asUpdateText(detail.newValue);
-    if (value == null || value.trim() === '') continue;
-    const previousText = asUpdateText(detail.oldValue);
-    const previous =
-      previousText != null && previousText.trim() !== ''
-        ? previousText
-        : undefined;
-    if (previous === value) continue;
-    if (coveredFields.has(detail.key)) continue;
-    if (coveredPairs.has(`${previous ?? ''}\u0000${value}`)) continue;
-    const describes = opts.describeField?.(detail.key);
-    updates.push({
-      field: detail.key,
-      ...(previous !== undefined ? { previous } : {}),
-      value,
-      ...(describes ? { describes } : {})
-    });
+  for (const candidate of explicit) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.field !== 'string' ||
+      !candidate.field
+    )
+      continue;
+    const key = candidate.field;
+    const existing = changes.get(key);
+    const change: FieldChange =
+      existing ??
+      ({
+        key,
+        before: candidate.previous ?? null,
+        after: candidate.value ?? null
+      } as FieldChange);
+    if (opts.includeDocumentHints) {
+      const anchor =
+        typeof candidate.anchor === 'string' && candidate.anchor
+          ? candidate.anchor
+          : undefined;
+      const describes =
+        typeof candidate.describes === 'string' && candidate.describes
+          ? candidate.describes
+          : opts.describeField?.(key);
+      if (anchor || describes) {
+        change.documentHint = {
+          ...(anchor ? { anchor } : {}),
+          ...(describes ? { describes } : {})
+        };
+      }
+    }
+    changes.set(key, change);
   }
-  return updates;
+
+  if (opts.includeDocumentHints) {
+    for (const change of changes.values()) {
+      if (change.documentHint) continue;
+      const describes = opts.describeField?.(change.key);
+      if (describes) change.documentHint = { describes };
+    }
+  }
+
+  return [...changes.values()];
 };
