@@ -4,24 +4,45 @@ import {
 } from '../assistantToolDispatch';
 
 describe('document tool dispatch', () => {
-  it.each(['findDocumentOccurrences', 'find_document_occurrences'])(
-    'routes %s to the live document bridge',
-    async (toolName) => {
-      const findDocumentOccurrences = jest
-        .fn()
-        .mockResolvedValue({ ok: true, occurrences: [] });
+  it('routes findDocumentOccurrences to the live document bridge', async () => {
+    const findDocumentOccurrences = jest
+      .fn()
+      .mockResolvedValue({ ok: true, occurrences: [] });
 
-      const result = await dispatchAssistantTool(toolName, { text: 'Robin' }, {
+    const result = await dispatchAssistantTool(
+      'findDocumentOccurrences',
+      { text: 'Robin' },
+      {
         docxBridge: { findDocumentOccurrences }
-      });
+      }
+    );
 
-      expect(result).toEqual({
-        handled: true,
-        output: { ok: true, occurrences: [] }
-      });
-      expect(findDocumentOccurrences).toHaveBeenCalledWith({ text: 'Robin' });
-    }
-  );
+    expect(result).toEqual({
+      handled: true,
+      output: { ok: true, occurrences: [] }
+    });
+    expect(findDocumentOccurrences).toHaveBeenCalledWith({ text: 'Robin' });
+  });
+
+  it.each([
+    'get_document_inventory',
+    'find_document_occurrences',
+    'apply_document_edits',
+    'get_form_fields'
+  ])('does not claim unreachable snake_case alias %s', async (toolName) => {
+    const handler = jest.fn();
+    const result = await dispatchAssistantTool(toolName, {}, {
+      docxBridge: {
+        getDocumentInventory: handler,
+        findDocumentOccurrences: handler,
+        applyDocumentEdits: handler
+      },
+      getFormFields: handler
+    });
+
+    expect(result).toEqual({ handled: false });
+    expect(handler).not.toHaveBeenCalled();
+  });
 });
 
 describe('callable rule catalog', () => {

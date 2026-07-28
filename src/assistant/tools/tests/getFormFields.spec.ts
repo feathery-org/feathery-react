@@ -268,19 +268,16 @@ describe('getFormFields: scan mode', () => {
 describe('the dispatch answers every tool call it is given', () => {
   beforeEach(installForm);
 
-  it.each(['getFormFields', 'get_form_fields'])(
-    'routes %s to the live form handler',
-    async (toolName) => {
-      const result = await dispatchAssistantTool(
-        toolName,
-        { keys: ['PE_AETitle'] },
-        { getFormFields: (input) => dispatchGetFormFields(FORM, input) }
-      );
+  it('routes getFormFields to the live form handler', async () => {
+    const result = await dispatchAssistantTool(
+      'getFormFields',
+      { keys: ['PE_AETitle'] },
+      { getFormFields: (input) => dispatchGetFormFields(FORM, input) }
+    );
 
-      expect(result.handled).toBe(true);
-      expect(result.output).toMatchObject({ ok: true, mode: 'keys' });
-    }
-  );
+    expect(result.handled).toBe(true);
+    expect(result.output).toMatchObject({ ok: true, mode: 'keys' });
+  });
 
   it('getFormFields with no host handler still returns an output, not silence', async () => {
     const result = await dispatchAssistantTool('getFormFields', {}, {});

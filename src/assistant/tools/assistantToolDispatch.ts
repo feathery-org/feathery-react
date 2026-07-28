@@ -222,10 +222,7 @@ export async function dispatchAssistantTool(
   }
 
   // 2) Built-in docx bridge reads/edits.
-  if (
-    toolName === 'getDocumentInventory' ||
-    toolName === 'get_document_inventory'
-  ) {
+  if (toolName === 'getDocumentInventory') {
     const handler = ctx.docxBridge?.getDocumentInventory;
     const output = handler
       ? await withToolTimeout(
@@ -239,10 +236,7 @@ export async function dispatchAssistantTool(
         );
     return { handled: true, output };
   }
-  if (
-    toolName === 'findDocumentOccurrences' ||
-    toolName === 'find_document_occurrences'
-  ) {
+  if (toolName === 'findDocumentOccurrences') {
     const handler = ctx.docxBridge?.findDocumentOccurrences;
     const output = handler
       ? await withToolTimeout(
@@ -256,10 +250,7 @@ export async function dispatchAssistantTool(
         );
     return { handled: true, output };
   }
-  if (
-    toolName === 'applyDocumentEdits' ||
-    toolName === 'apply_document_edits'
-  ) {
+  if (toolName === 'applyDocumentEdits') {
     const handler = ctx.docxBridge?.applyDocumentEdits;
     const output = handler
       ? await withToolTimeout(
@@ -277,7 +268,7 @@ export async function dispatchAssistantTool(
   // 3) Live form field lookup. Declared client-forwarded by ai-services with no
   // server execute, so with no handler here the turn hangs forever rather than
   // failing - the wedge behind two of the captain's three 2026-07-27 "hangs".
-  if (toolName === 'getFormFields' || toolName === 'get_form_fields') {
+  if (toolName === 'getFormFields') {
     const handler = ctx.getFormFields;
     const output = handler
       ? await withToolTimeout(
