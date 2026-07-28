@@ -370,6 +370,38 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       round: 'half_up'
     }
   },
+  {
+    // handler: ANCHORED_OP_HANDLERS.set_column_formula
+    //
+    // The same formula applied down a whole column, one row at a time. It
+    // exists because picking row ranges is what the model gets wrong: live it
+    // totalled rows 1..3 of one column and rows 1..4 of the column beside it,
+    // in the same table, in the same turn. Here the bounds stop mattering - the
+    // default span is every row, rows that cannot produce a value are skipped
+    // and named, and (the no-op rule) only the cells whose value actually
+    // moves become tracked changes.
+    op: 'set_column_formula',
+    params: {
+      formula: 'string',
+      startRow: 'int>=0?',
+      endRow: 'int>=0?',
+      label: 'string?',
+      round: 'enum[half_up,half_even,toward_zero,away_from_zero]?',
+      decimals: 'int>=0?'
+    },
+    requiresAnchor: true,
+    anchorKind: 'table_cell',
+    tracked: true,
+    summary:
+      'Recompute a WHOLE COLUMN instead of guessing a row range: `formula` runs once per row with `{row}` standing for that row. Anchor ANY cell of the target column. Omit startRow/endRow to cover every row - rows whose inputs are not numeric (headers, separators) are skipped and named, and rows already holding the computed value get NO change card. The receipt states coverage and what moved.',
+    example: {
+      op: 'set_column_formula',
+      anchor: '0;7;1;2;0',
+      formula: '[0;7;{row};1;0] * 13%',
+      label: 'the Tax column at 13%',
+      round: 'half_up'
+    }
+  },
   // `insert_column` was withdrawn in S5: probed on a real DocumentEditor, it
   // reports ok:true and genuinely mutates the table (4 -> 6 cells) while
   // recording ZERO revisions, so the change survives reject-all and can never

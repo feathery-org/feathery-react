@@ -177,6 +177,41 @@ const premiumTableFixture = () => ({
   ]
 });
 
+// A premium column and a STALE tax column beside it: the shape a whole-column
+// recompute exists for. Row 3's tax is already right, so the contract also
+// proves the no-op rule inside a bulk write.
+const taxColumnFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Schedule'),
+        {
+          tableFormat: {},
+          rows: [
+            {
+              rowFormat: {},
+              cells: [cell('Coverage'), cell('Premium'), cell('Tax')]
+            },
+            {
+              rowFormat: {},
+              cells: [cell('General Liability'), cell('$1,000.00'), cell('')]
+            },
+            {
+              rowFormat: {},
+              cells: [cell('Property'), cell('$2,000.00'), cell('$99.00')]
+            },
+            {
+              rowFormat: {},
+              cells: [cell('Auto'), cell('$3,000.00'), cell('$390.00')]
+            }
+          ]
+        },
+        para('End')
+      ]
+    }
+  ]
+});
+
 // Table-less, final empty paragraph with nothing after it: the only fixture
 // shape the page-layout ops complete under jsdom (S2 probe finding).
 const pageOpsFixture = () => ({
@@ -318,6 +353,58 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(formula.receipt).toContain('"Included"');
       expect(formula.receipt).toContain(
         'Post-write re-read reproduced this exact value.'
+      );
+    }
+  },
+  set_column_formula: {
+    fixture: taxColumnFixture,
+    edits: [
+      {
+        op: 'set_column_formula',
+        // ANY cell of the target column; the table and the column come from it.
+        anchor: '0;1;1;2;0',
+        formula: '[0;1;{row};1;0] * 13%',
+        label: 'the Tax column at 13%',
+        round: 'half_up'
+      }
+    ],
+    verify: (ed, result) => {
+      const report = result.results[0].column!;
+      // Every row of the table was evaluated - no row range was guessed.
+      expect(report).toMatchObject({
+        tableAnchor: '0;1',
+        column: 2,
+        startRow: 0,
+        endRow: 3,
+        wholeTable: true,
+        rowsEvaluated: 4,
+        rowsChanged: 2,
+        rowsUnchanged: 1,
+        rowsSkipped: 1,
+        verifiedByReRead: true
+      });
+      // Row 0 is the header: "Premium" is not a number, so no value can be
+      // computed and the row is skipped and named - never zeroed.
+      expect(report.rows[0]).toMatchObject({
+        row: 0,
+        outcome: 'skipped',
+        reason: 'cell_not_numeric'
+      });
+      // Row 3's tax was already exactly right: no write, no change card.
+      expect(report.rows[3]).toMatchObject({
+        row: 3,
+        outcome: 'unchanged',
+        previousText: '$390.00',
+        renderedValue: '$390.00'
+      });
+      const texts = blockTexts(ed);
+      expect(texts).toContain('$130.00');
+      expect(texts).toContain('$260.00');
+      expect(texts).toContain('$390.00');
+      expect(texts).not.toContain('$99.00');
+      expect(report.receipt).toContain(
+        'Recomputed 4 rows of the Tax column at 13% ' +
+          '(column 2 of the table at 0;1), 2 changed.'
       );
     }
   },
