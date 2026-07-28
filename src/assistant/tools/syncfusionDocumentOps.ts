@@ -4882,7 +4882,8 @@ function assertTrackedMutation(
   editor: LiveEditor,
   before: LiveRevision[],
   op: EditOp,
-  priorRejectStream?: string
+  priorRejectStream: string | undefined,
+  postWriteSfdt: any
 ): void {
   const structural = TRACKED_STRUCTURAL_OPS.get(op.op);
   if (
@@ -4912,7 +4913,7 @@ function assertTrackedMutation(
   }
 
   if (priorRejectStream !== undefined) {
-    const nowRejectsTo = rejectProjectionStream(parseSfdt(editor.serialize()));
+    const nowRejectsTo = rejectProjectionStream(postWriteSfdt);
     if (nowRejectsTo !== priorRejectStream)
       throw new OpError(
         'untracked_write',
@@ -5745,8 +5746,8 @@ export function applyDocumentEdits(
   const nonBlockingStoryWriteFailures = new Set<number>();
   const resolvedFormatTargets = new Map<number, FlatBlock>();
   let anchorsMayHaveShifted = false;
-  const refresh = () => {
-    const sfdt = parseSfdt(editor.serialize());
+  const refresh = (serializedSfdt?: any) => {
+    const sfdt = serializedSfdt ?? parseSfdt(editor.serialize());
     blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
     rejectStream = rejectProjectionStream(sfdt);
@@ -6120,13 +6121,18 @@ export function applyDocumentEdits(
             };
             continue;
           }
+          // One committed snapshot feeds both the reject-projection assertion
+          // and the refreshed anchor map. Serializing those independently made
+          // every exhaustive batch pay two whole-document passes per op.
+          const postWriteSfdt = parseSfdt(editor.serialize());
           assertTrackedMutation(
             editor,
             revisionsBeforeOp,
             writtenOp,
-            priorRejectStream
+            priorRejectStream,
+            postWriteSfdt
           );
-          refresh();
+          refresh(postWriteSfdt);
           if (insertInheritance) {
             applyInsertInheritance(editor, insertInheritance, byAnchor);
             refresh();

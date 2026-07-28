@@ -701,6 +701,46 @@ describe('applyDocumentEdits', () => {
       }
     });
   });
+
+  it('real SDK: serializes one committed snapshot per op for assertion and refresh', () => {
+    const countSerializations = (editCount: number): number => {
+      const originals = ['Alpha target', 'Beta target', 'Gamma target'];
+      const replacements = ['Alpha revised', 'Beta revised', 'Gamma revised'];
+      const ed = makeRealDocumentEditor({
+        sections: [{ blocks: originals.map((text) => para(text)) }]
+      });
+      try {
+        const before = ed.serialize();
+        const serialize = jest.spyOn(ed, 'serialize');
+        const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+          edits: originals.slice(0, editCount).map((text, index) => ({
+            op: 'replace_text',
+            anchor: `0;${index}`,
+            find: text,
+            replace: replacements[index],
+            expect: text
+          }))
+        });
+
+        expect(result.results.every((entry) => entry.ok)).toBe(true);
+        const calls = serialize.mock.calls.length;
+        serialize.mockRestore();
+        rejectEveryRealRevision(ed);
+        expect(ed.serialize()).toBe(before);
+        return calls;
+      } finally {
+        destroyRealDocumentEditor(ed);
+      }
+    };
+
+    // Initial snapshot + one post-write verification per op + one shared
+    // committed snapshot per op + final inventory. Before the reuse, the
+    // assertion serialized once more per op (5 calls for one, 11 for three).
+    expect({
+      oneOperation: countSerializations(1),
+      threeOperations: countSerializations(3)
+    }).toEqual({ oneOperation: 4, threeOperations: 8 });
+  });
 });
 
 describe('live occurrence search and scoped replacement', () => {
