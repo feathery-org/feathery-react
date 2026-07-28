@@ -43,7 +43,8 @@ afterEach(() => {
 describe('runLogicRuleById - resolution', () => {
   it('errors when the form has not loaded', async () => {
     const res = await runLogicRuleById('r1', {}, 'missing');
-    expect(res.changedFields).toEqual([]);
+    expect(res.ok).toBe(false);
+    expect(res.fieldChanges).toEqual([]);
     expect(res.error).toMatch(/has not loaded/i);
   });
 
@@ -65,12 +66,17 @@ describe('runLogicRuleById - resolution', () => {
     });
     const res = await runLogicRuleById('s1', {});
     expect(client.runServerSideLogicRule).toHaveBeenCalled();
-    expect(res.changedFields).toEqual([]);
+    expect(res).toMatchObject({
+      ok: true,
+      rule: { id: 's1', name: 'S' },
+      result: null,
+      fieldChanges: []
+    });
   });
 });
 
 describe('runLogicRuleById - server-side path', () => {
-  it('forwards input_params, applies field_data, and reports changedFields', async () => {
+  it('forwards input_params, applies field_data, and reports canonical fieldChanges', async () => {
     const client = {
       runServerSideLogicRule: jest.fn().mockResolvedValue({
         field_data: { fieldA: '1', fieldB: '2' }
@@ -98,9 +104,11 @@ describe('runLogicRuleById - server-side path', () => {
       true,
       true
     );
-    expect(res.changedFields.sort()).toEqual(['fieldA', 'fieldB']);
-    // Server-side returnValue stays undefined in v1
-    expect(res.returnValue).toBeUndefined();
+    expect(res.fieldChanges).toEqual([
+      { key: 'fieldA', before: null, after: '1' },
+      { key: 'fieldB', before: null, after: '2' }
+    ]);
+    expect(res.result).toBeNull();
   });
 
   it('pairs field_data new values with pre-invoke old values and derives doc updates', async () => {
@@ -127,24 +135,28 @@ describe('runLogicRuleById - server-side path', () => {
     // Old->new details: oldValue from the snapshot taken BEFORE invocation,
     // newValue from the backend's authoritative field_data. A field the form
     // never held snapshots as null.
-    expect(res.changedFieldDetails).toEqual([
-      { key: 'premium', oldValue: '$8,000', newValue: '$9,500' },
-      { key: 'internalFlag', oldValue: null, newValue: { deep: true } }
-    ]);
-    // Derived doc updates: scalar old->new pairs only - the object-valued
-    // field can't drive an exact-text replace and is skipped.
-    expect(res.derivedUpdates).toEqual([
+    expect(res.fieldChanges).toEqual([
       {
-        field: 'premium',
-        previous: '$8,000',
-        value: '$9,500',
-        describes: "the rendered value of form field 'premium'"
+        key: 'premium',
+        before: '$8,000',
+        after: '$9,500',
+        documentHint: {
+          describes: "the rendered value of form field 'premium'"
+        }
+      },
+      {
+        key: 'internalFlag',
+        before: null,
+        after: { deep: true },
+        documentHint: {
+          describes: "the rendered value of form field 'internalFlag'"
+        }
       }
     ]);
-    // Fields changed, so the result states plainly the document was not
-    // edited by the rule itself.
-    expect(res.documentEdited).toBe(false);
-    expect(res.note).toMatch(/did NOT edit the open document/);
+    expect(res).not.toHaveProperty('changedFields');
+    expect(res).not.toHaveProperty('changedFieldDetails');
+    expect(res).not.toHaveProperty('derivedUpdates');
+    expect(res).not.toHaveProperty('note');
   });
 
   it('does not surface a field_data entry that echoes the pre-rule value', async () => {
@@ -168,11 +180,7 @@ describe('runLogicRuleById - server-side path', () => {
 
     const res = await runLogicRuleById('s1', {}, FORM);
 
-    expect(res.changedFields).toEqual([]);
-    expect(res.changedFieldDetails).toEqual([]);
-    expect(res.derivedUpdates).toBeUndefined();
-    expect(res.documentEdited).toBeUndefined();
-    expect(res.note).toBeUndefined();
+    expect(res.fieldChanges).toEqual([]);
   });
 
   it('surfaces a backend error and does not report changed fields', async () => {
@@ -194,7 +202,8 @@ describe('runLogicRuleById - server-side path', () => {
     });
     const res = await runLogicRuleById('s1', {}, FORM);
     expect(res.error).toBe('lambda blew up');
-    expect(res.changedFields).toEqual([]);
+    expect(res.ok).toBe(false);
+    expect(res.fieldChanges).toEqual([]);
   });
 });
 
@@ -223,20 +232,15 @@ describe('runLogicRuleById - client-side path', () => {
       WITH_DOCUMENT
     );
 
-    expect(res.returnValue).toBe('+10000000000');
-    expect(res.changedFields).toEqual(['myField']);
-    // The pre-invoke snapshot is returned, not discarded: old->new per field.
-    expect(res.changedFieldDetails).toEqual([
-      { key: 'myField', oldValue: 'old', newValue: '+10000000000' }
-    ]);
-    // A changed field receives the same deterministic old->new document safety
-    // net as the server path, even when the rule returned only a scalar.
-    expect(res.derivedUpdates).toEqual([
+    expect(res.result).toBe('+10000000000');
+    expect(res.fieldChanges).toEqual([
       {
-        field: 'myField',
-        previous: 'old',
-        value: '+10000000000',
-        describes: "the rendered value of form field 'myField'"
+        key: 'myField',
+        before: 'old',
+        after: '+10000000000',
+        documentHint: {
+          describes: "the rendered value of form field 'myField'"
+        }
       }
     ]);
     expect((internalState[FORM].fields as any).myField.value).toBe(
@@ -261,7 +265,7 @@ describe('runLogicRuleById - client-side path', () => {
 
     const res = await runLogicRuleById('c-file', {}, FORM);
 
-    expect(res.returnValue).toEqual({
+    expect(res.result).toEqual({
       file: {
         kind: 'file',
         present: true,
@@ -270,7 +274,7 @@ describe('runLogicRuleById - client-side path', () => {
       },
       nested: { pending: { kind: 'promise', present: true } }
     });
-    expect(() => JSON.stringify(res.returnValue)).not.toThrow();
+    expect(() => JSON.stringify(res)).not.toThrow();
   });
 
   it('bounds a client rule return before it reaches the assistant transport', async () => {
@@ -288,16 +292,34 @@ describe('runLogicRuleById - client-side path', () => {
 
     const res = await runLogicRuleById('c-large', {}, FORM);
 
-    expect(typeof res.returnValue).toBe('string');
-    expect((res.returnValue as string).length).toBe(8001);
-    expect((res.returnValue as string).endsWith('…')).toBe(true);
+    expect(typeof res.result).toBe('string');
+    expect(JSON.stringify(res.result).length).toBeLessThanOrEqual(8000);
+    expect((res.result as string).endsWith('…')).toBe(true);
   });
 
-  // The captain's live case: a rule that only mutates a form field and
-  // returns nothing must surface the change as a document-reflectable update
-  // with the field's before and after values, plus an explicit statement that
-  // the document itself was NOT edited.
-  it('surfaces a field-mutating rule that returns nothing as a derived update with before/after values', async () => {
+  it('bounds the serialized size of escape-heavy return text', async () => {
+    seed({
+      logicRules: [
+        {
+          id: 'c-escaped',
+          name: 'Escaped Return',
+          trigger_event: 'tool',
+          server_side: false,
+          code: 'return "\\x00".repeat(3000);'
+        }
+      ]
+    });
+
+    const res = await runLogicRuleById('c-escaped', {}, FORM);
+
+    expect(JSON.stringify(res.result).length).toBeLessThanOrEqual(8000);
+    expect((res.result as string).endsWith('…')).toBe(true);
+  });
+
+  // The captain's live case: a rule that only mutates a form field and returns
+  // nothing must surface one canonical change with the field's before/after
+  // values and an optional document locator.
+  it('surfaces a field-mutating rule that returns nothing as one canonical field change', async () => {
     seed({
       fields: { PE_AETitle: { value: 'Risk Advisor' } },
       steps: {
@@ -325,32 +347,32 @@ describe('runLogicRuleById - client-side path', () => {
       WITH_DOCUMENT
     );
 
-    expect(res.returnValue).toBeUndefined();
-    expect(res.changedFieldDetails).toEqual([
+    expect(res.result).toBeNull();
+    expect(res.fieldChanges).toEqual([
       {
         key: 'PE_AETitle',
-        oldValue: 'Risk Advisor',
-        newValue: 'Sr. Risk Advisor'
+        before: 'Risk Advisor',
+        after: 'Sr. Risk Advisor',
+        documentHint: {
+          describes:
+            'the rendered value of form field \'PE_AETitle\' ("Advisor Title")'
+        }
       }
     ]);
-    // `previous` carries the pre-rule value for the exact-text search, and
-    // `describes` names the field (key + admin label) so reflection can fall
-    // back to semantic search when the document holds an older rendering.
-    expect(res.derivedUpdates).toEqual([
-      {
-        field: 'PE_AETitle',
-        previous: 'Risk Advisor',
-        value: 'Sr. Risk Advisor',
-        describes: 'the rendered value of form field \'PE_AETitle\' ("Advisor Title")'
-      }
+    const roundTripped = JSON.parse(JSON.stringify(res));
+    expect(roundTripped).toEqual(res);
+    expect(Object.keys(roundTripped).sort()).toEqual([
+      'fieldChanges',
+      'ok',
+      'result',
+      'rule'
     ]);
-    // The honesty half: the rule ran, the document did not change.
-    expect(res.documentEdited).toBe(false);
-    expect(res.note).toMatch(/did NOT edit the open document/);
-    expect(res.note).toMatch(/could not be/);
+    expect(
+      new Set(roundTripped.fieldChanges.map((change: any) => change.key)).size
+    ).toBe(roundTripped.fieldChanges.length);
   });
 
-  it('omits `previous` when the pre-rule value is empty, keeping describes as the only locator', async () => {
+  it('keeps an empty before value and uses describes as the document locator', async () => {
     seed({
       fields: { PE_Company: { value: '' } },
       logicRules: [
@@ -366,17 +388,19 @@ describe('runLogicRuleById - client-side path', () => {
 
     const res = await runLogicRuleById('c5', {}, FORM, WITH_DOCUMENT);
 
-    expect(res.derivedUpdates).toEqual([
+    expect(res.fieldChanges).toEqual([
       {
-        field: 'PE_Company',
-        value: 'New Co',
-        describes: "the rendered value of form field 'PE_Company'"
+        key: 'PE_Company',
+        before: '',
+        after: 'New Co',
+        documentHint: {
+          describes: "the rendered value of form field 'PE_Company'"
+        }
       }
     ]);
-    expect(res.documentEdited).toBe(false);
   });
 
-  it('keeps changedFieldDetails and the honesty note for a change that cannot drive a text replace', async () => {
+  it('keeps non-text before/after facts in the one canonical list', async () => {
     seed({
       fields: { matrix: { value: 'plain' } },
       logicRules: [
@@ -392,14 +416,16 @@ describe('runLogicRuleById - client-side path', () => {
 
     const res = await runLogicRuleById('c6', {}, FORM, WITH_DOCUMENT);
 
-    expect(res.changedFieldDetails).toEqual([
-      { key: 'matrix', oldValue: 'plain', newValue: { nested: true } }
+    expect(res.fieldChanges).toEqual([
+      {
+        key: 'matrix',
+        before: 'plain',
+        after: { nested: true },
+        documentHint: {
+          describes: "the rendered value of form field 'matrix'"
+        }
+      }
     ]);
-    // No text to search/replace with - but the result still says the rule did
-    // not edit the document, so the model cannot claim a silent success.
-    expect(res.derivedUpdates).toBeUndefined();
-    expect(res.documentEdited).toBe(false);
-    expect(res.note).toMatch(/could not be/);
   });
 
   it('merges with, not duplicates, an explicitly returned updates array', async () => {
@@ -424,24 +450,32 @@ describe('runLogicRuleById - client-side path', () => {
 
     const res = await runLogicRuleById('c7', {}, FORM, WITH_DOCUMENT);
 
-    // PE_AETitle is covered by the rule's own updates entry (passed through
-    // untouched on returnValue) and must not be double-applied; PE_Phone was
-    // only mutated, so it still gets the derived safety net.
-    expect(res.returnValue.updates).toEqual([
+    expect(res.result).toBeNull();
+    expect(res.fieldChanges).toEqual([
       {
-        field: 'PE_AETitle',
-        previous: 'Risk Advisor',
-        value: 'Sr. Risk Advisor'
+        key: 'PE_AETitle',
+        before: 'Risk Advisor',
+        after: 'Sr. Risk Advisor',
+        documentHint: {
+          describes: "the rendered value of form field 'PE_AETitle'"
+        }
+      },
+      {
+        key: 'PE_Phone',
+        before: '555-1111',
+        after: '+15551111',
+        documentHint: {
+          describes: "the rendered value of form field 'PE_Phone'"
+        }
       }
     ]);
-    expect(res.derivedUpdates).toEqual([
-      {
-        field: 'PE_Phone',
-        previous: '555-1111',
-        value: '+15551111',
-        describes: "the rendered value of form field 'PE_Phone'"
-      }
-    ]);
+    const wireResult = JSON.parse(JSON.stringify(res));
+    expect(wireResult).toEqual(res);
+    expect(
+      new Set(wireResult.fieldChanges.map((change: any) => change.key)).size
+    ).toBe(2);
+    expect(wireResult).not.toHaveProperty('derivedUpdates');
+    expect(wireResult).not.toHaveProperty('changedFieldDetails');
   });
 
   it('reports no changed fields when the rule touches nothing', async () => {
@@ -459,12 +493,8 @@ describe('runLogicRuleById - client-side path', () => {
     });
 
     const res = await runLogicRuleById('c2', { answer: 7 }, FORM);
-    expect(res.returnValue).toBe(7);
-    expect(res.changedFields).toEqual([]);
-    // A rule that changes nothing produces no updates and no reflection note.
-    expect(res.derivedUpdates).toBeUndefined();
-    expect(res.documentEdited).toBeUndefined();
-    expect(res.note).toBeUndefined();
+    expect(res.result).toBe(7);
+    expect(res.fieldChanges).toEqual([]);
   });
 
   it('does not emit document updates or instructions for a form-only chat', async () => {
@@ -485,13 +515,9 @@ describe('runLogicRuleById - client-side path', () => {
       documentPresent: false
     });
 
-    expect(res.changedFields).toEqual(['myField']);
-    expect(res.changedFieldDetails).toEqual([
-      { key: 'myField', oldValue: 'old', newValue: 'new' }
+    expect(res.fieldChanges).toEqual([
+      { key: 'myField', before: 'old', after: 'new' }
     ]);
-    expect(res.derivedUpdates).toBeUndefined();
-    expect(res.documentEdited).toBeUndefined();
-    expect(res.note).toBeUndefined();
   });
 
   it('returns an error when rule code throws instead of reporting success', async () => {
@@ -507,8 +533,9 @@ describe('runLogicRuleById - client-side path', () => {
       ]
     });
     const res = await runLogicRuleById('c3', {}, FORM);
-    expect(res.returnValue).toBeUndefined();
-    expect(res.changedFields).toEqual([]);
+    expect(res.result).toBeNull();
+    expect(res.fieldChanges).toEqual([]);
+    expect(res.ok).toBe(false);
     expect(res.error).toBe('kaboom');
   });
 });

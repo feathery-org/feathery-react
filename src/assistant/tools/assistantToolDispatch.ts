@@ -4,37 +4,9 @@
 // local rule execution allowlist, and a runLogicRuleById fn), so @feathery/react stays
 // decoupled from the editor implementation.
 
-import type {
-  ChangedFieldDetail,
-  DerivedRuleUpdate
-} from '../../utils/logicRuleResult';
+import type { LogicRuleTransportResult } from '../../utils/logicRuleResult';
 
-export {
-  composeDerivedRuleUpdates,
-  RULE_FIELDS_CHANGED_NOTE
-} from '../../utils/logicRuleResult';
-export type {
-  ChangedFieldDetail,
-  DerivedRuleUpdate
-} from '../../utils/logicRuleResult';
-
-export type RunLogicRuleResult = {
-  changedFields: string[];
-  // Old->new per changed field; parallel to changedFields (richer shape kept
-  // separate so existing changedFields readers stay untouched).
-  changedFieldDetails?: ChangedFieldDetail[];
-  // Present when scalar old->new pairs could be derived from the rule's field
-  // changes, on both the client- and server-side paths. Deduped against an
-  // explicitly returned returnValue.updates array.
-  derivedUpdates?: DerivedRuleUpdate[];
-  // Present (always false) whenever the rule changed at least one form field:
-  // running a rule NEVER edits the open document by itself, so "the rule ran"
-  // and "the document shows it" stay two separate facts for the model.
-  documentEdited?: false;
-  note?: string;
-  returnValue?: any;
-  error?: string;
-};
+export type RunLogicRuleResult = LogicRuleTransportResult;
 
 // Per-tool-call budgets: reads must not stall the turn beyond a minute; edit
 // batches (track-changes, large docs) get more headroom.

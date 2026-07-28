@@ -155,22 +155,19 @@ describe('field-mutating rule -> derived update -> landing document edit', () =>
 
       // The rule returned nothing, but the field mutation is surfaced with
       // the before and after values...
-      expect(output.returnValue).toBeUndefined();
-      expect(output.derivedUpdates).toHaveLength(1);
-      const update = output.derivedUpdates[0];
+      expect(output.result).toBeNull();
+      expect(output.fieldChanges).toHaveLength(1);
+      const update = output.fieldChanges[0];
       expect(update).toMatchObject({
-        field: 'PE_AETitle',
-        previous: 'Risk Advisor',
-        value: 'Sr. Risk Advisor'
+        key: 'PE_AETitle',
+        before: 'Risk Advisor',
+        after: 'Sr. Risk Advisor'
       });
-      // ...and the result says outright that the document was not edited.
-      expect(output.documentEdited).toBe(false);
-      expect(output.note).toMatch(/did NOT edit the open document/);
 
       // The reflection path the model follows: search the previous text live,
       // then one anchored tracked replace per occurrence.
       const found = findDocumentOccurrences(ed as unknown as LiveEditor, {
-        text: update.previous,
+        text: update.before,
         matchCase: false
       });
       expect(found.ok).toBe(true);
@@ -185,7 +182,7 @@ describe('field-mutating rule -> derived update -> landing document edit', () =>
             op: 'replace_text',
             anchor: occurrence.anchor,
             find: occurrence.matchText,
-            replace: update.value,
+            replace: update.after,
             expect: occurrence.blockText,
             start: occurrence.start,
             end: occurrence.end
@@ -216,17 +213,17 @@ describe('field-mutating rule -> derived update -> landing document edit', () =>
     try {
       const dispatched = await dispatchTitleRule({ title: 'Sr. Risk Advisor' });
       const output = dispatched.output as any;
-      const update = output.derivedUpdates[0];
+      const update = output.fieldChanges[0];
       expect(update).toMatchObject({
-        field: 'PE_AETitle',
-        previous: 'Engineer',
-        value: 'Sr. Risk Advisor'
+        key: 'PE_AETitle',
+        before: 'Engineer',
+        after: 'Sr. Risk Advisor'
       });
 
       // The exact-text search honestly comes up empty - not a crash, and per
       // the contract NOT a success either.
       const found = findDocumentOccurrences(ed as unknown as LiveEditor, {
-        text: update.previous,
+        text: update.before,
         matchCase: false
       });
       expect(found.ok).toBe(true);
@@ -234,12 +231,8 @@ describe('field-mutating rule -> derived update -> landing document edit', () =>
 
       // The update carries what the text IS, so reflection can fall back to
       // semantic search instead of silently skipping...
-      expect(update.describes).toBe(
+      expect(update.documentHint.describes).toBe(
         "the rendered value of form field 'PE_AETitle'"
-      );
-      // ...and the note spells out what to say when nothing can be located.
-      expect(output.note).toMatch(
-        /form field was updated but the document could not be/
       );
     } finally {
       destroyRealDocumentEditor(ed);

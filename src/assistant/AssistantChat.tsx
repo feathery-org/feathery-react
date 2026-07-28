@@ -608,7 +608,7 @@ const AssistantChat = ({
               runLogicRule: (ruleId, inputParams) =>
                 runLogicRuleById(ruleId, inputParams, instanceId, {
                   documentPresent: Boolean(getDocxEditor(instanceId))
-                }),
+                })
             }),
           native: {
             setFieldValue: (fields) =>
