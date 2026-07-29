@@ -22,13 +22,10 @@ export function sanitizeTransportValue(
     };
   }
 
-  const seen =
-    typeof WeakSet === 'function'
-      ? new WeakSet<Record<string, unknown>>()
-      : null;
+  const ancestors: Record<string, unknown>[] = [];
   let serialized: string | undefined;
   try {
-    serialized = JSON.stringify(value, (_key, current) => {
+    serialized = JSON.stringify(value, function (_key, current) {
       if (current && typeof current === 'object') {
         const record = current as Record<string, unknown>;
         const fileLike =
@@ -51,8 +48,15 @@ export function sanitizeTransportValue(
         if (typeof (record as any).then === 'function') {
           return { kind: 'promise', present: true };
         }
-        if (seen?.has(record)) return { kind: 'circular', present: true };
-        seen?.add(record);
+        while (
+          ancestors.length > 0 &&
+          ancestors[ancestors.length - 1] !== this
+        ) {
+          ancestors.pop();
+        }
+        if (ancestors.includes(record))
+          return { kind: 'circular', present: true };
+        ancestors.push(record);
       }
       if (typeof current === 'bigint') return String(current);
       if (typeof current === 'function' || typeof current === 'symbol')
