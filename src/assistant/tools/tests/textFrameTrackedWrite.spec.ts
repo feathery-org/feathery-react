@@ -264,6 +264,11 @@ describe("the captain's advisor-title change on the cover page", () => {
 
       expect(result.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
       expect(result.changeSet.status).toBe('applied');
+      expect(
+        realRevisions(ed)
+          .map((revision) => String(revision.revisionType).toLowerCase())
+          .sort()
+      ).toEqual(['deletion', 'insertion']);
     });
   });
 
@@ -451,6 +456,51 @@ describe('text-frame post-write verification', () => {
         });
         expect(result.changeSet.status).toBe('failed');
         expect(frameOccurrence(ed, 'Innovation Learning LLC')).toBeDefined();
+        expect(realRevisions(ed)).toHaveLength(0);
+      },
+      coverPageDoc('Innovation Learning LLC')
+    );
+  });
+
+  it('fails when the replacement is inserted beside an undeleted target', () => {
+    let revisionTypesAfterInsert: string[] = [];
+    withEditor(
+      (ed) => {
+        const before = ed.serialize();
+        const frame = frameOccurrence(ed, 'Innovation Learning LLC');
+        const adjacentWriteEditor = editorWithInsertText(
+          ed,
+          (realInsert, text) => {
+            const endOffset = `${frame.anchor};${frame.end}`;
+            ed.selection.select(endOffset, endOffset);
+            realInsert(text);
+            revisionTypesAfterInsert = realRevisions(ed).map((revision) =>
+              String(revision.revisionType).toLowerCase()
+            );
+          }
+        );
+        const result = applyDocumentEdits(adjacentWriteEditor, {
+          changeSetId: 'adjacent-story-write',
+          edits: [
+            {
+              op: 'replace_text',
+              anchor: frame.anchor,
+              start: frame.start,
+              end: frame.end,
+              expect: frame.blockText,
+              find: frame.matchText,
+              replace: 'Innovation Learning'
+            }
+          ]
+        });
+
+        expect(revisionTypesAfterInsert).toEqual(['insertion']);
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'text_verification_failed'
+        });
+        expect(result.changeSet.status).toBe('failed');
+        expect(ed.serialize()).toBe(before);
         expect(realRevisions(ed)).toHaveLength(0);
       },
       coverPageDoc('Innovation Learning LLC')

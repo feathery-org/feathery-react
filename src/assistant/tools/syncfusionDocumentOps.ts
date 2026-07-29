@@ -2418,7 +2418,8 @@ function verifyLiveStoryWrite(
   editor: LiveEditor,
   target: LiveStoryTarget,
   replacement: string,
-  writtenEndOffset: string
+  writtenEndOffset: string,
+  revisionsBeforeWrite: LiveRevision[]
 ): void {
   // Story offsets are public selection addresses, but cannot safely be rebuilt
   // from a character count (text frames add story-local segments). Re-search
@@ -2438,12 +2439,17 @@ function verifyLiveStoryWrite(
     return start.anchor === target.anchor && end.anchor === target.anchor;
   });
   // A first tracked replace inserts at the deleted range's old end; replacing
-  // a still-pending insertion reuses its start. In both cases SyncFusion's
-  // post-insert caret is the authoritative end of the range just written.
+  // a still-pending insertion reuses its start. The old end is also where a
+  // broken write can insert beside an untouched target, so that case additionally
+  // requires the Deletion revision created by a real first replacement.
+  const hasNewDeletion = createdRevisions(editor, revisionsBeforeWrite).some(
+    (revision) =>
+      String(revision.revisionType ?? '').toLowerCase() === 'deletion'
+  );
   const match = matches.find(
     (result: any) =>
       (String(result?.startOffset) === target.startOffset ||
-        String(result?.startOffset) === target.endOffset) &&
+        (String(result?.startOffset) === target.endOffset && hasNewDeletion)) &&
       String(result?.endOffset) === writtenEndOffset
   );
   if (!match)
@@ -2471,7 +2477,8 @@ function verifyLiveStoryWrite(
 function applyLiveStoryTextOp(
   editor: LiveEditor,
   op: EditOp,
-  target: LiveStoryTarget
+  target: LiveStoryTarget,
+  revisionsBeforeWrite: LiveRevision[]
 ): void {
   observeMutationGuardBoundary(op, 'find_content');
   if (op.op !== 'replace_text' && op.op !== 'delete_text')
@@ -2506,7 +2513,8 @@ function applyLiveStoryTextOp(
     editor,
     target,
     replacement,
-    String(editor.selection.endOffset ?? '')
+    String(editor.selection.endOffset ?? ''),
+    revisionsBeforeWrite
   );
 }
 
@@ -6076,7 +6084,7 @@ export function applyDocumentEdits(
               // this far (`story_write_unverified` refuses them at preflight).
               if (isTextFrameAnchor(op.anchor))
                 priorRejectStream = rejectStream;
-              applyLiveStoryTextOp(editor, op, plan.target);
+              applyLiveStoryTextOp(editor, op, plan.target, revisionsBeforeOp);
             } else {
               const target = resolveChangeSetBlock(
                 blocks,
