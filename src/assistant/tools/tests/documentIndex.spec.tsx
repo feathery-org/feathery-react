@@ -74,17 +74,18 @@ const headers = () => ({ Authorization: 'Bearer JWT' });
 
 const BLANK_SFDT = { sections: [{ blocks: [] }] };
 
-const targets = (
-  documentId?: string,
-  envelopeId: string | null = documentId ? ENV_ID : null
-) => () => [
-  { type: 'panel', id: 'panel-1' },
-  { type: 'fuser', id: 'user-1' },
-  ...(documentId
-    ? [{ type: 'generated_document', id: documentId }]
-    : []),
-  ...(envelopeId ? [{ type: 'envelope', id: envelopeId }] : [])
-];
+const targets =
+  (
+    documentId?: string,
+    envelopeId: string | null = documentId ? ENV_ID : null
+  ) =>
+  () =>
+    [
+      { type: 'panel', id: 'panel-1' },
+      { type: 'fuser', id: 'user-1' },
+      ...(documentId ? [{ type: 'generated_document', id: documentId }] : []),
+      ...(envelopeId ? [{ type: 'envelope', id: envelopeId }] : [])
+    ];
 
 const mountedEditorTargets = () => {
   const documentTarget = getActiveDocxEditorTarget();
@@ -400,7 +401,8 @@ describe('index-on-load: a progressively loading document must not be certified 
     };
   };
 
-  const lastPost = () => JSON.parse(indexPosts()[indexPosts().length - 1][1].body);
+  const lastPost = () =>
+    JSON.parse(indexPosts()[indexPosts().length - 1][1].body);
 
   it('indexes the full document, not the first partial snapshot, when sections stream in without contentChange', async () => {
     const editor = streamingEditor();
@@ -629,6 +631,19 @@ describe('AssistantChat wiring (the regression guard)', () => {
       documentId: 'document-b',
       envelopeId: 'envelope-b'
     });
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    // The outgoing editor can finish resolving its envelope after the handoff
+    // and re-run its registration effect before cleanup. That exact editor
+    // identity is retired and cannot reclaim the active step.
+    expect(
+      registerDocxEditor('editor-a', outgoing, {
+        stepId: 'step-a',
+        documentId: 'document-a',
+        envelopeId: 'envelope-a'
+      })
+    ).toBe(false);
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });

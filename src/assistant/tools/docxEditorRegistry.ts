@@ -22,6 +22,7 @@ const DEFAULT_STEP_ID = '__legacy_document_step__';
 let nextOrder = 0;
 let registration: DocxEditorRegistration | undefined;
 let candidates = new Map<EditorInstanceId, DocxEditorRegistration>();
+const supersededEditors = new Set<any>();
 
 const resolveEditorInstanceId = (
   editorInstanceId: string | undefined,
@@ -96,6 +97,7 @@ export const registerDocxEditor = (
   context: DocxEditorContext = {}
 ): boolean => {
   if (!editor) return false;
+  if (supersededEditors.has(editor)) return false;
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
   const next: DocxEditorRegistration = {
     instanceId: resolvedInstanceId,
@@ -111,6 +113,9 @@ export const registerDocxEditor = (
     // different step is therefore a handoff, not a simultaneous-editor error.
     // Discard outgoing candidates so their late cleanup cannot resurrect or
     // clear the incoming step.
+    candidates.forEach((candidate) => {
+      if (candidate.editor !== editor) supersededEditors.add(candidate.editor);
+    });
     candidates = new Map([[resolvedInstanceId, next]]);
     publish(next);
     return true;
@@ -161,6 +166,7 @@ export function getDocxEditor(): any {
 export const _clearDocxEditors = (): void => {
   registration = undefined;
   candidates.clear();
+  supersededEditors.clear();
   listeners.clear();
   nextOrder = 0;
 };
