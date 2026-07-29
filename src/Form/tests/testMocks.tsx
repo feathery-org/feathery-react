@@ -234,7 +234,10 @@ jest.mock('../../utils/sensitiveActions', () => ({
   getPrivateActions: () => ({})
 }));
 
-jest.mock('uuid', () => ({ v4: () => 'uuid-1' }));
+jest.mock('../../utils/uuid', () => ({
+  uuidv4: () => 'uuid-1',
+  validateUuid: () => true
+}));
 
 // internalState and setter
 jest.mock('../../utils/internalState', () => ({

@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 import { JSForm, Props as FormProps } from '../Form';
 import { defaultClient, initInfo } from '../utils/init';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from '../utils/uuid';
 import {
   registerRenderCallback,
   rerenderAllForms

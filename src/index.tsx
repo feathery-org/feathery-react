@@ -11,7 +11,7 @@ import {
 import { OPERATOR_CODE } from './utils/logic';
 import { featheryDoc } from './utils/browser';
 import { getFormContext } from './utils/formContext';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from './utils/uuid';
 import { FormContext } from './types/Form';
 import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
