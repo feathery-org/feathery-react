@@ -107,7 +107,7 @@ const realRevisions = (ed: DocumentEditor): any[] => {
  * anchor that always worked) plus a multi-block text frame holding the same
  * title (the anchor that failed).
  */
-const coverPageDoc = () => {
+const coverPageDoc = (frameTitle = 'Engineer') => {
   const cell = (text: string) => ({
     cellFormat: {},
     blocks: [{ inlines: [{ text }] }]
@@ -162,7 +162,7 @@ const coverPageDoc = () => {
                   blocks: [
                     { inlines: [{ text: 'Hilb Group' }] },
                     { inlines: [{ text: 'Tyler Marlow' }] },
-                    { inlines: [{ text: 'Engineer' }] }
+                    { inlines: [{ text: frameTitle }] }
                   ]
                 }
               }
@@ -219,8 +219,11 @@ const replaceInFrame = (
   });
 };
 
-const withEditor = (run: (ed: DocumentEditor) => void) => {
-  const ed = makeRealDocumentEditor(coverPageDoc());
+const withEditor = (
+  run: (ed: DocumentEditor) => void,
+  sfdt = coverPageDoc()
+) => {
+  const ed = makeRealDocumentEditor(sfdt);
   try {
     ed.enableTrackChanges = true;
     run(ed);
@@ -230,6 +233,29 @@ const withEditor = (run: (ed: DocumentEditor) => void) => {
     host?.remove();
   }
 };
+
+const editorWithInsertText = (
+  ed: DocumentEditor,
+  insertText: (realInsert: (text: string) => void, text: string) => void
+) =>
+  new Proxy(ed as unknown as LiveEditor, {
+    get(target, property, receiver) {
+      if (property === 'editor') {
+        const realEditor: any = Reflect.get(target, property, receiver);
+        return new Proxy(realEditor, {
+          get(inner, method, innerReceiver) {
+            const value = Reflect.get(inner, method, innerReceiver);
+            if (method !== 'insertText' || typeof value !== 'function')
+              return typeof value === 'function' ? value.bind(inner) : value;
+            return (text: string) =>
+              insertText((actual) => value.call(inner, actual), text);
+          }
+        });
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
 
 describe("the captain's advisor-title change on the cover page", () => {
   it('a FIRST tracked replace inside a text frame lands (this always worked)', () => {
@@ -336,6 +362,188 @@ describe("the captain's advisor-title change on the cover page", () => {
       for (const revision of [...realRevisions(ed)].reverse()) revision.reject();
       expect(ed.serialize()).toBe(before);
     });
+  });
+});
+
+describe('text-frame post-write verification', () => {
+  it.each([
+    ['Innovation Learning LLC', 'Innovation Learning'],
+    ['Acme Corp Ltd', 'Acme Corp']
+  ])('shortens %p to %p and preserves the surrounding text', (find, replace) => {
+    withEditor(
+      (ed) => {
+        const result = replaceInFrame(ed, 'shorten-company', find, replace);
+
+        expect(result.results[0]).toMatchObject({ ok: true });
+        expect(result.changeSet.status).toBe('applied');
+        while (ed.revisions.length) ed.revisions.get(0).accept();
+        expect(
+          frameOccurrence(ed, `Before ${replace} after`).matchText
+        ).toBe(`Before ${replace} after`);
+        expect(
+          findDocumentOccurrences(ed as unknown as LiveEditor, {
+            text: find,
+            matchCase: true,
+            maxResults: 20
+          }).count
+        ).toBe(0);
+      },
+      coverPageDoc(`Before ${find} after`)
+    );
+  });
+
+  it('edits the intended occurrence when the replacement already exists in the same block', () => {
+    const before = 'Acme Corp elsewhere; rename Acme Corp Ltd here';
+    const after = 'Acme Corp elsewhere; rename Acme Corp here';
+    withEditor(
+      (ed) => {
+        const result = replaceInFrame(
+          ed,
+          'shorten-one-company',
+          'Acme Corp Ltd',
+          'Acme Corp'
+        );
+
+        expect(result.results[0]).toMatchObject({ ok: true });
+        expect(result.changeSet.status).toBe('applied');
+        while (ed.revisions.length) ed.revisions.get(0).accept();
+        expect(frameOccurrence(ed, after).matchText).toBe(after);
+        const occurrences = findDocumentOccurrences(
+          ed as unknown as LiveEditor,
+          {
+            text: 'Acme Corp',
+            matchCase: true,
+            maxResults: 20
+          }
+        );
+        expect(occurrences.count).toBe(2);
+        expect(occurrences.occurrences.map((item) => item.start)).toEqual([
+          0, 28
+        ]);
+      },
+      coverPageDoc(before)
+    );
+  });
+
+  it('fails when the selected write does not land', () => {
+    withEditor(
+      (ed) => {
+        const frame = frameOccurrence(ed, 'Innovation Learning LLC');
+        const noWriteEditor = editorWithInsertText(ed, () => undefined);
+        const result = applyDocumentEdits(noWriteEditor, {
+          changeSetId: 'missing-story-write',
+          edits: [
+            {
+              op: 'replace_text',
+              anchor: frame.anchor,
+              start: frame.start,
+              end: frame.end,
+              expect: frame.blockText,
+              find: frame.matchText,
+              replace: 'Innovation Learning'
+            }
+          ]
+        });
+
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'text_verification_failed'
+        });
+        expect(result.changeSet.status).toBe('failed');
+        expect(frameOccurrence(ed, 'Innovation Learning LLC')).toBeDefined();
+        expect(realRevisions(ed)).toHaveLength(0);
+      },
+      coverPageDoc('Innovation Learning LLC')
+    );
+  });
+
+  it('fails when the selected write lands with extra text', () => {
+    let inserted = '';
+    withEditor(
+      (ed) => {
+        const before = ed.serialize();
+        const frame = frameOccurrence(ed, 'Innovation Learning LLC');
+        const wrongWriteEditor = editorWithInsertText(
+          ed,
+          (realInsert) => {
+            inserted = 'WRONG Innovation Learning';
+            realInsert(inserted);
+          }
+        );
+        const result = applyDocumentEdits(wrongWriteEditor, {
+          changeSetId: 'wrong-story-write',
+          edits: [
+            {
+              op: 'replace_text',
+              anchor: frame.anchor,
+              start: frame.start,
+              end: frame.end,
+              expect: frame.blockText,
+              find: frame.matchText,
+              replace: 'Innovation Learning'
+            }
+          ]
+        });
+
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'text_verification_failed'
+        });
+        expect(result.changeSet.status).toBe('failed');
+        expect(inserted).toBe('WRONG Innovation Learning');
+        expect(ed.serialize()).toBe(before);
+        expect(realRevisions(ed)).toHaveLength(0);
+      },
+      coverPageDoc('Innovation Learning LLC')
+    );
+  });
+
+  it('keeps a multi-op change set failed when one write is genuinely wrong', () => {
+    withEditor(
+      (ed) => {
+        const frame = frameOccurrence(ed, 'Innovation Learning LLC');
+        const wrongStoryEditor = editorWithInsertText(
+          ed,
+          (realInsert, text) =>
+            realInsert(
+              text === 'Innovation Learning'
+                ? 'Innovation Learning WRONG'
+                : text
+            )
+        );
+        const result = applyDocumentEdits(wrongStoryEditor, {
+          changeSetId: 'wrong-story-write-with-sibling',
+          edits: [
+            {
+              op: 'replace_text',
+              anchor: frame.anchor,
+              start: frame.start,
+              end: frame.end,
+              expect: frame.blockText,
+              find: frame.matchText,
+              replace: 'Innovation Learning'
+            },
+            {
+              op: 'replace_text',
+              anchor: '0;0',
+              expect: 'Proposal for Hilb Group',
+              find: 'Hilb Group',
+              replace: 'Updated Company'
+            }
+          ]
+        });
+
+        expect(result.changeSet.status).toBe('failed');
+        expect(result.results).toEqual([
+          expect.objectContaining({
+            ok: false,
+            error: 'text_verification_failed'
+          }),
+          expect.objectContaining({ ok: false, error: 'change_set_failed' })
+        ]);
+      },
+      coverPageDoc('Innovation Learning LLC')
+    );
   });
 });
 

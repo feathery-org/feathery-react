@@ -2417,7 +2417,8 @@ function resolveLiveStoryTarget(
 function verifyLiveStoryWrite(
   editor: LiveEditor,
   target: LiveStoryTarget,
-  replacement: string
+  replacement: string,
+  writtenEndOffset: string
 ): void {
   // Story offsets are public selection addresses, but cannot safely be rebuilt
   // from a character count (text frames add story-local segments). Re-search
@@ -2436,7 +2437,16 @@ function verifyLiveStoryWrite(
     const end = offsetParts(String(result?.endOffset ?? ''));
     return start.anchor === target.anchor && end.anchor === target.anchor;
   });
-  if (matches.length !== 1)
+  // A first tracked replace inserts at the deleted range's old end; replacing
+  // a still-pending insertion reuses its start. In both cases SyncFusion's
+  // post-insert caret is the authoritative end of the range just written.
+  const match = matches.find(
+    (result: any) =>
+      (String(result?.startOffset) === target.startOffset ||
+        String(result?.startOffset) === target.endOffset) &&
+      String(result?.endOffset) === writtenEndOffset
+  );
+  if (!match)
     throw new OpError(
       'text_verification_failed',
       `Text verification failed at "${target.anchor}".`,
@@ -2445,7 +2455,6 @@ function verifyLiveStoryWrite(
         `matching public ranges: ${matches.length}`
       ]
     );
-  const match = matches[0];
   editor.selection.select(String(match.startOffset), String(match.endOffset));
   const actual = String(editor.selection.text ?? '');
   if (actual !== replacement)
@@ -2493,7 +2502,12 @@ function applyLiveStoryTextOp(
       ? ''
       : String(op.replace ?? op.text ?? op.newText ?? '');
   replaceSelectedText(editor, replacement);
-  verifyLiveStoryWrite(editor, target, replacement);
+  verifyLiveStoryWrite(
+    editor,
+    target,
+    replacement,
+    String(editor.selection.endOffset ?? '')
+  );
 }
 
 function replaceSelectedText(editor: LiveEditor, replacement: string): void {
