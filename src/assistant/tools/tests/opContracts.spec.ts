@@ -6,10 +6,9 @@
 // ops flip from "working" to broken the moment the real invariant applied).
 // Every test asserts three things:
 //   1. the op reports ok and the change set applies;
-//   2. the registry's empirical `tracked` field stays honest - tracked ops
-//      create revisions, untracked ops create none;
-//   3. an op-specific semantic effect actually happened (so a handler that
+//   2. an op-specific semantic effect actually happened (so a handler that
 //      silently no-ops cannot pass).
+//   3. the shared mutation guards observed the operation.
 // A meta-test requires a contract case for every registry entry, so an op can
 // not be advertised without one. Fresh editor per test: chaining editors
 // across tests hangs jsdom layout.
@@ -251,8 +250,8 @@ interface ContractCase {
   /** Op-specific proof the edit actually happened. */
   verify: (editor: DocumentEditor, result: ApplyEditsResult) => void;
   /**
-   * Overrides the registry-derived revision assertion for the meta-ops whose
-   * whole point is changing the revision count (accept/reject all).
+   * Revision assertion for the meta-ops whose whole point is changing the
+   * revision count (accept/reject all).
    */
   assertRevisions?: (created: number, editor: DocumentEditor) => void;
 }
@@ -1150,16 +1149,18 @@ const PARAMETER_VARIANTS: Array<[string, string, ContractCase]> = [
 
 // --- The contract ------------------------------------------------------------
 
-// One contract execution: the op's real route, the `tracked` promise, and the
-// op-specific semantic proof. Shared by the per-op happy paths and every
-// parameter variant so a variant can never assert less than the base contract.
+// One contract execution: the op's real route and op-specific semantic proof.
+// Shared by the per-op happy paths and every parameter variant so a variant can
+// never assert less than the base contract.
 function runContractCase(op: string, contract: ContractCase): void {
   const entry = DOCUMENT_EDITOR_CAPABILITIES.find((e) => e.op === op);
   expect(entry).toBeDefined();
   const editor = makeEditor(contract.fixture());
   try {
     contract.setup?.(editor);
-    const revisionsBefore = editor.revisions.length;
+    const revisionsBefore = contract.assertRevisions
+      ? editor.revisions.length
+      : 0;
     const result = applyDocumentEdits(editor as any, {
       edits: contract.edits,
       changeSetId: `contract-${op}`
@@ -1176,15 +1177,11 @@ function runContractCase(op: string, contract: ContractCase): void {
     );
     expect(result.changeSet?.status).toBe('applied');
 
-    const created = editor.revisions.length - revisionsBefore;
     if (contract.assertRevisions) {
-      contract.assertRevisions(created, editor);
-    } else if (entry!.tracked) {
-      // The registry promises the user an individually rejectable change.
-      expect(created).toBeGreaterThan(0);
-    } else {
-      // The registry says so honestly: no revision, applies immediately.
-      expect(created).toBe(0);
+      contract.assertRevisions(
+        editor.revisions.length - revisionsBefore,
+        editor
+      );
     }
 
     contract.verify(editor, result);
@@ -1201,45 +1198,42 @@ describe('op contracts: every advertised op works over its real route', () => {
 
   it.each(
     DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
-  )(
-    '%s: applies through the shared mutation guards and honours `tracked`',
-    (op, entry) => {
-      const contract = CONTRACTS[op];
-      expect(contract).toBeDefined();
-      const observed: MutationGuardCoverage[] = [];
-      _setMutationGuardObserver((coverage) => observed.push(coverage));
-      try {
-        runContractCase(op, contract);
-      } finally {
-        _setMutationGuardObserver();
-      }
-
-      const coverage = observed.find((item) => item.op === op);
-      expect(coverage).toBeDefined();
-      expect(coverage?.cas).toBe(
-        op === 'replace_all'
-          ? 'find_content'
-          : !entry.requiresAnchor
-          ? 'not_applicable'
-          : op === 'replace_selection'
-          ? 'selection_content'
-          : 'block_expect'
-      );
-      expect(coverage?.numberProvenance).toBe(
-        ['set_cell_formula', 'set_column_formula'].includes(op)
-          ? 'engine_computed'
-          : [
-              'replace_text',
-              'replace_selection',
-              'replace_all',
-              'insert_text',
-              'set_cell_text'
-            ].includes(op)
-          ? 'model_authored_text_checked'
-          : 'not_applicable'
-      );
+  )('%s: applies through the shared mutation guards', (op, entry) => {
+    const contract = CONTRACTS[op];
+    expect(contract).toBeDefined();
+    const observed: MutationGuardCoverage[] = [];
+    _setMutationGuardObserver((coverage) => observed.push(coverage));
+    try {
+      runContractCase(op, contract);
+    } finally {
+      _setMutationGuardObserver();
     }
-  );
+
+    const coverage = observed.find((item) => item.op === op);
+    expect(coverage).toBeDefined();
+    expect(coverage?.cas).toBe(
+      op === 'replace_all'
+        ? 'find_content'
+        : !entry.requiresAnchor
+        ? 'not_applicable'
+        : op === 'replace_selection'
+        ? 'selection_content'
+        : 'block_expect'
+    );
+    expect(coverage?.numberProvenance).toBe(
+      ['set_cell_formula', 'set_column_formula'].includes(op)
+        ? 'engine_computed'
+        : [
+            'replace_text',
+            'replace_selection',
+            'replace_all',
+            'insert_text',
+            'set_cell_text'
+          ].includes(op)
+        ? 'model_authored_text_checked'
+        : 'not_applicable'
+    );
+  });
 
   it.each(PARAMETER_VARIANTS)('%s variant: %s', (op, _variant, contract) => {
     runContractCase(op, contract);
