@@ -13,16 +13,44 @@ export type DocxEditorRegistration = {
 };
 
 export type DocxEditorContext = {
+  formId?: string;
   stepId?: string;
   documentId?: string;
   envelopeId?: string;
 };
 
+// Consumers that need to react to the assistant editor appearing or changing
+// (the document indexer). Replaying the current registration covers either
+// lifecycle order: chat-first or editor-first.
+type DocxEditorListener = (
+  registration: DocxEditorRegistration | undefined
+) => void;
+
+type DocxEditorRegistry = {
+  registration?: DocxEditorRegistration;
+  candidates: Map<EditorInstanceId, DocxEditorRegistration>;
+  supersededEditors: WeakSet<object>;
+  listeners: Set<DocxEditorListener>;
+};
+
+const DEFAULT_FORM_ID = '__legacy_document_form__';
 const DEFAULT_STEP_ID = '__legacy_document_step__';
 let nextOrder = 0;
-let registration: DocxEditorRegistration | undefined;
-let candidates = new Map<EditorInstanceId, DocxEditorRegistration>();
-let supersededEditors = new WeakSet<object>();
+const registries = new Map<string, DocxEditorRegistry>();
+
+const getRegistry = (formId?: string): DocxEditorRegistry => {
+  const key = formId ?? DEFAULT_FORM_ID;
+  let registry = registries.get(key);
+  if (!registry) {
+    registry = {
+      candidates: new Map(),
+      supersededEditors: new WeakSet(),
+      listeners: new Set()
+    };
+    registries.set(key, registry);
+  }
+  return registry;
+};
 
 const resolveEditorInstanceId = (
   editorInstanceId: string | undefined,
@@ -47,30 +75,27 @@ const compareCandidates = (
   return left.order - right.order;
 };
 
-const selectCandidate = (): DocxEditorRegistration | undefined =>
-  [...candidates.values()].sort(compareCandidates)[0];
+const selectCandidate = (
+  registry: DocxEditorRegistry
+): DocxEditorRegistration | undefined =>
+  [...registry.candidates.values()].sort(compareCandidates)[0];
 
-// Consumers that need to react to the assistant editor appearing or changing
-// (the document indexer). Replaying the current registration covers either
-// lifecycle order: chat-first or editor-first.
-type DocxEditorListener = (
-  registration: DocxEditorRegistration | undefined
-) => void;
-const listeners = new Set<DocxEditorListener>();
-
-const publish = (next: DocxEditorRegistration | undefined): void => {
+const publish = (
+  registry: DocxEditorRegistry,
+  next: DocxEditorRegistration | undefined
+): void => {
   if (
-    registration?.instanceId === next?.instanceId &&
-    registration?.editor === next?.editor &&
-    registration?.stepId === next?.stepId &&
-    registration?.documentId === next?.documentId &&
-    registration?.envelopeId === next?.envelopeId
+    registry.registration?.instanceId === next?.instanceId &&
+    registry.registration?.editor === next?.editor &&
+    registry.registration?.stepId === next?.stepId &&
+    registry.registration?.documentId === next?.documentId &&
+    registry.registration?.envelopeId === next?.envelopeId
   )
     return;
-  registration = next;
-  listeners.forEach((listener) => {
+  registry.registration = next;
+  registry.listeners.forEach((listener) => {
     try {
-      listener(registration);
+      listener(registry.registration);
     } catch {
       // An assistant subscriber must never affect editor/form registration.
     }
@@ -78,17 +103,19 @@ const publish = (next: DocxEditorRegistration | undefined): void => {
 };
 
 export const subscribeDocxEditors = (
-  listener: DocxEditorListener
+  listener: DocxEditorListener,
+  formId?: string
 ): (() => void) => {
-  listeners.add(listener);
-  if (registration) {
+  const registry = getRegistry(formId);
+  registry.listeners.add(listener);
+  if (registry.registration) {
     try {
-      listener(registration);
+      listener(registry.registration);
     } catch {
       // An assistant subscriber must never affect editor/form registration.
     }
   }
-  return () => listeners.delete(listener);
+  return () => registry.listeners.delete(listener);
 };
 
 export const registerDocxEditor = (
@@ -97,7 +124,8 @@ export const registerDocxEditor = (
   context: DocxEditorContext = {}
 ): boolean => {
   if (!editor) return false;
-  if (supersededEditors.has(editor)) return false;
+  const registry = getRegistry(context.formId);
+  if (registry.supersededEditors.has(editor)) return false;
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
   const next: DocxEditorRegistration = {
     instanceId: resolvedInstanceId,
@@ -105,68 +133,71 @@ export const registerDocxEditor = (
     documentId: context.documentId,
     envelopeId: context.envelopeId,
     editor,
-    order: candidates.get(resolvedInstanceId)?.order ?? nextOrder++
+    order: registry.candidates.get(resolvedInstanceId)?.order ?? nextOrder++
   };
 
-  if (registration && registration.stepId !== next.stepId) {
+  if (registry.registration && registry.registration.stepId !== next.stepId) {
     // React mounts the incoming step before unmounting the outgoing one. A
     // different step is therefore a handoff, not a simultaneous-editor error.
     // Discard outgoing candidates so their late cleanup cannot resurrect or
     // clear the incoming step.
-    candidates.forEach((candidate) => {
-      if (candidate.editor !== editor) supersededEditors.add(candidate.editor);
+    registry.candidates.forEach((candidate) => {
+      if (candidate.editor !== editor)
+        registry.supersededEditors.add(candidate.editor);
     });
-    candidates = new Map([[resolvedInstanceId, next]]);
-    publish(next);
+    registry.candidates = new Map([[resolvedInstanceId, next]]);
+    publish(registry, next);
     return true;
   }
 
-  candidates.set(resolvedInstanceId, next);
-  publish(selectCandidate());
+  registry.candidates.set(resolvedInstanceId, next);
+  publish(registry, selectCandidate(registry));
   return true;
 };
 
 export const unregisterDocxEditor = (
   editorInstanceId: string | undefined,
-  editor: any
+  editor: any,
+  formId?: string
 ) => {
+  const registry = getRegistry(formId);
   const resolvedInstanceId = resolveEditorInstanceId(editorInstanceId, editor);
-  const owned = candidates.get(resolvedInstanceId);
+  const owned = registry.candidates.get(resolvedInstanceId);
   if (!owned || owned.editor !== editor) return;
 
-  candidates.delete(resolvedInstanceId);
+  registry.candidates.delete(resolvedInstanceId);
   if (
-    registration?.instanceId === resolvedInstanceId &&
-    registration.editor === editor
+    registry.registration?.instanceId === resolvedInstanceId &&
+    registry.registration.editor === editor
   )
-    publish(selectCandidate());
+    publish(registry, selectCandidate(registry));
 };
 
-export const getActiveDocxEditorTarget = ():
-  | { type: 'generated_document'; id: string }
-  | undefined =>
-  registration?.documentId
+export const getActiveDocxEditorTarget = (
+  formId?: string
+): { type: 'generated_document'; id: string } | undefined => {
+  const registration = getRegistry(formId).registration;
+  return registration?.documentId
     ? { type: 'generated_document', id: registration.documentId }
     : undefined;
+};
 
-export const getActiveDocxEditorEnvelopeTarget = ():
-  | { type: 'envelope'; id: string }
-  | undefined =>
-  registration?.envelopeId
+export const getActiveDocxEditorEnvelopeTarget = (
+  formId?: string
+): { type: 'envelope'; id: string } | undefined => {
+  const registration = getRegistry(formId).registration;
+  return registration?.envelopeId
     ? { type: 'envelope', id: registration.envelopeId }
     : undefined;
+};
 
-// Existing assistant callers pass a form instance id. It is intentionally not
-// a selector: the current step's deterministic registration is authoritative.
-export function getDocxEditor(editorInstanceId?: string): any;
-export function getDocxEditor(): any {
-  return registration?.editor;
+// Calls that omit a form id keep using the legacy unnamed registry. Named
+// registrations are isolated by the same form instance id as internalState.
+export function getDocxEditor(formId?: string): any {
+  return getRegistry(formId).registration?.editor;
 }
 
 export const _clearDocxEditors = (): void => {
-  registration = undefined;
-  candidates.clear();
-  supersededEditors = new WeakSet<object>();
-  listeners.clear();
+  registries.clear();
   nextOrder = 0;
 };
