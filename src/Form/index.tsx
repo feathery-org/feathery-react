@@ -241,7 +241,10 @@ import type {
   AssistantStepSettings
 } from '../assistant/AssistantChat';
 import AssistantClient from '../assistant/AssistantClient';
-import { getActiveDocxEditorTarget } from '../assistant/tools/docxEditorRegistry';
+import {
+  getActiveDocxEditorEnvelopeTarget,
+  getActiveDocxEditorTarget
+} from '../assistant/tools/docxEditorRegistry';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -910,9 +913,12 @@ function Form({
     // The mounted editor is the only source of truth. Generation commonly
     // happens on a previous step, so scanning the current step's actions loses
     // the document exactly when the editor is open. This is still only the
-    // document template target; backend auth derives the envelope scope.
+    // document template target; the editor separately publishes its real
+    // envelope as the only per-submission index scope.
     const documentTarget = getActiveDocxEditorTarget();
     if (documentTarget) targets.push(documentTarget);
+    const envelopeTarget = getActiveDocxEditorEnvelopeTarget();
+    if (envelopeTarget) targets.push(envelopeTarget);
     return targets;
   }, [formId]);
 

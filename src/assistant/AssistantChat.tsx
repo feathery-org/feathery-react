@@ -96,7 +96,7 @@ import {
 } from './tools/docxEditorBridge';
 import { getDocxEditor } from './tools/docxEditorRegistry';
 import {
-  GENERATED_DOCUMENT_TARGET_TYPE,
+  ENVELOPE_TARGET_TYPE,
   getDocumentIndexFreshness,
   useDocumentIndex
 } from './tools/documentIndex';
@@ -344,9 +344,7 @@ const AssistantChat = ({
     // is dirty or holds someone else's content - stale hits must fail loud,
     // not read plausible (S3). Never rendered into the prompt, so its
     // per-request variation cannot break prompt caching.
-    const documentTarget = targets.find(
-      (t) => t.type === GENERATED_DOCUMENT_TARGET_TYPE
-    );
+    const documentTarget = targets.find((t) => t.type === ENVELOPE_TARGET_TYPE);
     if (documentTarget)
       context.document_state = getDocumentIndexFreshness(documentTarget);
     body.context = context;

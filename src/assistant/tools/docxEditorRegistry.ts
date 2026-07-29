@@ -7,6 +7,7 @@ export type DocxEditorRegistration = {
   instanceId: EditorInstanceId;
   stepId: string;
   documentId?: string;
+  envelopeId?: string;
   editor: any;
   order: number;
 };
@@ -14,6 +15,7 @@ export type DocxEditorRegistration = {
 export type DocxEditorContext = {
   stepId?: string;
   documentId?: string;
+  envelopeId?: string;
 };
 
 const DEFAULT_STEP_ID = '__legacy_document_step__';
@@ -60,7 +62,8 @@ const publish = (next: DocxEditorRegistration | undefined): void => {
     registration?.instanceId === next?.instanceId &&
     registration?.editor === next?.editor &&
     registration?.stepId === next?.stepId &&
-    registration?.documentId === next?.documentId
+    registration?.documentId === next?.documentId &&
+    registration?.envelopeId === next?.envelopeId
   )
     return;
   registration = next;
@@ -98,6 +101,7 @@ export const registerDocxEditor = (
     instanceId: resolvedInstanceId,
     stepId: context.stepId ?? DEFAULT_STEP_ID,
     documentId: context.documentId,
+    envelopeId: context.envelopeId,
     editor,
     order: candidates.get(resolvedInstanceId)?.order ?? nextOrder++
   };
@@ -138,6 +142,13 @@ export const getActiveDocxEditorTarget = ():
   | undefined =>
   registration?.documentId
     ? { type: 'generated_document', id: registration.documentId }
+    : undefined;
+
+export const getActiveDocxEditorEnvelopeTarget = ():
+  | { type: 'envelope'; id: string }
+  | undefined =>
+  registration?.envelopeId
+    ? { type: 'envelope', id: registration.envelopeId }
     : undefined;
 
 // Existing assistant callers pass a form instance id. It is intentionally not

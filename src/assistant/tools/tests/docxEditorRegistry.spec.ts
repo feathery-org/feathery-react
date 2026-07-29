@@ -1,5 +1,6 @@
 import {
   _clearDocxEditors,
+  getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget,
   getDocxEditor,
   registerDocxEditor,
@@ -45,7 +46,8 @@ describe('docx editor registry ownership', () => {
     expect(
       registerDocxEditor('document-container-a', editorA, {
         stepId: 'step-a',
-        documentId: 'document-a'
+        documentId: 'document-a',
+        envelopeId: 'envelope-a'
       })
     ).toBe(true);
 
@@ -56,6 +58,10 @@ describe('docx editor registry ownership', () => {
       type: 'generated_document',
       id: 'document-a'
     });
+    expect(getActiveDocxEditorEnvelopeTarget()).toEqual({
+      type: 'envelope',
+      id: 'envelope-a'
+    });
 
     // The non-target editor remains registered as a candidate. If the selected
     // one leaves the step, the other becomes Robin's target without affecting
@@ -63,6 +69,7 @@ describe('docx editor registry ownership', () => {
     unregisterDocxEditor('document-container-a', editorA);
     expect(getDocxEditor()).toBe(editorZ);
     expect(getActiveDocxEditorTarget()?.id).toBe('document-z');
+    expect(getActiveDocxEditorEnvelopeTarget()).toBeUndefined();
 
     error.mockRestore();
     warn.mockRestore();
@@ -85,24 +92,29 @@ describe('docx editor registry ownership', () => {
 
     registerDocxEditor('document-container-a', outgoingEditor, {
       stepId: 'step-a',
-      documentId: 'document-a'
+      documentId: 'document-a',
+      envelopeId: 'envelope-a'
     });
 
     // React mounts the next step before it unmounts the previous step.
     registerDocxEditor('document-container-b', incomingEditor, {
       stepId: 'step-b',
-      documentId: 'document-b'
+      documentId: 'document-b',
+      envelopeId: 'envelope-b'
     });
     expect(getDocxEditor()).toBe(incomingEditor);
     expect(getActiveDocxEditorTarget()?.id).toBe('document-b');
+    expect(getActiveDocxEditorEnvelopeTarget()?.id).toBe('envelope-b');
 
     // The old effect cleanup runs after the handoff and must not erase it.
     unregisterDocxEditor('document-container-a', outgoingEditor);
     expect(getDocxEditor()).toBe(incomingEditor);
     expect(getActiveDocxEditorTarget()?.id).toBe('document-b');
+    expect(getActiveDocxEditorEnvelopeTarget()?.id).toBe('envelope-b');
 
     unregisterDocxEditor('document-container-b', incomingEditor);
     expect(getDocxEditor()).toBeUndefined();
     expect(getActiveDocxEditorTarget()).toBeUndefined();
+    expect(getActiveDocxEditorEnvelopeTarget()).toBeUndefined();
   });
 });
