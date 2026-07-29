@@ -1,10 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import {
-  DOCUMENT_EDITOR_CAPABILITIES,
-  DOCUMENT_EDITOR_READS
-} from '../registry';
+import * as capabilityRegistry from '../registry';
 import {
   ANCHORED_OP_HANDLERS,
   ANCHORLESS_OP_HANDLERS
@@ -27,6 +24,7 @@ const DISPATCH_SOURCE = fs.readFileSync(
   path.join(__dirname, '../../tools/syncfusionDocumentOps.ts'),
   'utf8'
 );
+const { DOCUMENT_EDITOR_CAPABILITIES } = capabilityRegistry;
 
 describe('capabilities registry <-> dispatch parity', () => {
   it('op names are unique', () => {
@@ -83,117 +81,47 @@ describe('capabilities registry <-> dispatch parity', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Entry self-consistency: each example must validate against its own declared
-// params (m5 C3 - a self-inconsistent example is a broken declaration).
-// ---------------------------------------------------------------------------
-
-const RESERVED_EXAMPLE_KEYS = new Set(['op', 'anchor', 'expect']);
-
-function matchesType(value: unknown, type: string): boolean {
-  const base = type.endsWith('?') ? type.slice(0, -1) : type;
-  if (base === 'string') return typeof value === 'string';
-  if (base === 'number') return typeof value === 'number';
-  if (base === 'boolean') return typeof value === 'boolean';
-  if (base === 'int>0')
-    return typeof value === 'number' && Number.isInteger(value) && value > 0;
-  if (base === 'int>=0')
-    return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-  const enumMatch = base.match(/^enum\[(.*)\]$/);
-  if (enumMatch)
-    return typeof value === 'string' && enumMatch[1].split(',').includes(value);
-  throw new Error(`Unknown param type "${type}"`);
-}
-
-// ---------------------------------------------------------------------------
-// Read capabilities <-> retrieval surface parity (S3). Reads are dispatched by
-// getDocumentInventory's scope switch and findDocumentOccurrences, not the
-// edit switches - so their parity check reads the scope union and the search
-// export instead of case labels. Same failure classes as ops: a declared read
-// with no implementation is a lie, an implemented scope nobody declares is
-// invisible capability.
-// ---------------------------------------------------------------------------
-
 const PARAM_TYPE_LANGUAGE =
   /^(string|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
 
-describe('read capabilities <-> retrieval surface parity', () => {
-  it('read names are unique and entries fit the declaration envelope', () => {
-    const names = DOCUMENT_EDITOR_READS.map((entry) => entry.read);
-    expect(new Set(names).size).toBe(names.length);
-    for (const entry of DOCUMENT_EDITOR_READS) {
-      expect(entry.summary.trim().length).toBeGreaterThan(0);
-      expect(entry.summary.length).toBeLessThanOrEqual(400);
-      for (const type of Object.values(entry.params)) {
-        expect(type).toMatch(PARAM_TYPE_LANGUAGE);
-      }
+describe('capability entries expose only the live handler contract', () => {
+  it.each(
+    DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
+  )('%s retains only op, params, and requiresAnchor', (_op, entry) => {
+    const liveKeys = new Set(['op', 'params', 'requiresAnchor']);
+    const deadKeys = Object.keys(entry).filter((key) => !liveKeys.has(key));
+    expect(deadKeys).toEqual([]);
+    for (const type of Object.values(entry.params)) {
+      expect(type).toMatch(PARAM_TYPE_LANGUAGE);
     }
   });
+});
 
-  it('inventory-scope reads match the InventoryScope union exactly, both directions', () => {
-    const union = DISPATCH_SOURCE.match(
-      /export type InventoryScope =([^;]+);/
-    );
+describe('live retrieval surface owns its own contract', () => {
+  it('keeps inventory scope types in parity with their implementation branches', () => {
+    const union = DISPATCH_SOURCE.match(/export type InventoryScope =([^;]+);/);
     expect(union).toBeTruthy();
-    const implementedScopes = [...union![1].matchAll(/'([a-z_]+)'/g)].map(
+    const declaredScopes = [...union![1].matchAll(/'([a-z_]+)'/g)].map(
       (match) => match[1]
     );
-    // Guard against a vacuous match on a moved/renamed type.
-    expect(implementedScopes).toContain('outline');
+    const branchedScopes = [
+      ...DISPATCH_SOURCE.matchAll(/scope === '([a-z_]+)'/g)
+    ].map((match) => match[1]);
 
-    const declaredScopes = DOCUMENT_EDITOR_READS.filter(
-      (entry) => entry.read !== 'occurrences'
-    ).map((entry) => entry.read);
-
-    expect([...declaredScopes].sort()).toEqual([...implementedScopes].sort());
+    // `full` is the exhaustive fallback after every specialized branch.
+    expect(DISPATCH_SOURCE).toContain('const all = cap(blocks)');
+    expect([...new Set([...branchedScopes, 'full'])].sort()).toEqual(
+      [...declaredScopes].sort()
+    );
   });
 
-  it('the occurrences read has a live implementation', () => {
+  it('keeps occurrences on its live exported implementation', () => {
     expect(DISPATCH_SOURCE).toContain(
       'export function findDocumentOccurrences'
     );
   });
-});
 
-describe('capability entries are self-consistent', () => {
-  it.each(
-    DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
-  )(
-    '%s: example validates against declared params and anchor contract',
-    (op, entry) => {
-      expect(entry.example.op).toBe(op);
-      expect(entry.summary.trim().length).toBeGreaterThan(0);
-      expect(entry.summary.length).toBeLessThanOrEqual(400);
-
-      // Anchor contract.
-      if (entry.requiresAnchor) {
-        expect(entry.anchorKind).not.toBe('none');
-        const anchor = entry.example.anchor;
-        expect(typeof anchor).toBe('string');
-        const parts = String(anchor).split(';');
-        if (entry.anchorKind === 'table_cell') expect(parts).toHaveLength(5);
-        else expect(parts.length).toBeLessThanOrEqual(2);
-      } else {
-        expect(entry.anchorKind).toBe('none');
-        expect(entry.example.anchor).toBeUndefined();
-      }
-
-      // Every example key is either reserved or declared.
-      for (const key of Object.keys(entry.example)) {
-        if (RESERVED_EXAMPLE_KEYS.has(key)) continue;
-        expect(Object.keys(entry.params)).toContain(key);
-      }
-
-      // Every declared param present in the example matches its type, and
-      // every required (non-`?`) param is present.
-      for (const [param, type] of Object.entries(entry.params)) {
-        const value = entry.example[param];
-        if (value === undefined) {
-          expect(type.endsWith('?')).toBe(true);
-        } else {
-          expect(matchesType(value, type)).toBe(true);
-        }
-      }
-    }
-  );
+  it('does not restore a parallel read catalogue', () => {
+    expect('DOCUMENT_EDITOR_READS' in capabilityRegistry).toBe(false);
+  });
 });

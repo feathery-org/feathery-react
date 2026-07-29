@@ -186,7 +186,8 @@ function multiRunDoc() {
   };
 }
 
-const MULTI_RUN_TEXT = 'Coverage is placed and then serviced for the whole term.';
+const MULTI_RUN_TEXT =
+  'Coverage is placed and then serviced for the whole term.';
 
 function tableDoc() {
   return {
@@ -429,7 +430,7 @@ describe('the root failure: a model-counted offset must not invalidate a resolve
 // test fails.
 // ---------------------------------------------------------------------------
 
-describe('SyncFusion prefix-replacement residue is the editor\'s, and is pinned', () => {
+describe("SyncFusion prefix-replacement residue is the editor's, and is pinned", () => {
   it('real SDK: a raw prefix replacement through the public API alone leaves exactly bidi:false', () => {
     const text = 'Alpha beta gamma delta epsilon.';
     const ed = makeRealDocumentEditor({
@@ -444,7 +445,9 @@ describe('SyncFusion prefix-replacement residue is the editor\'s, and is pinned'
       rejectEveryRealRevision(ed);
       const after = ed.serialize();
       expect(after).not.toBe(before);
-      expect(after.replace('"cf":{"bi":false},"tlp":"Alpha', '"cf":{},"tlp":"Alpha')).toBe(before);
+      expect(
+        after.replace('"cf":{"bi":false},"tlp":"Alpha', '"cf":{},"tlp":"Alpha')
+      ).toBe(before);
       // Content itself is untouched.
       expect(blockTexts(ed)).toEqual([text]);
     } finally {
@@ -453,7 +456,7 @@ describe('SyncFusion prefix-replacement residue is the editor\'s, and is pinned'
   });
 });
 
-describe('readSelection reports the selection\'s full extent', () => {
+describe("readSelection reports the selection's full extent", () => {
   it('real SDK: a multi-paragraph selection reports its end block, not just its start', () => {
     const ed = makeRealDocumentEditor(multiParagraphDoc());
     try {
@@ -501,7 +504,10 @@ describe('readSelection reports the selection\'s full extent', () => {
       ed.selection.select('0;0;0', `0;0;${long.length}`);
       const selection = readSelection(ed as unknown as LiveEditor);
       expect(long.length).toBeGreaterThan(500);
-      expect(selection).toMatchObject({ truncated: true, textLength: long.length });
+      expect(selection).toMatchObject({
+        truncated: true,
+        textLength: long.length
+      });
       expect(selection?.text).toHaveLength(500);
     } finally {
       destroyRealDocumentEditor(ed);
@@ -554,7 +560,10 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
       expect(
         ed
           .serialize()
-          .replace(`"cf":{"bi":false},"tlp":"${COMMITMENT}`, `"cf":{},"tlp":"${COMMITMENT}`)
+          .replace(
+            `"cf":{"bi":false},"tlp":"${COMMITMENT}`,
+            `"cf":{},"tlp":"${COMMITMENT}`
+          )
       ).toBe(before);
     } finally {
       destroyRealDocumentEditor(ed);
@@ -647,7 +656,9 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
       // Rejectable as a tracked change...
       expect(revisionTypes(ed).sort()).toEqual(['Deletion', 'Insertion']);
       expect(
-        realRevisions(ed).every((revision) => typeof revision.reject === 'function')
+        realRevisions(ed).every(
+          (revision) => typeof revision.reject === 'function'
+        )
       ).toBe(true);
 
       // ...and rejecting restores the document byte for byte.
@@ -903,10 +914,7 @@ describe('replace_selection refuses, by name and with a remedy, what it cannot w
   });
 
   it('real SDK: expectLength alone refuses a same-length concurrent content change', () => {
-    const concurrentlyChanged = COMMITMENT.replace(
-      'commitment',
-      'dedication'
-    );
+    const concurrentlyChanged = COMMITMENT.replace('commitment', 'dedication');
     expect(concurrentlyChanged).not.toBe(COMMITMENT);
     expect(concurrentlyChanged).toHaveLength(COMMITMENT.length);
     const changedDoc = onePargraphDoc();
@@ -997,15 +1005,19 @@ describe('replace_selection refuses, by name and with a remedy, what it cannot w
 });
 
 describe('replace_selection is a declared capability', () => {
-  it('is in the registry, anchored, and tracked', () => {
+  it('is in the registry with its live anchor and parameter contract', () => {
     const entry = DOCUMENT_EDITOR_CAPABILITIES.find(
       (capability) => capability.op === 'replace_selection'
     );
-    expect(entry).toMatchObject({
-      requiresAnchor: true,
-      anchorKind: 'block',
-      tracked: true
+    expect(entry).toEqual({
+      op: 'replace_selection',
+      params: {
+        replace: 'string',
+        startOffset: 'string?',
+        endOffset: 'string?',
+        expectLength: 'int>=0?'
+      },
+      requiresAnchor: true
     });
-    expect(entry?.summary).toContain('selected');
   });
 });
