@@ -117,4 +117,49 @@ describe('docx editor registry ownership', () => {
     expect(getActiveDocxEditorTarget()).toBeUndefined();
     expect(getActiveDocxEditorEnvelopeTarget()).toBeUndefined();
   });
+
+  it('rejects_late_reregister_from_superseded_outgoing_editor', () => {
+    const outgoingEditor = {};
+    const incomingEditor = {};
+
+    registerDocxEditor('document-container-a', outgoingEditor, {
+      stepId: 'step-a',
+      documentId: 'document-a'
+    });
+    registerDocxEditor('document-container-b', incomingEditor, {
+      stepId: 'step-b',
+      documentId: 'document-b'
+    });
+
+    expect(
+      registerDocxEditor('document-container-a', outgoingEditor, {
+        stepId: 'step-a',
+        documentId: 'document-a'
+      })
+    ).toBe(false);
+    expect(getDocxEditor()).toBe(incomingEditor);
+
+    unregisterDocxEditor('document-container-a', outgoingEditor);
+    expect(getDocxEditor()).toBe(incomingEditor);
+  });
+
+  it('allows_new_editor_instance_when_navigating_back_to_prior_step', () => {
+    const firstEditorA = {};
+    const editorB = {};
+    const revisitedEditorA = {};
+
+    registerDocxEditor('document-container-a', firstEditorA, {
+      stepId: 'step-a'
+    });
+    registerDocxEditor('document-container-b', editorB, {
+      stepId: 'step-b'
+    });
+
+    expect(
+      registerDocxEditor('document-container-a', revisitedEditorA, {
+        stepId: 'step-a'
+      })
+    ).toBe(true);
+    expect(getDocxEditor()).toBe(revisitedEditorA);
+  });
 });
