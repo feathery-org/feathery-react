@@ -157,6 +157,7 @@ describe('postDocumentIndex', () => {
       Authorization: 'Bearer JWT'
     });
     const body = JSON.parse(init.body);
+    expect(body.form_key).toBe('panel-1');
     expect(body.targets).toEqual(targets(DOC_ID)());
     expect(body.envelopeId).toBe(ENV_ID);
     expect(body.documentId).toBeUndefined();
