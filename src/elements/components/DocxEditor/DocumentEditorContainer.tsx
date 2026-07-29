@@ -329,10 +329,11 @@ export default function DocumentEditorContainer({
       registeredEditor.current = editor;
       registerDocxEditor(containerId, editor, {
         stepId,
-        documentId: activeDocumentId
+        documentId: activeDocumentId,
+        envelopeId: envelope?.id
       });
     },
-    [activeDocumentId, containerId, stepId]
+    [activeDocumentId, containerId, envelope?.id, stepId]
   );
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
@@ -340,9 +341,10 @@ export default function DocumentEditorContainer({
     if (!containerId || !registeredEditor.current) return;
     registerDocxEditor(containerId, registeredEditor.current, {
       stepId,
-      documentId: activeDocumentId
+      documentId: activeDocumentId,
+      envelopeId: envelope?.id
     });
-  }, [activeDocumentId, containerId, stepId]);
+  }, [activeDocumentId, containerId, envelope?.id, stepId]);
   useEffect(
     () => () => {
       if (containerId && registeredEditor.current) {

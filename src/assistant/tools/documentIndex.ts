@@ -1,14 +1,14 @@
 // In-form document indexing (HILB Contract C). ai-services requires a queryable
 // semantic index before every bulk document edit: `discoverIndexedDocumentCandidates`
 // and `searchGeneratedDocument` read `generated_doc_chunk`, and nothing else
-// populates it on the in-form path (there is no envelope / pgvector pipeline for
-// a document opened in the form). So when the in-form document editor comes up
-// with a loaded document, POST its block inventory to /assistant/document-index.
+// populates it on the in-form path. So when the in-form document editor comes
+// up with a loaded envelope, POST its block inventory to
+// /assistant/document-index.
 //
-// Trust boundary: the browser sends the same target manifest as chat, never a
-// storage key. feathery-backend validates the panel/template relationship,
-// derives the newest-created envelope from the authenticated fuser, and sends a
-// typed server-only scope to ai-services.
+// Trust boundary: the browser sends the same target manifest as chat plus the
+// editor's real envelope id. feathery-backend validates the panel/template
+// relationship and verifies that envelope belongs to the target-derived fuser
+// before sending a typed server-only scope to ai-services.
 
 import { useEffect } from 'react';
 import { buildIndexBlocks, IndexBlock } from './syncfusionDocumentOps';
@@ -45,10 +45,16 @@ export const INDEX_STABLE_POLLS = 2;
 export const REINDEX_DEBOUNCE_MS = 5000;
 
 export const GENERATED_DOCUMENT_TARGET_TYPE = 'generated_document';
+export const ENVELOPE_TARGET_TYPE = 'envelope';
 
 export type DocumentIndexTarget = { type: string; id: string };
 
 const getDocumentTarget = (
+  targets: DocumentIndexTarget[]
+): DocumentIndexTarget | undefined =>
+  targets.find((target) => target.type === ENVELOPE_TARGET_TYPE);
+
+const getGeneratedDocumentTarget = (
   targets: DocumentIndexTarget[]
 ): DocumentIndexTarget | undefined =>
   targets.find((target) => target.type === GENERATED_DOCUMENT_TARGET_TYPE);
@@ -158,8 +164,8 @@ const fingerprint = (blocks: IndexBlock[]): string => {
 export type PostDocumentIndexArgs = {
   // `${origin}/agent/assistant/` - the same base the chat posts to.
   baseUrl: string;
-  // The authenticated chat target manifest. It identifies the user's current
-  // resource but cannot select ai-services persistence.
+  // The authenticated chat target manifest. The backend verifies its envelope
+  // against the target-derived form submission before selecting persistence.
   targets: DocumentIndexTarget[];
   blocks: IndexBlock[];
   headers: () => Record<string, string>;
@@ -178,7 +184,7 @@ export interface PostDocumentIndexResult {
 }
 
 // POST the block inventory. Returns { posted: false } (nothing sent) when the
-// generated-document target or blocks are missing - never POST an empty inventory.
+// envelope target or blocks are missing - never POST an empty inventory.
 export const postDocumentIndex = async ({
   baseUrl,
   targets,
@@ -186,12 +192,13 @@ export const postDocumentIndex = async ({
   headers,
   contentHash
 }: PostDocumentIndexArgs): Promise<PostDocumentIndexResult> => {
-  if (!baseUrl || !getDocumentTarget(targets) || !blocks?.length)
-    return { posted: false };
+  const envelopeTarget = getDocumentTarget(targets);
+  if (!baseUrl || !envelopeTarget || !blocks?.length) return { posted: false };
   const res = await fetch(`${baseUrl}document-index`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers() },
     body: JSON.stringify({
+      envelopeId: envelopeTarget.id,
       targets,
       blocks,
       ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
@@ -380,8 +387,17 @@ export function useDocumentIndex({
       const currentTargets = (): DocumentIndexTarget[] => {
         if (generation !== activeGeneration) return [];
         const targets = getTargets();
-        const target = getDocumentTarget(targets);
-        if (registration.documentId && target?.id !== registration.documentId)
+        const documentTarget = getGeneratedDocumentTarget(targets);
+        const envelopeTarget = getDocumentTarget(targets);
+        if (
+          registration.documentId &&
+          documentTarget?.id !== registration.documentId
+        )
+          return [];
+        if (
+          registration.envelopeId &&
+          envelopeTarget?.id !== registration.envelopeId
+        )
           return [];
         return targets;
       };
@@ -395,10 +411,10 @@ export function useDocumentIndex({
       const poll = () => {
         if (settled) return;
         const targets = currentTargets();
-        const documentTarget = getDocumentTarget(targets);
-        // No document target yet (the generate action has not run): there is
-        // nothing to authorize, so keep waiting rather than guessing a target.
-        if (documentTarget) {
+        const envelopeTarget = getDocumentTarget(targets);
+        // The generated_document target mounts tools independently. Until the
+        // editor has a real envelope there is no per-submission index scope.
+        if (envelopeTarget) {
           const snapshot = readSnapshot(editor);
           if (snapshot) {
             if (snapshot.digest === lastDigest) stablePolls++;
@@ -447,8 +463,8 @@ export function useDocumentIndex({
           if (
             getDocumentTarget(targets) &&
             // A regeneration can produce byte-identical content under a new
-            // server-derived envelope. Force this load-complete sync so the new
-            // envelope never inherits a local "already posted" assumption.
+            // envelope. Force this load-complete sync so the new envelope
+            // never inherits a local "already posted" assumption.
             indexNow(editor, baseUrl, targets, headers, true)
           )
             settled = true;

@@ -9,6 +9,7 @@ import {
   _resetDocumentIndexState
 } from '../documentIndex';
 import {
+  getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget,
   registerDocxEditor,
   unregisterDocxEditor,
@@ -65,24 +66,34 @@ jest.mock('../../../utils/init', () => ({
 
 const BASE_URL = 'https://api.test/agent/assistant/';
 const DOC_ID = 'doc-template-123';
+const ENV_ID = 'envelope-456';
+const OTHER_ENV_ID = 'envelope-789';
 const DOCUMENT_TARGET = { type: 'generated_document', id: DOC_ID };
+const ENVELOPE_TARGET = { type: 'envelope', id: ENV_ID };
 const headers = () => ({ Authorization: 'Bearer JWT' });
 
 const BLANK_SFDT = { sections: [{ blocks: [] }] };
 
-const targets = (documentId?: string) => () =>
-  documentId
-    ? [
-        { type: 'panel', id: 'panel-1' },
-        { type: 'generated_document', id: documentId }
-      ]
-    : [{ type: 'panel', id: 'panel-1' }];
+const targets = (
+  documentId?: string,
+  envelopeId: string | null = documentId ? ENV_ID : null
+) => () => [
+  { type: 'panel', id: 'panel-1' },
+  { type: 'fuser', id: 'user-1' },
+  ...(documentId
+    ? [{ type: 'generated_document', id: documentId }]
+    : []),
+  ...(envelopeId ? [{ type: 'envelope', id: envelopeId }] : [])
+];
 
 const mountedEditorTargets = () => {
   const documentTarget = getActiveDocxEditorTarget();
+  const envelopeTarget = getActiveDocxEditorEnvelopeTarget();
   return [
     { type: 'panel', id: 'panel-1' },
-    ...(documentTarget ? [documentTarget] : [])
+    { type: 'fuser', id: 'user-1' },
+    ...(documentTarget ? [documentTarget] : []),
+    ...(envelopeTarget ? [envelopeTarget] : [])
   ];
 };
 
@@ -128,7 +139,7 @@ const indexPosts = () =>
   fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('document-index'));
 
 describe('postDocumentIndex', () => {
-  it('POSTs the target manifest without any storage key', async () => {
+  it('POSTs the current envelope as the only index scope', async () => {
     const sent = await postDocumentIndex({
       baseUrl: BASE_URL,
       targets: targets(DOC_ID)(),
@@ -146,7 +157,7 @@ describe('postDocumentIndex', () => {
     });
     const body = JSON.parse(init.body);
     expect(body.targets).toEqual(targets(DOC_ID)());
-    expect(body.envelopeId).toBeUndefined();
+    expect(body.envelopeId).toBe(ENV_ID);
     expect(body.documentId).toBeUndefined();
     expect(body.scope).toBeUndefined();
     expect(body.blocks).toEqual([
@@ -154,11 +165,11 @@ describe('postDocumentIndex', () => {
     ]);
   });
 
-  it('sends nothing when the document target or the blocks are missing', async () => {
+  it('sends nothing when the envelope target or the blocks are missing', async () => {
     expect(
       await postDocumentIndex({
         baseUrl: BASE_URL,
-        targets: targets(undefined)(),
+        targets: targets(DOC_ID, null)(),
         blocks: [{ anchor: 's0:b0', kind: 'paragraph', text: 'hi' }],
         headers
       })
@@ -291,10 +302,16 @@ describe('useDocumentIndex', () => {
     );
   });
 
-  it('waits for a generated_document target instead of guessing one', async () => {
+  it('waits for an envelope while the generated_document target mounts tools', async () => {
     const editor = fakeEditor();
     editor.loaded = true;
-    mount(undefined);
+    renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets: targets(DOC_ID, null),
+        headers
+      })
+    );
     registerDocxEditor(undefined, editor);
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS * 3);
@@ -418,7 +435,7 @@ describe('index-on-load: a progressively loading document must not be certified 
     expect(indexedText).toContain('$5,000,000');
 
     // And the freshness certificate must vouch for THAT index - the full one.
-    const fresh = getDocumentIndexFreshness(DOCUMENT_TARGET);
+    const fresh = getDocumentIndexFreshness(ENVELOPE_TARGET);
     expect(fresh.indexDirty).toBe(false);
     expect(fresh.indexHash).toBe(finalBody.contentHash);
 
@@ -448,7 +465,7 @@ describe('index-on-load: a progressively loading document must not be certified 
 
     const finalBody = lastPost();
     expect(JSON.stringify(finalBody.blocks)).toContain('General Liability');
-    const fresh = getDocumentIndexFreshness(DOCUMENT_TARGET);
+    const fresh = getDocumentIndexFreshness(ENVELOPE_TARGET);
     expect(fresh.indexDirty).toBe(false);
     expect(fresh.indexHash).toBe(finalBody.contentHash);
   });
@@ -483,7 +500,7 @@ describe('index-on-load: a progressively loading document must not be certified 
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     expect(indexPosts()).toHaveLength(posted + 1);
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(false);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
   });
 });
 
@@ -521,12 +538,12 @@ describe('AssistantChat wiring (the regression guard)', () => {
     expect(init.headers.Authorization).toBe('Bearer JWT');
   });
 
-  it('sends no index request while the form has no document target', async () => {
+  it('does not index before generation while the document tools stay mounted', async () => {
     render(
       <AssistantChat
         instanceId='form-1'
         baseUrl={BASE_URL}
-        getTargets={targets(undefined)}
+        getTargets={targets(DOC_ID, null)}
         getJwt={() => 'JWT'}
       />
     );
@@ -552,7 +569,8 @@ describe('AssistantChat wiring (the regression guard)', () => {
       (globalThis as any).__capturedTransportOpts.body();
 
     expect(transportBody().context.targets).toEqual([
-      { type: 'panel', id: 'panel-1' }
+      { type: 'panel', id: 'panel-1' },
+      { type: 'fuser', id: 'user-1' }
     ]);
     expect(transportBody().context.document_state).toBeUndefined();
 
@@ -560,7 +578,8 @@ describe('AssistantChat wiring (the regression guard)', () => {
     editor.loaded = true;
     registerDocxEditor('editor-a', editor, {
       stepId: 'edit-proposal',
-      documentId: DOC_ID
+      documentId: DOC_ID,
+      envelopeId: ENV_ID
     });
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
@@ -568,7 +587,9 @@ describe('AssistantChat wiring (the regression guard)', () => {
 
     expect(transportBody().context.targets).toEqual([
       { type: 'panel', id: 'panel-1' },
-      DOCUMENT_TARGET
+      { type: 'fuser', id: 'user-1' },
+      DOCUMENT_TARGET,
+      ENVELOPE_TARGET
     ]);
     expect(transportBody().context.document_state).toMatchObject({
       indexDirty: false,
@@ -592,7 +613,8 @@ describe('AssistantChat wiring (the regression guard)', () => {
     outgoing.loaded = true;
     registerDocxEditor('editor-a', outgoing, {
       stepId: 'step-a',
-      documentId: 'document-a'
+      documentId: 'document-a',
+      envelopeId: 'envelope-a'
     });
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
@@ -604,7 +626,8 @@ describe('AssistantChat wiring (the regression guard)', () => {
     // React mounts the incoming step first.
     registerDocxEditor('editor-b', incoming, {
       stepId: 'step-b',
-      documentId: 'document-b'
+      documentId: 'document-b',
+      envelopeId: 'envelope-b'
     });
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
@@ -616,20 +639,20 @@ describe('AssistantChat wiring (the regression guard)', () => {
       indexPosts().map(
         ([, init]) =>
           JSON.parse(init.body).targets.find(
-            (target: any) => target.type === 'generated_document'
+            (target: any) => target.type === 'envelope'
           ).id
       )
-    ).toEqual(['document-a', 'document-b']);
+    ).toEqual(['envelope-a', 'envelope-b']);
     expect(
       getDocumentIndexFreshness({
-        type: 'generated_document',
-        id: 'document-a'
+        type: 'envelope',
+        id: 'envelope-a'
       }).indexDirty
     ).toBe(false);
     expect(
       getDocumentIndexFreshness({
-        type: 'generated_document',
-        id: 'document-b'
+        type: 'envelope',
+        id: 'envelope-b'
       }).indexDirty
     ).toBe(false);
 
@@ -674,7 +697,7 @@ describe('index freshness (S3 staleness detection)', () => {
 
     // Before the index lands, this client cannot vouch for whatever the
     // server holds (an earlier session, another submitter) - so: dirty.
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET)).toEqual({
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET)).toEqual({
       indexHash: null,
       indexDirty: true
     });
@@ -682,7 +705,7 @@ describe('index freshness (S3 staleness detection)', () => {
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    const fresh = getDocumentIndexFreshness(DOCUMENT_TARGET);
+    const fresh = getDocumentIndexFreshness(ENVELOPE_TARGET);
     expect(fresh.indexDirty).toBe(false);
     expect(fresh.indexHash).toEqual(expect.any(String));
     // The freshness hash IS the hash the server stored with the index.
@@ -698,21 +721,21 @@ describe('index freshness (S3 staleness detection)', () => {
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(false);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
 
     editor.text = 'Total premium: $9,999';
     editor.emit('contentChange');
     // No timers advanced: the very next chat request must already see stale.
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(true);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(true);
 
     // The debounced re-index repairs it.
     await act(async () => {
       jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
     });
     expect(indexPosts()).toHaveLength(2);
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(false);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
     expect(JSON.parse(indexPosts()[1][1].body).contentHash).toBe(
-      getDocumentIndexFreshness(DOCUMENT_TARGET).indexHash
+      getDocumentIndexFreshness(ENVELOPE_TARGET).indexHash
     );
   });
 
@@ -726,13 +749,61 @@ describe('index freshness (S3 staleness detection)', () => {
 
     editor.emit('contentChange');
     editor.emit('contentChange');
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(true);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(true);
     await act(async () => {
       jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
     });
     // Content matches what the server already holds: fresh again, no re-POST.
     expect(indexPosts()).toHaveLength(1);
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(false);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
+  });
+
+  it('keeps two submissions index and staleness state isolated', async () => {
+    const firstEditor = loadedEditor();
+    const first = renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets: targets(DOC_ID, ENV_ID),
+        headers
+      })
+    );
+    registerDocxEditor(undefined, firstEditor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    unregisterDocxEditor(undefined, firstEditor);
+    first.unmount();
+
+    const secondEditor = loadedEditor();
+    renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets: targets(DOC_ID, OTHER_ENV_ID),
+        headers
+      })
+    );
+    registerDocxEditor(undefined, secondEditor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+
+    expect(
+      indexPosts().map(([, init]) => JSON.parse(init.body).envelopeId)
+    ).toEqual([ENV_ID, OTHER_ENV_ID]);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
+    const otherEnvelopeTarget = {
+      type: 'envelope',
+      id: OTHER_ENV_ID
+    };
+    expect(getDocumentIndexFreshness(otherEnvelopeTarget).indexDirty).toBe(
+      false
+    );
+
+    secondEditor.emit('contentChange');
+    expect(getDocumentIndexFreshness(otherEnvelopeTarget).indexDirty).toBe(
+      true
+    );
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
   });
 
   it('a failed POST leaves the scope dirty - never fresh on hope', async () => {
@@ -745,7 +816,7 @@ describe('index freshness (S3 staleness detection)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     expect(indexPosts()).toHaveLength(1);
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET)).toEqual({
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET)).toEqual({
       indexHash: null,
       indexDirty: true
     });
@@ -771,10 +842,10 @@ describe('index freshness (S3 staleness detection)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     expect(indexPosts()).toHaveLength(1);
-    expect(getDocumentIndexFreshness(DOCUMENT_TARGET).indexDirty).toBe(true);
+    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(true);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining(
-        'document index for target doc-template-123 is incomplete'
+        'document index for target envelope-456 is incomplete'
       )
     );
   });
@@ -831,12 +902,12 @@ describe('AssistantChat sends document_state (the staleness signal call site)', 
     });
   });
 
-  it('sends no document_state when the form has no document target', () => {
+  it('sends no document_state before the mounted editor has an envelope', () => {
     render(
       <AssistantChat
         instanceId='form-1'
         baseUrl={BASE_URL}
-        getTargets={targets(undefined)}
+        getTargets={targets(DOC_ID, null)}
         getJwt={() => 'JWT'}
       />
     );

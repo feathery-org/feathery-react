@@ -5,6 +5,7 @@ import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
 import {
   _clearDocxEditors,
+  getActiveDocxEditorEnvelopeTarget,
   getDocxEditor
 } from '../../../assistant/tools/docxEditorRegistry';
 import DocumentEditorContainer from './DocumentEditorContainer';
@@ -121,11 +122,18 @@ describe('DocumentEditorContainer registry lifecycle', () => {
       });
     });
     expect(error).not.toHaveBeenCalled();
+    expect(getActiveDocxEditorEnvelopeTarget()).toEqual({
+      type: 'envelope',
+      id: 'envelope-document-container-a'
+    });
 
     second.unmount();
     expect(getDocxEditor()).toMatchObject({
       sourceUrl: 'https://example.com/document-container-b.docx'
     });
+    expect(getActiveDocxEditorEnvelopeTarget()?.id).toBe(
+      'envelope-document-container-b'
+    );
 
     first.unmount();
     expect(getDocxEditor()).toBeUndefined();
@@ -155,6 +163,9 @@ describe('DocumentEditorContainer registry lifecycle', () => {
       expect(getDocxEditor()).toMatchObject({
         sourceUrl: 'https://example.com/document-container-b.docx'
       })
+    );
+    expect(getActiveDocxEditorEnvelopeTarget()?.id).toBe(
+      'envelope-document-container-b'
     );
 
     // Then the outgoing cleanup arrives late.
