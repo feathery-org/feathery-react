@@ -162,4 +162,24 @@ describe('docx editor registry ownership', () => {
     ).toBe(true);
     expect(getDocxEditor()).toBe(revisitedEditorA);
   });
+
+  it('resets superseded editor identity between registry lifecycles', () => {
+    const outgoingEditor = {};
+
+    registerDocxEditor('document-container-a', outgoingEditor, {
+      stepId: 'step-a'
+    });
+    registerDocxEditor('document-container-b', {}, {
+      stepId: 'step-b'
+    });
+    expect(registerDocxEditor('document-container-a', outgoingEditor)).toBe(
+      false
+    );
+
+    _clearDocxEditors();
+
+    expect(registerDocxEditor('document-container-a', outgoingEditor)).toBe(
+      true
+    );
+  });
 });

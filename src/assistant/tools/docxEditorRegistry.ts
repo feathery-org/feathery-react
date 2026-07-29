@@ -22,7 +22,7 @@ const DEFAULT_STEP_ID = '__legacy_document_step__';
 let nextOrder = 0;
 let registration: DocxEditorRegistration | undefined;
 let candidates = new Map<EditorInstanceId, DocxEditorRegistration>();
-const supersededEditors = new Set<any>();
+let supersededEditors = new WeakSet<object>();
 
 const resolveEditorInstanceId = (
   editorInstanceId: string | undefined,
@@ -166,7 +166,7 @@ export function getDocxEditor(): any {
 export const _clearDocxEditors = (): void => {
   registration = undefined;
   candidates.clear();
-  supersededEditors.clear();
+  supersededEditors = new WeakSet<object>();
   listeners.clear();
   nextOrder = 0;
 };
