@@ -19,6 +19,7 @@ import {
   isStepperStepVisible
 } from '../../utils/stepper';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
+import { sanitizeTransportValue } from '../../utils/transportValue';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -122,6 +123,7 @@ export type PanelRuntimeSnapshot = {
   currentStepTables: PanelRuntimeTableEntry[];
   values: Record<string, unknown>;
   hiddenFieldValues: Record<string, unknown>;
+  hiddenFieldsEmpty: string[];
 };
 
 const extractRawText = (props: Record<string, unknown>): string => {
@@ -150,6 +152,16 @@ const resolveText = (text: string, repeat?: number): string => {
 
 export const getCurrentStepKey = (formId: string): string | undefined =>
   internalState[formId]?.currentStep?.key;
+
+const sanitizeRuntimeValue = (value: unknown): unknown =>
+  sanitizeTransportValue(value, Number.MAX_SAFE_INTEGER).value;
+
+const isMeaningful = (value: unknown): boolean => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string' && value === '') return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  return true;
+};
 
 // Hydrate prior-session completed steps so a snapshot's stepper reachability is correct on the first turn
 export const ensureCompletedSteps = async (
@@ -444,7 +456,7 @@ export const getPanelRuntimeSnapshot = (
     return {
       key: servar.key,
       type: servar.type,
-      value,
+      value: sanitizeRuntimeValue(value),
       visible,
       disabled,
       required: !!servar.required,
@@ -484,21 +496,22 @@ export const getPanelRuntimeSnapshot = (
     });
   }
 
-  // Split values into servars (visible form fields) and hidden fields
-  const isMeaningful = (v: unknown): boolean => {
-    if (v === null || v === undefined) return false;
-    if (typeof v === 'string' && v === '') return false;
-    if (Array.isArray(v) && v.length === 0) return false;
-    return true;
-  };
+  // Split values into servars and hidden fields at the transport source. Every
+  // value is JSON-shaped here so File/Promise-like runtime objects become
+  // explicit presence descriptors before any assistant context can retain the
+  // live reference. An empty hidden key is carried by name only, so empty stays
+  // distinguishable from not present without a value entry per org hidden field.
   const values: Record<string, unknown> = {};
   const hiddenFieldValues: Record<string, unknown> = {};
+  const hiddenFieldsEmpty: string[] = [];
   for (const key of Object.keys(fieldsMap)) {
-    const v = fieldsMap[key]?.value ?? null;
+    const v = sanitizeRuntimeValue(fieldsMap[key]?.value ?? null);
     if (servarKeys.has(key)) {
       values[key] = v;
     } else if (isMeaningful(v)) {
       hiddenFieldValues[key] = v;
+    } else {
+      hiddenFieldsEmpty.push(key);
     }
   }
 
@@ -673,6 +686,7 @@ export const getPanelRuntimeSnapshot = (
     currentStepElements,
     currentStepTables,
     values,
-    hiddenFieldValues
+    hiddenFieldValues,
+    hiddenFieldsEmpty
   };
 };

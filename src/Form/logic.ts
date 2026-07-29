@@ -20,7 +20,17 @@ import {
   ServerSideLogicRule
 } from '../types/Form';
 import Field from '../utils/entities/Field';
-import { FormInternalState } from '../utils/internalState';
+import internalStateStore, { FormInternalState } from '../utils/internalState';
+import { getFormContext } from '../utils/formContext';
+import { getPrivateActions } from '../utils/sensitiveActions';
+import { sanitizeTransportValue } from '../utils/transportValue';
+import {
+  ChangedFieldDetail,
+  composeFieldChanges,
+  FieldChange,
+  LogicRuleTransportResult,
+  withoutEmbeddedFieldUpdates
+} from '../utils/logicRuleResult';
 
 export function getAcornParsedNodes(input: string): Program | null {
   let parsedNode: Program | null = null;
@@ -544,8 +554,11 @@ export const runClientSideLogic = async (
   extractedSharedCodeInfo: ExtractedSharedCodeInfo[],
   internalState: FormInternalState,
   connectorFields: any,
-  props: Record<string, any>
-) => {
+  props: Record<string, any>,
+  // Tool inputs exposed to the rule code as `feathery.params`. Omitted for
+  // ordinary event-triggered rule execution.
+  inputParams?: Record<string, any>
+): Promise<any> => {
   let logicRuleCode = logicRule.code;
 
   if (extractedSharedCodeInfo.length > 0) {
@@ -583,12 +596,308 @@ export const runClientSideLogic = async (
     ...Object.keys(injectableFields),
     asyncWrappedCode
   );
-  await fn(
-    { ...props, http: httpHelpers(client, connectorFields) },
-    ...Object.values(injectableFields)
-  ).catch((e: any) => {
+  // Capture the rule code's resolved return value so callers (e.g. Robin tool
+  // dispatch via runLogicRuleById) can use it; ordinary event execution simply
+  // ignores it. Tool execution must propagate failures to its caller.
+  let returnValue: any;
+  try {
+    returnValue = await fn(
+      {
+        ...props,
+        http: httpHelpers(client, connectorFields),
+        params: inputParams ?? {}
+      },
+      ...Object.values(injectableFields)
+    );
+  } catch (e: any) {
     // catch unhandled rejections in async user code (if a promise is returned)
     // handle any errors in async code that actually returns a promise
     handleRuleError(e.message, logicRule);
+    throw e;
+  }
+  return returnValue;
+};
+
+export type RunLogicRuleResult = LogicRuleTransportResult;
+
+// A rule is user-authored JavaScript and may return any runtime value. Bound and
+// recursively sanitize every dynamic value before it reaches addToolOutput.
+const LOGIC_RULE_RETURN_VALUE_LIMIT = 8_000;
+const LOGIC_RULE_FIELD_VALUE_LIMIT = 2_000;
+const LOGIC_RULE_FIELD_CHANGE_LIMIT = 100;
+const LOGIC_RULE_KEY_LIMIT = 160;
+const LOGIC_RULE_NAME_LIMIT = 400;
+const LOGIC_RULE_ERROR_LIMIT = 1_000;
+
+const boundedText = (value: unknown, limit: number): string =>
+  String(sanitizeTransportValue(String(value ?? ''), limit).value);
+
+const sanitizeFieldChanges = (changes: FieldChange[]): FieldChange[] =>
+  changes.slice(0, LOGIC_RULE_FIELD_CHANGE_LIMIT).map((change) => ({
+    key: boundedText(change.key, LOGIC_RULE_KEY_LIMIT),
+    before: sanitizeTransportValue(change.before, LOGIC_RULE_FIELD_VALUE_LIMIT)
+      .value,
+    after: sanitizeTransportValue(change.after, LOGIC_RULE_FIELD_VALUE_LIMIT)
+      .value,
+    ...(change.documentHint
+      ? {
+          documentHint: {
+            ...(change.documentHint.anchor
+              ? {
+                  anchor: boundedText(
+                    change.documentHint.anchor,
+                    LOGIC_RULE_KEY_LIMIT
+                  )
+                }
+              : {}),
+            ...(change.documentHint.describes
+              ? {
+                  describes: boundedText(
+                    change.documentHint.describes,
+                    LOGIC_RULE_NAME_LIMIT
+                  )
+                }
+              : {})
+          }
+        }
+      : {})
+  }));
+
+const logicRuleTransportResult = (input: {
+  ruleId: string;
+  ruleName: string;
+  returnValue?: unknown;
+  changedFieldDetails?: ChangedFieldDetail[];
+  documentPresent?: boolean;
+  describeField?: (key: string) => string | undefined;
+  error?: unknown;
+}): RunLogicRuleResult => {
+  const fieldChanges = composeFieldChanges(input.changedFieldDetails ?? [], {
+    explicitUpdates: (input.returnValue as any)?.updates,
+    includeDocumentHints: input.documentPresent === true,
+    describeField: input.describeField
   });
+  return {
+    ok: !input.error,
+    rule: {
+      id: boundedText(input.ruleId, LOGIC_RULE_KEY_LIMIT) || 'unknown-rule',
+      name:
+        boundedText(input.ruleName, LOGIC_RULE_NAME_LIMIT) || 'Unavailable rule'
+    },
+    result: sanitizeTransportValue(
+      withoutEmbeddedFieldUpdates(input.returnValue),
+      LOGIC_RULE_RETURN_VALUE_LIMIT
+    ).value,
+    fieldChanges: sanitizeFieldChanges(fieldChanges),
+    ...(input.error
+      ? { error: boundedText(input.error, LOGIC_RULE_ERROR_LIMIT) }
+      : {})
+  };
+};
+
+// Snapshot every field's value (JSON-serialized) so we can diff after a rule
+// runs and report which fields it actually touched. Serialized (not live
+// references) so in-place mutations by rule code can't corrupt the snapshot.
+const snapshotFieldValues = (
+  state: FormInternalState
+): Record<string, string> => {
+  const out: Record<string, string> = {};
+  Object.entries(state?.fields ?? {}).forEach(([key, field]) => {
+    try {
+      out[key] = JSON.stringify((field as any)?.value ?? null);
+    } catch {
+      out[key] = '';
+    }
+  });
+  return out;
+};
+
+// Recover a plain value from a snapshot entry (inverse of snapshotFieldValues'
+// JSON.stringify; '' marks an unserializable value and maps to null).
+const parseSnapshotValue = (serialized: string | undefined): any => {
+  if (!serialized) return null;
+  try {
+    return JSON.parse(serialized);
+  } catch {
+    return null;
+  }
+};
+
+// Name a changed field for the document-reflection fallback: the field key
+// plus its admin-authored label when the form declares one. Used as the
+// `describes` semantic-search query when the pre-rule text isn't found in the
+// document (the document may hold an older rendering of the field).
+const describeFieldForDocument = (
+  state: FormInternalState,
+  key: string
+): string => {
+  let label: string | undefined;
+  try {
+    for (const step of Object.values((state as any)?.steps ?? {})) {
+      const match = ((step as any)?.servar_fields ?? []).find(
+        (f: any) => f?.servar?.key === key
+      );
+      if (match) {
+        if (typeof match?.servar?.name === 'string') label = match.servar.name;
+        break;
+      }
+    }
+  } catch {
+    // Hidden fields and partially-seeded forms have no servar; the key-only
+    // description below still names the field.
+  }
+  const labelPart = label && label !== key ? ` ("${label}")` : '';
+  return `the rendered value of form field '${key}'${labelPart}`;
+};
+
+const diffChangedFieldDetails = (
+  before: Record<string, string>,
+  after: Record<string, string>
+): ChangedFieldDetail[] => {
+  const changed: ChangedFieldDetail[] = [];
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  keys.forEach((key) => {
+    if (before[key] !== after[key])
+      changed.push({
+        key,
+        oldValue: parseSnapshotValue(before[key]),
+        newValue: parseSnapshotValue(after[key])
+      });
+  });
+  return changed;
+};
+
+// Execute a single logic rule on demand by its id - the entrypoint the
+// assistant uses to invoke designer-defined `trigger_event === 'tool'` rules.
+// Resolves the rule from internalState.logicRules and branches on server_side:
+//   - server_side: true  -> featheryClient.runServerSideLogicRule(id, {input_params})
+//                           (returnValue stays undefined in v1)
+//   - server_side: false -> runClientSideLogic with params exposed to the rule
+//                           code as `feathery.params`, capturing its return value
+// Returns the set of field keys the rule changed (plus per-field old->new
+// details from the pre-invoke snapshot, and - server-side only - document
+// updates derived from field_data) plus the client-side rule's resolved
+// return value. Never throws - failures surface via the `error` field.
+export const runLogicRuleById = async (
+  ruleId: string,
+  inputParams: Record<string, any> = {},
+  formUuid?: string,
+  options: { documentPresent?: boolean } = {}
+): Promise<RunLogicRuleResult> => {
+  // Resolve the owning form. When no uuid is given, fall back to the only
+  // loaded form (the common single-form host case).
+  const uuids = Object.keys(internalStateStore);
+  const resolvedUuid =
+    formUuid && internalStateStore[formUuid]
+      ? formUuid
+      : !formUuid && uuids.length === 1
+      ? uuids[0]
+      : formUuid;
+  const state = resolvedUuid ? internalStateStore[resolvedUuid] : undefined;
+
+  if (!state) {
+    return logicRuleTransportResult({
+      ruleId,
+      ruleName: 'Unavailable rule',
+      error: 'Form has not loaded yet.'
+    });
+  }
+
+  const rule = (state.logicRules ?? []).find((r) => r.id === ruleId);
+  if (!rule) {
+    return logicRuleTransportResult({
+      ruleId,
+      ruleName: 'Unavailable rule',
+      error: `Logic rule '${ruleId}' was not found on this form.`
+    });
+  }
+
+  const before = snapshotFieldValues(state);
+
+  try {
+    if (rule.server_side) {
+      const response = await (state.client as any).runServerSideLogicRule(
+        rule.id,
+        {
+          input_params: inputParams
+        }
+      );
+      if (response?.field_data) {
+        setFieldValues(response.field_data, true, true);
+      }
+      if (response?.file_values) {
+        processFileValues(response.file_values);
+        rerenderAllForms();
+      }
+      if (response?.error) {
+        handleRuleError(response.error, rule);
+        return logicRuleTransportResult({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          error: response.error
+        });
+      }
+      // Prefer the backend's authoritative field_data (new values) paired
+      // with the pre-invoke snapshot (old values); fall back to a diff. A
+      // field_data entry echoing the pre-rule value is not a change - only
+      // fields the rule actually moved are surfaced.
+      const fieldData = response?.field_data as Record<string, any> | undefined;
+      const changedFieldDetails: ChangedFieldDetail[] = fieldData
+        ? Object.keys(fieldData)
+            .filter((key) => {
+              let serialized = '';
+              try {
+                serialized = JSON.stringify(fieldData[key] ?? null);
+              } catch {}
+              return serialized !== (before[key] ?? JSON.stringify(null));
+            })
+            .map((key) => ({
+              key,
+              oldValue: parseSnapshotValue(before[key]),
+              newValue: fieldData[key]
+            }))
+        : diffChangedFieldDetails(before, snapshotFieldValues(state));
+      return logicRuleTransportResult({
+        ruleId: rule.id,
+        ruleName: rule.name,
+        changedFieldDetails,
+        documentPresent: options.documentPresent,
+        describeField: (key) => describeFieldForDocument(state, key)
+      });
+    }
+
+    const props = {
+      ...getFormContext(resolvedUuid as string),
+      ...getPrivateActions(resolvedUuid as string)
+    };
+    const returnValue = await runClientSideLogic(
+      rule,
+      state.client,
+      (state as any).extractedSharedCodeInfo ?? [],
+      state,
+      (state as any).connectorFields,
+      props,
+      inputParams
+    );
+    const changedFieldDetails = diffChangedFieldDetails(
+      before,
+      snapshotFieldValues(state)
+    );
+    return logicRuleTransportResult({
+      ruleId: rule.id,
+      ruleName: rule.name,
+      returnValue,
+      changedFieldDetails,
+      documentPresent: options.documentPresent,
+      describeField: (key) => describeFieldForDocument(state, key)
+    });
+  } catch (e: any) {
+    const message = e?.reason?.message ?? e?.error?.message ?? e?.message;
+    handleRuleError(message, rule);
+    return logicRuleTransportResult({
+      ruleId: rule.id,
+      ruleName: rule.name,
+      error: message ?? 'Logic rule failed.'
+    });
+  }
 };

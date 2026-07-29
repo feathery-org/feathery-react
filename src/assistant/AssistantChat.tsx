@@ -84,6 +84,25 @@ import {
   dispatchDeleteTableRow,
   dispatchSetTableCellValue
 } from './tools/tableMutations';
+import {
+  buildCallableRules,
+  dispatchAssistantTool,
+  unhandledToolOutput
+} from './tools/assistantToolDispatch';
+import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
+import {
+  createDocxEditorBridge,
+  readDocxSelection
+} from './tools/docxEditorBridge';
+import { getDocxEditor } from './tools/docxEditorRegistry';
+import {
+  ENVELOPE_TARGET_TYPE,
+  getDocumentIndexFreshness,
+  useDocumentIndex
+} from './tools/documentIndex';
+import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
+import { runLogicRuleById } from '../Form/logic';
+import internalState from '../utils/internalState';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -294,16 +313,41 @@ const AssistantChat = ({
     ? getTargets().find((t) => t.type === 'panel')?.id
     : undefined;
 
+  // ai-services requires a populated semantic index before every bulk document
+  // edit and nothing else fills it on the in-form path, so the index POST lives
+  // here: this is the one place that already holds the chat's target manifest and
+  // its auth, guaranteeing the index is keyed and authenticated exactly like the
+  // query that reads it. Fire-and-forget - it never gates the chat or the editor.
+  useDocumentIndex({ baseUrl, formId: instanceId, getTargets, headers });
+
   const buildChatBody = (): Record<string, unknown> => {
+    // ai-services reads assistant scope exclusively from body.context;
+    // form_key stays top-level because backend form auth reads body params.
     const body: Record<string, unknown> = {};
     if (formKey) body.form_key = formKey;
+    const context: Record<string, unknown> = {};
     const targets = getTargets();
-    if (targets.length > 0) body.targets = targets;
+    if (targets.length > 0) context.targets = targets;
 
     if (instanceId) {
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
-      if (panelRuntime) body.panel_runtime = panelRuntime;
+      if (panelRuntime) context.panel_runtime = panelRuntime;
+      context.selection = readDocxSelection(getDocxEditor(instanceId));
+      // Machine-only executor facts: protocol version and operation names.
+      // ai-services intersects these names with its canonical server enum and
+      // owns every description, example, payload rule, and result shape.
+      context.capabilities = CAPABILITIES_DECLARATION;
     }
+    // How fresh the semantic index is for the open document, re-read on every
+    // request (each tool round trip rebuilds this body, so the answer tracks
+    // edits within a turn). ai-services refuses semantic search when the index
+    // is dirty or holds someone else's content - stale hits must fail loud,
+    // not read plausible (S3). Never rendered into the prompt, so its
+    // per-request variation cannot break prompt caching.
+    const documentTarget = targets.find((t) => t.type === ENVELOPE_TARGET_TYPE);
+    if (documentTarget)
+      context.document_state = getDocumentIndexFreshness(documentTarget);
+    body.context = context;
     return body;
   };
 
@@ -550,129 +594,46 @@ const AssistantChat = ({
         voiceDataRef.current?.(part);
       },
       onToolCall: async ({ toolCall }: any) => {
-        if (toolCall.dynamic) return;
-
-        if (toolCall.toolName === 'setFieldValue') {
-          const input = (toolCall.input ?? {}) as {
-            fields?: Array<{
-              fieldKey?: unknown;
-              value?: unknown;
-              repeatIndex?: unknown;
-            }>;
-          };
-          const fields = Array.isArray(input.fields) ? input.fields : [];
-          const output = await dispatchSetFieldValue(instanceId, fields);
-          chat.addToolOutput({
-            tool: 'setFieldValue',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        } else if (toolCall.toolName === 'clickElement') {
-          const input = (toolCall.input ?? {}) as {
-            elementId?: unknown;
-            repeatIndex?: unknown;
-          };
-          const elementId =
-            typeof input.elementId === 'string' ? input.elementId : '';
-          const output = await dispatchClickElement(
-            instanceId,
-            elementId,
-            input.repeatIndex
-          );
-          chat.addToolOutput({
-            tool: 'clickElement',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        } else if (toolCall.toolName === 'navigateToStep') {
-          const input = (toolCall.input ?? {}) as { stepKey?: unknown };
-          const stepKey =
-            typeof input.stepKey === 'string' ? input.stepKey : '';
-          const output = await dispatchNavigate(instanceId, stepKey);
-          chat.addToolOutput({
-            tool: 'navigateToStep',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        } else if (toolCall.toolName === 'triggerTableAction') {
-          const input = (toolCall.input ?? {}) as {
-            tableId?: unknown;
-            rowIndex?: unknown;
-            actionLabel?: unknown;
-          };
-          const tableId =
-            typeof input.tableId === 'string' ? input.tableId : '';
-          const rowIndex =
-            typeof input.rowIndex === 'number' ? input.rowIndex : NaN;
-          const actionLabel =
-            typeof input.actionLabel === 'string'
-              ? input.actionLabel
-              : undefined;
-          const output = await dispatchTriggerTableAction(
-            instanceId,
-            tableId,
-            rowIndex,
-            actionLabel
-          );
-          chat.addToolOutput({
-            tool: 'triggerTableAction',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        } else if (toolCall.toolName === 'addTableRow') {
-          const input = (toolCall.input ?? {}) as { tableId?: unknown };
-          const tableId =
-            typeof input.tableId === 'string' ? input.tableId : '';
-          const output = await dispatchAddTableRow(instanceId, tableId);
-          chat.addToolOutput({
-            tool: 'addTableRow',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        } else if (toolCall.toolName === 'deleteTableRow') {
-          const input = (toolCall.input ?? {}) as {
-            tableId?: unknown;
-            rowIndex?: unknown;
-          };
-          const tableId =
-            typeof input.tableId === 'string' ? input.tableId : '';
-          const rowIndex =
-            typeof input.rowIndex === 'number' ? input.rowIndex : NaN;
-          const output = await dispatchDeleteTableRow(
-            instanceId,
-            tableId,
-            rowIndex
-          );
-          chat.addToolOutput({
-            tool: 'deleteTableRow',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        } else if (toolCall.toolName === 'setTableCellValue') {
-          const input = (toolCall.input ?? {}) as {
-            tableId?: unknown;
-            cells?: unknown;
-          };
-          const tableId =
-            typeof input.tableId === 'string' ? input.tableId : '';
-          const cells = Array.isArray(input.cells)
-            ? (input.cells as Array<{
-                rowIndex: unknown;
-                fieldKey: unknown;
-                value: unknown;
-              }>)
-            : [];
-          const output = await dispatchSetTableCellValue(
-            instanceId,
-            tableId,
-            cells
-          );
-          chat.addToolOutput({
-            tool: 'setTableCellValue',
-            toolCallId: toolCall.toolCallId,
-            output
-          });
-        }
+        await handleAssistantToolCall(toolCall, {
+          dispatch: (toolName, input) =>
+            dispatchAssistantTool(toolName, input, {
+              docxBridge: createDocxEditorBridge(() =>
+                getDocxEditor(instanceId)
+              ),
+              callableRules: buildCallableRules(
+                internalState[instanceId ?? '']?.logicRules ?? []
+              ),
+              // No form instance means no form to run a rule against, and the
+              // dashboard shares this module with the builder's preview forms
+              runLogicRule: instanceId
+                ? (ruleId, inputParams) =>
+                    runLogicRuleById(ruleId, inputParams, instanceId, {
+                      documentPresent: Boolean(getDocxEditor(instanceId))
+                    })
+                : undefined
+            }),
+          native: {
+            setFieldValue: (fields) =>
+              dispatchSetFieldValue(instanceId, fields),
+            clickElement: (elementId, repeatIndex) =>
+              dispatchClickElement(instanceId, elementId, repeatIndex),
+            navigateToStep: (stepKey) => dispatchNavigate(instanceId, stepKey),
+            triggerTableAction: (tableId, rowIndex, actionLabel) =>
+              dispatchTriggerTableAction(
+                instanceId,
+                tableId,
+                rowIndex,
+                actionLabel
+              ),
+            addTableRow: (tableId) => dispatchAddTableRow(instanceId, tableId),
+            deleteTableRow: (tableId, rowIndex) =>
+              dispatchDeleteTableRow(instanceId, tableId, rowIndex),
+            setTableCellValue: (tableId, cells) =>
+              dispatchSetTableCellValue(instanceId, tableId, cells)
+          },
+          unhandled: unhandledToolOutput,
+          emit: (args) => chat.addToolOutput(args)
+        });
       },
       onFinish: ({ isAbort, isError }: any) => {
         if (isAbort || isError || !resolvedThreadId) return;

@@ -1,10 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
+import {
+  registerDocxEditor,
+  unregisterDocxEditor
+} from '../../../assistant/tools/docxEditorRegistry';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -102,9 +112,13 @@ const wrap = {
 // be added without changing this wiring.
 export default function DocumentEditorContainer({
   containerId,
+  formId,
+  stepId,
   editMode
 }: {
   containerId?: string;
+  formId?: string;
+  stepId?: string;
   editMode?: boolean;
 }) {
   // saveEnvelopeFile/getCurrentEnvelope only use initInfo(), not the form key,
@@ -231,7 +245,10 @@ export default function DocumentEditorContainer({
     () => (sourceUrl ? { url: sourceUrl } : undefined),
     [sourceUrl]
   );
-  const activeDocumentId = documentId ?? envelope?.document;
+  // The loaded editor is authoritative. If a generate action contains several
+  // documents, the envelope actually displayed here wins over the action's
+  // first-document loading default.
+  const activeDocumentId = envelope?.document ?? documentId;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
   // `view_draft_read_only` (default: editable).
@@ -303,6 +320,44 @@ export default function DocumentEditorContainer({
     else openTab(url);
   }, [client, envelope, targetAction, terminalAction]);
 
+  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
+  // point. The schema container id is stable for this editor across renders;
+  // retain the editor object as well so cleanup can only remove this exact
+  // registration, never another mounted container's editor.
+  const registeredEditor = useRef<any>(undefined);
+  const onEditorReady = useCallback(
+    (editor: any) => {
+      if (!containerId) return;
+      registeredEditor.current = editor;
+      registerDocxEditor(containerId, editor, {
+        formId,
+        stepId,
+        documentId: activeDocumentId,
+        envelopeId: envelope?.id
+      });
+    },
+    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+  );
+  // Envelope identity can settle after SyncFusion's created callback. Refresh
+  // only the assistant registration; the editor itself stays mounted.
+  useEffect(() => {
+    if (!containerId || !registeredEditor.current) return;
+    registerDocxEditor(containerId, registeredEditor.current, {
+      formId,
+      stepId,
+      documentId: activeDocumentId,
+      envelopeId: envelope?.id
+    });
+  }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
+  useEffect(
+    () => () => {
+      if (containerId && registeredEditor.current) {
+        unregisterDocxEditor(containerId, registeredEditor.current, formId);
+      }
+    },
+    [containerId, formId]
+  );
+
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
@@ -354,6 +409,7 @@ export default function DocumentEditorContainer({
       // on every save), not the user's machine — no Download button.
       hideDownload={targetAction?.envelope_action === 'save'}
       onSave={saveEnvelope}
+      onEditorReady={onEditorReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not
       // persist anything — the envelope stays an editable docx.
       onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}
