@@ -4,12 +4,99 @@ import {
   getActiveDocxEditorTarget,
   getDocxEditor,
   registerDocxEditor,
+  subscribeDocxEditors,
   unregisterDocxEditor
 } from '../docxEditorRegistry';
 
 describe('docx editor registry ownership', () => {
   beforeEach(() => _clearDocxEditors());
   afterEach(() => _clearDocxEditors());
+
+  it('keeps editor registrations isolated between forms', () => {
+    const editorA = {};
+    const editorB = {};
+
+    registerDocxEditor('document-container', editorA, {
+      formId: 'form-a',
+      stepId: 'step-a',
+      documentId: 'document-a',
+      envelopeId: 'envelope-a'
+    });
+    registerDocxEditor('document-container', editorB, {
+      formId: 'form-b',
+      stepId: 'step-b',
+      documentId: 'document-b',
+      envelopeId: 'envelope-b'
+    });
+
+    expect(getDocxEditor('form-a')).toBe(editorA);
+    expect(getActiveDocxEditorTarget('form-a')?.id).toBe('document-a');
+    expect(getActiveDocxEditorEnvelopeTarget('form-a')?.id).toBe('envelope-a');
+    expect(getDocxEditor('form-b')).toBe(editorB);
+    expect(getActiveDocxEditorTarget('form-b')?.id).toBe('document-b');
+    expect(getActiveDocxEditorEnvelopeTarget('form-b')?.id).toBe('envelope-b');
+
+    unregisterDocxEditor('document-container', editorA, 'form-a');
+    expect(getDocxEditor('form-a')).toBeUndefined();
+    expect(getDocxEditor('form-b')).toBe(editorB);
+  });
+
+  it('notifies only the subscriber for the registering form', () => {
+    const listenerA = jest.fn();
+    const listenerB = jest.fn();
+    subscribeDocxEditors(listenerA, 'form-a');
+    subscribeDocxEditors(listenerB, 'form-b');
+    const editorA = {};
+    const editorB = {};
+
+    registerDocxEditor('document-container-a', editorA, {
+      formId: 'form-a'
+    });
+    expect(listenerA).toHaveBeenLastCalledWith(
+      expect.objectContaining({ editor: editorA })
+    );
+    expect(listenerB).not.toHaveBeenCalled();
+
+    registerDocxEditor('document-container-b', editorB, {
+      formId: 'form-b'
+    });
+    expect(listenerB).toHaveBeenLastCalledWith(
+      expect.objectContaining({ editor: editorB })
+    );
+    expect(listenerA).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the handoff and retirement lifecycle within each form', () => {
+    const firstEditor = {};
+    const nextEditor = {};
+    const revisitedEditor = {};
+
+    registerDocxEditor('document-container-a', firstEditor, {
+      formId: 'form-a',
+      stepId: 'step-a'
+    });
+    registerDocxEditor('document-container-b', nextEditor, {
+      formId: 'form-a',
+      stepId: 'step-b'
+    });
+
+    expect(getDocxEditor('form-a')).toBe(nextEditor);
+    expect(
+      registerDocxEditor('document-container-a', firstEditor, {
+        formId: 'form-a',
+        stepId: 'step-a'
+      })
+    ).toBe(false);
+    expect(getDocxEditor('form-a')).toBe(nextEditor);
+
+    expect(
+      registerDocxEditor('document-container-a', revisitedEditor, {
+        formId: 'form-a',
+        stepId: 'step-a'
+      })
+    ).toBe(true);
+    expect(getDocxEditor('form-a')).toBe(revisitedEditor);
+  });
 
   it('unregisters only when both the instance id and editor identity match', () => {
     const editor = {};
@@ -20,13 +107,13 @@ describe('docx editor registry ownership', () => {
     });
 
     unregisterDocxEditor('document-container-b', editor);
-    expect(getDocxEditor('document-container-a')).toBe(editor);
+    expect(getDocxEditor()).toBe(editor);
 
     unregisterDocxEditor('document-container-a', {});
-    expect(getDocxEditor('document-container-a')).toBe(editor);
+    expect(getDocxEditor()).toBe(editor);
 
     unregisterDocxEditor('document-container-a', editor);
-    expect(getDocxEditor('document-container-a')).toBeUndefined();
+    expect(getDocxEditor()).toBeUndefined();
   });
 
   it('silently selects the lexically first container when one step has two editors', () => {
@@ -39,12 +126,14 @@ describe('docx editor registry ownership', () => {
     // must not decide which document Robin reads.
     expect(
       registerDocxEditor('document-container-z', editorZ, {
+        formId: 'form-a',
         stepId: 'step-a',
         documentId: 'document-z'
       })
     ).toBe(true);
     expect(
       registerDocxEditor('document-container-a', editorA, {
+        formId: 'form-a',
         stepId: 'step-a',
         documentId: 'document-a',
         envelopeId: 'envelope-a'
@@ -53,12 +142,12 @@ describe('docx editor registry ownership', () => {
 
     expect(error).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
-    expect(getDocxEditor()).toBe(editorA);
-    expect(getActiveDocxEditorTarget()).toEqual({
+    expect(getDocxEditor('form-a')).toBe(editorA);
+    expect(getActiveDocxEditorTarget('form-a')).toEqual({
       type: 'generated_document',
       id: 'document-a'
     });
-    expect(getActiveDocxEditorEnvelopeTarget()).toEqual({
+    expect(getActiveDocxEditorEnvelopeTarget('form-a')).toEqual({
       type: 'envelope',
       id: 'envelope-a'
     });
@@ -66,10 +155,10 @@ describe('docx editor registry ownership', () => {
     // The non-target editor remains registered as a candidate. If the selected
     // one leaves the step, the other becomes Robin's target without affecting
     // either editor's own manual editing lifecycle.
-    unregisterDocxEditor('document-container-a', editorA);
-    expect(getDocxEditor()).toBe(editorZ);
-    expect(getActiveDocxEditorTarget()?.id).toBe('document-z');
-    expect(getActiveDocxEditorEnvelopeTarget()).toBeUndefined();
+    unregisterDocxEditor('document-container-a', editorA, 'form-a');
+    expect(getDocxEditor('form-a')).toBe(editorZ);
+    expect(getActiveDocxEditorTarget('form-a')?.id).toBe('document-z');
+    expect(getActiveDocxEditorEnvelopeTarget('form-a')).toBeUndefined();
 
     error.mockRestore();
     warn.mockRestore();
@@ -77,13 +166,21 @@ describe('docx editor registry ownership', () => {
 
   it('uses editor identity for an anonymous registration and rejects a missing editor', () => {
     const editor = {};
+    const namedEditor = {};
 
     expect(registerDocxEditor(undefined, editor)).toBe(true);
+    expect(
+      registerDocxEditor('document-container-a', namedEditor, {
+        formId: 'form-a'
+      })
+    ).toBe(true);
     expect(registerDocxEditor('document-container-a', null)).toBe(false);
     expect(getDocxEditor()).toBe(editor);
+    expect(getDocxEditor('form-a')).toBe(namedEditor);
 
     unregisterDocxEditor(undefined, editor);
     expect(getDocxEditor()).toBeUndefined();
+    expect(getDocxEditor('form-a')).toBe(namedEditor);
   });
 
   it('hands off across steps before the outgoing editor unmounts and ignores its late cleanup', () => {
@@ -169,9 +266,13 @@ describe('docx editor registry ownership', () => {
     registerDocxEditor('document-container-a', outgoingEditor, {
       stepId: 'step-a'
     });
-    registerDocxEditor('document-container-b', {}, {
-      stepId: 'step-b'
-    });
+    registerDocxEditor(
+      'document-container-b',
+      {},
+      {
+        stepId: 'step-b'
+      }
+    );
     expect(registerDocxEditor('document-container-a', outgoingEditor)).toBe(
       false
     );

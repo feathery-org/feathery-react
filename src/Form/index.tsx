@@ -915,9 +915,9 @@ function Form({
     // the document exactly when the editor is open. This is still only the
     // document template target; the editor separately publishes its real
     // envelope as the only per-submission index scope.
-    const documentTarget = getActiveDocxEditorTarget();
+    const documentTarget = getActiveDocxEditorTarget(_internalId);
     if (documentTarget) targets.push(documentTarget);
-    const envelopeTarget = getActiveDocxEditorEnvelopeTarget();
+    const envelopeTarget = getActiveDocxEditorEnvelopeTarget(_internalId);
     if (envelopeTarget) targets.push(envelopeTarget);
     return targets;
   }, [formId]);
@@ -3109,6 +3109,7 @@ function Form({
   }
 
   const form = {
+    formInstanceId: _internalId,
     userProgress,
     curDepth,
     maxDepth,

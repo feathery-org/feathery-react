@@ -112,10 +112,12 @@ const wrap = {
 // be added without changing this wiring.
 export default function DocumentEditorContainer({
   containerId,
+  formId,
   stepId,
   editMode
 }: {
   containerId?: string;
+  formId?: string;
   stepId?: string;
   editMode?: boolean;
 }) {
@@ -328,30 +330,32 @@ export default function DocumentEditorContainer({
       if (!containerId) return;
       registeredEditor.current = editor;
       registerDocxEditor(containerId, editor, {
+        formId,
         stepId,
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
     },
-    [activeDocumentId, containerId, envelope?.id, stepId]
+    [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
     if (!containerId || !registeredEditor.current) return;
     registerDocxEditor(containerId, registeredEditor.current, {
+      formId,
       stepId,
       documentId: activeDocumentId,
       envelopeId: envelope?.id
     });
-  }, [activeDocumentId, containerId, envelope?.id, stepId]);
+  }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
   useEffect(
     () => () => {
       if (containerId && registeredEditor.current) {
-        unregisterDocxEditor(containerId, registeredEditor.current);
+        unregisterDocxEditor(containerId, registeredEditor.current, formId);
       }
     },
-    [containerId]
+    [containerId, formId]
   );
 
   const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;

@@ -343,6 +343,7 @@ const indexNow = (
 
 type UseDocumentIndexArgs = {
   baseUrl: string;
+  formId?: string;
   // The chat's own target builder; backend resolves both requests identically.
   getTargets: () => DocumentIndexTarget[];
   // The chat's own header factory, so index and chat authenticate identically.
@@ -358,6 +359,7 @@ type UseDocumentIndexArgs = {
 // Robin request starting.
 export function useDocumentIndex({
   baseUrl,
+  formId,
   getTargets,
   headers
 }: UseDocumentIndexArgs): void {
@@ -502,7 +504,7 @@ export function useDocumentIndex({
       }
     };
 
-    const unsubscribe = subscribeDocxEditors(onEditor);
+    const unsubscribe = subscribeDocxEditors(onEditor, formId);
     return () => {
       cancelled = true;
       unsubscribe();
@@ -516,5 +518,5 @@ export function useDocumentIndex({
         }
       });
     };
-  }, [baseUrl, getTargets, headers]);
+  }, [baseUrl, formId, getTargets, headers]);
 }

@@ -89,12 +89,13 @@ describe('DocumentEditorContainer registry lifecycle', () => {
     const first = render(
       <DocumentEditorContainer
         containerId='document-container-b'
+        formId='form-1'
         stepId='step-same'
       />
     );
 
     await waitFor(() =>
-      expect(getDocxEditor()).toMatchObject({
+      expect(getDocxEditor('form-1')).toMatchObject({
         sourceUrl: 'https://example.com/document-container-b.docx'
       })
     );
@@ -102,6 +103,7 @@ describe('DocumentEditorContainer registry lifecycle', () => {
     const second = render(
       <DocumentEditorContainer
         containerId='document-container-a'
+        formId='form-1'
         stepId='step-same'
       />
     );
@@ -117,37 +119,38 @@ describe('DocumentEditorContainer registry lifecycle', () => {
           'editor:https://example.com/document-container-b.docx'
         )
       ).toBeInTheDocument();
-      expect(getDocxEditor()).toMatchObject({
+      expect(getDocxEditor('form-1')).toMatchObject({
         sourceUrl: 'https://example.com/document-container-a.docx'
       });
     });
     expect(error).not.toHaveBeenCalled();
-    expect(getActiveDocxEditorEnvelopeTarget()).toEqual({
+    expect(getActiveDocxEditorEnvelopeTarget('form-1')).toEqual({
       type: 'envelope',
       id: 'envelope-document-container-a'
     });
 
     second.unmount();
-    expect(getDocxEditor()).toMatchObject({
+    expect(getDocxEditor('form-1')).toMatchObject({
       sourceUrl: 'https://example.com/document-container-b.docx'
     });
-    expect(getActiveDocxEditorEnvelopeTarget()?.id).toBe(
+    expect(getActiveDocxEditorEnvelopeTarget('form-1')?.id).toBe(
       'envelope-document-container-b'
     );
 
     first.unmount();
-    expect(getDocxEditor()).toBeUndefined();
+    expect(getDocxEditor('form-1')).toBeUndefined();
   });
 
   it('hands off to the next step before the previous step unmounts', async () => {
     const outgoing = render(
       <DocumentEditorContainer
         containerId='document-container-a'
+        formId='form-1'
         stepId='step-a'
       />
     );
     await waitFor(() =>
-      expect(getDocxEditor()).toMatchObject({
+      expect(getDocxEditor('form-1')).toMatchObject({
         sourceUrl: 'https://example.com/document-container-a.docx'
       })
     );
@@ -156,24 +159,58 @@ describe('DocumentEditorContainer registry lifecycle', () => {
     const incoming = render(
       <DocumentEditorContainer
         containerId='document-container-b'
+        formId='form-1'
         stepId='step-b'
       />
     );
     await waitFor(() =>
-      expect(getDocxEditor()).toMatchObject({
+      expect(getDocxEditor('form-1')).toMatchObject({
         sourceUrl: 'https://example.com/document-container-b.docx'
       })
     );
-    expect(getActiveDocxEditorEnvelopeTarget()?.id).toBe(
+    expect(getActiveDocxEditorEnvelopeTarget('form-1')?.id).toBe(
       'envelope-document-container-b'
     );
 
     // Then the outgoing cleanup arrives late.
     outgoing.unmount();
-    expect(getDocxEditor()).toMatchObject({
+    expect(getDocxEditor('form-1')).toMatchObject({
       sourceUrl: 'https://example.com/document-container-b.docx'
     });
     incoming.unmount();
-    expect(getDocxEditor()).toBeUndefined();
+    expect(getDocxEditor('form-1')).toBeUndefined();
+  });
+
+  it('keeps editors mounted by different forms isolated', async () => {
+    const formA = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-a'
+        stepId='step-a'
+      />
+    );
+    const formB = render(
+      <DocumentEditorContainer
+        containerId='document-container-b'
+        formId='form-b'
+        stepId='step-b'
+      />
+    );
+
+    await waitFor(() => {
+      expect(getDocxEditor('form-a')).toMatchObject({
+        sourceUrl: 'https://example.com/document-container-a.docx'
+      });
+      expect(getDocxEditor('form-b')).toMatchObject({
+        sourceUrl: 'https://example.com/document-container-b.docx'
+      });
+    });
+
+    formA.unmount();
+    expect(getDocxEditor('form-a')).toBeUndefined();
+    expect(getDocxEditor('form-b')).toMatchObject({
+      sourceUrl: 'https://example.com/document-container-b.docx'
+    });
+    formB.unmount();
   });
 });

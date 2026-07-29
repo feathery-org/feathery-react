@@ -88,8 +88,8 @@ const targets =
     ];
 
 const mountedEditorTargets = () => {
-  const documentTarget = getActiveDocxEditorTarget();
-  const envelopeTarget = getActiveDocxEditorEnvelopeTarget();
+  const documentTarget = getActiveDocxEditorTarget('form-1');
+  const envelopeTarget = getActiveDocxEditorEnvelopeTarget('form-1');
   return [
     { type: 'panel', id: 'panel-1' },
     { type: 'fuser', id: 'user-1' },
@@ -526,7 +526,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
 
     const editor = fakeEditor();
     editor.loaded = true;
-    registerDocxEditor(undefined, editor);
+    registerDocxEditor(undefined, editor, { formId: 'form-1' });
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
@@ -552,7 +552,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
     );
     const editor = fakeEditor();
     editor.loaded = true;
-    registerDocxEditor(undefined, editor);
+    registerDocxEditor(undefined, editor, { formId: 'form-1' });
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS * 4);
     });
@@ -580,6 +580,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
     const editor = fakeEditor();
     editor.loaded = true;
     registerDocxEditor('editor-a', editor, {
+      formId: 'form-1',
       stepId: 'edit-proposal',
       documentId: DOC_ID,
       envelopeId: ENV_ID
@@ -615,6 +616,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
     const outgoing = fakeEditor();
     outgoing.loaded = true;
     registerDocxEditor('editor-a', outgoing, {
+      formId: 'form-1',
       stepId: 'step-a',
       documentId: 'document-a',
       envelopeId: 'envelope-a'
@@ -628,6 +630,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
     incoming.text = 'Second document only';
     // React mounts the incoming step first.
     registerDocxEditor('editor-b', incoming, {
+      formId: 'form-1',
       stepId: 'step-b',
       documentId: 'document-b',
       envelopeId: 'envelope-b'
@@ -640,6 +643,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
     // identity is retired and cannot reclaim the active step.
     expect(
       registerDocxEditor('editor-a', outgoing, {
+        formId: 'form-1',
         stepId: 'step-a',
         documentId: 'document-a',
         envelopeId: 'envelope-a'
@@ -649,7 +653,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     // Then the outgoing effect cleans up late.
-    unregisterDocxEditor('editor-a', outgoing);
+    unregisterDocxEditor('editor-a', outgoing, 'form-1');
 
     expect(
       indexPosts().map(
@@ -894,7 +898,7 @@ describe('AssistantChat sends document_state (the staleness signal call site)', 
     );
     const editor = fakeEditor();
     editor.loaded = true;
-    registerDocxEditor(undefined, editor);
+    registerDocxEditor(undefined, editor, { formId: 'form-1' });
 
     // Before the index is confirmed: the request already says so.
     expect(transportBody().context.document_state).toEqual({
