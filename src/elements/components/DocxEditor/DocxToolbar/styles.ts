@@ -19,6 +19,9 @@ export const FEATHERY_RED_HOVER = '#dc3a4b';
 export const EDGE_PAD = 12;
 // Gap between group spans in the tool row (and between controls in a group).
 export const ROW_GAP = 2;
+// Toolbar root height. Exported so the editor shell can reserve the same space
+// before the toolbar mounts.
+export const TOOLBAR_HEIGHT = 44;
 export const groupSpan = {
   display: 'inline-flex',
   alignItems: 'center',

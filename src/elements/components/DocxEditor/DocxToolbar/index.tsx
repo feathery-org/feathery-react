@@ -17,7 +17,7 @@ import {
 } from './groups';
 import { useEditorFormatState } from './useEditorFormatState';
 import { MORE_KEY, useToolbarOverflow } from './useToolbarOverflow';
-import { groupSpan, ROW_GAP, triggerBtn, ZINC } from './styles';
+import { groupSpan, ROW_GAP, TOOLBAR_HEIGHT, triggerBtn, ZINC } from './styles';
 
 function Divider() {
   return (
@@ -155,7 +155,7 @@ export default function DocxToolbar({
       ref={rootRef}
       css={{
         position: 'relative',
-        height: 44,
+        height: TOOLBAR_HEIGHT,
         flex: '0 0 auto',
         borderBottom: `1px solid ${ZINC[200]}`,
         background: '#fff'

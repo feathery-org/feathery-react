@@ -310,5 +310,32 @@ export function useDocxEditor({
 
   const resize = useCallback(() => containerInstRef.current?.resize?.(), []);
 
+  // DocumentEditorContainer caches its layout geometry at `created` and never
+  // observes its host box, so a later resize leaves it laid out against stale
+  // dimensions until something forces a reflow — opening a document was that
+  // trigger, hence the jump. rAF-coalesced: resize() is a full relayout, and
+  // deferring out of the observer callback avoids an undelivered-notifications
+  // warning.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !editor) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (frame) return;
+      frame = featheryWindow().requestAnimationFrame(() => {
+        frame = 0;
+        // Resizing to 0 while hidden makes Syncfusion compute a degenerate
+        // layout it does not recover from when the box returns.
+        const { width, height } = el.getBoundingClientRect();
+        if (width > 0 && height > 0) containerInstRef.current?.resize?.();
+      });
+    });
+    observer.observe(el);
+    return () => {
+      if (frame) featheryWindow().cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [editor]);
+
   return { containerRef, editor, loading, error, exportDoc, resize };
 }
