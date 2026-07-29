@@ -194,6 +194,7 @@ export const postDocumentIndex = async ({
 }: PostDocumentIndexArgs): Promise<PostDocumentIndexResult> => {
   const envelopeTarget = getDocumentTarget(targets);
   if (!baseUrl || !envelopeTarget || !blocks?.length) return { posted: false };
+  const formKey = targets.find((target) => target.type === 'panel')?.id;
   const res = await fetch(`${baseUrl}document-index`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers() },
@@ -201,6 +202,7 @@ export const postDocumentIndex = async ({
       envelopeId: envelopeTarget.id,
       targets,
       blocks,
+      ...(formKey ? { form_key: formKey } : {}),
       ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
     })
   });
