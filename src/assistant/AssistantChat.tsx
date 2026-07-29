@@ -603,10 +603,14 @@ const AssistantChat = ({
               callableRules: buildCallableRules(
                 internalState[instanceId ?? '']?.logicRules ?? []
               ),
-              runLogicRule: (ruleId, inputParams) =>
-                runLogicRuleById(ruleId, inputParams, instanceId, {
-                  documentPresent: Boolean(getDocxEditor(instanceId))
-                })
+              // No form instance means no form to run a rule against, and the
+              // dashboard shares this module with the builder's preview forms
+              runLogicRule: instanceId
+                ? (ruleId, inputParams) =>
+                    runLogicRuleById(ruleId, inputParams, instanceId, {
+                      documentPresent: Boolean(getDocxEditor(instanceId))
+                    })
+                : undefined
             }),
           native: {
             setFieldValue: (fields) =>

@@ -60,12 +60,13 @@ it('normalizes runtime-only values at the panelRuntime source and retains empty 
     nested: { pending: { kind: 'promise', present: true } }
   });
   expect(snapshot.currentStepFields[0].value).toEqual(snapshot.values.upload);
-  expect(snapshot.hiddenFieldValues).toEqual({
-    hidden_file: filePresence,
-    hidden_null: null,
-    hidden_empty_string: '',
-    hidden_empty_array: []
-  });
+  expect(snapshot.hiddenFieldValues).toEqual({ hidden_file: filePresence });
+  expect(snapshot.hiddenFieldsEmpty).toEqual([
+    'hidden_null',
+    'hidden_empty_string',
+    'hidden_empty_array'
+  ]);
   expect(snapshot.hiddenFieldValues).not.toHaveProperty('not_present');
+  expect(snapshot.hiddenFieldsEmpty).not.toContain('not_present');
   expect(() => JSON.stringify(snapshot)).not.toThrow();
 });
