@@ -445,7 +445,7 @@ export default class IntegrationClient {
   }
 
   ENVELOPE_CHECK_INTERVAL = 2000;
-  ENVELOPE_MAX_TIME = 3 * 60 * 1000;
+  ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
   async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();

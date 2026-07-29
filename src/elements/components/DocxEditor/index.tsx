@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
+import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import { useDocxEditor } from './useDocxEditor';
 import { DocxSource } from './types';
 
@@ -224,6 +225,9 @@ function DocxEditor({
         background: '#fff'
       }}
     >
+      {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
+          arrival doesn't shrink the editor pane mid-load. */}
+      {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
       {editor && (
         <DocxToolbar
           editor={editor}
