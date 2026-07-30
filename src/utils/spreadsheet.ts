@@ -1,9 +1,6 @@
-// Parsing helpers for spreadsheet uploads (CSV + Excel). CSV is parsed natively
-// so no dependency is needed for the common case; Excel parsing dynamically
-// imports the (heavier) `xlsx` library only when an Excel file is uploaded, so
-// it stays out of the main bundle.
+import { featheryDoc, featheryWindow } from './browser';
 
-export const SPREADSHEET_EXTENSIONS = ['csv', 'xlsx', 'xls', 'xlsm'];
+const SPREADSHEET_EXTENSIONS = ['csv', 'xlsx', 'xls', 'xlsm'];
 
 export const isSpreadsheetFile = (file: File): boolean => {
   const ext = (file.name || '').split('.').pop()?.toLowerCase() ?? '';
@@ -13,15 +10,40 @@ export const isSpreadsheetFile = (file: File): boolean => {
 const isExcelFile = (file: File): boolean =>
   /\.(xlsx|xls|xlsm)$/i.test(file.name || '');
 
-export function parseCSV(csv: string): string[][] {
+const SHEETJS_CDN =
+  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+let sheetJSPromise: Promise<any> | null = null;
+
+function loadSheetJS(): Promise<any> {
+  const win = featheryWindow() as any;
+  if (win.XLSX) return Promise.resolve(win.XLSX);
+  if (sheetJSPromise) return sheetJSPromise;
+  sheetJSPromise = new Promise((resolve, reject) => {
+    const doc = featheryDoc();
+    const script = doc.createElement('script');
+    script.src = SHEETJS_CDN;
+    script.async = true;
+    script.onload = () => resolve((featheryWindow() as any).XLSX);
+    script.onerror = () => {
+      sheetJSPromise = null;
+      reject(new Error('Failed to load the spreadsheet parser'));
+    };
+    doc.head.appendChild(script);
+  });
+  return sheetJSPromise;
+}
+
+function parseCSV(csv: string): string[][] {
+  const text = csv.charCodeAt(0) === 0xfeff ? csv.slice(1) : csv;
+
   const rows: string[][] = [];
   let currentRow: string[] = [];
   let currentValue = '';
   let insideQuotes = false;
 
-  for (let i = 0; i < csv.length; i++) {
-    const char = csv[i];
-    const nextChar = csv[i + 1];
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
 
     if (char === '"' && insideQuotes && nextChar === '"') {
       currentValue += '"';
@@ -73,12 +95,8 @@ export interface SpreadsheetSheet {
   rows: string[][];
 }
 
-/**
- * Build the list of importable sheets from an xlsx workbook: skip hidden sheets
- * (`Hidden` is 1 = hidden, 2 = very hidden) and stringify every cell. Pure +
- * testable; the row extractor is injected so this needs no file IO.
- */
-export function collectVisibleSheets(
+// Skips hidden sheets (`Hidden` is 1 = hidden, 2 = very hidden).
+function collectVisibleSheets(
   workbook: any,
   sheetToRows: (sheet: any) => any[][]
 ): SpreadsheetSheet[] {
@@ -95,20 +113,16 @@ export function collectVisibleSheets(
   return sheets;
 }
 
-/**
- * Parse a CSV or Excel file into its sheets. CSV yields a single implicit sheet;
- * Excel yields all visible sheets (caller decides which are non-empty).
- */
 export async function parseWorkbook(file: File): Promise<SpreadsheetSheet[]> {
   if (isExcelFile(file)) {
-    const XLSX = await import('xlsx');
+    const XLSX = await loadSheetJS();
     const buffer = await readArrayBuffer(file);
     const workbook = XLSX.read(new Uint8Array(buffer), {
       type: 'array',
       cellDates: true
     });
     return collectVisibleSheets(workbook, (sheet) =>
-      XLSX.utils.sheet_to_json<any[]>(sheet, {
+      XLSX.utils.sheet_to_json(sheet, {
         header: 1,
         raw: false,
         defval: ''
@@ -125,12 +139,6 @@ export interface ParsedSpreadsheet {
   rows: string[][];
 }
 
-/**
- * Normalize parsed output into trimmed headers (blank headers become
- * "Column N") and non-empty data rows. Columns whose data cells are blank in
- * EVERY row are dropped entirely (a single non-blank value anywhere in the
- * column, at any row, keeps it). Headers and row cells stay index-aligned.
- */
 export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
   if (parsed.length === 0) return { headers: [], rows: [] };
 
@@ -139,7 +147,6 @@ export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
     .slice(1)
     .filter((row) => row.some((col) => col && col.trim() !== ''));
 
-  // A column is kept only if at least one data row has a non-blank value in it.
   const keptIndexes = rawHeaders
     .map((_h, colIndex) => colIndex)
     .filter((colIndex) =>
@@ -157,23 +164,49 @@ export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
   return { headers, rows };
 }
 
-// Mapping: target field key -> source column index (unmapped = absent).
-export type FieldColumnMapping = Record<string, number>;
+export interface NormalizedSheet {
+  name: string;
+  headers: string[];
+  rows: string[][];
+}
 
-/**
- * Build field values from a field->column mapping: for each mapped field,
- * collect every data row's value (trimmed) from its source column into an
- * array, preserving row order. Returns a map of fieldKey -> string[].
- */
-export function buildReversedFieldValues(
-  rows: string[][],
-  mapping: FieldColumnMapping
-): Record<string, string[]> {
-  const values: Record<string, string[]> = {};
-  if (rows.length === 0) return values;
-  Object.entries(mapping).forEach(([fieldKey, colIndex]) => {
-    if (colIndex == null || colIndex < 0) return;
-    values[fieldKey] = rows.map((row) => (row[colIndex] ?? '').trim());
+export interface ColumnRef {
+  sheet: string;
+  header: string;
+}
+export type FieldMapping = Record<string, ColumnRef>;
+
+// Fields mapped to different sheets are zipped by row index; shorter sheets
+// yield blanks on the extra rows.
+export function buildStagedRows(
+  sheets: NormalizedSheet[],
+  mapping: FieldMapping
+): Record<string, string>[] {
+  const byName = new Map(sheets.map((s) => [s.name, s]));
+  const resolved: { fieldKey: string; values: string[] }[] = [];
+
+  Object.entries(mapping).forEach(([fieldKey, ref]) => {
+    const sheet = byName.get(ref.sheet);
+    if (!sheet) return;
+    const colIndex = sheet.headers.indexOf(ref.header);
+    if (colIndex < 0) return;
+    resolved.push({
+      fieldKey,
+      values: sheet.rows.map((r) => (r[colIndex] ?? '').trim())
+    });
   });
-  return values;
+
+  const rowCount = resolved.reduce(
+    (max, r) => Math.max(max, r.values.length),
+    0
+  );
+  const out: Record<string, string>[] = [];
+  for (let i = 0; i < rowCount; i++) {
+    const row: Record<string, string> = {};
+    resolved.forEach(({ fieldKey, values }) => {
+      row[fieldKey] = values[i] ?? '';
+    });
+    out.push(row);
+  }
+  return out;
 }

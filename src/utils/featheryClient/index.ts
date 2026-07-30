@@ -1186,22 +1186,35 @@ export default class FeatheryClient extends IntegrationClient {
     data?: Record<string, any>;
     where?: any[];
     rows?: Record<string, any>[];
-    fuserKey?: string;
+    // `get` only. Omitted means saved rows only; when set, each entry carries
+    // a `draft` boolean.
+    includeDrafts?: 'all' | 'onlyDrafts';
+    // `finalize` only: skip the field-rule / required / uniqueness gate, which
+    // draft rows were never held to on the way in.
+    skipValidation?: boolean;
   }) {
     const { sdkKey, userId } = initInfo();
-    const { hubId, operation, entryId, data, where, rows, fuserKey } = options;
-    // Only the staged data-mapping ops are scoped to a fuser. Existing
-    // operations (get/create/update/delete) must NOT carry a fuser_key so
-    // their requests stay byte-identical to the pre-feature behavior.
-    const STAGED_OPS = [
+    const {
+      hubId,
+      operation,
+      entryId,
+      data,
+      where,
+      rows,
+      includeDrafts,
+      skipValidation
+    } = options;
+    // get/create/update/delete must NOT carry a fuser_key so their requests stay
+    // byte-identical to the pre-feature behavior. `finalize` isn't scoped either.
+    const FUSER_SCOPED_OPS = [
       'stage',
       'get_staged',
       'update_staged',
-      'delete_staged',
-      'finalize'
+      'delete_staged'
     ];
-    const resolvedFuserKey =
-      fuserKey ?? (STAGED_OPS.includes(operation) ? userId : undefined);
+    const resolvedFuserKey = FUSER_SCOPED_OPS.includes(operation)
+      ? userId
+      : undefined;
     const url = `${API_URL}hub/${hubId}/action/`;
     const res = await apiFetch(
       sdkKey,
@@ -1215,6 +1228,9 @@ export default class FeatheryClient extends IntegrationClient {
           data,
           rows,
           fuser_key: resolvedFuserKey,
+          // Wire key keeps the backend's `include_staged` spelling.
+          ...(includeDrafts ? { include_staged: includeDrafts } : {}),
+          ...(skipValidation ? { skip_validation: true } : {}),
           // Map each condition to the backend's snake_case shape.
           where: where?.map((cond: any) =>
             'entryId' in cond
