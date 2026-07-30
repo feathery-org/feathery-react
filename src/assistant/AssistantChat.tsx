@@ -247,8 +247,21 @@ export type WorkflowAction = {
   instructions: string;
 };
 
-export type AssistantStepDefault = 'closed' | 'floating' | 'sidebar_right';
+export type AssistantStepDefault =
+  | 'closed'
+  | 'floating'
+  | 'sidebar_left'
+  | 'sidebar_right'
+  | 'fullscreen';
 export type AssistantStepSettings = Record<string, AssistantStepDefault>;
+
+const STEP_DEFAULT_MODES: Partial<Record<AssistantStepDefault, AssistantMode>> =
+  {
+    floating: 'current',
+    sidebar_left: 'sidebar-left',
+    sidebar_right: 'sidebar-right',
+    fullscreen: 'fullscreen'
+  };
 
 export type AssistantLayoutState = {
   mode: AssistantMode;
@@ -370,11 +383,10 @@ const AssistantChat = ({
     if (!activeStepId || activeStepId === forcedStepRef.current) return;
     forcedStepRef.current = activeStepId;
     const stepDefault = stepSettings[activeStepId];
-    if (stepDefault === 'floating' || stepDefault === 'sidebar_right') {
+    const forcedMode = stepDefault && STEP_DEFAULT_MODES[stepDefault];
+    if (forcedMode) {
       setIsOpen(true);
-      setModeState(
-        stepDefault === 'sidebar_right' ? 'sidebar-right' : 'current'
-      );
+      setModeState(forcedMode);
     }
   }, [activeStepId, stepSettings]);
 
