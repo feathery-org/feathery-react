@@ -34,8 +34,17 @@ export function useEditorFormatState(editor: any) {
     syncSelection();
     syncZoom();
     return () => {
-      editor.removeEventListener('selectionChange', syncSelection);
-      editor.removeEventListener('zoomFactorChange', syncZoom);
+      // On step navigation React destroys the deleted subtree parent-first,
+      // so useDocxEditor has already destroy()ed the editor by the time this
+      // cleanup runs — removeEventListener on a destroyed ej2 instance throws
+      // ("Cannot convert undefined or null to object").
+      if (editor.isDestroyed) return;
+      try {
+        editor.removeEventListener('selectionChange', syncSelection);
+        editor.removeEventListener('zoomFactorChange', syncZoom);
+      } catch {
+        /* editor already torn down */
+      }
     };
   }, [editor]);
 

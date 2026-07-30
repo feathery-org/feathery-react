@@ -80,32 +80,37 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
           zIndex: 1
         }}
       >
-        {dirty && (
+        {/* Always rendered, hidden while clean: this region's width feeds the
+            tool row's clearance (useToolbarOverflow), so the indicator popping
+            in and out must not change it — otherwise every first edit shoves
+            the centered tool row to the left edge, and it only recovers on an
+            explicit save. */}
+        <span
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 13,
+            color: ZINC[500],
+            whiteSpace: 'nowrap',
+            visibility: dirty ? 'visible' : 'hidden'
+          }}
+          aria-hidden={!dirty}
+          title={dirty ? 'You have unsaved changes' : undefined}
+        >
           <span
             css={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 13,
-              color: ZINC[500],
-              whiteSpace: 'nowrap'
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: FEATHERY_RED,
+              flex: '0 0 auto'
             }}
-            title='You have unsaved changes'
-          >
-            <span
-              css={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: FEATHERY_RED,
-                flex: '0 0 auto'
-              }}
-            />
-            {/* On narrow toolbars the dot alone carries the state (with the
-                tooltip); the label would crowd out the tool row. */}
-            {!compact && 'Unsaved changes'}
-          </span>
-        )}
+          />
+          {/* On narrow toolbars the dot alone carries the state (with the
+              tooltip); the label would crowd out the tool row. */}
+          {!compact && 'Unsaved changes'}
+        </span>
         {onDownload && onDownloadPdf ? (
           <Menu
             align='end'
