@@ -507,6 +507,159 @@ describe('text-frame post-write verification', () => {
     );
   });
 
+  // The mirror image of the case above, and the reason the verification cannot
+  // be a revision-type test: this write is at the range START, where a
+  // legitimate second replace over a still-pending insertion also writes. Both
+  // land on exactly the searched range, both author one rejectable Insertion,
+  // and both leave the reject projection unchanged - so the only thing that
+  // separates them is what the document reads once the changes are accepted.
+  it('fails when the replacement is inserted beside an undeleted target at the range start', () => {
+    let revisionTypesAfterInsert: string[] = [];
+    withEditor(
+      (ed) => {
+        const before = ed.serialize();
+        const frame = frameOccurrence(ed, 'Innovation Learning LLC');
+        const startAdjacentWriteEditor = editorWithInsertText(
+          ed,
+          (realInsert, text) => {
+            const startOffset = `${frame.anchor};${frame.start}`;
+            ed.selection.select(startOffset, startOffset);
+            realInsert(text);
+            revisionTypesAfterInsert = realRevisions(ed).map((revision) =>
+              String(revision.revisionType).toLowerCase()
+            );
+          }
+        );
+        const result = applyDocumentEdits(startAdjacentWriteEditor, {
+          changeSetId: 'start-adjacent-story-write',
+          edits: [
+            {
+              op: 'replace_text',
+              anchor: frame.anchor,
+              start: frame.start,
+              end: frame.end,
+              expect: frame.blockText,
+              find: frame.matchText,
+              replace: 'Innovation Learning'
+            }
+          ]
+        });
+
+        expect(revisionTypesAfterInsert).toEqual(['insertion']);
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'text_verification_failed'
+        });
+        // The message names the property that failed, not a match count: the
+        // accepted document still reads the target beside the replacement.
+        expect(result.results[0].details?.join('\n')).toContain(
+          'Innovation LearningInnovation Learning LLC'
+        );
+        expect(result.changeSet.status).toBe('failed');
+        expect(ed.serialize()).toBe(before);
+        expect(realRevisions(ed)).toHaveLength(0);
+      },
+      coverPageDoc('Innovation Learning LLC')
+    );
+  });
+
+  // The engine tolerates a live editor that does not expose an observable
+  // revision collection (`assertTrackedMutation` returns early for it). Post-write
+  // verification must tolerate it too, or that degraded shape turns every
+  // text-frame write into a hard failure plus a rollback.
+  it('applies a frame replace on an editor whose revision collection is not observable', () => {
+    withEditor((ed) => {
+      const hiddenRevisions = new Proxy(ed as unknown as LiveEditor, {
+        get(target, property, receiver) {
+          if (property === 'revisions') return { acceptAll: () => undefined };
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+      });
+      const frame = frameOccurrence(ed, 'Engineer');
+      const result = applyDocumentEdits(hiddenRevisions, {
+        changeSetId: 'unobservable-revisions',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: frame.anchor,
+            start: frame.start,
+            end: frame.end,
+            expect: frame.blockText,
+            find: 'Engineer',
+            replace: 'Sr. Advisor'
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'replace_text' });
+      expect(result.changeSet.status).toBe('applied');
+      // The write really was tracked - only the engine's view of the collection
+      // was hidden.
+      expect(
+        realRevisions(ed)
+          .map((revision) => String(revision.revisionType).toLowerCase())
+          .sort()
+      ).toEqual(['deletion', 'insertion']);
+    });
+  });
+
+  // The accepted document is unchanged here, which is the one case where the
+  // changed text cannot locate the occurrence that was replaced.
+  it('accepts a frame replace whose replacement is the target text itself', () => {
+    withEditor(
+      (ed) => {
+        const result = replaceInFrame(
+          ed,
+          'identical-frame-write',
+          'Engineer',
+          'Engineer'
+        );
+
+        expect(result.results[0]).toMatchObject({ ok: true });
+        expect(result.changeSet.status).toBe('applied');
+        expect(frameOccurrence(ed, 'Engineer').matchText).toBe('Engineer');
+      },
+      // The spelling occurs twice in the document (frame title and table cell),
+      // so the unchanged stream has to be decided without a changed span.
+      coverPageDoc('Engineer')
+    );
+  });
+
+  // `delete_text` on a story range used to search for its own (empty)
+  // replacement, which against the real SDK never terminates. A deletion writes
+  // no text, so the accept projection is what proves it landed.
+  it('deletes a frame range as one tracked, reversible deletion', () => {
+    withEditor((ed) => {
+      const before = ed.serialize();
+      const frame = frameOccurrence(ed, 'Engineer');
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'frame-delete',
+        edits: [
+          {
+            op: 'delete_text',
+            anchor: frame.anchor,
+            start: frame.start,
+            end: frame.end,
+            expect: frame.blockText,
+            find: 'Engineer'
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'delete_text' });
+      expect(result.changeSet.status).toBe('applied');
+      expect(
+        realRevisions(ed).map((revision) =>
+          String(revision.revisionType).toLowerCase()
+        )
+      ).toEqual(['deletion']);
+
+      for (const revision of [...realRevisions(ed)].reverse()) revision.reject();
+      expect(ed.serialize()).toBe(before);
+    });
+  });
+
   it('fails when the selected write lands with extra text', () => {
     let inserted = '';
     withEditor(
