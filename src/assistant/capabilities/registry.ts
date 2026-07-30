@@ -20,9 +20,15 @@
  * language): `string`, `number`, `int>0`, `int>=0`, `boolean`,
  * `enum[a,b,...]` - each optionally suffixed `?` when the param may be
  * omitted. Cross-op fields (`anchor`, `expect`, `start`, `end`,
- * `inheritFormatFrom`, `changeSetId`) are reserved keys with one canonical
- * meaning and are not repeated per entry; `requiresAnchor` declares whether
- * the operation uses that anchor contract.
+ * `inheritFormatFrom`, `changeSetId`, `group`) are reserved keys with one
+ * canonical meaning and are not repeated per entry; `requiresAnchor` declares
+ * whether the operation uses that anchor contract.
+ *
+ * `group` names an edit's accept/reject unit within its change set: every op
+ * carrying the same `group` resolves together from one accept or reject
+ * decision, and never drags other groups along. Ops without a `group` share
+ * the change-set-wide unit. The engine persists the grouping into each
+ * revision's SyncFusion `customData`, so it survives document reloads.
  *
  * `expect` is the compare-and-swap guard: the text the op believes is still
  * there, which the model COPIES from a read. `start`/`end` only disambiguate

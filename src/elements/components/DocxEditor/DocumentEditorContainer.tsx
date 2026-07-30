@@ -15,6 +15,7 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
+import { rebindRevisionGroups } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -335,6 +336,15 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
+      // Assistant accept groups persist in each revision's customData, but
+      // their in-memory accept/reject bindings die with the previous editor
+      // instance; rebuild them for whatever document this editor holds.
+      // Idempotent, and never allowed to affect editor registration.
+      try {
+        rebindRevisionGroups(editor);
+      } catch {
+        // A grouping failure must not break the editor mount.
+      }
     },
     [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );

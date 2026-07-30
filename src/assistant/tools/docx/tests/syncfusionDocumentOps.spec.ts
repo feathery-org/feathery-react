@@ -18,7 +18,9 @@ import {
   applyDocumentEdits,
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
-  LiveEditor
+  LiveEditor,
+  parseRevisionGroupTag,
+  rebindRevisionGroups
 } from '../syncfusionDocumentOps';
 
 DocumentEditor.Inject(
@@ -2231,6 +2233,12 @@ interface Run {
 
 class RevisionMockEditor implements LiveEditor {
   enableTrackChanges = false;
+  // Mirrors the live editor: SyncFusion stamps `revisionSettings.customData`
+  // onto every revision it creates while the value is set (editor.js), which
+  // is how the engine tags each op's revisions with their accept group.
+  documentEditorSettings = {
+    revisionSettings: { customData: null as string | null }
+  };
   // One section; each block is a list of runs.
   blocksRuns: Run[][];
   selection: any;
@@ -2316,6 +2324,7 @@ class RevisionMockEditor implements LiveEditor {
         if (delRun) {
           const rev: any = {
             revisionType: 'Deletion',
+            customData: this.documentEditorSettings.revisionSettings.customData,
             accept: () => {
               removeRun(this.blocksRuns[bi], delRun);
               removeChange(rev);
@@ -2330,6 +2339,7 @@ class RevisionMockEditor implements LiveEditor {
         if (insRun) {
           const rev: any = {
             revisionType: 'Insertion',
+            customData: this.documentEditorSettings.revisionSettings.customData,
             accept: () => {
               insRun.state = 'normal';
               removeChange(rev);
@@ -2510,6 +2520,171 @@ describe('replace revision grouping (content-loss guard)', () => {
     expect(ed.text(0)).toBe('General Liability: $5,500');
     expect(ed.text(1)).toBe('Total premium: $5,500');
     expect(ed.revisions.changes).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Assistant-defined accept groups (`group` on each op, persisted via
+// SyncFusion revision customData).
+// ---------------------------------------------------------------------------
+
+describe('assistant-defined accept groups', () => {
+  it('ops with distinct `group` values resolve independently', () => {
+    const ed = new RevisionMockEditor([
+      'General Liability: $5,500',
+      'Signed on 2026-01-01'
+    ]);
+    const res = applyDocumentEdits(ed, {
+      changeSetId: 'cs-1',
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;0',
+          find: '5,500',
+          replace: '6,000',
+          group: 'update-premium'
+        },
+        {
+          op: 'replace_text',
+          anchor: '0;1',
+          find: '2026-01-01',
+          replace: '2026-02-01',
+          group: 'update-date'
+        }
+      ]
+    });
+    expect(res.results.every((r) => r.ok)).toBe(true);
+    expect(ed.revisions.changes).toHaveLength(4);
+    // Every revision carries its group both as the durable customData tag and
+    // as the in-memory expando.
+    expect(
+      ed.revisions.changes.map(
+        (r: any) => parseRevisionGroupTag(r.customData)?.group
+      )
+    ).toEqual([
+      'update-premium',
+      'update-premium',
+      'update-date',
+      'update-date'
+    ]);
+    expect(
+      ed.revisions.changes.map((r: any) => r.robinGroupId)
+    ).toEqual([
+      'update-premium',
+      'update-premium',
+      'update-date',
+      'update-date'
+    ]);
+
+    // Accepting ONE revision of the premium group resolves that group only:
+    // the date edit's revisions stay pending (both its tracked runs are still
+    // in the paragraph), then resolve on their own decision.
+    ed.revisions.changes[0].accept();
+    expect(ed.text(0)).toBe('General Liability: $6,000');
+    expect(ed.revisions.changes).toHaveLength(2);
+    expect(ed.text(1)).toBe('Signed on 2026-01-012026-02-01');
+
+    ed.revisions.changes[0].reject();
+    expect(ed.text(1)).toBe('Signed on 2026-01-01');
+    expect(ed.revisions.changes).toHaveLength(0);
+  });
+
+  it('changeSet.groups reports each accept unit with its ops and revisions', () => {
+    const ed = new RevisionMockEditor(['Premium: $100', 'Tax: $13']);
+    const res = applyDocumentEdits(ed, {
+      changeSetId: 'cs-2',
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;0',
+          find: '$100',
+          replace: '$200',
+          group: 'premium'
+        },
+        { op: 'replace_text', anchor: '0;1', find: '$13', replace: '$26' }
+      ]
+    });
+    expect(res.changeSet?.groups).toEqual([
+      { id: 'premium', opIndices: [0], revisionCount: 2 },
+      // The ungrouped op falls into the change-set-wide unit.
+      { id: 'cs-2', opIndices: [1], revisionCount: 2 }
+    ]);
+  });
+
+  it('refuses a malformed `group` before writing anything', () => {
+    const ed = new RevisionMockEditor(['Premium: $100']);
+    const res = applyDocumentEdits(ed, {
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;0',
+          find: '$100',
+          replace: '$200',
+          group: '   '
+        }
+      ]
+    });
+    expect(res.results[0]).toMatchObject({ ok: false, error: 'invalid_group' });
+    expect(ed.text(0)).toBe('Premium: $100');
+    expect(ed.revisions.changes).toHaveLength(0);
+  });
+
+  it('restores whatever customData the host had set before the change set', () => {
+    const ed = new RevisionMockEditor(['Premium: $100']);
+    ed.documentEditorSettings.revisionSettings.customData = 'host-tag';
+    applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '$100', replace: '$200' }
+      ]
+    });
+    expect(ed.documentEditorSettings.revisionSettings.customData).toBe(
+      'host-tag'
+    );
+  });
+
+  it('rebindRevisionGroups rebuilds accept units from persisted customData', () => {
+    // Simulate a reload: revisions exist with tags but no in-memory bindings.
+    const accepted: string[] = [];
+    const makeRevision = (id: string, tag: string) => ({
+      customData: tag,
+      accept: () => accepted.push(`${id}:public-accept`),
+      reject: () => accepted.push(`${id}:public-reject`),
+      handleAcceptReject: (isAccept: boolean) =>
+        accepted.push(`${id}:${isAccept ? 'accept' : 'reject'}`)
+    });
+    const tagA = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'cs-3',
+      group: 'a'
+    });
+    const tagB = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'cs-3',
+      group: 'b'
+    });
+    const revisions = [
+      makeRevision('a1', tagA),
+      makeRevision('a2', tagA),
+      makeRevision('b1', tagB),
+      { customData: 'not-ours', accept: jest.fn(), reject: jest.fn() }
+    ];
+    const editor = { revisions: { changes: revisions } } as unknown as LiveEditor;
+
+    expect(rebindRevisionGroups(editor)).toBe(3);
+    // Idempotent: a second pass binds nothing new.
+    expect(rebindRevisionGroups(editor)).toBe(0);
+
+    // Accepting one member resolves its whole group through the non-cascading
+    // single-revision path, never the public accept and never group b.
+    revisions[0].accept?.();
+    expect(accepted).toEqual(['a1:accept', 'a2:accept']);
+
+    (revisions[2] as any).reject();
+    expect(accepted).toEqual(['a1:accept', 'a2:accept', 'b1:reject']);
+    // Foreign customData is left untouched.
+    expect((revisions[3] as any).accept).not.toHaveBeenCalled();
   });
 });
 

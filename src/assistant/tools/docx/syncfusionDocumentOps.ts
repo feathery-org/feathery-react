@@ -313,6 +313,14 @@ export interface EditOp {
   op: string;
   anchor?: string;
   expect?: string;
+  /**
+   * Assistant-defined accept/reject unit. Ops sharing a `group` within one
+   * change set resolve together from a single accept or reject decision; ops
+   * without one default to the change set id (today's all-or-nothing shape).
+   * The group is stamped into each created revision's `customData`, so it
+   * survives SFDT/DOCX round-trips and is rebindable after reload.
+   */
+  group?: string;
   [field: string]: any;
 }
 
@@ -549,6 +557,18 @@ export interface ApplyEditsResult {
     revisionGrouping: 'bridge_bound_revision_cards' | 'no_revisions';
     uiGrouping: 'requires_cross_layer_group_card';
     /**
+     * The accept/reject units this change set created: one entry per
+     * assistant-defined `group` (ops without one share the change set id).
+     * Accepting or rejecting ANY revision of a group resolves exactly that
+     * group. `revisionCount` is the number of live revisions bound to the
+     * group; a group whose ops all no-opped reports 0 - nothing to review.
+     */
+    groups: Array<{
+      id: string;
+      opIndices: number[];
+      revisionCount: number;
+    }>;
+    /**
      * What this change set touched, in resolved terms, derived by the ENGINE
      * from the ops. Always present, so "which columns moved" is a property of
      * the result rather than something the model may forget to mention.
@@ -668,6 +688,14 @@ export interface LiveEditor {
   // The collection interface is declared below with the other revision types.
   // eslint-disable-next-line no-use-before-define
   revisions?: LiveRevisionCollection;
+  // SyncFusion stamps `revisionSettings.customData` onto every revision it
+  // creates while the value is set; the write path uses it to tag each op's
+  // revisions with their accept group. Optional so unit-test fakes without it
+  // simply skip tagging.
+  documentEditorSettings?: {
+    revisionSettings?: { customData?: string | null; [k: string]: any };
+    [k: string]: any;
+  };
   editorHistory?: { undo?(): void; redo?(): void; [k: string]: any };
   search?: any;
   [k: string]: any;
@@ -678,8 +706,16 @@ export interface LiveEditor {
 export interface LiveRevision {
   revisionType?: string;
   revisionID?: string;
+  /** SyncFusion's durable free-form tag; carries the accept-group binding. */
+  customData?: string | null;
   accept?(): void;
   reject?(): void;
+  /**
+   * SyncFusion-internal single-revision resolve (`isAccept`, `isGroupAcceptOrReject`).
+   * Preferred over `accept`/`reject`, whose public path consults the pane's
+   * adjacency `groupedView` and resolves same-author/same-type NEIGHBOURS too.
+   */
+  handleAcceptReject?(isAccept: boolean, isGroupAcceptOrReject: boolean): void;
   [k: string]: any;
 }
 
@@ -5107,34 +5143,136 @@ function rejectCreatedRevisions(
       'A failed change set created a revision that could not be rejected.'
     );
   for (const revision of revisions) {
-    const reject = revision.reject;
-    if (typeof reject === 'function') reject.call(revision);
+    // Single-revision path first: the public reject() cascades through the
+    // pane's adjacency groupedView and could reject neighbouring revisions
+    // this change set never created.
+    resolveSingleRevision(captureNativeResolvers(revision), false);
   }
 }
 
-// Bind a set of revisions authored by ONE logical edit so per-card accept/reject
-// is all-or-nothing. The first accept/reject on any member resolves the whole
-// group with that single decision; later clicks on already-resolved members are
-// no-ops. Each native handler is wrapped in try/catch so a stale-range throw on a
-// later member cannot undo the first member's (safe) result.
+// The durable link between "one assistant-defined accept group" and the
+// SyncFusion revisions it produced. The tag is written through SyncFusion's
+// `revisionSettings.customData`, which the engine stamps onto every revision
+// created while it is set and which round-trips through SFDT/DOCX - unlike the
+// in-memory accept/reject bindings, which die with the JS objects.
+const REVISION_GROUP_TAG_VERSION = 1;
+
+export interface RevisionGroupTag {
+  changeSetId: string;
+  group: string;
+}
+
+/** The accept group an op belongs to; ungrouped ops share the change set id. */
+function opGroupId(op: EditOp, changeSetId: string): string {
+  return typeof op.group === 'string' && op.group.trim()
+    ? op.group.trim()
+    : changeSetId;
+}
+
+function revisionGroupTag(changeSetId: string, group: string): string {
+  return JSON.stringify({
+    v: REVISION_GROUP_TAG_VERSION,
+    source: 'robin',
+    changeSetId,
+    group
+  });
+}
+
+export function parseRevisionGroupTag(
+  customData: unknown
+): RevisionGroupTag | undefined {
+  if (typeof customData !== 'string' || !customData.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(customData);
+    if (
+      parsed &&
+      parsed.source === 'robin' &&
+      typeof parsed.changeSetId === 'string' &&
+      typeof parsed.group === 'string'
+    )
+      return { changeSetId: parsed.changeSetId, group: parsed.group };
+  } catch {
+    // Foreign customData (another producer's tag, or plain text) is not ours
+    // to interpret; the revision simply stays outside assistant grouping.
+  }
+  return undefined;
+}
+
+// Resolve ONE revision without SyncFusion's adjacency cascade. The public
+// `accept()`/`reject()` route through the pane's `groupedView`, which lumps
+// same-author/same-type NEIGHBOURING revisions into one card and resolves the
+// whole card - that is exactly how accepting one assistant edit used to drag
+// unrelated edits along. `handleAcceptReject` is the engine's own
+// single-revision path (the one its group loop calls per member). It is
+// internal, so feature-detect it and keep the public call as the fallback;
+// note it does not fire `beforeAcceptRejectChanges` (`accept()` fires that
+// before delegating).
+function resolveSingleRevision(
+  natives: {
+    accept?: () => void;
+    reject?: () => void;
+    single?: (isAccept: boolean, isGroup: boolean) => void;
+  },
+  isAccept: boolean
+): void {
+  if (natives.single) {
+    natives.single(isAccept, false);
+    return;
+  }
+  const fn = isAccept ? natives.accept : natives.reject;
+  if (fn) fn();
+}
+
+// Point SyncFusion's revision tagger at this op's accept group: every revision
+// the editor creates until the next stamp carries the tag in `customData`
+// (editor.js stamps `revisionSettings.customData` onto each new revision).
+// Editors without `revisionSettings` (unit-test fakes) simply skip tagging and
+// fall back to change-set-wide grouping.
+function stampRevisionGroup(
+  editor: LiveEditor,
+  changeSetId: string,
+  op: EditOp
+): void {
+  const settings = editor.documentEditorSettings?.revisionSettings;
+  if (!settings) return;
+  settings.customData = revisionGroupTag(
+    changeSetId,
+    opGroupId(op, changeSetId)
+  );
+}
+
+function captureNativeResolvers(rev: LiveRevision) {
+  return {
+    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
+    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined,
+    single:
+      typeof rev.handleAcceptReject === 'function'
+        ? rev.handleAcceptReject.bind(rev)
+        : undefined
+  };
+}
+
+// Bind a set of revisions authored by ONE logical edit group so per-card
+// accept/reject is all-or-nothing within the group and NEVER wider. The first
+// accept/reject on any member resolves the whole group with that single
+// decision; later clicks on already-resolved members are no-ops. Each native
+// handler is wrapped in try/catch so a stale-range throw on a later member
+// cannot undo the first member's (safe) result. Single-revision groups are
+// bound too: the wrapper is what routes around the pane's adjacency cascade.
 function groupRevisionsAtomic(
   group: LiveRevision[],
-  changeSetId?: string
+  changeSetId?: string,
+  groupId?: string
 ): void {
-  if (group.length < 2) return;
-  const natives = group.map((rev) => ({
-    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
-    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined
-  }));
+  if (!group.length) return;
+  const members = group.map(captureNativeResolvers);
   const state = { resolved: false };
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
-    for (const n of natives) {
-      const fn = isAccept ? n.accept : n.reject;
-      if (!fn) continue;
+    for (const natives of members) {
       try {
-        fn();
+        resolveSingleRevision(natives, isAccept);
       } catch {
         // A later member's range may be stale once the first resolved; the
         // group's outcome is already consistent, so swallow and move on.
@@ -5143,22 +5281,117 @@ function groupRevisionsAtomic(
   };
   for (const rev of group) {
     if (changeSetId) (rev as any).robinChangeSetId = changeSetId;
+    if (groupId) (rev as any).robinGroupId = groupId;
+    // Rebind guard: marks this revision's accept/reject as already wrapped so
+    // a later rebind pass cannot stack wrappers.
+    (rev as any).robinGroupBound = true;
     rev.accept = () => resolveAll(true);
     rev.reject = () => resolveAll(false);
   }
 }
 
-// Diff the revisions created by a single op (against a pre-op snapshot) and bind
-// them atomically. A no-op when the op added fewer than two revisions.
+/** Result of binding one change set's created revisions into accept groups. */
+interface RevisionGroupingReport {
+  revisionCount: number;
+  /** group id -> number of live revisions bound to it. */
+  revisionsByGroup: Map<string, number>;
+}
+
+// Diff the revisions created by this change set (against a pre-batch snapshot),
+// partition them by the group tag each revision carries in `customData`, and
+// bind each partition atomically. Revisions with no readable tag (test fakes,
+// editors without `revisionSettings`) fall back into the change-set-wide group.
 function groupNewRevisions(
   editor: LiveEditor,
   before: LiveRevision[],
-  changeSetId?: string
-): number {
+  changeSetId: string
+): RevisionGroupingReport {
   const created = createdRevisions(editor, before);
-  if (!created.length) return 0;
-  groupRevisionsAtomic(created, changeSetId);
-  return created.length;
+  const revisionsByGroup = new Map<string, number>();
+  if (!created.length) return { revisionCount: 0, revisionsByGroup };
+  const partitions = new Map<string, LiveRevision[]>();
+  for (const rev of created) {
+    const tag = parseRevisionGroupTag(rev.customData);
+    const group =
+      tag && tag.changeSetId === changeSetId ? tag.group : changeSetId;
+    const partition = partitions.get(group);
+    if (partition) partition.push(rev);
+    else partitions.set(group, [rev]);
+  }
+  partitions.forEach((partition, group) => {
+    groupRevisionsAtomic(partition, changeSetId, group);
+    revisionsByGroup.set(group, partition.length);
+  });
+  return { revisionCount: created.length, revisionsByGroup };
+}
+
+// The change-set result's account of its accept units: which edits form each
+// group and how many live revisions the group ended up bound to. Derived from
+// the ops (the declaration) and the post-write partition (the fact), so a
+// group whose writes all no-opped is visibly empty rather than missing.
+function reportRevisionGroups(
+  edits: EditOp[],
+  changeSetId: string,
+  revisionsByGroup: Map<string, number>
+): Array<{ id: string; opIndices: number[]; revisionCount: number }> {
+  const opIndicesById = new Map<string, number[]>();
+  edits.forEach((op, index) => {
+    if (!op?.op) return;
+    const id = opGroupId(op, changeSetId);
+    const indices = opIndicesById.get(id);
+    if (indices) indices.push(index);
+    else opIndicesById.set(id, [index]);
+  });
+  // Untagged revisions land in the change-set-wide group; make sure it is
+  // reported even when every op declared its own group.
+  revisionsByGroup.forEach((_, id) => {
+    if (!opIndicesById.has(id)) opIndicesById.set(id, []);
+  });
+  return [...opIndicesById.entries()].map(([id, opIndices]) => ({
+    id,
+    opIndices,
+    revisionCount: revisionsByGroup.get(id) ?? 0
+  }));
+}
+
+/**
+ * Rebuild accept-group bindings from the tags persisted in each revision's
+ * `customData`. The in-memory wrappers installed at write time do not survive
+ * a save/reload (or a fresh editor mount over an existing document); the tags
+ * do. Safe to call repeatedly - already-bound revisions are skipped - and a
+ * no-op for documents with no assistant-tagged revisions.
+ *
+ * @returns the number of revisions (re)bound into groups.
+ */
+export function rebindRevisionGroups(editor: LiveEditor): number {
+  const partitions = new Map<
+    string,
+    { changeSetId: string; group: string; revisions: LiveRevision[] }
+  >();
+  for (const rev of snapshotRevisions(editor)) {
+    if ((rev as any).robinGroupBound) continue;
+    const tag = parseRevisionGroupTag(rev.customData);
+    if (!tag) continue;
+    const key = `${tag.changeSetId} ${tag.group}`;
+    const partition = partitions.get(key);
+    if (partition) partition.revisions.push(rev);
+    else
+      partitions.set(key, {
+        changeSetId: tag.changeSetId,
+        group: tag.group,
+        revisions: [rev]
+      });
+  }
+  let bound = 0;
+  partitions.forEach((partition) => {
+    groupRevisionsAtomic(
+      partition.revisions,
+      partition.changeSetId,
+      partition.group
+    );
+    bound += partition.revisions.length;
+  });
+  return bound;
 }
 
 const FORMAT_OPS = new Set([
@@ -5887,6 +6120,10 @@ export function applyDocumentEdits(
   const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
+  // The group tag rides on SyncFusion's revision customData for the duration
+  // of this change set; whatever the host set there before is restored after.
+  const revisionSettings = editor.documentEditorSettings?.revisionSettings;
+  const priorRevisionCustomData = revisionSettings?.customData;
   let blocks: FlatBlock[] = [];
   let byAnchor = new Map<string, FlatBlock>();
   // "What the whole document would read if every revision were rejected",
@@ -5896,6 +6133,11 @@ export function applyDocumentEdits(
   // replaced the text it targeted rather than landing beside it.
   let rejectStream = '';
   let acceptStream = '';
+  // Catch-all rebind: revisions from earlier change sets (or an earlier
+  // session over a reloaded document) whose in-memory bindings are gone get
+  // their accept groups rebuilt from the persisted customData tags before any
+  // new writes land. Idempotent - bound revisions are skipped.
+  rebindRevisionGroups(editor);
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();
@@ -5956,6 +6198,22 @@ export function applyDocumentEdits(
     const name = op?.op;
     if (!name) {
       results[index] = { ok: false, op: '', error: 'missing_op' };
+      return;
+    }
+    if (
+      op.group !== undefined &&
+      (typeof op.group !== 'string' ||
+        !op.group.trim() ||
+        op.group.trim().length > 120)
+    ) {
+      results[index] = {
+        ok: false,
+        op: name,
+        ...(op.anchor ? { anchor: op.anchor } : {}),
+        error: 'invalid_group',
+        message:
+          "`group` names this edit's accept/reject unit: a non-empty string of at most 120 characters, shared by every edit that must resolve together. Omit it to group the whole change set."
+      };
       return;
     }
     if (UNSAFE_CHANGE_SET_OPS.has(name)) {
@@ -6179,6 +6437,7 @@ export function applyDocumentEdits(
       for (const plan of plans) {
         const { op, index } = plan;
         if (results[index] || FORMAT_OPS.has(op.op)) continue;
+        stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
         let priorRejectStream: string | undefined;
@@ -6327,6 +6586,7 @@ export function applyDocumentEdits(
       for (const plan of plans) {
         const { op, index } = plan;
         if (results[index] || !FORMAT_OPS.has(op.op)) continue;
+        stampRevisionGroup(editor, changeSetId, op);
         try {
           if (!op.anchor)
             throw new OpError(
@@ -6400,6 +6660,7 @@ export function applyDocumentEdits(
   } finally {
     editor.enableTrackChanges = priorTrackChanges;
     editor.currentUser = priorCurrentUser;
+    if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
   }
 
   const hasMaterialFailure = results.some(
@@ -6421,11 +6682,8 @@ export function applyDocumentEdits(
     }
   }
 
-  const revisionCount = groupNewRevisions(
-    editor,
-    revisionSnapshot,
-    changeSetId
-  );
+  const grouping = groupNewRevisions(editor, revisionSnapshot, changeSetId);
+  const revisionCount = grouping.revisionCount;
   const hasFailure = results.some((result) => result && !result.ok);
   if (hasFailure) {
     // Never use global undo: it can revert unrelated history. Existing writes
@@ -6465,6 +6723,11 @@ export function applyDocumentEdits(
         ? 'bridge_bound_revision_cards'
         : 'no_revisions',
       uiGrouping: 'requires_cross_layer_group_card',
+      groups: reportRevisionGroups(
+        edits,
+        changeSetId,
+        grouping.revisionsByGroup
+      ),
       // The engine's own account of what this batch touched, beside the
       // model's announcement of what it was about to do. Two independent
       // statements of the same thing: if they disagree, that is visible.
