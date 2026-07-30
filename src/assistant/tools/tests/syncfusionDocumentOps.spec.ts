@@ -89,6 +89,7 @@ function para(
 
 class MockEditor implements LiveEditor {
   enableTrackChanges = false;
+  currentUser = '';
   doc: { sections: { blocks: MockBlock[] }[] };
   acceptAll = jest.fn();
   rejectAll = jest.fn();
@@ -496,6 +497,82 @@ describe('applyDocumentEdits', () => {
     });
     expect(seen).toEqual([true]); // track-changes was ON during the write
     expect(ed.enableTrackChanges).toBe(false); // restored afterwards
+  });
+
+  it('restores the prior author when an assistant batch fails', () => {
+    const ed = make([para('Quote: $5,500')]);
+    ed.currentUser = 'Existing author';
+    ed.editor.insertText = () => {
+      throw new Error('deliberate assistant write failure');
+    };
+
+    const result = applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({
+      ok: false,
+      error: 'op_failed'
+    });
+    expect(ed.currentUser).toBe('Existing author');
+  });
+
+  it('real SDK: attributes only assistant revisions to Robin', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            para('Manual before'),
+            para('Assistant before'),
+            para('Manual after')
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      expect(ed.currentUser).toBe('');
+
+      ed.selection.select('0;0;0', '0;0;6');
+      ed.editor.insertText('Human');
+      const beforeAssistant = realRevisions(ed).length;
+      expect(beforeAssistant).toBeGreaterThan(0);
+      expect(
+        realRevisions(ed).every((revision) => revision.author === 'Guest user')
+      ).toBe(true);
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;1',
+            find: 'before',
+            replace: 'after'
+          }
+        ]
+      });
+      expect(result.results[0].ok).toBe(true);
+      const afterAssistant = realRevisions(ed).length;
+      expect(afterAssistant).toBeGreaterThan(beforeAssistant);
+      expect(
+        realRevisions(ed)
+          .slice(beforeAssistant, afterAssistant)
+          .every((revision) => revision.author === 'Robin')
+      ).toBe(true);
+
+      ed.selection.select('0;2;0', '0;2;6');
+      ed.editor.insertText('Human');
+      expect(
+        realRevisions(ed)
+          .slice(afterAssistant)
+          .every((revision) => revision.author === 'Guest user')
+      ).toBe(true);
+      expect(ed.currentUser).toBe('');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
   });
 
   it('replaces text at an anchor and reports ok', () => {

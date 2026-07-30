@@ -581,6 +581,9 @@ const CONTRACTS: Record<string, ContractCase> = {
     ],
     verify: (ed) => {
       expect(ed.serialize()).toContain('Verify this figure.');
+      expect(JSON.parse(ed.serialize()).cm).toEqual([
+        expect.objectContaining({ a: 'Robin' })
+      ]);
     }
   },
   delete_all_comments: {

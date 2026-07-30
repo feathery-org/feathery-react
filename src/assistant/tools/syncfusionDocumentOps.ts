@@ -53,6 +53,7 @@ import {
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
+const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -648,6 +649,7 @@ export interface FindDocumentOccurrencesBatchResult {
 export interface LiveEditor {
   serialize(): string;
   enableTrackChanges: boolean;
+  currentUser: string;
   selection: {
     select(start: string, end: string): void;
     text: string;
@@ -5900,7 +5902,9 @@ export function applyDocumentEdits(
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
+  const priorCurrentUser = editor.currentUser;
   editor.enableTrackChanges = true;
+  editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
   let blocks: FlatBlock[] = [];
   let byAnchor = new Map<string, FlatBlock>();
   // "What the whole document would read if every revision were rejected",
@@ -6413,6 +6417,7 @@ export function applyDocumentEdits(
     }
   } finally {
     editor.enableTrackChanges = priorTrackChanges;
+    editor.currentUser = priorCurrentUser;
   }
 
   const hasMaterialFailure = results.some(
