@@ -757,7 +757,9 @@ function revisionIdsOfType(sfdt: any, code: number, name: string): Set<string> {
 }
 
 // Exclude pending deletions from the bridge's current-text view while retaining
-// the tracked revision itself for Accept/Reject.
+// the tracked revision itself for Accept/Reject. Dropping exactly these ids also
+// projects what the document would read if every revision were accepted, which
+// is how acceptProjectionStream is built.
 function deletedRevisionIds(sfdt: any): Set<string> {
   return revisionIdsOfType(sfdt, 2, 'deletion');
 }
@@ -2307,7 +2309,8 @@ function isUnverifiedStoryWriteAnchor(anchor: string): boolean {
 
 // A shape/text-frame anchor. Its content is serialized into the SFDT (as
 // `inline.textFrame.blocks`), so unlike other live stories it can be proven
-// reversible by the whole-document reject projection.
+// reversible by the whole-document reject projection and proven to have replaced
+// the text it targeted by the accept projection.
 function isTextFrameAnchor(anchor: string): boolean {
   return liveStoryMarker(anchor) === 'S';
 }
@@ -5081,9 +5084,14 @@ function assertTrackedMutation(
     return;
   }
 
-  // Live story ranges (text frames, page-specific headers/footers) are absent
-  // from serialized SFDT, so the projection above cannot be evaluated for them.
-  // Those anchors keep the revision-type assertion.
+  // The only writes left are the story ranges the projection genuinely cannot
+  // see (footnote/endnote markers): they are absent from serialized SFDT, so the
+  // projection above cannot be evaluated for them and they keep the
+  // revision-type assertion, whose Deletion requirement is what proves such a
+  // write struck its target. Text frames never reach here - their content IS
+  // serialized, so they arrive with a prior reject stream - and page-specific
+  // headers/footers never reach the write at all (`story_write_unverified`
+  // refuses them at preflight).
   if (
     !revisions.length ||
     (!types.has('insertion') &&
@@ -6223,6 +6231,11 @@ export function applyDocumentEdits(
               // second advisor-title edit failed on the cover page while the
               // first succeeded, and why the table edit beside it was fine.
               //
+              // That same serialization is what lets the mirror projection prove
+              // the write REPLACED the target instead of inserting beside it
+              // (`assertStoryTextFrameReplacement`), so both baselines - reject
+              // and accept - are captured here.
+              //
               // Stories the projection genuinely cannot see (footnote/endnote
               // markers) keep the revision assertion; headers/footers never get
               // this far (`story_write_unverified` refuses them at preflight).
@@ -6289,9 +6302,10 @@ export function applyDocumentEdits(
             };
             continue;
           }
-          // One committed snapshot feeds both the reject-projection assertion
-          // and the refreshed anchor map. Serializing those independently made
-          // every exhaustive batch pay two whole-document passes per op.
+          // One committed snapshot feeds the reject- and accept-projection
+          // assertions and the refreshed anchor map. Serializing those
+          // independently made every exhaustive batch pay two whole-document
+          // passes per op.
           const postWriteSfdt = parseSfdt(editor.serialize());
           if (storyWrite && priorAcceptStream !== undefined)
             assertStoryTextFrameReplacement(
