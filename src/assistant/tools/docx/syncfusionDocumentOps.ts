@@ -716,6 +716,8 @@ export interface LiveRevision {
    * adjacency `groupedView` and resolves same-author/same-type NEIGHBOURS too.
    */
   handleAcceptReject?(isAccept: boolean, isGroupAcceptOrReject: boolean): void;
+  /** Public SyncFusion navigation: select this revision's range in the document. */
+  select?(): void;
   [k: string]: any;
 }
 
@@ -5352,6 +5354,69 @@ function reportRevisionGroups(
     opIndices,
     revisionCount: revisionsByGroup.get(id) ?? 0
   }));
+}
+
+/** One tracked revision inside an accept group, shaped for review UI. */
+export interface RevisionGroupItem {
+  revision: LiveRevision;
+  /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | '' when unknown. */
+  revisionType: string;
+  /** Readable excerpt of the tracked content; empty for pure structure. */
+  text: string;
+}
+
+/** One assistant-defined accept group with its live member revisions. */
+export interface RevisionGroupView {
+  changeSetId: string;
+  group: string;
+  items: RevisionGroupItem[];
+}
+
+// The visible text a revision's tracked range holds. SyncFusion's range items
+// are text runs (with `.text`) interleaved with structural markers (paragraph
+// marks, row formats) that have none; the excerpt is for a review card, so
+// structure simply contributes nothing and the card falls back to a label.
+function revisionRangeText(revision: LiveRevision): string {
+  let range: any[];
+  try {
+    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
+  } catch {
+    return '';
+  }
+  if (!Array.isArray(range)) return '';
+  let out = '';
+  for (const item of range) {
+    if (typeof item?.text === 'string') out += item.text;
+  }
+  return out.trim();
+}
+
+/**
+ * The assistant-tagged accept groups currently pending in the editor, in
+ * revision-collection order, each with its live member revisions. Foreign or
+ * untagged revisions (a human's manual tracked edits) are not included - they
+ * remain the native pane's business. This is the read model for a grouped
+ * review card UI; resolving a group is just calling accept()/reject() on any
+ * member (the atomic binding does the rest).
+ */
+export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
+  const views = new Map<string, RevisionGroupView>();
+  for (const revision of snapshotRevisions(editor)) {
+    const tag = parseRevisionGroupTag(revision.customData);
+    if (!tag) continue;
+    const key = `${tag.changeSetId} ${tag.group}`;
+    let view = views.get(key);
+    if (!view) {
+      view = { changeSetId: tag.changeSetId, group: tag.group, items: [] };
+      views.set(key, view);
+    }
+    view.items.push({
+      revision,
+      revisionType: String(revision.revisionType ?? ''),
+      text: revisionRangeText(revision)
+    });
+  }
+  return [...views.values()];
 }
 
 /**

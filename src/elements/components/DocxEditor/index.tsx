@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
+import TrackedChangeGroups from './TrackedChangeGroups';
 import { useDocxEditor } from './useDocxEditor';
 import { DocxSource } from './types';
 
@@ -260,45 +261,51 @@ function DocxEditor({
           readOnly={readOnly}
         />
       )}
-      <div css={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        {/* Syncfusion mounts its editor into this element. */}
-        <div
-          ref={containerRef}
-          css={{
-            width: '100%',
-            height: '100%',
-            // Syncfusion's status-bar page control renders the "Page" label,
-            // the number input, and "of N" on a line but the input box is
-            // taller than the text and sits low. Flex-center the whole control
-            // and normalize the input box (height/line-height/margin) so all
-            // three align on one baseline. Scoped to this editor's DOM.
-            '& .e-de-ctnr-pagenumber': {
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4
-            },
-            '& .e-de-ctnr-pagenumber .e-input-group': {
-              margin: 0,
-              alignSelf: 'center'
-            },
-            '& .e-de-pagenumber-input': {
-              height: 22,
-              minHeight: 22,
-              lineHeight: '22px',
-              padding: '0 4px',
-              margin: 0,
-              boxSizing: 'border-box',
-              textAlign: 'center'
-            },
-            '& .e-de-pagenumber-text': {
-              display: 'inline-flex',
-              alignItems: 'center',
-              lineHeight: '22px'
-            }
-          }}
-        />
-        {loading && !error && <div css={overlay}>Loading document…</div>}
-        {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
+      <div css={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div css={{ flex: 1, minWidth: 0, position: 'relative' }}>
+          {/* Syncfusion mounts its editor into this element. */}
+          <div
+            ref={containerRef}
+            css={{
+              width: '100%',
+              height: '100%',
+              // Syncfusion's status-bar page control renders the "Page" label,
+              // the number input, and "of N" on a line but the input box is
+              // taller than the text and sits low. Flex-center the whole
+              // control and normalize the input box (height/line-height/
+              // margin) so all three align on one baseline. Scoped to this
+              // editor's DOM.
+              '& .e-de-ctnr-pagenumber': {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              },
+              '& .e-de-ctnr-pagenumber .e-input-group': {
+                margin: 0,
+                alignSelf: 'center'
+              },
+              '& .e-de-pagenumber-input': {
+                height: 22,
+                minHeight: 22,
+                lineHeight: '22px',
+                padding: '0 4px',
+                margin: 0,
+                boxSizing: 'border-box',
+                textAlign: 'center'
+              },
+              '& .e-de-pagenumber-text': {
+                display: 'inline-flex',
+                alignItems: 'center',
+                lineHeight: '22px'
+              }
+            }}
+          />
+          {loading && !error && <div css={overlay}>Loading document…</div>}
+          {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
+        </div>
+        {/* Grouped review cards for assistant-authored tracked changes.
+            Read-only hosts cannot resolve revisions, so no panel there. */}
+        {editor && !readOnly && <TrackedChangeGroups editor={editor} />}
       </div>
     </div>
   );

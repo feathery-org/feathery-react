@@ -19,6 +19,7 @@ import {
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
   LiveEditor,
+  listRevisionGroups,
   parseRevisionGroupTag,
   rebindRevisionGroups
 } from '../syncfusionDocumentOps';
@@ -2325,6 +2326,7 @@ class RevisionMockEditor implements LiveEditor {
           const rev: any = {
             revisionType: 'Deletion',
             customData: this.documentEditorSettings.revisionSettings.customData,
+            getRange: () => [{ text: delRun.text }],
             accept: () => {
               removeRun(this.blocksRuns[bi], delRun);
               removeChange(rev);
@@ -2340,6 +2342,7 @@ class RevisionMockEditor implements LiveEditor {
           const rev: any = {
             revisionType: 'Insertion',
             customData: this.documentEditorSettings.revisionSettings.customData,
+            getRange: () => [{ text: insRun.text }],
             accept: () => {
               insRun.state = 'normal';
               removeChange(rev);
@@ -2640,6 +2643,43 @@ describe('assistant-defined accept groups', () => {
     expect(ed.documentEditorSettings.revisionSettings.customData).toBe(
       'host-tag'
     );
+  });
+
+  it('listRevisionGroups exposes tagged revisions as review-card data', () => {
+    const ed = new RevisionMockEditor(['Premium: $100', 'Tax: $13']);
+    applyDocumentEdits(ed, {
+      changeSetId: 'cs-4',
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;0',
+          find: '$100',
+          replace: '$200',
+          group: 'premium'
+        },
+        {
+          op: 'replace_text',
+          anchor: '0;1',
+          find: '$13',
+          replace: '$26',
+          group: 'tax'
+        }
+      ]
+    });
+    const views = listRevisionGroups(ed);
+    expect(views).toHaveLength(2);
+    expect(views[0]).toMatchObject({ changeSetId: 'cs-4', group: 'premium' });
+    expect(views[0].items.map((i) => [i.revisionType, i.text])).toEqual([
+      ['Deletion', '$100'],
+      ['Insertion', '$200']
+    ]);
+    expect(views[1]).toMatchObject({ changeSetId: 'cs-4', group: 'tax' });
+
+    // Resolving a group empties its view; the other group is untouched.
+    views[0].items[0].revision.accept?.();
+    const after = listRevisionGroups(ed);
+    expect(after).toHaveLength(1);
+    expect(after[0].group).toBe('tax');
   });
 
   it('rebindRevisionGroups rebuilds accept units from persisted customData', () => {
