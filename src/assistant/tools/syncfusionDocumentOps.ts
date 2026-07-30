@@ -5903,8 +5903,6 @@ export function applyDocumentEdits(
   const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
-  editor.enableTrackChanges = true;
-  editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
   let blocks: FlatBlock[] = [];
   let byAnchor = new Map<string, FlatBlock>();
   // "What the whole document would read if every revision were rejected",
@@ -6187,6 +6185,8 @@ export function applyDocumentEdits(
       result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
   );
   try {
+    editor.enableTrackChanges = true;
+    editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
     if (preflightFailed) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`

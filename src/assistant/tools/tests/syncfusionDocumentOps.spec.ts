@@ -519,6 +519,35 @@ describe('applyDocumentEdits', () => {
     expect(ed.currentUser).toBe('Existing author');
   });
 
+  it('restores editor attribution state when preflight serialization fails', () => {
+    const ed = make([para('Quote: $5,500')]);
+    ed.enableTrackChanges = false;
+    ed.currentUser = 'Existing author';
+    ed.serialize = () => {
+      throw new Error('deliberate preflight serialization failure');
+    };
+
+    expect(() =>
+      applyDocumentEdits(ed, {
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '5,500',
+            replace: '6,000'
+          }
+        ]
+      })
+    ).toThrow('deliberate preflight serialization failure');
+    expect({
+      currentUser: ed.currentUser,
+      enableTrackChanges: ed.enableTrackChanges
+    }).toEqual({
+      currentUser: 'Existing author',
+      enableTrackChanges: false
+    });
+  });
+
   it('real SDK: attributes only assistant revisions to Robin', () => {
     const ed = makeRealDocumentEditor({
       sections: [
