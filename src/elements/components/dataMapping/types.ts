@@ -25,20 +25,6 @@ export interface HubSchema {
   fields: HubFieldSchema[];
 }
 
-// A staged row as returned by get_staged (values keyed by field key).
-export interface StagedEntry {
-  entry_id: string;
-  data: Record<string, any>;
-}
-
-// Errors reported by stage / get_staged / update_staged (row-level).
-export interface StagedError {
-  entry_id?: string;
-  row_index?: number;
-  field_key?: string;
-  message: string;
-}
-
 // Minimal client surface the modal needs (FeatheryClient satisfies this).
 export interface DataMappingClient {
   getHubSchemas: (hubIds: string[]) => Promise<{ hubs: HubSchema[] }>;

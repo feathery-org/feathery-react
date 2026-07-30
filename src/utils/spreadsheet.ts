@@ -1,10 +1,6 @@
-// Parsing helpers for spreadsheet uploads (CSV + Excel). CSV is parsed natively
-// so no dependency is needed for the common case; Excel parsing lazily loads
-// SheetJS from its patched CDN build only when an Excel file is uploaded.
-
 import { featheryDoc, featheryWindow } from './browser';
 
-export const SPREADSHEET_EXTENSIONS = ['csv', 'xlsx', 'xls', 'xlsm'];
+const SPREADSHEET_EXTENSIONS = ['csv', 'xlsx', 'xls', 'xlsm'];
 
 export const isSpreadsheetFile = (file: File): boolean => {
   const ext = (file.name || '').split('.').pop()?.toLowerCase() ?? '';
@@ -14,9 +10,6 @@ export const isSpreadsheetFile = (file: File): boolean => {
 const isExcelFile = (file: File): boolean =>
   /\.(xlsx|xls|xlsm)$/i.test(file.name || '');
 
-// SheetJS is loaded from the patched CDN build (>=0.20.2) rather than the
-// vulnerable npm `xlsx@0.18.5` (CVE-2023-30533, CVE-2024-22363). It is loaded
-// lazily so it stays out of the main bundle until an Excel file is uploaded.
 const SHEETJS_CDN =
   'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
 let sheetJSPromise: Promise<any> | null = null;
@@ -40,8 +33,7 @@ function loadSheetJS(): Promise<any> {
   return sheetJSPromise;
 }
 
-export function parseCSV(csv: string): string[][] {
-  // Strip a leading UTF-8 byte-order mark so the first header stays clean.
+function parseCSV(csv: string): string[][] {
   const text = csv.charCodeAt(0) === 0xfeff ? csv.slice(1) : csv;
 
   const rows: string[][] = [];
@@ -103,12 +95,8 @@ export interface SpreadsheetSheet {
   rows: string[][];
 }
 
-/**
- * Build the list of importable sheets from an xlsx workbook: skip hidden sheets
- * (`Hidden` is 1 = hidden, 2 = very hidden) and stringify every cell. Pure +
- * testable; the row extractor is injected so this needs no file IO.
- */
-export function collectVisibleSheets(
+// Skips hidden sheets (`Hidden` is 1 = hidden, 2 = very hidden).
+function collectVisibleSheets(
   workbook: any,
   sheetToRows: (sheet: any) => any[][]
 ): SpreadsheetSheet[] {
@@ -125,10 +113,6 @@ export function collectVisibleSheets(
   return sheets;
 }
 
-/**
- * Parse a CSV or Excel file into its sheets. CSV yields a single implicit sheet;
- * Excel yields all visible sheets (caller decides which are non-empty).
- */
 export async function parseWorkbook(file: File): Promise<SpreadsheetSheet[]> {
   if (isExcelFile(file)) {
     const XLSX = await loadSheetJS();
@@ -155,12 +139,6 @@ export interface ParsedSpreadsheet {
   rows: string[][];
 }
 
-/**
- * Normalize parsed output into trimmed headers (blank headers become
- * "Column N") and non-empty data rows. Columns whose data cells are blank in
- * EVERY row are dropped entirely (a single non-blank value anywhere in the
- * column, at any row, keeps it). Headers and row cells stay index-aligned.
- */
 export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
   if (parsed.length === 0) return { headers: [], rows: [] };
 
@@ -169,7 +147,6 @@ export function normalizeSpreadsheet(parsed: string[][]): ParsedSpreadsheet {
     .slice(1)
     .filter((row) => row.some((col) => col && col.trim() !== ''));
 
-  // A column is kept only if at least one data row has a non-blank value in it.
   const keptIndexes = rawHeaders
     .map((_h, colIndex) => colIndex)
     .filter((colIndex) =>
@@ -193,19 +170,14 @@ export interface NormalizedSheet {
   rows: string[][];
 }
 
-// A field maps to a specific sheet + column header, recorded at selection time
-// so saving pulls each field's data from the sheet it was mapped on.
 export interface ColumnRef {
   sheet: string;
   header: string;
 }
 export type FieldMapping = Record<string, ColumnRef>;
 
-/**
- * Build one row-object per data row from a field->{sheet,header} mapping.
- * Fields mapped to different sheets are zipped by row index; shorter sheets
- * yield blanks for their fields on the extra rows.
- */
+// Fields mapped to different sheets are zipped by row index; shorter sheets
+// yield blanks on the extra rows.
 export function buildStagedRows(
   sheets: NormalizedSheet[],
   mapping: FieldMapping
