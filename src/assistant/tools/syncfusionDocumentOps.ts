@@ -53,6 +53,7 @@ import {
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
+const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -648,6 +649,7 @@ export interface FindDocumentOccurrencesBatchResult {
 export interface LiveEditor {
   serialize(): string;
   enableTrackChanges: boolean;
+  currentUser: string;
   selection: {
     select(start: string, end: string): void;
     text: string;
@@ -5900,7 +5902,7 @@ export function applyDocumentEdits(
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
-  editor.enableTrackChanges = true;
+  const priorCurrentUser = editor.currentUser;
   let blocks: FlatBlock[] = [];
   let byAnchor = new Map<string, FlatBlock>();
   // "What the whole document would read if every revision were rejected",
@@ -6183,6 +6185,8 @@ export function applyDocumentEdits(
       result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
   );
   try {
+    editor.enableTrackChanges = true;
+    editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
     if (preflightFailed) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`
@@ -6413,6 +6417,7 @@ export function applyDocumentEdits(
     }
   } finally {
     editor.enableTrackChanges = priorTrackChanges;
+    editor.currentUser = priorCurrentUser;
   }
 
   const hasMaterialFailure = results.some(
