@@ -757,7 +757,9 @@ function revisionIdsOfType(sfdt: any, code: number, name: string): Set<string> {
 }
 
 // Exclude pending deletions from the bridge's current-text view while retaining
-// the tracked revision itself for Accept/Reject.
+// the tracked revision itself for Accept/Reject. Dropping exactly these ids also
+// projects what the document would read if every revision were accepted, which
+// is how acceptProjectionStream is built.
 function deletedRevisionIds(sfdt: any): Set<string> {
   return revisionIdsOfType(sfdt, 2, 'deletion');
 }
@@ -2220,7 +2222,21 @@ function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
 // directly. A projection blind to a story would pass every write in it
 // vacuously - which is exactly how text-frame writes went unverified.
 export function rejectProjectionStream(sfdt: any): string {
-  const dropIds = insertedRevisionIds(sfdt);
+  return revisionProjectionStream(sfdt, insertedRevisionIds(sfdt));
+}
+
+// The mirror projection: what the document would read if every revision were
+// ACCEPTED - pending deletions dropped, pending insertions kept. The reject
+// projection proves a write is REVERSIBLE; this one proves it actually REPLACED
+// the text it targeted, which reversibility cannot show and no revision-type
+// inspection can establish either: a write that inserts the replacement beside
+// an untouched target creates a perfectly rejectable Insertion and leaves the
+// document reading "Innovation LearningInnovation Learning LLC".
+function acceptProjectionStream(sfdt: any): string {
+  return revisionProjectionStream(sfdt, deletedRevisionIds(sfdt));
+}
+
+function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
   const allDropped = (rids: unknown): boolean =>
     Array.isArray(rids) &&
     rids.length > 0 &&
@@ -2293,7 +2309,8 @@ function isUnverifiedStoryWriteAnchor(anchor: string): boolean {
 
 // A shape/text-frame anchor. Its content is serialized into the SFDT (as
 // `inline.textFrame.blocks`), so unlike other live stories it can be proven
-// reversible by the whole-document reject projection.
+// reversible by the whole-document reject projection and proven to have replaced
+// the text it targeted by the accept projection.
 function isTextFrameAnchor(anchor: string): boolean {
   return liveStoryMarker(anchor) === 'S';
 }
@@ -2417,8 +2434,16 @@ function resolveLiveStoryTarget(
 function verifyLiveStoryWrite(
   editor: LiveEditor,
   target: LiveStoryTarget,
-  replacement: string
+  replacement: string,
+  writtenEndOffset: string
 ): void {
+  // A deletion writes no text, so there is no written range to re-search - and
+  // `findAll('')` is not a search: against the real SDK it never terminates and
+  // exhausts the heap. What a tracked deletion must prove is that the target is
+  // struck and the write is reversible, which the accept projection
+  // (`assertStoryTextFrameReplacement`) and the tracked-revision assertion
+  // establish for every story shape.
+  if (!replacement) return;
   // Story offsets are public selection addresses, but cannot safely be rebuilt
   // from a character count (text frames add story-local segments). Re-search
   // the written text and select SyncFusion's returned range instead.
@@ -2436,16 +2461,34 @@ function verifyLiveStoryWrite(
     const end = offsetParts(String(result?.endOffset ?? ''));
     return start.anchor === target.anchor && end.anchor === target.anchor;
   });
-  if (matches.length !== 1)
+  // A first tracked replace inserts at the deleted range's old end; replacing a
+  // still-pending insertion reuses its start. Both are also where a broken write
+  // can insert beside an untouched target, which reads as the right range and is
+  // not discriminable here - the accept projection is what refuses that write
+  // (`assertStoryTextFrameReplacement`).
+  const match = matches.find(
+    (result: any) =>
+      (String(result?.startOffset) === target.startOffset ||
+        String(result?.startOffset) === target.endOffset) &&
+      String(result?.endOffset) === writtenEndOffset
+  );
+  if (!match)
     throw new OpError(
       'text_verification_failed',
       `Text verification failed at "${target.anchor}".`,
       [
         `expected: ${JSON.stringify(replacement)}`,
-        `matching public ranges: ${matches.length}`
+        `expected range: ${target.startOffset} or ${target.endOffset} to ${writtenEndOffset}`,
+        `ranges returned for the replacement: ${
+          matches
+            .map(
+              (result: any) =>
+                `${String(result?.startOffset)} to ${String(result?.endOffset)}`
+            )
+            .join(', ') || 'none'
+        }`
       ]
     );
-  const match = matches[0];
   editor.selection.select(String(match.startOffset), String(match.endOffset));
   const actual = String(editor.selection.text ?? '');
   if (actual !== replacement)
@@ -2463,7 +2506,7 @@ function applyLiveStoryTextOp(
   editor: LiveEditor,
   op: EditOp,
   target: LiveStoryTarget
-): void {
+): { target: LiveStoryTarget; replacement: string } {
   observeMutationGuardBoundary(op, 'find_content');
   if (op.op !== 'replace_text' && op.op !== 'delete_text')
     throw new OpError(
@@ -2492,8 +2535,95 @@ function applyLiveStoryTextOp(
     op.op === 'delete_text'
       ? ''
       : String(op.replace ?? op.text ?? op.newText ?? '');
-  replaceSelectedText(editor, replacement);
-  verifyLiveStoryWrite(editor, target, replacement);
+  // A pure deletion is not an empty replacement: `insertText('')` leaves the
+  // selection untouched, so the op silently wrote nothing. `delete()` is the
+  // public tracked-deletion primitive the body `delete_text` path already uses,
+  // and it is safe here for the same reason it is safe there - the selection is
+  // exactly the searched text range, with no paragraph mark in it.
+  if (replacement) replaceSelectedText(editor, replacement);
+  else editor.editor.delete();
+  verifyLiveStoryWrite(
+    editor,
+    target,
+    replacement,
+    String(editor.selection.endOffset ?? '')
+  );
+  return { target, replacement };
+}
+
+// The property a story text write must actually have, stated as a document
+// projection instead of inferred from the revisions it happened to author:
+// accepting every revision must read as the target text REPLACED by the
+// replacement. Nothing else separates a real tracked replacement from a write
+// that inserted the replacement beside an undeleted target - that write lands on
+// the same search range, authors a rejectable Insertion, and leaves the reject
+// projection unchanged, so it passes every other assertion while the accepted
+// document reads "Innovation LearningInnovation Learning LLC".
+//
+// Only text frames get this: their content is serialized into the SFDT, so the
+// projection can see it. Stories the projection cannot see (footnote/endnote
+// markers) keep the revision-pair assertion in `assertTrackedMutation`, which
+// demands the Deletion a real replacement authors.
+function assertStoryTextFrameReplacement(
+  write: { target: LiveStoryTarget; replacement: string },
+  priorAcceptStream: string,
+  postWriteSfdt: any
+): void {
+  const { target, replacement } = write;
+  const accepted = acceptProjectionStream(postWriteSfdt);
+  // The projection is a whole-document stream, so the target is one occurrence of
+  // its own spelling in it and every occurrence is a candidate; the search-range
+  // check in `verifyLiveStoryWrite` is what pins down which one was written.
+  //
+  // Only an occurrence spanning every character that actually changed can be the
+  // one this write replaced, and a whole-document candidate is built for those
+  // alone: a one-letter `find` in a large document has thousands of occurrences
+  // and none of them is worth a copy of the document. Both ends of the changed
+  // span are maximal and may overlap (shortening "X LLC" to "X" lets the space
+  // fall on either side), which only widens the set of occurrences worth testing
+  // - safe, because the filter must exclude no occurrence that could be the
+  // replaced one and full-stream equality is what decides.
+  const changedFrom = commonPrefixLength(priorAcceptStream, accepted);
+  const changedTo =
+    priorAcceptStream.length - commonSuffixLength(priorAcceptStream, accepted);
+  // An accepted document that did not change at all has no changed span to pin
+  // an occurrence with, and exactly one write leaves it unchanged: replacing the
+  // target with its own text.
+  const spansTheChange = (at: number) =>
+    accepted === priorAcceptStream
+      ? replacement === target.text
+      : at <= changedFrom && at + target.text.length >= changedTo;
+  const replacedAt = (at: number) =>
+    priorAcceptStream.slice(0, at) +
+    replacement +
+    priorAcceptStream.slice(at + target.text.length);
+  const occurrences: number[] = [];
+  // `find` is required to be non-empty, and an empty needle would make indexOf
+  // stand still.
+  if (target.text)
+    for (
+      let at = priorAcceptStream.indexOf(target.text);
+      at >= 0;
+      at = priorAcceptStream.indexOf(target.text, at + 1)
+    )
+      occurrences.push(at);
+  if (
+    occurrences.some((at) => spansTheChange(at) && replacedAt(at) === accepted)
+  )
+    return;
+  const explain = occurrences.find(spansTheChange) ?? occurrences[0];
+  throw new OpError(
+    'text_verification_failed',
+    `Text verification failed at "${target.anchor}".`,
+    explain === undefined
+      ? [
+          `expected: ${JSON.stringify(
+            target.text
+          )} replaced by ${JSON.stringify(replacement)}`,
+          'the target text was not part of the accepted document before this write, so this write cannot have replaced it'
+        ]
+      : describeAcceptDivergence(replacedAt(explain), accepted)
+  );
 }
 
 function replaceSelectedText(editor: LiveEditor, replacement: string): void {
@@ -4830,20 +4960,51 @@ function createdRevisions(
   );
 }
 
+function commonPrefixLength(a: string, b: string): number {
+  let at = 0;
+  const comparable = Math.min(a.length, b.length);
+  while (at < comparable && a[at] === b[at]) at++;
+  return at;
+}
+
+function commonSuffixLength(a: string, b: string): number {
+  let at = 0;
+  const comparable = Math.min(a.length, b.length);
+  while (at < comparable && a[a.length - 1 - at] === b[b.length - 1 - at]) at++;
+  return at;
+}
+
 // A full-document projection would drown the model; report only the first
 // divergence with enough surrounding context to identify the location.
-function describeStreamDivergence(expected: string, actual: string): string[] {
-  let start = 0;
-  const comparable = Math.min(expected.length, actual.length);
-  while (start < comparable && expected[start] === actual[start]) start++;
+function describeDivergence(
+  lead: string,
+  tail: string,
+  expected: string,
+  actual: string
+): string[] {
+  const start = commonPrefixLength(expected, actual);
   const from = Math.max(0, start - 60);
   const excerpt = (stream: string) =>
     JSON.stringify(stream.slice(from, start + 80));
-  return [
-    `after rejecting every revision the document would read ${excerpt(
-      actual
-    )} where it previously read ${excerpt(expected)}`
-  ];
+  return [`${lead} ${excerpt(actual)} ${tail} ${excerpt(expected)}`];
+}
+
+function describeStreamDivergence(expected: string, actual: string): string[] {
+  return describeDivergence(
+    'after rejecting every revision the document would read',
+    'where it previously read',
+    expected,
+    actual
+  );
+}
+
+function describeAcceptDivergence(expected: string, actual: string): string[] {
+  return describeDivergence(
+    'after accepting every revision the document would read',
+    'where this write should have made it read',
+    expected,
+    actual
+  );
 }
 
 const TRACKED_TEXT_OPS = new Set([
@@ -4923,9 +5084,14 @@ function assertTrackedMutation(
     return;
   }
 
-  // Live story ranges (text frames, page-specific headers/footers) are absent
-  // from serialized SFDT, so the projection above cannot be evaluated for them.
-  // Those anchors keep the revision-type assertion.
+  // The only writes left are the story ranges the projection genuinely cannot
+  // see (footnote/endnote markers): they are absent from serialized SFDT, so the
+  // projection above cannot be evaluated for them and they keep the
+  // revision-type assertion, whose Deletion requirement is what proves such a
+  // write struck its target. Text frames never reach here - their content IS
+  // serialized, so they arrive with a prior reject stream - and page-specific
+  // headers/footers never reach the write at all (`story_write_unverified`
+  // refuses them at preflight).
   if (
     !revisions.length ||
     (!types.has('insertion') &&
@@ -5739,8 +5905,11 @@ export function applyDocumentEdits(
   let byAnchor = new Map<string, FlatBlock>();
   // "What the whole document would read if every revision were rejected",
   // kept alongside the live block map so a tracked write can be proven
-  // reversible without a second serialize per op.
+  // reversible without a second serialize per op. Its mirror - what the document
+  // would read if every revision were accepted - is what proves a story write
+  // replaced the text it targeted rather than landing beside it.
   let rejectStream = '';
+  let acceptStream = '';
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();
@@ -5751,6 +5920,7 @@ export function applyDocumentEdits(
     blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
     rejectStream = rejectProjectionStream(sfdt);
+    acceptStream = acceptProjectionStream(sfdt);
   };
   refresh();
   const fail = (index: number, op: EditOp, err: unknown) => {
@@ -6026,6 +6196,10 @@ export function applyDocumentEdits(
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
         let priorRejectStream: string | undefined;
+        let priorAcceptStream: string | undefined;
+        let storyWrite:
+          | { target: LiveStoryTarget; replacement: string }
+          | undefined;
         let insertInheritance: PlannedInsertInheritance[] | undefined;
         let opExtras: OpSuccessExtras | void;
         try {
@@ -6057,12 +6231,19 @@ export function applyDocumentEdits(
               // second advisor-title edit failed on the cover page while the
               // first succeeded, and why the table edit beside it was fine.
               //
+              // That same serialization is what lets the mirror projection prove
+              // the write REPLACED the target instead of inserting beside it
+              // (`assertStoryTextFrameReplacement`), so both baselines - reject
+              // and accept - are captured here.
+              //
               // Stories the projection genuinely cannot see (footnote/endnote
               // markers) keep the revision assertion; headers/footers never get
               // this far (`story_write_unverified` refuses them at preflight).
-              if (isTextFrameAnchor(op.anchor))
+              if (isTextFrameAnchor(op.anchor)) {
                 priorRejectStream = rejectStream;
-              applyLiveStoryTextOp(editor, op, plan.target);
+                priorAcceptStream = acceptStream;
+              }
+              storyWrite = applyLiveStoryTextOp(editor, op, plan.target);
             } else {
               const target = resolveChangeSetBlock(
                 blocks,
@@ -6121,10 +6302,17 @@ export function applyDocumentEdits(
             };
             continue;
           }
-          // One committed snapshot feeds both the reject-projection assertion
-          // and the refreshed anchor map. Serializing those independently made
-          // every exhaustive batch pay two whole-document passes per op.
+          // One committed snapshot feeds the reject- and accept-projection
+          // assertions and the refreshed anchor map. Serializing those
+          // independently made every exhaustive batch pay two whole-document
+          // passes per op.
           const postWriteSfdt = parseSfdt(editor.serialize());
+          if (storyWrite && priorAcceptStream !== undefined)
+            assertStoryTextFrameReplacement(
+              storyWrite,
+              priorAcceptStream,
+              postWriteSfdt
+            );
           assertTrackedMutation(
             editor,
             revisionsBeforeOp,
