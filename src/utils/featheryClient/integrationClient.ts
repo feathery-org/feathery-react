@@ -17,6 +17,7 @@ import {
   FormConflictError,
   generateFormDocuments as apiGenerateFormDocuments,
   generateQuikEnvelopes as apiGenerateQuikEnvelopes,
+  getApiUrl,
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
@@ -26,6 +27,7 @@ import {
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
+import { editorContainerId } from '../document';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -447,29 +449,60 @@ export default class IntegrationClient {
   ENVELOPE_CHECK_INTERVAL = 2000;
   ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
-  async generateEnvelopes(action: Record<string, any>) {
+  async generateEnvelopes(
+    action: Record<string, any>,
+    signerEmailOverride?: string
+  ) {
     const { userId, sdkKey } = initInfo();
+    // The action UI resolves the signer from a form field; the
+    // `feathery.generateDocuments` logic-rule method passes the email directly.
+    //
     // Editor flow: the backend converts a docx envelope to PDF at generation
     // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold the signer back here — the
+    // the targeted document-editor container. Hold the signer back there — the
     // editor's Sign action forwards it at finalize time (finalizeEnvelope),
     // when that conversion is meant to happen.
-    const signer = action.view_draft_container
+    const signer = editorContainerId(action)
       ? undefined
-      : fieldValues[action.envelope_signer_field_key];
+      : signerEmailOverride ?? fieldValues[action.envelope_signer_field_key];
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
+    const documentIds = action.documents ?? [];
+    const signerEmail = signer?.toString() ?? '';
+    const repeatable = action.repeatable ?? false;
     const runAsync = action.run_async ?? true;
+    const openInEditor = action.envelope_action === 'open_in_editor';
+
+    // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
+    // set of known fields, so it can't carry the review-step flag through to
+    // the endpoint. Call the endpoint directly (reusing this client's own
+    // fetch/poll handling) whenever review is requested; leave the
+    // non-review path untouched.
+    //
+    // The draft-editor container is deliberately excluded: it consumes the
+    // generate response's `envelopes` metadata, which the review payload
+    // replaces, and it presents its own editing surface instead of the review
+    // viewer. Targeting a container therefore keeps the plain generate flow.
+    if (openInEditor && !editorContainerId(action)) {
+      return await this.generateEnvelopesForEditor({
+        documentIds,
+        signerEmail,
+        repeatable,
+        runAsync,
+        toolbarActions: action.editor_toolbar_actions ?? [],
+        mergeDocs: action.merge_docs ?? false
+      });
+    }
 
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds: action.documents ?? [],
+      documentIds,
       userId,
-      signerEmail: signer?.toString() ?? '',
-      repeatable: action.repeatable ?? false,
+      signerEmail,
+      repeatable,
       runAsync,
       envelopeAction,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
@@ -560,6 +593,187 @@ export default class IntegrationClient {
         if (response.ok) return await response.json();
         else throw Error(parseAPIError(await response.json()));
       }
+    });
+  }
+
+  private async generateEnvelopesForEditor({
+    documentIds,
+    signerEmail,
+    repeatable,
+    runAsync,
+    toolbarActions,
+    mergeDocs
+  }: {
+    documentIds: string[];
+    signerEmail: string;
+    repeatable: boolean;
+    runAsync: boolean;
+    toolbarActions: string[];
+    mergeDocs: boolean;
+  }) {
+    const { userId } = initInfo();
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      documents: documentIds,
+      run_async: runAsync,
+      envelope_action: 'open_in_editor',
+      // Generate reads the toolbar only to decide whether default field values
+      // are baked in; the pressed action is sent to finalize separately.
+      editor_toolbar_actions: toolbarActions,
+      // Forwarded even though the editor path itself never merges at generate
+      // time: it lets the backend reject an unsupported merge combination now,
+      // before the filler reviews every document and presses a button that
+      // finalize would then refuse.
+      merge_docs: mergeDocs
+    };
+    if (signerEmail) payload.signer_email = signerEmail;
+    if (repeatable) payload.repeatable = repeatable;
+
+    const url = `${getApiUrl()}document/form/generate/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    const response = await this._fetch(url, options, false);
+    if (!response) return;
+    const data = await response.json();
+    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!runAsync || data.documents) return data;
+
+    const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${documentIds}`;
+    return await this.pollUntilComplete(
+      pollUrl,
+      this.ENVELOPE_CHECK_INTERVAL,
+      this.ENVELOPE_MAX_TIME,
+      'Document generation'
+    );
+  }
+
+  FINALIZE_CHECK_INTERVAL = 2000;
+  FINALIZE_MAX_TIME = 3 * 60 * 1000;
+
+  async finalizeEnvelopeReview(
+    action: Record<string, any>,
+    {
+      envelopes,
+      envelopeAction
+    }: {
+      envelopes: { envelopeId: string }[];
+      envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+    }
+  ) {
+    if (!envelopes.length) {
+      return { status: 'error', message: 'No envelopes to finalize' };
+    }
+
+    const { userId } = initInfo();
+    const runAsync = action.run_async ?? true;
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      envelopes: envelopes.map((envelope) => ({
+        envelope_id: envelope.envelopeId
+      })),
+      envelope_action: envelopeAction,
+      merge_docs: action.merge_docs ?? false,
+      run_async: runAsync
+    };
+    if (action.merged_file_name)
+      payload.merged_file_name = action.merged_file_name;
+
+    const url = `${getApiUrl()}document/form/finalize/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    const response = await this._fetch(url, options, false);
+    if (!response) return;
+    const data = await response.json();
+    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    // The sync response is already the final `{ files: [...] }` payload.
+    // The async response is always `{}` immediately, regardless of the
+    // requested envelope_action (sign/fill/download/save) — completion is
+    // only ever signaled by the poll endpoint's `status: 'complete'`, never
+    // by guessing at the shape of this intermediate body.
+    if (!runAsync) return data;
+
+    const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
+    const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;
+    return await this.pollUntilComplete(
+      pollUrl,
+      this.FINALIZE_CHECK_INTERVAL,
+      this.FINALIZE_MAX_TIME,
+      'Document finalize'
+    );
+  }
+
+  // Shared GET-poll loop for endpoints whose async path reports completion
+  // via `{ status: 'complete', ... }` (mirrors the poll pattern used by
+  // client-utils' generateFormDocuments / generateQuikEnvelopes, but routed
+  // through this._fetch so auth/conflict handling stays consistent).
+  // TODO (tyler): migrate the other polling endpoints (Quik envelope
+  // generation, AI document extraction, persona) onto this helper instead of
+  // each hand-rolling its own retry loop — the persona loop below still has
+  // the parseResponse bug this one was just fixed for. Once it is shared,
+  // move it out of the middle of the document methods.
+  private pollUntilComplete(
+    pollUrl: string,
+    checkInterval: number,
+    maxTime: number,
+    operationName: string
+  ): Promise<Record<string, any>> {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = maxTime / checkInterval;
+
+      const retryOrTimeout = () => {
+        if (attempts < maxAttempts) {
+          setTimeout(checkCompletion, checkInterval);
+        } else {
+          const message = `${operationName} took too long...`;
+          console.warn(message);
+          resolve({ status: 'error', message });
+        }
+      };
+
+      const checkCompletion = async (): Promise<void> => {
+        attempts += 1;
+        let response;
+        try {
+          // parseResponse=false is load-bearing: with the default `true`,
+          // client-utils' checkResponseSuccess throws on every non-2xx poll,
+          // which turns a hard 500 into a silent retry until timeout and
+          // routes a 403 through handleFormAuthenticationError (poisoning
+          // every later _fetch). Matches client-utils' own pollForCompletion.
+          response = await this._fetch(pollUrl, { method: 'GET' }, false);
+        } catch {
+          // transient network error - retry on next interval
+        }
+        if (!response) return retryOrTimeout();
+
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          // A non-JSON body (a gateway's HTML 502 page, a truncated
+          // response) must not escape as an unhandled rejection: this runs
+          // from a setTimeout inside the promise executor, so a throw here
+          // would leave the outer promise permanently unsettled and the
+          // caller's spinner running forever. Treat it as a bad poll and
+          // retry until the timeout resolves the promise.
+          return retryOrTimeout();
+        }
+        if (response.ok) {
+          if (data.status === 'complete') return resolve(data);
+          return retryOrTimeout();
+        }
+        return resolve({ status: 'error', message: parseAPIError(data) });
+      };
+
+      setTimeout(checkCompletion, checkInterval);
     });
   }
 

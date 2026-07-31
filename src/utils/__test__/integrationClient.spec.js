@@ -577,6 +577,389 @@ describe('IntegrationClient', () => {
       );
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
+
+    it('does not treat a plain action as an editor action (regression)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf'] })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.envelope_action).not.toBe('open_in_editor');
+    });
+
+    it('sends the open_in_editor action to the generate endpoint directly and returns the sync payload', async () => {
+      // Arrange: client-utils' generateFormDocuments can't forward unknown
+      // params, so the editor action must be sent via a direct call.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: ['doc1', 'doc2'],
+        repeatable: true,
+        run_async: false,
+        envelope_action: 'open_in_editor'
+      };
+
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+
+      const documentsPayload = {
+        documents: [
+          { envelope_id: 'env-1', pdf_url: 'https://x/1.pdf', type: 'form' }
+        ],
+        expires_at: '2026-07-15T00:00:00Z'
+      };
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue(documentsPayload)
+      });
+
+      // Act
+      const result = await integrationClient.generateEnvelopes(action);
+
+      // Assert
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/generate/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            documents: action.documents,
+            run_async: false,
+            envelope_action: 'open_in_editor',
+            editor_toolbar_actions: [],
+            merge_docs: false,
+            signer_email: 'test@example.com',
+            repeatable: true
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual(documentsPayload);
+    });
+
+    it('polls until complete when open_in_editor runs async', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
+      integrationClient.ENVELOPE_MAX_TIME = 20;
+      const action = {
+        documents: ['doc1'],
+        run_async: true,
+        envelope_action: 'open_in_editor'
+      };
+
+      const completePayload = {
+        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+        expires_at: '2026-07-15T00:00:00Z',
+        status: 'complete'
+      };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'running' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch.mock.calls[1][0]).toBe(
+        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=${action.documents}`
+      );
+      expect(result).toEqual(completePayload);
+    });
+
+    it('surfaces an error response from the review generate endpoint', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        envelope_action: 'open_in_editor'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: false,
+        json: jest.fn().mockResolvedValue({ error: 'Envelope limit exceeded' })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Envelope limit exceeded'
+      });
+    });
+  });
+
+  describe('finalizeEnvelopeReview', () => {
+    const baseAction = { form_key: 'test_form_key' };
+
+    it('sends the reviewed envelopes to the finalize endpoint and returns files for download', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['merged.pdf'] })
+      });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/finalize/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            envelopes: [{ envelope_id: 'env-1' }],
+            envelope_action: 'download',
+            merge_docs: false,
+            run_async: false
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({ files: ['merged.pdf'] });
+    });
+
+    it('never sends signer_email on finalize (removed from the final contract)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        ...baseAction,
+        run_async: false,
+        envelope_signer_field_key: 'signer_field'
+      };
+      Object.assign(fieldValues, { signer_field: 'signer@example.com' });
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['signed.pdf'] })
+      });
+
+      await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.envelopes).toEqual([{ envelope_id: 'env-1' }]);
+      expect(body.signer_email).toBeUndefined();
+      expect(body.envelope_action).toBe('sign');
+    });
+
+    it('polls until complete when finalize runs async', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+      integrationClient.FINALIZE_MAX_TIME = 20;
+      const action = { ...baseAction, run_async: true };
+
+      const completePayload = { status: 'complete', files: ['merged.pdf'] };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({})
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'incomplete' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'save'
+      });
+
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+      expect(global.fetch.mock.calls[1][0]).toBe(
+        `${API_URL}document/form/finalize/poll/?fid=test_user_id&eids=env-1`
+      );
+      expect(result).toEqual(completePayload);
+    });
+
+    it('always polls for async finalize even if the initial POST response already looks file-shaped', async () => {
+      // Regression for the old `data.files` early-return heuristic: the
+      // real contract's immediate async POST response is always `{}` — the
+      // client must key completion off `run_async` + the poll's
+      // `status: 'complete'`, never off the shape of an intermediate body.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+      integrationClient.FINALIZE_MAX_TIME = 20;
+      const action = { ...baseAction, run_async: true };
+
+      const completePayload = { status: 'complete', files: ['merged.pdf'] };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({ files: ['stale.pdf'] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(result).toEqual(completePayload);
+    });
+
+    it('rejects an empty envelopes list without making a network call (backend rejects [])', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [],
+        envelopeAction: 'download'
+      });
+
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        status: 'error',
+        message: 'No envelopes to finalize'
+      });
+    });
+
+    it('surfaces an error response from the finalize endpoint', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: false,
+        json: jest.fn().mockResolvedValue({ error: 'Envelope expired' })
+      });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign'
+      });
+
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Envelope expired'
+      });
+    });
+
+    it('resolves with a timeout error when a poll body is not JSON, instead of hanging forever', async () => {
+      // A gateway HTML 502 page makes response.json() throw. The poll loop
+      // runs from a setTimeout inside the promise executor, so an unguarded
+      // throw leaves the promise permanently unsettled and the caller's
+      // spinner running until the user reloads.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+      integrationClient.FINALIZE_MAX_TIME = 3;
+      const action = { ...baseAction, run_async: true };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({})
+        })
+        .mockResolvedValue({
+          ok: false,
+          status: 502,
+          json: jest
+            .fn()
+            .mockRejectedValue(new SyntaxError('Unexpected token <'))
+        });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Document finalize took too long...'
+      });
+    });
+
+    it('surfaces a failing poll response immediately instead of retrying to timeout', async () => {
+      // The poll must run with parseResponse=false. With the default `true`,
+      // client-utils' checkResponseSuccess throws on the 500, the loop's bare
+      // catch swallows it as a "transient network error", and the caller waits
+      // out FINALIZE_MAX_TIME only to be told it was slow rather than failed.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.FINALIZE_CHECK_INTERVAL = 1;
+      integrationClient.FINALIZE_MAX_TIME = 20;
+      const action = { ...baseAction, run_async: true };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 201,
+          json: jest.fn().mockResolvedValue({})
+        })
+        .mockResolvedValue({
+          ok: false,
+          status: 500,
+          json: jest.fn().mockResolvedValue({ error: 'Worker exploded' })
+        });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Worker exploded'
+      });
+      // POST + exactly one poll — no retry storm.
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('sendDocusignEnvelope', () => {
