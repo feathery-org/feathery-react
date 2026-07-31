@@ -236,6 +236,42 @@ export default class IntegrationClient {
     );
   }
 
+  async startBoxOAuth(parentOrigin: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      parent_origin: parentOrigin
+    });
+    const response = await this._fetch(`${API_URL}box/oauth/start/?${params}`);
+    if (!response) throw new Error('Unable to start Box authorization.');
+
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(
+      parseAPIError(payload) || 'Unable to start Box authorization.'
+    );
+  }
+
+  async getBoxOAuthStatus(state: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      state
+    });
+    const response = await this._fetch(`${API_URL}box/oauth/status/?${params}`);
+    if (!response) return { status: 'pending' };
+
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(
+      parseAPIError(payload) || 'Unable to check Box authorization.'
+    );
+  }
+
   async triggerFlinksIframeAuthorization() {
     await initFormsPromise;
     const { userId } = initInfo();

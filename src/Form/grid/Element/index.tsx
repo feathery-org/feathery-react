@@ -679,6 +679,7 @@ const Element = ({ node: el, form }: any) => {
         return (
           <Elements.TextField
             {...fieldProps}
+            rawValue={stringifyWithNull(fieldVal)}
             onAccept={(val: any, mask: any) => {
               // This logic should be here and not inside the text field component
               // It was causing issues with typing in embedded forms on Android

@@ -205,6 +205,7 @@ function TextField({
   setRef = () => {},
   inlineError,
   repeatIndex = null,
+  rawValue: providedRawValue,
   children
 }: any) {
   const [showAutocomplete, setShowAutocomplete] = useState(false);
@@ -219,7 +220,9 @@ function TextField({
   const listItemRef = useRef<any[]>([]);
   const inputRef = useRef<{ element?: HTMLInputElement }>(null);
   const { value: fieldVal } = getFieldValue(element);
-  const rawValue = stringifyWithNull(fieldVal);
+  const rawValue = stringifyWithNull(
+    providedRawValue === undefined ? fieldVal : providedRawValue
+  );
 
   const servar = element.servar;
   const options = (servar.metadata.options ?? []).filter((opt: string) => opt);

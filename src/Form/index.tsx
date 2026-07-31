@@ -157,6 +157,7 @@ import {
   ACTION_AI_EXTRACTION,
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
+  ACTION_TRIGGER_BOX_OAUTH,
   ACTION_GENERATE_ENVELOPES,
   ACTION_SIGN_DOCUMENTS,
   ACTION_GENERATE_QUIK_DOCUMENTS,
@@ -195,6 +196,12 @@ import {
   REQUIRED_FLOW_ACTIONS
 } from '../utils/elementActions';
 import { openArgyleLink } from '../integrations/argyle';
+import {
+  BOX_OAUTH_POPUP_NAME,
+  getBoxFolderPathFieldValues,
+  getBoxOAuthPopupFeatures,
+  openBoxOAuth
+} from '../integrations/box';
 import { authState } from '../auth/LoginForm';
 import {
   getAuthIntegrationMetadata,
@@ -306,21 +313,28 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
   windows.forEach((win) => win?.close());
 }
 
-// Pre-open windows synchronously within the user-gesture call stack on iOS.
-// iOS Safari blocks window.open() after any await breaks the gesture chain.
-function preOpenIOSWindows(actions: any[]) {
+// OAuth popups must open within the user gesture. iOS has the same constraint
+// for ordinary new-tab actions after an async validation or submission.
+function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
-  if (isIOS()) {
-    actions.forEach((action, idx) => {
-      if (action.type === ACTION_URL && action.open_tab) {
-        const win = featheryWindow().open('about:blank', '_blank');
-        if (win) {
-          win.opener = null;
-          windows.set(idx, win);
-        }
+  actions.forEach((action, idx) => {
+    if (action.type === ACTION_TRIGGER_BOX_OAUTH) {
+      windows.set(
+        idx,
+        featheryWindow().open(
+          'about:blank',
+          BOX_OAUTH_POPUP_NAME,
+          getBoxOAuthPopupFeatures()
+        )
+      );
+    } else if (isIOS() && action.type === ACTION_URL && action.open_tab) {
+      const win = featheryWindow().open('about:blank', '_blank');
+      if (win) {
+        win.opener = null;
+        windows.set(idx, win);
       }
-    });
-  }
+    }
+  });
   return windows;
 }
 
@@ -2144,9 +2158,11 @@ function Form({
   } = useCheckButtonAction(setButtonLoader, clearLoaders);
 
   const buttonOnClick = async (button: ClickActionElement) => {
-    if (!isButtonActionRunning()) {
-      await setButtonLoader(button);
-    }
+    if (isButtonActionRunning()) return;
+
+    const actions = prioritizeActions(button.properties.actions ?? []);
+    const preOpenedWindows = preOpenActionWindows(actions);
+    await setButtonLoader(button);
 
     const setButtonError = (message: string) => {
       // Clear loaders before setting errors since buttons are disabled
@@ -2166,9 +2182,6 @@ function Form({
         10
       );
     };
-
-    const actions = prioritizeActions(button.properties.actions ?? []);
-    const preOpenedWindows = preOpenIOSWindows(actions);
 
     try {
       if (button.properties.captcha_verification && !initState.isTestEnv) {
@@ -2403,7 +2416,7 @@ function Form({
 
     // Guards text/container callers if an async onAction or action logic rule breaks the gesture chain
     if (!externalPreOpenedWindows) {
-      preOpenIOSWindows(actions).forEach((win, idx) =>
+      preOpenActionWindows(actions).forEach((win, idx) =>
         preOpenedWindows.set(idx, win)
       );
     }
@@ -2512,6 +2525,29 @@ function Form({
           integrations?.flinks,
           updateFieldValues
         );
+        break;
+      } else if (type === ACTION_TRIGGER_BOX_OAUTH) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
+        const popup = preOpenedWindows.get(i) ?? null;
+        preOpenedWindows.delete(i);
+        try {
+          const result = await openBoxOAuth(client, popup);
+          const newValues = getBoxFolderPathFieldValues(action, result);
+          if (Object.keys(newValues).length) {
+            updateFieldValues(newValues);
+            await client.submitCustom(newValues, { shouldFlush: true });
+          }
+          await flowOnSuccess(i)();
+        } catch (error) {
+          elementClicks[id] = false;
+          clearButtonActionState();
+          setElementError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to connect your Box account.'
+          );
+          onAsyncEnd();
+        }
         break;
       } else if (type === ACTION_URL) {
         let url = replaceTextVariables(action.url, element.repeat);
