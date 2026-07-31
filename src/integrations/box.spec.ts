@@ -1,10 +1,10 @@
-import { getBoxFolderPathFieldValues, openBoxOAuth } from './box';
+import { getBoxOAuthFieldValues, openBoxOAuth } from './box';
 import { featheryWindow } from '../utils/browser';
 
-describe('getBoxFolderPathFieldValues', () => {
+describe('getBoxOAuthFieldValues', () => {
   it('maps the selected Box path to the configured field key', () => {
     expect(
-      getBoxFolderPathFieldValues(
+      getBoxOAuthFieldValues(
         { box_folder_path_field_key: 'box_destination' },
         { folder: { path: 'All Files / Client Files / Applications' } }
       )
@@ -13,9 +13,38 @@ describe('getBoxFolderPathFieldValues', () => {
     });
   });
 
+  it('maps the connected account email to the configured field key', () => {
+    expect(
+      getBoxOAuthFieldValues(
+        { box_account_email_field_key: 'box_account' },
+        { account_email: 'respondent@example.com' }
+      )
+    ).toEqual({
+      box_account: 'respondent@example.com'
+    });
+  });
+
+  it('maps both fields at once when both are configured', () => {
+    expect(
+      getBoxOAuthFieldValues(
+        {
+          box_folder_path_field_key: 'box_destination',
+          box_account_email_field_key: 'box_account'
+        },
+        {
+          folder: { path: 'All Files / Applications' },
+          account_email: 'respondent@example.com'
+        }
+      )
+    ).toEqual({
+      box_destination: 'All Files / Applications',
+      box_account: 'respondent@example.com'
+    });
+  });
+
   it('does not update a field when no destination field is configured', () => {
     expect(
-      getBoxFolderPathFieldValues(
+      getBoxOAuthFieldValues(
         {},
         { folder: { path: 'All Files / Applications' } }
       )

@@ -198,7 +198,7 @@ import {
 import { openArgyleLink } from '../integrations/argyle';
 import {
   BOX_OAUTH_POPUP_NAME,
-  getBoxFolderPathFieldValues,
+  getBoxOAuthFieldValues,
   getBoxOAuthPopupFeatures,
   openBoxOAuth
 } from '../integrations/box';
@@ -2532,7 +2532,7 @@ function Form({
         preOpenedWindows.delete(i);
         try {
           const result = await openBoxOAuth(client, popup);
-          const newValues = getBoxFolderPathFieldValues(action, result);
+          const newValues = getBoxOAuthFieldValues(action, result);
           if (Object.keys(newValues).length) {
             updateFieldValues(newValues);
             await client.submitCustom(newValues, { shouldFlush: true });

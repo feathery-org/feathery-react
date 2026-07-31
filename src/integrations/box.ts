@@ -27,14 +27,29 @@ export function getBoxOAuthPopupFeatures() {
   ].join(',');
 }
 
-export function getBoxFolderPathFieldValues(
+export function getBoxOAuthFieldValues(
   action: Record<string, any>,
   result: Record<string, any>
 ) {
-  const fieldKey = action.box_folder_path_field_key;
+  const values: Record<string, string> = {};
+
+  const folderPathFieldKey = action.box_folder_path_field_key;
   const folderPath = result.folder?.path;
-  if (!fieldKey || typeof folderPath !== 'string' || !folderPath) return {};
-  return { [fieldKey]: folderPath };
+  if (folderPathFieldKey && typeof folderPath === 'string' && folderPath) {
+    values[folderPathFieldKey] = folderPath;
+  }
+
+  const accountEmailFieldKey = action.box_account_email_field_key;
+  const accountEmail = result.account_email;
+  if (
+    accountEmailFieldKey &&
+    typeof accountEmail === 'string' &&
+    accountEmail
+  ) {
+    values[accountEmailFieldKey] = accountEmail;
+  }
+
+  return values;
 }
 
 export async function openBoxOAuth(client: any, popup: Window | null) {
