@@ -71,3 +71,33 @@ export function containerToolbarOutcomes(action: Record<string, any>): {
     savesToField: actions.includes('save')
   };
 }
+
+// Generate Documents `sign` actions default to Feathery's own hosted eSign
+// flow (`getSignUrl` above). When the action is configured for DocuSign
+// instead, the backend's `{docusign_envelope_id, status}` response *is* the
+// completion signal — there is no Feathery sign URL to redirect to, so
+// callers must skip that redirect entirely and just continue the flow.
+// The action has to actually resolve to signing, because `sign_method` is only
+// meaningful for the sign action and the designer leaves a previously chosen
+// `sign_method` on the action when the envelope action is switched away from
+// sign. Matching the backend (which ignores sign_method unless the action
+// resolves to sign) keeps a stale value from rerouting fill/download/save
+// through the docusign path, where merge_docs would be silently dropped.
+//
+// `actingAction` is what resolves it. In the editor flow `action.envelope_action`
+// is 'open_in_editor' and carries no outcome of its own — the outcome is the
+// toolbar button the filler pressed, which arrives here as `actingAction`.
+// Reading only `action.envelope_action` answered "not DocuSign" for every editor
+// Sign / Save-as-Draft press, so the caller sent the envelope through DocuSign
+// and then *also* opened Feathery's hosted eSign page (navigating the page away
+// outright when `action.redirect` was set).
+export function isDocusignSignAction(
+  action: Record<string, any>,
+  actingAction?: string
+): boolean {
+  const envelopeAction = actingAction ?? action?.envelope_action;
+  return (
+    action?.sign_method === 'docusign' &&
+    (!envelopeAction || envelopeAction === 'sign')
+  );
+}
