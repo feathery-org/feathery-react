@@ -690,6 +690,42 @@ describe('IntegrationClient', () => {
       expect(result).toEqual(completePayload);
     });
 
+    it('polls with canonical cache keys for a mixed template/quik array', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      integrationClient.ENVELOPE_CHECK_INTERVAL = 1;
+      integrationClient.ENVELOPE_MAX_TIME = 20;
+      const action = {
+        documents: ['doc1', { kind: 'quik' }, 'doc2'],
+        run_async: true,
+        envelope_action: 'open_in_editor'
+      };
+
+      const completePayload = {
+        documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+        status: 'complete'
+      };
+
+      global.fetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ status: 'running' })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue(completePayload)
+        });
+
+      await integrationClient.generateEnvelopes(action);
+
+      // Must mirror the backend document_cache_keys: quik -> "quik", not
+      // "[object Object]".
+      expect(global.fetch.mock.calls[1][0]).toBe(
+        `${API_URL}document/form/generate/poll/?fid=test_user_id&dids=doc1,quik,doc2`
+      );
+    });
+
     it('surfaces an error response from the review generate endpoint', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);
@@ -795,6 +831,35 @@ describe('IntegrationClient', () => {
       expect(body.sign_method).toBeUndefined();
     });
 
+    it('routes a plain action with a quik document item through the direct call so the poll keys match', async () => {
+      // client-utils' generateFormDocuments interpolates the raw documents
+      // array into its poll URL, so {kind:'quik'} would become
+      // "[object Object]" and never match the backend's cache keys — the
+      // documents generate and then the first poll 400s. No review, no
+      // docusign: this is the plain Feathery-sign / download / save path.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1', { kind: 'quik' }],
+        run_async: false,
+        envelope_action: 'download'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['merged.pdf'] })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const [url, options] = global.fetch.mock.calls[0];
+      expect(url).toBe(`${API_URL}document/form/generate/`);
+      expect(JSON.parse(options.body).documents).toEqual([
+        'doc1',
+        { kind: 'quik' }
+      ]);
+    });
+
     it('routes a non-docusign sign_method through the library path, not the direct call (regression)', async () => {
       // Only sign_method: 'docusign' needs the direct call to carry the flag
       // through; other sign_method values (e.g. Feathery's own hosted eSign)
@@ -843,6 +908,57 @@ describe('IntegrationClient', () => {
         }
       );
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
+    });
+
+    it('sends a mixed template/quik documents array verbatim on the direct path', async () => {
+      // The unified Generate Documents action carries a polymorphic ordered
+      // `documents` array: template UUID strings plus at most one
+      // `{kind:'quik'}` dict. The direct (review/docusign) path must forward it
+      // to the generate endpoint exactly as configured, without reshaping.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const mixedDocuments = ['uuid-1', { kind: 'quik' }, 'uuid-2'];
+      const action = {
+        documents: mixedDocuments,
+        run_async: false,
+        envelope_action: 'open_in_editor'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+          expires_at: '2026-07-15T00:00:00Z'
+        })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(mixedDocuments);
+    });
+
+    it('sends a mixed template/quik documents array verbatim on the library path', async () => {
+      // The library path (@feathery/client-utils generateFormDocuments) is used
+      // when neither the review step nor a docusign sign_method is requested; it
+      // must forward the same polymorphic array unchanged.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const mixedDocuments = ['uuid-1', { kind: 'quik' }, 'uuid-2'];
+      const action = {
+        documents: mixedDocuments,
+        run_async: false
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf'] })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.documents).toEqual(mixedDocuments);
     });
   });
 
@@ -1141,6 +1257,31 @@ describe('IntegrationClient', () => {
 
       const body = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(body.sign_method).toBeUndefined();
+    });
+
+    it('finalizes a quik-sourced review envelope with its envelope id unchanged', async () => {
+      // Quik-sourced review documents produce real Envelope rows on the
+      // backend, so their `envelope_id` is source-agnostic: finalize must send
+      // it through verbatim, exactly like a template-sourced envelope.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['signed.pdf'] })
+      });
+
+      await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'quik-env-1' }, { envelopeId: 'tmpl-env-2' }],
+        envelopeAction: 'sign'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.envelopes).toEqual([
+        { envelope_id: 'quik-env-1' },
+        { envelope_id: 'tmpl-env-2' }
+      ]);
     });
   });
 

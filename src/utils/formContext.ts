@@ -237,7 +237,9 @@ export const getFormContext = (formUuid: string) => {
       zipName,
       saveDocumentFieldKey
     }: {
-      documentIds: string[];
+      // A plain template UUID string, or a source object such as the Quik item
+      // `{ kind: 'quik' }` — mirroring the action config's `documents` array.
+      documentIds: (string | { kind: string; [key: string]: any })[];
       signerEmail?: string;
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
       signMethod?: 'feathery' | 'docusign';
@@ -257,12 +259,15 @@ export const getFormContext = (formUuid: string) => {
         !!signerEmail ||
         !!envelopeAction ||
         !!toolbarActions?.length ||
-        !!repeatable;
-      // DocuSign, a signer email, the editor, and the sign/save envelope
-      // actions all need the same endpoint + editor flow the Generate Documents
-      // action uses, so route through the <Form />-registered flow when any are
-      // requested. Otherwise keep the simple, backward-compatible client path
-      // (template fill / merge / download).
+        !!repeatable ||
+        documentIds.some(
+          (doc) => typeof doc === 'object' && doc.kind === 'quik'
+        );
+      // Quik sources, DocuSign, a signer email, the editor, and the sign/save
+      // envelope actions all need the same endpoint + editor flow the Generate
+      // Documents action uses, so route through the <Form />-registered flow
+      // when any are requested. Otherwise keep the simple, backward-compatible
+      // client path (template fill / merge / download).
       if (formState.generateEnvelopeFlow && usesRichOptions) {
         return formState.generateEnvelopeFlow(
           {
@@ -281,8 +286,20 @@ export const getFormContext = (formUuid: string) => {
           signerEmail
         );
       }
+      // Reached only when no <Form /> flow is registered (headless/vanillajs).
+      // The simple client path interpolates documentIds straight into its poll
+      // URL, so a source object would stringify to "[object Object]" and poll
+      // against a key the backend never wrote — until it timed out. Say so.
+      if (documentIds.some((doc) => typeof doc !== 'string')) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: document source objects (e.g. the Quik item) ' +
+              'require a mounted <Form />; pass template ids only here.'
+          )
+        );
+      }
       return formState.client.generateDocuments({
-        documentIds,
+        documentIds: documentIds as string[],
         download,
         merge,
         mergedFileName
