@@ -92,7 +92,7 @@ const schemaFor = (containerIds: string[]) => ({
           actions: [
             {
               type: ACTION_GENERATE_ENVELOPES,
-              view_draft_container: containerId,
+              editor_mode: containerId,
               documents: [`document-${containerId}`]
             }
           ]

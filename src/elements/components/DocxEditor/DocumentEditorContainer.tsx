@@ -10,7 +10,7 @@ import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
-import { getSignUrl } from '../../../utils/document';
+import { editorContainerId, getSignUrl } from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
@@ -19,7 +19,7 @@ import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 
 // The container carries no document. Its document is owned by the Generate
-// Documents button that targets it: find the action whose view_draft_container
+// Documents button that targets it: find the action whose editor_mode
 // matches this container and use its first document. Scans loaded form schemas
 // (container ids are unique, so no need to know the form key).
 function resolveTargetAction(
@@ -38,7 +38,7 @@ function resolveTargetAction(
         for (const action of button?.properties?.actions ?? []) {
           if (
             action?.type === ACTION_GENERATE_ENVELOPES &&
-            action?.view_draft_container === containerId
+            editorContainerId(action ?? {}) === containerId
           ) {
             return action;
           }
@@ -255,10 +255,10 @@ export default function DocumentEditorContainer({
   const activeDocumentId = envelope?.document ?? documentId;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
-  // `view_draft_read_only` (default: editable).
+  // `editor_read_only` (default: editable).
   const actionReadOnly =
-    typeof targetAction?.view_draft_read_only === 'boolean'
-      ? targetAction.view_draft_read_only
+    typeof targetAction?.editor_read_only === 'boolean'
+      ? targetAction.editor_read_only
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;

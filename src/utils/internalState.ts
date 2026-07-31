@@ -163,6 +163,15 @@ export interface FormInternalState {
   ) => Promise<any>;
   getDocusignBrands: () => Promise<any>;
   getConfig: GetConfig;
+  // Registered by <Form /> so the `feathery.generateDocuments` logic-rule
+  // method can run the full Generate Documents flow (generate → optional review
+  // modal → envelope action), reaching component-only state like the review
+  // viewer. Absent in headless/vanillajs contexts, where the method falls back
+  // to the simpler client path.
+  generateEnvelopeFlow?: (
+    action: Record<string, any>,
+    signerEmail?: string
+  ) => Promise<any>;
 }
 
 type InternalState = {
