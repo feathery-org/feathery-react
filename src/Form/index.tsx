@@ -1228,7 +1228,7 @@ function Form({
                 data.files,
                 replaceTextVariables(action.envelope_zip_name)
               );
-            } else if (envAction === 'save') {
+            } else if (envAction === 'save' && data.files) {
               let files = data.files;
               if (files.length === 1) files = files[0];
               const newValues = { [action.save_document_field_key]: files };
@@ -2898,7 +2898,7 @@ function Form({
               data.files,
               replaceTextVariables(action.envelope_zip_name)
             );
-          } else if (envAction === 'save') {
+          } else if (envAction === 'save' && data.files) {
             let files = data.files;
             if (files.length === 1) files = files[0];
             const newValues = { [action.save_document_field_key]: files };

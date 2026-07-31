@@ -22,7 +22,7 @@ export default function DocumentsPanel({
           onClick={() => onNavigate(doc.pdf_url, 0)}
           css={rowButtonCss}
         >
-          {doc.form_name ?? doc.name}
+          {doc.name}
         </button>
       ))}
     </div>

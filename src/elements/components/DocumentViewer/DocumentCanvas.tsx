@@ -201,7 +201,7 @@ export default function DocumentCanvas({
               <span css={{ color: color.errorText }}>
                 <AlertIcon size={24} />
               </span>
-              Failed to load {doc.form_name ?? doc.name ?? 'document'}.
+              Failed to load {doc.name ?? 'document'}.
               <button
                 type='button'
                 css={secondaryButtonCss}

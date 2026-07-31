@@ -6,7 +6,7 @@ it('lists forms and navigates on click', () => {
   const onNavigate = jest.fn();
   render(
     <DocumentsPanel
-      documents={[{ type: 'form', pdf_url: 'u1', form_name: 'Form A' }]}
+      documents={[{ type: 'form', pdf_url: 'u1', name: 'Form A' }]}
       onNavigate={onNavigate}
     />
   );
