@@ -1,4 +1,8 @@
-import { containerToolbarOutcomes, editorContainerId } from '../document';
+import {
+  containerToolbarOutcomes,
+  editorContainerId,
+  isDocusignSignAction
+} from '../document';
 
 describe('editorContainerId', () => {
   // `editor_mode` is the single source of truth for how the editor is
@@ -54,6 +58,78 @@ describe('containerToolbarOutcomes', () => {
     expect(containerToolbarOutcomes({})).toEqual({
       terminalAction: undefined,
       savesToField: false
+    });
+  });
+});
+
+describe('isDocusignSignAction', () => {
+  it('returns true when the action is configured for docusign sign', () => {
+    expect(isDocusignSignAction({ sign_method: 'docusign' })).toBe(true);
+  });
+
+  it('returns false when sign_method is feathery (regression)', () => {
+    expect(isDocusignSignAction({ sign_method: 'feathery' })).toBe(false);
+  });
+
+  it('returns false when sign_method is absent (regression)', () => {
+    expect(isDocusignSignAction({})).toBe(false);
+  });
+
+  it('returns false for an unrecognized sign_method value', () => {
+    expect(isDocusignSignAction({ sign_method: 'something-else' })).toBe(false);
+  });
+
+  it('returns true when envelope_action is explicitly sign', () => {
+    expect(
+      isDocusignSignAction({ sign_method: 'docusign', envelope_action: 'sign' })
+    ).toBe(true);
+  });
+
+  it.each(['fill', 'download', 'save'])(
+    'returns false for a stale docusign sign_method on a %s action',
+    (envelopeAction) => {
+      expect(
+        isDocusignSignAction({
+          sign_method: 'docusign',
+          envelope_action: envelopeAction
+        })
+      ).toBe(false);
+    }
+  );
+
+  describe('editor flow (envelope_action is open_in_editor)', () => {
+    const editorAction = {
+      sign_method: 'docusign',
+      envelope_action: 'open_in_editor'
+    };
+
+    // Without the acting action this answered false, so the caller sent the
+    // envelope through DocuSign and then *also* opened Feathery's hosted eSign
+    // page — navigating the page away outright when action.redirect was set.
+    it('returns true for a Sign press in the editor', () => {
+      expect(isDocusignSignAction(editorAction, 'sign')).toBe(true);
+    });
+
+    it.each(['download', 'save', 'fill'])(
+      'returns false for a %s press in the editor',
+      (actingAction) => {
+        expect(isDocusignSignAction(editorAction, actingAction)).toBe(false);
+      }
+    );
+
+    it('returns false for an editor sign press routed through feathery', () => {
+      expect(
+        isDocusignSignAction(
+          { sign_method: 'feathery', envelope_action: 'open_in_editor' },
+          'sign'
+        )
+      ).toBe(false);
+    });
+
+    it('falls back to envelope_action with no acting action', () => {
+      // The direct (non-editor) path calls it with one argument.
+      expect(isDocusignSignAction(editorAction)).toBe(false);
+      expect(isDocusignSignAction({ sign_method: 'docusign' })).toBe(true);
     });
   });
 });

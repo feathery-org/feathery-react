@@ -27,7 +27,7 @@ import {
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
-import { editorContainerId } from '../document';
+import { editorContainerId, isDocusignSignAction } from '../document';
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -476,23 +476,30 @@ export default class IntegrationClient {
     const openInEditor = action.envelope_action === 'open_in_editor';
 
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
-    // set of known fields, so it can't carry the review-step flag through to
-    // the endpoint. Call the endpoint directly (reusing this client's own
-    // fetch/poll handling) whenever review is requested; leave the
-    // non-review path untouched.
+    // set of known fields, so it can't carry the review-step flag or
+    // DocuSign's sign_method through to the endpoint. Call the endpoint
+    // directly (reusing this client's own fetch/poll handling) whenever
+    // either is requested; other sign_method values (e.g. Feathery's own
+    // hosted eSign) still go through the maintained library path below.
     //
     // The draft-editor container is deliberately excluded: it consumes the
     // generate response's `envelopes` metadata, which the review payload
     // replaces, and it presents its own editing surface instead of the review
     // viewer. Targeting a container therefore keeps the plain generate flow.
-    if (openInEditor && !editorContainerId(action)) {
+    if (
+      (openInEditor || isDocusignSignAction(action)) &&
+      !editorContainerId(action)
+    ) {
       return await this.generateEnvelopesForEditor({
         documentIds,
         signerEmail,
         repeatable,
         runAsync,
         toolbarActions: action.editor_toolbar_actions ?? [],
-        mergeDocs: action.merge_docs ?? false
+        mergeDocs: action.merge_docs ?? false,
+        openInEditor,
+        envelopeAction,
+        signMethod: action.sign_method
       });
     }
 
@@ -602,7 +609,10 @@ export default class IntegrationClient {
     repeatable,
     runAsync,
     toolbarActions,
-    mergeDocs
+    mergeDocs,
+    openInEditor,
+    envelopeAction,
+    signMethod
   }: {
     documentIds: string[];
     signerEmail: string;
@@ -610,6 +620,11 @@ export default class IntegrationClient {
     runAsync: boolean;
     toolbarActions: string[];
     mergeDocs: boolean;
+    // False for a direct DocuSign sign, which also needs this call because
+    // client-utils can't forward sign_method.
+    openInEditor: boolean;
+    envelopeAction: 'sign' | 'fill';
+    signMethod?: string;
   }) {
     const { userId } = initInfo();
     const payload: Record<string, any> = {
@@ -617,16 +632,19 @@ export default class IntegrationClient {
       fuser_key: userId,
       documents: documentIds,
       run_async: runAsync,
-      envelope_action: 'open_in_editor',
-      // Generate reads the toolbar only to decide whether default field values
-      // are baked in; the pressed action is sent to finalize separately.
-      editor_toolbar_actions: toolbarActions,
-      // Forwarded even though the editor path itself never merges at generate
-      // time: it lets the backend reject an unsupported merge combination now,
-      // before the filler reviews every document and presses a button that
-      // finalize would then refuse.
+      envelope_action: openInEditor ? 'open_in_editor' : envelopeAction,
+      // Forwarded even though neither path merges at generate time: it lets the
+      // backend reject an unsupported merge combination (merge_docs with a
+      // DocuSign send) now, instead of after the filler has reviewed every
+      // document and pressed a button that finalize would then refuse.
       merge_docs: mergeDocs
     };
+    if (openInEditor) {
+      // Generate reads the toolbar only to decide whether default field values
+      // are baked in; the pressed action is sent to finalize separately.
+      payload.editor_toolbar_actions = toolbarActions;
+    }
+    if (signMethod) payload.sign_method = signMethod;
     if (signerEmail) payload.signer_email = signerEmail;
     if (repeatable) payload.repeatable = repeatable;
 
@@ -658,10 +676,13 @@ export default class IntegrationClient {
     action: Record<string, any>,
     {
       envelopes,
-      envelopeAction
+      envelopeAction,
+      draft = false
     }: {
       envelopes: { envelopeId: string }[];
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+      // DocuSign sign only: create the envelope as a draft instead of sending.
+      draft?: boolean;
     }
   ) {
     if (!envelopes.length) {
@@ -678,10 +699,12 @@ export default class IntegrationClient {
       })),
       envelope_action: envelopeAction,
       merge_docs: action.merge_docs ?? false,
+      draft,
       run_async: runAsync
     };
     if (action.merged_file_name)
       payload.merged_file_name = action.merged_file_name;
+    if (action.sign_method) payload.sign_method = action.sign_method;
 
     const url = `${getApiUrl()}document/form/finalize/`;
     const options = {
