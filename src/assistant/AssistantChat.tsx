@@ -670,6 +670,9 @@ const AssistantChat = ({
     [headers, getTargets, getJwt]
   );
   const activeThread = threads.find((t) => t.id === activeThreadId);
+  // A thread only gets a title on its first send, so an untitled (or absent)
+  // active thread means we're already sitting in a fresh chat
+  const inNewChat = !activeThread?.title;
   const activeChat = activeThread?.chat ?? readyChat;
 
   const {
@@ -1193,7 +1196,6 @@ const AssistantChat = ({
             overflow: 'hidden'
           }}
         >
-          <ChatIcon />
           <button
             type='button'
             onClick={() => setIsDropdownOpen((prev) => !prev)}
@@ -1222,7 +1224,7 @@ const AssistantChat = ({
                 minWidth: 0
               }}
             >
-              {activeThread?.title || 'AI Assistant'}
+              {activeThread?.title || 'New Chat'}
             </span>
             <span css={{ display: 'flex', opacity: 0.8, flexShrink: 0 }}>
               <ChevronDownIcon />
@@ -1388,28 +1390,30 @@ const AssistantChat = ({
                 overflowY: 'scroll'
               }}
             >
-              <button
-                type='button'
-                onClick={() => {
-                  handleNewThread();
-                  setIsDropdownOpen(false);
-                }}
-                css={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: `1px solid ${GRAY_100}`,
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: colors.primary,
-                  textAlign: 'left',
-                  ':hover': { backgroundColor: GRAY_50 }
-                }}
-              >
-                + New Chat
-              </button>
+              {!inNewChat && (
+                <button
+                  type='button'
+                  onClick={() => {
+                    handleNewThread();
+                    setIsDropdownOpen(false);
+                  }}
+                  css={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: `1px solid ${GRAY_100}`,
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: colors.primary,
+                    textAlign: 'left',
+                    ':hover': { backgroundColor: GRAY_50 }
+                  }}
+                >
+                  + New Chat
+                </button>
+              )}
 
               {visibleThreads.length === 0 && (
                 <div
