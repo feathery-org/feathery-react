@@ -8,7 +8,7 @@ const { loadPdfjs } = jest.requireMock('./pdfjsLoader');
 const doc = {
   type: 'form' as const,
   pdf_url: 'http://x/a.pdf',
-  form_name: 'Form A'
+  name: 'Form A'
 };
 const baseProps = {
   documents: [doc],
@@ -67,10 +67,10 @@ it('does not reload already-loaded documents when an attachment is added', async
   const docA = {
     type: 'form' as const,
     pdf_url: 'http://x/a.pdf',
-    form_name: 'A'
+    name: 'A'
   };
   const docB = {
-    type: 'attachment' as const,
+    type: 'form' as const,
     pdf_url: 'http://x/b.pdf',
     name: 'B'
   };
@@ -123,7 +123,7 @@ it('destroys loaded documents on unmount and when an attachment is removed', asy
     }
   });
   const docA = { type: 'form' as const, pdf_url: 'http://x/a.pdf' };
-  const docB = { type: 'attachment' as const, pdf_url: 'http://x/b.pdf' };
+  const docB = { type: 'form' as const, pdf_url: 'http://x/b.pdf' };
 
   const { rerender, unmount } = render(
     <DocumentCanvas {...baseProps} documents={[docA, docB]} />

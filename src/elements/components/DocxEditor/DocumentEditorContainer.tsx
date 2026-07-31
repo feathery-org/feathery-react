@@ -10,7 +10,11 @@ import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
-import { editorContainerId, getSignUrl } from '../../../utils/document';
+import {
+  containerToolbarOutcomes,
+  editorContainerId,
+  getSignUrl
+} from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
@@ -258,13 +262,11 @@ export default function DocumentEditorContainer({
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
-  const terminalAction = targetAction
-    ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
-      ? 'sign'
-      : targetAction.envelope_action === 'download'
-      ? 'download'
-      : undefined
-    : undefined;
+  // The outcomes this container offers, read from `editor_toolbar_actions` —
+  // the same key the overlay editor uses. See containerToolbarOutcomes.
+  const { terminalAction, savesToField } = containerToolbarOutcomes(
+    targetAction ?? {}
+  );
 
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
@@ -283,8 +285,8 @@ export default function DocumentEditorContainer({
         );
       }
       if (
-        targetAction?.envelope_action === 'save' &&
-        targetAction.save_document_field_key &&
+        savesToField &&
+        targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
         const newValues = {
@@ -295,7 +297,7 @@ export default function DocumentEditorContainer({
       }
       return updated;
     },
-    [client, envelope, targetAction]
+    [client, envelope, targetAction, savesToField]
   );
 
   // Only the sign action is handled here — the download action downloads the
@@ -407,7 +409,7 @@ export default function DocumentEditorContainer({
       terminalActionDisabled={!envelope.file}
       // Save-to-field flow: the document's destination is a form field (set
       // on every save), not the user's machine — no Download button.
-      hideDownload={targetAction?.envelope_action === 'save'}
+      hideDownload={savesToField}
       onSave={saveEnvelope}
       onEditorReady={onEditorReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not

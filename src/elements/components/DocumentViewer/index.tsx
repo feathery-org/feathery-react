@@ -39,18 +39,14 @@ const MAX_PAGE_WIDTH = 900;
 const CONTAINER_PADDING = 48;
 const VIEWER_TITLE = 'Review Your Forms';
 
+/** One entry of the review payload's `documents` array, exactly as the
+ * backend's build_envelope_viewer_payload emits it. */
 export interface ViewerDocument {
-  type: 'form' | 'attachment';
+  type: 'form';
   pdf_url: string;
-  form_id?: string;
-  group_index?: number;
-  // Present on documents returned by the Generate Documents review flow's
-  // generate step (`envelopes[].envelope_id` at finalize time).
+  // The id finalize acts on.
   envelope_id?: string;
-  form_name?: string;
   name?: string;
-  position?: 'before' | 'after';
-  id?: string;
 }
 
 export interface DocumentViewerPayload {
@@ -106,18 +102,16 @@ export default function DocumentViewer({
   );
   const [expiredBanner, setExpiredBanner] = useState(isExpired);
 
-  const visibleDocuments = payload.documents;
-
   const pageEntries = useMemo(
     () =>
-      visibleDocuments.flatMap((doc) =>
+      payload.documents.flatMap((doc) =>
         Array.from({ length: pageCounts[doc.pdf_url] ?? 0 }, (_, i) => ({
           pdfUrl: doc.pdf_url,
           pageIndex: i,
           key: pageKey(doc.pdf_url, i)
         }))
       ),
-    [visibleDocuments, pageCounts]
+    [payload.documents, pageCounts]
   );
   const pageOrder = useMemo(() => pageEntries.map((p) => p.key), [pageEntries]);
   const { activeKey, observePage } = useActivePage(
@@ -210,10 +204,10 @@ export default function DocumentViewer({
   // viewer is read-only, so there are no edited values to collect.
   const reviewedEnvelopes = useMemo(
     () =>
-      visibleDocuments
-        .filter((doc) => doc.type === 'form' && doc.envelope_id)
+      payload.documents
+        .filter((doc) => doc.envelope_id)
         .map((doc) => ({ envelopeId: doc.envelope_id as string })),
-    [visibleDocuments]
+    [payload.documents]
   );
 
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
@@ -328,7 +322,7 @@ export default function DocumentViewer({
       {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
       <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <ViewerSidebar
-          documents={visibleDocuments}
+          documents={payload.documents}
           pageCounts={pageCounts}
           pdfProxies={loadedDocs.current}
           activeKey={activeKey}
@@ -340,7 +334,7 @@ export default function DocumentViewer({
           css={{ flex: 1, overflow: 'auto', padding: 24 }}
         >
           <DocumentCanvas
-            documents={visibleDocuments}
+            documents={payload.documents}
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
             registerPageRef={registerPageRef}
