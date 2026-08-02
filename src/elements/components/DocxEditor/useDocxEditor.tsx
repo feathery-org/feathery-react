@@ -315,9 +315,10 @@ export function useDocxEditor({
   // dimensions until something forces a reflow — opening a document was that
   // trigger, hence the jump. rAF-coalesced: resize() is a full relayout, and
   // deferring out of the observer callback avoids an undelivered-notifications
-  // warning.
+  // warning. Watch the parent: resize() pins an inline px width on the host,
+  // so an observer there goes deaf after one tick.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = containerRef.current?.parentElement;
     if (!el || !editor) return;
     let frame = 0;
     const observer = new ResizeObserver(() => {
@@ -327,7 +328,17 @@ export function useDocxEditor({
         // Resizing to 0 while hidden makes Syncfusion compute a degenerate
         // layout it does not recover from when the box returns.
         const { width, height } = el.getBoundingClientRect();
-        if (width > 0 && height > 0) containerInstRef.current?.resize?.();
+        if (width > 0 && height > 0) {
+          // Syncfusion latches this in its window handler, it gates re-measure
+          editor.isContainerResize = false;
+          containerInstRef.current?.resize?.();
+          // resize() relays out but never refits the zoom, and the built-in
+          // status bar only redraws its label when told to
+          if (editor.viewer?.zoomType === 'FitPageWidth') {
+            editor.fitPage('FitPageWidth');
+            containerInstRef.current?.statusBar?.updateZoomContent?.();
+          }
+        }
       });
     });
     observer.observe(el);
