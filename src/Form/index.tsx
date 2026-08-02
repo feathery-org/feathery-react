@@ -2796,7 +2796,7 @@ function Form({
           }
           if (!action.view_draft_container) {
             const envAction = action.envelope_action;
-            if (!envAction) {
+            if (!envAction || envAction === 'sign') {
               // One entry comes back per multi-signer document, carrying an
               // id only when the filler signs it first. A signer link covers
               // the batch's plain envelopes too, so it takes priority over
