@@ -233,7 +233,10 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
-import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
+import {
+  ENVELOPE_LABELS,
+  useEnvelopeGenerationToast
+} from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
 import type {
@@ -2793,19 +2796,46 @@ function Form({
           }
           if (!action.view_draft_container) {
             const envAction = action.envelope_action;
-            if (!envAction || envAction === 'sign') {
-              // Sign files
-              const url = getSignUrl(action.redirect);
-              if (action.redirect) {
-                const eventData: Record<string, any> = {
-                  step_key: activeStep.key,
-                  next_step_key: '',
-                  event: submit ? 'complete' : 'skip',
-                  completed: true
-                };
-                await client.registerEvent(eventData);
-                featheryWindow().location.href = url;
-              } else openTab(url);
+            if (!envAction) {
+              // One entry comes back per multi-signer document, carrying an
+              // id only when the filler signs it first. A signer link covers
+              // the batch's plain envelopes too, so it takes priority over
+              // the legacy user link, which serves only those.
+              const responseSigners = data.signers ?? [];
+              const allMultiSigner =
+                responseSigners.length > 0 &&
+                new Set(responseSigners.map((s: any) => s.document_id)).size ===
+                  (action.documents ?? []).length;
+              const matchedSigner = responseSigners.find(
+                (s: any) => s.signer_id
+              );
+
+              if (!matchedSigner && allMultiSigner) {
+                // Nothing in the batch for the filler to sign themselves.
+                if (responseSigners.some((s: any) => s.invited)) {
+                  updateEnvelopeGeneration(envelopeId, {
+                    labels: {
+                      ...ENVELOPE_LABELS,
+                      complete: 'Sent for Signature'
+                    }
+                  });
+                }
+              } else {
+                const url = getSignUrl(
+                  action.redirect,
+                  matchedSigner?.signer_id
+                );
+                if (action.redirect) {
+                  const eventData: Record<string, any> = {
+                    step_key: activeStep.key,
+                    next_step_key: '',
+                    event: submit ? 'complete' : 'skip',
+                    completed: true
+                  };
+                  await client.registerEvent(eventData);
+                  featheryWindow().location.href = url;
+                } else openTab(url);
+              }
             } else if (envAction === 'download' && data.files) {
               // Download files directly
               await downloadAllFileUrls(

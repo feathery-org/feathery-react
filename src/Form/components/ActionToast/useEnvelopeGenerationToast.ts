@@ -25,7 +25,7 @@ function isEnvelopeGenerationAction(
 export type EnvelopeDataItem = DataItem;
 
 // Labels for envelope generation
-const ENVELOPE_LABELS = {
+export const ENVELOPE_LABELS = {
   queued: 'Queued Document',
   incomplete: 'Generating Document',
   complete: 'Completed',
