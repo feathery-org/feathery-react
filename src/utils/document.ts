@@ -9,7 +9,7 @@ function isValidUrl(urlString: string): boolean {
   }
 }
 
-export function getSignUrl(redirect?: boolean | string) {
+export function getSignUrl(redirect?: boolean | string, signerId?: string) {
   const regionPart =
     initState.region && initState.region !== 'us' ? `${initState.region}.` : '';
 
@@ -33,7 +33,13 @@ export function getSignUrl(redirect?: boolean | string) {
     }
   }
 
-  return `https://${regionPart}document.feathery.io/to/${initState._internalUserId}${query}`;
+  // A signer id only exists when the filler is themselves a first-order
+  // signer - fill-only envelopes and non-signing fillers have none. The
+  // fuser id falls back to resolving the submission's envelopes through the
+  // legacy session path, since a signer id is a bearer token the backend
+  // only ever hands back for the filler's own row.
+  const id = signerId ?? initState._internalUserId;
+  return `https://${regionPart}document.feathery.io/to/${id}${query}`;
 }
 
 /** The Document Editor container this action targets, or '' when it doesn't

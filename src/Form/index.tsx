@@ -237,7 +237,10 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
-import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
+import {
+  ENVELOPE_LABELS,
+  useEnvelopeGenerationToast
+} from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
 import type {
@@ -1249,7 +1252,14 @@ function Form({
               // completion signal. `envAction` has to be passed: in the editor
               // flow action.envelope_action is 'open_in_editor', and the outcome
               // is the toolbar button the filler pressed.
-              openTab(getSignUrl(action.redirect));
+              //
+              // A multi-signer batch returns the filler's own signing token
+              // only when they sign first; otherwise the legacy user link
+              // serves whatever plain envelopes there are.
+              const signerId = (data.signers ?? []).find(
+                (s: any) => s.signer_id
+              )?.signer_id;
+              openTab(getSignUrl(action.redirect, signerId));
             }
           };
           const data = await client.generateEnvelopes(action, signerEmail);
@@ -2905,8 +2915,26 @@ function Form({
               // outcome is the toolbar button the filler pressed.
               return;
             }
+            // One entry comes back per multi-signer document, carrying an id
+            // only when the filler signs it first. A signer link covers the
+            // batch's plain envelopes too, so it takes priority over the
+            // legacy user link, which serves only those.
+            const responseSigners = data.signers ?? [];
+            const allMultiSigner =
+              responseSigners.length > 0 &&
+              new Set(responseSigners.map((s: any) => s.document_id)).size ===
+                (action.documents ?? []).length;
+            const matchedSigner = responseSigners.find((s: any) => s.signer_id);
+            if (!matchedSigner && allMultiSigner) {
+              // Nothing in the batch for the filler to sign themselves.
+              if (responseSigners.some((s: any) => s.invited))
+                updateEnvelopeGeneration(envelopeId, {
+                  labels: { ...ENVELOPE_LABELS, complete: 'Sent for Signature' }
+                });
+              return;
+            }
             // Sign files
-            const url = getSignUrl(action.redirect);
+            const url = getSignUrl(action.redirect, matchedSigner?.signer_id);
             if (action.redirect) {
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
