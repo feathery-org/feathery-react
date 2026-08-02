@@ -33,11 +33,9 @@ export function getSignUrl(redirect?: boolean | string, signerId?: string) {
     }
   }
 
-  // A signer id only exists when the filler is themselves a first-order
-  // signer - fill-only envelopes and non-signing fillers have none. The
-  // fuser id falls back to resolving the submission's envelopes through the
-  // legacy session path, since a signer id is a bearer token the backend
-  // only ever hands back for the filler's own row.
+  // The backend issues a signer id only when a row provably belongs to the
+  // filler. Everything else they can sign resolves through the fuser
+  // session, which serves any lone-signer envelope.
   const id = signerId ?? initState._internalUserId;
   return `https://${regionPart}document.feathery.io/to/${id}${query}`;
 }
