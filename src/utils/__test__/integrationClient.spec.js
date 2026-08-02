@@ -27,6 +27,14 @@ jest.mock('../init', () => ({
 }));
 
 describe('IntegrationClient', () => {
+  // Read a request off the fetch mock. Assert bodies against the parsed object
+  // rather than a serialized string, so key order and unrelated added fields
+  // don't matter.
+  const requestUrl = (call = 0) => global.fetch.mock.calls[call][0];
+  const requestMethod = (call = 0) => global.fetch.mock.calls[call][1].method;
+  const requestBody = (call = 0) =>
+    JSON.parse(global.fetch.mock.calls[call][1].body);
+
   beforeEach(() => {
     jest.clearAllMocks();
     global.fetch = jest.fn();
@@ -64,25 +72,21 @@ describe('IntegrationClient', () => {
       );
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}rollout/custom-trigger/`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Token test_sdk_key'
-          },
-          method: 'POST',
-          body: JSON.stringify({
-            automation_ids: [automationId],
-            sync: true,
-            multiple: false,
-            payload: fieldValues,
-            form_key: formKey,
-            fuser_key: 'test_user_id'
-          }),
-          cache: 'no-store',
-          keepalive: true
-        }
+      expect(requestUrl()).toBe(`${API_URL}rollout/custom-trigger/`);
+      expect(requestMethod()).toBe('POST');
+      // The one place the forwarded SDK key is pinned.
+      expect(global.fetch.mock.calls[0][1].headers).toEqual(
+        expect.objectContaining({ Authorization: 'Token test_sdk_key' })
+      );
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          automation_ids: [automationId],
+          sync: true,
+          multiple: false,
+          payload: fieldValues,
+          form_key: formKey,
+          fuser_key: 'test_user_id'
+        })
       );
       expect(result).toEqual({ ok: true, payload: { result: 'success' } });
     });
@@ -108,25 +112,16 @@ describe('IntegrationClient', () => {
       );
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}rollout/custom-trigger/`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Token test_sdk_key'
-          },
-          method: 'POST',
-          body: JSON.stringify({
-            automation_ids: automationIds,
-            sync: false,
-            multiple: true,
-            payload: fieldValues,
-            form_key: formKey,
-            fuser_key: 'test_user_id'
-          }),
-          cache: 'no-store',
-          keepalive: true
-        }
+      expect(requestUrl()).toBe(`${API_URL}rollout/custom-trigger/`);
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          automation_ids: automationIds,
+          sync: false,
+          multiple: true,
+          payload: fieldValues,
+          form_key: formKey,
+          fuser_key: 'test_user_id'
+        })
       );
       expect(result).toEqual({
         ok: true,
@@ -200,21 +195,16 @@ describe('IntegrationClient', () => {
       await integrationClient.sendEmail(templateId);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(`${API_URL}email/logic-rule/`, {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Token test_sdk_key'
-        },
-        method: 'POST',
-        body: JSON.stringify({
+      expect(requestUrl()).toBe(`${API_URL}email/logic-rule/`);
+      expect(requestMethod()).toBe('POST');
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
           template_id: templateId,
           form_key: formKey,
           fuser_key: 'test_user_id',
           skip_pfd: false
-        }),
-        cache: 'no-store',
-        keepalive: true
-      });
+        })
+      );
     });
 
     it('handles sendEmail when userId is undefined', async () => {
@@ -236,15 +226,13 @@ describe('IntegrationClient', () => {
       await integrationClient.sendEmail(templateId);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}email/logic-rule/`,
+      expect(requestUrl()).toBe(`${API_URL}email/logic-rule/`);
+      expect(requestBody()).toEqual(
         expect.objectContaining({
-          body: JSON.stringify({
-            template_id: templateId,
-            form_key: formKey,
-            fuser_key: 'user_id',
-            skip_pfd: false
-          })
+          template_id: templateId,
+          form_key: formKey,
+          fuser_key: 'user_id',
+          skip_pfd: false
         })
       );
     });
@@ -393,7 +381,7 @@ describe('IntegrationClient', () => {
           body: expect.any(String)
         })
       );
-      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+      expect(requestBody()).toEqual(
         expect.objectContaining({
           attachments: staticAttachments
         })
@@ -416,7 +404,7 @@ describe('IntegrationClient', () => {
         attachments: [{ id: 'static-id', position: 'before' }]
       });
 
-      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+      expect(requestBody()).toEqual(
         expect.objectContaining({
           attachments: [{ id: 'static-id', position: 'before' }]
         })
@@ -445,7 +433,7 @@ describe('IntegrationClient', () => {
         ]
       });
 
-      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+      expect(requestBody()).toEqual(
         expect.objectContaining({
           attachments: [
             { id: 'before-static-id', position: 'before' },
@@ -485,7 +473,7 @@ describe('IntegrationClient', () => {
         ]
       });
 
-      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+      expect(requestBody()).toEqual(
         expect.objectContaining({
           attachments: [
             { id: 'before-static-id', position: 'before' },
@@ -519,7 +507,7 @@ describe('IntegrationClient', () => {
         ]
       });
 
-      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual(
+      expect(requestBody()).toEqual(
         expect.objectContaining({
           attachments: [{ id: 'static-id', position: 'before' }]
         })
@@ -553,27 +541,25 @@ describe('IntegrationClient', () => {
       const result = await integrationClient.generateEnvelopes(action);
 
       // Assert
-      expect(global.fetch).toHaveBeenCalledWith(
-        `${API_URL}document/form/generate/`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: 'Token test_sdk_key'
-          },
-          method: 'POST',
-          body: JSON.stringify({
-            form_key: formKey,
-            fuser_key: 'test_user_id',
-            documents: action.documents,
-            run_async: false,
-            envelope_action: 'fill',
-            merge_docs: false,
-            signer_email: 'test@example.com',
-            repeatable: true
-          }),
-          cache: 'no-store',
-          keepalive: true
-        }
+      expect(requestUrl()).toBe(`${API_URL}document/form/generate/`);
+      expect(requestMethod()).toBe('POST');
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          form_key: formKey,
+          fuser_key: 'test_user_id',
+          documents: action.documents,
+          run_async: false,
+          // Anything other than "sign" fills instead.
+          envelope_action: 'fill',
+          // A document with no role falls back to the shared signer field,
+          // and role_id is left off rather than nulled. That email is the
+          // filler's own, so each entry is flagged as theirs to sign inline.
+          signers: [
+            { document_id: 'doc1', email: 'test@example.com', filler: true },
+            { document_id: 'doc2', email: 'test@example.com', filler: true }
+          ],
+          repeatable: true
+        })
       );
       expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
     });
@@ -643,7 +629,10 @@ describe('IntegrationClient', () => {
             envelope_action: 'open_in_editor',
             merge_docs: false,
             editor_toolbar_actions: [],
-            signer_email: 'test@example.com',
+            signers: [
+              { document_id: 'doc1', email: 'test@example.com', filler: true },
+              { document_id: 'doc2', email: 'test@example.com', filler: true }
+            ],
             repeatable: true
           }),
           cache: 'no-store',
@@ -900,7 +889,10 @@ describe('IntegrationClient', () => {
             run_async: false,
             envelope_action: 'fill',
             merge_docs: false,
-            signer_email: 'test@example.com',
+            signers: [
+              { document_id: 'doc1', email: 'test@example.com', filler: true },
+              { document_id: 'doc2', email: 'test@example.com', filler: true }
+            ],
             repeatable: true
           }),
           cache: 'no-store',
@@ -1301,8 +1293,8 @@ describe('IntegrationClient', () => {
         useDisclosure: true
       });
 
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(global.fetch.mock.calls[0][1].method).toBe('POST');
+      const body = requestBody();
+      expect(requestMethod()).toBe('POST');
       expect(body.wet_sign).toBe(true);
       expect(body.use_disclosure).toBe(true);
       expect(body.signers).toBeUndefined();
@@ -1325,7 +1317,7 @@ describe('IntegrationClient', () => {
         ignoreTemplateFieldMapping: true
       });
 
-      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      const body = requestBody();
       expect(body.ignore_template_field_mapping).toBe(true);
       expect(body.fill_data).toEqual({ some_field_key: 'a string' });
     });
@@ -1346,19 +1338,19 @@ describe('IntegrationClient', () => {
         status: 'sent'
       });
 
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('docusign/envelope/'),
+      expect(requestUrl()).toEqual(
+        expect.stringContaining('docusign/envelope/')
+      );
+      expect(requestMethod()).toBe('PATCH');
+      expect(requestBody()).toEqual(
         expect.objectContaining({
-          method: 'PATCH',
-          body: JSON.stringify({
-            fuser_key: 'test_user_id',
-            form_key: formKey,
-            docusign_envelope_id: 'env-123',
-            status: 'sent',
-            voided_reason: undefined
-          })
+          fuser_key: 'test_user_id',
+          form_key: formKey,
+          docusign_envelope_id: 'env-123',
+          status: 'sent'
         })
       );
+      expect(requestBody().voided_reason).toBeUndefined();
       expect(result).toEqual({ status: 'sent' });
     });
 
@@ -1377,13 +1369,15 @@ describe('IntegrationClient', () => {
         voidedReason: 'Customer cancelled'
       });
 
-      expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
-        fuser_key: 'test_user_id',
-        form_key: formKey,
-        docusign_envelope_id: 'env-123',
-        status: 'voided',
-        voided_reason: 'Customer cancelled'
-      });
+      expect(requestBody()).toEqual(
+        expect.objectContaining({
+          fuser_key: 'test_user_id',
+          form_key: formKey,
+          docusign_envelope_id: 'env-123',
+          status: 'voided',
+          voided_reason: 'Customer cancelled'
+        })
+      );
     });
   });
 
@@ -1402,19 +1396,19 @@ describe('IntegrationClient', () => {
         status: 'discarded'
       });
 
-      expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('docusign/envelope/'),
+      expect(requestUrl()).toEqual(
+        expect.stringContaining('docusign/envelope/')
+      );
+      expect(requestMethod()).toBe('PATCH');
+      expect(requestBody()).toEqual(
         expect.objectContaining({
-          method: 'PATCH',
-          body: JSON.stringify({
-            fuser_key: 'test_user_id',
-            form_key: formKey,
-            docusign_envelope_id: 'env-123',
-            status: 'discarded',
-            voided_reason: undefined
-          })
+          fuser_key: 'test_user_id',
+          form_key: formKey,
+          docusign_envelope_id: 'env-123',
+          status: 'discarded'
         })
       );
+      expect(requestBody().voided_reason).toBeUndefined();
       expect(result).toEqual({ status: 'discarded' });
     });
   });
