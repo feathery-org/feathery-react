@@ -1,13 +1,3 @@
-/**
- * W0 incident replays use `it.failing` for assertions that state the correct
- * behavior but fail on today's master. Such tests are green while the defect is
- * present and flip red as soon as a fix makes the assertion pass; that fixing
- * change must promote the case to ordinary `it()`.
- *
- * Jest 26's Jasmine runner exposes `it.failing` in our TypeScript definitions
- * but not at runtime. The file-local compatibility below implements the same
- * inversion without changing the repository-wide runner.
- */
 import 'jest-canvas-mock';
 import {
   DocumentEditor,
@@ -28,29 +18,6 @@ import {
   incidentCChangeSet,
   incidentDChangeSets
 } from './fixtures/incidentPayloads';
-
-if (typeof it.failing !== 'function') {
-  Object.defineProperty(it, 'failing', {
-    value: (name: string, body: () => unknown, timeout?: number) =>
-      it(
-        name,
-        () => {
-          let failed = false;
-          try {
-            body();
-          } catch (_error) {
-            failed = true;
-          }
-          if (!failed) {
-            throw new Error(
-              'Expected this replay to fail on current master. Promote it.failing to it after landing the fix.'
-            );
-          }
-        },
-        timeout
-      )
-  });
-}
 
 DocumentEditor.Inject(
   Editor,
@@ -283,7 +250,7 @@ describe('W0 captain incident replays', () => {
     }
   );
 
-  it.failing(
+  it(
     'C: refuses fabricated amounts written into currency-symbol-only money cells',
     () => {
       const editor = makeRealDocumentEditor(incidentCSfdt(true));
@@ -308,7 +275,7 @@ describe('W0 captain incident replays', () => {
     }
   );
 
-  it.failing(
+  it(
     'C: refuses reuse of the one stated premium as a second literal tax value',
     () => {
       const editor = makeRealDocumentEditor(incidentCSfdt(false));
@@ -316,9 +283,14 @@ describe('W0 captain incident replays', () => {
         const before = editor.serialize();
         const result = replay(editor, incidentCChangeSet);
 
-        expect(result.results[5].ok).toBe(false);
-        expect(result.results[5].error).toBeDefined();
-        expect(result.results[5].error).not.toBe('change_set_failed');
+        expect(result.results[5]).toMatchObject({
+          ok: false,
+          error: 'user_stated_figure_reused'
+        });
+        expect(result.results[5].message).toContain('6;28;5;4;0');
+        expect(result.results[5].message).toContain('6;28;5;5;0');
+        expect(result.results[5].message).toContain('set_cell_formula');
+        expect(result.results[5].message).toContain('ask the user');
         expect(result.changeSet.status).toBe('failed');
         expect(revisions(editor)).toHaveLength(0);
         expect(editor.serialize()).toBe(before);
@@ -328,8 +300,30 @@ describe('W0 captain incident replays', () => {
     }
   );
 
-  // Promoted from it.failing on the HILB branch: the empty-table guard here
-  // already refuses attempt a honestly. Stays it.failing on plain master.
+  it('C: allows two different user-stated figures in one change set', () => {
+    const editor = makeRealDocumentEditor(incidentCSfdt(false));
+    try {
+      const before = editor.serialize();
+      const edits = incidentCChangeSet.edits.slice(2).map((edit, index) =>
+        index === 3 ? { ...edit, text: '80023' } : edit
+      );
+      const result = replay(editor, {
+        changeSetId: 'distinct-user-stated-figures',
+        plan: 'Add the user-stated premium and tax figures.',
+        edits
+      });
+
+      expect(result.changeSet.status).toBe('applied');
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(result.results[2].literalNumber?.source).toBe('user_stated');
+      expect(result.results[3].literalNumber?.source).toBe('user_stated');
+      for (const revision of revisions(editor)) revision.reject();
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(editor);
+    }
+  });
+
   it(
     'D attempt a: lands as an addressable table or honestly refuses the genuinely empty payload',
     () => {

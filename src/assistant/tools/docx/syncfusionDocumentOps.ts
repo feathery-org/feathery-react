@@ -4404,6 +4404,19 @@ function isQuantityText(text: string): boolean {
   return classifyNumericText(text).quantity;
 }
 
+// Currency symbols and number-format punctuation without a digit are an empty
+// amount placeholder, not prose. This deliberately excludes letters so
+// "Included" and "N/A" keep the prose carve-out below.
+function isDigitFreeQuantityPlaceholder(text: string): boolean {
+  return (
+    text !== '' &&
+    !/\d/.test(text) &&
+    /^[\s$¢£¤¥\u058F\u060B\u09F2\u09F3\u09FB\u0AF1\u0BF9\u0E3F\u17DB\u20A0-\u20CF.,'’()\-−+%]*$/.test(
+      text
+    )
+  );
+}
+
 /**
  * THE ONE JUDGEMENT: does this cell belong to a column of formatted amounts,
  * and - if it does - what number format does the DOCUMENT say a value written
@@ -4444,7 +4457,12 @@ function resolveQuantityCellFormat(
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
   // A cell holding "Included" or "N/A" is not a money cell, whatever its
   // neighbours look like.
-  if (existing !== '' && !existingIsQuantity) return null;
+  if (
+    existing !== '' &&
+    !existingIsQuantity &&
+    !isDigitFreeQuantityPlaceholder(existing)
+  )
+    return null;
 
   const collected = collectTableColumnCells(
     blocks,
@@ -4547,7 +4565,22 @@ function guardModelAuthoredNumber(
   const text = modelAuthoredCellText(op);
   if (text === undefined) return undefined;
   if (block.kind !== 'table_cell') return undefined;
-  if (!isQuantityText(text)) return undefined;
+  const { record, citationFailure } =
+    op.op === 'set_cell_text'
+      ? resolveNumberProvenance(
+          op as TypedEditOp<'set_cell_text'>,
+          text.trim(),
+          block.text.trim()
+        )
+      : { record: undefined, citationFailure: '' };
+  // `literal: true` is an auditable claim even outside a quantity-formatted
+  // column. The change-set boundary uses these records to enforce the
+  // single-use licence for a user-stated figure.
+  const userStatedRecord =
+    record?.source === 'user_stated' && classifyNumericText(text).numeric
+      ? { ...record, ...(rendered ? { rendered } : {}) }
+      : undefined;
+  if (!isQuantityText(text)) return userStatedRecord;
   // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
   // quantity, or it is empty and sits in a column that plainly holds them - the
   // freshly-inserted Total cell, which is exactly where a fabricated total
@@ -4555,15 +4588,7 @@ function guardModelAuthoredNumber(
   const existing = block.text.trim();
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
   if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block))
-    return undefined;
-  const { record, citationFailure } =
-    op.op === 'set_cell_text'
-      ? resolveNumberProvenance(
-          op as TypedEditOp<'set_cell_text'>,
-          text.trim(),
-          existing
-        )
-      : { record: undefined, citationFailure: '' };
+    return userStatedRecord;
   if (record) return { ...record, ...(rendered ? { rendered } : {}) };
   throw new OpError(
     'model_authored_number',
@@ -7287,6 +7312,56 @@ function collectOpExtras(
   };
 }
 
+function userStatedFigureKey(write: LiteralNumberWrite): string | null {
+  const parsed = parseNumericCell(write.rendered?.asSent ?? write.text);
+  if (!parsed) return null;
+  let { units, scale } = parsed.value;
+  while (scale > 0 && units % 10 === 0) {
+    units /= 10;
+    scale--;
+  }
+  return `${units}:${scale}`;
+}
+
+/**
+ * A user-stated figure is a one-cell licence within a change set. Successful
+ * writes already carry the common-boundary audit record, so enforce the batch
+ * invariant over those records instead of re-interpreting model-authored ops.
+ */
+function refuseReusedUserStatedFigures(
+  results: Array<EditResult | undefined>
+): void {
+  const firstUse = new Map<string, { anchor: string; text: string }>();
+  results.forEach((result, index) => {
+    if (!result?.ok) return;
+    const write = result.literalNumber;
+    if (!write || write.source !== 'user_stated') return;
+    const key = userStatedFigureKey(write);
+    if (!key) return;
+    const anchor = result.anchor ?? '(unknown cell)';
+    const first = firstUse.get(key);
+    if (!first) {
+      firstUse.set(key, { anchor, text: write.rendered?.asSent ?? write.text });
+      return;
+    }
+    if (first.anchor === anchor) return;
+    results[index] = {
+      ...result,
+      ok: false,
+      error: 'user_stated_figure_reused',
+      message:
+        `The user-stated figure ${JSON.stringify(
+          first.text
+        )} already licenses cell "${first.anchor}" and cannot also license cell "${anchor}" in the same change set. ` +
+        `If "${anchor}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
+      details: [
+        `first literal cell: ${first.anchor}`,
+        `reused literal cell: ${anchor}`
+      ]
+    };
+  });
+}
+
 function mayShiftAnchors(op: EditOp): boolean {
   // A selection replacement can swallow paragraph marks, so treat it as always
   // shifting: the anchors after it must be re-resolved, never reused.
@@ -8613,6 +8688,8 @@ export function applyDocumentEdits(
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
   }
+
+  refuseReusedUserStatedFigures(results);
 
   const hasMaterialFailure = results.some(
     (result, index) =>
