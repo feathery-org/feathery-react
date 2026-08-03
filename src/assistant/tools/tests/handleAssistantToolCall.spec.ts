@@ -6,9 +6,14 @@
 // handler can otherwise make AssistantChat's onToolCall chain emit nothing:
 // no error, no answer, forever.
 //
-// The invariant is: NO tool call, whatever it is named, can leave this handler
-// without exactly one output.
+// The invariant is: NO tool call, whatever it is named, can leave the TURN
+// without exactly one output. Not the handler - the turn. `onToolCall` also fires
+// for the tools ai-services executes itself, so answering an unrecognised call on
+// the spot overwrote the server's real result with a failure (the row flashed a
+// red X, then flipped back to a check when the real output landed). Those calls
+// are left alone here and swept at turn end, where unanswered means unowned.
 import {
+  answerUnansweredToolCalls,
   handleAssistantToolCall,
   NativeToolHandlers
 } from '../handleAssistantToolCall';
@@ -53,11 +58,26 @@ function harness(
 }
 
 describe('every streamed tool call produces exactly one output', () => {
-  it('THE LIVE WEDGE: an unrecognised tool ends the turn with a visible error instead of silence', async () => {
+  it('THE LIVE WEDGE: an unrecognised tool is answered at turn end, not with silence', async () => {
     const h = harness();
 
     await handleAssistantToolCall(
       { toolName: 'futureServerTool', toolCallId: 'call_a4', input: {} },
+      h.deps
+    );
+
+    // Nothing yet: while the stream is open this is indistinguishable from a
+    // server-executed tool whose real output is still coming.
+    expect(h.emitted).toHaveLength(0);
+
+    answerUnansweredToolCalls(
+      [
+        {
+          type: 'tool-futureServerTool',
+          toolCallId: 'call_a4',
+          state: 'input-available'
+        }
+      ],
       h.deps
     );
 
@@ -68,6 +88,32 @@ describe('every streamed tool call produces exactly one output', () => {
       toolCallId: 'call_a4',
       output: { ok: false, error: 'unhandled_tool' }
     });
+  });
+
+  it('THE FLASH: a tool the server already answered is left alone', async () => {
+    const h = harness();
+
+    // The regression this fix is for: getPanelSnapshot runs in ai-services, so
+    // onToolCall fires for it here and its output arrives over the stream.
+    await handleAssistantToolCall(
+      { toolName: 'getPanelSnapshot', toolCallId: 'call_snap', input: {} },
+      h.deps
+    );
+    expect(h.emitted).toHaveLength(0);
+
+    answerUnansweredToolCalls(
+      [
+        {
+          type: 'tool-getPanelSnapshot',
+          toolCallId: 'call_snap',
+          state: 'output-available',
+          output: { steps: [] }
+        }
+      ],
+      h.deps
+    );
+
+    expect(h.emitted).toHaveLength(0);
   });
 
   it('a DYNAMIC tool the dispatch did not claim also gets an output', async () => {
@@ -156,6 +202,19 @@ describe('every streamed tool call produces exactly one output', () => {
         { toolName, toolCallId: `id_${toolName}`, input: {} },
         h.deps
       );
+      // Whatever the handler declined to answer is still pending at turn end,
+      // so the sweep answers it and the two together emit exactly once
+      if (h.emitted.length === 0)
+        answerUnansweredToolCalls(
+          [
+            {
+              type: `tool-${toolName}`,
+              toolCallId: `id_${toolName}`,
+              state: 'input-available'
+            }
+          ],
+          h.deps
+        );
       expect(h.emitted).toHaveLength(1);
       expect(h.emitted[0].toolCallId).toBe(`id_${toolName}`);
       expect(h.emitted[0].output).toBeDefined();
@@ -171,5 +230,67 @@ describe('every streamed tool call produces exactly one output', () => {
     );
 
     expect(h.emitted).toHaveLength(1);
+  });
+});
+
+describe('the turn-end sweep answers only what nobody else did', () => {
+  it('answers a pending call in either streamed state, static or dynamic', () => {
+    const h = harness();
+
+    answerUnansweredToolCalls(
+      [
+        { type: 'step-start' },
+        { type: 'text', text: 'looking that up' },
+        { type: 'tool-searchDocuments', toolCallId: 'a', state: 'input-available' },
+        { type: 'tool-queryHub', toolCallId: 'b', state: 'input-streaming' },
+        {
+          type: 'dynamic-tool',
+          toolName: 'rule_fm_quote_c07c',
+          toolCallId: 'c',
+          state: 'input-available'
+        }
+      ],
+      h.deps
+    );
+
+    expect(h.emitted.map((e) => [e.tool, e.toolCallId])).toEqual([
+      ['searchDocuments', 'a'],
+      ['queryHub', 'b'],
+      ['rule_fm_quote_c07c', 'c']
+    ]);
+    h.emitted.forEach((e) =>
+      expect(e.output).toMatchObject({ ok: false, error: 'unhandled_tool' })
+    );
+  });
+
+  it('leaves answered, errored and provider-executed calls untouched', () => {
+    const h = harness();
+
+    answerUnansweredToolCalls(
+      [
+        { type: 'tool-setFieldValue', toolCallId: 'a', state: 'output-available' },
+        { type: 'tool-clickElement', toolCallId: 'b', state: 'output-error' },
+        // The provider runs its own tools and answers them itself
+        {
+          type: 'tool-web_search',
+          toolCallId: 'c',
+          state: 'input-available',
+          providerExecuted: true
+        },
+        { type: 'tool-getPanelSnapshot', state: 'input-available' }
+      ],
+      h.deps
+    );
+
+    expect(h.emitted).toHaveLength(0);
+  });
+
+  it('survives a reply with no parts at all', () => {
+    const h = harness();
+
+    answerUnansweredToolCalls([], h.deps);
+    answerUnansweredToolCalls(undefined as any, h.deps);
+
+    expect(h.emitted).toHaveLength(0);
   });
 });

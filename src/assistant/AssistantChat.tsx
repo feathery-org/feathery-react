@@ -89,7 +89,10 @@ import {
   dispatchAssistantTool,
   unhandledToolOutput
 } from './tools/assistantToolDispatch';
-import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
+import {
+  answerUnansweredToolCalls,
+  handleAssistantToolCall
+} from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
   readDocxSelection
@@ -487,6 +490,10 @@ const AssistantChat = ({
     [color]
   );
 
+  // Id of the reply that just finished on its own, so the sweep below runs for
+  // that turn only - never for an aborted one, and never for a loaded thread
+  const finishedReplyRef = useRef<string | null>(null);
+
   const makeChat = (
     threadId: string | null,
     initialMessages: any[] = [],
@@ -642,7 +649,9 @@ const AssistantChat = ({
           emit: (args) => chat.addToolOutput(args)
         });
       },
-      onFinish: ({ isAbort, isError }: any) => {
+      onFinish: ({ message, isAbort, isError }: any) => {
+        finishedReplyRef.current =
+          isAbort || isError ? null : message?.id ?? null;
         if (isAbort || isError || !resolvedThreadId) return;
         setThreads((prev) => {
           const thread = prev.find((t) => t.id === resolvedThreadId);
@@ -679,6 +688,21 @@ const AssistantChat = ({
   } = useChat({
     chat: activeChat
   });
+
+  // A tool call left without an output wedges the turn forever, since the
+  // auto-send that continues the reply waits for every call to be answered. Once
+  // the reply is in, anything still unanswered is nobody's, so answer it here
+  useEffect(() => {
+    const replyId = finishedReplyRef.current;
+    if (status !== 'ready' || !replyId) return;
+    finishedReplyRef.current = null;
+    const reply = rawMessages[rawMessages.length - 1];
+    if (reply?.id !== replyId) return;
+    answerUnansweredToolCalls(reply.parts ?? [], {
+      unhandled: unhandledToolOutput,
+      emit: (args) => activeChat.addToolOutput(args)
+    });
+  }, [status, rawMessages, activeChat]);
 
   const {
     attachments,
