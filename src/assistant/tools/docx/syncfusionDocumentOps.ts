@@ -5243,6 +5243,62 @@ function stampRevisionGroup(
   );
 }
 
+// SyncFusion coalesces adjacent same-author/same-type revisions into ONE
+// revision object (`isRevisionMatched` checks only author + type), which
+// silently folds a second accept group's tracked content into the first
+// group's revision - the second tag never lands. Gate the engine's merge
+// predicates on the group tag so revisions only combine within one group.
+// Everything untagged (human edits, foreign customData) normalizes to the
+// same empty key and keeps native merge behavior.
+const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
+
+function revisionTagKey(customData: unknown): string {
+  const tag = parseRevisionGroupTag(customData);
+  return tag ? `${tag.changeSetId} ${tag.group}` : '';
+}
+
+export function installRevisionGroupIsolation(editor: LiveEditor): void {
+  const mod: any = (editor as any).editorModule ?? editor.editor;
+  if (!mod || typeof mod.isRevisionMatched !== 'function') return;
+  if (mod[REVISION_ISOLATION_INSTALLED]) return;
+  mod[REVISION_ISOLATION_INSTALLED] = true;
+
+  // The tag new content would carry: the engine stamps
+  // `revisionSettings.customData` onto every revision it creates.
+  const activeKey = () =>
+    revisionTagKey(editor.documentEditorSettings?.revisionSettings?.customData);
+
+  // "May this new tracked content extend `item`?" `item` is a Revision or an
+  // element carrying revisions; unwrap to single revisions so the original
+  // author/type check and the tag check always apply to the same revision.
+  const originalMatched = mod.isRevisionMatched.bind(mod);
+  mod.isRevisionMatched = (item: any, type: any): boolean => {
+    const revisions: any[] =
+      item && typeof item.revisionLength === 'number'
+        ? Array.from(
+            { length: item.revisionLength },
+            (_, i) => item.revisions?.[i]
+          )
+        : [item];
+    const key = activeKey();
+    return revisions.some(
+      (rev) =>
+        rev &&
+        originalMatched(rev, type) &&
+        revisionTagKey(rev.customData) === key
+    );
+  };
+
+  // "May these two existing revisions merge?" (e.g. the content separating
+  // them was removed). Only within one group.
+  if (typeof mod.compareTwoRevisions === 'function') {
+    const originalCompare = mod.compareTwoRevisions.bind(mod);
+    mod.compareTwoRevisions = (a: any, b: any): boolean =>
+      originalCompare(a, b) &&
+      revisionTagKey(a?.customData) === revisionTagKey(b?.customData);
+  }
+}
+
 function captureNativeResolvers(rev: LiveRevision) {
   return {
     accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
@@ -5269,27 +5325,57 @@ function groupRevisionsAtomic(
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
   const state = { resolved: false };
+  // Members a reviewer resolved one-by-one (robinResolveSelf); a later group
+  // decision must not resolve them a second time.
+  const resolvedAlone = new Set<number>();
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
-    for (const natives of members) {
+    for (let index = 0; index < members.length; index++) {
+      if (resolvedAlone.has(index)) continue;
       try {
-        resolveSingleRevision(natives, isAccept);
+        resolveSingleRevision(members[index], isAccept);
       } catch {
         // A later member's range may be stale once the first resolved; the
         // group's outcome is already consistent, so swallow and move on.
       }
     }
   };
-  for (const rev of group) {
+  group.forEach((rev, index) => {
     if (changeSetId) (rev as any).robinChangeSetId = changeSetId;
     if (groupId) (rev as any).robinGroupId = groupId;
     // Rebind guard: marks this revision's accept/reject as already wrapped so
     // a later rebind pass cannot stack wrappers.
     (rev as any).robinGroupBound = true;
+    // The per-edit escape hatch: resolve THIS member alone through the native
+    // single-revision path, leaving the rest of the group pending.
+    (rev as any).robinResolveSelf = (isAccept: boolean) => {
+      if (state.resolved || resolvedAlone.has(index)) return;
+      resolvedAlone.add(index);
+      resolveSingleRevision(members[index], isAccept);
+    };
     rev.accept = () => resolveAll(true);
     rev.reject = () => resolveAll(false);
+  });
+}
+
+/**
+ * Resolve ONE tracked revision without resolving the rest of its accept group
+ * and without SyncFusion's adjacency cascade. Group-bound revisions route
+ * through the native resolvers captured at bind time (their public
+ * accept/reject were rewired to whole-group resolution); unbound revisions
+ * take the same single-revision path directly.
+ */
+export function resolveRevisionIndividually(
+  revision: LiveRevision,
+  isAccept: boolean
+): void {
+  const self = (revision as any).robinResolveSelf;
+  if (typeof self === 'function') {
+    self(isAccept);
+    return;
   }
+  resolveSingleRevision(captureNativeResolvers(revision), isAccept);
 }
 
 /** Result of binding one change set's created revisions into accept groups. */
@@ -6203,6 +6289,9 @@ export function applyDocumentEdits(
   // their accept groups rebuilt from the persisted customData tags before any
   // new writes land. Idempotent - bound revisions are skipped.
   rebindRevisionGroups(editor);
+  // Adjacent writes from different accept groups must not coalesce into one
+  // revision; see installRevisionGroupIsolation. Idempotent.
+  installRevisionGroupIsolation(editor);
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();

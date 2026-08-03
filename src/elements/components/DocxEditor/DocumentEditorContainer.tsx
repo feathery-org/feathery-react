@@ -15,7 +15,10 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
-import { rebindRevisionGroups } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  installRevisionGroupIsolation,
+  rebindRevisionGroups
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -342,6 +345,7 @@ export default function DocumentEditorContainer({
       // Idempotent, and never allowed to affect editor registration.
       try {
         rebindRevisionGroups(editor);
+        installRevisionGroupIsolation(editor);
       } catch {
         // A grouping failure must not break the editor mount.
       }

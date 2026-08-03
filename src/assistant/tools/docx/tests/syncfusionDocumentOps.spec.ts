@@ -20,8 +20,10 @@ import {
   FULL_INVENTORY_BLOCK_LIMIT,
   LiveEditor,
   listRevisionGroups,
+  installRevisionGroupIsolation,
   parseRevisionGroupTag,
-  rebindRevisionGroups
+  rebindRevisionGroups,
+  resolveRevisionIndividually
 } from '../syncfusionDocumentOps';
 
 DocumentEditor.Inject(
@@ -2725,6 +2727,89 @@ describe('assistant-defined accept groups', () => {
     expect(accepted).toEqual(['a1:accept', 'a2:accept', 'b1:reject']);
     // Foreign customData is left untouched.
     expect((revisions[3] as any).accept).not.toHaveBeenCalled();
+  });
+
+  it('resolveRevisionIndividually resolves one member; the group decision skips it', () => {
+    const resolved: string[] = [];
+    const makeRev = (id: string, tagStr: string) => ({
+      customData: tagStr,
+      accept: () => resolved.push(`${id}:public-accept`),
+      reject: () => resolved.push(`${id}:public-reject`),
+      handleAcceptReject: (isAccept: boolean) =>
+        resolved.push(`${id}:${isAccept ? 'accept' : 'reject'}`)
+    });
+    const tagA = JSON.stringify({
+      v: 1,
+      source: 'robin',
+      changeSetId: 'cs-5',
+      group: 'a'
+    });
+    const revisions = [
+      makeRev('a1', tagA),
+      makeRev('a2', tagA),
+      makeRev('a3', tagA)
+    ];
+    const editor = {
+      revisions: { changes: revisions }
+    } as unknown as LiveEditor;
+    expect(rebindRevisionGroups(editor)).toBe(3);
+
+    // One edit reviewed alone: only that member resolves, through the native
+    // single-revision path (never the group-wide public accept/reject).
+    resolveRevisionIndividually(revisions[1] as any, false);
+    expect(resolved).toEqual(['a2:reject']);
+    // Resolving the same member again is a no-op.
+    resolveRevisionIndividually(revisions[1] as any, true);
+    expect(resolved).toEqual(['a2:reject']);
+
+    // The later group decision resolves only the remaining members.
+    (revisions[0] as any).accept();
+    expect(resolved).toEqual(['a2:reject', 'a1:accept', 'a3:accept']);
+  });
+
+  it('real SDK: adjacent writes from different accept groups stay separate revisions', () => {
+    // SyncFusion extends an adjacent same-author/same-type revision instead of
+    // creating a new one, which would fold group B's content (and lose its
+    // tag) into group A's revision. Isolation gates that merge on the tag.
+    const ed = makeRealDocumentEditor({
+      sections: [{ blocks: [para('Base.')] }]
+    });
+    try {
+      const live = ed as unknown as LiveEditor;
+      installRevisionGroupIsolation(live);
+      const tag = (group: string) =>
+        JSON.stringify({ v: 1, source: 'robin', changeSetId: 'cs-iso', group });
+      const settings = (ed as any).documentEditorSettings.revisionSettings;
+      ed.enableTrackChanges = true;
+      ed.selection.moveToDocumentEnd();
+
+      settings.customData = tag('premium');
+      ed.editor.insertText('AAA ');
+      // Back-to-back on purpose: no untracked content separates the groups.
+      settings.customData = tag('cancellation');
+      ed.editor.insertText('BBB');
+      settings.customData = null;
+
+      const views = listRevisionGroups(live);
+      expect(views.map((v) => [v.group, v.items.length])).toEqual([
+        ['premium', 1],
+        ['cancellation', 1]
+      ]);
+      expect(views.map((v) => v.items[0].text)).toEqual(['AAA', 'BBB']);
+
+      // Untagged (human) writes keep native merge behavior: adjacent
+      // insertions still combine into one revision. Count the raw revision
+      // list — the public collection is the pane's card view, which lumps
+      // adjacent same-author revisions regardless of how they were created.
+      const rawRevisions = () => (ed.revisions as any).changes.length;
+      const before = rawRevisions();
+      ed.selection.moveToDocumentEnd();
+      ed.editor.insertText('one ');
+      ed.editor.insertText('two');
+      expect(rawRevisions()).toBe(before + 1);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
   });
 });
 
