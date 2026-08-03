@@ -12,13 +12,15 @@ function makeEditor(revisions: any[]) {
   const listeners: Record<string, Array<() => void>> = {};
   return {
     revisions: { changes: revisions },
+    // The panel maps the document cursor to a revision through this on
+    // selectionChange; tests point it at a revision to emulate an inline
+    // click on a tracked change. Returns undefined until a test redirects it.
+    selection: { getCurrentRevision: jest.fn() },
     addEventListener: (event: string, handler: () => void) => {
       (listeners[event] ??= []).push(handler);
     },
     removeEventListener: (event: string, handler: () => void) => {
-      listeners[event] = (listeners[event] ?? []).filter(
-        (h) => h !== handler
-      );
+      listeners[event] = (listeners[event] ?? []).filter((h) => h !== handler);
     },
     emit: (event: string) => (listeners[event] ?? []).forEach((h) => h())
   };
@@ -50,7 +52,10 @@ describe('TrackedChangeGroups', () => {
 
   it('renders one card per group with a humanized title and change count', () => {
     const editor = makeEditor([
-      makeRevision({ revisionType: 'Deletion', getRange: () => [{ text: '$5,500' }] }),
+      makeRevision({
+        revisionType: 'Deletion',
+        getRange: () => [{ text: '$5,500' }]
+      }),
       makeRevision(),
       makeRevision({
         customData: tag('cs-1', 'fix-effective-date'),
@@ -125,21 +130,125 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('$6,000')).toBeInTheDocument();
   });
 
-  it('Accept resolves through one member and refreshes the panel', () => {
-    const revisions = [
-      makeRevision({ revisionType: 'Deletion' }),
-      makeRevision()
-    ];
-    // Emulate the atomic group binding: accepting the first member resolves
-    // the whole group, i.e. both revisions leave the collection.
-    revisions[0].accept.mockImplementation(() => {
-      revisions.length = 0;
+  it('group Accept resolves every member, not just the first or contiguous ones', () => {
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const insertion = makeRevision();
+    const revisions = [deletion, insertion];
+    // Emulate the live editor: resolved revisions leave the collection.
+    deletion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(deletion), 1);
+    });
+    insertion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
     });
     const editor = makeEditor(revisions);
     render(<TrackedChangeGroups editor={editor} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+
+    // Every member resolved exactly once — a native accept on one member
+    // would instead resolve whatever is contiguous to it.
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+  });
+
+  it('clicking a tracked change in the document navigates the panel to it', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const editor = makeEditor([deletion, insertion]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // Collapsed: the rows are not rendered yet.
+    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+
+    // The user clicks inside the deletion in the document.
+    editor.selection.getCurrentRevision.mockReturnValue([deletion]);
+    act(() => editor.emit('selectionChange'));
+
+    // Its group auto-expanded and its row is marked current.
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeNull();
+
+    // Moving the cursor off any tracked change clears the mark but leaves
+    // the group expanded.
+    editor.selection.getCurrentRevision.mockReturnValue(undefined);
+    act(() => editor.emit('selectionChange'));
+    expect(screen.getByText('$5,500')).toBeInTheDocument();
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeNull();
+  });
+
+  it('folds a replace pair into one edit; one approval resolves both halves', () => {
+    // A replace: the deletion's last range element links directly to the
+    // insertion's first (nextNode), same as the live engine produces.
+    const newRun = { text: '$6,000' };
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500', nextNode: newRun }]
+    });
+    const insertion = makeRevision({ getRange: () => [newRun] });
+    const revisions = [deletion, insertion];
+    deletion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(deletion), 1);
+    });
+    insertion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // ONE edit, not two.
+    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(screen.getByText('$5,500 → $6,000')).toBeInTheDocument();
+
+    // One ✓ settles both underlying revisions.
+    fireEvent.click(screen.getByLabelText('Accept this edit'));
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    expect(insertion.accept).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+  });
+
+  it('✕ hides the panel; clicking an inline edit asks to show it again', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    const onHiddenChange = jest.fn();
+    const { rerender } = render(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden={false}
+        onHiddenChange={onHiddenChange}
+      />
+    );
+
+    fireEvent.click(screen.getByLabelText('Hide suggested changes'));
+    expect(onHiddenChange).toHaveBeenCalledWith(true);
+
+    // Hidden renders nothing, but the component stays mounted listening.
+    rerender(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden
+        onHiddenChange={onHiddenChange}
+      />
+    );
+    expect(screen.queryByText('Suggested changes')).not.toBeInTheDocument();
+
+    // Clicking the tracked change inline asks the host to show the panel.
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+    expect(onHiddenChange).toHaveBeenCalledWith(false);
   });
 
   it('refreshes when the editor content changes', () => {

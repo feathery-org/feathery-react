@@ -2811,6 +2811,47 @@ describe('assistant-defined accept groups', () => {
       destroyRealDocumentEditor(ed);
     }
   });
+
+  it('real SDK: a tracked replace folds into ONE review item; one approval settles both halves', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [{ blocks: [para('The premium is $5,500 for 2026.')] }]
+    });
+    try {
+      const live = ed as unknown as LiveEditor;
+      const settings = (ed as any).documentEditorSettings.revisionSettings;
+      ed.enableTrackChanges = true;
+      settings.customData = JSON.stringify({
+        v: 1,
+        source: 'robin',
+        changeSetId: 'cs-rep',
+        group: 'update-premium'
+      });
+      // Overtype the selected "$5,500": SyncFusion records a Deletion (old
+      // text) directly followed by an Insertion (new text).
+      ed.selection.select('0;0;15', '0;0;21');
+      ed.editor.insertText('$6,000');
+      settings.customData = null;
+
+      const views = listRevisionGroups(live);
+      expect(views).toHaveLength(1);
+      expect(views[0].items).toHaveLength(1);
+      const item = views[0].items[0];
+      expect(item.revisionType).toBe('Replace');
+      expect(item.text).toBe('$5,500 → $6,000');
+      expect(item.partner).toBeTruthy();
+
+      // The one approval resolves both underlying revisions (this is what the
+      // panel does for a replace item).
+      resolveRevisionIndividually(item.revision, true);
+      resolveRevisionIndividually(item.partner as any, true);
+      expect((ed.revisions as any).changes.length).toBe(0);
+      ed.selection.selectAll();
+      expect(ed.selection.text).toContain('$6,000');
+      expect(ed.selection.text).not.toContain('$5,500');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

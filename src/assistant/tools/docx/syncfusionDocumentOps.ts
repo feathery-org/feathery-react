@@ -5445,10 +5445,14 @@ function reportRevisionGroups(
 /** One tracked revision inside an accept group, shaped for review UI. */
 export interface RevisionGroupItem {
   revision: LiveRevision;
-  /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | '' when unknown. */
+  /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | 'Replace' | ''. */
   revisionType: string;
   /** Readable excerpt of the tracked content; empty for pure structure. */
   text: string;
+  /** A replace is ONE edit made of two revisions (delete old + insert new);
+   *  `revision` holds the deletion and `partner` the insertion, so one
+   *  approval must resolve both. */
+  partner?: LiveRevision;
 }
 
 /** One assistant-defined accept group with its live member revisions. */
@@ -5485,6 +5489,26 @@ function revisionRangeText(revision: LiveRevision): string {
  * review card UI; resolving a group is just calling accept()/reject() on any
  * member (the atomic binding does the rest).
  */
+// A tracked replace is a Deletion (old text) immediately followed in the
+// document by an Insertion (new text): the deletion range's last element is
+// linked directly to the insertion range's first. To a reviewer that is ONE
+// edit, so the pair folds into one 'Replace' item.
+function isReplacePair(
+  deletion: LiveRevision,
+  insertion: LiveRevision
+): boolean {
+  try {
+    const delRange =
+      typeof deletion.getRange === 'function' ? deletion.getRange() : [];
+    const insRange =
+      typeof insertion.getRange === 'function' ? insertion.getRange() : [];
+    const last: any = delRange[delRange.length - 1];
+    return !!last && !!insRange[0] && last.nextNode === insRange[0];
+  } catch {
+    return false;
+  }
+}
+
 export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
   for (const revision of snapshotRevisions(editor)) {
@@ -5496,11 +5520,25 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
       view = { changeSetId: tag.changeSetId, group: tag.group, items: [] };
       views.set(key, view);
     }
-    view.items.push({
+    const item: RevisionGroupItem = {
       revision,
       revisionType: String(revision.revisionType ?? ''),
       text: revisionRangeText(revision)
-    });
+    };
+    const prev = view.items[view.items.length - 1];
+    if (
+      prev &&
+      !prev.partner &&
+      prev.revisionType === 'Deletion' &&
+      item.revisionType === 'Insertion' &&
+      isReplacePair(prev.revision, item.revision)
+    ) {
+      prev.partner = item.revision;
+      prev.revisionType = 'Replace';
+      prev.text = `${prev.text} → ${item.text}`;
+      continue;
+    }
+    view.items.push(item);
   }
   return [...views.values()];
 }
