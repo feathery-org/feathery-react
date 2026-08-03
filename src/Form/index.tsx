@@ -221,6 +221,7 @@ import { isNum } from '../utils/primitives';
 import {
   editorContainerId,
   getSignUrl,
+  getSubmissionSignUrl,
   isDocusignSignAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
@@ -1253,13 +1254,13 @@ function Form({
               // flow action.envelope_action is 'open_in_editor', and the outcome
               // is the toolbar button the filler pressed.
               //
-              // A multi-signer batch returns the filler's own signing token
-              // only when they sign first; otherwise the legacy user link
-              // serves whatever plain envelopes there are.
+              // Only ever opened as a signer: the batch returns the filler's
+              // own token when they sign it, and there's nothing for them to
+              // open when it doesn't.
               const signerId = (data.signers ?? []).find(
                 (s: any) => s.signer_id
               )?.signer_id;
-              openTab(getSignUrl(action.redirect, signerId));
+              if (signerId) openTab(getSignUrl(signerId, action.redirect));
             }
           };
           const data = await client.generateEnvelopes(action, signerEmail);
@@ -2915,17 +2916,12 @@ function Form({
               // outcome is the toolbar button the filler pressed.
               return;
             }
-            // One entry comes back per multi-signer document, carrying an id
-            // only when the filler signs it first. A signer link covers the
-            // batch's plain envelopes too, so it takes priority over the
-            // legacy user link, which serves only those.
+            // One entry comes back per signable envelope, carrying an id only
+            // when the filler signs it first. One signer link covers the rest
+            // of the batch they can sign.
             const responseSigners = data.signers ?? [];
-            const allMultiSigner =
-              responseSigners.length > 0 &&
-              new Set(responseSigners.map((s: any) => s.document_id)).size ===
-                (action.documents ?? []).length;
             const matchedSigner = responseSigners.find((s: any) => s.signer_id);
-            if (!matchedSigner && allMultiSigner) {
+            if (!matchedSigner) {
               // Nothing in the batch for the filler to sign themselves.
               if (responseSigners.some((s: any) => s.invited))
                 updateEnvelopeGeneration(envelopeId, {
@@ -2934,7 +2930,7 @@ function Form({
               return;
             }
             // Sign files
-            const url = getSignUrl(action.redirect, matchedSigner?.signer_id);
+            const url = getSignUrl(matchedSigner.signer_id, action.redirect);
             if (action.redirect) {
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
@@ -3053,7 +3049,7 @@ function Form({
         // Enter the existing envelope sign flow for this submission's
         // documents WITHOUT regenerating (which would overwrite editor edits).
         // Same redirect/openTab behavior as the generate 'sign' branch above.
-        const url = getSignUrl(action.redirect);
+        const url = getSubmissionSignUrl(action.redirect);
         if (action.redirect) {
           await client.registerEvent({
             step_key: activeStep.key,

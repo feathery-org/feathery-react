@@ -313,13 +313,38 @@ export default function DocumentEditorContainer({
   const runSigningAction = useCallback(
     async (draft: boolean) => {
       if (!envelope) return;
+      const signerKey = targetAction?.envelope_signer_field_key;
+      const fillerEmail = signerKey
+        ? fieldValues[signerKey]?.toString() ?? ''
+        : '';
+      let finalized: Record<string, any> | undefined;
       // Both backends need a PDF carrying signature fields, and generation
       // skipped that conversion to keep the docx editable. One-way: this draft
-      // stops being editable. Throws so nothing is sent unfinalized.
+      // stops being editable. Throws so nothing is sent unfinalized. It's also
+      // what hands back the signer to open as.
       if (envelope.type === 'docx' && !envelope.signed) {
-        const signerKey = targetAction?.envelope_signer_field_key;
-        const signer = signerKey ? fieldValues[signerKey] : undefined;
-        await client.finalizeEnvelope(envelope.id, signer?.toString() ?? '');
+        // Per-role signers were held back at generation for the same reason, so
+        // they go up now, scoped to the document actually on screen. Without
+        // any, the shared signer field covers every role instead.
+        const roleSigners = (targetAction?.envelope_signers ?? [])
+          .filter((entry: any) => entry.document_id === activeDocumentId)
+          .map((entry: any) => ({
+            document_id: entry.document_id,
+            role_id: entry.role_id,
+            email: fieldValues[entry.field_key]?.toString() ?? ''
+          }));
+        const signers = (
+          roleSigners.length || !activeDocumentId
+            ? roleSigners
+            : // role_id left off rather than nulled - the backend rejects an
+              // explicit null, and omitting it covers every role.
+              [{ document_id: activeDocumentId, email: fillerEmail }]
+        ).filter((entry: any) => entry.email);
+        finalized = await client.finalizeEnvelope(
+          envelope.id,
+          signers,
+          fillerEmail
+        );
         setFinalizedId(envelope.id);
       }
 
@@ -336,11 +361,14 @@ export default function DocumentEditorContainer({
         return;
       }
 
-      const url = getSignUrl(targetAction?.redirect);
+      // A signer id comes back only when the filler signs first. Without one
+      // the envelope is someone else's to sign, so there's nothing to open.
+      if (!finalized?.signer_id) return;
+      const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
-    [client, envelope, targetAction]
+    [client, envelope, targetAction, activeDocumentId]
   );
 
   // 'draft' as the terminal action means Create Draft is the only signing
@@ -458,7 +486,9 @@ export default function DocumentEditorContainer({
       terminalAction={terminalAction}
       onTerminalAction={terminalAction ? runTerminalAction : undefined}
       onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
-      terminalActionDisabled={!envelope.file}
+      // Signing needs a signer to open as, which only finalizing an unsigned
+      // envelope hands back - so there's nothing behind the button once signed.
+      terminalActionDisabled={!envelope.file || envelope.signed}
       // Without this a failed send is swallowed: DocxEditor routes terminal
       // errors here and there is nothing else listening.
       onError={setError}
