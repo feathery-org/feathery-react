@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
+import { installRevisionGroupIsolation } from '../../../assistant/tools/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
 
@@ -54,6 +55,68 @@ function loadAccentOverride() {
     --color-sf-primary-darker:#c9313f;
   }`;
   doc.head.appendChild(style);
+}
+
+// GitHub-style tracked-change rendering: insertions get a green highlight,
+// deletions a red one, and revised text keeps its normal font color with no
+// underline or strikethrough. Syncfusion draws the document on CANVAS, so
+// this is a renderer patch, not CSS: `checkRevisionType()` is the single
+// source feeding the author-color text and the underline/strike decorations
+// across every render path (text, lists, images, paragraph marks) — blank it,
+// then paint our own word-level highlight behind revised runs using the same
+// geometry as Syncfusion's native highlighter fillRect.
+const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
+const INSERTION_HIGHLIGHT = '#d7e8b6';
+const DELETION_HIGHLIGHT = '#ffd4d2';
+
+function installRevisionHighlightRendering(ed: any) {
+  const renderer = ed?.documentHelper?.render;
+  if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
+  renderer[REVISION_RENDER_PATCH] = true;
+
+  const revisionHighlight = (elementBox: any): string | undefined => {
+    const count = elementBox?.revisionLength ?? 0;
+    let highlight: string | undefined;
+    for (let i = 0; i < count; i++) {
+      const type = elementBox.getRevision(i)?.revisionType;
+      // A run that is both (edited within an insertion) reads as a deletion.
+      if (type === 'Deletion' || type === 'MoveFrom') return DELETION_HIGHLIGHT;
+      if (type === 'Insertion' || type === 'MoveTo')
+        highlight = INSERTION_HIGHLIGHT;
+    }
+    return highlight;
+  };
+
+  renderer.checkRevisionType = () => [];
+
+  const originalRenderText = renderer.renderTextElementBox.bind(renderer);
+  renderer.renderTextElementBox = (
+    elementBox: any,
+    left: number,
+    top: number,
+    underlineY: number
+  ) => {
+    const highlight = revisionHighlight(elementBox);
+    if (highlight && elementBox?.width > 0) {
+      try {
+        const ctx = renderer.pageContext;
+        ctx.fillStyle = highlight;
+        ctx.fillRect(
+          Math.floor(
+            renderer.getScaledValue(left + (elementBox.margin?.left ?? 0), 1)
+          ),
+          Math.floor(
+            renderer.getScaledValue(top + (elementBox.margin?.top ?? 0), 2) - 1
+          ),
+          Math.ceil(renderer.getScaledValue(elementBox.width) + 1),
+          Math.ceil(renderer.getScaledValue(elementBox.height) + 1)
+        );
+      } catch {
+        // Highlight is decoration only; the text itself must still render.
+      }
+    }
+    return originalRenderText(elementBox, left, top, underlineY);
+  };
 }
 
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
@@ -216,6 +279,23 @@ export function useDocxEditor({
         // Native right-click menu — insert/delete table rows & columns,
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
+        try {
+          // The grouped review panel (TrackedChangeGroups) is this editor's
+          // review surface. Syncfusion auto-opens its own Changes pane the
+          // moment tracked changes appear (reviewPaneHelper), covering the
+          // panel — mark the pane user-closed, the same switch its ✕ sets,
+          // so the auto-open never fires.
+          ed.showRevisions = false;
+          if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
+          // Tagged tracked changes from different accept groups must not
+          // coalesce into one revision; see installRevisionGroupIsolation.
+          installRevisionGroupIsolation(ed);
+          // GitHub-style change rendering: green/red highlights, no author
+          // color, no underline/strikethrough.
+          installRevisionHighlightRendering(ed);
+        } catch {
+          // Review-pane/grouping setup must never block the editor mount.
+        }
         setEditor(ed);
         onEditorReady?.(ed);
 

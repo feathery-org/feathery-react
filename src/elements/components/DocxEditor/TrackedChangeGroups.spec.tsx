@@ -61,8 +61,8 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
     // Two revisions in the premium group, one in the date group.
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('2 edits')).toBeInTheDocument();
+    expect(screen.getByText('1 edit')).toBeInTheDocument();
   });
 
   it('expands a card to its individual edits and navigates on click', () => {
@@ -92,6 +92,37 @@ describe('TrackedChangeGroups', () => {
       screen.getByRole('button', { name: 'Collapse Update premium' })
     );
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+  });
+
+  it('row ✓/✗ resolves a single edit without touching the rest of the group', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const revisions = [deletion, insertion];
+    // Emulate the live editor: an individually resolved revision leaves the
+    // collection while its group siblings stay pending.
+    deletion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(deletion), 1);
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getAllByLabelText('Accept this edit')[0]);
+
+    // Only the clicked row's revision resolved; its sibling is untouched and
+    // the click did not double as row navigation.
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    expect(insertion.accept).not.toHaveBeenCalled();
+    expect(deletion.select).not.toHaveBeenCalled();
+
+    // The panel refreshed: the resolved row is gone, the sibling remains.
+    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
   });
 
   it('Accept resolves through one member and refreshes the panel', () => {
