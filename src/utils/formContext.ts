@@ -211,10 +211,10 @@ export const getFormContext = (formUuid: string) => {
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
     createTask: (params: {
-      formKey?: string;
-      fuserKey?: string;
+      targetFormKey?: string;
       templateId: string;
-      collaboratorGroup: string;
+      collaboratorGroup?: string;
+      email?: string;
     }) => formState.client.createTask(params),
     dataHubAction: ({
       hubId,

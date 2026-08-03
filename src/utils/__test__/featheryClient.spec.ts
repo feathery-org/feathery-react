@@ -861,10 +861,10 @@ describe('FeatheryClient - using api helpers', () => {
       expect(result).toEqual(payload);
     });
 
-    it('honors formKey and fuserKey overrides', async () => {
+    it('honors targetFormKey override and accepts email in place of collaboratorGroup', async () => {
       // Arrange
       const templateId = 'template_456';
-      const collaboratorGroup = 'group2@example.com';
+      const email = 'reviewer@example.com';
 
       (global.fetch as jest.Mock).mockResolvedValue({
         status: 201,
@@ -873,10 +873,9 @@ describe('FeatheryClient - using api helpers', () => {
 
       // Act
       await featheryClient.createTask({
-        formKey: 'other_form',
-        fuserKey: 'other_fuser',
+        targetFormKey: 'other_form',
         templateId,
-        collaboratorGroup
+        email
       });
 
       // Assert
@@ -886,13 +885,29 @@ describe('FeatheryClient - using api helpers', () => {
           method: 'POST',
           body: JSON.stringify({
             form_key: 'other_form',
-            fuser_key: 'other_fuser',
-            users_groups: [collaboratorGroup],
+            fuser_key: userId,
+            users_groups: [email],
             template_id: templateId,
             collaborator_user: undefined
           })
         })
       );
+    });
+
+    it('throws when neither collaboratorGroup nor email is provided', async () => {
+      await expect(
+        featheryClient.createTask({ templateId: 'template_123' })
+      ).rejects.toThrow(/collaboratorGroup or email/);
+    });
+
+    it('throws when both collaboratorGroup and email are provided', async () => {
+      await expect(
+        featheryClient.createTask({
+          templateId: 'template_123',
+          collaboratorGroup: 'group1',
+          email: 'reviewer@example.com'
+        })
+      ).rejects.toThrow(/not both/);
     });
 
     it('throws error when invite returns error status', async () => {

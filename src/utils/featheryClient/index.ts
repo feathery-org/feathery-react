@@ -1078,23 +1078,32 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async createTask({
-    formKey,
-    fuserKey,
+    targetFormKey,
     templateId,
-    collaboratorGroup
+    collaboratorGroup,
+    email
   }: {
-    formKey?: string;
-    fuserKey?: string;
+    targetFormKey?: string;
     templateId: string;
-    collaboratorGroup: string;
+    collaboratorGroup?: string;
+    email?: string;
   }) {
+    if (!collaboratorGroup && !email) {
+      throw new Error('createTask requires either collaboratorGroup or email');
+    }
+    if (collaboratorGroup && email) {
+      throw new Error(
+        'createTask accepts collaboratorGroup or email, not both'
+      );
+    }
+
     const { userId, sdkKey } = initInfo();
     const res = await apiInviteFormCollaborator(
       sdkKey,
-      formKey ?? this.formKey,
+      targetFormKey ?? this.formKey,
       templateId,
-      [collaboratorGroup],
-      fuserKey ?? userId
+      [(collaboratorGroup ?? email) as string],
+      userId
     );
 
     if (res && res.ok) return res.payload;
