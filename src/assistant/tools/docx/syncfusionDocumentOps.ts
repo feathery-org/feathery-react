@@ -952,6 +952,10 @@ function paragraphMarkRevisionIds(block: any): unknown {
   return pick(pick(block, 'characterFormat', 'cf'), 'revisionIds', 'rids');
 }
 
+function rowRevisionIds(row: any): unknown {
+  return pick(pick(row, 'rowFormat', 'trpr'), 'revisionIds', 'rids');
+}
+
 // optimized textAlignment is numeric (0 Left,1 Center,2 Right,3 Justify).
 const ALIGN = ['Left', 'Center', 'Right', 'Justify'];
 function normalizeAlignment(v: any): string | undefined {
@@ -2749,6 +2753,7 @@ function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
       const rows = getRows(block);
       if (rows) {
         for (const row of rows) {
+          if (allRevisionIdsIn(rowRevisionIds(row), dropIds)) continue;
           const cells: any[] = pick(row, 'cells', 'c') ?? [];
           for (const cell of cells) {
             for (const cellBlock of getBlocks(cell)) pushParagraph(cellBlock);
@@ -4874,7 +4879,8 @@ export const ANCHORED_OP_HANDLERS: {
   insert_row: ({ editor, op }) => {
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
   },
-  insert_table: ({ editor, op }) => {
+  insert_table: ({ editor, op, block }) => {
+    selectRange(editor, block.anchor, 0, 0);
     callEditor(
       editor,
       'insertTable',
@@ -6271,12 +6277,13 @@ function describeAcceptDivergence(expected: string, actual: string): string[] {
   );
 }
 
-const TRACKED_TEXT_OPS = new Set([
+export const TRACKED_TEXT_OPS = new Set([
   'replace_text',
   'replace_selection',
   'delete_text',
   'delete_paragraph',
   'insert_text',
+  'insert_table',
   'set_cell_text',
   'set_cell_formula',
   'set_column_formula',
@@ -6285,7 +6292,7 @@ const TRACKED_TEXT_OPS = new Set([
 
 // A structural table edit is content just as much as text is, so it carries the
 // same requirement: SyncFusion must author a rejectable card of the right kind.
-const TRACKED_STRUCTURAL_OPS = new Map([
+export const TRACKED_STRUCTURAL_OPS = new Map([
   ['insert_row', 'insertion'],
   ['delete_row', 'deletion']
 ]);
@@ -7112,6 +7119,38 @@ function tableAnchorFromCellAnchor(anchor: unknown): string {
   return parts.slice(0, -3).join(';');
 }
 
+/**
+ * The top-level anchor at which an inserted table will be addressable.
+ * Inserting at a body paragraph puts the table at that block index and pushes
+ * the paragraph down. Inserting from a cell targets the first body block after
+ * the containing table.
+ */
+function resultingInsertedTableAnchor(anchor: unknown): string {
+  const parts = String(anchor ?? '').split(';');
+  if (parts.length === 2) return parts.join(';');
+  if (parts.length < 5) return '';
+  const block = Number(parts[1]);
+  if (!Number.isInteger(block) || block < 0) return '';
+  return `${parts[0]};${block + 1}`;
+}
+
+function assertInsertedTableIsAddressable(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>
+): void {
+  if (op.op !== 'insert_table') return;
+  const resultingAnchor = resultingInsertedTableAnchor(op.anchor);
+  if (resultingAnchor && byAnchor.has(`${resultingAnchor};0;0;0`)) return;
+  throw new OpError(
+    'inserted_table_not_addressable',
+    `insert_table at "${op.anchor}" did not create a distinct table at "${resultingAnchor}". Adjacent tables can coalesce instead of creating a new addressable block. Choose an anchor separated from the existing table by a paragraph, then target the new cells under "${resultingAnchor};row;column;0". Nothing was written.`,
+    [
+      `requested insert anchor: ${op.anchor}`,
+      `expected resulting table anchor: ${resultingAnchor}`
+    ]
+  );
+}
+
 function cellWriteTargetsTable(op: EditOp, tableAnchor: string): boolean {
   return (
     (op?.op === 'set_cell_text' || op?.op === 'set_cell_formula') &&
@@ -7128,7 +7167,7 @@ function tableCreatedByEarlierInsert(edits: EditOp[], index: number): boolean {
       .some(
         (earlier) =>
           earlier?.op === 'insert_table' &&
-          String(earlier.anchor ?? '') === tableAnchor
+          resultingInsertedTableAnchor(earlier.anchor) === tableAnchor
       )
   );
 }
@@ -7789,22 +7828,66 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
     index: number;
     anchor: string;
     size: string;
+    resultingAnchor?: string;
+    mismatchedCellWriteAnchors?: string[];
   }> = [];
+  const cellWriteAnchors = Array.from(
+    new Set(
+      edits
+        .filter(
+          (candidate) =>
+            candidate?.op === 'set_cell_text' ||
+            candidate?.op === 'set_cell_formula'
+        )
+        .map((candidate) => tableAnchorFromCellAnchor(candidate.anchor))
+        .filter(Boolean)
+    )
+  );
+  const resultingTableAnchors = new Set(
+    edits
+      .filter((candidate) => candidate?.op === 'insert_table')
+      .map((candidate) => resultingInsertedTableAnchor(candidate.anchor))
+      .filter(Boolean)
+  );
   edits.forEach((op, index) => {
     if (op?.op !== 'insert_table') return;
     const anchor = String(op.anchor ?? '');
+    const resultingAnchor = resultingInsertedTableAnchor(anchor);
     const hasCellWrites = edits.some((candidate) =>
-      cellWriteTargetsTable(candidate, anchor)
+      cellWriteTargetsTable(candidate, resultingAnchor)
     );
     if (hasCellWrites) return;
+    const mismatchedCellWriteAnchors = cellWriteAnchors.filter(
+      (candidate) => !resultingTableAnchors.has(candidate)
+    );
     emptyTables.push({
       index,
       anchor,
-      size: `${positiveCount(op.rows)}x${positiveCount(op.columns)}`
+      size: `${positiveCount(op.rows)}x${positiveCount(op.columns)}`,
+      ...(mismatchedCellWriteAnchors.length
+        ? { resultingAnchor, mismatchedCellWriteAnchors }
+        : {})
     });
   });
   if (!emptyTables.length) return null;
   const first = emptyTables[0];
+  if (first.mismatchedCellWriteAnchors?.length) {
+    return {
+      code: 'insert_table_cell_anchor_mismatch',
+      message:
+        `insert_table at "${first.anchor}" would create the table at "${first.resultingAnchor}", but this change set writes cells under ${first.mismatchedCellWriteAnchors
+          .map((anchor) => `"${anchor}"`)
+          .join(', ')}. ` +
+        `Retarget those writes to "${first.resultingAnchor};row;column;0", or choose an insert anchor whose resulting table address matches them. Nothing was written.`,
+      details: [
+        `resulting table anchor: ${first.resultingAnchor}`,
+        ...first.mismatchedCellWriteAnchors.map(
+          (anchor) => `cell writes target table: ${anchor}`
+        )
+      ],
+      indices: [first.index]
+    };
+  }
   return {
     code: 'empty_insert_table',
     message:
@@ -8394,6 +8477,7 @@ export function applyDocumentEdits(
             trackedMutationTargetText
           );
           refresh(postWriteSfdt);
+          assertInsertedTableIsAddressable(writtenOp, byAnchor);
           if (insertInheritance) {
             applyInsertInheritance(editor, insertInheritance, byAnchor);
             refresh();
