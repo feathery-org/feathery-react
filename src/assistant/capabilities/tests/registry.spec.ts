@@ -5,7 +5,7 @@ import * as capabilityRegistry from '../registry';
 import {
   ANCHORED_OP_HANDLERS,
   ANCHORLESS_OP_HANDLERS
-} from '../../tools/syncfusionDocumentOps';
+} from '../../tools/docx/syncfusionDocumentOps';
 
 // ---------------------------------------------------------------------------
 // Registry <-> dispatch parity, both directions.
@@ -21,7 +21,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const DISPATCH_SOURCE = fs.readFileSync(
-  path.join(__dirname, '../../tools/syncfusionDocumentOps.ts'),
+  path.join(__dirname, '../../tools/docx/syncfusionDocumentOps.ts'),
   'utf8'
 );
 const { DOCUMENT_EDITOR_CAPABILITIES } = capabilityRegistry;

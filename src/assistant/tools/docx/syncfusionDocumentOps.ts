@@ -27,7 +27,7 @@ import {
   AnchorlessDocumentOp,
   DOCUMENT_EDITOR_CAPABILITIES,
   OpParams
-} from '../capabilities/registry';
+} from '../../capabilities/registry';
 import {
   classifyNumericText,
   parseNumericCell,
@@ -2108,13 +2108,8 @@ function describeUnexpectedError(err: unknown): string {
 // op writes nothing, so an edit cannot land on content that moved or changed
 // under it. That protection is the point and is not relaxed here.
 //
-// What IS fixed is two ways the guard refused correct work, plus its name.
-// Live evidence (2026-07-27): every refusal in a 30-minute window but one was a
-// misfire, and the name sent three investigations hunting positional anchor
-// drift that this module has never measured - there is no anchor-revision map
-// anywhere in it. Worse, the name made the advice wrong: the model was told to
-// re-read the inventory and correct the anchor, which cannot help when the anchor
-// was right, so it burned round trips re-reading unchanged content.
+// A refusal must name the real text mismatch, never anchor drift this module
+// does not measure, wrong advice sends the model re-reading unchanged content
 
 /**
  * A paragraph mark is not content.
@@ -2153,8 +2148,8 @@ function expectGuardRefuses(expected: unknown, live: string): boolean {
 
 // An expect_mismatch refusal must name what actually mismatched, or the model
 // re-reads the inventory, gets the same anchor back, and re-sends the same
-// request forever (observed live: 7+ identical round trips). The live text is
-// the one fact that lets the next attempt differ.
+// request forever. The live text is the one fact that lets the next attempt
+// differ.
 const STALE_TEXT_EXCERPT_LIMIT = 300;
 function staleAnchorDetails(expected: unknown, live: string): string[] {
   const cap = (text: string) =>
@@ -2213,16 +2208,15 @@ function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
 // offset short of the block end) legitimately moves the pre-existing text off
 // its index, so the anchor's new occupant is a different logical block.
 //
-// Text-frame content is included. It lives in the serialized SFDT exactly like
-// any other content - as `inline.textFrame.blocks`, which is where
-// currentTextFrameText already reads it - but this walk used to skip it, so a
-// text-frame write had no projection to be proven by and fell back to a
-// revision-type guess: the very heuristic this projection was introduced to
-// replace, carrying the very false negative it was introduced to fix.
+// Text-frame content must be walked too. It lives in the serialized SFDT
+// exactly like any other content - as `inline.textFrame.blocks`, which is
+// where currentTextFrameText already reads it - and a walk that skips it
+// leaves a text-frame write with no projection to be proven by, falling back
+// to the revision-type guess this projection exists to replace.
 // Exported for its own test: this projection IS the tracked-write proof, so
 // "does it actually see the content it claims to cover" has to be assertable
 // directly. A projection blind to a story would pass every write in it
-// vacuously - which is exactly how text-frame writes went unverified.
+// vacuously.
 export function rejectProjectionStream(sfdt: any): string {
   return revisionProjectionStream(sfdt, insertedRevisionIds(sfdt));
 }
@@ -2641,15 +2635,10 @@ function replaceSelectedText(editor: LiveEditor, replacement: string): void {
 // `start`/`end` are a DISAMBIGUATOR among several matches of the same spelling,
 // never a validity test on a match SyncFusion already resolved.
 //
-// They used to be an equality filter, and that is what killed the captain's
-// selection rewrite (2026-07-27 14:2x EDT, ai-services-3002.log line 26661):
-// the model sent a 457-character `find` with `end: 0` on the first attempt
-// (the tool schema fills every field, so an unset `end` arrives as 0) and
-// `end: 451` on the two retries - it tried to count the characters and was off
-// by six. Search had found the range perfectly, at 0..457, all three times.
-// The filter threw it away and reported `exact_match_range_not_found`, so a
-// paragraph that was sitting right there under the user's own selection was
-// declared missing three times and the turn ended in "please do it by hand".
+// Treating them as an equality filter discards ranges search already resolved
+// correctly: the tool schema fills every field so an unset `end` arrives as 0,
+// and a model-counted offset is routinely off by a few characters, either one
+// would report a text right under the user's selection as not found.
 //
 // A character offset is a value the model has to COUNT, and it cannot count.
 // The live search result is authoritative for WHERE the text is; `expect` -
@@ -3548,10 +3537,8 @@ function runFormulaCellWrite(
 // Column-wide recompute (set_column_formula)
 //
 // The failure this exists to remove: the model picks the row range and gets it
-// wrong. Live on 2026-07-27 it wrote two totals into the same row of one table
-// over DIFFERENT spans - sum(rows 1..3) for one column and sum(rows 1..4) for
-// the one beside it. One of those is wrong by construction, and nothing in the
-// output said which.
+// wrong, writing totals in the same row over DIFFERENT spans, one wrong by
+// construction with nothing in the output saying which.
 //
 // So let a formula apply down a WHOLE DATA column. The engine evaluates it for
 // every row in the span and - because of the no-op rule - writes only the cells
@@ -4917,8 +4904,7 @@ function callSelection(
 // (acceptAll / rejectAll) is always safe, but resolving them individually per
 // card in a contradictory order - reject the insertion (drop the new text) AND
 // accept the deletion (drop the old text) - deletes BOTH and the paragraph's
-// content is lost. (Reproduced live: a General Liability quote paragraph
-// vanished entirely after a multi-op edit followed by per-card rejects.)
+// content is lost.
 //
 // Fix: bind the delete+insert revisions of one logical edit into a group and
 // make each member's accept/reject cascade to the whole group, so the FIRST
@@ -5623,11 +5609,9 @@ function applyInsertInheritance(
 // Two things live here, and both exist because they are invisible one op at a
 // time:
 //
-//   1. TWO TOTALS OVER THE SAME TABLE THAT SPAN DIFFERENT ROWS. Live on
-//      2026-07-27 the model wrote sum(rows 1..3) into one column's total and
-//      sum(rows 1..4) into the column beside it. Each op is individually
-//      perfect; together, one of them is wrong by construction. Nothing except
-//      a cross-op check can see it.
+//   1. TWO TOTALS OVER THE SAME TABLE THAT SPAN DIFFERENT ROWS. Each op is
+//      individually perfect, together one of them is wrong by construction,
+//      and nothing except a cross-op check can see it.
 //   2. THE DEPENDENCY CHAIN, ANNOUNCED. A person asks to re-total BECAUSE they
 //      changed an input, so when an input column changes the derived column and
 //      the totals are all stale and Robin should follow the chain rather than
@@ -6016,10 +6000,8 @@ export function applyDocumentEdits(
     // as the preflight target. That deferral only means something in a change
     // set whose structural ops can shift anchors: in a formatting-only set no
     // anchor can move, so today's occupant IS the block the model named, and
-    // an expect discrepancy must be reported as what it is - stale expect
-    // text - never as a missing anchor (observed live: a follow-up formatting
-    // set styling freshly inserted paragraphs died anchor_not_found 18 times
-    // on anchors that existed).
+    // an expect discrepancy must be reported as what it is, stale expect
+    // text, never as a missing anchor on an anchor that exists.
     const formatExpectMismatch =
       FORMAT_OPS.has(name) &&
       op.expect != null &&

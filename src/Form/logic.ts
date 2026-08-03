@@ -620,43 +620,26 @@ export const runClientSideLogic = async (
 
 export type RunLogicRuleResult = LogicRuleTransportResult;
 
-// A rule is user-authored JavaScript and may return any runtime value. Bound and
-// recursively sanitize every dynamic value before it reaches addToolOutput.
-const LOGIC_RULE_RETURN_VALUE_LIMIT = 8_000;
-const LOGIC_RULE_FIELD_VALUE_LIMIT = 2_000;
-const LOGIC_RULE_FIELD_CHANGE_LIMIT = 100;
-const LOGIC_RULE_KEY_LIMIT = 160;
-const LOGIC_RULE_NAME_LIMIT = 400;
-const LOGIC_RULE_ERROR_LIMIT = 1_000;
-
-const boundedText = (value: unknown, limit: number): string =>
-  String(sanitizeTransportValue(String(value ?? ''), limit).value);
+// A rule is user-authored JavaScript and may return any runtime value.
+// Recursively sanitize every dynamic value before it reaches addToolOutput.
+// No client-side size clipping, the server digests oversized tool results
+// with full-fidelity recall via queryOutput
+const asText = (value: unknown): string =>
+  String(sanitizeTransportValue(String(value ?? '')));
 
 const sanitizeFieldChanges = (changes: FieldChange[]): FieldChange[] =>
-  changes.slice(0, LOGIC_RULE_FIELD_CHANGE_LIMIT).map((change) => ({
-    key: boundedText(change.key, LOGIC_RULE_KEY_LIMIT),
-    before: sanitizeTransportValue(change.before, LOGIC_RULE_FIELD_VALUE_LIMIT)
-      .value,
-    after: sanitizeTransportValue(change.after, LOGIC_RULE_FIELD_VALUE_LIMIT)
-      .value,
+  changes.map((change) => ({
+    key: asText(change.key),
+    before: sanitizeTransportValue(change.before),
+    after: sanitizeTransportValue(change.after),
     ...(change.documentHint
       ? {
           documentHint: {
             ...(change.documentHint.anchor
-              ? {
-                  anchor: boundedText(
-                    change.documentHint.anchor,
-                    LOGIC_RULE_KEY_LIMIT
-                  )
-                }
+              ? { anchor: asText(change.documentHint.anchor) }
               : {}),
             ...(change.documentHint.describes
-              ? {
-                  describes: boundedText(
-                    change.documentHint.describes,
-                    LOGIC_RULE_NAME_LIMIT
-                  )
-                }
+              ? { describes: asText(change.documentHint.describes) }
               : {})
           }
         }
@@ -680,18 +663,14 @@ const logicRuleTransportResult = (input: {
   return {
     ok: !input.error,
     rule: {
-      id: boundedText(input.ruleId, LOGIC_RULE_KEY_LIMIT) || 'unknown-rule',
-      name:
-        boundedText(input.ruleName, LOGIC_RULE_NAME_LIMIT) || 'Unavailable rule'
+      id: asText(input.ruleId) || 'unknown-rule',
+      name: asText(input.ruleName) || 'Unavailable rule'
     },
     result: sanitizeTransportValue(
-      withoutEmbeddedFieldUpdates(input.returnValue),
-      LOGIC_RULE_RETURN_VALUE_LIMIT
-    ).value,
+      withoutEmbeddedFieldUpdates(input.returnValue)
+    ),
     fieldChanges: sanitizeFieldChanges(fieldChanges),
-    ...(input.error
-      ? { error: boundedText(input.error, LOGIC_RULE_ERROR_LIMIT) }
-      : {})
+    ...(input.error ? { error: asText(input.error) } : {})
   };
 };
 
