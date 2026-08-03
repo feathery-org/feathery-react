@@ -99,6 +99,12 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     requiresAnchor: true
   },
   {
+    // handler: ANCHORED_OP_HANDLERS.delete_paragraph
+    op: 'delete_paragraph',
+    params: { force: 'boolean?' },
+    requiresAnchor: true
+  },
+  {
     // handler: applyAnchoredOp case 'insert_text'
     op: 'insert_text',
     params: {
@@ -110,8 +116,26 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   },
   {
     // handler: applyAnchoredOp case 'set_cell_text'
+    //
+    // A figure written into a column of formatted amounts is re-rendered in
+    // that column's own number format before anything else looks at it, so
+    // `9660` beside `$36,803.00` lands as `$9,660.00`.
+    //
+    // Such a figure must also declare where it came from, because the engine
+    // did not compute it. Two provenances are sanctioned:
+    //   - `literal: true` - the user stated this exact figure in conversation.
+    //   - `quotedFrom` + `quotedText` - it was quoted verbatim out of a
+    //     document the user attached: the attachment, and the verbatim excerpt
+    //     containing the figure. The engine checks the figure actually appears
+    //     in the excerpt and records the citation on the result.
+    // Anything derived from other cells still goes through set_cell_formula.
     op: 'set_cell_text',
-    params: { text: 'string', literal: 'boolean?' },
+    params: {
+      text: 'string',
+      literal: 'boolean?',
+      quotedFrom: 'string?',
+      quotedText: 'string?'
+    },
     requiresAnchor: true
   },
   {
@@ -207,12 +231,29 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   },
   {
     // handler: applyAnchoredOp case 'insert_row'
+    //
+    // `preserveBanding` (default ON): SyncFusion clones the reference row's fill
+    // into the new row, which breaks a striped table in both directions - the new
+    // row repeats its neighbour, and every row below it shifts parity. The
+    // executor therefore reads the stripe BEFORE the insert (the only moment it
+    // is unambiguous) and re-lays it from the new row down afterwards. Costs no
+    // extra change cards, because appearance writes create no revisions. Send
+    // `preserveBanding: false` to get SyncFusion's raw behaviour.
     op: 'insert_row',
-    params: { above: 'boolean?', count: 'int>0?' },
+    params: {
+      above: 'boolean?',
+      count: 'int>0?',
+      preserveBanding: 'boolean?'
+    },
     requiresAnchor: true
   },
   {
     // handler: applyAnchoredOp case 'delete_row'
+    //
+    // No banding preserve, unlike insert_row: under track changes SyncFusion
+    // marks the row deleted and leaves it IN PLACE until the revision is
+    // accepted, so no row below it has changed parity yet. `restripe_table` is
+    // the repair after acceptance.
     op: 'delete_row',
     params: {},
     requiresAnchor: true
@@ -253,6 +294,78 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       round: 'enum[half_up,half_even,toward_zero,away_from_zero]?',
       decimals: 'int>=0?'
     },
+    requiresAnchor: true
+  },
+  // --- Table appearance -------------------------------------------------------
+  //
+  // Like the character/paragraph formatting block above, these are NOT tracked:
+  // SyncFusion 34.1.31's RevisionType is `Insertion | Deletion | MoveTo |
+  // MoveFrom` and nothing else, and a probe of a real DocumentEditor confirms a
+  // cell shading or border write creates ZERO revisions. They are still
+  // reversible: the executor snapshots the appearance it is about to overwrite
+  // and binds the restore into the change set's revision group, so rejecting the
+  // card puts the old appearance back along with the content. A change set that
+  // writes ONLY appearance has no card to bind to and says so
+  // (`changeSet.formatTracking: 'untracked_immediate'`).
+  {
+    // handler: ANCHORED_OP_HANDLERS.set_cell_format
+    // Anchor: the cell's paragraph anchor, exactly as set_cell_text takes it.
+    op: 'set_cell_format',
+    params: {
+      shading: 'string?',
+      verticalAlignment: 'enum[Top,Center,Bottom]?',
+      borders:
+        'enum[AllBorders,OutsideBorders,LeftBorder,RightBorder,TopBorder,BottomBorder,NoBorder]?',
+      borderColor: 'string?',
+      borderWidth: 'number?',
+      borderStyle:
+        'enum[Single,None,Dot,DashSmallGap,DashLargeGap,DashDot,DashDotDot,Double]?'
+    },
+    requiresAnchor: true
+  },
+  {
+    // handler: ANCHORED_OP_HANDLERS.set_row_format
+    // Anchor: ANY cell paragraph anchor in the row.
+    op: 'set_row_format',
+    params: {
+      shading: 'string?',
+      verticalAlignment: 'enum[Top,Center,Bottom]?',
+      borders:
+        'enum[AllBorders,OutsideBorders,LeftBorder,RightBorder,TopBorder,BottomBorder,NoBorder]?',
+      borderColor: 'string?',
+      borderWidth: 'number?',
+      borderStyle:
+        'enum[Single,None,Dot,DashSmallGap,DashLargeGap,DashDot,DashDotDot,Double]?',
+      isHeader: 'boolean?'
+    },
+    requiresAnchor: true
+  },
+  {
+    // handler: ANCHORED_OP_HANDLERS.copy_table_format
+    //
+    // "Copy how the table looks", done engine-side. One set_cell_format per cell
+    // across a 12x5 table is 60 model-authored ops that drift; this is one, and
+    // it is deterministic. Appearance only - never content, never dimensions.
+    //
+    // Anchor: the TARGET table (a cell anchor, or the `0;7` table anchor a
+    // structure read reports). `sourceTable` names the source the same way.
+    op: 'copy_table_format',
+    params: { sourceTable: 'string' },
+    requiresAnchor: true
+  },
+  {
+    // handler: ANCHORED_OP_HANDLERS.restripe_table
+    //
+    // Re-lay the table's OWN alternating fill so its parity is consistent again.
+    // The pattern is inferred from the rows that exist (period and header count
+    // both), never assumed, and a table with no detectable stripe is left
+    // untouched rather than given one it never had.
+    //
+    // `insert_row`/`delete_row` already preserve banding by themselves, so this
+    // is the repair tool for a table someone else broke - not a follow-up the
+    // model has to remember.
+    op: 'restripe_table',
+    params: { fromRow: 'int>=0?' },
     requiresAnchor: true
   },
   // `insert_column` was withdrawn in S5: probed on a real DocumentEditor, it

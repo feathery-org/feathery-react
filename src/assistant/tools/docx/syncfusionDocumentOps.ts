@@ -29,9 +29,17 @@ import {
   OpParams
 } from '../../capabilities/registry';
 import {
+  CellNumberFormat,
   classifyNumericText,
+  isZeroPaddedInteger,
+  ParsedColumnCell,
   parseNumericCell,
-  SkippedCell
+  RenderFormatSource,
+  renderNumericCell,
+  rescaleExact,
+  resolveRenderFormat,
+  SkippedCell,
+  upgradeNegativeStyle
 } from './numericCells';
 import {
   collectFormulaAggregates,
@@ -50,6 +58,29 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+import {
+  AppearanceFacts,
+  appearanceEquals,
+  AppearanceRestore,
+  AppearanceWrite,
+  AppearanceWriteOutcome,
+  AppearanceWriteReport,
+  bandedShadingForRow,
+  BORDER_SIDES,
+  BorderFacts,
+  BorderSide,
+  BorderWrite,
+  cellAppearanceAt,
+  collectTableAppearance,
+  copiedCellAppearance,
+  detectTableBanding,
+  inferHeaderRows,
+  rowShadings,
+  sourceRowForTarget,
+  TableAppearance,
+  TableBanding,
+  tableIsUnstyled
+} from './tableAppearance';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
@@ -142,6 +173,16 @@ export interface StructureTable {
   columns: number;
   firstRowCells: string[];
   firstRowCellsTruncated?: boolean;
+  /**
+   * This table has an appearance worth copying - a fill, a border, a header row
+   * or a Word table style somewhere in it. One boolean, deliberately: the
+   * skeleton read must stay cheap, and this is exactly enough for "make the new
+   * section's table look like its siblings" to know which sibling to read and
+   * that there is something to copy. The detail is a `table_facts` read.
+   */
+  styled?: true;
+  /** The Word table style, when it has one. */
+  styleName?: string;
 }
 
 // One SFDT section (the spans between section breaks), by 0-based index.
@@ -246,6 +287,12 @@ export interface TableCellFact {
   bold?: true;
   italic?: true;
   styleName?: string;
+  /**
+   * How the CELL looks - fill, borders, vertical alignment. Present only where
+   * this cell differs from the row-level `appearance` beside it, so a banded
+   * row costs one appearance object rather than one per cell.
+   */
+  appearance?: AppearanceFacts;
 }
 
 export interface TableRowFact {
@@ -260,6 +307,18 @@ export interface TableRowFact {
   allBold?: true;
   /** Some cell in this row spans columns or rows. */
   hasMergedCells?: true;
+  /**
+   * Word's own header-row flag, as stored. A FACT, unlike "row 0 is the
+   * header" - a table may carry it on two rows, or on none at all.
+   */
+  isHeader?: true;
+  /**
+   * The appearance every present cell of this row SHARES. This is where a
+   * banded table's stripe is visible: read the rows' `appearance.shading` down
+   * the table and the pattern is the list. Absent when the cells disagree, in
+   * which case each cell carries its own `appearance`.
+   */
+  appearance?: AppearanceFacts;
   cells: TableCellFact[];
 }
 
@@ -293,6 +352,10 @@ export interface TableFacts {
   }>;
   rows: TableRowFact[];
   columns: TableColumnFact[];
+  /** The Word table style this table carries, when it has one. */
+  styleName?: string;
+  /** Table-level fill/borders, when set. */
+  appearance?: AppearanceFacts;
   /**
    * Always false. A facts read has no maxEntries and is never capped: layout
    * facts are small even for a table whose contents are not, and a partial
@@ -494,15 +557,43 @@ export interface ColumnFormulaReport {
 }
 
 /**
+ * A numeric `set_cell_text` the engine re-rendered in its column's own number
+ * format, so the bytes written are not the bytes sent. Recorded beside the
+ * provenance: the reviewer sees the figure as the model supplied it and as the
+ * document dressed it.
+ */
+export interface ColumnFormatRender {
+  /** The figure exactly as the op supplied it. */
+  asSent: string;
+  /** The bytes actually written, in the column's own format. */
+  written: string;
+  /** Whether that format came from this cell or from the column's majority. */
+  formatSource: RenderFormatSource;
+}
+
+/**
  * A numeric `set_cell_text` that got through the model-authored-number gate by
- * declaring `literal: true`. Recorded on the result so the exception is
- * auditable in the change set instead of being indistinguishable from a
+ * declaring where the figure came from. Recorded on the result so the exception
+ * is auditable in the change set instead of being indistinguishable from a
  * computed write.
  */
 export interface LiteralNumberWrite {
   text: string;
   /** What the cell held before, when it held a number. */
   previousText: string;
+  /**
+   * The declared provenance. `user_stated` is `literal: true` - a figure the
+   * user dictated in conversation. `attachment` is `quotedFrom`/`quotedText` -
+   * a figure quoted verbatim out of a document the user supplied, whose
+   * excerpt the engine checked actually contains it.
+   */
+  source: 'user_stated' | 'attachment';
+  /** `attachment` only: the attachment the figure was read out of. */
+  quotedFrom?: string;
+  /** `attachment` only: the verbatim excerpt the figure was quoted from. */
+  quotedText?: string;
+  /** Set when the written bytes differ from the bytes sent. */
+  rendered?: ColumnFormatRender;
   note: string;
 }
 
@@ -538,6 +629,11 @@ export interface EditResult {
   // is already there, byte for byte. `ok` is still true - the requested state
   // is the state - but there is no revision and no change card. See writeNoOp.
   noOp?: NoOpWriteReport;
+  // Present on a successful appearance op (set_cell_format / set_row_format /
+  // copy_table_format / restripe_table): what it wrote, what it left alone, and
+  // the stripe it detected. The engine's own account, so "did the restripe
+  // actually do anything" is answerable from the result.
+  appearance?: AppearanceWriteReport;
 }
 
 export interface ApplyEditsResult {
@@ -551,13 +647,33 @@ export interface ApplyEditsResult {
     // first-class grouped card in the revisions UI.
     revisionGrouping: 'bridge_bound_revision_cards' | 'no_revisions';
     uiGrouping: 'requires_cross_layer_group_card';
-    /** Accept units created: one entry per `group` (ungrouped ops share the
-     *  change set id). A group whose ops all no-opped reports 0 revisions. */
+    /**
+     * The accept/reject units this change set created: one entry per
+     * assistant-defined `group` (ops without one share the change set id).
+     * Accepting or rejecting ANY revision of a group resolves exactly that
+     * group. `revisionCount` is the number of live revisions bound to the
+     * group; a group whose ops all no-opped reports 0 - nothing to review.
+     * `restoresAppearance` marks a group that also owns table-appearance
+     * snapshots, so rejecting its card puts the fills and borders back too.
+     */
     groups: Array<{
       id: string;
       opIndices: number[];
       revisionCount: number;
+      restoresAppearance?: true;
     }>;
+    /**
+     * Present only when this change set wrote table APPEARANCE. SyncFusion
+     * creates no revision for a fill or a border, so:
+     *   'grouped_with_revision_cards' - the appearance snapshots are bound to a
+     *     group that has content revisions, and rejecting that card restores the
+     *     appearance too;
+     *   'untracked_immediate' - no group carrying appearance ended up with a
+     *     revision to bind to, so there is no card and the change applies
+     *     immediately, exactly like the shipped set_char_format. Stated rather
+     *     than implied.
+     */
+    formatTracking?: 'grouped_with_revision_cards' | 'untracked_immediate';
     /**
      * What this change set touched, in resolved terms, derived by the ENGINE
      * from the ops. Always present, so "which columns moved" is a property of
@@ -736,7 +852,12 @@ interface FlatBlock {
 // SFDT walking (pure)
 // ---------------------------------------------------------------------------
 
-const HEADING_STYLE = /heading\s*(\d+)/i;
+// Built-in heading styles, anchored: a paragraph is "Heading 3" only when that
+// IS the style's name. The unanchored form this replaces matched any name
+// CONTAINING "heading<digit>", which ranked the live proposal document's
+// "noTOCheading2" - its LARGEST heading style - as a second-level heading.
+const HEADING_STYLE = /^heading\s*(\d+)$/i;
+const TITLE_STYLE = /^title(\s+char)?$/i;
 
 // SyncFusion serializes an OPTIMIZED SFDT with abbreviated keys (sec/b/i/tlp/
 // pf/cf/...), while imported/full SFDT and our test fixtures use the long keys
@@ -817,6 +938,18 @@ function inlineText(
     else if (inline.name === 'Tab' || inline.tlp === undefined) continue;
   }
   return out;
+}
+
+function allRevisionIdsIn(rids: unknown, ids: Set<string>): boolean {
+  return (
+    Array.isArray(rids) &&
+    rids.length > 0 &&
+    rids.every((id) => ids.has(String(id)))
+  );
+}
+
+function paragraphMarkRevisionIds(block: any): unknown {
+  return pick(pick(block, 'characterFormat', 'cf'), 'revisionIds', 'rids');
 }
 
 // optimized textAlignment is numeric (0 Left,1 Center,2 Right,3 Justify).
@@ -951,11 +1084,259 @@ function readBlockFormats(block: any): {
   };
 }
 
-function headingLevel(fmt: DocFormat | undefined): number {
-  const style = (fmt?.styleName ?? '').trim();
-  if (/^title(\s+char)?$/i.test(style)) return 0;
-  const m = style.match(HEADING_STYLE);
-  return m ? Number(m[1]) : -1;
+// ---------------------------------------------------------------------------
+// Heading detection
+//
+// Three tiers, most authoritative first, so a well-formed document keeps the
+// answer it already gets:
+//   1. a declared outline level - the paragraph's own, then its style chain's;
+//      the clean OOXML answer, and the only one that is not a guess;
+//   2. a built-in style name ("Heading 3", "Title");
+//   3. typographic inference across the document's own custom styles.
+//
+// Tier 3 exists because real documents have neither of the first two. In the
+// live proposal document every section heading wears a custom style
+// ("headingNoToc", "noTOCheading2") that declares no outline level and is based
+// on "Body Text", so neither the outline level nor the inheritance chain says
+// anything - and the NAMES rank backwards: "noTOCheading2" is the document's
+// largest heading, while "H1" is not a heading at all but a 12pt bold field
+// label ("Company Name", "Rating") in a table cell.
+//
+// So the inference never reads the name. A custom style is a heading when its
+// resolved type is a clear step LARGER than the document's body text AND the
+// paragraphs wearing it are shaped like headings - short, with no sentence
+// terminator. Size alone would promote those bold 12pt labels; shape alone would
+// promote every one-line body paragraph. Levels come from the size ordering -
+// the largest heading style is level 1, each smaller distinct size one level
+// deeper - which makes them relative and consistent within one document: two
+// sections set in the same type always compare equal, a smaller one always
+// compares deeper, so a same-level comparable can always be resolved.
+// ---------------------------------------------------------------------------
+
+// A custom style must be set this much larger than body text to read as a
+// heading rather than a styled label. Measured on the live document: its body is
+// 11pt, its 12pt bold field labels are 1.09x (excluded) and its smallest real
+// heading style is 14pt at 1.27x (included).
+const HEADING_SIZE_RATIO = 1.15;
+const HEADING_SHAPE_MAX_CHARS = 120;
+// Word's own default when neither the document nor the default style says.
+const DEFAULT_BODY_FONT_SIZE = 11;
+const STYLE_CHAIN_LIMIT = 16;
+
+interface StyleDefinition {
+  basedOn?: string;
+  fontSize?: number;
+  outlineLevel?: number;
+}
+
+// Full SFDT writes 'BodyText' | 'Level1'..'Level9'; optimized SFDT writes the
+// index, 0 being BodyText. Anything outside Level1..Level9 is read as "not
+// declared" rather than "not a heading", for two reasons: BodyText carries no
+// ranking, so a document that stamped it on every paragraph would otherwise lose
+// its genuine Heading N styles; and OOXML's out-of-range levels (the live
+// document's "TOC Heading" carries w:outlineLvl 9, which OOXML defines as body
+// text) must not become a level-10 heading.
+const MAX_OUTLINE_LEVEL = 9;
+function normalizeOutlineLevel(value: any): number | undefined {
+  const level =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+      ? Number(value.match(/^level\s*(\d+)$/i)?.[1])
+      : NaN;
+  return level >= 1 && level <= MAX_OUTLINE_LEVEL ? level : undefined;
+}
+
+function readStyleTable(sfdt: any): Map<string, StyleDefinition> {
+  const table = new Map<string, StyleDefinition>();
+  const styles = pick(sfdt, 'styles', 'sty');
+  if (!Array.isArray(styles)) return table;
+  for (const style of styles) {
+    const name = pick(style, 'name', 'n');
+    if (!name) continue;
+    // Paragraph styles only ('Paragraph'/0): a linked character style repeats
+    // its paragraph style's size under a "... Char" name.
+    const type = pick(style, 'type', 't');
+    if (type !== undefined && type !== 'Paragraph' && type !== 0) continue;
+    const def: StyleDefinition = {};
+    // On a style object the optimized key 'b' is basedOn (on a characterFormat
+    // it is bold - a different object).
+    const basedOn = pick(style, 'basedOn', 'b');
+    if (basedOn) def.basedOn = String(basedOn);
+    const fontSize = pick(
+      pick(style, 'characterFormat', 'cf'),
+      'fontSize',
+      'fsz'
+    );
+    if (typeof fontSize === 'number') def.fontSize = fontSize;
+    const outlineLevel = normalizeOutlineLevel(
+      pick(pick(style, 'paragraphFormat', 'pf'), 'outlineLevel', 'ol')
+    );
+    if (outlineLevel !== undefined) def.outlineLevel = outlineLevel;
+    table.set(String(name).toLowerCase(), def);
+  }
+  return table;
+}
+
+// Resolve one inherited property up the basedOn chain. The chain is only ever
+// read for DECLARED values (size, outline level) and never for "is this a
+// heading" - the live document's headings are based on "Body Text", so
+// inheriting that judgement would classify them as body.
+function walkStyleChain<T>(
+  table: Map<string, StyleDefinition>,
+  styleName: string | undefined,
+  read: (def: StyleDefinition) => T | undefined
+): T | undefined {
+  let name = styleName;
+  for (let hops = 0; name && hops < STYLE_CHAIN_LIMIT; hops++) {
+    const def = table.get(name.toLowerCase());
+    if (!def) return undefined;
+    const value = read(def);
+    if (value !== undefined) return value;
+    name = def.basedOn;
+  }
+  return undefined;
+}
+
+// Tiers 1 (chain) and 2 (name) for one style. A built-in name outranks an
+// inherited outline level so "Title", which Word bases on "Heading 1", keeps
+// level 0 instead of inheriting level 1.
+function declaredStyleLevel(
+  table: Map<string, StyleDefinition>,
+  styleName: string
+): number | undefined {
+  const name = styleName.trim();
+  if (TITLE_STYLE.test(name)) return 0;
+  const m = name.match(HEADING_STYLE);
+  if (m) return Number(m[1]);
+  return walkStyleChain(table, name, (def) => def.outlineLevel);
+}
+
+function looksLikeHeadingText(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= HEADING_SHAPE_MAX_CHARS &&
+    !/[.!?]$/.test(trimmed)
+  );
+}
+
+interface StyleUsage {
+  fontSize: number;
+  declaredLevel?: number;
+  paragraphs: number;
+  characters: number;
+  headingShaped: number;
+}
+
+// Level per paragraph style for one document, keyed by lower-cased style name.
+// EVERY paragraph is measured, table cells included: the live document keeps most
+// of its prose inside layout tables, and measuring the body story alone left the
+// stale table of contents (211 paragraphs of 10pt "TOC 1"/"TOC 2") as the biggest
+// body-text vote, which dropped the bar far enough to promote 12pt "Body Text".
+// Only which paragraphs can BE headings is restricted - a cell paragraph never
+// is, which is where all 71 of the document's "H1" field labels live.
+function documentStyleLevels(
+  sfdt: any,
+  paragraphs: { styleName: string; text: string }[]
+): Map<string, number> {
+  const table = readStyleTable(sfdt);
+  const documentFontSize = pick(
+    pick(sfdt, 'characterFormat', 'cf'),
+    'fontSize',
+    'fsz'
+  );
+  const defaultFontSize =
+    typeof documentFontSize === 'number'
+      ? documentFontSize
+      : DEFAULT_BODY_FONT_SIZE;
+  const resolveFontSize = (styleName: string): number => {
+    const size = walkStyleChain(
+      table,
+      styleName || 'Normal',
+      (def) => def.fontSize
+    );
+    return typeof size === 'number' ? size : defaultFontSize;
+  };
+
+  const usage = new Map<string, StyleUsage>();
+  for (const paragraph of paragraphs) {
+    const styleName = paragraph.styleName.trim();
+    const key = styleName.toLowerCase();
+    let use = usage.get(key);
+    if (!use) {
+      use = {
+        fontSize: resolveFontSize(styleName),
+        paragraphs: 0,
+        characters: 0,
+        headingShaped: 0
+      };
+      const declaredLevel = styleName
+        ? declaredStyleLevel(table, styleName)
+        : undefined;
+      if (declaredLevel !== undefined) use.declaredLevel = declaredLevel;
+      usage.set(key, use);
+    }
+    // A style is registered even by an empty paragraph, so an empty "Heading 2"
+    // keeps its declared level. Only the statistics the inference reads are
+    // restricted to paragraphs that have text.
+    if (!paragraph.text.trim()) continue;
+    use.paragraphs++;
+    use.characters += paragraph.text.trim().length;
+    if (looksLikeHeadingText(paragraph.text)) use.headingShaped++;
+  }
+
+  // Body text size: the size most of the document's text - measured in
+  // characters, not paragraphs, since headings are short by nature - is set in,
+  // counting only styles that are not already recognised headings. A tie
+  // resolves to the larger size because a higher bar infers FEWER headings,
+  // which is the safe direction to be wrong in.
+  const charactersBySize = new Map<number, number>();
+  for (const use of usage.values()) {
+    if (use.declaredLevel !== undefined) continue;
+    charactersBySize.set(
+      use.fontSize,
+      (charactersBySize.get(use.fontSize) ?? 0) + use.characters
+    );
+  }
+  let bodyFontSize = defaultFontSize;
+  let bodyCharacters = 0;
+  for (const [fontSize, characters] of charactersBySize) {
+    if (
+      characters > bodyCharacters ||
+      (characters === bodyCharacters && fontSize > bodyFontSize)
+    ) {
+      bodyFontSize = fontSize;
+      bodyCharacters = characters;
+    }
+  }
+
+  const levels = new Map<string, number>();
+  const inferred: { key: string; fontSize: number }[] = [];
+  const headingFontSizes = new Set<number>();
+  for (const [key, use] of usage) {
+    if (use.declaredLevel !== undefined) {
+      levels.set(key, use.declaredLevel);
+      headingFontSizes.add(use.fontSize);
+      continue;
+    }
+    if (use.paragraphs === 0) continue;
+    if (use.fontSize < bodyFontSize * HEADING_SIZE_RATIO) continue;
+    if (use.headingShaped * 2 < use.paragraphs) continue;
+    inferred.push({ key, fontSize: use.fontSize });
+    headingFontSizes.add(use.fontSize);
+  }
+
+  // Rank by size: the document's largest heading is level 1, each smaller
+  // distinct heading size one level deeper. Declared levels are never moved, but
+  // the sizes of the styles carrying them still count, so an inferred style
+  // lands below a larger Heading N and above a smaller one.
+  for (const { key, fontSize } of inferred) {
+    let larger = 0;
+    for (const other of headingFontSizes) if (other > fontSize) larger++;
+    levels.set(key, larger + 1);
+  }
+  return levels;
 }
 
 // Walk the SFDT into a flat, in-order list of addressable blocks. Paragraphs
@@ -966,6 +1347,14 @@ export function flattenSfdt(
   dropRevisionIds?: Set<string>
 ): FlatBlock[] {
   const out: FlatBlock[] = [];
+  // Every paragraph, for the typography measurement; `block` is set only on the
+  // ones that can become headings (body paragraphs, never table cells).
+  const paragraphs: {
+    block?: FlatBlock;
+    styleName: string;
+    text: string;
+    declaredLevel?: number;
+  }[] = [];
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   const deletedIds = dropRevisionIds ?? deletedRevisionIds(sfdt);
 
@@ -979,36 +1368,70 @@ export function flattenSfdt(
           cells.forEach((cell, ci) => {
             getBlocks(cell).forEach((cb, cbi) => {
               const text = inlineText(getInlines(cb), deletedIds);
+              const format = readFormat(cb);
               out.push({
                 anchor: `${si};${bi};${ri};${ci};${cbi}`,
                 kind: 'table_cell',
                 text,
-                format: readFormat(cb),
+                format,
                 ...readBlockFormats(cb),
                 isHeading: false,
                 level: -1,
                 length: text.length
+              });
+              paragraphs.push({
+                styleName: format?.styleName ?? '',
+                text
               });
             });
           });
         });
       } else {
         const text = inlineText(getInlines(block), deletedIds);
+        if (
+          text.length === 0 &&
+          allRevisionIdsIn(paragraphMarkRevisionIds(block), deletedIds)
+        )
+          return;
         const format = readFormat(block);
-        const level = headingLevel(format);
-        out.push({
+        const flat: FlatBlock = {
           anchor: `${si};${bi}`,
-          kind: level >= 0 ? 'heading' : 'paragraph',
+          kind: 'paragraph',
           text,
           format,
           ...readBlockFormats(block),
-          isHeading: level >= 0,
-          level,
+          isHeading: false,
+          level: -1,
           length: text.length
+        };
+        out.push(flat);
+        paragraphs.push({
+          block: flat,
+          styleName: format?.styleName ?? '',
+          text,
+          declaredLevel: normalizeOutlineLevel(
+            pick(pick(block, 'paragraphFormat', 'pf'), 'outlineLevel', 'ol')
+          )
         });
       }
     });
   });
+
+  // Heading level needs the whole document: the style table for declared levels
+  // and inherited sizes, and every paragraph for the body text size the inference
+  // measures custom styles against.
+  const levelByStyle = documentStyleLevels(sfdt, paragraphs);
+  for (const paragraph of paragraphs) {
+    if (!paragraph.block) continue;
+    const level =
+      paragraph.declaredLevel ??
+      levelByStyle.get(paragraph.styleName.trim().toLowerCase()) ??
+      -1;
+    if (level < 0) continue;
+    paragraph.block.kind = 'heading';
+    paragraph.block.isHeading = true;
+    paragraph.block.level = level;
+  }
 
   return out;
 }
@@ -1055,7 +1478,22 @@ interface TableAccumulator {
   headerByCell: Map<number, string[]>;
 }
 
-function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
+/** The raw SFDT block a table anchor (`"0;7"`) names, or undefined. */
+function tableBlockAt(sfdt: any, tableAnchor: string): any {
+  const [sectionIndex, blockIndex] = tableAnchor.split(';').map(Number);
+  if (!Number.isInteger(sectionIndex) || !Number.isInteger(blockIndex))
+    return undefined;
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const block = getBlocks(sections[sectionIndex] ?? {})[blockIndex];
+  return getRows(block) ? block : undefined;
+}
+
+// `sfdt` is optional because the fixture-driven read path may not have it;
+// without it the appearance hint is simply absent rather than wrong.
+function collectStructureTables(
+  blocks: FlatBlock[],
+  sfdt?: any
+): StructureTable[] {
   const order: TableAccumulator[] = [];
   const byAnchor = new Map<string, TableAccumulator>();
   for (const b of blocks) {
@@ -1105,6 +1543,13 @@ function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
     // Never truncate silently: a capped header row must say it is capped.
     if (t.columns > STRUCTURE_MAX_HEADER_CELLS)
       table.firstRowCellsTruncated = true;
+    const appearance = sfdt
+      ? collectTableAppearance(tableBlockAt(sfdt, t.anchor))
+      : null;
+    if (appearance) {
+      if (appearance.styleName) table.styleName = appearance.styleName;
+      if (!tableIsUnstyled(appearance)) table.styled = true;
+    }
     return table;
   });
 }
@@ -1194,10 +1639,13 @@ export function collectTableFacts(
   tableAnchor: string
 ): TableFacts | null {
   const [sectionIndex, blockIndex] = tableAnchor.split(';').map(Number);
-  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const tableBlock = getBlocks(sections[sectionIndex] ?? {})[blockIndex];
+  const tableBlock = tableBlockAt(sfdt, tableAnchor);
   const rawRows = tableBlock ? getRows(tableBlock) : undefined;
   if (!rawRows) return null;
+  // How the table LOOKS, read from the same raw rows: fills, borders, vertical
+  // alignment, header flags, table style. Without this a model asked to make a
+  // new section's table match its siblings had nothing to match against.
+  const appearance = collectTableAppearance(tableBlock) as TableAppearance;
 
   const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
   const rows: TableRowFact[] = [];
@@ -1223,9 +1671,16 @@ export function collectTableFacts(
       const fullText = paragraphs.map((paragraph) => paragraph.text).join('\n');
       const clipped = fullText.length > TABLE_FACTS_CELL_TEXT_CHARS;
       const classified = classifyNumericText(fullText);
-      const cellFormat = pick(rawCell, 'cellFormat', 'cf') ?? {};
-      const columnSpan = Number(pick(cellFormat, 'columnSpan', 'colSpan') ?? 1);
-      const rowSpan = Number(pick(cellFormat, 'rowSpan') ?? 1);
+      // The optimized-SFDT cell-format key is `tcpr`, NOT `cf` (`cf` is a
+      // paragraph's characterFormat). The live editor always serializes
+      // optimized SFDT, so probing `cf` here made every merge span invisible in
+      // production while the long-key fixtures kept the spec green - the same
+      // class of key mistake `getRows` documents for `r` vs `rw`.
+      const cellFormat = pick(rawCell, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const columnSpan = Number(
+        pick(cellFormat, 'columnSpan', 'colsp', 'colSpan') ?? 1
+      );
+      const rowSpan = Number(pick(cellFormat, 'rowSpan', 'rwsp') ?? 1);
       const first = paragraphs[0];
       const fact: TableCellFact = {
         row,
@@ -1250,6 +1705,11 @@ export function collectTableFacts(
         ...(first?.characterFormat?.italic ? { italic: true as const } : {}),
         ...(first?.format?.styleName
           ? { styleName: first.format.styleName }
+          : {}),
+        // Only where the cell differs from its row: collectTableAppearance
+        // already hoisted a shared row appearance up to the row.
+        ...(appearance?.rows[row]?.cells[column]
+          ? { appearance: appearance.rows[row].cells[column] }
           : {})
       };
       if (fact.columnSpan || fact.rowSpan) {
@@ -1274,6 +1734,10 @@ export function collectTableFacts(
         : {}),
       ...(cells.some((cell) => cell.columnSpan || cell.rowSpan)
         ? { hasMergedCells: true as const }
+        : {}),
+      ...(appearance?.rows[row]?.isHeader ? { isHeader: true as const } : {}),
+      ...(appearance?.rows[row]?.appearance
+        ? { appearance: appearance.rows[row].appearance }
         : {}),
       cells
     });
@@ -1309,6 +1773,8 @@ export function collectTableFacts(
     columnCount,
     uniformRows: rows.every((row) => row.cellCount === columnCount),
     mergedCells,
+    ...(appearance?.styleName ? { styleName: appearance.styleName } : {}),
+    ...(appearance?.appearance ? { appearance: appearance.appearance } : {}),
     rows,
     columns,
     truncated: false
@@ -1369,7 +1835,7 @@ export function buildInventoryFromBlocks(
     // cheap leg for navigation questions and the remedy the too-large refusal
     // names, so it must stay text-free apart from headings and header cells.
     const headings = collectOutlineSections(blocks);
-    const tables = collectStructureTables(blocks);
+    const tables = collectStructureTables(blocks, sfdt);
     const cappedHeadings = cap(headings);
     const cappedTables = cap(tables);
     const result: InventoryResult = {
@@ -2257,22 +2723,14 @@ function acceptProjectionStream(sfdt: any): string {
 }
 
 function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
-  const allDropped = (rids: unknown): boolean =>
-    Array.isArray(rids) &&
-    rids.length > 0 &&
-    rids.every((id) => dropIds.has(String(id)));
   const out: string[] = [];
   const pushParagraph = (block: any) => {
     const inlines = getInlines(block);
     out.push(inlineText(inlines, dropIds));
-    const markRevisionIds = pick(
-      pick(block, 'characterFormat', 'cf'),
-      'revisionIds',
-      'rids'
-    );
+    const markRevisionIds = paragraphMarkRevisionIds(block);
     // Rejecting an inserted paragraph mark joins this paragraph with the next
     // one, so an inserted mark contributes no separator to the projection.
-    if (!allDropped(markRevisionIds)) out.push('\n');
+    if (!allRevisionIdsIn(markRevisionIds, dropIds)) out.push('\n');
     // A shape anchored in this paragraph carries its own block stream. Emitted
     // after the host paragraph and fenced by a control character, so frame
     // content can never read as body content and a frame boundary that moved
@@ -2954,17 +3412,34 @@ function verifySelectionWrite(
 ): void {
   if (!replacement) return;
   const blocks = flattenSfdt(parseSfdt(editor.serialize()));
-  const startIndex = blocks.findIndex(
+  let startIndex = blocks.findIndex(
     (block) => block.anchor === range.startAnchor
   );
+  let endIndex = blocks.findIndex((block) => block.anchor === range.endAnchor);
+  if (startIndex < 0) {
+    startIndex = blocks.findIndex(
+      (block) =>
+        compareOffsets(block.anchor, range.startAnchor) >= 0 &&
+        compareOffsets(block.anchor, range.endAnchor) <= 0
+    );
+  }
+  if (endIndex < 0) {
+    for (let index = blocks.length - 1; index >= 0; index--) {
+      const block = blocks[index];
+      if (
+        compareOffsets(block.anchor, range.startAnchor) >= 0 &&
+        compareOffsets(block.anchor, range.endAnchor) <= 0
+      ) {
+        endIndex = index;
+        break;
+      }
+    }
+  }
   if (startIndex < 0)
     throw new OpError(
       'post_write_anchor_not_found',
       `The edited anchor "${range.startAnchor}" disappeared after the write.`
     );
-  const endIndex = blocks.findIndex(
-    (block) => block.anchor === range.endAnchor
-  );
   const span = blocks
     .slice(startIndex, Math.max(endIndex, startIndex) + 1)
     .map((block) => block.text)
@@ -3122,6 +3597,12 @@ interface OpSuccessExtras {
    * no revision to assert) and to report the op as done-without-a-change.
    */
   noOp?: NoOpWriteReport;
+  /**
+   * Set by the table-appearance ops. Its `report` half becomes the result's
+   * `appearance`; its `restores` half is engine-internal and is collected by the
+   * executor, never returned to the model.
+   */
+  appearanceWrite?: AppearanceWriteOutcome;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -3919,34 +4400,123 @@ function isQuantityText(text: string): boolean {
 }
 
 /**
- * How many cells of the target's own column are quantity-formatted. Two is the
- * threshold for calling the column a quantity column: one lone formatted cell
- * could be the header or a stray.
+ * THE ONE JUDGEMENT: does this cell belong to a column of formatted amounts,
+ * and - if it does - what number format does the DOCUMENT say a value written
+ * here should wear? Both halves of the money-cell contract read it: the
+ * provenance gate below (which numeric writes need a declared source) and the
+ * `set_cell_text` render (what bytes such a write actually lays down). There is
+ * deliberately one implementation, so the two can never disagree about which
+ * cells are money cells.
+ *
+ * The rule, and where each part of it comes from:
+ * - "a formatted amount" is `classifyNumericText(...).quantity` - the same
+ *   three-tier test `table_facts` publishes and the gate has always used, so an
+ *   id column (`0093`) and prose that happens to contain digits are excluded by
+ *   construction rather than by a second opinion.
+ * - the cell BELONGS to such a column when it already holds a quantity itself,
+ *   or when it is empty and at least two OTHER cells of its own column hold
+ *   one. Two is the gate's existing threshold: one lone formatted cell could be
+ *   the header or a stray.
+ * - the FORMAT is `resolveRenderFormat`, the formula path's own discovery,
+ *   unchanged: the target cell's own format when it has one, otherwise the
+ *   column's dominant format (`renders in this cell's own number format`).
+ * - a column whose amounts do not agree on one unit has no single format to
+ *   write in, so it resolves to null and nothing is re-rendered - the same
+ *   mixed-unit refusal `collectNumericCells` applies to arithmetic.
  */
-function quantitySiblingCount(blocks: FlatBlock[], cellAnchor: string): number {
-  const parts = cellAnchor.split(';');
-  if (parts.length !== 5) return 0;
+function resolveQuantityCellFormat(
+  blocks: FlatBlock[],
+  block: FlatBlock
+): {
+  format: CellNumberFormat;
+  formatSource: RenderFormatSource;
+  /** The column's own formatted amounts, as the formula path names them. */
+  inputs: ParsedColumnCell[];
+} | null {
+  const parts = block.anchor.split(';');
+  if (block.kind !== 'table_cell' || parts.length !== 5) return null;
+  const existing = block.text.trim();
+  const existingIsQuantity = existing !== '' && isQuantityText(existing);
+  // A cell holding "Included" or "N/A" is not a money cell, whatever its
+  // neighbours look like.
+  if (existing !== '' && !existingIsQuantity) return null;
+
   const collected = collectTableColumnCells(
     blocks,
     `${parts[0]};${parts[1]}`,
     Number(parts[3])
   );
-  if (!collected) return 0;
-  return collected.cells.filter(
-    (cellEntry) =>
-      cellEntry.anchor !== cellAnchor &&
-      cellEntry.text != null &&
-      isQuantityText(cellEntry.text)
-  ).length;
+  const siblings: ParsedColumnCell[] = [];
+  for (const cellEntry of collected?.cells ?? []) {
+    if (cellEntry.anchor === block.anchor) continue;
+    if (cellEntry.text == null || !isQuantityText(cellEntry.text)) continue;
+    const parsed = parseNumericCell(cellEntry.text);
+    if (!parsed) continue;
+    siblings.push({
+      row: cellEntry.row,
+      anchor: cellEntry.anchor,
+      text: cellEntry.text,
+      parsed: parsed
+    });
+  }
+  if (!existingIsQuantity && siblings.length < 2) return null;
+
+  const units = new Set(
+    siblings.map((sibling) => sibling.parsed.unit).filter(Boolean)
+  );
+  const existingUnit = existingIsQuantity
+    ? parseNumericCell(existing)?.unit ?? ''
+    : '';
+  if (existingUnit) units.add(existingUnit);
+  if (units.size > 1) return null;
+
+  return {
+    ...resolveRenderFormat(existingIsQuantity ? block.text : null, siblings),
+    inputs: siblings
+  };
 }
 
 const LITERAL_NUMBER_NOTE =
   'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
 
+const QUOTED_NUMBER_NOTE =
+  'Quoted verbatim from an attachment the user supplied (quotedFrom / quotedText), NOT computed by the engine. The engine verified the figure appears in the quoted excerpt; it cannot verify the excerpt came from that attachment, so the citation is recorded for review. Anything derived from other cells must go through set_cell_formula.';
+
 /**
- * The gate. Returns the audit record when a numeric write is allowed through
- * the user-dictated exception, `undefined` when the write is not numeric at
- * all, and throws the refusal otherwise.
+ * What the engine can and cannot check about "this figure came out of the
+ * user's document".
+ *
+ * It CANNOT check the claim itself: the attachment is read server-side, this
+ * engine runs against the editor and has no copy of the PDF, so "quotedFrom
+ * names a real attachment" is an assertion and stays one. Saying otherwise
+ * would be the same unverifiable-number problem one level up.
+ *
+ * It CAN check the claim is INTERNALLY CONSISTENT, and that is worth having:
+ * the figure being written must actually occur in the excerpt the model says it
+ * read it out of. A number the model derived cannot be dressed as a quotation
+ * without also fabricating an excerpt containing it, and the excerpt travels
+ * with the change set, so a reviewer can search the attachment for that exact
+ * sentence. Value equality, not string equality, is the test - a PDF reading
+ * `$9,660.00` justifies writing `9660` into a column that renders it that way.
+ */
+function quotedExcerptContains(excerpt: string, figure: string): boolean {
+  const target = parseNumericCell(figure);
+  if (!target) return false;
+  const candidates = excerpt.match(/[^\s]*\d[^\s]*/g) ?? [];
+  return candidates.some((candidate) => {
+    const parsed = parseNumericCell(candidate.replace(/[.,;:)]+$/, ''));
+    if (!parsed) return false;
+    const scale = Math.max(parsed.value.scale, target.value.scale);
+    const a = rescaleExact(parsed.value, scale);
+    const b = rescaleExact(target.value, scale);
+    return !!a && !!b && a.units === b.units;
+  });
+}
+
+/**
+ * The gate. Returns the audit record when a numeric write is allowed through on
+ * a declared provenance, `undefined` when the write is not numeric at all, and
+ * throws the refusal otherwise.
  */
 function modelAuthoredCellText(op: EditOp): string | undefined {
   switch (op.op) {
@@ -3966,7 +4536,8 @@ function modelAuthoredCellText(op: EditOp): string | undefined {
 function guardModelAuthoredNumber(
   op: EditOp,
   block: FlatBlock,
-  byAnchor: Map<string, FlatBlock>
+  byAnchor: Map<string, FlatBlock>,
+  rendered?: ColumnFormatRender
 ): LiteralNumberWrite | undefined {
   const text = modelAuthoredCellText(op);
   if (text === undefined) return undefined;
@@ -3978,20 +4549,22 @@ function guardModelAuthoredNumber(
   // lands, so leaving the empty case open would leave the gate open.
   const existing = block.text.trim();
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
-  const emptyInQuantityColumn =
-    existing === '' &&
-    quantitySiblingCount(Array.from(byAnchor.values()), block.anchor) >= 2;
-  if (!existingIsQuantity && !emptyInQuantityColumn) return undefined;
-  if (op.op === 'set_cell_text' && op.literal === true) {
-    return {
-      text: text.trim(),
-      previousText: existing,
-      note: LITERAL_NUMBER_NOTE
-    };
-  }
+  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block))
+    return undefined;
+  const { record, citationFailure } =
+    op.op === 'set_cell_text'
+      ? resolveNumberProvenance(
+          op as TypedEditOp<'set_cell_text'>,
+          text.trim(),
+          existing
+        )
+      : { record: undefined, citationFailure: '' };
+  if (record) return { ...record, ...(rendered ? { rendered } : {}) };
   throw new OpError(
     'model_authored_number',
-    `Refusing to write the number ${JSON.stringify(text.trim())} into ${
+    `Refusing to write the number ${JSON.stringify(text.trim())}${
+      rendered ? ` (sent as ${JSON.stringify(rendered.asSent)})` : ''
+    } into ${
       existingIsQuantity
         ? 'a cell that already holds a formatted amount'
         : 'an empty cell in a column of formatted amounts'
@@ -3999,11 +4572,77 @@ function guardModelAuthoredNumber(
       op.op
     }: a value in a quantity column is almost always derived from other cells, and a number in the response body is unverifiable - the engine cannot tell a correct total from a plausible one. Use set_cell_formula with a \`formula\` that REFERENCES the cells the value comes from (e.g. "[${
       block.anchor
-    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived - the user dictated this exact number - use set_cell_text with \`literal: true\`, which records it as a verbatim user-stated figure rather than a computed one.`,
+    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived, declare where it came from instead: the user dictated this exact number - set_cell_text with \`literal: true\`; or it is quoted verbatim from a document the user attached - set_cell_text with \`quotedFrom\` (the attachment) and \`quotedText\` (the verbatim excerpt containing the figure), which the engine checks the figure against and records as a citation.${citationFailure}`,
     [
       `target cell: ${block.anchor}`,
       `current content: ${JSON.stringify(block.text)}`
     ]
+  );
+}
+
+/**
+ * The sanctioned provenances for a figure the engine did not compute, and the
+ * audit record each one leaves. Anything else is refused by the gate above.
+ *
+ * `citationFailure` is the sentence the refusal appends when a citation WAS
+ * offered and did not hold up. Falling silently back to the generic refusal
+ * would read as "attachments are not supported" and send the model round the
+ * same loop it was already stuck in.
+ */
+function resolveNumberProvenance(
+  op: TypedEditOp<'set_cell_text'>,
+  text: string,
+  previousText: string
+): { record?: LiteralNumberWrite; citationFailure: string } {
+  if (op.literal === true) {
+    return {
+      record: {
+        text,
+        previousText,
+        source: 'user_stated',
+        note: LITERAL_NUMBER_NOTE
+      },
+      citationFailure: ''
+    };
+  }
+  const quotedFrom =
+    typeof op.quotedFrom === 'string' ? op.quotedFrom.trim() : '';
+  const quotedText =
+    typeof op.quotedText === 'string' ? op.quotedText.trim() : '';
+  if (!quotedFrom && !quotedText) return { citationFailure: '' };
+  if (!quotedFrom || !quotedText) {
+    return {
+      citationFailure:
+        ' `quotedFrom` and `quotedText` must BOTH be sent: the attachment the figure was read out of, and the verbatim excerpt containing it.'
+    };
+  }
+  if (!quotedExcerptContains(quotedText, text)) {
+    return {
+      citationFailure: ` The excerpt sent as \`quotedText\` (${JSON.stringify(
+        quotedText
+      )}) does not contain this figure, so the citation does not support it.`
+    };
+  }
+  return {
+    record: {
+      text,
+      previousText,
+      source: 'attachment',
+      quotedFrom,
+      quotedText,
+      note: QUOTED_NUMBER_NOTE
+    },
+    citationFailure: ''
+  };
+}
+
+/** True when this op declares a provenance for a figure it is writing. */
+function declaresNumberProvenance(op: EditOp): boolean {
+  if (op.op !== 'set_cell_text') return false;
+  return (
+    op.literal === true ||
+    (typeof op.quotedFrom === 'string' && op.quotedFrom.trim() !== '') ||
+    (typeof op.quotedText === 'string' && op.quotedText.trim() !== '')
   );
 }
 
@@ -4089,6 +4728,33 @@ export const ANCHORED_OP_HANDLERS: {
     if (idx < 0)
       throw new OpError('text_not_found', `"${find}" not found at anchor.`);
     selectRange(editor, block.anchor, idx, idx + find.length);
+    editor.editor.delete();
+  },
+  delete_paragraph: ({ editor, op, block, byAnchor }) => {
+    if (block.kind === 'table_cell')
+      throw new OpError(
+        'paragraph_delete_table_cell',
+        'delete_paragraph removes document paragraphs, not table-cell content. Use set_cell_text/delete_text for a cell.'
+      );
+    if (!op.force && block.text.trim().length) {
+      throw new OpError(
+        'paragraph_not_empty',
+        'delete_paragraph only removes whitespace-only paragraphs unless `force: true` is supplied.',
+        [
+          `anchor: ${block.anchor}`,
+          `paragraph text: ${JSON.stringify(block.text)}`,
+          'Visible characters are never treated as empty. A paragraph containing "_" must be explicitly forced or handled with a more specific edit.'
+        ]
+      );
+    }
+    const blocks = Array.from(byAnchor.values());
+    const index = blocks.findIndex(
+      (candidate) => candidate.anchor === block.anchor
+    );
+    const next = index >= 0 ? blocks[index + 1] : undefined;
+    if (next && next.kind !== 'table_cell')
+      editor.selection.select(`${block.anchor};0`, `${next.anchor};0`);
+    else selectParagraph(editor, block);
     editor.editor.delete();
   },
   insert_text: ({ editor, op, block }) => {
@@ -4231,6 +4897,104 @@ export const ANCHORED_OP_HANDLERS: {
   delete_row: ({ editor }) => {
     callEditor(editor, 'deleteRow');
   },
+  // --- Table appearance ------------------------------------------------------
+  // Each returns the restore snapshots the executor binds to the change set's
+  // revision group; see the appearance-write section for why that is how a
+  // formatting write is made rejectable at all.
+  set_cell_format: ({ editor, op, block }) => {
+    const { tableAnchor, row, column } = cellAnchorParts(
+      block.anchor,
+      'set_cell_format'
+    );
+    const write = appearanceWriteFromOp(op);
+    const current = liveTableAppearance(editor, tableAnchor);
+    const before = cellAppearanceAt(current, row, column);
+    writeAppearance(editor, block.anchor, write, 'cell');
+    return {
+      appearanceWrite: {
+        report: { ...emptyAppearanceReport(), cellsWritten: 1 },
+        restores: [
+          { cellAnchor: block.anchor, write: restoreWriteFor(before, write) }
+        ]
+      }
+    };
+  },
+  set_row_format: ({ editor, op, block }) => {
+    const { tableAnchor, row } = cellAnchorParts(
+      block.anchor,
+      'set_row_format'
+    );
+    const isHeaderField = fmtField(op, 'isHeader');
+    // isHeader alone is a complete request, so the appearance fields are only
+    // required when it is absent.
+    const write =
+      isHeaderField != null
+        ? tryAppearanceWriteFromOp(op)
+        : appearanceWriteFromOp(op);
+    const current = liveTableAppearance(editor, tableAnchor);
+    const cells = current.rows[row]?.cells ?? [];
+    if (!cells.length)
+      throw new OpError(
+        'row_not_found',
+        `Row ${row} of table "${tableAnchor}" has no cells.`
+      );
+    const restores: AppearanceRestore[] = [];
+    if (isHeaderField != null) {
+      const wanted = !!isHeaderField;
+      if (wanted !== !!current.rows[row].isHeader) {
+        writeRowIsHeader(editor, block.anchor, wanted);
+        restores.push({
+          cellAnchor: block.anchor,
+          rowIsHeader: !!current.rows[row].isHeader
+        });
+      }
+    }
+    let cellsWritten = 0;
+    if (write) {
+      // One selectRow write would set every cell at once, but the RESTORE has to
+      // be per cell (the cells may have differed before), so the write is per
+      // cell too - one path, and the inverse is exact by construction.
+      for (let column = 0; column < cells.length; column++) {
+        const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+        const before = cellAppearanceAt(current, row, column);
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
+        cellsWritten++;
+      }
+    }
+    return {
+      appearanceWrite: {
+        report: { ...emptyAppearanceReport(), cellsWritten, rowsWritten: 1 },
+        restores
+      }
+    };
+  },
+  copy_table_format: ({ editor, op, block }) => {
+    const { tableAnchor } = cellAnchorParts(block.anchor, 'copy_table_format');
+    return { appearanceWrite: runCopyTableFormat(editor, op, tableAnchor) };
+  },
+  restripe_table: ({ editor, op, block }) => {
+    const { tableAnchor } = cellAnchorParts(block.anchor, 'restripe_table');
+    const current = liveTableAppearance(editor, tableAnchor);
+    const banding = detectTableBanding(current);
+    if (!banding)
+      return {
+        appearanceWrite: {
+          report: { ...emptyAppearanceReport(), noBandingDetected: true },
+          restores: []
+        }
+      };
+    const fromRow = integerParam(op.fromRow, 'fromRow') ?? 0;
+    return {
+      appearanceWrite: applyBandingRows(
+        editor,
+        tableAnchor,
+        current,
+        banding,
+        fromRow
+      )
+    };
+  },
   insert_section_break: ({ editor, op }) => {
     callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
   }
@@ -4363,14 +5127,81 @@ function intendedBlockText(
   }
 }
 
+/**
+ * A figure written into a column of formatted amounts wears that column's
+ * format. `9660` into a column of `$36,803.00` lands as `$9,660.00`, because
+ * the neighbours say so - the captain's complaint was exactly that the engine
+ * wrote the digits it was handed and ignored the column around them:
+ * *"I gave it just the value."*
+ *
+ * WHEN. Only when the figure carries no format of its own, which is
+ * `classifyNumericText`'s own middle tier: numeric, but with no unit, no
+ * decimal places and no observed grouping. That is what "just the value" means,
+ * and reading it off the existing classifier is what keeps this from becoming a
+ * second opinion about what a number is. A figure that ARRIVES formatted -
+ * `0.00`, `$0`, `($0.00)`, `12.5%` - is an explicit instruction about how the
+ * cell should read and is written exactly as sent; that is how "drop the
+ * currency symbol from this column" is expressed, and re-dressing it would
+ * silently refuse the request.
+ *
+ * WHAT FORMAT. The document's, discovered by `resolveQuantityCellFormat` -
+ * which is `resolveRenderFormat`, the same mechanism `set_cell_formula` uses to
+ * keep `$36,803` from coming back as `36803`. There is no second formatting
+ * implementation.
+ *
+ * WHERE IN THE ORDER. Deliberately ahead of the provenance gate, not behind it,
+ * so the gate judges the bytes that will LAND. Dropping the `$` therefore stops
+ * being a way to slip a money value past it: a bare `9660` aimed at a money
+ * column is now refused exactly as `$9,660.00` already was. That closes a hole
+ * rather than opening one - a figure the engine is about to dress as money is a
+ * money write, whatever decoration it arrived with.
+ *
+ * Untouched, in every case: text that is not a number, an identifier whose
+ * leading zeros are part of what it says, a figure that already carries a
+ * format, a value that does not fit the column's decimals, and any cell whose
+ * column is not a column of formatted amounts.
+ */
+function renderCellTextInColumnFormat(
+  op: EditOp,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): { op: EditOp; rendered?: ColumnFormatRender } {
+  if (op.op !== 'set_cell_text') return { op };
+  const asSent = String(op.text ?? '');
+  const classified = classifyNumericText(asSent);
+  if (!classified.numeric || classified.quantity) return { op };
+  if (isZeroPaddedInteger(asSent)) return { op };
+  const parsed = parseNumericCell(asSent);
+  if (!parsed) return { op };
+  const resolved = resolveQuantityCellFormat(
+    Array.from(byAnchor.values()),
+    block
+  );
+  if (!resolved) return { op };
+  let format = resolved.format;
+  if (parsed.value.units < 0)
+    format = upgradeNegativeStyle(format, resolved.inputs);
+  const value = rescaleExact(parsed.value, format.decimals);
+  if (!value) return { op };
+  const written = renderNumericCell(value, format);
+  if (written === asSent) return { op };
+  return {
+    op: { ...op, text: written },
+    rendered: { asSent, written, formatSource: resolved.formatSource }
+  };
+}
+
 // Applies one anchored op. `block` is the freshly-resolved block. Throws OpError
 // on a recoverable failure (surfaced as {ok:false, error}).
 function applyAnchoredOp(
   editor: LiveEditor,
-  op: EditOp,
+  rawOp: EditOp,
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>
 ): OpSuccessExtras | void {
+  // One re-render, before the no-op rule, the provenance gate and the handler,
+  // so all three see the bytes that will actually land in the cell.
+  const { op, rendered } = renderCellTextInColumnFormat(rawOp, block, byAnchor);
   const liveText = selectBlock(editor, block);
   observeMutationGuardBoundary(
     op,
@@ -4412,7 +5243,7 @@ function applyAnchoredOp(
   // The engine, not an individual handler, keeps model arithmetic out of
   // numeric cells. Every registered anchored op crosses this point before its
   // handler can write.
-  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor);
+  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor, rendered);
 
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
   if (!handler)
@@ -4858,6 +5689,427 @@ function applyParaFormat(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Table appearance writes (set_cell_format / set_row_format /
+// copy_table_format / restripe_table, and the insert_row banding preserve)
+//
+// SyncFusion authors NO revision for a cell fill, border or vertical alignment
+// - its RevisionType is Insertion|Deletion|MoveTo|MoveFrom and nothing else, and
+// a probe of a real DocumentEditor confirms the revision count does not move.
+// So these writes are made reversible the only honest way available: every write
+// first snapshots the appearance it is about to overwrite, and the executor binds
+// those snapshots into the change set's revision group, so rejecting the card
+// restores the appearance before it rejects the content. A change set that wrote
+// only appearance has no card to bind to and reports that fact rather than
+// implying a reviewable change exists.
+// ---------------------------------------------------------------------------
+
+const HEX_COLOR = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const CLEARED_COLORS = new Set(['none', 'empty', 'transparent', 'auto']);
+
+/**
+ * A model-supplied colour to the canonical form the READ reports, or null for
+ * "no fill". Upper-cased so that copying a `#d9e2f3` source produces a target
+ * whose read equals the source's read - without that, a copy is not idempotent.
+ */
+function normalizeShading(raw: unknown, field: string): string | null {
+  const value = String(raw ?? '').trim();
+  if (!value || CLEARED_COLORS.has(value.toLowerCase())) return null;
+  const match = HEX_COLOR.exec(value);
+  if (!match)
+    throw new OpError(
+      'invalid_color',
+      `\`${field}\` must be a hex colour like "#D9E2F3", or "none" to clear the fill; received ${JSON.stringify(
+        value
+      )}.`
+    );
+  return `#${match[1].toUpperCase()}`;
+}
+
+/** The `applyBorders` calls that reproduce `borders`, or clear them when absent. */
+function borderWritesFor(borders: AppearanceFacts['borders']): BorderWrite[] {
+  const clear: BorderWrite = { type: 'NoBorder', style: 'None' };
+  if (!borders) return [clear];
+  const spec = (type: string, facts: BorderFacts): BorderWrite => ({
+    type,
+    style: facts.style,
+    ...(facts.width != null ? { width: facts.width } : {}),
+    ...(facts.color ? { color: facts.color } : {})
+  });
+  if (borders.all) return [spec('AllBorders', borders.all)];
+  // Clear first: a side the source does not have must not survive on the target.
+  const writes: BorderWrite[] = [clear];
+  for (const side of BORDER_SIDES) {
+    const facts = borders[side as BorderSide];
+    if (facts)
+      writes.push(
+        spec(`${side[0].toUpperCase()}${side.slice(1)}Border`, facts)
+      );
+  }
+  return writes;
+}
+
+/** The write that reproduces `facts` in full (used by copy and restore). */
+function appearanceWriteFor(
+  facts: AppearanceFacts | undefined,
+  parts: { shading?: boolean; verticalAlignment?: boolean; borders?: boolean }
+): AppearanceWrite {
+  return {
+    ...(parts.shading ? { shading: facts?.shading ?? null } : {}),
+    ...(parts.verticalAlignment
+      ? { verticalAlignment: facts?.verticalAlignment ?? 'Top' }
+      : {}),
+    ...(parts.borders ? { borders: borderWritesFor(facts?.borders) } : {})
+  };
+}
+
+/** The inverse of `applied`, read from the appearance that was there before. */
+function restoreWriteFor(
+  before: AppearanceFacts | undefined,
+  applied: AppearanceWrite
+): AppearanceWrite {
+  return appearanceWriteFor(before, {
+    shading: applied.shading !== undefined,
+    verticalAlignment: applied.verticalAlignment !== undefined,
+    borders: applied.borders !== undefined
+  });
+}
+
+const BORDER_TYPES = new Set([
+  'AllBorders',
+  'OutsideBorders',
+  'LeftBorder',
+  'RightBorder',
+  'TopBorder',
+  'BottomBorder',
+  'NoBorder'
+]);
+
+type AppearanceOp =
+  | TypedEditOp<'set_cell_format'>
+  | TypedEditOp<'set_row_format'>;
+
+/**
+ * The write a `set_cell_format`/`set_row_format` op asks for. Refuses an op that
+ * carries no appearance at all, for the same reason `set_char_format` does: a
+ * styling op that silently succeeds having done nothing makes the assistant
+ * report "Done." over an unchanged document.
+ */
+function appearanceWriteFromOp(op: AppearanceOp): AppearanceWrite {
+  const shadingField = fmtField(op, 'shading');
+  const verticalAlignment = fmtMeaningfulField(op, 'verticalAlignment');
+  const borderType = fmtMeaningfulField(op, 'borders');
+  const borderStyle = fmtMeaningfulField(op, 'borderStyle');
+  const borderColor = fmtMeaningfulField(op, 'borderColor');
+  const borderWidth = fmtMeaningfulField(op, 'borderWidth');
+  const write: AppearanceWrite = {};
+  if (shadingField != null && String(shadingField).trim())
+    write.shading = normalizeShading(shadingField, 'shading');
+  if (verticalAlignment) {
+    const match = (['Top', 'Center', 'Bottom'] as const).find(
+      (value) => value.toLowerCase() === String(verticalAlignment).toLowerCase()
+    );
+    if (!match)
+      throw new OpError(
+        'invalid_vertical_alignment',
+        `\`verticalAlignment\` must be Top, Center or Bottom; received ${JSON.stringify(
+          String(verticalAlignment)
+        )}.`
+      );
+    write.verticalAlignment = match;
+  }
+  // A border colour/width/style with no `borders` type has nowhere to apply, so
+  // default the type rather than dropping the request silently.
+  if (borderType || borderStyle || borderColor || borderWidth != null) {
+    const type = String(borderType ?? 'AllBorders');
+    if (!BORDER_TYPES.has(type))
+      throw new OpError(
+        'invalid_border_type',
+        `\`borders\` must be one of ${[...BORDER_TYPES].join(
+          ', '
+        )}; received ${JSON.stringify(type)}.`
+      );
+    const style =
+      type === 'NoBorder' ? 'None' : String(borderStyle ?? 'Single');
+    const width = Number(borderWidth);
+    write.borders = [
+      {
+        type,
+        style,
+        ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+        ...(borderColor
+          ? {
+              color: normalizeShading(borderColor, 'borderColor') ?? '#000000'
+            }
+          : {})
+      }
+    ];
+  }
+  if (
+    write.shading === undefined &&
+    write.verticalAlignment === undefined &&
+    write.borders === undefined
+  )
+    throw new OpError(
+      'missing_format',
+      `${op.op} needs at least one appearance field (shading / verticalAlignment / borders).`
+    );
+  return write;
+}
+
+/**
+ * The same parse, but returning undefined instead of refusing when the op
+ * carries no appearance - for `set_row_format`, where `isHeader` on its own is
+ * already a complete request. Field-value errors still refuse.
+ */
+function tryAppearanceWriteFromOp(
+  op: AppearanceOp
+): AppearanceWrite | undefined {
+  try {
+    return appearanceWriteFromOp(op);
+  } catch (err) {
+    if (isOpError(err) && err.code === 'missing_format') return undefined;
+    throw err;
+  }
+}
+
+/** `"0;7;3;2;0"` -> `{ tableAnchor: "0;7", row: 3, column: 2 }`. */
+function cellAnchorParts(
+  anchor: string,
+  opName: string
+): { tableAnchor: string; row: number; column: number } {
+  const parts = anchor.split(';');
+  if (parts.length !== 5 || parts.some((part) => !/^\d+$/.test(part)))
+    throw new OpError(
+      'not_a_cell_anchor',
+      `${opName} needs a table-cell anchor ("section;block;row;cell;paragraph", e.g. "0;7;2;1;0"); "${anchor}" is not one. Copy one from a table_facts read.`
+    );
+  return {
+    tableAnchor: `${parts[0]};${parts[1]}`,
+    row: Number(parts[2]),
+    column: Number(parts[3])
+  };
+}
+
+/** The table's appearance as it stands in the live editor right now. */
+function liveTableAppearance(
+  editor: LiveEditor,
+  tableAnchor: string
+): TableAppearance {
+  const appearance = collectTableAppearance(
+    tableBlockAt(parseSfdt(editor.serialize()), tableAnchor)
+  );
+  if (!appearance)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${tableAnchor}". Re-read the structure and use a current anchor.`
+    );
+  return appearance;
+}
+
+const cellAnchorOf = (tableAnchor: string, row: number, column: number) =>
+  `${tableAnchor};${row};${column};0`;
+
+// `extent`, not `scope`: the registry parity spec scans this file for
+// `scope === '...'` to enumerate the inventory scopes, and a local named `scope`
+// here would forge one.
+function selectForAppearance(
+  editor: LiveEditor,
+  cellAnchor: string,
+  extent: 'cell' | 'row'
+): void {
+  editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
+  callSelection(editor, extent === 'row' ? 'selectRow' : 'selectCell');
+}
+
+/**
+ * Apply one appearance write to the cell (or row) the anchor names. The
+ * selection is re-established before each border call because `applyBorders`
+ * operates on whatever is selected.
+ */
+function writeAppearance(
+  editor: LiveEditor,
+  cellAnchor: string,
+  write: AppearanceWrite,
+  extent: 'cell' | 'row'
+): void {
+  selectForAppearance(editor, cellAnchor, extent);
+  const cellFormat = editor.selection?.cellFormat;
+  if (!cellFormat)
+    throw new OpError(
+      'unsupported_op',
+      'Cell formatting is unavailable on this editor.'
+    );
+  // SyncFusion's own spelling of "no fill" on the way in and out; see
+  // tableAppearance.ts on why the read treats it as absent.
+  if (write.shading !== undefined)
+    cellFormat.background = write.shading ?? 'empty';
+  if (write.verticalAlignment)
+    cellFormat.verticalAlignment = write.verticalAlignment;
+  for (const border of write.borders ?? []) {
+    callEditor(editor, 'applyBorders', {
+      type: border.type,
+      borderStyle: border.style,
+      ...(border.width != null ? { lineWidth: border.width } : {}),
+      ...(border.color ? { borderColor: border.color } : {})
+    });
+    selectForAppearance(editor, cellAnchor, extent);
+  }
+}
+
+function writeRowIsHeader(
+  editor: LiveEditor,
+  cellAnchor: string,
+  isHeader: boolean
+): void {
+  selectForAppearance(editor, cellAnchor, 'row');
+  const rowFormat = editor.selection?.rowFormat;
+  if (!rowFormat)
+    throw new OpError(
+      'unsupported_op',
+      'Row formatting is unavailable on this editor.'
+    );
+  rowFormat.isHeader = isHeader;
+}
+
+/** Put every recorded appearance back, newest first. */
+function replayAppearanceRestores(
+  editor: LiveEditor,
+  restores: AppearanceRestore[]
+): void {
+  for (let index = restores.length - 1; index >= 0; index--) {
+    const restore = restores[index];
+    if (restore.rowIsHeader !== undefined)
+      writeRowIsHeader(editor, restore.cellAnchor, restore.rowIsHeader);
+    if (restore.write)
+      writeAppearance(editor, restore.cellAnchor, restore.write, 'cell');
+  }
+}
+
+const emptyAppearanceReport = (): AppearanceWriteReport => ({
+  cellsWritten: 0,
+  rowsWritten: 0,
+  cellsUnchanged: 0
+});
+
+/**
+ * Re-lay `banding` over the rows of one table, from `fromRow` down. Only writes
+ * a row whose fill actually differs, and leaves a row whose own cells carry
+ * DIFFERENT fills alone - a deliberate per-cell highlight is not a stripe error,
+ * and the count of such rows is reported rather than quietly absorbed.
+ */
+function applyBandingRows(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  banding: TableBanding,
+  fromRow: number
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const restores: AppearanceRestore[] = [];
+  const shadings = rowShadings(current);
+  const start = Math.max(fromRow, banding.headerRows);
+  let skipped = 0;
+  for (let row = start; row < current.rows.length; row++) {
+    const wanted = bandedShadingForRow(banding, row);
+    if (wanted === undefined) continue;
+    if (shadings[row] === undefined) {
+      skipped++;
+      continue;
+    }
+    if (shadings[row] === wanted) continue;
+    const cells = current.rows[row].cells;
+    for (let column = 0; column < cells.length; column++) {
+      const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+      const before = cellAppearanceAt(current, row, column);
+      const write: AppearanceWrite = { shading: wanted };
+      writeAppearance(editor, cellAnchor, write, 'cell');
+      restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
+      report.cellsWritten++;
+    }
+    report.rowsWritten++;
+  }
+  report.banding = banding;
+  if (skipped) report.rowsSkippedMixed = skipped;
+  return { report, restores };
+}
+
+function runCopyTableFormat(
+  editor: LiveEditor,
+  op: TypedEditOp<'copy_table_format'>,
+  targetAnchor: string
+): AppearanceWriteOutcome {
+  const sourceAnchor = normalizeTableAnchor(op.sourceTable);
+  if (!sourceAnchor)
+    throw new OpError(
+      'missing_source_table',
+      'copy_table_format needs `sourceTable`: the table to copy the look FROM, as a table anchor ("0;7") or any of its cell anchors.'
+    );
+  if (sourceAnchor === targetAnchor)
+    throw new OpError(
+      'copy_source_is_target',
+      `copy_table_format was given the same table ("${targetAnchor}") as both source and target.`
+    );
+  const sfdt = parseSfdt(editor.serialize());
+  const source = collectTableAppearance(tableBlockAt(sfdt, sourceAnchor));
+  if (!source)
+    throw new OpError(
+      'source_table_not_found',
+      `No table answers to the \`sourceTable\` anchor "${sourceAnchor}". Re-read the structure and name a table that exists.`
+    );
+  const target = collectTableAppearance(tableBlockAt(sfdt, targetAnchor));
+  if (!target)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${targetAnchor}".`
+    );
+  const headerRows = inferHeaderRows(source);
+  const banding = detectTableBanding(source);
+  const report = emptyAppearanceReport();
+  const restores: AppearanceRestore[] = [];
+  if (source.styleName) report.sourceStyleName = source.styleName;
+  if (banding) report.banding = banding;
+  target.rows.forEach((targetRow, row) => {
+    // The same mapping copiedCellAppearance uses, so the header flag and the
+    // cell appearance can never be taken from two different source rows.
+    const mapped = source.rows[sourceRowForTarget(source, headerRows, row)];
+    let rowTouched = false;
+    const wantsHeader = !!mapped?.isHeader;
+    if (wantsHeader !== !!targetRow.isHeader && targetRow.cells.length) {
+      const cellAnchor = cellAnchorOf(targetAnchor, row, 0);
+      writeRowIsHeader(editor, cellAnchor, wantsHeader);
+      restores.push({ cellAnchor, rowIsHeader: !!targetRow.isHeader });
+      rowTouched = true;
+    }
+    for (let column = 0; column < targetRow.cells.length; column++) {
+      const desired = copiedCellAppearance(
+        source,
+        banding,
+        headerRows,
+        row,
+        column
+      );
+      const before = cellAppearanceAt(target, row, column);
+      if (appearanceEquals(desired, before)) {
+        report.cellsUnchanged++;
+        continue;
+      }
+      const cellAnchor = cellAnchorOf(targetAnchor, row, column);
+      const write = appearanceWriteFor(desired, {
+        shading: true,
+        verticalAlignment: true,
+        borders: true
+      });
+      writeAppearance(editor, cellAnchor, write, 'cell');
+      restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
+      report.cellsWritten++;
+      rowTouched = true;
+    }
+    if (rowTouched) report.rowsWritten++;
+  });
+  return { report, restores };
+}
+
 function readPostEditInventory(
   editor: LiveEditor,
   warnings: string[]
@@ -5023,6 +6275,7 @@ const TRACKED_TEXT_OPS = new Set([
   'replace_text',
   'replace_selection',
   'delete_text',
+  'delete_paragraph',
   'insert_text',
   'set_cell_text',
   'set_cell_formula',
@@ -5036,6 +6289,26 @@ const TRACKED_STRUCTURAL_OPS = new Map([
   ['insert_row', 'insertion'],
   ['delete_row', 'deletion']
 ]);
+
+function deletionRevisionDetails(
+  revisions: LiveRevision[],
+  targetText?: string
+): string[] {
+  const destroyed = targetText
+    ? [`text that would be destroyed: ${JSON.stringify(targetText)}`]
+    : [];
+  return [
+    ...destroyed,
+    ...revisions.map(
+      (revision, index) =>
+        `unexpected deletion revision ${index + 1}: ${
+          revision.revisionID
+            ? `revisionID ${JSON.stringify(revision.revisionID)}`
+            : 'no revisionID'
+        }`
+    )
+  ];
+}
 
 // A write is reviewable only when it can be undone from the Changes pane. This
 // check runs immediately after the public write, before an op is reported
@@ -5056,7 +6329,8 @@ function assertTrackedMutation(
   before: LiveRevision[],
   op: EditOp,
   priorRejectStream: string | undefined,
-  postWriteSfdt: any
+  postWriteSfdt: any,
+  targetText?: string
 ): void {
   const structural = TRACKED_STRUCTURAL_OPS.get(op.op);
   if (
@@ -5075,6 +6349,19 @@ function assertTrackedMutation(
       String(revision.revisionType ?? '').toLowerCase()
     )
   );
+  const unexpectedDeletions =
+    op.op === 'insert_text'
+      ? revisions.filter(
+          (revision) =>
+            String(revision.revisionType ?? '').toLowerCase() === 'deletion'
+        )
+      : [];
+  if (unexpectedDeletions.length)
+    throw new OpError(
+      'insert_text_created_deletion',
+      `insert_text at "${op.anchor}" created a Deletion revision, but no deletion was requested.`,
+      deletionRevisionDetails(unexpectedDeletions, targetText)
+    );
 
   if (structural) {
     if (!revisions.length || !types.has(structural))
@@ -5285,14 +6572,34 @@ function captureNativeResolvers(rev: LiveRevision) {
   };
 }
 
-// Bind one edit group's revisions so accept/reject on ANY member resolves
-// the whole group — never wider — through the non-cascading path. Later
-// calls on resolved members are no-ops; single-revision groups are bound
-// too (the wrapper is what routes around the adjacency cascade).
+// Bind a set of revisions authored by ONE logical edit group so per-card
+// accept/reject is all-or-nothing within the group and NEVER wider. The first
+// accept/reject on any member resolves the whole group with that single
+// decision; later clicks on already-resolved members are no-ops. Each native
+// handler is wrapped in try/catch so a stale-range throw on a later member
+// cannot undo the first member's (safe) result. Single-revision groups are
+// bound too: the wrapper is what routes around the pane's adjacency cascade.
+//
+// `onReject` is how a FORMATTING write joins the same decision. SyncFusion
+// authors no revision for a cell fill or border (its RevisionType is
+// Insertion|Deletion|MoveTo|MoveFrom, verified against the real SDK), so the
+// appearance a change set overwrote cannot be a card of its own. Instead the
+// executor hands the restore snapshots for THIS group in here: rejecting the
+// group puts the appearance back FIRST - while the row indices it recorded are
+// still valid, since rejecting a row insertion shifts every row below it - and
+// then rejects the content. That is what makes "reject the card and the table
+// looks exactly as it did" true for a batch that also restripes.
+//
+// Known limitation: `onReject` is an in-memory closure over snapshots taken
+// during the write, so unlike the `customData` group tag it does NOT survive a
+// save/reload. `rebindRevisionGroups` rebuilds the accept groups from the tags
+// but cannot rebuild the appearance restore, so a card rebound after a reload
+// rejects its content only. See `rebindRevisionGroups`.
 function groupRevisionsAtomic(
   group: LiveRevision[],
   changeSetId?: string,
-  groupId?: string
+  groupId?: string,
+  onReject?: () => void
 ): void {
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
@@ -5303,6 +6610,17 @@ function groupRevisionsAtomic(
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
+    if (!isAccept && onReject) {
+      // The single outermost boundary for the appearance restore: this runs
+      // inside SyncFusion's own Changes-pane callback, and a throw here would
+      // escape into the host UI and leave the group half-resolved. The content
+      // rejects below either way.
+      try {
+        onReject();
+      } catch {
+        // Nothing to add: the cards still resolve consistently.
+      }
+    }
     for (let index = 0; index < members.length; index++) {
       if (resolvedAlone.has(index)) continue;
       try {
@@ -5393,19 +6711,35 @@ interface RevisionGroupingReport {
   revisionCount: number;
   /** group id -> number of live revisions bound to it. */
   revisionsByGroup: Map<string, number>;
+  /**
+   * Groups whose appearance snapshots found a revision to bind to, so rejecting
+   * their card restores the appearance as well as the content. A group that took
+   * snapshots but produced no revision is absent here: its appearance is
+   * untracked and already applied, which is what `formatTracking` reports.
+   */
+  appearanceGroups: Set<string>;
 }
 
-// Partition this change set's created revisions by their customData group
-// tag and bind each partition atomically; untaggable revisions fall back to
-// the change-set-wide group.
+// Diff the revisions created by this change set (against a pre-batch snapshot),
+// partition them by the group tag each revision carries in `customData`, and
+// bind each partition atomically. Revisions with no readable tag (test fakes,
+// editors without `revisionSettings`) fall back into the change-set-wide group.
+//
+// `restoresByGroup` carries the appearance snapshots each group's ops took.
+// SyncFusion authors no revision for a fill or a border, so a group's snapshots
+// ride along on that group's own card and nowhere else: rejecting one group must
+// never put back appearance a different group wrote.
 function groupNewRevisions(
   editor: LiveEditor,
   before: LiveRevision[],
-  changeSetId: string
+  changeSetId: string,
+  restoresByGroup?: Map<string, AppearanceRestore[]>
 ): RevisionGroupingReport {
   const created = createdRevisions(editor, before);
   const revisionsByGroup = new Map<string, number>();
-  if (!created.length) return { revisionCount: 0, revisionsByGroup };
+  const appearanceGroups = new Set<string>();
+  if (!created.length)
+    return { revisionCount: 0, revisionsByGroup, appearanceGroups };
   const partitions = new Map<string, LiveRevision[]>();
   for (const rev of created) {
     const tag = parseRevisionGroupTag(rev.customData);
@@ -5416,10 +6750,16 @@ function groupNewRevisions(
     else partitions.set(group, [rev]);
   }
   partitions.forEach((partition, group) => {
-    groupRevisionsAtomic(partition, changeSetId, group);
+    const restores = restoresByGroup?.get(group);
+    const onReject =
+      restores && restores.length
+        ? () => replayAppearanceRestores(editor, restores)
+        : undefined;
+    if (onReject) appearanceGroups.add(group);
+    groupRevisionsAtomic(partition, changeSetId, group, onReject);
     revisionsByGroup.set(group, partition.length);
   });
-  return { revisionCount: created.length, revisionsByGroup };
+  return { revisionCount: created.length, revisionsByGroup, appearanceGroups };
 }
 
 // changeSet.groups: ops declare the units, the post-write partition supplies
@@ -5427,8 +6767,14 @@ function groupNewRevisions(
 function reportRevisionGroups(
   edits: EditOp[],
   changeSetId: string,
-  revisionsByGroup: Map<string, number>
-): Array<{ id: string; opIndices: number[]; revisionCount: number }> {
+  revisionsByGroup: Map<string, number>,
+  appearanceGroups: Set<string>
+): Array<{
+  id: string;
+  opIndices: number[];
+  revisionCount: number;
+  restoresAppearance?: true;
+}> {
   const opIndicesById = new Map<string, number[]>();
   edits.forEach((op, index) => {
     if (!op?.op) return;
@@ -5445,7 +6791,8 @@ function reportRevisionGroups(
   return [...opIndicesById.entries()].map(([id, opIndices]) => ({
     id,
     opIndices,
-    revisionCount: revisionsByGroup.get(id) ?? 0
+    revisionCount: revisionsByGroup.get(id) ?? 0,
+    ...(appearanceGroups.has(id) ? { restoresAppearance: true as const } : {})
   }));
 }
 
@@ -5494,8 +6841,18 @@ function revisionRangeText(revision: LiveRevision): string {
   return out.trim();
 }
 
-// A tracked replace is a Deletion whose range links directly to an adjacent
-// Insertion's first element — ONE edit to a reviewer.
+/**
+ * The tracked-change groups currently pending in the editor, in revision-
+ * collection order, each with its live member revisions. Assistant edits use
+ * their persisted accept-group tag; untagged human edits group by author.
+ * This is the read model for the grouped review UI; resolving an assistant
+ * group is just calling accept()/reject() on any member (the atomic binding
+ * does the rest).
+ */
+// A tracked replace is a Deletion (old text) immediately followed in the
+// document by an Insertion (new text): the deletion range's last element is
+// linked directly to the insertion range's first. To a reviewer that is ONE
+// edit, so the pair folds into one 'Replace' item.
 function isReplacePair(
   deletion: LiveRevision,
   insertion: LiveRevision
@@ -5627,7 +6984,7 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     if ((rev as any).robinGroupBound) continue;
     const tag = parseRevisionGroupTag(rev.customData);
     if (!tag) continue;
-    const key = `${tag.changeSetId} ${tag.group}`;
+    const key = `${tag.changeSetId}\u0000${tag.group}`;
     const partition = partitions.get(key);
     if (partition) partition.revisions.push(rev);
     else
@@ -5649,6 +7006,10 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
   return bound;
 }
 
+// Ops that change how something LOOKS and never where anything IS. Membership
+// buys three things: they cannot shift anchors, they run in phase 3 after every
+// structural edit (so a restripe sees the table's final row indices), and a
+// pre-existing target's formatting is snapshotted for the failure rollback.
 const FORMAT_OPS = new Set([
   'apply_style',
   'clear_formatting',
@@ -5657,7 +7018,33 @@ const FORMAT_OPS = new Set([
   'indent_step',
   'apply_bullets',
   'apply_numbering',
-  'clear_list'
+  'clear_list',
+  'set_cell_format',
+  'set_row_format',
+  'copy_table_format',
+  'restripe_table'
+]);
+
+// The appearance ops whose anchor names a TABLE rather than one paragraph. A
+// structure read reports a table as `"0;7"`, which is nothing's block anchor, so
+// the preflight retargets it to the table's first cell before resolving it -
+// naming the table the way the read names it must not be an error (see
+// retargetTableScopedAnchor).
+const TABLE_SCOPED_FORMAT_OPS = new Set([
+  'copy_table_format',
+  'restripe_table'
+]);
+
+// The appearance ops manage their own exact restores (see AppearanceRestore), so
+// the generic character/paragraph-format snapshot the other FORMAT_OPS take is
+// both useless to them and harmful: capturing and re-writing resolved character
+// formats changes serialized bytes on a target the op never touched, which would
+// leave a diff behind even after a REFUSED appearance op.
+const TABLE_APPEARANCE_OPS = new Set([
+  'set_cell_format',
+  'set_row_format',
+  'copy_table_format',
+  'restripe_table'
 ]);
 
 interface ChangeSetPlan {
@@ -5673,13 +7060,20 @@ interface ChangeSetPlan {
   // An `insert_text` whose paragraph does not exist yet because an earlier break
   // in the same change set creates it. Same contract as deferredNewCell.
   deferredNewParagraph?: boolean;
+  /**
+   * For `insert_row`: the stripe read from the table BEFORE the
+   * edit. It has to be captured here, because after the edit the pattern is
+   * genuinely ambiguous - a table whose band got doubled fits a LONGER period
+   * perfectly, so post-hoc detection would preserve the damage instead of the
+   * pattern. Absent when the table has no stripe or `preserveBanding: false`.
+   */
+  bandingPreserve?: { tableAnchor: string; banding: TableBanding };
 }
 
-// Table ops which bring new, empty cells into existence WITHOUT shifting block
-// indices. `insert_table` is deliberately excluded: it adds a block, so every
-// later anchor in the batch shifts and a computed cell anchor could name a cell
-// of an entirely different table. Filling a brand new table stays a second call
-// against a re-read inventory.
+// Table ops which bring new, empty cells into existence. `insert_row` does it
+// without shifting table block indices; `insert_table` does shift body block
+// indices, so only cell anchors under the exact inserted table anchor are
+// allowed to defer to it.
 const CELL_CREATING_OPS = new Set(['insert_row']);
 
 // The rows every earlier `insert_row` in this batch brings into existence,
@@ -5710,6 +7104,33 @@ function rowsCreatedByEarlierInserts(
       created.add(`${parts[0]};${parts[1]};${first + offset}`);
   }
   return created;
+}
+
+function tableAnchorFromCellAnchor(anchor: unknown): string {
+  const parts = String(anchor ?? '').split(';');
+  if (parts.length < 5) return '';
+  return parts.slice(0, -3).join(';');
+}
+
+function cellWriteTargetsTable(op: EditOp, tableAnchor: string): boolean {
+  return (
+    (op?.op === 'set_cell_text' || op?.op === 'set_cell_formula') &&
+    tableAnchorFromCellAnchor(op.anchor) === tableAnchor
+  );
+}
+
+function tableCreatedByEarlierInsert(edits: EditOp[], index: number): boolean {
+  const tableAnchor = tableAnchorFromCellAnchor(edits[index]?.anchor);
+  return (
+    !!tableAnchor &&
+    edits
+      .slice(0, index)
+      .some(
+        (earlier) =>
+          earlier?.op === 'insert_table' &&
+          String(earlier.anchor ?? '') === tableAnchor
+      )
+  );
 }
 
 // Breaks which end the current paragraph and so bring exactly one new, empty
@@ -5753,6 +7174,78 @@ function assertDeferredAnchorIsNewAndEmpty(
         target.text
       )}; refusing to overwrite existing content through a deferred anchor.`
     );
+}
+
+/**
+ * A table-scoped appearance op whose anchor names the TABLE (`"0;7"`, the way a
+ * structure read reports it) is retargeted to that table's first cell
+ * paragraph, which is a real block. These ops act on the whole table, so any of
+ * its cell anchors identifies the same work - which also makes a stale row index
+ * harmless rather than a refusal.
+ */
+function retargetTableScopedAnchor(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>
+): EditOp {
+  if (!op?.op || !TABLE_SCOPED_FORMAT_OPS.has(op.op)) return op;
+  const anchor = String(op.anchor ?? '');
+  if (!anchor || byAnchor.has(anchor)) return op;
+  const tableAnchor = normalizeTableAnchor(anchor);
+  if (!tableAnchor) return op;
+  const firstCell = `${tableAnchor};0;0;0`;
+  return byAnchor.has(firstCell) ? { ...op, anchor: firstCell } : op;
+}
+
+/**
+ * The pre-edit stripe an `insert_row` must put back, when there is one.
+ *
+ * `delete_row` is deliberately NOT here. Under track changes SyncFusion marks the
+ * row deleted and LEAVES IT IN PLACE until the revision is accepted (verified
+ * against the real SDK - the row count does not move), so no row below it has
+ * changed parity yet and restriping would be wrong. Once the deletion is
+ * accepted, `restripe_table` is the repair.
+ */
+function planBandingPreserve(
+  op: EditOp,
+  sfdt: any
+): ChangeSetPlan['bandingPreserve'] {
+  if (op.op !== 'insert_row') return undefined;
+  if (op.preserveBanding === false) return undefined;
+  const parts = String(op.anchor ?? '').split(';');
+  if (parts.length !== 5) return undefined;
+  const tableAnchor = `${parts[0]};${parts[1]}`;
+  const appearance = collectTableAppearance(tableBlockAt(sfdt, tableAnchor));
+  if (!appearance) return undefined;
+  // Strict: this fires without being asked, so a table with one highlighted row
+  // must not be mistaken for a striped one.
+  const banding = detectTableBanding(appearance, { strict: true });
+  return banding ? { tableAnchor, banding } : undefined;
+}
+
+/** The first row index an `insert_row` disturbs, from its resolved anchor. */
+function firstRowDisturbedBy(op: EditOp, anchor: string): number | null {
+  const parts = anchor.split(';');
+  if (parts.length !== 5) return null;
+  const row = Number(parts[2]);
+  if (!Number.isInteger(row) || row < 0) return null;
+  return op.above === true ? row : row + 1;
+}
+
+/**
+ * Split a handler's success extras into the model-facing half and the
+ * engine-internal appearance restores, which are collected rather than returned.
+ */
+function collectOpExtras(
+  extras: OpSuccessExtras | void,
+  record: (restores: AppearanceRestore[]) => void
+): Partial<EditResult> {
+  if (!extras) return {};
+  const { appearanceWrite, ...rest } = extras;
+  if (appearanceWrite) record(appearanceWrite.restores);
+  return {
+    ...rest,
+    ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
+  };
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
@@ -6123,7 +7616,15 @@ const FORMULA_OPS = new Set(['set_cell_formula', 'set_column_formula']);
 function writesCellQuantity(op: EditOp): boolean {
   if (!op?.op) return false;
   if (FORMULA_OPS.has(op.op)) return true;
-  return op.op === 'set_cell_text' && isQuantityText(String(op.text ?? ''));
+  if (op.op !== 'set_cell_text') return false;
+  const text = String(op.text ?? '');
+  // A figure sent as "just the value" is still an amount when the op declares
+  // it as one - the column, not this batch-level read, supplies the currency
+  // symbol it will land with, so the decoration cannot be the whole test.
+  return (
+    isQuantityText(text) ||
+    (declaresNumberProvenance(op) && classifyNumericText(text).numeric)
+  );
 }
 
 interface ColumnTouch {
@@ -6283,6 +7784,39 @@ function detectInconsistentAggregateRanges(
   return null;
 }
 
+function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
+  const emptyTables: Array<{
+    index: number;
+    anchor: string;
+    size: string;
+  }> = [];
+  edits.forEach((op, index) => {
+    if (op?.op !== 'insert_table') return;
+    const anchor = String(op.anchor ?? '');
+    const hasCellWrites = edits.some((candidate) =>
+      cellWriteTargetsTable(candidate, anchor)
+    );
+    if (hasCellWrites) return;
+    emptyTables.push({
+      index,
+      anchor,
+      size: `${positiveCount(op.rows)}x${positiveCount(op.columns)}`
+    });
+  });
+  if (!emptyTables.length) return null;
+  const first = emptyTables[0];
+  return {
+    code: 'empty_insert_table',
+    message:
+      `insert_table at "${first.anchor}" would create an empty ${first.size} table with no cell writes in this change set. ` +
+      'Empty grids in client proposals are refused; include set_cell_text writes for the new table or do not insert it.',
+    details: emptyTables.map(
+      (table) => `empty table: ${table.size} at ${table.anchor}`
+    ),
+    indices: emptyTables.map((table) => table.index)
+  };
+}
+
 /**
  * The announcement gate. A batch that writes into more than one column of one
  * table is following a dependency chain, and must say so first.
@@ -6375,6 +7909,9 @@ export function applyDocumentEdits(
   const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
+  // enableTrackChanges flips to true only inside the protected try below
+  // (which restores it in `finally`) - preflight here is read-only, and a
+  // serialization failure before that point must leave it exactly as found.
   // The group tag rides on SyncFusion's revision customData for the duration
   // of this change set; whatever the host set there before is restored after.
   const revisionSettings = editor.documentEditorSettings?.revisionSettings;
@@ -6394,13 +7931,37 @@ export function applyDocumentEdits(
   // Adjacent writes from different accept groups must not coalesce into one
   // revision; see installRevisionGroupIsolation. Idempotent.
   installRevisionGroupIsolation(editor);
+  // The parsed SFDT behind the current block map. Table APPEARANCE lives on
+  // cellFormat/rowFormat, which flattening drops, so the banding preserve reads
+  // it from here instead of paying a second serialize.
+  let liveSfdt: any;
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();
   const resolvedFormatTargets = new Map<number, FlatBlock>();
+  // Every appearance this change set overwrote, in write order, so the whole
+  // batch can be put back visually by the failure rollback.
+  const appearanceRestores: AppearanceRestore[] = [];
+  // The same snapshots split by the accept group whose op took them, so a reject
+  // of ONE grouped card puts back exactly that group's appearance and never a
+  // sibling group's. Every appearance write in this change set goes through
+  // `recordAppearanceRestores`, so neither collection can miss one.
+  const appearanceRestoresByGroup = new Map<string, AppearanceRestore[]>();
+  const recordAppearanceRestores = (
+    op: EditOp,
+    restores: AppearanceRestore[]
+  ) => {
+    if (!restores.length) return;
+    appearanceRestores.push(...restores);
+    const id = opGroupId(op, changeSetId);
+    const bucket = appearanceRestoresByGroup.get(id);
+    if (bucket) bucket.push(...restores);
+    else appearanceRestoresByGroup.set(id, [...restores]);
+  };
   let anchorsMayHaveShifted = false;
   const refresh = (serializedSfdt?: any) => {
     const sfdt = serializedSfdt ?? parseSfdt(editor.serialize());
+    liveSfdt = sfdt;
     blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
     rejectStream = rejectProjectionStream(sfdt);
@@ -6429,6 +7990,7 @@ export function applyDocumentEdits(
   // any anchor is resolved, so a refused change set costs nothing at all.
   const batchRefusal =
     detectInconsistentAggregateRanges(edits) ??
+    detectEmptyInsertedTables(edits) ??
     detectUnannouncedChain(edits, columnTouches, plan);
   if (batchRefusal) {
     for (const index of batchRefusal.indices) {
@@ -6448,9 +8010,10 @@ export function applyDocumentEdits(
   const hasStructuralEdits = edits.some(
     (op) => op?.op && !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op)
   );
-  edits.forEach((op, index) => {
+  edits.forEach((rawOp, index) => {
     // Already refused by a batch-level check; do not re-diagnose it.
     if (results[index]) return;
+    const op = retargetTableScopedAnchor(rawOp, byAnchor);
     const name = op?.op;
     if (!name) {
       results[index] = { ok: false, op: '', error: 'missing_op' };
@@ -6567,7 +8130,7 @@ export function applyDocumentEdits(
             .slice(0, index)
             .some(
               (earlier) => earlier?.op && CELL_CREATING_OPS.has(earlier.op)
-            ));
+            ) || tableCreatedByEarlierInsert(edits, index));
     if (deferredNewCell) target = undefined;
     // `insert_text` may address the empty paragraph an earlier break in this
     // same change set is about to create, so a new page and the text on it are
@@ -6657,6 +8220,7 @@ export function applyDocumentEdits(
       return;
     }
     try {
+      const bandingPreserve = planBandingPreserve(op, liveSfdt);
       plans.push({
         index,
         op,
@@ -6664,10 +8228,14 @@ export function applyDocumentEdits(
         source,
         ...(deferredNewCell ? { deferredNewCell: true } : {}),
         ...(deferredNewParagraph ? { deferredNewParagraph: true } : {}),
+        ...(bandingPreserve ? { bandingPreserve } : {}),
         ...(source
           ? { inherited: readEffectiveSourceFormat(editor, source) }
           : {}),
-        ...(target && !isLiveStoryTarget(target) && FORMAT_OPS.has(name)
+        ...(target &&
+        !isLiveStoryTarget(target) &&
+        FORMAT_OPS.has(name) &&
+        !TABLE_APPEARANCE_OPS.has(name)
           ? { targetBefore: readEffectiveSourceFormat(editor, target) }
           : {})
       });
@@ -6701,6 +8269,7 @@ export function applyDocumentEdits(
         let storyWrite:
           | { target: LiveStoryTarget; replacement: string }
           | undefined;
+        let trackedMutationTargetText: string | undefined;
         let insertInheritance: PlannedInsertInheritance[] | undefined;
         let opExtras: OpSuccessExtras | void;
         try {
@@ -6722,6 +8291,7 @@ export function applyDocumentEdits(
                 'Structural edit needs an anchor.'
               );
             if (plan.target && isLiveStoryTarget(plan.target)) {
+              trackedMutationTargetText = plan.target.text;
               // A text frame's content IS in the serialized SFDT, so the reject
               // projection covers it and proves the write reversible exactly as
               // it does for a body or table anchor. Before this, story writes
@@ -6754,6 +8324,7 @@ export function applyDocumentEdits(
               );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
+              trackedMutationTargetText = target.text;
               // The reversibility baseline: the whole-document reject
               // projection the last refresh built, so a tracked write costs no
               // extra serialize before it lands. Never a per-anchor text - a
@@ -6819,18 +8390,44 @@ export function applyDocumentEdits(
             revisionsBeforeOp,
             writtenOp,
             priorRejectStream,
-            postWriteSfdt
+            postWriteSfdt,
+            trackedMutationTargetText
           );
           refresh(postWriteSfdt);
           if (insertInheritance) {
             applyInsertInheritance(editor, insertInheritance, byAnchor);
             refresh();
           }
+          // Put the stripe back over the rows the insert/delete disturbed - the
+          // row itself and everything below it, whose parity has just flipped.
+          // Uses the pattern read BEFORE the edit, and the anchor as actually
+          // resolved, so it survives an earlier op having shifted the table.
+          let bandingReport: AppearanceWriteReport | undefined;
+          if (plan.bandingPreserve && writtenOp.anchor) {
+            const parts = writtenOp.anchor.split(';');
+            const tableAnchor = `${parts[0]};${parts[1]}`;
+            const fromRow = firstRowDisturbedBy(op, writtenOp.anchor);
+            if (fromRow != null) {
+              const outcome = applyBandingRows(
+                editor,
+                tableAnchor,
+                liveTableAppearance(editor, tableAnchor),
+                plan.bandingPreserve.banding,
+                fromRow
+              );
+              recordAppearanceRestores(op, outcome.restores);
+              bandingReport = outcome.report;
+              refresh();
+            }
+          }
           results[index] = {
             ok: true,
             op: op.op,
             anchor: op.anchor,
-            ...(opExtras ?? {})
+            ...collectOpExtras(opExtras, (restores) =>
+              recordAppearanceRestores(op, restores)
+            ),
+            ...(bandingReport ? { appearance: bandingReport } : {})
           };
         } catch (err) {
           fail(index, op, err);
@@ -6849,13 +8446,20 @@ export function applyDocumentEdits(
               'missing_anchor',
               'Formatting edit needs an anchor.'
             );
+          // A table-scoped op names a TABLE, and its anchor is just one of that
+          // table's cells - so it must NOT be relocated by cell text. Two tables
+          // sharing a header cell is ordinary (it is exactly the captain's
+          // document: two Location Schedules with "Loc #" in row 0), and the
+          // text match then reports `anchor_relocation_ambiguous` for an op that
+          // had no ambiguity at all. A row insert never moves a table's block
+          // anchor, so the direct anchor is the right answer here.
           const target = resolveChangeSetBlock(
             blocks,
             op.anchor,
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
               : undefined,
-            anchorsMayHaveShifted
+            anchorsMayHaveShifted && !TABLE_SCOPED_FORMAT_OPS.has(op.op)
           );
           const source = plan.source
             ? resolveChangeSetBlock(
@@ -6866,7 +8470,7 @@ export function applyDocumentEdits(
               )
             : undefined;
           resolvedFormatTargets.set(index, target);
-          applyAnchoredOp(
+          const extras = applyAnchoredOp(
             editor,
             {
               ...op,
@@ -6878,7 +8482,14 @@ export function applyDocumentEdits(
             byAnchor
           );
           refresh();
-          results[index] = { ok: true, op: op.op, anchor: op.anchor };
+          results[index] = {
+            ok: true,
+            op: op.op,
+            anchor: op.anchor,
+            ...collectOpExtras(extras, (restores) =>
+              recordAppearanceRestores(op, restores)
+            )
+          };
         } catch (err) {
           fail(index, op, err);
         }
@@ -6928,6 +8539,14 @@ export function applyDocumentEdits(
       // A failed text-frame/post-write verification must not leave earlier
       // sibling edits applied. Scoped native rejects restore only this change
       // set's cards; unrelated user revisions are never touched.
+      //
+      // Appearance goes back FIRST, while the row indices its snapshots name are
+      // still the live ones - rejecting a row insertion shifts every row below
+      // it. Cleared afterwards so the grouped card cannot replay it a second
+      // time.
+      replayAppearanceRestores(editor, appearanceRestores);
+      appearanceRestores.length = 0;
+      appearanceRestoresByGroup.clear();
       rejectCreatedRevisions(editor, revisionSnapshot);
     } catch (err) {
       warnings.push(
@@ -6938,7 +8557,13 @@ export function applyDocumentEdits(
     }
   }
 
-  const grouping = groupNewRevisions(editor, revisionSnapshot, changeSetId);
+  const wroteAppearance = appearanceRestores.length > 0;
+  const grouping = groupNewRevisions(
+    editor,
+    revisionSnapshot,
+    changeSetId,
+    appearanceRestoresByGroup
+  );
   const revisionCount = grouping.revisionCount;
   const hasFailure = results.some((result) => result && !result.ok);
   if (hasFailure) {
@@ -6982,8 +8607,23 @@ export function applyDocumentEdits(
       groups: reportRevisionGroups(
         edits,
         changeSetId,
-        grouping.revisionsByGroup
+        grouping.revisionsByGroup,
+        grouping.appearanceGroups
       ),
+      ...(wroteAppearance
+        ? {
+            // Only every appearance group having found a card to ride on makes
+            // "reject and the appearance comes back" true of the whole batch.
+            // If any group wrote appearance without producing a revision, that
+            // appearance is already applied with nothing to reject, so the batch
+            // says so; `groups[].restoresAppearance` still names the exact
+            // groups a reject would restore.
+            formatTracking:
+              grouping.appearanceGroups.size === appearanceRestoresByGroup.size
+                ? ('grouped_with_revision_cards' as const)
+                : ('untracked_immediate' as const)
+          }
+        : {}),
       // The engine's own account of what this batch touched, beside the
       // model's announcement of what it was about to do. Two independent
       // statements of the same thing: if they disagree, that is visible.

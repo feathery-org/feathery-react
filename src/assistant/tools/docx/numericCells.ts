@@ -281,6 +281,17 @@ export interface NumericTextClass {
 
 const MAX_DECORATION_LETTERS = 3; // "USD", "EUR", "CAD"
 
+/**
+ * A zero-padded leading digit run is an identifier, never an amount: `0093` is
+ * a location number, and its leading zeros are part of what it says. Read by
+ * the classifier below and by the write path, which must never re-render such
+ * a value as a number (that would silently turn `0093` into `93`).
+ */
+export function isZeroPaddedInteger(rawText: string): boolean {
+  const firstRun = /\d+/.exec(String(rawText ?? ''))?.[0] ?? '';
+  return firstRun.length > 1 && firstRun.startsWith('0');
+}
+
 export function classifyNumericText(rawText: string): NumericTextClass {
   const text = String(rawText ?? '').trim();
   if (!text || !/\d/.test(text)) return { numeric: false, quantity: false };
@@ -298,10 +309,7 @@ export function classifyNumericText(rawText: string): NumericTextClass {
     unit: parsed.unit,
     decimals: format.decimals
   };
-  // A zero-padded leading digit run is an identifier, never an amount.
-  const firstRun = /\d+/.exec(text)?.[0] ?? '';
-  if (firstRun.length > 1 && firstRun.startsWith('0'))
-    return { ...base, quantity: false };
+  if (isZeroPaddedInteger(text)) return { ...base, quantity: false };
   const hasUnit = `${format.prefix}${format.suffix}`.trim() !== '';
   const hasDecimals = format.decimals > 0;
   const hasGrouping =
