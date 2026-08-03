@@ -175,6 +175,7 @@ import {
   ACTION_SEND_MAGIC_LINK,
   ACTION_SEND_SMS_CODE,
   ACTION_SEND_SMS_MESSAGE,
+  ACTION_SET_TASK_STATUS,
   ACTION_STORE_FIELD,
   ACTION_TELESIGN_PHONE_TYPE,
   ACTION_TELESIGN_SILENT_VERIFICATION,
@@ -2693,6 +2694,14 @@ function Form({
             updateFieldValues(newVals);
             await client.submitCustom(newVals);
           }
+        } catch (e: any) {
+          setElementError((e as Error).message);
+          break;
+        }
+      } else if (type === ACTION_SET_TASK_STATUS) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
+        try {
+          await client.setTaskStatus(action.template_id, action.task_status_id);
         } catch (e: any) {
           setElementError((e as Error).message);
           break;
