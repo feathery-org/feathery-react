@@ -45,29 +45,31 @@ export function editorContainerId(action: Record<string, any>): string {
 }
 
 /** What a Document Editor container's toolbar offers, read from the same
- * `editor_toolbar_actions` key the overlay editor uses.
+ * `editor_toolbar_actions` key the overlay uses — `envelope_action` is always
+ * 'open_in_editor' for a container and carries no outcome of its own.
  *
- * A container is the other presentation of `envelope_action: 'open_in_editor'`,
- * so `envelope_action` is always 'open_in_editor' there and carries no outcome
- * of its own — the outcome has to come from the toolbar list.
- *
- * The container renders a single terminal button, so the most conclusive
- * configured outcome wins: Sign over Download. 'draft' is absent by design — it
- * is a DocuSign-only outcome, and the container signs through Feathery's own
- * eSign ceremony. An empty list is valid: the filler edits, saves, and
- * continues through the form's own navigation with no terminal button.
+ * One terminal button, so the most conclusive outcome wins (Sign > Create Draft
+ * > Download) and `offersDraft` puts the other signing outcome in a menu beside
+ * it. 'draft' needs DocuSign; nothing else has a draft state.
  */
 export function containerToolbarOutcomes(action: Record<string, any>): {
-  terminalAction: 'sign' | 'download' | undefined;
+  terminalAction: 'sign' | 'download' | 'draft' | undefined;
+  offersDraft: boolean;
   savesToField: boolean;
 } {
   const actions: string[] = action?.editor_toolbar_actions ?? [];
+  const draft = actions.includes('draft') && action?.sign_method === 'docusign';
+  const sign = actions.includes('sign');
   return {
-    terminalAction: actions.includes('sign')
+    terminalAction: sign
       ? 'sign'
+      : draft
+      ? 'draft'
       : actions.includes('download')
       ? 'download'
       : undefined,
+    // Only meaningful beside Sign; on its own, draft *is* the terminal action.
+    offersDraft: draft && sign,
     savesToField: actions.includes('save')
   };
 }

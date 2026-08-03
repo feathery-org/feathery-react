@@ -28,8 +28,11 @@ export interface DocxEditorProps {
    *  the Feathery backend). When provided, Download becomes a DOCX/PDF menu.
    *  Current edits are saved via `onSave` before this is called. */
   onExportPdf?: () => Promise<Blob>;
-  terminalAction?: 'download' | 'sign';
+  terminalAction?: 'download' | 'sign' | 'draft';
   onTerminalAction?: (saveResult?: unknown) => void | Promise<void>;
+  /** Draft variant of the 'sign' terminal action (DocuSign only). When
+   *  provided, Sign becomes a Send / Save as Draft menu. Same save-first flow. */
+  onTerminalActionDraft?: (saveResult?: unknown) => void | Promise<void>;
   terminalActionDisabled?: boolean;
   terminalActionLoading?: boolean;
   className?: string;
@@ -75,6 +78,7 @@ function DocxEditor({
   onExportPdf,
   terminalAction,
   onTerminalAction,
+  onTerminalActionDraft,
   terminalActionDisabled,
   terminalActionLoading,
   className,
@@ -177,7 +181,11 @@ function DocxEditor({
     }
   };
 
-  const handleTerminalAction = async () => {
+  // Every terminal action saves the current edits first, then runs its own
+  // outcome against the just-saved document.
+  const saveThenRun = async (
+    run: (blob: Blob, saveResult?: unknown) => void | Promise<void>
+  ) => {
     setTerminalRunning(true);
     try {
       const blob = await exportDoc();
@@ -185,6 +193,16 @@ function DocxEditor({
         onSave && dirtyRef.current
           ? await saveCurrentDocument(blob)
           : undefined;
+      await run(blob, saveResult);
+    } catch (err) {
+      onError?.((err as Error).message || String(err));
+    } finally {
+      setTerminalRunning(false);
+    }
+  };
+
+  const handleTerminalAction = () =>
+    saveThenRun(async (blob, saveResult) => {
       if (terminalAction === 'download') {
         // Download the just-saved bytes directly (avoids the stale-URL issue
         // of re-fetching an overwritten envelope file).
@@ -192,12 +210,12 @@ function DocxEditor({
       } else {
         await onTerminalAction?.(saveResult);
       }
-    } catch (err) {
-      onError?.((err as Error).message || String(err));
-    } finally {
-      setTerminalRunning(false);
-    }
-  };
+    });
+
+  // Draft variant of the 'sign' terminal action: identical save-first flow, and
+  // the host sends the document to DocuSign as a draft instead of for signature.
+  const handleTerminalActionDraft = () =>
+    saveThenRun((_blob, saveResult) => onTerminalActionDraft?.(saveResult));
 
   // PDF variant of the 'download' terminal action — same save-first flow,
   // then the host-converted PDF bytes.
@@ -249,6 +267,11 @@ function DocxEditor({
           onTerminalActionPdf={
             terminalAction === 'download' && onExportPdf
               ? handleTerminalActionPdf
+              : undefined
+          }
+          onTerminalActionDraft={
+            terminalAction === 'sign' && onTerminalActionDraft
+              ? handleTerminalActionDraft
               : undefined
           }
           terminalActionDisabled={

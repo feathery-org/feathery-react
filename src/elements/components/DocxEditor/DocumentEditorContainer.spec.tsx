@@ -10,26 +10,57 @@ import {
 } from '../../../assistant/tools/docxEditorRegistry';
 import DocumentEditorContainer from './DocumentEditorContainer';
 
+// Exposes the terminal handlers as buttons so the container's outcome routing
+// can be driven the way the real toolbar drives it.
 jest.mock('./index', () => {
   const React = jest.requireActual('react');
 
   return function MockDocxEditor({
     source,
-    onEditorReady
-  }: {
-    source?: { url?: string };
-    onEditorReady?: (editor: any) => void;
-  }) {
+    onEditorReady,
+    terminalAction,
+    onTerminalAction,
+    onTerminalActionDraft
+  }: any) {
     const editor = React.useMemo(
       () => ({ sourceUrl: source?.url }),
       [source?.url]
     );
     React.useEffect(() => onEditorReady?.(editor), [editor, onEditorReady]);
-    return React.createElement('div', {
-      'data-testid': `editor:${source?.url ?? 'none'}`
-    });
+    return React.createElement(
+      'div',
+      { 'data-testid': `editor:${source?.url ?? 'none'}` },
+      onTerminalAction &&
+        React.createElement('button', {
+          key: 'terminal',
+          'data-testid': `terminal:${terminalAction}`,
+          onClick: () => onTerminalAction()
+        }),
+      onTerminalActionDraft &&
+        React.createElement('button', {
+          key: 'draft',
+          'data-testid': 'terminal:draft-menu',
+          onClick: () => onTerminalActionDraft()
+        })
+    );
   };
 });
+
+const mockFinalizeEnvelope = jest.fn();
+const mockFinalizeEnvelopeReview = jest.fn();
+jest.mock('../../../utils/featheryClient', () => ({
+  __esModule: true,
+  API_URL: 'https://api.test/',
+  default: jest.fn().mockImplementation(function (this: any, formKey: string) {
+    this.formKey = formKey;
+    this.finalizeEnvelope = (...args: any[]) => mockFinalizeEnvelope(...args);
+    this.finalizeEnvelopeReview = (...args: any[]) =>
+      mockFinalizeEnvelopeReview(...args);
+    this.getCurrentEnvelope = jest.fn().mockResolvedValue({});
+    this.saveEnvelopeFile = jest.fn().mockResolvedValue({});
+    this.downloadEnvelopePdf = jest.fn().mockResolvedValue(new Blob());
+  })
+}));
 
 const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
 
@@ -212,5 +243,119 @@ describe('DocumentEditorContainer registry lifecycle', () => {
       sourceUrl: 'https://example.com/document-container-b.docx'
     });
     formB.unmount();
+  });
+});
+
+describe('DocumentEditorContainer signing outcomes', () => {
+  const CONTAINER = 'document-container-a';
+
+  const seed = (action: Record<string, any>) => {
+    initState.formSchemas = {
+      'form-key': {
+        steps: [
+          {
+            id: 'step-0',
+            buttons: [
+              {
+                properties: {
+                  actions: [
+                    {
+                      type: ACTION_GENERATE_ENVELOPES,
+                      editor_mode: CONTAINER,
+                      documents: [`document-${CONTAINER}`],
+                      ...action
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY] = {
+      [CONTAINER]: draftFor(CONTAINER)
+    };
+  };
+
+  const mount = () =>
+    render(
+      <DocumentEditorContainer
+        containerId={CONTAINER}
+        formId='form-1'
+        stepId='step-0'
+      />
+    );
+
+  beforeEach(() => {
+    _clearDocxEditors();
+    mockFinalizeEnvelope.mockReset().mockResolvedValue({});
+    mockFinalizeEnvelopeReview
+      .mockReset()
+      .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' });
+  });
+
+  afterEach(() => {
+    _clearDocxEditors();
+    initState.formSchemas = {};
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+    jest.restoreAllMocks();
+  });
+
+  it('sends the reviewed docx to DocuSign instead of the Feathery sign page', async () => {
+    seed({ sign_method: 'docusign', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    // The docx must be converted to a signable PDF before it is sent.
+    await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
+    await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
+    const [action, params] = mockFinalizeEnvelopeReview.mock.calls[0];
+    expect(action.sign_method).toBe('docusign');
+    expect(params).toEqual({
+      envelopes: [{ envelopeId: `envelope-${CONTAINER}` }],
+      envelopeAction: 'sign',
+      draft: false
+    });
+  });
+
+  it('sends draft=true from the Save as Draft menu entry', async () => {
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['sign', 'draft']
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() =>
+      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+    );
+    getByTestId('terminal:draft-menu').click();
+
+    await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
+    expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
+  });
+
+  it('sends draft=true when Create Draft is the only signing outcome', async () => {
+    seed({ sign_method: 'docusign', editor_toolbar_actions: ['draft'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:draft')).toBeTruthy());
+    getByTestId('terminal:draft').click();
+
+    await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
+    expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
+  });
+
+  it('keeps the Feathery eSign path when sign_method is not docusign', async () => {
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
+    expect(mockFinalizeEnvelopeReview).not.toHaveBeenCalled();
   });
 });
