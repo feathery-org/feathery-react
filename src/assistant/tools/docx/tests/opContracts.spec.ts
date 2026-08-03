@@ -36,6 +36,8 @@ import {
   ApplyEditsResult,
   EditOp,
   MutationGuardCoverage,
+  TRACKED_STRUCTURAL_OPS,
+  TRACKED_TEXT_OPS,
   TableFacts
 } from '../syncfusionDocumentOps';
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
@@ -1390,6 +1392,22 @@ describe('op contracts: every advertised op works over its real route', () => {
   it('every registry op has a contract case, and no case is orphaned', () => {
     const registered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op);
     expect([...Object.keys(CONTRACTS)].sort()).toEqual([...registered].sort());
+  });
+
+  it('every registered content-creating op crosses a tracked mutation contract', () => {
+    const contentCreatingOps = new Set([
+      'insert_text',
+      'insert_table',
+      'insert_row'
+    ]);
+    const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
+      .filter((op) => contentCreatingOps.has(op))
+      .filter(
+        (op) =>
+          !TRACKED_TEXT_OPS.has(op) && !TRACKED_STRUCTURAL_OPS.has(op)
+      );
+
+    expect(uncovered).toEqual([]);
   });
 
   it.each(

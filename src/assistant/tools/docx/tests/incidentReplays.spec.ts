@@ -254,7 +254,7 @@ function expectHonestDuplicateTableOutcome(
 jest.setTimeout(120000);
 
 describe('W0 captain incident replays', () => {
-  it.failing(
+  it(
     'A: inserts at 6;32 without a deletion revision over Billing Options',
     () => {
       const editor = makeRealDocumentEditor(incidentASfdt());
@@ -350,7 +350,7 @@ describe('W0 captain incident replays', () => {
     }
   );
 
-  it.failing(
+  it(
     'D attempt b: lands addressably at 6;20 or refuses the insert itself without consuming the spacer',
     () => {
       const editor = makeRealDocumentEditor(incidentDSfdt());
@@ -369,7 +369,7 @@ describe('W0 captain incident replays', () => {
     }
   );
 
-  it.failing(
+  it(
     'D attempt c: never claims a populated payload has no cell writes',
     () => {
       const editor = makeRealDocumentEditor(incidentDSfdt());
@@ -388,7 +388,7 @@ describe('W0 captain incident replays', () => {
     }
   );
 
-  it.failing(
+  it(
     'D attempt d: never claims a populated payload has no cell writes',
     () => {
       const editor = makeRealDocumentEditor(incidentDSfdt());
