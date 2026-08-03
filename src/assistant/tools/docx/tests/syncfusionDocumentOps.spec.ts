@@ -41,7 +41,10 @@ DocumentEditor.Inject(
 // environment does not expose it on window by default.
 if (!window.crypto?.getRandomValues) {
   Object.defineProperty(window, 'crypto', {
-    value: { getRandomValues: (array: Uint8Array) => require('crypto').randomFillSync(array) }
+    value: {
+      getRandomValues: (array: Uint8Array) =>
+        require('crypto').randomFillSync(array)
+    }
   });
 }
 
@@ -1140,14 +1143,16 @@ describe('live occurrence search and scoped replacement', () => {
 
       expect(result).toMatchObject({
         results: [expect.objectContaining({ ok: true, anchor: '0;2' })],
-        changeSet: { status: 'applied', revisionGrouping: 'bridge_bound_revision_cards' }
+        changeSet: {
+          status: 'applied',
+          revisionGrouping: 'bridge_bound_revision_cards'
+        }
       });
       expect(flattenSfdt(JSON.parse(ed.serialize()))).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             anchor: '0;2',
-            text:
-              'HYPERLINK \\l "_Toc216275880"Our Purpose\\t PAGEREF _Toc216275880 \\h 5'
+            text: 'HYPERLINK \\l "_Toc216275880"Our Purpose\\t PAGEREF _Toc216275880 \\h 5'
           })
         ])
       );
@@ -2385,8 +2390,12 @@ class RevisionMockEditor implements LiveEditor {
           blocks: this.blocksRuns.map((runs) => ({
             inlines: runs.map((run) => ({
               text: run.text,
-              ...(run.state === 'del' ? { revisionIds: ['mock-deletion'] } : {}),
-              ...(run.state === 'ins' ? { revisionIds: ['mock-insertion'] } : {})
+              ...(run.state === 'del'
+                ? { revisionIds: ['mock-deletion'] }
+                : {}),
+              ...(run.state === 'ins'
+                ? { revisionIds: ['mock-insertion'] }
+                : {})
             }))
           }))
         }
@@ -2574,9 +2583,7 @@ describe('assistant-defined accept groups', () => {
       'update-date',
       'update-date'
     ]);
-    expect(
-      ed.revisions.changes.map((r: any) => r.robinGroupId)
-    ).toEqual([
+    expect(ed.revisions.changes.map((r: any) => r.robinGroupId)).toEqual([
       'update-premium',
       'update-premium',
       'update-date',
@@ -2714,7 +2721,9 @@ describe('assistant-defined accept groups', () => {
       makeRevision('b1', tagB),
       { customData: 'not-ours', accept: jest.fn(), reject: jest.fn() }
     ];
-    const editor = { revisions: { changes: revisions } } as unknown as LiveEditor;
+    const editor = {
+      revisions: { changes: revisions }
+    } as unknown as LiveEditor;
 
     expect(rebindRevisionGroups(editor)).toBe(3);
     // Idempotent: a second pass binds nothing new.
@@ -2875,6 +2884,46 @@ describe('assistant-defined accept groups', () => {
       expect(restored[0].items[0].revisionType).toBe('Replace');
       expect(restored[0].items[0].beforeText).toBe('$5,500');
       expect(restored[0].items[0].text).toBe('$6,000');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});
+
+describe("single review surface: suppressing SyncFusion's native revision pane", () => {
+  it('showRevisions=false hides the native Changes pane without touching tracked-change marks', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        { blocks: [para('Draft paragraph'), para('Second paragraph')] }
+      ]
+    });
+    try {
+      // Track the edit before opening the pane - showRevisions=true makes
+      // selection changes navigate the (unrendered, in this jsdom host) pane
+      // list, which is not what this test is exercising.
+      ed.enableTrackChanges = true;
+      ed.selection.select('0;0;0', '0;0;5');
+      ed.editor.insertText('Final');
+      const revisionCount = ed.revisions.length;
+      expect(revisionCount).toBeGreaterThan(0);
+
+      const pane = () =>
+        ed.element?.querySelector('.e-de-review-pane') as HTMLElement | null;
+
+      // Property changes on an EJ2 component are pending until `dataBind()`
+      // flushes them (its own documented behaviour); force the flush so this
+      // test observes the same effect the running app sees, synchronously.
+
+      // What DocumentEditorContainer hardcodes for its inner DocumentEditor.
+      ed.showRevisions = true;
+      (ed as any).dataBind();
+      expect(pane()?.style.display).not.toBe('none');
+
+      ed.showRevisions = false;
+      (ed as any).dataBind();
+      expect(pane()?.style.display).toBe('none');
+      // The pane closed; the tracked-change marks it listed are untouched.
+      expect(ed.revisions.length).toBe(revisionCount);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -3075,6 +3124,190 @@ const blockTexts = (editor: DocumentEditor) =>
 
 const revisionTypes = (editor: DocumentEditor) =>
   realRevisions(editor).map((revision) => revision.revisionType);
+
+function premiumSummaryHeadingSfdt() {
+  return {
+    sections: Array.from({ length: 7 }, (_, sectionIndex) => ({
+      blocks:
+        sectionIndex === 6
+          ? Array.from({ length: 28 }, (_, blockIndex) => {
+              if (blockIndex === 16)
+                return {
+                  paragraphFormat: { styleName: 'Title' },
+                  inlines: [{ text: 'Cyber Insurance' }]
+                };
+              if (blockIndex === 26)
+                return {
+                  paragraphFormat: { styleName: 'Title' },
+                  inlines: [{ text: 'Premium Summary' }]
+                };
+              return { inlines: [{ text: `Section 6 block ${blockIndex}` }] };
+            })
+          : [{ inlines: [{ text: `Section ${sectionIndex}` }] }]
+    }))
+  };
+}
+
+function tableInsertionSfdt() {
+  return {
+    sections: [
+      {
+        blocks: [
+          { inlines: [{ text: 'Homeowners Insurance' }] },
+          { inlines: [{ text: '' }] }
+        ]
+      }
+    ]
+  };
+}
+
+describe('tracked inserts never author deletions', () => {
+  it('real SDK: pure insert_text before the Premium Summary title creates no Deletion revision and reject restores the heading byte-for-byte', () => {
+    const ed = makeRealDocumentEditor(premiumSummaryHeadingSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'g01-add-homeowners-section',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '6;26',
+            group: 'g01-add-homeowners-section',
+            text:
+              'Homeowners Insurance\n\nCoverages and Limits\n\nForms & Endorsements\n\n',
+            find: '',
+            replace: '',
+            expectLength: 0
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'insert_text'
+      });
+      expect(revisionTypes(ed).filter((type) => type === 'Deletion')).toEqual(
+        []
+      );
+      expect(blockTexts(ed)).toContain('Premium Summary');
+
+      rejectEveryRealRevision(ed);
+      expect(ed.revisions.length).toBe(0);
+      expect(ed.serialize()).toBe(before);
+      expect(blockTexts(ed)).toContain('Premium Summary');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: replace_text still authors the Deletion and Insertion pair', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Premium Summary' }] },
+            { inlines: [{ text: 'End' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'rename-heading',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: 'Premium',
+            replace: 'Policy'
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'replace_text'
+      });
+      expect(revisionTypes(ed).sort()).toEqual(['Deletion', 'Insertion']);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});
+
+describe('insert_table requires same-batch cell writes', () => {
+  it('real SDK: insert_table with no cell writes is refused before an empty grid is created', () => {
+    const ed = makeRealDocumentEditor(tableInsertionSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'empty-homeowners-coverages-table',
+        edits: [{ op: 'insert_table', anchor: '0;1', rows: 15, columns: 3 }]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'insert_table',
+        anchor: '0;1',
+        error: 'empty_insert_table'
+      });
+      expect(result.results[0].message).toContain('15x3');
+      expect(result.results[0].message).toContain('0;1');
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      expect(ed.revisions.length).toBe(0);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: insert_table accompanied by cell writes applies', () => {
+    const ed = makeRealDocumentEditor(tableInsertionSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'filled-homeowners-coverages-table',
+        edits: [
+          { op: 'insert_table', anchor: '0;1', rows: 2, columns: 3 },
+          { op: 'set_cell_text', anchor: '0;1;0;0;0', text: 'Coverage' },
+          { op: 'set_cell_text', anchor: '0;1;0;1;0', text: 'Limit' },
+          { op: 'set_cell_text', anchor: '0;1;0;2;0', text: 'Deductible' },
+          { op: 'set_cell_text', anchor: '0;1;1;0;0', text: 'Dwelling' },
+          { op: 'set_cell_text', anchor: '0;1;1;1;0', text: '$500,000' },
+          { op: 'set_cell_text', anchor: '0;1;1;2;0', text: '$1,000' }
+        ]
+      });
+
+      expect(result.results.map((entry) => entry.ok)).toEqual([
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ]);
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+      expect(blockTexts(ed)).toEqual(
+        expect.arrayContaining([
+          'Coverage',
+          'Limit',
+          'Deductible',
+          'Dwelling',
+          '$500,000',
+          '$1,000'
+        ])
+      );
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});
 
 describe('table rows: insert a row and fill its cells', () => {
   it('real SDK: fills every cell of a row it just inserted, in one change set, as one rejectable card', () => {
@@ -3513,6 +3746,114 @@ describe('new page: add a page and put formatted text on it', () => {
       destroyRealDocumentEditor(ed);
     }
   });
+
+  it('real SDK: delete_paragraph refuses visible content unless forced, and treats underscore as visible', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Keep me' }] },
+            { inlines: [{ text: '_' }] },
+            { inlines: [{ text: '' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      const nonEmpty = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'refuse-non-empty-paragraph',
+        edits: [{ op: 'delete_paragraph', anchor: '0;0', expect: 'Keep me' }]
+      });
+      expect(nonEmpty.results[0]).toMatchObject({
+        ok: false,
+        op: 'delete_paragraph',
+        error: 'paragraph_not_empty'
+      });
+      expect(blockTexts(ed)).toEqual(['Keep me', '_', '']);
+
+      const underscore = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'refuse-underscore-paragraph',
+        edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '_' }]
+      });
+      expect(underscore.results[0]).toMatchObject({
+        ok: false,
+        op: 'delete_paragraph',
+        error: 'paragraph_not_empty'
+      });
+      expect(blockTexts(ed)).toEqual(['Keep me', '_', '']);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: rejecting a paragraph deletion restores the document byte-for-byte', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Before' }] },
+            { inlines: [] },
+            { inlines: [{ text: 'After' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-empty-paragraph',
+        edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'delete_paragraph'
+      });
+      expect(blockTexts(ed)).toEqual(['Before', 'After']);
+      expect(revisionTypes(ed)).toContain('Deletion');
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: anchors after a paragraph deletion resolve for later ops in the same batch', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Intro' }] },
+            { inlines: [] },
+            { inlines: [{ text: 'Target Heading' }] },
+            { inlines: [{ text: 'Tail' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-then-format-shifted-anchor',
+        edits: [
+          { op: 'delete_paragraph', anchor: '0;1', expect: '' },
+          {
+            op: 'set_para_format',
+            anchor: '0;2',
+            expect: 'Target Heading',
+            alignment: 'Center'
+          }
+        ]
+      });
+
+      expect(result.results.every((r) => r.ok)).toBe(true);
+      expect(blockTexts(ed)).toEqual(['Intro', 'Target Heading', 'Tail']);
+      ed.selection.select('0;2;0', '0;2;14');
+      expect(ed.selection.text).toBe('Target Heading');
+      expect(ed.selection.paragraphFormat.textAlignment).toBe('Center');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -3774,8 +4115,9 @@ describe('structure scope (the cheap navigation leg)', () => {
   });
 
   it('keeps working past the block limit where full is refused', () => {
-    const many = Array.from({ length: FULL_INVENTORY_BLOCK_LIMIT + 1 }, (_, i) =>
-      para(`p${i}`, i % 100 === 0 ? 'Heading 1' : undefined)
+    const many = Array.from(
+      { length: FULL_INVENTORY_BLOCK_LIMIT + 1 },
+      (_, i) => para(`p${i}`, i % 100 === 0 ? 'Heading 1' : undefined)
     );
     const blocks = flattenSfdt({ sections: [{ blocks: many }] });
 
@@ -3819,8 +4161,9 @@ describe('structure scope (the cheap navigation leg)', () => {
 
 describe('retrieval refusals carry their remedy', () => {
   it('document_too_large keeps its hard limit and names structure as the way in', () => {
-    const many = Array.from({ length: FULL_INVENTORY_BLOCK_LIMIT + 1 }, (_, i) =>
-      para(`p${i}`)
+    const many = Array.from(
+      { length: FULL_INVENTORY_BLOCK_LIMIT + 1 },
+      (_, i) => para(`p${i}`)
     );
     const blocks = flattenSfdt({ sections: [{ blocks: many }] });
     const res = buildInventoryFromBlocks(blocks, { scope: 'full' }) as any;
@@ -4032,7 +4375,11 @@ describe('inheritance by default (S4b)', () => {
     'bidi'
   ] as const;
 
-  function readCellParaFormat(editor: DocumentEditor, anchor: string, len: number) {
+  function readCellParaFormat(
+    editor: DocumentEditor,
+    anchor: string,
+    len: number
+  ) {
     editor.selection.select(`${anchor};0`, `${anchor};${len + 1}`);
     const out: Record<string, any> = {};
     for (const prop of CELL_PARA_PROPS)
@@ -4059,7 +4406,10 @@ describe('inheritance by default (S4b)', () => {
       // The heading paragraph matched the heading reference - including the
       // 12 pt DIRECT override the named style alone would have hidden.
       const heading = selectRealBlock(ed, '0;2', 'Our Values');
-      expect((heading.paragraphFormat.styleName as any)?.name ?? heading.paragraphFormat.styleName).toBe('headingNoToc');
+      expect(
+        (heading.paragraphFormat.styleName as any)?.name ??
+          heading.paragraphFormat.styleName
+      ).toBe('headingNoToc');
       expect(heading.characterFormat.fontFamily).toBe('Arial');
       expect(heading.characterFormat.fontSize).toBe(12);
       expect(heading.characterFormat.bold).toBe(true);
@@ -4471,6 +4821,547 @@ describe('inheritance by default (S4b)', () => {
       const thanks = selectRealBlock(ed, '0;3', 'THANK YOU');
       expect(thanks.characterFormat.fontFamily).toBe('Georgia');
       expect(thanks.characterFormat.fontSize).toBe(10.5);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Heading level detection on documents that do not use built-in heading styles.
+//
+// The fixture is the captain's live proposal document's style pattern, taken
+// from its unpacked styles.xml: custom heading styles that declare no outline
+// level, are based on a BODY style, whose names rank backwards against their
+// sizes ("noTOCheading2" is the largest, "H1" the smallest), plus bold 12pt
+// "H1" field labels that must NOT read as headings.
+// ---------------------------------------------------------------------------
+describe('heading level detection', () => {
+  const proposalStyles = [
+    // Present but unused, exactly as in the live document - Title is based on
+    // it, so it is what an inheritance walk would find.
+    {
+      type: 'Paragraph',
+      name: 'Heading 1',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: { fontSize: 16, fontColor: '#2F5496' },
+      paragraphFormat: { outlineLevel: 'Level1' }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Normal',
+      next: 'Normal',
+      characterFormat: { fontFamily: 'Aptos', fontSize: 11 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Body Text',
+      basedOn: 'Normal',
+      next: 'Body Text',
+      characterFormat: { fontSize: 12 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Title',
+      basedOn: 'Heading 1',
+      next: 'Normal',
+      characterFormat: { fontSize: 20, fontColor: '#1F4E79' }
+    },
+    // Sounds second-level, is the biggest heading in the document.
+    {
+      type: 'Paragraph',
+      name: 'noTOCheading2',
+      basedOn: 'Body Text',
+      next: 'Body Text',
+      characterFormat: { bold: true, fontSize: 20, fontColor: '#1F4E79' }
+    },
+    {
+      type: 'Paragraph',
+      name: 'headingNoToc',
+      basedOn: 'Body Text',
+      next: 'Body Text',
+      characterFormat: { bold: true, fontSize: 14, fontColor: '#1F4E79' }
+    },
+    // Sounds top-level, is a 12pt bold field label with no basedOn at all.
+    {
+      type: 'Paragraph',
+      name: 'H1',
+      characterFormat: { bold: true, fontSize: 12 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'TOC 1',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: { fontSize: 10 }
+    }
+  ];
+
+  const styled = (styleName: string, text: string) => ({
+    paragraphFormat: { styleName },
+    inlines: [{ text }]
+  });
+
+  const proposalSfdt = () => ({
+    sections: [
+      {
+        blocks: [
+          styled('Title', 'About Hilb Group'),
+          styled(
+            'Normal',
+            'Built on trust, integrity, and collaboration, Hilb Group brings national capability to local relationships.'
+          ),
+          styled('noTOCheading2', 'Industry Experience'),
+          styled(
+            'Normal',
+            'We have placed coverage for human services organisations for over thirty years.'
+          ),
+          styled('noTOCheading2', 'A Long-Term Perspective'),
+          styled(
+            'Normal',
+            'Our renewal strategy is built around a three-year view of your exposures.'
+          ),
+          styled('headingNoToc', 'Our Approach'),
+          styled(
+            'Normal',
+            'We start with the exposures and work outward to the market.'
+          ),
+          styled('headingNoToc', 'Coverages & Limits'),
+          styled(
+            'Normal',
+            'The programme below reflects the limits agreed at the last review.'
+          ),
+          // Field labels: 'H1' in a table cell, as every one of the live
+          // document's 71 uses is...
+          {
+            tableFormat: {},
+            rows: [
+              {
+                rowFormat: {},
+                cells: [
+                  { cellFormat: {}, blocks: [styled('H1', 'Company Name')] },
+                  {
+                    cellFormat: {},
+                    blocks: [styled('Body Text', 'Acme Mutual Insurance')]
+                  }
+                ]
+              },
+              {
+                rowFormat: {},
+                cells: [
+                  { cellFormat: {}, blocks: [styled('H1', 'Rating')] },
+                  {
+                    cellFormat: {},
+                    blocks: [styled('Body Text', 'A (Excellent)')]
+                  }
+                ]
+              }
+            ]
+          },
+          // ...and again in the body, so the exclusion is proven by the rule
+          // itself and not only by the cell path that already returns -1.
+          styled('H1', 'Financial Size'),
+          styled('Body Text', 'XV ($2 billion or greater)')
+        ]
+      }
+    ],
+    styles: proposalStyles
+  });
+
+  const outlineOf = (editor: DocumentEditor) =>
+    (
+      buildInventoryFromBlocks(flattenSfdt(JSON.parse(editor.serialize())), {
+        scope: 'outline'
+      }) as any
+    ).sections;
+
+  it('real SDK: a custom heading style based on a body style is a heading', () => {
+    const ed = makeRealDocumentEditor(proposalSfdt());
+    try {
+      const blocks = flattenSfdt(JSON.parse(ed.serialize()));
+      const approach = blocks.find((b) => b.text === 'Our Approach');
+      expect(approach).toMatchObject({
+        kind: 'heading',
+        isHeading: true
+      });
+      expect(outlineOf(ed).map((s: any) => s.heading)).toEqual([
+        'About Hilb Group',
+        'Industry Experience',
+        'A Long-Term Perspective',
+        'Our Approach',
+        'Coverages & Limits'
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: bold 12pt field labels are not headings, in a cell or in the body', () => {
+    const ed = makeRealDocumentEditor(proposalSfdt());
+    try {
+      const blocks = flattenSfdt(JSON.parse(ed.serialize()));
+      for (const label of ['Company Name', 'Rating', 'Financial Size']) {
+        const block = blocks.find((b) => b.text === label);
+        expect(block?.format?.styleName).toBe('H1');
+        expect({ label, isHeading: block?.isHeading, level: block?.level }).toEqual(
+          { label, isHeading: false, level: -1 }
+        );
+      }
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: the larger custom styles rank above the smaller one', () => {
+    const ed = makeRealDocumentEditor(proposalSfdt());
+    try {
+      const levelOf = (heading: string) =>
+        outlineOf(ed).find((s: any) => s.heading === heading).level;
+      // 20pt Title, 20pt noTOCheading2, 14pt headingNoToc. The names would
+      // order these the other way round.
+      expect(levelOf('Our Approach')).toBeGreaterThan(
+        levelOf('About Hilb Group')
+      );
+      expect(levelOf('Our Approach')).toBeGreaterThan(
+        levelOf('Industry Experience')
+      );
+      expect(outlineOf(ed).map((s: any) => [s.heading, s.level])).toEqual([
+        ['About Hilb Group', 0],
+        ['Industry Experience', 1],
+        ['A Long-Term Perspective', 1],
+        ['Our Approach', 2],
+        ['Coverages & Limits', 2]
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: sibling sections compare equal, so a same-level comparable resolves', () => {
+    const ed = makeRealDocumentEditor(proposalSfdt());
+    try {
+      const sections = outlineOf(ed);
+      const comparableFor = (heading: string) => {
+        const target = sections.find((s: any) => s.heading === heading);
+        return sections.find(
+          (s: any) => s.anchor !== target.anchor && s.level === target.level
+        )?.heading;
+      };
+      expect(comparableFor('Coverages & Limits')).toBe('Our Approach');
+      expect(comparableFor('A Long-Term Perspective')).toBe(
+        'Industry Experience'
+      );
+      // Levels are a property of the style, not of one paragraph: the sibling
+      // pair below carries a direct size override on one member only.
+      const withOverride = {
+        sections: [
+          {
+            blocks: [
+              styled('headingNoToc', 'Our Approach'),
+              styled('Normal', 'We start with the exposures.'),
+              {
+                paragraphFormat: { styleName: 'headingNoToc' },
+                inlines: [
+                  {
+                    text: 'Coverages & Limits',
+                    characterFormat: { fontSize: 12 }
+                  }
+                ]
+              },
+              styled('Normal', 'The programme below reflects the limits.')
+            ]
+          }
+        ],
+        styles: proposalStyles
+      };
+      const overridden = makeRealDocumentEditor(withOverride);
+      try {
+        const levels = outlineOf(overridden).map((s: any) => s.level);
+        expect(levels).toHaveLength(2);
+        expect(levels[1]).toBe(levels[0]);
+      } finally {
+        destroyRealDocumentEditor(overridden);
+      }
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a well-formed document keeps its declared levels', () => {
+    // Heading 3 with no Heading 2 in between: size ranking alone would collapse
+    // these to 1 and 2. Declared levels are authoritative and must survive.
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            styled('Heading 1', 'Executive Summary'),
+            styled('Normal', 'This programme covers the 2026 policy year.'),
+            // An empty heading paragraph - the live document has seven - keeps
+            // its declared level: it is declared, not inferred from text.
+            styled('Heading 2', ''),
+            styled('Heading 3', 'Pricing detail'),
+            styled('Normal', 'The indication below is subject to survey.'),
+            styled('Heading 1', 'Next Steps'),
+            styled('Normal', 'We will bind on receipt of the signed request.')
+          ]
+        }
+      ],
+      styles: [
+        {
+          type: 'Paragraph',
+          name: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 11 }
+        },
+        {
+          type: 'Paragraph',
+          name: 'Heading 1',
+          basedOn: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 16 },
+          paragraphFormat: { outlineLevel: 'Level1' }
+        },
+        {
+          type: 'Paragraph',
+          name: 'Heading 2',
+          basedOn: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 13 },
+          paragraphFormat: { outlineLevel: 'Level2' }
+        },
+        {
+          type: 'Paragraph',
+          name: 'Heading 3',
+          basedOn: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 12 },
+          paragraphFormat: { outlineLevel: 'Level3' }
+        }
+      ]
+    });
+    try {
+      expect(outlineOf(ed).map((s: any) => [s.heading, s.level])).toEqual([
+        ['Executive Summary', 1],
+        ['', 2],
+        ['Pricing detail', 3],
+        ['Next Steps', 1]
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a declared outline level outranks the size inference', () => {
+    // 'sectionHead' is big enough to be inferred as the top level, and says
+    // otherwise. The declaration wins - on the style, and on the paragraph.
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            styled('sectionHead', 'Coverage Summary'),
+            styled('Normal', 'The limits below apply to all locations.'),
+            {
+              paragraphFormat: { styleName: 'Normal', outlineLevel: 'Level4' },
+              inlines: [{ text: 'Endorsement note' }]
+            },
+            styled('Normal', 'Endorsements are listed in the appendix.')
+          ]
+        }
+      ],
+      styles: [
+        {
+          type: 'Paragraph',
+          name: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 11 }
+        },
+        {
+          type: 'Paragraph',
+          name: 'sectionHead',
+          basedOn: 'Normal',
+          next: 'Normal',
+          characterFormat: { bold: true, fontSize: 18 },
+          paragraphFormat: { outlineLevel: 'Level2' }
+        }
+      ]
+    });
+    try {
+      expect(outlineOf(ed).map((s: any) => [s.heading, s.level])).toEqual([
+        ['Coverage Summary', 2],
+        ['Endorsement note', 4]
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a stale table of contents does not drag the body-text bar down', () => {
+    // The live document's shape, and the reason the body-text size is measured
+    // over table cells too: 211 paragraphs of 10pt TOC against prose that lives
+    // almost entirely inside layout tables. Measuring the body story alone made
+    // 10pt the body size, which promoted 12pt "Body Text" to a heading.
+    const tocEntry = (text: string) => styled('TOC 1', text);
+    const cell = (text: string, styleName: string) => ({
+      cellFormat: {},
+      blocks: [styled(styleName, text)]
+    });
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            styled('Title', 'About Hilb Group'),
+            tocEntry('About Us5'),
+            tocEntry('Our Mission5'),
+            tocEntry('Our Values5'),
+            tocEntry('Your Client Services Team6'),
+            tocEntry('Named Insured(s)7'),
+            tocEntry('Insured Location Information7'),
+            styled('headingNoToc', 'Our Approach'),
+            // Body Text in the body story, as the live document has it - short,
+            // unterminated, and 12pt, so only the size bar can exclude it.
+            styled('Body Text', 'How We Support Clients'),
+            {
+              tableFormat: {},
+              rows: [
+                {
+                  rowFormat: {},
+                  cells: [
+                    cell(
+                      'Built on trust, integrity, and collaboration, Hilb Group brings national capability to local relationships.',
+                      'Normal'
+                    ),
+                    cell(
+                      'We have placed coverage for human services organisations for over thirty years.',
+                      'Normal'
+                    )
+                  ]
+                },
+                {
+                  rowFormat: {},
+                  cells: [
+                    cell(
+                      'Our renewal strategy is built around a three-year view of your exposures.',
+                      'Normal'
+                    ),
+                    cell(
+                      'The programme below reflects the limits agreed at the last review.',
+                      'Normal'
+                    )
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      styles: proposalStyles
+    });
+    try {
+      // 14pt headingNoToc ranks below 20pt Title; what matters is that 12pt
+      // "How We Support Clients" is not in the outline at all.
+      expect(outlineOf(ed).map((s: any) => [s.heading, s.level])).toEqual([
+        ['About Hilb Group', 0],
+        ['Our Approach', 2]
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('an out-of-range declared outline level is not a heading', () => {
+    // OOXML's w:outlineLvl 9 means body text, and the live document's
+    // "TOC Heading" style carries it. SFDT's own enum stops at Level9, so an
+    // importer that passes the raw index through must not mint a level-10
+    // heading. Asserted on the walker directly - the SDK's enum would reject
+    // the value before it reached us.
+    const blocks = flattenSfdt({
+      sections: [
+        {
+          blocks: [
+            para('Table of Contents', 'TOC Heading'),
+            para('This programme covers the 2026 policy year.', 'Normal'),
+            para('Nothing to see here', 'quietStyle')
+          ]
+        }
+      ],
+      styles: [
+        {
+          type: 'Paragraph',
+          name: 'Normal',
+          characterFormat: { fontSize: 11 }
+        },
+        {
+          type: 'Paragraph',
+          name: 'TOC Heading',
+          basedOn: 'Normal',
+          characterFormat: { fontSize: 10 },
+          paragraphFormat: { outlineLevel: 'Level10' }
+        },
+        {
+          type: 'Paragraph',
+          name: 'quietStyle',
+          basedOn: 'Normal',
+          paragraphFormat: { outlineLevel: 'BodyText' }
+        }
+      ]
+    });
+    expect(blocks.map((b) => [b.text, b.kind, b.level])).toEqual([
+      ['Table of Contents', 'paragraph', -1],
+      ['This programme covers the 2026 policy year.', 'paragraph', -1],
+      ['Nothing to see here', 'paragraph', -1]
+    ]);
+  });
+
+  it('real SDK: a large-type style used for prose is not a heading', () => {
+    // Size alone is not enough: a 16pt cover blurb is body text, and promoting
+    // it would put a page break in the middle of the cover page.
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            styled(
+              'coverBlurb',
+              'A proposed insurance programme prepared for Innovation Learning LLC, covering general liability, property and umbrella exposures for the coming policy year.'
+            ),
+            styled('Normal', 'Prepared by the Hilb Group risk advisory team.'),
+            styled('Normal', 'All figures are indications, not quotations.'),
+            // Enough body text that 11pt is unambiguously this document's body
+            // size, so the blurb clears the size gate and only its shape - long,
+            // and ending in a sentence terminator - can exclude it.
+            styled(
+              'Normal',
+              'Coverage is subject to the terms, conditions and exclusions of the policies as issued.'
+            ),
+            styled(
+              'Normal',
+              'Premiums shown exclude taxes, fees and surcharges unless stated otherwise.'
+            ),
+            styled(
+              'Normal',
+              'Please review the schedule of locations and advise of any additions before binding.'
+            )
+          ]
+        }
+      ],
+      styles: [
+        {
+          type: 'Paragraph',
+          name: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 11 }
+        },
+        {
+          type: 'Paragraph',
+          name: 'coverBlurb',
+          basedOn: 'Normal',
+          next: 'Normal',
+          characterFormat: { fontSize: 16 }
+        }
+      ]
+    });
+    try {
+      expect(outlineOf(ed)).toEqual([]);
     } finally {
       destroyRealDocumentEditor(ed);
     }

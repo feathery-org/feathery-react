@@ -32,9 +32,11 @@ import {
   _setMutationGuardObserver,
   applyDocumentEdits,
   flattenSfdt,
+  getDocumentInventory,
   ApplyEditsResult,
   EditOp,
-  MutationGuardCoverage
+  MutationGuardCoverage,
+  TableFacts
 } from '../syncfusionDocumentOps';
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
 
@@ -213,6 +215,78 @@ const taxColumnFixture = () => ({
   ]
 });
 
+// A banded table beside an unstyled one - the captain's shape: a sibling section
+// whose table is beautifully striped, and a new section's table that is not.
+// 0;0 title, 0;1 the banded table, 0;2 the plain table, 0;3 trailing paragraph.
+const shadedCell = (text: string, background?: string) => ({
+  cellFormat: {
+    preferredWidth: 100,
+    ...(background ? { shading: { backgroundColor: background } } : {})
+  },
+  blocks: [{ inlines: [{ text }] }]
+});
+
+const bandedTablesFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Location Schedule'),
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [
+                shadedCell('Loc #', '#1F3864'),
+                shadedCell('Address', '#1F3864')
+              ]
+            },
+            { rowFormat: {}, cells: [shadedCell('1'), shadedCell('A St')] },
+            {
+              rowFormat: {},
+              cells: [
+                shadedCell('2', '#D9E2F3'),
+                shadedCell('B St', '#D9E2F3')
+              ]
+            },
+            { rowFormat: {}, cells: [shadedCell('3'), shadedCell('C St')] },
+            {
+              rowFormat: {},
+              cells: [
+                shadedCell('4', '#D9E2F3'),
+                shadedCell('D St', '#D9E2F3')
+              ]
+            }
+          ]
+        },
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            { rowFormat: {}, cells: [shadedCell('Loc #'), shadedCell('Address')] },
+            { rowFormat: {}, cells: [shadedCell('5'), shadedCell('E St')] },
+            { rowFormat: {}, cells: [shadedCell('6'), shadedCell('F St')] },
+            { rowFormat: {}, cells: [shadedCell('7'), shadedCell('G St')] },
+            { rowFormat: {}, cells: [shadedCell('8'), shadedCell('H St')] }
+          ]
+        },
+        para('End')
+      ]
+    }
+  ]
+});
+
+/** Every row's shared fill, straight off a table_facts read. */
+const rowFills = (ed: DocumentEditor, tableAnchor: string) => {
+  const read = getDocumentInventory(ed as any, {
+    scope: 'table_facts',
+    tableAnchor
+  });
+  expect('table' in read).toBe(true);
+  return (read as { table: TableFacts }).table.rows.map(
+    (row) => row.appearance?.shading ?? null
+  );
+};
+
 // Table-less, final empty paragraph with nothing after it: the only fixture
 // shape the page-layout ops complete under jsdom (S2 probe finding).
 const pageOpsFixture = () => ({
@@ -302,6 +376,19 @@ const CONTRACTS: Record<string, ContractCase> = {
     edits: [{ op: 'delete_text', anchor: '0;2', find: 'DRAFT ' }],
     verify: (ed) => {
       expect(blockTexts(ed)[2]).toBe('note: Acme Corp must confirm.');
+    }
+  },
+  delete_paragraph: {
+    fixture: () => ({
+      sections: [
+        {
+          blocks: [para('Before'), { inlines: [] }, para('After')]
+        }
+      ]
+    }),
+    edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }],
+    verify: (ed) => {
+      expect(blockTexts(ed)).toEqual(['Before', 'After']);
     }
   },
   insert_text: {
@@ -402,6 +489,104 @@ const CONTRACTS: Record<string, ContractCase> = {
       );
     }
   },
+  set_cell_format: {
+    fixture: bandedTablesFixture,
+    edits: [
+      {
+        op: 'set_cell_format',
+        anchor: '0;2;1;1;0',
+        shading: '#FFF2CC',
+        verticalAlignment: 'Center',
+        borders: 'AllBorders',
+        borderColor: '#7F7F7F',
+        borderWidth: 0.5,
+        borderStyle: 'Single'
+      }
+    ],
+    verify: (ed, result) => {
+      const read = getDocumentInventory(ed as any, {
+        scope: 'table_facts',
+        tableAnchor: '0;2'
+      }) as { table: TableFacts };
+      const cell = read.table.rows[1].cells[1];
+      expect(cell.appearance).toEqual({
+        shading: '#FFF2CC',
+        verticalAlignment: 'Center',
+        borders: { all: { style: 'Single', width: 0.5, color: '#7F7F7F' } }
+      });
+      expect(result.results[0].appearance).toMatchObject({ cellsWritten: 1 });
+      // Formatting alone: no revision to bind to, and the engine says so.
+      expect(result.changeSet?.formatTracking).toBe('untracked_immediate');
+    }
+  },
+  set_row_format: {
+    fixture: bandedTablesFixture,
+    edits: [
+      {
+        op: 'set_row_format',
+        anchor: '0;2;0;0;0',
+        shading: '#1F3864',
+        isHeader: true
+      }
+    ],
+    verify: (ed, result) => {
+      const read = getDocumentInventory(ed as any, {
+        scope: 'table_facts',
+        tableAnchor: '0;2'
+      }) as { table: TableFacts };
+      expect(read.table.rows[0].isHeader).toBe(true);
+      expect(read.table.rows[0].appearance?.shading).toBe('#1F3864');
+      // The row is described ONCE: no per-cell repetition of the same fill.
+      expect(read.table.rows[0].cells.map((c) => c.appearance)).toEqual([
+        undefined,
+        undefined
+      ]);
+      expect(result.results[0].appearance).toMatchObject({
+        rowsWritten: 1,
+        cellsWritten: 2
+      });
+    }
+  },
+  copy_table_format: {
+    fixture: bandedTablesFixture,
+    edits: [
+      { op: 'copy_table_format', anchor: '0;2;0;0;0', sourceTable: '0;1' }
+    ],
+    verify: (ed, result) => {
+      // The plain table now reads exactly like its banded sibling.
+      expect(rowFills(ed, '0;2')).toEqual(rowFills(ed, '0;1'));
+      const read = getDocumentInventory(ed as any, {
+        scope: 'table_facts',
+        tableAnchor: '0;2'
+      }) as { table: TableFacts };
+      expect(read.table.rows[0].isHeader).toBe(true);
+      expect(result.results[0].appearance?.cellsWritten).toBeGreaterThan(0);
+    }
+  },
+  restripe_table: {
+    fixture: bandedTablesFixture,
+    // Break the stripe first with the bare SDK, then repair it with the op.
+    setup: (ed) => {
+      ed.selection.select('0;1;3;0;0;0', '0;1;3;0;0;0');
+      ed.selection.selectRow();
+      ed.selection.cellFormat.background = '#D9E2F3';
+    },
+    edits: [{ op: 'restripe_table', anchor: '0;1;0;0;0' }],
+    verify: (ed, result) => {
+      expect(rowFills(ed, '0;1')).toEqual([
+        '#1F3864',
+        null,
+        '#D9E2F3',
+        null,
+        '#D9E2F3'
+      ]);
+      expect(result.results[0].appearance?.banding).toEqual({
+        headerRows: 1,
+        period: 2,
+        cycle: [null, '#D9E2F3']
+      });
+    }
+  },
   change_case: {
     fixture: proseFixture,
     edits: [{ op: 'change_case', anchor: '0;0', caseType: 'uppercase' }],
@@ -487,12 +672,20 @@ const CONTRACTS: Record<string, ContractCase> = {
   },
   insert_table: {
     fixture: proseFixture,
-    edits: [{ op: 'insert_table', anchor: '0;3', rows: 2, columns: 3 }],
+    edits: [
+      { op: 'insert_table', anchor: '0;3', rows: 2, columns: 3 },
+      { op: 'set_cell_text', anchor: '0;3;0;0;0', text: 'Coverage' },
+      { op: 'set_cell_text', anchor: '0;3;0;1;0', text: 'Limit' },
+      { op: 'set_cell_text', anchor: '0;3;0;2;0', text: 'Premium' }
+    ],
     verify: (ed) => {
       const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
         (b) => b.kind === 'table_cell'
       );
       expect(cells.length).toBe(6);
+      expect(cells.map((cell) => cell.text)).toEqual(
+        expect.arrayContaining(['Coverage', 'Limit', 'Premium'])
+      );
     }
   },
   delete_table: {
