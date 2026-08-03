@@ -1,5 +1,5 @@
 import React, { ReactNode, useMemo, useState } from 'react';
-import { validate as uuidValidate } from 'uuid';
+import { validateUuid } from '../utils/uuid';
 import LoaderContainer from '../elements/components/LoaderContainer';
 import FeatherySpinner from '../elements/components/Spinner';
 
@@ -76,7 +76,7 @@ const useLoader = ({
   }, [loaders]);
 
   const isStepLoaderForButton = fullPageLoader
-    ? uuidValidate(fullPageLoader[0]) ||
+    ? validateUuid(fullPageLoader[0]) ||
       Boolean((fullPageLoader[1] as any)?.isCompletionLoader)
     : false;
   const isShowExplicitlyFalse = initialLoader && initialLoader.show === false;
