@@ -1,6 +1,6 @@
 // Adapter from the assistant's async tool contract to the single hardened
 // SyncFusion operation engine used by the in-form DocumentEditorContainer.
-import type { DocxBridge } from './assistantToolDispatch';
+import type { DocxBridge } from '../assistantToolDispatch';
 import {
   applyDocumentEdits,
   findDocumentOccurrences,

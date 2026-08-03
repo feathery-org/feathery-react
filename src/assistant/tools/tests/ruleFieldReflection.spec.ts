@@ -18,7 +18,7 @@ import {
   findDocumentOccurrences,
   flattenSfdt,
   LiveEditor
-} from '../syncfusionDocumentOps';
+} from '../docx/syncfusionDocumentOps';
 import { dispatchAssistantTool } from '../assistantToolDispatch';
 import { runLogicRuleById } from '../../../Form/logic';
 import internalState from '../../../utils/internalState';
@@ -118,13 +118,7 @@ const seed = (fields: Record<string, any>) => {
 
 const dispatchTitleRule = (input: Record<string, any>) =>
   dispatchAssistantTool('rule_fm_set_advisor_title_c07c', input, {
-    callableRules: [
-      {
-        id: TITLE_RULE.id,
-        name: TITLE_RULE.name,
-        server_side: false
-      }
-    ],
+    callableRules: [{ id: TITLE_RULE.id, name: TITLE_RULE.name }],
     runLogicRule: (ruleId, inputParams) =>
       runLogicRuleById(ruleId, inputParams, FORM, { documentPresent: true })
   });

@@ -15,6 +15,8 @@
 // visible error, which is what stops the next version-skewed tool from hanging.
 import type { ToolDispatchResult } from './assistantToolDispatch';
 
+import { TOOL_TIMEOUT_READ_MS, withToolTimeout } from './assistantToolDispatch';
+
 export type StreamedToolCall = {
   toolName: string;
   toolCallId: string;
@@ -86,48 +88,63 @@ export async function handleAssistantToolCall(
     return;
   }
 
+  // A hung form-runtime handler is the same wedge as a missing output, so
+  // every native call races the shared tool timeout
+  const timed = (run: () => Promise<any>) =>
+    withToolTimeout(run, TOOL_TIMEOUT_READ_MS, toolCall.toolName);
+
   switch (toolCall.toolName) {
     case 'setFieldValue':
-      done(await native.setFieldValue(asArray(input.fields)));
+      done(await timed(() => native.setFieldValue(asArray(input.fields))));
       return;
     case 'clickElement':
       done(
-        await native.clickElement(asString(input.elementId), input.repeatIndex)
+        await timed(() =>
+          native.clickElement(asString(input.elementId), input.repeatIndex)
+        )
       );
       return;
     case 'navigateToStep':
-      done(await native.navigateToStep(asString(input.stepKey)));
+      done(await timed(() => native.navigateToStep(asString(input.stepKey))));
       return;
     case 'triggerTableAction':
       done(
-        await native.triggerTableAction(
-          asString(input.tableId),
-          asNumber(input.rowIndex),
-          typeof input.actionLabel === 'string' ? input.actionLabel : undefined
+        await timed(() =>
+          native.triggerTableAction(
+            asString(input.tableId),
+            asNumber(input.rowIndex),
+            typeof input.actionLabel === 'string'
+              ? input.actionLabel
+              : undefined
+          )
         )
       );
       return;
     case 'addTableRow':
-      done(await native.addTableRow(asString(input.tableId)));
+      done(await timed(() => native.addTableRow(asString(input.tableId))));
       return;
     case 'deleteTableRow':
       done(
-        await native.deleteTableRow(
-          asString(input.tableId),
-          asNumber(input.rowIndex)
+        await timed(() =>
+          native.deleteTableRow(
+            asString(input.tableId),
+            asNumber(input.rowIndex)
+          )
         )
       );
       return;
     case 'setTableCellValue':
       done(
-        await native.setTableCellValue(
-          asString(input.tableId),
-          asArray(input.cells)
+        await timed(() =>
+          native.setTableCellValue(
+            asString(input.tableId),
+            asArray(input.cells)
+          )
         )
       );
       return;
     default:
-      // The branch whose absence wedged the conversation.
+      // Unknown tools must still emit an output or the turn hangs forever
       done(unhandled(toolCall.toolName));
   }
 }

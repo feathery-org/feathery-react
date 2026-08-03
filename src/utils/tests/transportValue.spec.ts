@@ -42,9 +42,9 @@ describe('sanitizeTransportValue assistant boundary', () => {
   ])(
     'recursively converts %s to JSON-shaped data',
     (_label, input, expected) => {
-      const result = sanitizeTransportValue(input, 1000);
-      expect(result).toEqual({ value: expected, truncated: false });
-      expect(() => JSON.stringify(result.value)).not.toThrow();
+      const result = sanitizeTransportValue(input);
+      expect(result).toEqual(expected);
+      expect(() => JSON.stringify(result)).not.toThrow();
     }
   );
 
@@ -53,19 +53,16 @@ describe('sanitizeTransportValue assistant boundary', () => {
       type: 'application/pdf'
     });
 
-    expect(sanitizeTransportValue({ nested: { file } }, 1000)).toEqual({
-      value: {
-        nested: {
-          file: {
-            kind: 'file',
-            present: true,
-            name: 'policy.pdf',
-            type: 'application/pdf',
-            size: 6
-          }
+    expect(sanitizeTransportValue({ nested: { file } })).toEqual({
+      nested: {
+        file: {
+          kind: 'file',
+          present: true,
+          name: 'policy.pdf',
+          type: 'application/pdf',
+          size: 6
         }
-      },
-      truncated: false
+      }
     });
   });
 
@@ -73,28 +70,28 @@ describe('sanitizeTransportValue assistant boundary', () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
 
-    expect(sanitizeTransportValue(cyclic, 1000)).toEqual({
-      value: { self: { kind: 'circular', present: true } },
-      truncated: false
+    expect(sanitizeTransportValue(cyclic)).toEqual({
+      self: { kind: 'circular', present: true }
     });
   });
 
   it('serializes the same object in sibling positions', () => {
     const shared = { value: 'shared' };
 
-    expect(sanitizeTransportValue([shared, shared], 1000)).toEqual({
-      value: [{ value: 'shared' }, { value: 'shared' }],
-      truncated: false
-    });
+    expect(sanitizeTransportValue([shared, shared])).toEqual([
+      { value: 'shared' },
+      { value: 'shared' }
+    ]);
   });
 
   it('serializes every row when an array is filled with one object', () => {
     const row = { value: 'row' };
 
-    expect(sanitizeTransportValue(Array(3).fill(row), 1000)).toEqual({
-      value: [{ value: 'row' }, { value: 'row' }, { value: 'row' }],
-      truncated: false
-    });
+    expect(sanitizeTransportValue(Array(3).fill(row))).toEqual([
+      { value: 'row' },
+      { value: 'row' },
+      { value: 'row' }
+    ]);
   });
 
   it('preserves padded repeat-container matrix rows in field changes', () => {
@@ -130,8 +127,8 @@ describe('sanitizeTransportValue assistant boundary', () => {
 
     const fieldChange = {
       key: 'coverage_schedule',
-      before: sanitizeTransportValue(beforeRows, 10_000).value,
-      after: sanitizeTransportValue(afterRows, 10_000).value
+      before: sanitizeTransportValue(beforeRows),
+      after: sanitizeTransportValue(afterRows)
     };
     const defaultRow = {
       coverage: ['General Liability'],
@@ -162,14 +159,9 @@ describe('sanitizeTransportValue assistant boundary', () => {
   it('serializes a shared object at different depths', () => {
     const shared = { value: 'shared' };
 
-    expect(
-      sanitizeTransportValue({ a: shared, b: { c: shared } }, 1000)
-    ).toEqual({
-      value: {
-        a: { value: 'shared' },
-        b: { c: { value: 'shared' } }
-      },
-      truncated: false
+    expect(sanitizeTransportValue({ a: shared, b: { c: shared } })).toEqual({
+      a: { value: 'shared' },
+      b: { c: { value: 'shared' } }
     });
   });
 
@@ -179,13 +171,10 @@ describe('sanitizeTransportValue assistant boundary', () => {
     a.b = b;
     b.a = a;
 
-    expect(sanitizeTransportValue(a, 1000)).toEqual({
-      value: {
-        b: {
-          a: { kind: 'circular', present: true }
-        }
-      },
-      truncated: false
+    expect(sanitizeTransportValue(a)).toEqual({
+      b: {
+        a: { kind: 'circular', present: true }
+      }
     });
   });
 
@@ -194,33 +183,40 @@ describe('sanitizeTransportValue assistant boundary', () => {
     const cyclic: Record<string, unknown> = { shared };
     shared.cyclic = cyclic;
 
-    expect(sanitizeTransportValue([shared, shared], 1000)).toEqual({
-      value: [
-        {
-          value: 'shared',
-          cyclic: {
-            shared: { kind: 'circular', present: true }
-          }
-        },
-        {
-          value: 'shared',
-          cyclic: {
-            shared: { kind: 'circular', present: true }
-          }
+    expect(sanitizeTransportValue([shared, shared])).toEqual([
+      {
+        value: 'shared',
+        cyclic: {
+          shared: { kind: 'circular', present: true }
         }
-      ],
-      truncated: false
-    });
+      },
+      {
+        value: 'shared',
+        cyclic: {
+          shared: { kind: 'circular', present: true }
+        }
+      }
+    ]);
   });
 
-  it.each([
-    ['ordinary text', 'x'.repeat(2000)],
-    ['escape-heavy text', '\u0000'.repeat(2000)],
-    ['a large object', { nested: { text: 'x'.repeat(2000) } }],
-    ['a large array', Array.from({ length: 1000 }, (_, index) => index)]
-  ])('bounds the serialized representation of %s', (_label, input) => {
-    const result = sanitizeTransportValue(input, 500);
-    expect(result.truncated).toBe(true);
-    expect(JSON.stringify(result.value).length).toBeLessThanOrEqual(500);
+  it('passes large values through unclipped, prompt bounding is the server digest\'s job', () => {
+    const large = { nested: { text: 'x'.repeat(2000) } };
+    expect(sanitizeTransportValue(large)).toEqual(large);
+  });
+
+  it('truncates a value too big for the request body, keeping the head', () => {
+    const oversized = sanitizeTransportValue({
+      text: 'x'.repeat(300_000)
+    }) as string;
+    expect(typeof oversized).toBe('string');
+    expect(oversized.endsWith('…[truncated]')).toBe(true);
+    expect(oversized.length).toBeLessThan(260_000);
+    expect(oversized.startsWith('{"text":"xxx')).toBe(true);
+  });
+
+  it('truncates an oversized string without wrapping it in JSON', () => {
+    const oversized = sanitizeTransportValue('y'.repeat(300_000)) as string;
+    expect(oversized.startsWith('yyy')).toBe(true);
+    expect(oversized.endsWith('…[truncated]')).toBe(true);
   });
 });

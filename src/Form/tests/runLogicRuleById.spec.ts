@@ -277,7 +277,7 @@ describe('runLogicRuleById - client-side path', () => {
     expect(() => JSON.stringify(res)).not.toThrow();
   });
 
-  it('bounds a client rule return before it reaches the assistant transport', async () => {
+  it('passes a large client rule return through unclipped for the server digest', async () => {
     seed({
       logicRules: [
         {
@@ -292,28 +292,10 @@ describe('runLogicRuleById - client-side path', () => {
 
     const res = await runLogicRuleById('c-large', {}, FORM);
 
-    expect(typeof res.result).toBe('string');
-    expect(JSON.stringify(res.result).length).toBeLessThanOrEqual(8000);
-    expect((res.result as string).endsWith('…')).toBe(true);
-  });
-
-  it('bounds the serialized size of escape-heavy return text', async () => {
-    seed({
-      logicRules: [
-        {
-          id: 'c-escaped',
-          name: 'Escaped Return',
-          trigger_event: 'tool',
-          server_side: false,
-          code: 'return "\\x00".repeat(3000);'
-        }
-      ]
-    });
-
-    const res = await runLogicRuleById('c-escaped', {}, FORM);
-
-    expect(JSON.stringify(res.result).length).toBeLessThanOrEqual(8000);
-    expect((res.result as string).endsWith('…')).toBe(true);
+    // No client clipping: the server digests oversized tool results and keeps
+    // full-fidelity recall via queryOutput
+    expect(res.result).toEqual({ nested: { text: 'x'.repeat(20000) } });
+    expect(() => JSON.stringify(res)).not.toThrow();
   });
 
   // The captain's live case: a rule that only mutates a form field and returns

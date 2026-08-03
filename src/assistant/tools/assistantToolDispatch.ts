@@ -23,33 +23,14 @@ export type DocxBridge = {
 };
 
 // A designer-defined `trigger_event === 'tool'` rule used only to authorize and
-// resolve a server-selected rule tool call back to a local rule id.
+// resolve a server-selected rule tool call back to a local rule id. ai-services
+// builds the model-facing catalog from the backend, never from this
 export type CallableRule = {
   id: string;
   name: string;
-  description?: string;
-  purpose?: string;
-  server_side: boolean;
-  parameters?: Array<{
-    name: string;
-    type: 'string' | 'number' | 'boolean' | 'file';
-    description?: string;
-    required?: boolean;
-    // The form field this parameter feeds (metadata.tool.parameters[].field),
-    // forwarded so Robin can ground/clarify against the latest live state.
-    field?: string;
-    [key: string]: any;
-  }>;
-  // The form fields the rule reads/writes (metadata.tool.allowed_fields),
-  // forwarded as description context so Robin can match current live values.
-  allowed_fields?: string[];
-  // Preserve the server-provided rule metadata so ai-services receives the
-  // complete host catalog without a discovery round trip.
-  metadata?: Record<string, any>;
 };
 
 export type AssistantToolContext = {
-  customToolHandlers?: Record<string, (input: any) => Promise<any>>;
   docxBridge?: DocxBridge;
   callableRules?: CallableRule[];
   runLogicRule?: (
@@ -178,18 +159,7 @@ export async function dispatchAssistantTool(
   input: any,
   ctx: AssistantToolContext
 ): Promise<ToolDispatchResult> {
-  // 1) Host-supplied custom handlers win over everything else.
-  const custom = ctx.customToolHandlers?.[toolName];
-  if (custom) {
-    const output = await withToolTimeout(
-      () => custom(input),
-      TOOL_TIMEOUT_READ_MS,
-      toolName
-    );
-    return { handled: true, output };
-  }
-
-  // 2) Built-in docx bridge reads/edits.
+  // 1) Built-in docx bridge reads/edits.
   if (toolName === 'getDocumentInventory') {
     const handler = ctx.docxBridge?.getDocumentInventory;
     const output = handler
@@ -233,7 +203,7 @@ export async function dispatchAssistantTool(
     return { handled: true, output };
   }
 
-  // 3) Designer-defined logic-rule tools.
+  // 2) Designer-defined logic-rule tools.
   if (isRuleTool(toolName)) {
     const callableRules = ctx.callableRules ?? [];
     const ruleId = resolveRuleId(toolName, input, callableRules);
@@ -276,33 +246,4 @@ export const buildCallableRules = (logicRules: any[] = []): CallableRule[] =>
         r.enabled !== false &&
         r.valid !== false
     )
-    .map((r) => {
-      const rule: CallableRule = {
-        id: r.id,
-        name: r.name,
-        description: r.description,
-        server_side: !!r.server_side,
-        parameters: r?.metadata?.tool?.parameters ?? [],
-        ...(r.metadata ? { metadata: r.metadata } : {})
-      };
-      const purpose = r.purpose ?? r.metadata?.tool?.purpose;
-      if (purpose) rule.purpose = purpose;
-      const allowedFields = r?.metadata?.tool?.allowed_fields;
-      if (Array.isArray(allowedFields) && allowedFields.length > 0) {
-        rule.allowed_fields = allowedFields.filter(
-          (f: unknown): f is string => typeof f === 'string' && !!f
-        );
-      }
-      return rule;
-    });
-
-// Keep per-request metadata under `context`, where ai-services reads targets,
-// selection, and panel_runtime. The backend adopts a new attachment session only from the
-// top-level `thread_id`, so mirror the resolved thread id in both places.
-export const buildAssistantRequestBody = (
-  context: Record<string, unknown>,
-  threadId: string | null
-): { thread_id: string | null; context: Record<string, unknown> } => ({
-  thread_id: threadId || null,
-  context: { ...context, threadId: threadId || null }
-});
+    .map((r) => ({ id: r.id, name: r.name }));

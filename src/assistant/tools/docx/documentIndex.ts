@@ -5,10 +5,11 @@
 // up with a loaded envelope, POST its block inventory to
 // /assistant/document-index.
 //
-// Trust boundary: the browser sends the same target manifest as chat plus the
-// editor's real envelope id. feathery-backend validates the panel/template
-// relationship and verifies that envelope belongs to the target-derived fuser
-// before sending a typed server-only scope to ai-services.
+// Trust boundary: the index push is fully verified by feathery-backend
+// (panel/template relationship, envelope verified against the target-derived
+// form submission) and stamps the verified identity onto the index. Chat
+// reads send the envelope target as a claim, authorized in ai-services
+// against those stamps.
 
 import { useEffect } from 'react';
 import { buildIndexBlocks, IndexBlock } from './syncfusionDocumentOps';
@@ -66,29 +67,20 @@ const documentTargetKey = (target: DocumentIndexTarget): string =>
 // remount of the chat, a re-render, or a second Robin request must not re-POST
 // unchanged content - and the freshness answer must survive all of those too.
 //
-// The freshness contract (S3, "staleness must be detectable, not silent"):
-//   - `changeSeq` bumps on EVERY contentChange, immediately, no debounce. The
-//     document goes stale the instant it changes; the 5s re-index debounce is
-//     the repair, not the detector.
-//   - `postedSeq`/`postedHash` record which change generation the server's
-//     index corresponds to. dirty === (changeSeq !== postedSeq).
-//   - The same digest is sent to the server as `contentHash` with each index
-//     POST and again as `document_state.indexHash` with each chat request, so
-//     the server can compare what it stored against what this client is
-//     looking at. Both values come from this one function; the server only
-//     ever tests them for equality.
+// The freshness contract: `currentHash` is the digest of the last snapshot
+// this client computed (recomputed on the debounced re-index). The chat sends
+// it on the envelope target as `contentHash`; the server compares it to the
+// digest stored with the index - match fresh, mismatch stale. Anything this
+// client cannot vouch for claims a sentinel no stored digest can equal, so an
+// unverified index reads stale rather than falsely fresh.
 interface ScopeIndexState {
-  // Digest the server confirmed it stored, null until the first clean POST.
+  currentHash: string | null;
   postedHash: string | null;
-  postedAt: number | null;
-  // Change generation the posted snapshot was built from.
-  postedSeq: number;
-  // Bumped synchronously on every contentChange.
-  changeSeq: number;
-  dirtySince: number | null;
-  // Digest currently being POSTed, so overlapping triggers cannot double-post.
   inFlightHash: string | null;
 }
+
+const PENDING_PREFIX = 'pending:';
+const PENDING_UNINDEXED = `${PENDING_PREFIX}unindexed`;
 
 const scopeState = new Map<string, ScopeIndexState>();
 
@@ -97,11 +89,8 @@ const stateFor = (target: DocumentIndexTarget): ScopeIndexState => {
   let state = scopeState.get(targetKey);
   if (!state) {
     state = {
+      currentHash: null,
       postedHash: null,
-      postedAt: null,
-      postedSeq: 0,
-      changeSeq: 0,
-      dirtySince: null,
       inFlightHash: null
     };
     scopeState.set(targetKey, state);
@@ -111,44 +100,13 @@ const stateFor = (target: DocumentIndexTarget): ScopeIndexState => {
 
 export const _resetDocumentIndexState = (): void => scopeState.clear();
 
-// What the chat sends as `context.document_state` on every request from a
-// document surface. ai-services compares `indexHash` against the hash stored
-// with the index and refuses semantic search while `indexDirty` - a stale
-// index returning plausible-but-wrong anchors is strictly worse than a loud
-// refusal.
-export interface DocumentIndexFreshness {
-  indexHash: string | null;
-  indexDirty: boolean;
-  dirtyForSeconds?: number;
-}
-
-export const getDocumentIndexFreshness = (
+// The hash the chat attaches to the envelope target it sends with every
+// request. Before the first snapshot there is nothing to vouch for, so the
+// claim is the unmatchable sentinel until one lands.
+export const getDocumentTargetContentHash = (
   target: DocumentIndexTarget
-): DocumentIndexFreshness => {
-  const state = scopeState.get(documentTargetKey(target));
-  // No confirmed POST yet this session: the server may hold an index from an
-  // earlier session or another submitter, and this client cannot vouch for it.
-  if (!state || state.postedHash === null)
-    return { indexHash: null, indexDirty: true };
-  if (state.changeSeq === state.postedSeq)
-    return { indexHash: state.postedHash, indexDirty: false };
-  return {
-    indexHash: state.postedHash,
-    indexDirty: true,
-    dirtyForSeconds:
-      state.dirtySince === null
-        ? 0
-        : Math.round((Date.now() - state.dirtySince) / 1000)
-  };
-};
-
-// The instant-staleness half of the contract: called synchronously from the
-// editor's contentChange, before any debounce.
-const markTargetDirty = (target: DocumentIndexTarget): void => {
-  const state = stateFor(target);
-  state.changeSeq++;
-  if (state.dirtySince === null) state.dirtySince = Date.now();
-};
+): string =>
+  scopeState.get(documentTargetKey(target))?.currentHash ?? PENDING_UNINDEXED;
 
 // Cheap, stable digest of the posted payload. Only ever compared against itself,
 // so collision resistance does not matter; length + content sensitivity does.
@@ -262,18 +220,13 @@ const syncSnapshot = (
   const target = getDocumentTarget(targets);
   if (!target) return;
   const state = stateFor(target);
-  // The change generation this snapshot represents. Captured before the async
-  // POST so an edit that lands mid-flight keeps the scope dirty.
-  const seqAtBuild = state.changeSeq;
+  // The freshness claim the chat sends tracks what this client last computed,
+  // whether or not the POST below happens or succeeds
+  state.currentHash = digest;
 
-  if (!force && state.postedHash === digest) {
-    // The server already holds exactly this content - e.g. a burst of edits
-    // that netted out to no change, or a reopen of the same document. The
-    // index is fresh again; say so.
-    state.postedSeq = seqAtBuild;
-    if (state.changeSeq === seqAtBuild) state.dirtySince = null;
-    return;
-  }
+  // The server already holds exactly this content - e.g. a burst of edits
+  // that netted out to no change, or a reopen of the same document
+  if (!force && state.postedHash === digest) return;
   // Claim the digest before the request so two overlapping triggers cannot
   // both POST the same content; drop the claim when the POST settles.
   if (state.inFlightHash === digest) return;
@@ -297,7 +250,6 @@ const syncSnapshot = (
         (typeof storedBlocks === 'number' && storedBlocks !== blocks.length)
       ) {
         state.postedHash = null;
-        if (state.dirtySince === null) state.dirtySince = Date.now();
         warn(
           `document index for target ${target.id} is incomplete ` +
             `(sent ${blocks.length} blocks, stored ${
@@ -310,15 +262,9 @@ const syncSnapshot = (
         return;
       }
       state.postedHash = digest;
-      state.postedAt = Date.now();
-      state.postedSeq = seqAtBuild;
-      // Only declare the scope clean when nothing changed while the POST was
-      // in flight; otherwise the pending debounce re-posts and clears it.
-      if (state.changeSeq === seqAtBuild) state.dirtySince = null;
     })
     .catch((err) => {
       state.inFlightHash = null;
-      if (state.dirtySince === null) state.dirtySince = Date.now();
       warn(
         `document index POST failed for target ${target.id} - semantic document search will return nothing`,
         err
@@ -455,13 +401,10 @@ export function useDocumentIndex({
       // load-complete signal. It covers what the stability poll cannot: a load
       // that pauses mid-way for longer than the stability window, and it also
       // usually lands the index sooner than the next poll tick would. The
-      // dirty mark is synchronous (a newly opened document is not the document
-      // the server indexed until proven otherwise); the serialize + POST are
-      // deferred off Syncfusion's dispatch stack. Even unchanged content is
-      // posted because regeneration may have selected a new server envelope.
+      // serialize + POST are deferred off Syncfusion's dispatch stack. Even
+      // unchanged content is posted because regeneration may have selected a
+      // new server envelope.
       const onDocumentChange = () => {
-        const changedTarget = getDocumentTarget(currentTargets());
-        if (changedTarget) markTargetDirty(changedTarget);
         later(() => {
           const targets = currentTargets();
           if (
@@ -477,14 +420,16 @@ export function useDocumentIndex({
 
       // Keep the index current: a regenerate re-opens a new document into this
       // same editor instance, so no fresh registration fires and this is the
-      // only signal. The dirty mark is synchronous - the index is stale the
-      // instant the document changes, and queries must see that immediately -
-      // while the re-index itself is debounced, and the fingerprint check
+      // only signal. The re-index is debounced, and the fingerprint check
       // means a settled edit that produced no net change costs nothing.
       let debounce: ReturnType<typeof setTimeout> | null = null;
       const onContentChange = () => {
-        const dirtyTarget = getDocumentTarget(currentTargets());
-        if (dirtyTarget) markTargetDirty(dirtyTarget);
+        // An un-indexed edit must read stale, never falsely fresh: flip the
+        // claimed hash provisional until the debounced re-index recomputes it
+        const target = getDocumentTarget(currentTargets());
+        const state = target && scopeState.get(documentTargetKey(target));
+        if (state?.currentHash && !state.currentHash.startsWith(PENDING_PREFIX))
+          state.currentHash = `${PENDING_PREFIX}${state.currentHash}`;
         if (debounce) clearTimeout(debounce);
         debounce = later(() => {
           const targets = currentTargets();

@@ -1,6 +1,6 @@
 import { act, render, renderHook } from '@testing-library/react';
 import {
-  getDocumentIndexFreshness,
+  getDocumentTargetContentHash,
   INDEX_POLL_MS,
   INDEX_STABLE_POLLS,
   postDocumentIndex,
@@ -15,7 +15,7 @@ import {
   unregisterDocxEditor,
   _clearDocxEditors
 } from '../docxEditorRegistry';
-import AssistantChat from '../../AssistantChat';
+import AssistantChat from '../../../AssistantChat';
 
 // Capture the chat transport options so tests can invoke the real `body()`
 // AssistantChat wires up - that is the exact payload a chat request carries,
@@ -45,11 +45,11 @@ jest.mock('@ai-sdk/react', () => ({
   })
 }));
 // Ships as ESM (via `streamdown`) and renders nothing relevant here.
-jest.mock('../../MarkdownText', () => ({
+jest.mock('../../../MarkdownText', () => ({
   __esModule: true,
   default: () => null
 }));
-jest.mock('../../voice/useAssistantVoice', () => ({
+jest.mock('../../../voice/useAssistantVoice', () => ({
   useAssistantVoice: () => ({
     active: false,
     start: jest.fn(),
@@ -58,7 +58,7 @@ jest.mock('../../voice/useAssistantVoice', () => ({
     listening: false
   })
 }));
-jest.mock('../../../utils/init', () => ({
+jest.mock('../../../../utils/init', () => ({
   initInfo: () => ({ sdkKey: 'SDK-KEY', userId: 'user-1' }),
   fieldValues: {},
   filePathMap: {}
@@ -437,10 +437,10 @@ describe('index-on-load: a progressively loading document must not be certified 
     expect(indexedText).toContain('General Liability');
     expect(indexedText).toContain('$5,000,000');
 
-    // And the freshness certificate must vouch for THAT index - the full one.
-    const fresh = getDocumentIndexFreshness(ENVELOPE_TARGET);
-    expect(fresh.indexDirty).toBe(false);
-    expect(fresh.indexHash).toBe(finalBody.contentHash);
+    // And the hash the chat will claim must vouch for THAT index - the full one.
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
+      finalBody.contentHash
+    );
 
     // Cost guard: the load must not burn an embedding run per layout tick.
     expect(indexPosts()).toHaveLength(1);
@@ -468,9 +468,9 @@ describe('index-on-load: a progressively loading document must not be certified 
 
     const finalBody = lastPost();
     expect(JSON.stringify(finalBody.blocks)).toContain('General Liability');
-    const fresh = getDocumentIndexFreshness(ENVELOPE_TARGET);
-    expect(fresh.indexDirty).toBe(false);
-    expect(fresh.indexHash).toBe(finalBody.contentHash);
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
+      finalBody.contentHash
+    );
   });
 
   it('documentChange on a still-blank editor posts nothing (the clobber guard holds)', async () => {
@@ -503,7 +503,9 @@ describe('index-on-load: a progressively loading document must not be certified 
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     expect(indexPosts()).toHaveLength(posted + 1);
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
+      lastPost().contentHash
+    );
   });
 });
 
@@ -571,11 +573,11 @@ describe('AssistantChat wiring (the regression guard)', () => {
     const transportBody = () =>
       (globalThis as any).__capturedTransportOpts.body();
 
-    expect(transportBody().context.targets).toEqual([
+    expect(transportBody().targets).toEqual([
       { type: 'panel', id: 'panel-1' },
       { type: 'fuser', id: 'user-1' }
     ]);
-    expect(transportBody().context.document_state).toBeUndefined();
+    expect(transportBody().context).toBeUndefined();
 
     const editor = fakeEditor();
     editor.loaded = true;
@@ -589,16 +591,12 @@ describe('AssistantChat wiring (the regression guard)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
 
-    expect(transportBody().context.targets).toEqual([
+    expect(transportBody().targets).toEqual([
       { type: 'panel', id: 'panel-1' },
       { type: 'fuser', id: 'user-1' },
       DOCUMENT_TARGET,
-      ENVELOPE_TARGET
+      { ...ENVELOPE_TARGET, contentHash: expect.any(String) }
     ]);
-    expect(transportBody().context.document_state).toMatchObject({
-      indexDirty: false,
-      indexHash: expect.any(String)
-    });
     expect(JSON.parse(indexPosts()[0][1].body).targets).toEqual(
       mountedEditorTargets()
     );
@@ -664,17 +662,11 @@ describe('AssistantChat wiring (the regression guard)', () => {
       )
     ).toEqual(['envelope-a', 'envelope-b']);
     expect(
-      getDocumentIndexFreshness({
-        type: 'envelope',
-        id: 'envelope-a'
-      }).indexDirty
-    ).toBe(false);
+      getDocumentTargetContentHash({ type: 'envelope', id: 'envelope-a' })
+    ).toEqual(expect.any(String));
     expect(
-      getDocumentIndexFreshness({
-        type: 'envelope',
-        id: 'envelope-b'
-      }).indexDirty
-    ).toBe(false);
+      getDocumentTargetContentHash({ type: 'envelope', id: 'envelope-b' })
+    ).toEqual(expect.any(String));
 
     // A stale event from the outgoing editor cannot be mislabeled as B.
     outgoing.text = 'stale outgoing edit';
@@ -686,12 +678,11 @@ describe('AssistantChat wiring (the regression guard)', () => {
   });
 });
 
-// S3: staleness must be detectable, not silent. A stale index returning
-// plausible-but-wrong anchors is strictly worse than an empty one - these
-// tests pin the client half of that contract: the dirty mark is synchronous
-// with the edit, the POST carries the document-level hash the server stores,
-// and nothing ever reports "fresh" that the server has not confirmed.
-describe('index freshness (S3 staleness detection)', () => {
+// The freshness contract, client half: the envelope target the chat sends
+// carries the digest of the last snapshot this client computed, the index
+// POST stores the same digest server-side, and the server compares the two on
+// every index read - match fresh, mismatch stale.
+describe('index freshness (target contentHash)', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
@@ -710,75 +701,93 @@ describe('index freshness (S3 staleness detection)', () => {
     return editor;
   };
 
-  it('reports dirty until the first POST is confirmed, then fresh with the posted hash', async () => {
+  it('claims the unmatchable sentinel before the first snapshot, then the posted hash', async () => {
     const editor = loadedEditor();
     mount(DOC_ID);
     registerDocxEditor(undefined, editor);
 
-    // Before the index lands, this client cannot vouch for whatever the
-    // server holds (an earlier session, another submitter) - so: dirty.
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET)).toEqual({
-      indexHash: null,
-      indexDirty: true
-    });
+    // Nothing to vouch for yet, so the server refuses index reads rather than
+    // answering from an index this client cannot match
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
+      'pending:unindexed'
+    );
 
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    const fresh = getDocumentIndexFreshness(ENVELOPE_TARGET);
-    expect(fresh.indexDirty).toBe(false);
-    expect(fresh.indexHash).toEqual(expect.any(String));
-    // The freshness hash IS the hash the server stored with the index.
+    const hash = getDocumentTargetContentHash(ENVELOPE_TARGET);
+    expect(hash).toEqual(expect.any(String));
+    // The claimed hash IS the hash the server stored with the index.
     const body = JSON.parse(indexPosts()[0][1].body);
-    expect(body.contentHash).toBe(fresh.indexHash);
+    expect(body.contentHash).toBe(hash);
     expect(body.blockCount).toBe(body.blocks.length);
   });
 
-  it('an edit marks the index stale IMMEDIATELY, before the re-index debounce', async () => {
+  it('an edit updates the hash on the debounced re-index, in step with the POST', async () => {
     const editor = loadedEditor();
     mount(DOC_ID);
     registerDocxEditor(undefined, editor);
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
+    const initialHash = getDocumentTargetContentHash(ENVELOPE_TARGET);
 
     editor.text = 'Total premium: $9,999';
     editor.emit('contentChange');
-    // No timers advanced: the very next chat request must already see stale.
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(true);
-
-    // The debounced re-index repairs it.
     await act(async () => {
       jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
     });
     expect(indexPosts()).toHaveLength(2);
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
-    expect(JSON.parse(indexPosts()[1][1].body).contentHash).toBe(
-      getDocumentIndexFreshness(ENVELOPE_TARGET).indexHash
-    );
+    const updatedHash = getDocumentTargetContentHash(ENVELOPE_TARGET);
+    expect(updatedHash).not.toBe(initialHash);
+    expect(JSON.parse(indexPosts()[1][1].body).contentHash).toBe(updatedHash);
   });
 
-  it('a burst of edits that nets out to no change clears dirty without a POST', async () => {
+  it('the claimed hash goes provisional the instant an edit fires, before the re-index lands', async () => {
     const editor = loadedEditor();
     mount(DOC_ID);
     registerDocxEditor(undefined, editor);
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
+    const initialHash = getDocumentTargetContentHash(ENVELOPE_TARGET);
 
+    editor.text = 'Total premium: $9,999';
     editor.emit('contentChange');
-    editor.emit('contentChange');
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(true);
+    // Mid-window the claim must not match the stored digest, so the server
+    // refuses instead of answering from the pre-edit index
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
+      `pending:${initialHash}`
+    );
+
     await act(async () => {
       jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
     });
-    // Content matches what the server already holds: fresh again, no re-POST.
-    expect(indexPosts()).toHaveLength(1);
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
+    const updatedHash = getDocumentTargetContentHash(ENVELOPE_TARGET);
+    expect(updatedHash).not.toContain('pending:');
+    expect(JSON.parse(indexPosts()[1][1].body).contentHash).toBe(updatedHash);
   });
 
-  it('keeps two submissions index and staleness state isolated', async () => {
+  it('a burst of edits that nets out to no change keeps the hash without a POST', async () => {
+    const editor = loadedEditor();
+    mount(DOC_ID);
+    registerDocxEditor(undefined, editor);
+    await act(async () => {
+      jest.advanceTimersByTime(INDEX_POLL_MS);
+    });
+    const initialHash = getDocumentTargetContentHash(ENVELOPE_TARGET);
+
+    editor.emit('contentChange');
+    editor.emit('contentChange');
+    await act(async () => {
+      jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
+    });
+    // Content matches what the server already holds: no re-POST, same hash.
+    expect(indexPosts()).toHaveLength(1);
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(initialHash);
+  });
+
+  it('keeps two submissions index state isolated', async () => {
     const firstEditor = loadedEditor();
     const first = renderHook(() =>
       useDocumentIndex({
@@ -810,23 +819,25 @@ describe('index freshness (S3 staleness detection)', () => {
     expect(
       indexPosts().map(([, init]) => JSON.parse(init.body).envelopeId)
     ).toEqual([ENV_ID, OTHER_ENV_ID]);
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
     const otherEnvelopeTarget = {
       type: 'envelope',
       id: OTHER_ENV_ID
     };
-    expect(getDocumentIndexFreshness(otherEnvelopeTarget).indexDirty).toBe(
-      false
-    );
+    const firstHash = getDocumentTargetContentHash(ENVELOPE_TARGET);
+    expect(firstHash).toEqual(expect.any(String));
 
+    secondEditor.text = 'Edited second document';
     secondEditor.emit('contentChange');
-    expect(getDocumentIndexFreshness(otherEnvelopeTarget).indexDirty).toBe(
-      true
+    await act(async () => {
+      jest.advanceTimersByTime(REINDEX_DEBOUNCE_MS);
+    });
+    expect(getDocumentTargetContentHash(otherEnvelopeTarget)).toBe(
+      JSON.parse(indexPosts()[indexPosts().length - 1][1].body).contentHash
     );
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(false);
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(firstHash);
   });
 
-  it('a failed POST leaves the scope dirty - never fresh on hope', async () => {
+  it('a failed POST still carries the client hash so the server compare fails loud', async () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     fetchMock.mockResolvedValue({ ok: false, status: 500 });
     const editor = loadedEditor();
@@ -836,13 +847,13 @@ describe('index freshness (S3 staleness detection)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     expect(indexPosts()).toHaveLength(1);
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET)).toEqual({
-      indexHash: null,
-      indexDirty: true
-    });
+    // The server never stored this hash, so its compare refuses reads.
+    expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toEqual(
+      expect.any(String)
+    );
   });
 
-  it('an incomplete index (failed embeds) warns loud and refuses to report fresh', async () => {
+  it('an incomplete index (failed embeds) warns loud and re-posts on the next trigger', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     fetchMock.mockResolvedValue({
       ok: true,
@@ -862,7 +873,6 @@ describe('index freshness (S3 staleness detection)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
     expect(indexPosts()).toHaveLength(1);
-    expect(getDocumentIndexFreshness(ENVELOPE_TARGET).indexDirty).toBe(true);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining(
         'document index for target envelope-456 is incomplete'
@@ -871,10 +881,10 @@ describe('index freshness (S3 staleness detection)', () => {
   });
 });
 
-// S3: the freshness signal is only worth anything if every chat request
-// carries it. These exercise the REAL transport body AssistantChat builds -
-// the exact bytes a request would send - not a helper in isolation.
-describe('AssistantChat sends document_state (the staleness signal call site)', () => {
+// The freshness signal is only worth anything if every chat request carries
+// it. These exercise the REAL transport body AssistantChat builds - the exact
+// bytes a request would send - not a helper in isolation.
+describe('AssistantChat sends the envelope target hash (the staleness signal call site)', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     delete (globalThis as any).__capturedTransportOpts;
@@ -887,7 +897,10 @@ describe('AssistantChat sends document_state (the staleness signal call site)', 
     return opts.body();
   };
 
-  it('carries the live freshness answer, re-read on every request', async () => {
+  const envelopeTargetOf = (body: any) =>
+    (body.targets ?? []).find((target: any) => target.type === 'envelope');
+
+  it('carries the current hash on the envelope target, re-read on every request', async () => {
     render(
       <AssistantChat
         instanceId='form-1'
@@ -900,29 +913,23 @@ describe('AssistantChat sends document_state (the staleness signal call site)', 
     editor.loaded = true;
     registerDocxEditor(undefined, editor, { formId: 'form-1' });
 
-    // Before the index is confirmed: the request already says so.
-    expect(transportBody().context.document_state).toEqual({
-      indexHash: null,
-      indexDirty: true
-    });
+    // Before the first snapshot the claim is unmatchable, so the server
+    // refuses index reads instead of trusting an index this client cannot vouch for
+    expect(envelopeTargetOf(transportBody()).contentHash).toBe(
+      'pending:unindexed'
+    );
 
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    expect(transportBody().context.document_state).toEqual({
-      indexHash: expect.any(String),
-      indexDirty: false
-    });
-
-    // An edit flips the very next request to stale - each tool round trip
-    // rebuilds this body, so mid-turn staleness is visible mid-turn.
-    editor.emit('contentChange');
-    expect(transportBody().context.document_state).toMatchObject({
-      indexDirty: true
-    });
+    const target = envelopeTargetOf(transportBody());
+    expect(target.contentHash).toEqual(expect.any(String));
+    expect(target.contentHash).toBe(
+      JSON.parse(indexPosts()[0][1].body).contentHash
+    );
   });
 
-  it('sends no document_state before the mounted editor has an envelope', () => {
+  it('sends no envelope target before the mounted editor has an envelope', () => {
     render(
       <AssistantChat
         instanceId='form-1'
@@ -931,6 +938,6 @@ describe('AssistantChat sends document_state (the staleness signal call site)', 
         getJwt={() => 'JWT'}
       />
     );
-    expect(transportBody().context.document_state).toBeUndefined();
+    expect(envelopeTargetOf(transportBody())).toBeUndefined();
   });
 });

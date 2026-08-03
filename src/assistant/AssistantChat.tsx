@@ -93,13 +93,13 @@ import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
   readDocxSelection
-} from './tools/docxEditorBridge';
-import { getDocxEditor } from './tools/docxEditorRegistry';
+} from './tools/docx/docxEditorBridge';
+import { getDocxEditor } from './tools/docx/docxEditorRegistry';
 import {
   ENVELOPE_TARGET_TYPE,
-  getDocumentIndexFreshness,
+  getDocumentTargetContentHash,
   useDocumentIndex
-} from './tools/documentIndex';
+} from './tools/docx/documentIndex';
 import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
@@ -334,33 +334,28 @@ const AssistantChat = ({
   useDocumentIndex({ baseUrl, formId: instanceId, getTargets, headers });
 
   const buildChatBody = (): Record<string, unknown> => {
-    // ai-services reads assistant scope exclusively from body.context;
-    // form_key stays top-level because backend form auth reads body params.
+    // form_key stays top-level because backend form auth reads body params
     const body: Record<string, unknown> = {};
     if (formKey) body.form_key = formKey;
-    const context: Record<string, unknown> = {};
-    const targets = getTargets();
-    if (targets.length > 0) context.targets = targets;
+    // The envelope target carries the client's current content hash, re-read
+    // on every request; ai-services compares it to the hash stored with the
+    // index so stale hits fail loud instead of reading plausible
+    const targets = getTargets().map((target) =>
+      target.type === ENVELOPE_TARGET_TYPE
+        ? { ...target, contentHash: getDocumentTargetContentHash(target) }
+        : target
+    );
+    if (targets.length > 0) body.targets = targets;
 
     if (instanceId) {
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
-      if (panelRuntime) context.panel_runtime = panelRuntime;
-      context.selection = readDocxSelection(getDocxEditor(instanceId));
+      if (panelRuntime) body.panel_runtime = panelRuntime;
+      body.selection = readDocxSelection(getDocxEditor(instanceId));
       // Machine-only executor facts: protocol version and operation names.
       // ai-services intersects these names with its canonical server enum and
       // owns every description, example, payload rule, and result shape.
-      context.capabilities = CAPABILITIES_DECLARATION;
+      body.capabilities = CAPABILITIES_DECLARATION;
     }
-    // How fresh the semantic index is for the open document, re-read on every
-    // request (each tool round trip rebuilds this body, so the answer tracks
-    // edits within a turn). ai-services refuses semantic search when the index
-    // is dirty or holds someone else's content - stale hits must fail loud,
-    // not read plausible (S3). Never rendered into the prompt, so its
-    // per-request variation cannot break prompt caching.
-    const documentTarget = targets.find((t) => t.type === ENVELOPE_TARGET_TYPE);
-    if (documentTarget)
-      context.document_state = getDocumentIndexFreshness(documentTarget);
-    body.context = context;
     return body;
   };
 
@@ -670,6 +665,9 @@ const AssistantChat = ({
     [headers, getTargets, getJwt]
   );
   const activeThread = threads.find((t) => t.id === activeThreadId);
+  // A thread only gets a title on its first send, so an untitled (or absent)
+  // active thread means we're already sitting in a fresh chat
+  const inNewChat = !activeThread?.title;
   const activeChat = activeThread?.chat ?? readyChat;
 
   const {
@@ -1193,7 +1191,6 @@ const AssistantChat = ({
             overflow: 'hidden'
           }}
         >
-          <ChatIcon />
           <button
             type='button'
             onClick={() => setIsDropdownOpen((prev) => !prev)}
@@ -1222,7 +1219,7 @@ const AssistantChat = ({
                 minWidth: 0
               }}
             >
-              {activeThread?.title || 'AI Assistant'}
+              {activeThread?.title || 'New Chat'}
             </span>
             <span css={{ display: 'flex', opacity: 0.8, flexShrink: 0 }}>
               <ChevronDownIcon />
@@ -1388,28 +1385,30 @@ const AssistantChat = ({
                 overflowY: 'scroll'
               }}
             >
-              <button
-                type='button'
-                onClick={() => {
-                  handleNewThread();
-                  setIsDropdownOpen(false);
-                }}
-                css={{
-                  width: '100%',
-                  padding: '10px 14px',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: `1px solid ${GRAY_100}`,
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: colors.primary,
-                  textAlign: 'left',
-                  ':hover': { backgroundColor: GRAY_50 }
-                }}
-              >
-                + New Chat
-              </button>
+              {!inNewChat && (
+                <button
+                  type='button'
+                  onClick={() => {
+                    handleNewThread();
+                    setIsDropdownOpen(false);
+                  }}
+                  css={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: `1px solid ${GRAY_100}`,
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: colors.primary,
+                    textAlign: 'left',
+                    ':hover': { backgroundColor: GRAY_50 }
+                  }}
+                >
+                  + New Chat
+                </button>
+              )}
 
               {visibleThreads.length === 0 && (
                 <div
