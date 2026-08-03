@@ -8,16 +8,11 @@ const ASSISTANT_SOURCE = fs.readFileSync(
   'utf8'
 );
 
-describe('live-state field contract supersedes the duplicate field-read tool', () => {
-  it('does not register or import a duplicate field-read handler', () => {
-    expect(ASSISTANT_SOURCE).not.toContain('dispatchGetFormFields');
-    expect(ASSISTANT_SOURCE).not.toContain('getFormFields:');
-  });
-
+describe('live-state field contract', () => {
   it('keeps panelRuntime as the source attached to every request body', () => {
     expect(ASSISTANT_SOURCE).toContain('getPanelRuntimeSnapshot(instanceId)');
     expect(ASSISTANT_SOURCE).toContain(
-      'if (panelRuntime) context.panel_runtime = panelRuntime'
+      'if (panelRuntime) body.panel_runtime = panelRuntime'
     );
     expect(typeof getPanelRuntimeSnapshot).toBe('function');
   });

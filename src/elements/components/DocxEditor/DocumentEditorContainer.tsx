@@ -14,7 +14,7 @@ import { getSignUrl } from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
-} from '../../../assistant/tools/docxEditorRegistry';
+} from '../../../assistant/tools/docx/docxEditorRegistry';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container

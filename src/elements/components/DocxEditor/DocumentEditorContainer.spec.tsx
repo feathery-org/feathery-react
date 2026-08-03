@@ -7,7 +7,7 @@ import {
   _clearDocxEditors,
   getActiveDocxEditorEnvelopeTarget,
   getDocxEditor
-} from '../../../assistant/tools/docxEditorRegistry';
+} from '../../../assistant/tools/docx/docxEditorRegistry';
 import DocumentEditorContainer from './DocumentEditorContainer';
 
 jest.mock('./index', () => {

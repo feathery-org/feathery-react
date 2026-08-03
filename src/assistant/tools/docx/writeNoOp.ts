@@ -5,9 +5,8 @@
 // `0.00` makes that claim falsely, and it does more damage than the wasted
 // revision suggests - a reviewer who opens three change cards and finds two of
 // them identical to what was already there learns that a change card does not
-// mean anything, and starts accepting them without reading. Observed live on
-// 2026-07-27: the engine wrote `0.00` over `0.00` and it appeared in the review
-// pane as a tracked change.
+// mean anything, and starts accepting them without reading. Writing a value
+// over an identical value must never surface as a tracked change.
 //
 // So: BEFORE writing, compare the value about to be written with what the cell
 // already holds. If they are identical, write nothing at all - no selection, no
