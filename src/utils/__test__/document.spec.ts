@@ -45,18 +45,56 @@ describe('containerToolbarOutcomes', () => {
   it('reports save separately from the terminal action', () => {
     expect(
       containerToolbarOutcomes({ editor_toolbar_actions: ['save', 'sign'] })
-    ).toEqual({ terminalAction: 'sign', savesToField: true });
+    ).toEqual({
+      terminalAction: 'sign',
+      offersDraft: false,
+      savesToField: true
+    });
   });
 
-  it('ignores draft, which only DocuSign supports', () => {
+  it('offers draft beside sign for a DocuSign action', () => {
     expect(
-      containerToolbarOutcomes({ editor_toolbar_actions: ['draft'] })
-    ).toEqual({ terminalAction: undefined, savesToField: false });
+      containerToolbarOutcomes({
+        sign_method: 'docusign',
+        editor_toolbar_actions: ['sign', 'draft']
+      })
+    ).toEqual({
+      terminalAction: 'sign',
+      offersDraft: true,
+      savesToField: false
+    });
+  });
+
+  it('makes draft the terminal action when sign is not offered', () => {
+    expect(
+      containerToolbarOutcomes({
+        sign_method: 'docusign',
+        editor_toolbar_actions: ['draft']
+      })
+    ).toEqual({
+      terminalAction: 'draft',
+      offersDraft: false,
+      savesToField: false
+    });
+  });
+
+  it('drops draft without DocuSign, the only backend with a draft state', () => {
+    expect(
+      containerToolbarOutcomes({
+        sign_method: 'feathery',
+        editor_toolbar_actions: ['draft']
+      })
+    ).toEqual({
+      terminalAction: undefined,
+      offersDraft: false,
+      savesToField: false
+    });
   });
 
   it('offers no terminal action when nothing is configured', () => {
     expect(containerToolbarOutcomes({})).toEqual({
       terminalAction: undefined,
+      offersDraft: false,
       savesToField: false
     });
   });
