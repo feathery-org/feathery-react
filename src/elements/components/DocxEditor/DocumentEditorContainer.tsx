@@ -303,22 +303,54 @@ export default function DocumentEditorContainer({
   // (possibly cache-stale) envelope file URL.
   const runTerminalAction = useCallback(async () => {
     if (terminalAction !== 'sign') return;
+    const signerKey = targetAction?.envelope_signer_field_key;
+    const fillerEmail = signerKey
+      ? fieldValues[signerKey]?.toString() ?? ''
+      : '';
+    let finalized: Record<string, any> | undefined;
     // The sign ceremony expects a PDF with signature fields. Generation
     // skipped that conversion so the docx stayed editable — run it now,
     // against the just-saved edits (DocxEditor saves before this fires).
     // One-way: this draft stops being editable; regenerating produces a
     // fresh editable one. Throws on failure so the sign page never opens
-    // against an unfinalized envelope.
+    // against an unfinalized envelope. Runs on an already-finalized envelope
+    // too — it's idempotent, and it's what hands back the signer to open as.
     if (envelope && envelope.type === 'docx' && !envelope.signed) {
-      const signerKey = targetAction?.envelope_signer_field_key;
-      const signer = signerKey ? fieldValues[signerKey] : undefined;
-      await client.finalizeEnvelope(envelope.id, signer?.toString() ?? '');
+      // Per-role signers were held back at generation for the same reason, so
+      // they go up now, scoped to the document actually on screen. Without
+      // any, the shared signer field covers every role instead.
+      const roleSigners = (targetAction?.envelope_signers ?? [])
+        .filter((entry: any) => entry.document_id === activeDocumentId)
+        .map((entry: any) => ({
+          document_id: entry.document_id,
+          role_id: entry.role_id,
+          email: fieldValues[entry.field_key]?.toString() ?? ''
+        }));
+      const signers = (
+        roleSigners.length || !activeDocumentId
+          ? roleSigners
+          : [
+              {
+                document_id: activeDocumentId,
+                role_id: null,
+                email: fillerEmail
+              }
+            ]
+      ).filter((entry: any) => entry.email);
+      finalized = await client.finalizeEnvelope(
+        envelope.id,
+        signers,
+        fillerEmail
+      );
       setFinalizedId(envelope.id);
     }
-    const url = getSignUrl(targetAction?.redirect);
+    // A signer id comes back only when the filler signs first. Without one the
+    // envelope is someone else's to sign, so there's nothing to open.
+    if (!finalized?.signer_id) return;
+    const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
     if (targetAction?.redirect) featheryWindow().location.href = url;
     else openTab(url);
-  }, [client, envelope, targetAction, terminalAction]);
+  }, [client, envelope, targetAction, terminalAction, activeDocumentId]);
 
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
   // point. The schema container id is stable for this editor across renders;
@@ -404,7 +436,9 @@ export default function DocumentEditorContainer({
       fileName='document'
       terminalAction={terminalAction}
       onTerminalAction={terminalAction ? runTerminalAction : undefined}
-      terminalActionDisabled={!envelope.file}
+      // Signing needs a signer to open as, which only finalizing an unsigned
+      // envelope hands back - so there's nothing behind the button once signed.
+      terminalActionDisabled={!envelope.file || envelope.signed}
       // Save-to-field flow: the document's destination is a form field (set
       // on every save), not the user's machine — no Download button.
       hideDownload={targetAction?.envelope_action === 'save'}

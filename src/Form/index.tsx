@@ -218,7 +218,7 @@ import {
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
-import { getSignUrl } from '../utils/document';
+import { getSignUrl, getSubmissionSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
@@ -2797,20 +2797,15 @@ function Form({
           if (!action.view_draft_container) {
             const envAction = action.envelope_action;
             if (!envAction || envAction === 'sign') {
-              // One entry comes back per multi-signer document, carrying an
-              // id only when the filler signs it first. A signer link covers
-              // the batch's plain envelopes too, so it takes priority over
-              // the legacy user link, which serves only those.
+              // One entry comes back per signable envelope, carrying an id
+              // only when the filler signs it first. One signer link covers
+              // the rest of the batch they can sign.
               const responseSigners = data.signers ?? [];
-              const allMultiSigner =
-                responseSigners.length > 0 &&
-                new Set(responseSigners.map((s: any) => s.document_id)).size ===
-                  (action.documents ?? []).length;
               const matchedSigner = responseSigners.find(
                 (s: any) => s.signer_id
               );
 
-              if (!matchedSigner && allMultiSigner) {
+              if (!matchedSigner) {
                 // Nothing in the batch for the filler to sign themselves.
                 if (responseSigners.some((s: any) => s.invited)) {
                   updateEnvelopeGeneration(envelopeId, {
@@ -2822,8 +2817,8 @@ function Form({
                 }
               } else {
                 const url = getSignUrl(
-                  action.redirect,
-                  matchedSigner?.signer_id
+                  matchedSigner.signer_id,
+                  action.redirect
                 );
                 if (action.redirect) {
                   const eventData: Record<string, any> = {
@@ -2859,7 +2854,7 @@ function Form({
         // Enter the existing envelope sign flow for this submission's
         // documents WITHOUT regenerating (which would overwrite editor edits).
         // Same redirect/openTab behavior as the generate 'sign' branch above.
-        const url = getSignUrl(action.redirect);
+        const url = getSubmissionSignUrl(action.redirect);
         if (action.redirect) {
           await client.registerEvent({
             step_key: activeStep.key,

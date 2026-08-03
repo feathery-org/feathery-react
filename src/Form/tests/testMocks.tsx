@@ -297,7 +297,8 @@ jest.mock('../../utils/offlineRequestHandler', () => ({
 
 // Document util
 jest.mock('../../utils/document', () => ({
-  getSignUrl: () => 'https://example.com/sign'
+  getSignUrl: () => 'https://example.com/sign',
+  getSubmissionSignUrl: () => 'https://example.com/sign'
 }));
 
 // Poll hook

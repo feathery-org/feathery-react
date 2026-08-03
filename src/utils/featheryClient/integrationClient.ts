@@ -528,7 +528,15 @@ export default class IntegrationClient {
   // Finalize an edited docx envelope for signing: the backend converts it to
   // PDF and injects signature fields (the same pipeline generation runs when
   // a signer is known up front). One-way — the envelope stops being editable.
-  finalizeEnvelope(envelopeId: string, signerEmail = '') {
+  // Signers are supplied here rather than at generation: they're what makes
+  // the backend convert the docx, so holding them back is what kept the draft
+  // editable. Same list shape generation sends, where a null role_id means the
+  // one email covers every role.
+  finalizeEnvelope(
+    envelopeId: string,
+    signers: Record<string, any>[] = [],
+    fillerEmail = ''
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
     const options = {
@@ -536,7 +544,8 @@ export default class IntegrationClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fuser_key: userId ?? '',
-        signer_email: signerEmail
+        signers,
+        filler_email: fillerEmail
       }),
       keepalive: false
     };

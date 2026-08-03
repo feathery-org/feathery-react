@@ -9,7 +9,7 @@ function isValidUrl(urlString: string): boolean {
   }
 }
 
-export function getSignUrl(redirect?: boolean | string, signerId?: string) {
+function signUrl(token: string, redirect?: boolean | string) {
   const regionPart =
     initState.region && initState.region !== 'us' ? `${initState.region}.` : '';
 
@@ -33,9 +33,17 @@ export function getSignUrl(redirect?: boolean | string, signerId?: string) {
     }
   }
 
-  // The backend issues a signer id only when a row provably belongs to the
-  // filler. Everything else they can sign resolves through the fuser
-  // session, which serves any lone-signer envelope.
-  const id = signerId ?? initState._internalUserId;
-  return `https://${regionPart}document.feathery.io/to/${id}${query}`;
+  return `https://${regionPart}document.feathery.io/to/${token}${query}`;
+}
+
+// Everyone who can sign has a signer row, so an envelope is always opened as
+// that one signer rather than left for the server to guess.
+export function getSignUrl(signerId: string, redirect?: boolean | string) {
+  return signUrl(signerId, redirect);
+}
+
+// The whole submission's envelopes instead of one signer's view - only for the
+// action that reopens whatever was already generated.
+export function getSubmissionSignUrl(redirect?: boolean | string) {
+  return signUrl(initState._internalUserId, redirect);
 }
