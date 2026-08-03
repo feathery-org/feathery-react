@@ -7352,7 +7352,9 @@ function refuseReusedUserStatedFigures(
       message:
         `The user-stated figure ${JSON.stringify(
           first.text
-        )} already licenses cell "${first.anchor}" and cannot also license cell "${anchor}" in the same change set. ` +
+        )} already licenses cell "${
+          first.anchor
+        }" and cannot also license cell "${anchor}" in the same change set. ` +
         `If "${anchor}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
       details: [
         `first literal cell: ${first.anchor}`,
@@ -7950,7 +7952,9 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
     return {
       code: 'insert_table_cell_anchor_mismatch',
       message:
-        `insert_table at "${first.anchor}" would create the table at "${first.resultingAnchor}", but this change set writes cells under ${first.mismatchedCellWriteAnchors
+        `insert_table at "${first.anchor}" would create the table at "${
+          first.resultingAnchor
+        }", but this change set writes cells under ${first.mismatchedCellWriteAnchors
           .map((anchor) => `"${anchor}"`)
           .join(', ')}. ` +
         `Retarget those writes to "${first.resultingAnchor};row;column;0", or choose an insert anchor whose resulting table address matches them. Nothing was written.`,
