@@ -19,11 +19,13 @@ import {
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
   LiveEditor,
+  findReplaceCounterpart,
   listRevisionGroups,
   installRevisionGroupIsolation,
   parseRevisionGroupTag,
   rebindRevisionGroups,
-  resolveRevisionIndividually
+  resolveRevisionIndividually,
+  resolveRevisionsAsOneUndo
 } from '../syncfusionDocumentOps';
 
 DocumentEditor.Inject(
@@ -2796,6 +2798,9 @@ describe('assistant-defined accept groups', () => {
         ['cancellation', 1]
       ]);
       expect(views.map((v) => v.items[0].text)).toEqual(['AAA', 'BBB']);
+      // Adjacent but both insertions (and different groups): not a replace.
+      expect(findReplaceCounterpart(views[0].items[0].revision)).toBeUndefined();
+      expect(findReplaceCounterpart(views[1].items[0].revision)).toBeUndefined();
 
       // Untagged (human) writes keep native merge behavior: adjacent
       // insertions still combine into one revision. Count the raw revision
@@ -2837,17 +2842,39 @@ describe('assistant-defined accept groups', () => {
       expect(views[0].items).toHaveLength(1);
       const item = views[0].items[0];
       expect(item.revisionType).toBe('Replace');
-      expect(item.text).toBe('$5,500 → $6,000');
+      // Old and new ride separately so review UI can render a −/+ diff.
+      expect(item.beforeText).toBe('$5,500');
+      expect(item.text).toBe('$6,000');
       expect(item.partner).toBeTruthy();
 
-      // The one approval resolves both underlying revisions (this is what the
-      // panel does for a replace item).
-      resolveRevisionIndividually(item.revision, true);
-      resolveRevisionIndividually(item.partner as any, true);
+      // Either half resolves to the other (renderer-side classification),
+      // including via the memo written on first lookup.
+      expect(findReplaceCounterpart(item.revision)).toBe(item.partner);
+      expect(findReplaceCounterpart(item.partner as any)).toBe(item.revision);
+
+      // One approval resolves both underlying revisions as ONE undo unit
+      // (this is what the panel does for a replace item).
+      resolveRevisionsAsOneUndo(
+        live,
+        [item.revision, item.partner as any],
+        true
+      );
       expect((ed.revisions as any).changes.length).toBe(0);
       ed.selection.selectAll();
       expect(ed.selection.text).toContain('$6,000');
       expect(ed.selection.text).not.toContain('$5,500');
+
+      // A single undo restores the WHOLE replace — both revisions pending
+      // again and still folded as one Replace item, never a dangling
+      // insertion left behind by a half-undone pair.
+      ed.editorHistory.undo();
+      expect((ed.revisions as any).changes.length).toBe(2);
+      const restored = listRevisionGroups(live);
+      expect(restored).toHaveLength(1);
+      expect(restored[0].items).toHaveLength(1);
+      expect(restored[0].items[0].revisionType).toBe('Replace');
+      expect(restored[0].items[0].beforeText).toBe('$5,500');
+      expect(restored[0].items[0].text).toBe('$6,000');
     } finally {
       destroyRealDocumentEditor(ed);
     }

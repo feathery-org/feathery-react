@@ -5378,6 +5378,53 @@ export function resolveRevisionIndividually(
   resolveSingleRevision(captureNativeResolvers(revision), isAccept);
 }
 
+/**
+ * Resolve several revisions as ONE undoable operation. Resolving them
+ * one-by-one records one history entry each, so undo peels the unit apart —
+ * e.g. undoing an accepted replace restores only its inserted half, which
+ * then reads as a plain insertion. Wrap the batch in the engine's complex
+ * history (the same mechanism its native Accept All uses) so a single undo
+ * restores the whole unit.
+ */
+export function resolveRevisionsAsOneUndo(
+  editor: LiveEditor,
+  revisions: LiveRevision[],
+  isAccept: boolean
+): void {
+  const editorModule: any = (editor as any).editorModule ?? editor.editor;
+  const history: any =
+    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
+  let complex = false;
+  if (
+    revisions.length > 1 &&
+    typeof editorModule?.initComplexHistory === 'function'
+  ) {
+    try {
+      editorModule.initComplexHistory(isAccept ? 'Accept All' : 'Reject All');
+      complex = true;
+    } catch {
+      complex = false;
+    }
+  }
+  try {
+    for (const revision of revisions) {
+      try {
+        resolveRevisionIndividually(revision, isAccept);
+      } catch {
+        // A stale member range must not stop the rest of the unit.
+      }
+    }
+  } finally {
+    if (complex) {
+      try {
+        history?.updateComplexHistory?.();
+      } catch {
+        // History bookkeeping must never break the resolution itself.
+      }
+    }
+  }
+}
+
 /** Result of binding one change set's created revisions into accept groups. */
 interface RevisionGroupingReport {
   revisionCount: number;
@@ -5447,8 +5494,12 @@ export interface RevisionGroupItem {
   revision: LiveRevision;
   /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | 'Replace' | ''. */
   revisionType: string;
-  /** Readable excerpt of the tracked content; empty for pure structure. */
+  /** Readable excerpt of the tracked content; empty for pure structure.
+   *  For a Replace this is the INSERTED (new) text. */
   text: string;
+  /** Replace only: the deleted (old) text, so review UI can render a
+   *  `− old / + new` diff. */
+  beforeText?: string;
   /** A replace is ONE edit made of two revisions (delete old + insert new);
    *  `revision` holds the deletion and `partner` the insertion, so one
    *  approval must resolve both. */
@@ -5509,6 +5560,69 @@ function isReplacePair(
   }
 }
 
+// Memo key for findReplaceCounterpart: null = computed, no counterpart.
+const REPLACE_COUNTERPART_MEMO = '__robinReplaceCounterpart';
+
+/**
+ * The other half of a tracked replace, from either side: the adjacent
+ * same-group Insertion for a Deletion, or the adjacent same-group Deletion
+ * for an Insertion. Lets a consumer holding ONE revision (e.g. the canvas
+ * renderer classifying an element box) treat the pair as a single edit.
+ * Memoized on the revision objects — the two halves are created together,
+ * so the linkage is stable for the revision's lifetime.
+ */
+export function findReplaceCounterpart(
+  revision: LiveRevision
+): LiveRevision | undefined {
+  const memo = (revision as any)[REPLACE_COUNTERPART_MEMO];
+  if (memo !== undefined) return memo ?? undefined;
+  const counterpart = computeReplaceCounterpart(revision);
+  (revision as any)[REPLACE_COUNTERPART_MEMO] = counterpart ?? null;
+  if (counterpart) (counterpart as any)[REPLACE_COUNTERPART_MEMO] = revision;
+  return counterpart;
+}
+
+function computeReplaceCounterpart(
+  revision: LiveRevision
+): LiveRevision | undefined {
+  const tag = parseRevisionGroupTag(revision.customData);
+  if (!tag) return undefined;
+  const type = String(revision.revisionType ?? '');
+  if (type !== 'Deletion' && type !== 'Insertion') return undefined;
+  let range: any[];
+  try {
+    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(range) || !range.length) return undefined;
+  // A deletion's replacement text follows it; an insertion's replaced text
+  // precedes it.
+  const neighbour: any =
+    type === 'Deletion'
+      ? range[range.length - 1]?.nextNode
+      : range[0]?.previousNode;
+  const count = neighbour?.revisionLength ?? 0;
+  for (let i = 0; i < count; i++) {
+    const other = neighbour.getRevision?.(i);
+    if (!other) continue;
+    const otherType = String(other.revisionType ?? '');
+    if (otherType !== (type === 'Deletion' ? 'Insertion' : 'Deletion'))
+      continue;
+    const otherTag = parseRevisionGroupTag(other.customData);
+    if (
+      !otherTag ||
+      otherTag.changeSetId !== tag.changeSetId ||
+      otherTag.group !== tag.group
+    )
+      continue;
+    const deletion = type === 'Deletion' ? revision : other;
+    const insertion = type === 'Deletion' ? other : revision;
+    if (isReplacePair(deletion, insertion)) return other;
+  }
+  return undefined;
+}
+
 export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
   for (const revision of snapshotRevisions(editor)) {
@@ -5535,7 +5649,8 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
     ) {
       prev.partner = item.revision;
       prev.revisionType = 'Replace';
-      prev.text = `${prev.text} → ${item.text}`;
+      prev.beforeText = prev.text;
+      prev.text = item.text;
       continue;
     }
     view.items.push(item);
