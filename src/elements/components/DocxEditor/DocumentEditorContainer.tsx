@@ -37,14 +37,26 @@ const valueKeyOf = (spec: any): string =>
     ? spec.id
     : `${spec.id}__${spec.index}`;
 
-/** The field value behind a token — indexed when the field is repeated. */
+/**
+ * The field value behind a token — indexed when the field is repeated.
+ *
+ * A repeated field is one key holding an array, but the same key holds a bare
+ * scalar before any repeat exists. Treating the scalar as row 0 keeps a token
+ * bound either way, instead of only the first row resolving.
+ */
 const fieldValueFor = (spec: any): any => {
   if (!spec.source) return undefined;
   const value = fieldValues[spec.source];
-  if (spec.index === undefined || spec.index === null) {
-    return Array.isArray(value) ? value[0] : value;
-  }
-  return Array.isArray(value) ? value[spec.index] : undefined;
+  const row = spec.index ?? 0;
+  if (Array.isArray(value)) return value[row];
+  return row === 0 ? value : undefined;
+};
+
+/** The rows of a repeated field, preserved so one row never clobbers another. */
+const fieldRows = (source: string): any[] => {
+  const value = fieldValues[source];
+  if (Array.isArray(value)) return [...value];
+  return value === undefined || value === null ? [] : [value];
 };
 
 // The container carries no document. Its document is owned by the Generate
@@ -412,13 +424,10 @@ export default function DocumentEditorContainer({
             if (spec.index === undefined || spec.index === null) {
               updates[spec.source] = next;
             } else {
-              const existing =
-                (updates[spec.source] as any[]) ??
-                (Array.isArray(fieldValues[spec.source])
-                  ? [...(fieldValues[spec.source] as any[])]
-                  : []);
-              existing[spec.index] = next;
-              updates[spec.source] = existing;
+              const rows =
+                (updates[spec.source] as any[]) ?? fieldRows(spec.source);
+              rows[spec.index] = next;
+              updates[spec.source] = rows;
             }
           }
           if (Object.keys(updates).length > 0) setFieldValues(updates);
