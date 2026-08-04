@@ -8,7 +8,7 @@ import TrackedChangeGroups from './TrackedChangeGroups';
 const tag = (changeSetId: string, group: string) =>
   JSON.stringify({ v: 1, source: 'robin', changeSetId, group });
 
-function makeEditor(revisions: any[]) {
+function makeEditor(revisions: any[]): any {
   const listeners: Record<string, Array<() => void>> = {};
   return {
     revisions: { changes: revisions },
@@ -212,6 +212,175 @@ describe('TrackedChangeGroups', () => {
     expect(date.accept).toHaveBeenCalledTimes(1);
     expect(screen.getByText('all clear')).toBeInTheDocument();
     expect(screen.getAllByText('1 done')).toHaveLength(2);
+  });
+
+  it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const revisions = [deletion, insertion];
+    deletion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(deletion), 1);
+    });
+    insertion.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
+    });
+    const editor = makeEditor(revisions);
+    const onResolve = jest.fn();
+    render(<TrackedChangeGroups editor={editor} onResolve={onResolve} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+
+    // Navigation starts at the first pending chip and opens its card.
+    fireEvent.keyDown(panel, { key: 'j' });
+    expect(deletion.select).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+
+    // Navigation is circular in both directions.
+    fireEvent.keyDown(panel, { key: 'ArrowUp' });
+    expect(insertion.select).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(deletion.select).toHaveBeenCalledTimes(2);
+
+    // A resolves only the focused chip and reports the toast copy.
+    fireEvent.keyDown(panel, { key: 'a' });
+    expect(deletion.accept).toHaveBeenCalledTimes(1);
+    expect(insertion.accept).not.toHaveBeenCalled();
+    expect(onResolve).toHaveBeenLastCalledWith('Removed change accepted.');
+
+    // ArrowDown selects the next still-pending chip; R rejects it.
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(insertion.select).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(panel, { key: 'r' });
+    expect(insertion.reject).toHaveBeenCalledTimes(1);
+    expect(onResolve).toHaveBeenLastCalledWith('Added change rejected.');
+  });
+
+  it('selects and scrolls the exact revision for keyboard and mouse navigation', () => {
+    const first = makeRevision();
+    const second = makeRevision({
+      customData: tag('cs-1', 'fix-effective-date'),
+      getRange: () => [{ text: '2026-02-01' }]
+    });
+    const editor = makeEditor([first, second]);
+    const start = {};
+    const end = {};
+    editor.selectionModule = {
+      start,
+      end,
+      selectRevision: jest.fn()
+    };
+    editor.documentHelper = { scrollToPosition: jest.fn() };
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(editor.selectionModule.selectRevision).toHaveBeenLastCalledWith(
+      first,
+      undefined,
+      undefined,
+      true
+    );
+    expect(editor.documentHelper.scrollToPosition).toHaveBeenLastCalledWith(
+      start,
+      end
+    );
+    expect(first.select).not.toHaveBeenCalled();
+    expect(panel).toHaveFocus();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Fix effective date' })
+    );
+    fireEvent.click(screen.getByText('2026-02-01'));
+    expect(editor.selectionModule.selectRevision).toHaveBeenLastCalledWith(
+      second,
+      undefined,
+      undefined,
+      true
+    );
+    expect(editor.documentHelper.scrollToPosition).toHaveBeenLastCalledWith(
+      start,
+      end
+    );
+    // Syncfusion's enableAutoFocus steals focus into its editable div on
+    // selection; the panel must take it back or the next arrow press moves
+    // the document caret instead of stepping chips.
+    expect(panel).toHaveFocus();
+  });
+
+  it('keeps keyboard focus on the panel after resolving from a chip button', () => {
+    const insertion = makeRevision();
+    const sibling = makeRevision({ getRange: () => [{ text: 'sibling' }] });
+    const revisions = [insertion, sibling];
+    insertion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    expect(panel).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept this edit' }));
+    expect(insertion.accept).toHaveBeenCalledTimes(1);
+    expect(panel).toHaveFocus();
+  });
+
+  it('does not skip chips when selectRevision echoes a neighbouring selectionChange', () => {
+    // Syncfusion's getCurrentRevision() after selectRevision often resolves to
+    // an adjacent run (or clears). If that echo updates activeRevision, each
+    // ArrowDown advances twice — every other edit is skipped.
+    const one = makeRevision({ getRange: () => [{ text: 'one' }] });
+    const two = makeRevision({ getRange: () => [{ text: 'two' }] });
+    const three = makeRevision({ getRange: () => [{ text: 'three' }] });
+    const four = makeRevision({ getRange: () => [{ text: 'four' }] });
+    const revisions = [one, two, three, four];
+    const editor = makeEditor(revisions);
+    editor.selectionModule = {
+      start: {},
+      end: {},
+      selectRevision: jest.fn((rev: any) => {
+        const idx = revisions.indexOf(rev);
+        const neighbour = revisions[Math.min(idx + 1, revisions.length - 1)];
+        editor.selection.getCurrentRevision.mockReturnValue([neighbour]);
+        editor.emit('selectionChange');
+      })
+    };
+    editor.documentHelper = { scrollToPosition: jest.fn() };
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(
+      screen.getByText('one').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(
+      screen.getByText('two').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(
+      screen.getByText('three').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(panel, { key: 'ArrowDown' });
+    expect(
+      screen.getByText('four').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+
+    expect(
+      editor.selectionModule.selectRevision.mock.calls.map(
+        (c: unknown[]) => c[0]
+      )
+    ).toEqual([one, two, three, four]);
   });
 
   it('folds a replace pair into one Replaced chip; one approval settles both halves', () => {

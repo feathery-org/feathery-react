@@ -29,6 +29,8 @@ interface Props {
    *  stays mounted while hidden so those listeners keep running. */
   hidden?: boolean;
   onHiddenChange?: (hidden: boolean) => void;
+  /** Lets the host show one undo toast for every panel resolution. */
+  onResolve?: (message: string) => void;
 }
 
 type Verdict = 'accepted' | 'rejected' | 'resolved';
@@ -118,6 +120,15 @@ const badgeOf = (revisionType: string) => {
   return { label: 'Edit', color: INK_2, background: PANEL_3 };
 };
 
+const resolutionLabelOf = (chip: ChipMem) => {
+  if (chip.revisionType === 'Insertion' || chip.revisionType === 'MoveTo')
+    return 'Added';
+  if (chip.revisionType === 'Deletion' || chip.revisionType === 'MoveFrom')
+    return 'Removed';
+  if (chip.revisionType === 'Replace') return 'Modified';
+  return 'Tracked';
+};
+
 // The −/+ rows a chip's diff shows.
 const diffRowsOf = (chip: ChipMem) => {
   const rows: Array<{ sign: '−' | '+'; text: string; del: boolean }> = [];
@@ -155,7 +166,12 @@ const caretSvg = (
   </svg>
 );
 
-function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
+function TrackedChangeGroups({
+  editor,
+  hidden,
+  onHiddenChange,
+  onResolve
+}: Props) {
   // Session memory of every edit the rail has seen, keyed by group. Live
   // items merge into it on refresh; resolved chips keep their snapshot and
   // verdict. Mutated in place, with a reducer tick to re-render.
@@ -165,7 +181,32 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // The edit the document cursor sits inside (or the chip last clicked);
   // its chip is expanded, ringed, scrolled to, and shows its own actions.
   const [activeRevision, setActiveRevision] = useState<any>(null);
+  // Mirrors activeRevision for keyboard stepping: selectRevision fires
+  // selectionChange synchronously, and that handler must not fight the
+  // chip we just chose (it can resolve to a neighbour and skip every other
+  // edit). The ref is the keyboard handler's source of truth.
+  const activeRevisionRef = useRef<any>(null);
+  const ignoreSelectionRef = useRef(false);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Syncfusion's enableAutoFocus steals keyboard focus into its editable div
+  // whenever the selection changes (selectRevision, accept/reject re-layout).
+  // Every panel-initiated action must hand focus back to the rail, or the
+  // next arrow/J/K press moves the DOCUMENT CARET instead of stepping chips —
+  // which reads as the keyboard skipping edits.
+  const refocusPanel = () => {
+    panelRef.current?.focus({ preventScroll: true });
+  };
+
+  const commitActiveRevision = useCallback(
+    (revision: any) => {
+      activeRevisionRef.current = revision;
+      setActiveRevision(revision);
+      setActiveInlineRevision(editor, revision);
+    },
+    [editor]
+  );
 
   const refresh = useCallback(() => {
     const memory = memoryRef.current;
@@ -260,9 +301,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // that edit. getCurrentRevision() is the same cursor→revision mapping the
   // native pane uses on selection change; recompute the groups inside the
   // handler so the lookup never works from a stale closure.
+  // Programmatic chip focus (keyboard/click) selects a revision on purpose —
+  // ignore the echo selectionChange so Syncfusion's cursor mapping cannot
+  // overwrite the chip we just stepped to (adjacent edits otherwise land on
+  // the neighbour and every arrow key appears to skip one).
   useEffect(() => {
     if (!editor) return;
     const onSelectionChange = () => {
+      if (ignoreSelectionRef.current) return;
       let revisions: any[] = [];
       try {
         const current = editor.selection?.getCurrentRevision?.();
@@ -281,9 +327,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
               setExpanded((prev) =>
                 prev[key] ? prev : { ...prev, [key]: true }
               );
-              setActiveRevision(item.revision);
-              // The renderer draws the boundary ring around this edit.
-              setActiveInlineRevision(editor, item.revision);
+              commitActiveRevision(item.revision);
               // An inline click is an explicit ask for the review panel.
               onHiddenChange?.(false);
               return;
@@ -294,15 +338,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         }
       }
       // The cursor is not on an assistant edit: nothing is active.
-      setActiveRevision(null);
-      setActiveInlineRevision(editor, null);
+      commitActiveRevision(null);
     };
     editor.addEventListener?.('selectionChange', onSelectionChange);
     return () => {
       editor.removeEventListener?.('selectionChange', onSelectionChange);
+      activeRevisionRef.current = null;
       setActiveInlineRevision(editor, null);
     };
-  }, [editor]);
+  }, [editor, commitActiveRevision, onHiddenChange]);
 
   // Bring the newly active chip into view once it exists (its group may have
   // been collapsed until this same update expanded it).
@@ -345,22 +389,101 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     settleRevisions(revisions, isAccept);
     stampVerdicts(revisions, isAccept ? 'accepted' : 'rejected');
     refresh();
+    const subject =
+      pending.length === 1
+        ? `${resolutionLabelOf(pending[0])} change`
+        : `${pending.length} changes`;
+    onResolve?.(`${subject} ${isAccept ? 'accepted' : 'rejected'}.`);
+    refocusPanel();
   };
 
   const focusChip = (chip: ChipMem) => {
     if (chip.verdict) return;
-    setActiveRevision(chip.revision);
-    setActiveInlineRevision(editor, chip.revision);
+    const group = [...memoryRef.current.values()].find((mem) =>
+      mem.chips.includes(chip)
+    );
+    if (group) {
+      setExpanded((prev) =>
+        prev[group.key] ? prev : { ...prev, [group.key]: true }
+      );
+    }
+    commitActiveRevision(chip.revision);
+    // Suppress the selectionChange echo from selectRevision (sync, and any
+    // trailing updateFocus microtask) so it cannot reassign activeRevision.
+    ignoreSelectionRef.current = true;
     try {
-      chip.revision?.select?.();
+      // The public revision.select() may expand the selection to Syncfusion's
+      // adjacent same-author/type group. Its internal selector accepts a
+      // skipGroupSelect flag, which keeps navigation on this exact chip.
+      const selection = editor?.selectionModule;
+      if (typeof selection?.selectRevision === 'function') {
+        selection.selectRevision(chip.revision, undefined, undefined, true);
+        // selectRevision normally scrolls while painting the selection. Make
+        // the jump explicit as well: some host/layout combinations suppress
+        // that implicit scroll while focus remains in the review rail.
+        if (selection.start && selection.end) {
+          editor.documentHelper?.scrollToPosition?.(
+            selection.start,
+            selection.end
+          );
+        }
+      } else {
+        chip.revision?.select?.();
+      }
     } catch {
       // Navigation is best-effort; a disposed range is simply not selectable.
+    } finally {
+      queueMicrotask(() => {
+        ignoreSelectionRef.current = false;
+      });
     }
+    refocusPanel();
   };
 
   const groups = [...memoryRef.current.values()];
   const allChips = groups.flatMap((mem) => mem.chips);
+  const pendingChips = allChips.filter((chip) => !chip.verdict);
   const totalPending = allChips.filter((chip) => !chip.verdict).length;
+
+  const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    if (
+      key === 'j' ||
+      key === 'arrowdown' ||
+      key === 'k' ||
+      key === 'arrowup'
+    ) {
+      if (!pendingChips.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const direction = key === 'j' || key === 'arrowdown' ? 1 : -1;
+      const current = activeRevisionRef.current;
+      const currentIndex = pendingChips.findIndex(
+        (chip) => chip.revision === current || chip.partner === current
+      );
+      const nextIndex =
+        currentIndex < 0
+          ? direction > 0
+            ? 0
+            : pendingChips.length - 1
+          : (currentIndex + direction + pendingChips.length) %
+            pendingChips.length;
+      // focusChip hands focus back to the rail after Syncfusion's selection
+      // steals it, so the next J/K/arrow key stays with this handler.
+      focusChip(pendingChips[nextIndex]);
+      return;
+    }
+    if (key !== 'a' && key !== 'r') return;
+    const current = activeRevisionRef.current;
+    const focused = pendingChips.find(
+      (chip) => chip.revision === current || chip.partner === current
+    );
+    if (!focused) return;
+    event.preventDefault();
+    event.stopPropagation();
+    resolveChips([focused], key === 'a');
+  };
 
   if (!groups.length) return null;
 
@@ -409,7 +532,10 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       )}
       {!hidden && (
         <div
+          ref={panelRef}
           aria-label='Assistant tracked changes'
+          tabIndex={0}
+          onKeyDown={onPanelKeyDown}
           css={{
             width: 340,
             flex: '0 0 auto',
@@ -419,7 +545,11 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
             flexDirection: 'column',
             minHeight: 0,
             fontSize: 13,
-            color: INK
+            color: INK,
+            outline: 'none',
+            '&:focus-visible': {
+              boxShadow: `inset 0 0 0 2px ${ACCENT_LINE}`
+            }
           }}
         >
           {/* Rail head: title, pending counter, bulk actions. */}
