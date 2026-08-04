@@ -17,7 +17,7 @@
 //
 /**
  * Param types use a small fixed language (m5 C3: no arbitrary schema
- * language): `string`, `number`, `int>0`, `int>=0`, `boolean`,
+ * language): `string`, `string[][]`, `number`, `int>0`, `int>=0`, `boolean`,
  * `enum[a,b,...]` - each optionally suffixed `?` when the param may be
  * omitted. Cross-op fields (`anchor`, `expect`, `start`, `end`,
  * `inheritFormatFrom`, `changeSetId`, `group`) are reserved keys with one
@@ -228,6 +228,7 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     params: {
       rows: 'int>0?',
       columns: 'int>0?',
+      initialCells: 'string[][]?',
       position: 'enum[before,after]?'
     },
     requiresAnchor: true
@@ -546,6 +547,8 @@ type EnumMembers<S extends string> = S extends `${infer Head},${infer Rest}`
 /** One non-optional param-language type to its TypeScript type. */
 type ParamBase<S extends string> = S extends 'string'
   ? string
+  : S extends 'string[][]'
+  ? string[][]
   : S extends 'number' | 'int>0' | 'int>=0'
   ? number
   : S extends 'boolean'

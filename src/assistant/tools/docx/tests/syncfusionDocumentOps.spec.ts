@@ -3589,6 +3589,36 @@ describe('insert_table requires same-batch cell writes', () => {
     }
   });
 
+  it('real SDK: insert_table can populate its cells atomically', () => {
+    const ed = makeRealDocumentEditor(tableInsertionSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'filled-table-atomically',
+        edits: [
+          {
+            op: 'insert_table',
+            anchor: '0;1',
+            rows: 2,
+            columns: 2,
+            initialCells: [
+              ['Label', 'Value'],
+              ['Example', '$10']
+            ]
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'insert_table' });
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+      expect(blockTexts(ed)).toEqual(
+        expect.arrayContaining(['Label', 'Value', 'Example', '$10'])
+      );
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: insert_table position after preserves both neighboring paragraphs and lands at the declared address', () => {
     const ed = makeRealDocumentEditor({
       sections: [
