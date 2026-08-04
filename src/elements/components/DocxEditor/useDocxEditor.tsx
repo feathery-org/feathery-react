@@ -60,11 +60,11 @@ function loadAccentOverride() {
   doc.head.appendChild(style);
 }
 
-// GitHub-style tracked-change rendering: insertions get a green highlight,
-// deletions a red one, and a replace pair reads as red struck-through old
-// text followed by green new text — one edit, resolved together. Revised
-// text keeps its normal font color. Syncfusion draws the document on CANVAS,
-// so this is a renderer
+// GitHub-style tracked-change rendering: insertions get a green highlight
+// and keep the document's font color; deletions get a red highlight with
+// red struck-through text. A replace pair reads as struck old text followed
+// by green new text — one edit, resolved together. Syncfusion draws the
+// document on CANVAS, so this is a renderer
 // patch, not CSS: `checkRevisionType()` is the single source feeding the
 // author-color text and the underline/strike decorations across every render
 // path (text, lists, images, paragraph marks) — blank it, then paint our own
@@ -76,7 +76,9 @@ const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
 const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
-const STRIKE_COLOR = 'rgba(23, 26, 28, 0.6)';
+// Deleted GLYPHS render in the palette's red; added text keeps the
+// document's own font color.
+const DELETION_TEXT_COLOR = '#b0302b';
 // Boundary ring on the active edit (mockup's `.chg.on`): a single line drawn
 // fully INSIDE the highlight box, flush with its edge.
 const RING_LINE = 'rgba(43, 49, 52, 0.34)';
@@ -219,20 +221,28 @@ export function installRevisionHighlightRendering(ed: any) {
       }
       recordRect(info, box);
     }
-    const out = originalRenderText(elementBox, left, top, underlineY);
+    let out;
+    if (info?.kind === 'del') {
+      // Deleted text renders through the engine's own revision styling,
+      // but in OUR palette: checkRevisionType feeds both the glyph color
+      // and the native single-strike decoration, so deleted runs come out
+      // red and struck through with the engine's baseline-aware geometry.
+      // The fake entry carries no Insertion type, so no underline appears,
+      // and the swap lasts only for this call.
+      const prevCheck = renderer.checkRevisionType;
+      renderer.checkRevisionType = () => [
+        { type: 'Deletion', color: DELETION_TEXT_COLOR }
+      ];
+      try {
+        out = originalRenderText(elementBox, left, top, underlineY);
+      } finally {
+        renderer.checkRevisionType = prevCheck;
+      }
+    } else {
+      out = originalRenderText(elementBox, left, top, underlineY);
+    }
     if (info && box) {
       try {
-        const ctx = renderer.pageContext;
-        // The old half of a replace reads struck-through.
-        if (info.counterpart && info.kind === 'del') {
-          ctx.fillStyle = STRIKE_COLOR;
-          ctx.fillRect(
-            box.x,
-            Math.round(box.y + box.h * 0.55),
-            box.w,
-            Math.max(1, Math.round(renderer.getScaledValue(0.8)))
-          );
-        }
         // Boxes of the active edit — both halves of a replace count as the
         // one edit — are collected and rung ONCE at the end of the page
         // render, so touching runs share a single merged ring. The line
