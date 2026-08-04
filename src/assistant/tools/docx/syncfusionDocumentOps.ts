@@ -2169,6 +2169,8 @@ const SECTION_PATTERN_TABLE_LIMIT = 2;
 const SECTION_PATTERN_HEADER_VARIANT_LIMIT = 3;
 const SECTION_PATTERN_HEADER_COLUMN_LIMIT = 6;
 const SECTION_PATTERN_TEXT_LIMIT = 40;
+// Similar sections must preserve more than two thirds of their ordered shape.
+const SECTION_PATTERN_FAMILY_SIMILARITY = 2 / 3;
 
 type SectionBlockRole =
   | 'section_heading'
@@ -2181,6 +2183,8 @@ type SectionBlockRole =
 
 interface SectionUnit {
   blocks: FlatBlock[];
+  start: number;
+  end: number;
 }
 
 interface SectionTableObservation {
@@ -2239,7 +2243,7 @@ function unitsAtLevel(blocks: FlatBlock[], level: number): SectionUnit[] {
         break;
       }
     }
-    units.push({ blocks: blocks.slice(start, end) });
+    units.push({ blocks: blocks.slice(start, end), start, end });
   }
   return units;
 }
@@ -2344,6 +2348,156 @@ function sequenceForUnit(unit: SectionUnit): SectionPatternSequenceElement[] {
     push(seenSubsection ? 'subsection_paragraph' : 'intro_paragraph');
   });
   return sequence;
+}
+
+function sequenceTokens(sequence: SectionPatternSequenceElement[]): string[] {
+  return sequence.flatMap((element) =>
+    Array(Math.min(element.count, SECTION_PATTERN_SEQUENCE_LIMIT)).fill(
+      `${element.role}:${element.level ?? ''}`
+    )
+  );
+}
+
+function sequenceSimilarity(
+  left: SectionPatternSequenceElement[],
+  right: SectionPatternSequenceElement[]
+): number {
+  const leftTokens = sequenceTokens(left);
+  const rightTokens = sequenceTokens(right);
+  const longest = Math.max(leftTokens.length, rightTokens.length);
+  if (!longest) return 1;
+
+  const previous = Array(rightTokens.length + 1).fill(0);
+  for (const leftToken of leftTokens) {
+    let diagonal = 0;
+    for (let rightIndex = 1; rightIndex <= rightTokens.length; rightIndex++) {
+      const above = previous[rightIndex];
+      previous[rightIndex] =
+        leftToken === rightTokens[rightIndex - 1]
+          ? diagonal + 1
+          : Math.max(previous[rightIndex], previous[rightIndex - 1]);
+      diagonal = above;
+    }
+  }
+  const structuralTokens = (sequence: SectionPatternSequenceElement[]) =>
+    new Set(
+      sequence
+        .filter(
+          ({ role }) =>
+            role !== 'intro_paragraph' && role !== 'subsection_paragraph'
+        )
+        .map(({ role, level }) => `${role}:${level ?? ''}`)
+    );
+  const leftStructure = structuralTokens(left);
+  const rightStructure = structuralTokens(right);
+  const sharedStructure = Array.from(leftStructure).filter((role) =>
+    rightStructure.has(role)
+  ).length;
+  const totalStructure = new Set([...leftStructure, ...rightStructure]).size;
+  const structuralOverlap = totalStructure
+    ? sharedStructure / totalStructure
+    : 1;
+  return Math.min(previous[rightTokens.length] / longest, structuralOverlap);
+}
+
+function clusterSectionFamilies(
+  sequences: SectionPatternSequenceElement[][]
+): number[][] {
+  const unassigned = new Set(sequences.map((_sequence, index) => index));
+  const families: number[][] = [];
+  while (unassigned.size) {
+    const first = unassigned.values().next().value as number;
+    const family: number[] = [];
+    const pending = [first];
+    unassigned.delete(first);
+    while (pending.length) {
+      const current = pending.pop() as number;
+      family.push(current);
+      for (const candidate of Array.from(unassigned)) {
+        if (
+          sequenceSimilarity(sequences[current], sequences[candidate]) >
+          SECTION_PATTERN_FAMILY_SIMILARITY
+        ) {
+          unassigned.delete(candidate);
+          pending.push(candidate);
+        }
+      }
+    }
+    families.push(family.sort((left, right) => left - right));
+  }
+  return families;
+}
+
+function nearestUnitIndex(
+  blocks: FlatBlock[],
+  units: SectionUnit[],
+  near?: string
+): number | undefined {
+  if (!near) return undefined;
+  const containing = units.findIndex((unit) => unitContainsAnchor(unit, near));
+  if (containing >= 0) return containing;
+  const blockIndex = blocks.findIndex(
+    (block) =>
+      block.anchor === near ||
+      block.anchor.startsWith(`${near};`) ||
+      near.startsWith(`${block.anchor};`)
+  );
+  if (blockIndex < 0) return undefined;
+
+  let nearest = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  units.forEach((unit, index) => {
+    const distance =
+      blockIndex < unit.start
+        ? unit.start - blockIndex
+        : blockIndex >= unit.end
+        ? blockIndex - unit.end + 1
+        : 0;
+    if (distance < nearestDistance) {
+      nearest = index;
+      nearestDistance = distance;
+    }
+  });
+  return units.length ? nearest : undefined;
+}
+
+function selectSectionFamily(
+  blocks: FlatBlock[],
+  units: SectionUnit[],
+  sequences: SectionPatternSequenceElement[][],
+  near?: string
+): { units: SectionUnit[]; sequences: SectionPatternSequenceElement[][] } {
+  const families = clusterSectionFamilies(sequences);
+  const nearest = nearestUnitIndex(blocks, units, near);
+  const candidates =
+    nearest !== undefined
+      ? families.filter((family) => family.includes(nearest))
+      : families;
+  const selected = candidates.reduce((best, candidate) => {
+    if (!best || candidate.length > best.length) {
+      return candidate;
+    }
+    if (candidate.length < best.length) return best;
+    const cohesion = (family: number[]) =>
+      family.reduce(
+        (total, left, leftIndex) =>
+          total +
+          family
+            .slice(leftIndex + 1)
+            .reduce(
+              (sum, right) =>
+                sum + sequenceSimilarity(sequences[left], sequences[right]),
+              0
+            ),
+        0
+      );
+    return cohesion(candidate) > cohesion(best) ? candidate : best;
+  }, candidates[0]);
+  const indices = selected ?? [];
+  return {
+    units: indices.map((index) => units[index]),
+    sequences: indices.map((index) => sequences[index])
+  };
 }
 
 function roleBlocksForUnit(
@@ -2593,16 +2747,24 @@ export function deriveSectionPattern(
   }
 
   const availableUnits = unitsAtLevel(blocks, level);
-  const units = sampleSectionUnits(availableUnits, near);
-  const fullSequences = units.map(sequenceForUnit);
-  const sequenceTruncated = fullSequences.some(
-    (sequence) => sequence.length > SECTION_PATTERN_SEQUENCE_LIMIT
-  );
-  const sequences = fullSequences.map((sequence) =>
+  const sampledUnits = sampleSectionUnits(availableUnits, near);
+  const sampledSequences = sampledUnits.map(sequenceForUnit);
+  const sampledTruncatedSequences = sampledSequences.map((sequence) =>
     sequence.slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
   );
+  const family = selectSectionFamily(
+    blocks,
+    sampledUnits,
+    sampledTruncatedSequences,
+    near
+  );
+  const units = family.units;
+  const sequences = family.sequences;
+  const sequenceTruncated = units.some(
+    (unit) => sequenceForUnit(unit).length > SECTION_PATTERN_SEQUENCE_LIMIT
+  );
   const selectedSequence = modal(sequences);
-  const recurring = selectedSequence?.count ?? 0;
+  const recurring = units.length;
   const sequence = (selectedSequence?.value ?? []).map((element, index) => ({
     ...element,
     confidence: patternConfidence(
@@ -2652,8 +2814,8 @@ export function deriveSectionPattern(
     confidence.level === 'low'
       ? units.length < 2
         ? `Low confidence: only ${units.length} sibling section was available at heading level ${level}; returning its observable minimal shape.`
-        : `Low confidence: no section shape clearly repeats across ${units.length} sampled siblings at heading level ${level}; returning the most common observable shape (${recurring}/${units.length}).`
-      : `Recurring section pattern observed in ${recurring} of ${units.length} sampled siblings at heading level ${level}.`;
+        : `Low confidence: no section shape clearly repeats across the selected family of ${units.length} sampled siblings at heading level ${level}; returning the most common observable shape.`
+      : `Recurring section family observed in ${units.length} of ${sampledUnits.length} sampled siblings at heading level ${level}.`;
   const tableTruncated = units.some(
     (unit) => tableAnchorsForUnit(unit).length > SECTION_PATTERN_TABLE_LIMIT
   );
