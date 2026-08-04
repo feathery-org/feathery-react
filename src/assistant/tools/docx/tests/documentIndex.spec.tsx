@@ -263,11 +263,11 @@ describe('document-index delta protocol', () => {
     else delete (globalThis as any).TextEncoder;
   });
 
-  const mount = () =>
+  const mount = (getTargets = targets(DOC_ID)) =>
     renderHook(() =>
       useDocumentIndex({
         baseUrl: BASE_URL,
-        getTargets: targets(DOC_ID),
+        getTargets,
         headers
       })
     );
@@ -441,20 +441,48 @@ describe('document-index delta protocol', () => {
     expect(full.blocks).toHaveLength(20);
   });
 
-  it('uses a delta for a forced documentChange when the base is confirmed', async () => {
+  it('uses a delta for same-scope documentChange when the base is confirmed', async () => {
     const editor = blockEditor(paragraphs(20));
     mount();
     registerDocxEditor(undefined, editor);
     await settleIndexing(INDEX_POLL_MS);
 
+    editor.texts[10] = 'Accepted revision resolved within the same envelope.';
     editor.emit('documentChange');
     await settleIndexing(0);
 
-    const forced = JSON.parse(indexPosts()[1][1].body);
-    expect(forced.mode).toBe('delta');
-    expect(forced.changedBlocks).toEqual([]);
-    expect(forced.removedHashes).toEqual([]);
-    expect(forced.anchorRemap).toEqual([]);
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta.mode).toBe('delta');
+    expect(delta.changedBlocks).toEqual([
+      expect.objectContaining({
+        text: 'Accepted revision resolved within the same envelope.'
+      })
+    ]);
+  });
+
+  it('uses a full sync when documentChange resolves a different scope', async () => {
+    let envelopeId = ENV_ID;
+    const editor = blockEditor(paragraphs(20));
+    mount(() => targets(DOC_ID, envelopeId)());
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    envelopeId = OTHER_ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+
+    envelopeId = ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+
+    expect(indexPosts()).toHaveLength(3);
+    const full = JSON.parse(indexPosts()[2][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(20);
+    expect(full.targets).toContainEqual({
+      type: 'envelope',
+      id: ENV_ID
+    });
   });
 
   it('falls back to full on a stale delta base and rebuilds the confirmed snapshot', async () => {
@@ -834,7 +862,7 @@ describe('index-on-load: a progressively loading document must not be certified 
     expect(indexPosts()).toHaveLength(0);
   });
 
-  it('documentChange re-POSTs even identical content for a newly derived envelope', async () => {
+  it('documentChange skips identical content within the same envelope', async () => {
     const editor = streamingEditor();
     editor.sections = [TOC_SECTION, ...BODY_SECTIONS];
     mount(DOC_ID);
@@ -845,13 +873,13 @@ describe('index-on-load: a progressively loading document must not be certified 
     const posted = indexPosts().length;
     expect(posted).toBeGreaterThan(0);
 
-    // A regeneration can reopen byte-identical content under a brand-new
-    // envelope. The browser cannot assume the old envelope's index carries.
+    // Accept/reject may fire documentChange without altering the indexed
+    // inventory. The confirmed same-scope index already represents it.
     editor.emit('documentChange');
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    expect(indexPosts()).toHaveLength(posted + 1);
+    expect(indexPosts()).toHaveLength(posted);
     expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
       lastPost().contentHash
     );
