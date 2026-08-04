@@ -234,3 +234,47 @@ describe('the harness itself', () => {
     }
   });
 });
+
+describe('the structural watchdog', () => {
+  it('undoes an edit that destroyed a token, and says so', () => {
+    // removeContentControl is a real edit, so SyncFusion emits contentChange
+    // itself — the same path a reader's keystroke takes.
+    const { editor, destroy } = makeTokenEditor(FIXTURES);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const cycle = attachTokenCycle(editor as any, { fields: fieldStore() });
+      expect(documentShape(editor as any).addresses).toContain('cost__0');
+
+      selectToken(editor, 'cost__0');
+      (editor.editor as any).removeContentControl();
+
+      expect(documentShape(editor as any).addresses).toContain('cost__0');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('undid an edit that would have broken')
+      );
+      cycle.detach();
+    } finally {
+      warn.mockRestore();
+      destroy();
+    }
+  });
+
+  it('leaves an ordinary value edit alone', () => {
+    const { editor, destroy } = makeTokenEditor(FIXTURES);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const cycle = attachTokenCycle(editor as any, { fields: fieldStore() });
+
+      selectToken(editor, 'cost__0');
+      editor.editor.insertText('99');
+
+      // Changing a value is the point of the feature; only structure is guarded.
+      expect(documentShape(editor as any).text.get('cost__0')).toContain('99');
+      expect(warn).not.toHaveBeenCalled();
+      cycle.detach();
+    } finally {
+      warn.mockRestore();
+      destroy();
+    }
+  });
+});
