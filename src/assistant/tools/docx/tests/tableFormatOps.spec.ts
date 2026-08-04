@@ -1194,7 +1194,10 @@ describe('appearance writes stay reversible', () => {
             borderStyle: 'Single',
             borderColor: '#FF0000'
           },
-          { op: 'set_row_format', anchor: '0;1;4;0;0', isHeader: true }
+          // Keep this appearance write in its original cell container. A row
+          // below the insertion would move to a different cell and is now
+          // deliberately refused instead of guessed by matching text.
+          { op: 'set_row_format', anchor: '0;1;2;0;0', isHeader: true }
         ],
         'restore-everything'
       );
@@ -1209,22 +1212,60 @@ describe('appearance writes stay reversible', () => {
     }
   });
 
-  it('rolls the appearance back when a sibling op in the change set fails', () => {
+  it('rolls back only the failed group appearance and preserves a sibling group', () => {
     const ed = makeEditor(twoTables());
     try {
       const before = fills(ed, '0;1');
-      const result = apply(ed, [
-        { op: 'restripe_table', anchor: '0;1;0;0;0', fromRow: 3 },
-        // A stale expect: this op must fail, and take the batch with it.
-        {
-          op: 'set_cell_text',
-          anchor: '0;1;1;0;0',
-          text: 'x',
-          expect: 'not what is there'
-        }
-      ]);
-      expect(result.results[1].ok).toBe(false);
-      expect(fills(ed, '0;1')).toEqual(before);
+      const result = apply(
+        ed,
+        [
+          {
+            op: 'set_cell_text',
+            group: 'survivor',
+            anchor: '0;1;1;0;0',
+            text: '1a'
+          },
+          {
+            op: 'set_cell_format',
+            group: 'survivor',
+            anchor: '0;1;1;0;0',
+            shading: '#FFF2CC'
+          },
+          {
+            op: 'restripe_table',
+            group: 'failed-appearance',
+            anchor: '0;1;0;0;0',
+            fromRow: 3
+          },
+          {
+            op: 'set_cell_format',
+            group: 'failed-appearance',
+            anchor: '0;1;2;0;0'
+          }
+        ],
+        'appearance-group-failure'
+      );
+
+      expect(result.results[0].ok).toBe(true);
+      expect(result.results[1].ok).toBe(true);
+      expect(result.results[2]).toMatchObject({
+        ok: false,
+        error: 'change_set_failed'
+      });
+      expect(result.results[3]).toMatchObject({
+        ok: false,
+        error: 'missing_format'
+      });
+      const after = fills(ed, '0;1');
+      expect(facts(ed, '0;1').rows[1].cells[0].appearance?.shading).toBe(
+        '#FFF2CC'
+      );
+      expect(after.filter((_, index) => index !== 1)).toEqual(
+        before.filter((_, index) => index !== 1)
+      );
+      expect(
+        revisions(ed).every((revision) => revision.robinGroupId === 'survivor')
+      ).toBe(true);
     } finally {
       destroyEditor(ed);
     }

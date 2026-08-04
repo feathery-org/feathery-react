@@ -662,6 +662,8 @@ export interface EditResult {
   anchor?: string;
   op: string;
   error?: string;
+  /** The stable content identity moved from the requested anchor before write. */
+  relocated?: { from: string; to: string };
   /**
    * The refusal's own words: what went wrong and what to do instead. Codes are
    * for branching, this is the remedy - a refusal the model cannot read is a
@@ -7167,19 +7169,15 @@ function assertTrackedMutation(
     );
 }
 
-// Revert only cards created after `before`; never touch unrelated human
-// revisions and never use global history or rejectAll. This is the safety net
-// for a post-write verification failure.
-function rejectCreatedRevisions(
-  editor: LiveEditor,
-  before: LiveRevision[]
-): void {
-  const revisions = createdRevisions(editor, before);
+// Revert only the exact cards recorded for one failed group; never touch
+// unrelated human revisions (or a successful sibling group) and never use
+// global history or rejectAll.
+function rejectRevisions(revisions: LiveRevision[]): void {
   if (!revisions.length) return;
   if (revisions.some((revision) => typeof revision.reject !== 'function'))
     throw new OpError(
       'compensating_rollback_failed',
-      'A failed change set created a revision that could not be rejected.'
+      'A failed edit group created a revision that could not be rejected.'
     );
   for (const revision of revisions) {
     // Never the public reject(): its adjacency cascade could reject
@@ -7834,6 +7832,8 @@ interface ChangeSetPlan {
   index: number;
   op: EditOp;
   target?: FlatBlock | LiveStoryTarget;
+  /** Preflight relocation, extended at write time if another structural op moves it again. */
+  relocated?: { from: string; to: string };
   source?: FlatBlock;
   inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
   targetBefore?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
@@ -8092,6 +8092,120 @@ function mayShiftAnchors(op: EditOp): boolean {
   return !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op);
 }
 
+type RelocationAttempt =
+  | { target: FlatBlock; relocated: { from: string; to: string } }
+  | { details: string[] };
+
+function sameRelocationContainer(from: string, to: string): boolean {
+  const source = String(from).split(';');
+  const target = String(to).split(';');
+  const sourceIsCell = source.length >= 5;
+  const targetIsCell = target.length >= 5;
+  if (sourceIsCell || targetIsCell)
+    return (
+      sourceIsCell &&
+      targetIsCell &&
+      source.slice(0, 4).join(';') === target.slice(0, 4).join(';')
+    );
+  // Body sections are one story/container. A section break changes page
+  // geometry, not the tracked text range's editing container.
+  return source.length === 2 && target.length === 2;
+}
+
+function relocationIdentity(
+  op: EditOp,
+  captured?: FlatBlock
+):
+  | { label: '`expect`'; text: string; matches: (block: FlatBlock) => boolean }
+  | { label: '`find`'; text: string; matches: (block: FlatBlock) => boolean }
+  | {
+      label: 'captured pre-write block text';
+      text: string;
+      matches: (block: FlatBlock) => boolean;
+    }
+  | undefined {
+  if (op.expect != null) {
+    const text = String(op.expect);
+    return {
+      label: '`expect`',
+      text,
+      matches: (block) => expectTextMatches(text, block.text)
+    };
+  }
+  if (op.find != null && String(op.find).length) {
+    const text = String(op.find);
+    return {
+      label: '`find`',
+      text,
+      matches: (block) => block.text.includes(text)
+    };
+  }
+  if (captured) {
+    return {
+      label: 'captured pre-write block text',
+      text: captured.text,
+      matches: (block) =>
+        block.kind === captured.kind && block.text === captured.text
+    };
+  }
+  return undefined;
+}
+
+function attemptAnchorRelocation(
+  blocks: FlatBlock[],
+  op: EditOp,
+  captured?: FlatBlock
+): RelocationAttempt {
+  const from = String(op.anchor ?? '');
+  const identity = relocationIdentity(op, captured);
+  if (!identity)
+    return {
+      details: [
+        `relocation attempted from: ${from}`,
+        'content identity unavailable: supply `expect` or `find` so the moved target can be identified'
+      ]
+    };
+  const matches = blocks.filter(identity.matches);
+  const attempted = `relocation attempted from "${from}" using ${
+    identity.label
+  } ${JSON.stringify(identity.text)}`;
+  if (!matches.length) return { details: [attempted, 'matching blocks: none'] };
+  if (matches.length > 1)
+    return {
+      details: [
+        attempted,
+        `matching blocks (${matches.length}): ${matches
+          .map((match) => match.anchor)
+          .join(', ')}`
+      ]
+    };
+  const target = matches[0];
+  // Never relocate across containers silently. In particular, an exact text
+  // match in a different table/cell is a refusal, not a guess; tracked changes
+  // make a same-container relocation reversible, but cannot make a wrong-cell
+  // target semantically safe.
+  if (!sameRelocationContainer(from, target.anchor))
+    return {
+      details: [
+        attempted,
+        `the only match is at "${target.anchor}", in a different table/cell container; relocation refused`
+      ]
+    };
+  return { target, relocated: { from, to: target.anchor } };
+}
+
+function retargetOpToBlock(op: EditOp, target: FlatBlock): EditOp {
+  const from = String(op.anchor ?? '');
+  const next: EditOp = { ...op, anchor: target.anchor };
+  for (const field of ['startOffset', 'endOffset'] as const) {
+    const value = offsetString(op[field]);
+    if (!value || anchorFromOffset(value) !== from) continue;
+    const suffix = value.slice(from.length);
+    next[field] = `${target.anchor}${suffix}`;
+  }
+  return next;
+}
+
 function resolveChangeSetBlock(
   blocks: FlatBlock[],
   anchor: string,
@@ -8110,15 +8224,36 @@ function resolveChangeSetBlock(
   const matches = blocks.filter(
     (block) => block.kind === baseline.kind && block.text === baseline.text
   );
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) {
+    const match = matches[0];
+    // Content identity is strong enough to recover a moved paragraph, but it
+    // is never permission to jump into a different table cell. A cell is a
+    // hard editing container in SyncFusion; crossing one silently could put a
+    // perfectly spelled value in the wrong row/table, so that guess is refused.
+    if (!sameRelocationContainer(anchor, match.anchor))
+      throw new OpError(
+        'anchor_relocation_container_mismatch',
+        `Anchor "${anchor}" now matches content at "${match.anchor}", but that location is in a different table/cell container. Refusing to guess.`,
+        [
+          `relocation attempted from: ${anchor}`,
+          `matching content found at: ${match.anchor}`
+        ]
+      );
+    return match;
+  }
   if (!matches.length)
     throw new OpError(
       'anchor_relocation_not_found',
-      `Anchor "${anchor}" moved after a structural edit and its preflight text no longer identifies one block.`
+      `Anchor "${anchor}" moved after a structural edit and its preflight text no longer identifies one block.`,
+      [`relocation attempted from: ${anchor}`, 'matching blocks: none']
     );
   throw new OpError(
     'anchor_relocation_ambiguous',
-    `Anchor "${anchor}" moved after a structural edit and matches ${matches.length} blocks; refusing a non-deterministic write.`
+    `Anchor "${anchor}" moved after a structural edit and matches ${matches.length} blocks; refusing a non-deterministic write.`,
+    [
+      `relocation attempted from: ${anchor}`,
+      `matching blocks: ${matches.map((match) => match.anchor).join(', ')}`
+    ]
   );
 }
 
@@ -9125,10 +9260,14 @@ function applyDocumentEditsMeasured(
   let liveSfdt: any;
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
+  const failedGroups = new Set<string>();
+  // Exact revision object membership makes per-group rollback work even in
+  // editors/test doubles which do not expose revisionSettings.customData.
+  const revisionsByAppliedGroup = new Map<string, Set<LiveRevision>>();
   const nonBlockingStoryWriteFailures = new Set<number>();
   const resolvedFormatTargets = new Map<number, FlatBlock>();
-  // Every appearance this change set overwrote, in write order, so the whole
-  // batch can be put back visually by the failure rollback.
+  // Every still-applied appearance snapshot, in write order. A failed group's
+  // entries are replayed and removed without touching successful siblings.
   const appearanceRestores: AppearanceRestore[] = [];
   // The same snapshots split by the accept group whose op took them, so a reject
   // of ONE grouped card puts back exactly that group's appearance and never a
@@ -9173,6 +9312,82 @@ function applyDocumentEditsMeasured(
       ...(isOpError(err) && err.retry ? { retry: err.retry } : {})
     };
   };
+  const rememberGroupRevisions = (op: EditOp, before: LiveRevision[]) => {
+    const created = createdRevisions(editor, before);
+    if (!created.length) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = revisionsByAppliedGroup.get(id) ?? new Set<LiveRevision>();
+    for (const revision of created) bucket.add(revision);
+    revisionsByAppliedGroup.set(id, bucket);
+  };
+  const markGroupFailed = (
+    groupId: string,
+    failingIndex: number,
+    disposition: 'refused' | 'rolled back'
+  ) => {
+    failedGroups.add(groupId);
+    const failure = results[failingIndex];
+    const failedOp = edits[failingIndex];
+    edits.forEach((op, index) => {
+      if (opGroupId(op, changeSetId) !== groupId || index === failingIndex)
+        return;
+      if (results[index] && !results[index]?.ok) return;
+      results[index] = {
+        ...(results[index] ?? {}),
+        ok: false,
+        op: op?.op ?? '',
+        ...(op?.anchor ? { anchor: op.anchor } : {}),
+        error: 'change_set_failed',
+        details: [
+          `Group ${JSON.stringify(groupId)} failed because edit ${
+            failingIndex + 1
+          } (${failedOp?.op ?? 'unknown op'} at ${JSON.stringify(
+            failedOp?.anchor ?? '(no anchor)'
+          )}) did not land (${
+            failure?.error ?? 'op_failed'
+          }); this sibling was ${disposition} with its group.`
+        ]
+      };
+    });
+  };
+  const rollbackGroup = (groupId: string) => {
+    const rollbackErrors: string[] = [];
+    const attempt = (work: () => void) => {
+      try {
+        work();
+      } catch (err) {
+        rollbackErrors.push(describeUnexpectedError(err));
+      }
+    };
+    const restores = appearanceRestoresByGroup.get(groupId) ?? [];
+    if (restores.length)
+      attempt(() => replayAppearanceRestores(editor, restores));
+    appearanceRestoresByGroup.delete(groupId);
+    if (restores.length) {
+      const owned = new Set(restores);
+      for (let index = appearanceRestores.length - 1; index >= 0; index--)
+        if (owned.has(appearanceRestores[index]))
+          appearanceRestores.splice(index, 1);
+    }
+    for (const plan of plans) {
+      if (opGroupId(plan.op, changeSetId) !== groupId) continue;
+      const target = resolvedFormatTargets.get(plan.index);
+      if (!target || !plan.targetBefore) continue;
+      const targetBefore = plan.targetBefore;
+      attempt(() => restoreCapturedFormat(editor, target, targetBefore));
+    }
+    const live = new Set(snapshotRevisions(editor));
+    const revisions = [...(revisionsByAppliedGroup.get(groupId) ?? [])].filter(
+      (revision) => live.has(revision)
+    );
+    if (revisions.length) attempt(() => rejectRevisions(revisions));
+    revisionsByAppliedGroup.delete(groupId);
+    attempt(() => refresh());
+    if (rollbackErrors.length)
+      warnings.push(
+        `group_rollback_failed: ${groupId}; ${rollbackErrors.join('; ')}`
+      );
+  };
 
   // Phase 0: what only the whole batch can show. Both of these refuse BEFORE
   // any anchor is resolved, so a refused change set costs nothing at all.
@@ -9201,7 +9416,8 @@ function applyDocumentEditsMeasured(
   edits.forEach((rawOp, index) => {
     // Already refused by a batch-level check; do not re-diagnose it.
     if (results[index]) return;
-    const op = retargetTableScopedAnchor(rawOp, byAnchor);
+    let op = retargetTableScopedAnchor(rawOp, byAnchor);
+    let relocated: { from: string; to: string } | undefined;
     const name = op?.op;
     if (!name) {
       results[index] = { ok: false, op: '', error: 'missing_op' };
@@ -9272,16 +9488,6 @@ function applyDocumentEditsMeasured(
       op.expect != null &&
       indexedTarget != null &&
       !expectTextMatches(op.expect, indexedTarget.text);
-    if (formatExpectMismatch && !hasStructuralEdits) {
-      results[index] = {
-        ok: false,
-        op: name,
-        anchor: op.anchor,
-        error: 'expect_mismatch',
-        details: staleAnchorDetails(op.expect, indexedTarget.text)
-      };
-      return;
-    }
     let target: FlatBlock | LiveStoryTarget | undefined =
       formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
@@ -9332,19 +9538,44 @@ function applyDocumentEditsMeasured(
         .some(
           (earlier) => earlier?.op && PARAGRAPH_CREATING_OPS.has(earlier.op)
         );
+    // A formatting target created by this batch has no pre-write identity yet,
+    // so a zero-match attempt remains deferred to phase 3. If the expected
+    // content already exists exactly once, though, this is ordinary anchor
+    // drift and we can bind the plan to that current block now.
+    if (!target && formatExpectMismatch && hasStructuralEdits) {
+      const attempt = attemptAnchorRelocation(blocks, op);
+      if ('target' in attempt) {
+        target = attempt.target;
+        relocated = attempt.relocated;
+        op = retargetOpToBlock(op, target);
+      }
+    }
     if (
       !target &&
       !deferredNewCell &&
       !deferredNewParagraph &&
       (!FORMAT_OPS.has(name) || !hasStructuralEdits)
     ) {
-      results[index] = {
-        ok: false,
-        op: name,
-        anchor: op.anchor,
-        error: 'anchor_not_found'
-      };
-      return;
+      const attempt = attemptAnchorRelocation(blocks, op);
+      if ('target' in attempt) {
+        target = attempt.target;
+        relocated = attempt.relocated;
+        op = retargetOpToBlock(op, target);
+      } else {
+        results[index] = {
+          ok: false,
+          op: name,
+          anchor: op.anchor,
+          error: indexedTarget ? 'expect_mismatch' : 'anchor_not_found',
+          details: [
+            ...(indexedTarget
+              ? staleAnchorDetails(op.expect, indexedTarget.text)
+              : []),
+            ...attempt.details
+          ]
+        };
+        return;
+      }
     }
     if (
       target &&
@@ -9354,14 +9585,25 @@ function applyDocumentEditsMeasured(
       name !== 'replace_selection' &&
       expectGuardRefuses(op.expect, target.text)
     ) {
-      results[index] = {
-        ok: false,
-        op: name,
-        anchor: op.anchor,
-        error: 'expect_mismatch',
-        details: staleAnchorDetails(op.expect, target.text)
-      };
-      return;
+      const staleTarget = target;
+      const attempt = attemptAnchorRelocation(blocks, op, staleTarget);
+      if ('target' in attempt) {
+        target = attempt.target;
+        relocated = attempt.relocated;
+        op = retargetOpToBlock(op, target);
+      } else {
+        results[index] = {
+          ok: false,
+          op: name,
+          anchor: op.anchor,
+          error: 'expect_mismatch',
+          details: [
+            ...staleAnchorDetails(op.expect, staleTarget.text),
+            ...attempt.details
+          ]
+        };
+        return;
+      }
     }
     if (
       target &&
@@ -9429,6 +9671,7 @@ function applyDocumentEditsMeasured(
         op,
         target,
         source,
+        ...(relocated ? { relocated } : {}),
         ...(deferredNewCell ? { deferredNewCell: true } : {}),
         ...(deferredNewParagraph ? { deferredNewParagraph: true } : {}),
         ...(insertInheritance ? { insertInheritance } : {}),
@@ -9445,31 +9688,56 @@ function applyDocumentEditsMeasured(
     }
   });
 
-  const preflightFailed = results.some(
-    (result, index) =>
-      result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
+  const preflightFailures = results.reduce<number[]>(
+    (indices, result, index) => {
+      if (result && !result.ok && !nonBlockingStoryWriteFailures.has(index))
+        indices.push(index);
+      return indices;
+    },
+    []
   );
+  if (!batchRefusal) {
+    for (const index of preflightFailures) {
+      const groupId = opGroupId(edits[index], changeSetId);
+      if (!failedGroups.has(groupId))
+        markGroupFailed(groupId, index, 'refused');
+    }
+  }
+  const preflightFailed = !!batchRefusal || preflightFailures.length > 0;
   // SyncFusion's public bulk-update switch suppresses pagination/layout paint
   // until the phase loops finish. Preserve an outer caller's already-disabled
   // state; only this function's own true -> false transition is restored.
-  const suspendLayout = !preflightFailed && editor.enableLayout === true;
+  const suspendLayout = !batchRefusal && editor.enableLayout === true;
   try {
     if (suspendLayout) editor.enableLayout = false;
     editor.enableTrackChanges = true;
     editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
-    if (preflightFailed) {
+    if (batchRefusal) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`
       );
     } else {
+      if (preflightFailures.length)
+        warnings.push(
+          `group_preflight_failed: ${[...failedGroups].join(
+            ', '
+          )}; unaffected groups remain eligible to apply.`
+        );
       // Phase 2: apply structural writes in request order, refreshing the anchor
       // map after every mutation. This is the only phase allowed to shift blocks.
       for (const plan of plans) {
         const { op, index } = plan;
-        if (results[index] || FORMAT_OPS.has(op.op)) continue;
+        const groupId = opGroupId(op, changeSetId);
+        if (
+          results[index] ||
+          FORMAT_OPS.has(op.op) ||
+          failedGroups.has(groupId)
+        )
+          continue;
         stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
+        let appliedRelocation = plan.relocated;
         let priorRejectStream: string | undefined;
         let priorAcceptStream: string | undefined;
         let storyWrite:
@@ -9531,6 +9799,11 @@ function applyDocumentEditsMeasured(
               );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
+              if (target.anchor !== op.anchor)
+                appliedRelocation = {
+                  from: plan.relocated?.from ?? op.anchor,
+                  to: target.anchor
+                };
               insertInheritance = rebasePlannedInsertInheritance(
                 insertInheritance,
                 op,
@@ -9583,7 +9856,8 @@ function applyDocumentEditsMeasured(
             results[index] = {
               ok: true,
               op: op.op,
-              anchor: op.anchor,
+              anchor: writtenOp.anchor,
+              ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
               ...opExtras
             };
             continue;
@@ -9667,7 +9941,8 @@ function applyDocumentEditsMeasured(
           results[index] = {
             ok: true,
             op: op.op,
-            anchor: op.anchor,
+            anchor: writtenOp.anchor,
+            ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
             ...collectOpExtras(opExtras, (restores) =>
               recordAppearanceRestores(op, restores)
             ),
@@ -9677,6 +9952,18 @@ function applyDocumentEditsMeasured(
           };
         } catch (err) {
           fail(index, op, err);
+          if (appliedRelocation)
+            results[index] = {
+              ...(results[index] ?? { ok: false, op: op.op }),
+              anchor: writtenOp.anchor,
+              relocated: appliedRelocation
+            };
+        } finally {
+          rememberGroupRevisions(op, revisionsBeforeOp);
+        }
+        if (results[index] && !results[index]?.ok) {
+          rollbackGroup(groupId);
+          markGroupFailed(groupId, index, 'rolled back');
         }
       }
 
@@ -9684,8 +9971,16 @@ function applyDocumentEditsMeasured(
       // paragraph format -> scoped resolved-format verification per location.
       for (const plan of plans) {
         const { op, index } = plan;
-        if (results[index] || !FORMAT_OPS.has(op.op)) continue;
+        const groupId = opGroupId(op, changeSetId);
+        if (
+          results[index] ||
+          !FORMAT_OPS.has(op.op) ||
+          failedGroups.has(groupId)
+        )
+          continue;
         stampRevisionGroup(editor, changeSetId, op);
+        const revisionsBeforeOp = snapshotRevisions(editor);
+        let appliedRelocation = plan.relocated;
         try {
           if (!op.anchor)
             throw new OpError(
@@ -9707,6 +10002,13 @@ function applyDocumentEditsMeasured(
               : undefined,
             anchorsMayHaveShifted && !TABLE_SCOPED_FORMAT_OPS.has(op.op)
           );
+          appliedRelocation =
+            target.anchor !== op.anchor
+              ? {
+                  from: plan.relocated?.from ?? op.anchor,
+                  to: target.anchor
+                }
+              : plan.relocated;
           const source = plan.source
             ? resolveChangeSetBlock(
                 blocks,
@@ -9735,45 +10037,26 @@ function applyDocumentEditsMeasured(
           results[index] = {
             ok: true,
             op: op.op,
-            anchor: op.anchor,
+            anchor: target.anchor,
+            ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
             ...collectOpExtras(extras, (restores) =>
               recordAppearanceRestores(op, restores)
             )
           };
         } catch (err) {
           fail(index, op, err);
-        }
-      }
-
-      // A failed resolved-format check must not leave pre-existing formatting
-      // partially changed. Restore every affected pre-existing target from its
-      // preflight snapshot, scoped to those anchors only. New structural content
-      // has no safe generic inverse, so it remains a tracked revision for reject.
-      if (results.some((result) => result && !result.ok)) {
-        for (const plan of plans) {
-          const target = resolvedFormatTargets.get(plan.index);
-          if (!target || !plan.targetBefore) continue;
-          try {
-            restoreCapturedFormat(editor, target, plan.targetBefore);
-          } catch (err) {
-            const existing = results[plan.index];
-            results[plan.index] = {
-              ok: false,
-              op: plan.op.op,
-              anchor: plan.op.anchor,
-              error: 'compensating_rollback_failed',
-              details: [
-                ...(existing?.details ?? []),
-                err instanceof Error
-                  ? err.message
-                  : 'Could not restore captured formatting.'
-              ]
+          if (appliedRelocation)
+            results[index] = {
+              ...(results[index] ?? { ok: false, op: op.op }),
+              relocated: appliedRelocation
             };
-          }
+        } finally {
+          rememberGroupRevisions(op, revisionsBeforeOp);
         }
-        // The restored targets are pre-existing formatting locations. Nothing
-        // after this point resolves another edit anchor, and final inventory
-        // performs the required fresh read, so this snapshot had no consumer.
+        if (results[index] && !results[index]?.ok) {
+          rollbackGroup(groupId);
+          markGroupFailed(groupId, index, 'rolled back');
+        }
       }
     }
   } finally {
@@ -9784,32 +10067,31 @@ function applyDocumentEditsMeasured(
   }
 
   refuseReusedUserStatedFigures(results);
-
-  const hasMaterialFailure = results.some(
-    (result, index) =>
-      result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
-  );
-  if (hasMaterialFailure) {
-    try {
-      // A failed text-frame/post-write verification must not leave earlier
-      // sibling edits applied. Scoped native rejects restore only this change
-      // set's cards; unrelated user revisions are never touched.
-      //
-      // Appearance goes back FIRST, while the row indices its snapshots name are
-      // still the live ones - rejecting a row insertion shifts every row below
-      // it. Cleared afterwards so the grouped card cannot replay it a second
-      // time.
-      replayAppearanceRestores(editor, appearanceRestores);
-      appearanceRestores.length = 0;
-      appearanceRestoresByGroup.clear();
-      rejectCreatedRevisions(editor, revisionSnapshot);
-    } catch (err) {
-      warnings.push(
-        `change_set_rollback_failed: ${
-          err instanceof Error ? err.message : 'unknown revision rollback error'
-        }`
-      );
-    }
+  if (!batchRefusal) {
+    results.forEach((result, index) => {
+      if (
+        !result ||
+        result.ok ||
+        nonBlockingStoryWriteFailures.has(index) ||
+        failedGroups.has(opGroupId(edits[index], changeSetId))
+      )
+        return;
+      const groupId = opGroupId(edits[index], changeSetId);
+      rollbackGroup(groupId);
+      markGroupFailed(groupId, index, 'rolled back');
+    });
+    // Coverage-only story refusals still make their own review group fail, but
+    // preserve the established contract that a verified body write can remain
+    // tracked. A differently named group is unaffected and remains `ok`.
+    results.forEach((result, index) => {
+      if (
+        !result ||
+        result.ok ||
+        failedGroups.has(opGroupId(edits[index], changeSetId))
+      )
+        return;
+      markGroupFailed(opGroupId(edits[index], changeSetId), index, 'refused');
+    });
   }
 
   const wroteAppearance = appearanceRestores.length > 0;
@@ -9821,22 +10103,6 @@ function applyDocumentEditsMeasured(
   );
   const revisionCount = grouping.revisionCount;
   const hasFailure = results.some((result) => result && !result.ok);
-  if (hasFailure) {
-    // Never use global undo: it can revert unrelated history. Existing writes
-    // remain bound to one rejectable revision decision and no op is presented as
-    // a successful logical change set when any sibling failed verification.
-    results.forEach((result, index) => {
-      if (!result?.ok) return;
-      results[index] = {
-        ...result,
-        ok: false,
-        error: 'change_set_failed',
-        details: [
-          `Change set ${changeSetId} failed at another location; this write remains in the single rejectable revision group.`
-        ]
-      };
-    });
-  }
   const inventory = readPostEditInventory(editor, warnings);
   warnings.push(
     `document_serialization: count=${

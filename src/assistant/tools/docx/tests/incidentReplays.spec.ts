@@ -226,9 +226,9 @@ function expectHonestDuplicateTableOutcome(
   result: ReturnType<typeof applyDocumentEdits>,
   allowEmptyTableRefusal = false
 ): void {
-  const cellWrites = payload.edits.filter(
-    (edit) => edit.op === 'set_cell_text'
-  );
+  const cellWrites = payload.edits
+    .map((edit, index) => ({ edit, index }))
+    .filter(({ edit }) => edit.op === 'set_cell_text');
   const spacer = blocks(editor).find((block) => block.text === '  ');
   expect(spacer).toBeDefined();
 
@@ -236,15 +236,17 @@ function expectHonestDuplicateTableOutcome(
     const byAnchor = new Map(
       blocks(editor).map((block) => [block.anchor, block.text] as const)
     );
-    const requestedAnchor = payload.edits[0].anchor;
+    const requestedAnchor =
+      result.results[0].relocated?.to ?? payload.edits[0].anchor;
     const requestedParts = requestedAnchor.split(';');
     const insertAnchor =
       requestedParts.length === 2
         ? requestedAnchor
         : `${requestedParts[0]};${Number(requestedParts[1]) + 1}`;
     expect(byAnchor.has(`${insertAnchor};0;0;0`)).toBe(true);
-    for (const edit of cellWrites) {
-      expect(byAnchor.get(edit.anchor)).toBe(edit.text);
+    for (const { edit, index } of cellWrites) {
+      const anchor = result.results[index].relocated?.to ?? edit.anchor;
+      expect(byAnchor.get(anchor)).toBe(edit.text);
     }
     expect(
       revisions(editor).filter(
@@ -275,7 +277,7 @@ function expectHonestDuplicateTableOutcome(
     }
     editor.selection.select(
       `${insertAnchor};0;1;0;0`,
-      `${insertAnchor};0;1;0;${cellWrites[1]?.text.length ?? 0}`
+      `${insertAnchor};0;1;0;${cellWrites[1]?.edit.text.length ?? 0}`
     );
     expect(editor.selection.characterFormat.fontFamily).toBe('Courier New');
     return;
@@ -300,92 +302,99 @@ function expectHonestDuplicateTableOutcome(
 jest.setTimeout(120000);
 
 describe('W0 captain incident replays', () => {
-  it(
-    'A: inserts at 6;32 without a deletion revision over Billing Options',
-    () => {
-      const editor = makeRealDocumentEditor(incidentASfdt());
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentAChangeSet);
-        const after = new Map(
-          blocks(editor).map((block) => [block.anchor, block.text] as const)
-        );
+  it('A: inserts at 6;32 without a deletion revision over Billing Options', () => {
+    const editor = makeRealDocumentEditor(incidentASfdt());
+    try {
+      const before = editor.serialize();
+      const result = replay(editor, incidentAChangeSet);
+      const after = new Map(
+        blocks(editor).map((block) => [block.anchor, block.text] as const)
+      );
 
-        expect(result.changeSet.status).toBe('applied');
-        expect(result.results.every((entry) => entry.ok)).toBe(true);
-        expect(after.get('6;32;0;0;0')).toBe('\u00a0');
-        expect(after.get('6;33')).toBe('Billing Options');
-        expect(
-          revisions(editor).filter(
-            (revision) => revision.revisionType === 'Deletion'
-          )
-        ).toHaveLength(0);
+      expect(result.changeSet.status).toBe('applied');
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(after.get('6;32;0;0;0')).toBe('\u00a0');
+      expect(after.get('6;33')).toBe('Billing Options');
+      expect(
+        revisions(editor).filter(
+          (revision) => revision.revisionType === 'Deletion'
+        )
+      ).toHaveLength(0);
 
-        for (const revision of revisions(editor)) revision.reject();
-        expect(editor.serialize()).toBe(before);
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+      for (const revision of revisions(editor)) revision.reject();
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 
-  it(
-    'C: refuses fabricated amounts written into currency-symbol-only money cells',
-    () => {
-      const editor = makeRealDocumentEditor(incidentCSfdt(true));
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentCChangeSet);
+  it('C: refuses fabricated amounts written into currency-symbol-only money cells', () => {
+    const editor = makeRealDocumentEditor(incidentCSfdt(true));
+    try {
+      const before = editor.serialize();
+      const result = replay(editor, incidentCChangeSet);
 
-        expect(result.results[0]).toMatchObject({
-          ok: false,
-          error: 'model_authored_number'
-        });
-        expect(result.results[1]).toMatchObject({
-          ok: false,
-          error: 'model_authored_number'
-        });
-        expect(result.changeSet.status).toBe('failed');
-        expect(revisions(editor)).toHaveLength(0);
-        expect(editor.serialize()).toBe(before);
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'model_authored_number'
+      });
+      expect(result.results[1]).toMatchObject({
+        ok: false,
+        error: 'change_set_failed'
+      });
+      expect(result.changeSet.status).toBe('failed');
+      expect(revisions(editor)).toHaveLength(0);
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 
-  it(
-    'C: refuses reuse of the one stated premium as a second literal tax value',
-    () => {
-      const editor = makeRealDocumentEditor(incidentCSfdt(false));
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentCChangeSet);
+  it('C: refuses reuse of the one stated premium as a second literal tax value', () => {
+    const editor = makeRealDocumentEditor(incidentCSfdt(false));
+    try {
+      const before = editor.serialize();
+      const result = replay(editor, incidentCChangeSet);
 
-        expect(result.results[5]).toMatchObject({
-          ok: false,
-          error: 'user_stated_figure_reused'
-        });
-        expect(result.results[5].message).toContain('6;28;5;4;0');
-        expect(result.results[5].message).toContain('6;28;5;5;0');
-        expect(result.results[5].message).toContain('set_cell_formula');
-        expect(result.results[5].message).toContain('ask the user');
-        expect(result.changeSet.status).toBe('failed');
-        expect(revisions(editor)).toHaveLength(0);
-        expect(editor.serialize()).toBe(before);
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+      expect(result.results[5]).toMatchObject({
+        ok: false,
+        error: 'user_stated_figure_reused'
+      });
+      expect(result.results[5].message).toContain('6;28;5;4;0');
+      expect(result.results[5].message).toContain('6;28;5;5;0');
+      expect(result.results[5].message).toContain('set_cell_formula');
+      expect(result.results[5].message).toContain('ask the user');
+      expect(result.changeSet.status).toBe('failed');
+      // Only g02 is rejected. The independently reviewable g01 repair stays
+      // applied and remains one rejectable card group.
+      expect(revisions(editor)).toHaveLength(4);
+      expect(
+        revisions(editor).every((revision) =>
+          String(revision.customData).includes('g01-fill-pl-row')
+        )
+      ).toBe(true);
+      const after = new Map(
+        blocks(editor).map((block) => [block.anchor, block.text] as const)
+      );
+      expect(after.get('6;28;4;4;0')).toBe('$3,863.00');
+      expect(after.get('6;28;4;5;0')).toBe('$3,863.00');
+      expect(after.has('6;28;5;0;0')).toBe(false);
+      for (const revision of revisions(editor)) revision.reject();
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 
   it('C: allows two different user-stated figures in one change set', () => {
     const editor = makeRealDocumentEditor(incidentCSfdt(false));
     try {
       const before = editor.serialize();
-      const edits = incidentCChangeSet.edits.slice(2).map((edit, index) =>
-        index === 3 ? { ...edit, text: '80023' } : edit
-      );
+      const edits = incidentCChangeSet.edits
+        .slice(2)
+        .map((edit, index) =>
+          index === 3 ? { ...edit, text: '80023' } : edit
+        );
       const result = replay(editor, {
         changeSetId: 'distinct-user-stated-figures',
         plan: 'Add the user-stated premium and tax figures.',
@@ -403,80 +412,79 @@ describe('W0 captain incident replays', () => {
     }
   });
 
-  it(
-    'D attempt a: lands as an addressable table or honestly refuses the genuinely empty payload',
-    () => {
-      const editor = makeRealDocumentEditor(incidentDSfdt());
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentDChangeSets.a);
-        expectHonestDuplicateTableOutcome(
-          editor,
-          before,
-          incidentDChangeSets.a,
-          result,
-          true
-        );
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+  it('D attempt a: lands as an addressable table or honestly refuses the genuinely empty payload', () => {
+    const editor = makeRealDocumentEditor(incidentDSfdt());
+    try {
+      const before = editor.serialize();
+      const result = replay(editor, incidentDChangeSets.a);
+      expectHonestDuplicateTableOutcome(
+        editor,
+        before,
+        incidentDChangeSets.a,
+        result,
+        true
+      );
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 
-  it(
-    'D attempt b: lands addressably at 6;20 or refuses the insert itself without consuming the spacer',
-    () => {
-      const editor = makeRealDocumentEditor(incidentDSfdt());
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentDChangeSets.b);
-        expectHonestDuplicateTableOutcome(
-          editor,
-          before,
-          incidentDChangeSets.b,
-          result
-        );
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+  it('D attempt b: lands addressably at 6;20 or refuses the insert itself without consuming the spacer', () => {
+    const editor = makeRealDocumentEditor(incidentDSfdt());
+    try {
+      const before = editor.serialize();
+      const result = replay(editor, incidentDChangeSets.b);
+      expectHonestDuplicateTableOutcome(
+        editor,
+        before,
+        incidentDChangeSets.b,
+        result
+      );
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 
-  it(
-    'D attempt c: never claims a populated payload has no cell writes',
-    () => {
-      const editor = makeRealDocumentEditor(incidentDSfdt());
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentDChangeSets.c);
-        expectHonestDuplicateTableOutcome(
-          editor,
-          before,
-          incidentDChangeSets.c,
-          result
-        );
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+  it('D attempt c: relocates a stale paragraph within its original table cell', () => {
+    const editor = makeRealDocumentEditor(incidentDSfdt());
+    try {
+      const before = editor.serialize();
+      const payload = {
+        ...incidentDChangeSets.c,
+        edits: [
+          {
+            ...incidentDChangeSets.c.edits[0],
+            anchor: '6;19;10;0;1',
+            expect: 'Coverage 10',
+            end: 11
+          },
+          ...incidentDChangeSets.c.edits.slice(1)
+        ]
+      };
+      const result = replay(editor, payload);
+      expectHonestDuplicateTableOutcome(editor, before, payload, result);
+      expect(result.results[0].relocated).toEqual({
+        from: '6;19;10;0;1',
+        to: '6;19;10;0;0'
+      });
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 
-  it(
-    'D attempt d: never claims a populated payload has no cell writes',
-    () => {
-      const editor = makeRealDocumentEditor(incidentDSfdt());
-      try {
-        const before = editor.serialize();
-        const result = replay(editor, incidentDChangeSets.d);
-        expectHonestDuplicateTableOutcome(
-          editor,
-          before,
-          incidentDChangeSets.d,
-          result
-        );
-      } finally {
-        destroyRealDocumentEditor(editor);
-      }
+  it('D attempt d: never claims a populated payload has no cell writes', () => {
+    const editor = makeRealDocumentEditor(incidentDSfdt());
+    try {
+      const before = editor.serialize();
+      const result = replay(editor, incidentDChangeSets.d);
+      expectHonestDuplicateTableOutcome(
+        editor,
+        before,
+        incidentDChangeSets.d,
+        result
+      );
+    } finally {
+      destroyRealDocumentEditor(editor);
     }
-  );
+  });
 });

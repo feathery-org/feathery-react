@@ -290,7 +290,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
       expect(
         result.results
           .slice(1)
-          .every((r) => r.error === 'change_set_preflight_failed')
+          .every((r) => r.error === 'change_set_failed')
       ).toBe(true);
       expect(ed.serialize()).toBe(before);
     } finally {
