@@ -115,6 +115,80 @@ const row = (texts: string[], background?: string, isHeader?: boolean) => ({
   cells: texts.map((text) => cell(text, background))
 });
 
+const styledCell = (
+  text: string,
+  characterFormat: Record<string, unknown>,
+  paragraphFormat: Record<string, unknown>,
+  background?: string
+) => ({
+  cellFormat: {
+    preferredWidth: 100,
+    ...(background ? { shading: { backgroundColor: background } } : {}),
+    borders: {
+      top: { lineStyle: 'Single', lineWidth: 0.5, color: '#7F7F7F' },
+      left: { lineStyle: 'Single', lineWidth: 0.5, color: '#7F7F7F' },
+      right: { lineStyle: 'Single', lineWidth: 0.5, color: '#7F7F7F' },
+      bottom: { lineStyle: 'Single', lineWidth: 0.5, color: '#7F7F7F' }
+    }
+  },
+  blocks: [{ paragraphFormat, inlines: [{ text, characterFormat }] }]
+});
+
+const inheritedTableFixture = () => {
+  const header = (text: string, column: number) =>
+    styledCell(
+      text,
+      {
+        fontFamily: column === 0 ? 'Arial' : 'Courier New',
+        fontSize: 12,
+        bold: true,
+        fontColor: '#FFFFFF'
+      },
+      { textAlignment: 'Center', afterSpacing: 4 },
+      HEADER_FILL
+    );
+  const body = (text: string, rowIndex: number, column: number) =>
+    styledCell(
+      text,
+      {
+        fontFamily: column === 0 ? 'Georgia' : 'Times New Roman',
+        fontSize: rowIndex === 3 ? 13 : 9.5,
+        italic: rowIndex === 3
+      },
+      {
+        textAlignment: rowIndex === 3 ? 'Right' : 'Left',
+        afterSpacing: rowIndex === 3 ? 7 : 2
+      },
+      rowIndex % 2 === 0 ? BAND_FILL : undefined
+    );
+  return {
+    sections: [
+      {
+        blocks: [
+          {
+            tableFormat: { preferredWidth: 300 },
+            rows: [
+              {
+                rowFormat: { isHeader: true },
+                cells: [header('Code', 0), header('Description', 1)]
+              },
+              ...[1, 2, 3, 4].map((rowIndex) => ({
+                rowFormat: {},
+                cells: [
+                  body(String(rowIndex), rowIndex, 0),
+                  body(`Row ${rowIndex}`, rowIndex, 1)
+                ]
+              }))
+            ]
+          },
+          { inlines: [{ text: 'Sibling table spacer' }] },
+          { inlines: [{ text: 'Insert here' }] }
+        ]
+      }
+    ]
+  };
+};
+
 /**
  * The captain's document: a sibling section whose Location Schedule is banded
  * (dark header row, then alternating rows starting UNFILLED), and a new section
@@ -177,6 +251,29 @@ const structure = (ed: DocumentEditor): DocumentStructure => {
 
 const apply = (ed: DocumentEditor, edits: any[], changeSetId = 'tf') =>
   applyDocumentEdits(ed as unknown as LiveEditor, { edits, changeSetId });
+
+const resolvedTextFormat = (
+  ed: DocumentEditor,
+  anchor: string,
+  text: string
+) => {
+  ed.selection.select(`${anchor};0`, `${anchor};${text.length}`);
+  const character = {
+    fontFamily: ed.selection.characterFormat.fontFamily,
+    fontSize: ed.selection.characterFormat.fontSize,
+    bold: ed.selection.characterFormat.bold,
+    italic: ed.selection.characterFormat.italic,
+    fontColor: ed.selection.characterFormat.fontColor
+  };
+  ed.selection.select(`${anchor};0`, `${anchor};${text.length + 1}`);
+  return {
+    character,
+    paragraph: {
+      textAlignment: ed.selection.paragraphFormat.textAlignment,
+      afterSpacing: ed.selection.paragraphFormat.afterSpacing
+    }
+  };
+};
 
 // ---------------------------------------------------------------------------
 
@@ -707,6 +804,171 @@ describe('restripe_table', () => {
       expect(facts(ed, '0;1').rows[3].cells[1].appearance?.shading).toBe(
         '#FFF2CC'
       );
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+});
+
+describe('structural inserts inherit resolved table formatting by default', () => {
+  it('gives a new table its nearest sibling appearance and per-column header/body text formats', () => {
+    const ed = makeEditor(inheritedTableFixture());
+    try {
+      const before = ed.serialize();
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_table', anchor: '0;2', rows: 3, columns: 2 },
+          { op: 'set_cell_text', anchor: '0;2;0;0;0', text: 'New code' },
+          { op: 'set_cell_text', anchor: '0;2;0;1;0', text: 'New description' },
+          { op: 'set_cell_text', anchor: '0;2;1;0;0', text: 'A5' },
+          { op: 'set_cell_text', anchor: '0;2;1;1;0', text: 'Fifth row' },
+          { op: 'set_cell_text', anchor: '0;2;2;0;0', text: 'A6' },
+          { op: 'set_cell_text', anchor: '0;2;2;1;0', text: 'Sixth row' },
+          // Explicit phase-3 formatting is the override act.
+          {
+            op: 'set_char_format',
+            anchor: '0;2;2;1;0',
+            fontName: 'Calibri',
+            fontSize: 16
+          },
+          { op: 'set_cell_format', anchor: '0;2;1;1;0', shading: '#FFF2CC' }
+        ],
+        'inherit-new-table'
+      );
+
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(fills(ed, '0;2')).toEqual([HEADER_FILL, null, BAND_FILL]);
+      expect(facts(ed, '0;2').rows[0].isHeader).toBe(true);
+      expect(facts(ed, '0;2').rows[0].appearance?.borders).toEqual({
+        all: { style: 'Single', width: 0.5, color: '#7F7F7F' }
+      });
+      expect(resolvedTextFormat(ed, '0;2;0;0;0', 'New code')).toMatchObject({
+        character: { fontFamily: 'Arial', fontSize: 12, bold: true },
+        paragraph: { textAlignment: 'Center', afterSpacing: 4 }
+      });
+      expect(
+        resolvedTextFormat(ed, '0;2;0;1;0', 'New description')
+      ).toMatchObject({
+        character: { fontFamily: 'Courier New', fontSize: 12, bold: true }
+      });
+      expect(resolvedTextFormat(ed, '0;2;1;0;0', 'A5')).toMatchObject({
+        character: { fontFamily: 'Georgia', fontSize: 9.5 },
+        paragraph: { textAlignment: 'Left', afterSpacing: 2 }
+      });
+      expect(resolvedTextFormat(ed, '0;2;2;1;0', 'Sixth row')).toMatchObject({
+        character: { fontFamily: 'Calibri', fontSize: 16 }
+      });
+      expect(facts(ed, '0;2').rows[1].cells[1].appearance?.shading).toBe(
+        '#FFF2CC'
+      );
+      expect(result.changeSet?.formatTracking).toBe(
+        'grouped_with_revision_cards'
+      );
+
+      revisions(ed)[0].reject();
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('formats an inserted row from the row it displaces, not the anchor row SyncFusion clones', () => {
+    const ed = makeEditor(inheritedTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;2;0;0' },
+        { op: 'set_cell_text', anchor: '0;0;3;0;0', text: 'A3a' },
+        { op: 'set_cell_text', anchor: '0;0;3;1;0', text: 'Inserted' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;0')).toEqual([
+        HEADER_FILL,
+        null,
+        BAND_FILL,
+        null,
+        BAND_FILL,
+        null
+      ]);
+      expect(resolvedTextFormat(ed, '0;0;3;0;0', 'A3a')).toMatchObject({
+        character: { fontFamily: 'Georgia', fontSize: 13, italic: true },
+        paragraph: { textAlignment: 'Right', afterSpacing: 7 }
+      });
+      expect(resolvedTextFormat(ed, '0;0;3;1;0', 'Inserted')).toMatchObject({
+        character: { fontFamily: 'Times New Roman', fontSize: 13, italic: true }
+      });
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('captures a following sibling before the table insert shifts its anchor', () => {
+    const doc: any = inheritedTableFixture();
+    doc.sections[0].blocks = [
+      doc.sections[0].blocks[2],
+      doc.sections[0].blocks[1],
+      doc.sections[0].blocks[0]
+    ];
+    const ed = makeEditor(doc);
+    try {
+      const result = apply(ed, [
+        { op: 'insert_table', anchor: '0;0', rows: 2, columns: 2 },
+        { op: 'set_cell_text', anchor: '0;0;0;0;0', text: 'New code' },
+        { op: 'set_cell_text', anchor: '0;0;0;1;0', text: 'New description' },
+        { op: 'set_cell_text', anchor: '0;0;1;0;0', text: 'A5' },
+        { op: 'set_cell_text', anchor: '0;0;1;1;0', text: 'Fifth row' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;0')).toEqual([HEADER_FILL, null]);
+      expect(
+        resolvedTextFormat(ed, '0;0;0;1;0', 'New description')
+      ).toMatchObject({
+        character: { fontFamily: 'Courier New', fontSize: 12, bold: true }
+      });
+      // The source moved from 0;2 to 0;3 when the new grid landed; inheritance
+      // still came from its pre-mutation snapshot.
+      expect(facts(ed, '0;3').rows[0].cells[0].text).toBe('Code');
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('formats an empty inserted row so a later-call cell write keeps the inherited look', () => {
+    const ed = makeEditor(inheritedTableFixture());
+    try {
+      const inserted = apply(ed, [{ op: 'insert_row', anchor: '0;0;2;0;0' }]);
+      expect(inserted.results.filter((entry) => !entry.ok)).toEqual([]);
+
+      const filled = apply(
+        ed,
+        [{ op: 'set_cell_text', anchor: '0;0;3;0;0', text: 'A3a' }],
+        'later-fill'
+      );
+      expect(filled.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(resolvedTextFormat(ed, '0;0;3;0;0', 'A3a')).toMatchObject({
+        character: { fontFamily: 'Georgia', fontSize: 13, italic: true },
+        paragraph: { textAlignment: 'Right', afterSpacing: 7 }
+      });
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('uses the table body cycle when an appended row displaces no row', () => {
+    const ed = makeEditor(inheritedTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;4;0;0' },
+        { op: 'set_cell_text', anchor: '0;0;5;0;0', text: 'A5' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(resolvedTextFormat(ed, '0;0;5;0;0', 'A5')).toMatchObject({
+        character: { fontFamily: 'Georgia', fontSize: 9.5, italic: false },
+        paragraph: { textAlignment: 'Left', afterSpacing: 2 }
+      });
     } finally {
       destroyEditor(ed);
     }
