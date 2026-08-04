@@ -24,6 +24,7 @@ import {
   findViewerSurface,
   measureTokenRects,
   sameRects,
+  tokenBookmarks,
   TokenRect
 } from './tokenRects';
 
@@ -58,6 +59,7 @@ export default function TokenOverlay({
   const [rects, setRects] = useState<TokenRect[]>([]);
   const [surface, setSurface] = useState<HTMLElement | null>(null);
   const rectsRef = useRef<TokenRect[]>([]);
+  const valueOfInstance = useRef<Map<string, string>>(new Map());
 
   useEffect(() => cycle.subscribe(setState), [cycle]);
 
@@ -78,8 +80,14 @@ export default function TokenOverlay({
     let frame = 0;
 
     const tick = () => {
-      const ids = state.specs.map((spec) => spec.id);
-      const next = measureTokenRects(editor, ids);
+      // Measure every APPEARANCE, and remember which value each belongs to so
+      // the colour follows the token while the rectangle follows the control.
+      const pairs = tokenBookmarks(editor);
+      valueOfInstance.current = new Map(pairs);
+      const next = measureTokenRects(
+        editor,
+        pairs.map(([instance]) => instance)
+      );
       if (!sameRects(rectsRef.current, next)) {
         rectsRef.current = next;
         setRects(next);
@@ -115,22 +123,25 @@ export default function TokenOverlay({
         pointerEvents: 'none'
       }}
     >
-      {rects.map((rect) => (
-        <div
-          key={rect.id}
-          style={{
-            position: 'absolute',
-            left: rect.left - 1.5 * rect.zoom,
-            top: rect.top,
-            width: rect.width + 3 * rect.zoom,
-            height: rect.height,
-            background: fillFor(state, rect.id, computedIds.has(rect.id)),
-            borderRadius: 3 * rect.zoom,
-            mixBlendMode: 'multiply',
-            transition: 'background 120ms ease'
-          }}
-        />
-      ))}
+      {rects.map((rect) => {
+        const valueId = valueOfInstance.current.get(rect.id) ?? rect.id;
+        return (
+          <div
+            key={rect.id}
+            style={{
+              position: 'absolute',
+              left: rect.left - 1.5 * rect.zoom,
+              top: rect.top,
+              width: rect.width + 3 * rect.zoom,
+              height: rect.height,
+              background: fillFor(state, valueId, computedIds.has(valueId)),
+              borderRadius: 3 * rect.zoom,
+              mixBlendMode: 'multiply',
+              transition: 'background 120ms ease'
+            }}
+          />
+        );
+      })}
     </div>,
     surface
   );

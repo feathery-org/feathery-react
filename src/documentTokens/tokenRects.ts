@@ -61,7 +61,27 @@ export interface TokenRect {
   zoom: number;
 }
 
-/** Measure the on-screen rectangle of every given token id. */
+/**
+ * Every token bookmark in the document, as (instance, value key) pairs.
+ *
+ * Bookmarks are named per APPEARANCE — `ftk_qty__0`, `ftk_company_name#1` —
+ * so measuring by token name would only ever find a scalar token's first
+ * appearance. Colour comes from the value, geometry from the appearance.
+ */
+export function tokenBookmarks(editor: any): Array<[string, string]> {
+  const names: string[] = editor?.getBookmarks?.() ?? [];
+  return names
+    .filter((name) => name.startsWith('ftk_'))
+    .map((name) => {
+      const instance = name.slice('ftk_'.length);
+      // `#n` marks a repeat appearance of the same value; strip it to get the
+      // value key the state is keyed by.
+      const hash = instance.lastIndexOf('#');
+      return [instance, hash > 0 ? instance.slice(0, hash) : instance];
+    });
+}
+
+/** Measure the on-screen rectangle of every given token instance. */
 export function measureTokenRects(editor: any, ids: string[]): TokenRect[] {
   const helper = editor?.documentHelper as DocumentHelperLike | undefined;
   const bookmarks = helper?.bookmarks;
