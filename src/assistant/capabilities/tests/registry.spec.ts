@@ -121,7 +121,19 @@ describe('live retrieval surface owns its own contract', () => {
     );
   });
 
-  it('does not restore a parallel read catalogue', () => {
-    expect('DOCUMENT_EDITOR_READS' in capabilityRegistry).toBe(false);
+  it('registers the standalone section-pattern read without advertising it as an edit op', () => {
+    expect(capabilityRegistry.DOCUMENT_EDITOR_READ_CAPABILITIES).toEqual([
+      {
+        tool: 'getSectionPattern',
+        params: { near: 'string?' },
+        requiresAnchor: false,
+        readOnly: true
+      }
+    ]);
+    expect(
+      DOCUMENT_EDITOR_CAPABILITIES.some(
+        (entry) => entry.op === ('getSectionPattern' as any)
+      )
+    ).toBe(false);
   });
 });

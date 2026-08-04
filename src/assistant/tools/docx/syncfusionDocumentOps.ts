@@ -141,6 +141,66 @@ export interface IndexBlock {
   format?: DocFormat;
 }
 
+export interface SectionPatternConfidence {
+  matches: number;
+  sampled: number;
+  level: 'high' | 'medium' | 'low';
+}
+
+export interface SectionPatternValue<T> {
+  value: T;
+  confidence: SectionPatternConfidence;
+}
+
+export interface SectionPatternSequenceElement {
+  role:
+    | 'section_heading'
+    | 'intro_paragraph'
+    | 'subsection_heading'
+    | 'subsection_paragraph'
+    | 'table';
+  level?: number;
+  count: number;
+  confidence: SectionPatternConfidence;
+}
+
+export interface SectionPatternRoleFormat {
+  styleName?: string;
+  characterFormat?: FormatBag;
+  paragraphFormat?: FormatBag;
+  confidence: SectionPatternConfidence;
+}
+
+export interface SectionPatternTable {
+  ordinal: number;
+  columns: SectionPatternValue<number>;
+  headerRow: SectionPatternValue<boolean>;
+  banding: SectionPatternValue<TableBanding | null>;
+  columnHeaders: {
+    variants: Array<{ texts: string[]; observed: number }>;
+    confidence: SectionPatternConfidence;
+  };
+  styleName?: SectionPatternValue<string>;
+}
+
+export interface SectionPatternResult {
+  ok: true;
+  pattern: {
+    sectionLevel?: SectionPatternValue<number>;
+    sequence: SectionPatternSequenceElement[];
+    tables: SectionPatternTable[];
+    roles: Record<string, SectionPatternRoleFormat>;
+  };
+  sample: {
+    available: number;
+    sampled: number;
+    recurring: number;
+    near?: string;
+    truncated?: true;
+  };
+  note: string;
+}
+
 // A refusal that names what to do instead of what went wrong. `retry` is the
 // loop breaker: 'never' means resending cannot succeed, 'after_remedy' means
 // retry only after performing the named remedy, 'modified_input' means the
@@ -2095,6 +2155,531 @@ export function buildIndexBlocksFromBlocks(blocks: FlatBlock[]): IndexBlock[] {
     out.push(block);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Section-pattern read
+// ---------------------------------------------------------------------------
+
+const SECTION_PATTERN_SAMPLE_LIMIT = 12;
+const SECTION_PATTERN_SEQUENCE_LIMIT = 16;
+const SECTION_PATTERN_TABLE_LIMIT = 2;
+const SECTION_PATTERN_HEADER_VARIANT_LIMIT = 3;
+const SECTION_PATTERN_HEADER_COLUMN_LIMIT = 6;
+const SECTION_PATTERN_TEXT_LIMIT = 40;
+
+type SectionBlockRole =
+  | 'section_heading'
+  | 'intro_paragraph'
+  | 'subsection_heading'
+  | 'subsection_paragraph'
+  | 'table'
+  | 'table_header'
+  | 'table_body';
+
+interface SectionUnit {
+  blocks: FlatBlock[];
+}
+
+interface SectionTableObservation {
+  columns: number;
+  headerRow: boolean;
+  banding: TableBanding | null;
+  columnHeaders: string[];
+  styleName?: string;
+}
+
+function patternConfidence(
+  matches: number,
+  sampled: number
+): SectionPatternConfidence {
+  const ratio = sampled > 0 ? matches / sampled : 0;
+  const level =
+    sampled >= 3 && matches >= 2 && ratio >= 2 / 3
+      ? 'high'
+      : sampled >= 2 && matches >= 2
+      ? 'medium'
+      : 'low';
+  return { matches, sampled, level };
+}
+
+function modal<T>(
+  values: T[],
+  key: (value: T) => string = (value) => JSON.stringify(value)
+): { value: T; count: number } | undefined {
+  const counts = new Map<string, { value: T; count: number }>();
+  let best: { value: T; count: number } | undefined;
+  for (const value of values) {
+    const id = key(value);
+    const current = counts.get(id) ?? { value, count: 0 };
+    current.count++;
+    counts.set(id, current);
+    if (!best || current.count > best.count) best = current;
+  }
+  return best;
+}
+
+function tableAnchorForBlock(block: FlatBlock): string | undefined {
+  if (block.kind !== 'table_cell') return undefined;
+  const parts = block.anchor.split(';');
+  return parts.length === 5 ? `${parts[0]};${parts[1]}` : undefined;
+}
+
+function unitsAtLevel(blocks: FlatBlock[], level: number): SectionUnit[] {
+  const units: SectionUnit[] = [];
+  for (let start = 0; start < blocks.length; start++) {
+    const heading = blocks[start];
+    if (!heading.isHeading || heading.level !== level) continue;
+    let end = blocks.length;
+    for (let index = start + 1; index < blocks.length; index++) {
+      if (blocks[index].isHeading && blocks[index].level <= level) {
+        end = index;
+        break;
+      }
+    }
+    units.push({ blocks: blocks.slice(start, end) });
+  }
+  return units;
+}
+
+function unitContainsAnchor(unit: SectionUnit, near: string): boolean {
+  return unit.blocks.some(
+    (block) =>
+      block.anchor === near ||
+      block.anchor.startsWith(`${near};`) ||
+      near.startsWith(`${block.anchor};`)
+  );
+}
+
+function chooseSectionLevel(
+  blocks: FlatBlock[],
+  near?: string
+): number | undefined {
+  const levels = Array.from(
+    new Set(
+      blocks.filter((block) => block.isHeading).map((block) => block.level)
+    )
+  ).sort((a, b) => a - b);
+  if (!levels.length) return undefined;
+
+  const repeated = levels.filter(
+    (level) => unitsAtLevel(blocks, level).length >= 2
+  );
+  if (near) {
+    const nearbyRepeated = repeated.filter((level) =>
+      unitsAtLevel(blocks, level).some((unit) => unitContainsAnchor(unit, near))
+    );
+    if (nearbyRepeated.length) return nearbyRepeated[0];
+  }
+  if (repeated.length) return repeated[0];
+  if (near) {
+    const nearby = levels.filter((level) =>
+      unitsAtLevel(blocks, level).some((unit) => unitContainsAnchor(unit, near))
+    );
+    if (nearby.length) return nearby[0];
+  }
+  return levels[0];
+}
+
+function sampleSectionUnits(
+  units: SectionUnit[],
+  near?: string
+): SectionUnit[] {
+  if (units.length <= SECTION_PATTERN_SAMPLE_LIMIT) return units;
+  if (!near) return units.slice(0, SECTION_PATTERN_SAMPLE_LIMIT);
+  const nearby = units.findIndex((unit) => unitContainsAnchor(unit, near));
+  if (nearby < 0) return units.slice(0, SECTION_PATTERN_SAMPLE_LIMIT);
+  const start = Math.max(
+    0,
+    Math.min(
+      units.length - SECTION_PATTERN_SAMPLE_LIMIT,
+      nearby - Math.floor(SECTION_PATTERN_SAMPLE_LIMIT / 2)
+    )
+  );
+  return units.slice(start, start + SECTION_PATTERN_SAMPLE_LIMIT);
+}
+
+function sequenceForUnit(unit: SectionUnit): SectionPatternSequenceElement[] {
+  const sequence: SectionPatternSequenceElement[] = [];
+  let seenSubsection = false;
+  let lastTable = '';
+  const push = (
+    role: SectionPatternSequenceElement['role'],
+    level?: number
+  ) => {
+    const previous = sequence[sequence.length - 1];
+    if (previous && previous.role === role && previous.level === level) {
+      previous.count++;
+      return;
+    }
+    sequence.push({
+      role,
+      ...(level !== undefined ? { level } : {}),
+      count: 1,
+      // Replaced after the recurring sequence is selected.
+      confidence: patternConfidence(0, 0)
+    });
+  };
+
+  unit.blocks.forEach((block, index) => {
+    if (index === 0) {
+      push('section_heading', block.level);
+      return;
+    }
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor) {
+      if (tableAnchor !== lastTable) push('table');
+      lastTable = tableAnchor;
+      return;
+    }
+    lastTable = '';
+    if (block.isHeading) {
+      seenSubsection = true;
+      push('subsection_heading', block.level);
+      return;
+    }
+    if (!block.text.trim()) return;
+    push(seenSubsection ? 'subsection_paragraph' : 'intro_paragraph');
+  });
+  return sequence;
+}
+
+function roleBlocksForUnit(
+  unit: SectionUnit
+): Map<SectionBlockRole, FlatBlock[]> {
+  const roles = new Map<SectionBlockRole, FlatBlock[]>();
+  const add = (role: SectionBlockRole, block: FlatBlock) => {
+    const current = roles.get(role) ?? [];
+    current.push(block);
+    roles.set(role, current);
+  };
+  let seenSubsection = false;
+  unit.blocks.forEach((block, index) => {
+    if (index === 0) {
+      add('section_heading', block);
+      return;
+    }
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor) {
+      const row = Number(block.anchor.split(';')[2]);
+      add(row === 0 ? 'table_header' : 'table_body', block);
+      return;
+    }
+    if (block.isHeading) {
+      seenSubsection = true;
+      add('subsection_heading', block);
+      return;
+    }
+    if (!block.text.trim()) return;
+    add(seenSubsection ? 'subsection_paragraph' : 'intro_paragraph', block);
+  });
+  return roles;
+}
+
+const SECTION_CHARACTER_FORMAT_KEYS = new Set([
+  'bold',
+  'italic',
+  'fontSize',
+  'fontFamily',
+  'fontColor',
+  'highlightColor',
+  'underline',
+  'allCaps'
+]);
+const SECTION_PARAGRAPH_FORMAT_KEYS = new Set([
+  'leftIndent',
+  'rightIndent',
+  'firstLineIndent',
+  'textAlignment',
+  'beforeSpacing',
+  'afterSpacing',
+  'lineSpacing',
+  'lineSpacingType',
+  'keepWithNext',
+  'outlineLevel'
+]);
+
+function clipPatternValue(value: unknown): unknown {
+  return typeof value === 'string'
+    ? value.slice(0, SECTION_PATTERN_TEXT_LIMIT * 2)
+    : value;
+}
+
+function compactFormatBag(
+  source: FormatBag | undefined,
+  allowed: Set<string>
+): FormatBag | undefined {
+  if (!source) return undefined;
+  const compact: FormatBag = {};
+  for (const key of Object.keys(source)) {
+    if (allowed.has(key)) compact[key] = clipPatternValue(source[key]);
+  }
+  return Object.keys(compact).length ? compact : undefined;
+}
+
+function roleFormat(
+  block: FlatBlock
+): Omit<SectionPatternRoleFormat, 'confidence'> {
+  const styleName = block.format?.styleName;
+  const characterFormat = compactFormatBag(
+    block.characterFormat,
+    SECTION_CHARACTER_FORMAT_KEYS
+  );
+  const paragraphFormat = compactFormatBag(
+    block.paragraphFormat,
+    SECTION_PARAGRAPH_FORMAT_KEYS
+  );
+  return {
+    ...(styleName
+      ? { styleName: styleName.slice(0, SECTION_PATTERN_TEXT_LIMIT * 2) }
+      : {}),
+    ...(characterFormat ? { characterFormat } : {}),
+    ...(paragraphFormat ? { paragraphFormat } : {})
+  };
+}
+
+function tableAnchorsForUnit(unit: SectionUnit): string[] {
+  const anchors: string[] = [];
+  for (const block of unit.blocks) {
+    const anchor = tableAnchorForBlock(block);
+    if (anchor && anchors[anchors.length - 1] !== anchor) anchors.push(anchor);
+  }
+  return anchors;
+}
+
+function tableObservation(
+  sfdt: any,
+  tableAnchor: string
+): SectionTableObservation | undefined {
+  const table = tableBlockAt(sfdt, tableAnchor);
+  const rows = getRows(table);
+  if (!table || !rows) return undefined;
+  const appearance = collectTableAppearance(table);
+  const columns = rows.reduce((widest, row) => {
+    const cells: any[] = pick(row, 'cells', 'c') ?? [];
+    return Math.max(widest, cells.length);
+  }, 0);
+  const headerRow = appearance ? inferHeaderRows(appearance) > 0 : false;
+  const deletedIds = deletedRevisionIds(sfdt);
+  const firstRowCells: any[] = pick(rows[0], 'cells', 'c') ?? [];
+  const columnHeaders = headerRow
+    ? firstRowCells.slice(0, SECTION_PATTERN_HEADER_COLUMN_LIMIT).map((cell) =>
+        getBlocks(cell)
+          .map((block) => inlineText(getInlines(block), deletedIds))
+          .join('\n')
+          .slice(0, SECTION_PATTERN_TEXT_LIMIT)
+      )
+    : [];
+  return {
+    columns,
+    headerRow,
+    banding: appearance ? detectTableBanding(appearance) : null,
+    columnHeaders,
+    ...(appearance?.styleName ? { styleName: appearance.styleName } : {})
+  };
+}
+
+function observedValue<T>(
+  values: Array<T | undefined>,
+  sampled: number
+): SectionPatternValue<T> | undefined {
+  const present = values.filter((value): value is T => value !== undefined);
+  const chosen = modal(present);
+  return chosen
+    ? {
+        value: chosen.value,
+        confidence: patternConfidence(chosen.count, sampled)
+      }
+    : undefined;
+}
+
+function tablePatterns(sfdt: any, units: SectionUnit[]): SectionPatternTable[] {
+  const observations = units.map((unit) =>
+    tableAnchorsForUnit(unit).map((anchor) => tableObservation(sfdt, anchor))
+  );
+  const tableCount = Math.min(
+    SECTION_PATTERN_TABLE_LIMIT,
+    observations.reduce(
+      (largest, tables) => Math.max(largest, tables.length),
+      0
+    )
+  );
+  const patterns: SectionPatternTable[] = [];
+  for (let ordinal = 0; ordinal < tableCount; ordinal++) {
+    const tableAtOrdinal = observations.map((tables) => tables[ordinal]);
+    const columns = observedValue(
+      tableAtOrdinal.map((table) => table?.columns),
+      units.length
+    );
+    const headerRow = observedValue(
+      tableAtOrdinal.map((table) => table?.headerRow),
+      units.length
+    );
+    const banding = observedValue(
+      tableAtOrdinal.map((table) => table?.banding),
+      units.length
+    );
+    if (!columns || !headerRow || !banding) continue;
+    const headerVariants = new Map<
+      string,
+      { texts: string[]; observed: number }
+    >();
+    for (const table of tableAtOrdinal) {
+      if (!table?.headerRow) continue;
+      const id = JSON.stringify(table.columnHeaders);
+      const variant = headerVariants.get(id) ?? {
+        texts: table.columnHeaders,
+        observed: 0
+      };
+      variant.observed++;
+      headerVariants.set(id, variant);
+    }
+    const variants = Array.from(headerVariants.values())
+      .sort((a, b) => b.observed - a.observed)
+      .slice(0, SECTION_PATTERN_HEADER_VARIANT_LIMIT);
+    const styleName = observedValue(
+      tableAtOrdinal.map((table) => table?.styleName),
+      units.length
+    );
+    patterns.push({
+      ordinal: ordinal + 1,
+      columns,
+      headerRow,
+      banding,
+      columnHeaders: {
+        variants,
+        confidence: patternConfidence(
+          tableAtOrdinal.filter((table) => table?.headerRow).length,
+          units.length
+        )
+      },
+      ...(styleName ? { styleName } : {})
+    });
+  }
+  return patterns;
+}
+
+/**
+ * Derive the document's own recurring section schema from sibling sections.
+ * `near` only selects the relevant sibling family/sample; inference still works
+ * from the document alone, and a document with no repetition returns an honest
+ * low-confidence observable shape instead of failing.
+ */
+export function deriveSectionPattern(
+  editor: LiveEditor,
+  options: { near?: string } = {}
+): SectionPatternResult {
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const near =
+    typeof options?.near === 'string' && options.near.trim()
+      ? options.near.trim().slice(0, 100)
+      : undefined;
+  const level = chooseSectionLevel(blocks, near);
+  if (level === undefined) {
+    return {
+      ok: true,
+      pattern: { sequence: [], tables: [], roles: {} },
+      sample: {
+        available: 0,
+        sampled: 0,
+        recurring: 0,
+        ...(near ? { near } : {})
+      },
+      note: 'Low confidence: no heading-delimited sibling sections were found; returning an empty observable pattern.'
+    };
+  }
+
+  const availableUnits = unitsAtLevel(blocks, level);
+  const units = sampleSectionUnits(availableUnits, near);
+  const fullSequences = units.map(sequenceForUnit);
+  const sequenceTruncated = fullSequences.some(
+    (sequence) => sequence.length > SECTION_PATTERN_SEQUENCE_LIMIT
+  );
+  const sequences = fullSequences.map((sequence) =>
+    sequence.slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
+  );
+  const selectedSequence = modal(sequences);
+  const recurring = selectedSequence?.count ?? 0;
+  const sequence = (selectedSequence?.value ?? []).map((element, index) => ({
+    ...element,
+    confidence: patternConfidence(
+      sequences.filter((candidate) => {
+        const atIndex = candidate[index];
+        return (
+          atIndex?.role === element.role &&
+          atIndex?.level === element.level &&
+          atIndex?.count === element.count
+        );
+      }).length,
+      units.length
+    )
+  }));
+
+  const unitRoles = units.map(roleBlocksForUnit);
+  const selectedRoles = new Set<SectionBlockRole>();
+  sequence.forEach((element) => selectedRoles.add(element.role));
+  if (sequence.some((element) => element.role === 'table')) {
+    selectedRoles.add('table_header');
+    selectedRoles.add('table_body');
+  }
+  const roles: Record<string, SectionPatternRoleFormat> = {};
+  for (const role of selectedRoles) {
+    if (role === 'table') continue;
+    const candidates = unitRoles.reduce(
+      (all, byRole) =>
+        all.concat((byRole.get(role) ?? []).map((block) => roleFormat(block))),
+      [] as Array<Omit<SectionPatternRoleFormat, 'confidence'>>
+    );
+    const selected = modal(candidates);
+    if (!selected) continue;
+    const selectedKey = JSON.stringify(selected.value);
+    const matches = unitRoles.filter((byRole) =>
+      (byRole.get(role) ?? []).some(
+        (block) => JSON.stringify(roleFormat(block)) === selectedKey
+      )
+    ).length;
+    roles[role] = {
+      ...selected.value,
+      confidence: patternConfidence(matches, units.length)
+    };
+  }
+
+  const confidence = patternConfidence(recurring, units.length);
+  const baseNote =
+    confidence.level === 'low'
+      ? units.length < 2
+        ? `Low confidence: only ${units.length} sibling section was available at heading level ${level}; returning its observable minimal shape.`
+        : `Low confidence: no section shape clearly repeats across ${units.length} sampled siblings at heading level ${level}; returning the most common observable shape (${recurring}/${units.length}).`
+      : `Recurring section pattern observed in ${recurring} of ${units.length} sampled siblings at heading level ${level}.`;
+  const tableTruncated = units.some(
+    (unit) => tableAnchorsForUnit(unit).length > SECTION_PATTERN_TABLE_LIMIT
+  );
+  const truncated = sequenceTruncated || tableTruncated;
+  const note = truncated
+    ? `${baseNote} Output is capped to the first ${SECTION_PATTERN_SEQUENCE_LIMIT} sequence elements and ${SECTION_PATTERN_TABLE_LIMIT} table shapes.`
+    : baseNote;
+
+  return {
+    ok: true,
+    pattern: {
+      sectionLevel: {
+        value: level,
+        confidence: patternConfidence(units.length, units.length)
+      },
+      sequence,
+      tables: tablePatterns(sfdt, units),
+      roles
+    },
+    sample: {
+      available: availableUnits.length,
+      sampled: units.length,
+      recurring,
+      ...(near ? { near } : {}),
+      ...(truncated ? { truncated: true as const } : {})
+    },
+    note
+  };
 }
 
 function parseSfdt(raw: string): any {

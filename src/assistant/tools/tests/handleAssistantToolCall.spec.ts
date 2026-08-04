@@ -147,6 +147,7 @@ describe('every streamed tool call produces exactly one output', () => {
       'setTableCellValue',
       'futureServerTool',
       'getDocumentInventory',
+      'getSectionPattern',
       'applyDocumentEdits',
       'queryOutput',
       'someToolInventedNextQuarter',
