@@ -1,5 +1,6 @@
 import { act, render, renderHook } from '@testing-library/react';
 import {
+  _hashDocumentIndexBlockText,
   getDocumentTargetContentHash,
   INDEX_POLL_MS,
   INDEX_STABLE_POLLS,
@@ -140,6 +141,37 @@ const indexPosts = () =>
   fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('document-index'));
 
 describe('postDocumentIndex', () => {
+  it('matches the server SHA-256 block-text hash', async () => {
+    const originalCrypto = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'crypto'
+    );
+    const originalTextEncoder = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'TextEncoder'
+    );
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: require('crypto').webcrypto
+    });
+    Object.defineProperty(globalThis, 'TextEncoder', {
+      configurable: true,
+      value: require('util').TextEncoder
+    });
+    try {
+      await expect(_hashDocumentIndexBlockText('hi')).resolves.toBe(
+        '8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4'
+      );
+    } finally {
+      if (originalCrypto)
+        Object.defineProperty(globalThis, 'crypto', originalCrypto);
+      else delete (globalThis as any).crypto;
+      if (originalTextEncoder)
+        Object.defineProperty(globalThis, 'TextEncoder', originalTextEncoder);
+      else delete (globalThis as any).TextEncoder;
+    }
+  });
+
   it('POSTs the current envelope as the only index scope', async () => {
     const sent = await postDocumentIndex({
       baseUrl: BASE_URL,
@@ -198,6 +230,217 @@ describe('postDocumentIndex', () => {
         headers
       })
     ).rejects.toThrow(/document-index failed \(500\)/);
+  });
+});
+
+describe('document-index delta protocol', () => {
+  let originalCrypto: PropertyDescriptor | undefined;
+  let originalTextEncoder: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    originalTextEncoder = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'TextEncoder'
+    );
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: require('crypto').webcrypto
+    });
+    Object.defineProperty(globalThis, 'TextEncoder', {
+      configurable: true,
+      value: require('util').TextEncoder
+    });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    if (originalCrypto)
+      Object.defineProperty(globalThis, 'crypto', originalCrypto);
+    else delete (globalThis as any).crypto;
+    if (originalTextEncoder)
+      Object.defineProperty(globalThis, 'TextEncoder', originalTextEncoder);
+    else delete (globalThis as any).TextEncoder;
+  });
+
+  const mount = () =>
+    renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets: targets(DOC_ID),
+        headers
+      })
+    );
+
+  const blockEditor = (texts: string[]) => {
+    const listeners: Record<string, (() => void)[]> = {};
+    return {
+      texts,
+      serialize() {
+        return JSON.stringify({
+          sections: [
+            {
+              blocks: this.texts.map((text) => ({ inlines: [{ text }] }))
+            }
+          ]
+        });
+      },
+      addEventListener(event: string, fn: () => void) {
+        (listeners[event] ||= []).push(fn);
+      },
+      removeEventListener(event: string, fn: () => void) {
+        listeners[event] = (listeners[event] ?? []).filter((f) => f !== fn);
+      },
+      emit(event: string) {
+        (listeners[event] ?? []).forEach((fn) => fn());
+      }
+    };
+  };
+
+  const settleIndexing = async (ms: number) => {
+    await act(async () => {
+      jest.advanceTimersByTime(ms);
+      // Wait for native Web Crypto work as well as the promise chain that
+      // sends and confirms the request it unlocks.
+      await _hashDocumentIndexBlockText('flush');
+      await Promise.resolve();
+    });
+  };
+
+  const paragraphs = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) =>
+        `Paragraph ${index}: ${'coverage terms and supporting detail '.repeat(
+          8
+        )}`
+    );
+
+  it('sends one inserted paragraph plus content-keyed anchor remaps', async () => {
+    const original = paragraphs(30);
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    const full = JSON.parse(indexPosts()[0][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(30);
+
+    editor.texts = [
+      ...original.slice(0, 15),
+      'A newly inserted paragraph in the middle of the document.',
+      ...original.slice(15)
+    ];
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta).toEqual(
+      expect.objectContaining({
+        mode: 'delta',
+        baseHash: full.contentHash,
+        blockCount: 31,
+        removedHashes: []
+      })
+    );
+    expect(delta.blocks).toBeUndefined();
+    expect(delta.changedBlocks).toHaveLength(1);
+    expect(delta.changedBlocks[0].text).toContain('newly inserted');
+    expect(delta.anchorRemap).toHaveLength(15);
+  });
+
+  it('uses a delta for a forced documentChange when the base is confirmed', async () => {
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.emit('documentChange');
+    await settleIndexing(0);
+
+    const forced = JSON.parse(indexPosts()[1][1].body);
+    expect(forced.mode).toBe('delta');
+    expect(forced.changedBlocks).toEqual([]);
+    expect(forced.removedHashes).toEqual([]);
+    expect(forced.anchorRemap).toEqual([]);
+  });
+
+  it('falls back to full on a stale delta base and rebuilds the confirmed snapshot', async () => {
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    const initial = JSON.parse(indexPosts()[0][1].body);
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: 'delta_base_mismatch',
+          expectedBaseHash: 'server-hash',
+          fallback: 'full'
+        })
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    editor.texts[10] = 'Edited after another client advanced the server base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const rejectedDelta = JSON.parse(indexPosts()[1][1].body);
+    const fallbackFull = JSON.parse(indexPosts()[2][1].body);
+    expect(rejectedDelta.mode).toBe('delta');
+    expect(rejectedDelta.baseHash).toBe(initial.contentHash);
+    expect(fallbackFull.mode).toBeUndefined();
+    expect(fallbackFull.blocks).toHaveLength(20);
+
+    editor.texts[11] = 'A later edit uses the rebuilt local base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const nextDelta = JSON.parse(indexPosts()[3][1].body);
+    expect(nextDelta.mode).toBe('delta');
+    expect(nextDelta.baseHash).toBe(fallbackFull.contentHash);
+  });
+
+  it('keeps the last confirmed snapshot when a delta request fails', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    const initial = JSON.parse(indexPosts()[0][1].body);
+
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+    editor.texts[10] = 'This delta is not confirmed by the server.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    expect(JSON.parse(indexPosts()[1][1].body).mode).toBe('delta');
+
+    editor.texts[11] = 'The next delta must still use the confirmed base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const retried = JSON.parse(indexPosts()[2][1].body);
+    expect(retried.mode).toBe('delta');
+    expect(retried.baseHash).toBe(initial.contentHash);
+    expect(retried.changedBlocks).toHaveLength(2);
+  });
+
+  it('uses full sync when more than 60 percent of blocks changed', async () => {
+    const editor = blockEditor(paragraphs(10));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts = editor.texts.map((text, index) =>
+      index < 7 ? `Rewritten ${text}` : text
+    );
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const full = JSON.parse(indexPosts()[1][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(10);
   });
 });
 

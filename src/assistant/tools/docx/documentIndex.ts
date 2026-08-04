@@ -73,10 +73,35 @@ const documentTargetKey = (target: DocumentIndexTarget): string =>
 // digest stored with the index - match fresh, mismatch stale. Anything this
 // client cannot vouch for claims a sentinel no stored digest can equal, so an
 // unverified index reads stale rather than falsely fresh.
+interface ConfirmedIndexBlock {
+  anchor: string;
+  // Retain the exact SHA-256 source so the confirmed snapshot is auditable and
+  // cannot accidentally drift from the server's text-only hashing contract.
+  text: string;
+}
+
+// Serialized inventory of the editor at one instant, with its digest computed
+// once so the poll's stability check and the POST share the same reading.
+interface IndexSnapshot {
+  blocks: IndexBlock[];
+  digest: string;
+}
+
+interface PendingIndexSync {
+  snapshot: IndexSnapshot;
+  baseUrl: string;
+  targets: DocumentIndexTarget[];
+  headers: () => Record<string, string>;
+  force: boolean;
+}
+
 interface ScopeIndexState {
   currentHash: string | null;
   postedHash: string | null;
   inFlightHash: string | null;
+  confirmedBlocks: Map<string, ConfirmedIndexBlock> | null;
+  confirmedBlockCount: number;
+  pendingSync: PendingIndexSync | null;
 }
 
 const PENDING_PREFIX = 'pending:';
@@ -91,7 +116,10 @@ const stateFor = (target: DocumentIndexTarget): ScopeIndexState => {
     state = {
       currentHash: null,
       postedHash: null,
-      inFlightHash: null
+      inFlightHash: null,
+      confirmedBlocks: null,
+      confirmedBlockCount: 0,
+      pendingSync: null
     };
     scopeState.set(targetKey, state);
   }
@@ -130,6 +158,12 @@ export type PostDocumentIndexArgs = {
   // Document-level digest of `blocks`; the server stores it with the index so
   // a later query can tell whether the index matches what this client sees.
   contentHash?: string;
+  delta?: {
+    baseHash: string;
+    changedBlocks: IndexBlock[];
+    removedHashes: string[];
+    anchorRemap: { hash: string; anchor: string }[];
+  };
 };
 
 // What the index endpoint reports it did. `failed` counts blocks whose
@@ -139,6 +173,7 @@ export interface PostDocumentIndexResult {
   posted: boolean;
   failed?: number;
   storedBlocks?: number;
+  deltaBaseMismatch?: boolean;
 }
 
 // POST the block inventory. Returns { posted: false } (nothing sent) when the
@@ -148,7 +183,8 @@ export const postDocumentIndex = async ({
   targets,
   blocks,
   headers,
-  contentHash
+  contentHash,
+  delta
 }: PostDocumentIndexArgs): Promise<PostDocumentIndexResult> => {
   const envelopeTarget = getDocumentTarget(targets);
   if (!baseUrl || !envelopeTarget || !blocks?.length) return { posted: false };
@@ -156,21 +192,42 @@ export const postDocumentIndex = async ({
   const res = await fetch(`${baseUrl}document-index`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers() },
-    body: JSON.stringify({
-      envelopeId: envelopeTarget.id,
-      targets,
-      blocks,
-      ...(formKey ? { form_key: formKey } : {}),
-      ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
-    })
+    body: JSON.stringify(
+      delta
+        ? {
+            envelopeId: envelopeTarget.id,
+            targets,
+            ...(formKey ? { form_key: formKey } : {}),
+            mode: 'delta',
+            baseHash: delta.baseHash,
+            contentHash,
+            changedBlocks: delta.changedBlocks,
+            removedHashes: delta.removedHashes,
+            anchorRemap: delta.anchorRemap,
+            blockCount: blocks.length
+          }
+        : {
+            envelopeId: envelopeTarget.id,
+            targets,
+            blocks,
+            ...(formKey ? { form_key: formKey } : {}),
+            ...(contentHash ? { contentHash, blockCount: blocks.length } : {})
+          }
+    )
   });
-  if (!res.ok) throw new Error(`document-index failed (${res.status})`);
   let body: any;
   try {
     body = await res.json();
   } catch {
     body = undefined; // older server; nothing to verify against
   }
+  if (
+    res.status === 409 &&
+    body?.error === 'delta_base_mismatch' &&
+    body?.fallback === 'full'
+  )
+    return { posted: true, deltaBaseMismatch: true };
+  if (!res.ok) throw new Error(`document-index failed (${res.status})`);
   return {
     posted: true,
     failed: typeof body?.failed === 'number' ? body.failed : undefined,
@@ -188,12 +245,111 @@ const warn = (message: string, detail?: unknown) =>
     ? console.warn(`Feathery: ${message}`)
     : console.warn(`Feathery: ${message}`, detail);
 
-// Serialized inventory of the editor at one instant, with its digest computed
-// once so the poll's stability check and the POST share the same reading.
-interface IndexSnapshot {
-  blocks: IndexBlock[];
-  digest: string;
+interface HashedIndexSnapshot {
+  blocksByHash: Map<string, IndexBlock>;
+  confirmedBlocks: Map<string, ConfirmedIndexBlock>;
 }
+
+interface DocumentIndexDelta {
+  baseHash: string;
+  changedBlocks: IndexBlock[];
+  removedHashes: string[];
+  anchorRemap: { hash: string; anchor: string }[];
+}
+
+export const DOCUMENT_INDEX_DELTA_CHANGED_RATIO = 0.6;
+
+// Match ai-services' `createHash('sha256').update(text).digest('hex')`: Web
+// Crypto digests TextEncoder's UTF-8 bytes and emits the same lowercase hex.
+export const _hashDocumentIndexBlockText = async (
+  text: string
+): Promise<string> => {
+  if (!globalThis.crypto?.subtle || typeof TextEncoder === 'undefined')
+    throw new Error('Web Crypto SHA-256 is unavailable');
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(text)
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0')
+  ).join('');
+};
+
+const hashSnapshot = async (
+  blocks: IndexBlock[]
+): Promise<HashedIndexSnapshot | null> => {
+  let hashes: string[];
+  try {
+    hashes = await Promise.all(
+      blocks.map(({ text }) => _hashDocumentIndexBlockText(text))
+    );
+  } catch {
+    // Indexing must keep working on an older/non-secure browser even when
+    // Web Crypto is unavailable. It simply remains on the full-sync path.
+    return null;
+  }
+  const blocksByHash = new Map<string, IndexBlock>();
+  const confirmedBlocks = new Map<string, ConfirmedIndexBlock>();
+  blocks.forEach((block, index) => {
+    const hash = hashes[index];
+    blocksByHash.set(hash, block);
+    confirmedBlocks.set(hash, { anchor: block.anchor, text: block.text });
+  });
+  return { blocksByHash, confirmedBlocks };
+};
+
+const buildDelta = (
+  blocks: IndexBlock[],
+  digest: string,
+  hashed: HashedIndexSnapshot,
+  state: ScopeIndexState
+): DocumentIndexDelta | null => {
+  const previous = state.confirmedBlocks;
+  if (!state.postedHash || !previous) return null;
+  // A hash-addressed remap cannot distinguish duplicate identical text. The
+  // server would move every matching row to one anchor, so use a full sync.
+  if (
+    previous.size !== state.confirmedBlockCount ||
+    hashed.blocksByHash.size !== blocks.length
+  )
+    return null;
+
+  const changedBlocks: IndexBlock[] = [];
+  const removedHashes: string[] = [];
+  const anchorRemap: { hash: string; anchor: string }[] = [];
+  hashed.blocksByHash.forEach((block, hash) => {
+    const prior = previous.get(hash);
+    if (!prior) changedBlocks.push(block);
+    else if (prior.anchor !== block.anchor)
+      anchorRemap.push({ hash, anchor: block.anchor });
+  });
+  previous.forEach((_block, hash) => {
+    if (!hashed.blocksByHash.has(hash)) removedHashes.push(hash);
+  });
+
+  if (changedBlocks.length / blocks.length > DOCUMENT_INDEX_DELTA_CHANGED_RATIO)
+    return null;
+  const delta = {
+    baseHash: state.postedHash,
+    changedBlocks,
+    removedHashes,
+    anchorRemap
+  };
+  // Count is the primary compaction guard; this catches deletion-heavy and
+  // unusually short-text documents where hashes/remaps outweigh a full body.
+  if (
+    JSON.stringify({
+      mode: 'delta',
+      ...delta,
+      contentHash: digest,
+      blockCount: blocks.length
+    }).length >=
+    JSON.stringify({ blocks, contentHash: digest, blockCount: blocks.length })
+      .length
+  )
+    return null;
+  return delta;
+};
 
 // Read the editor's current inventory. null means unreadable or no content
 // yet - never POST either.
@@ -210,13 +366,69 @@ const readSnapshot = (editor: any): IndexSnapshot | null => {
 };
 
 // Sync a snapshot to the server (no-op when the server already holds it).
-const syncSnapshot = (
+const performSnapshotSync = async (
   { blocks, digest }: IndexSnapshot,
+  baseUrl: string,
+  targets: DocumentIndexTarget[],
+  headers: () => Record<string, string>,
+  state: ScopeIndexState,
+  target: DocumentIndexTarget
+): Promise<void> => {
+  const hashed = await hashSnapshot(blocks);
+  const delta = hashed ? buildDelta(blocks, digest, hashed, state) : null;
+  let result = await postDocumentIndex({
+    baseUrl,
+    targets,
+    blocks,
+    headers,
+    contentHash: digest,
+    ...(delta ? { delta } : {})
+  });
+  if (result.deltaBaseMismatch) {
+    // The server is authoritative about the CAS base. Forget the local base
+    // before rebuilding it with the same current full inventory.
+    state.postedHash = null;
+    state.confirmedBlocks = null;
+    state.confirmedBlockCount = 0;
+    result = await postDocumentIndex({
+      baseUrl,
+      targets,
+      blocks,
+      headers,
+      contentHash: digest
+    });
+  }
+
+  const { failed, storedBlocks } = result;
+  // The server reporting fewer blocks than were sent (or failed embeds)
+  // means the index does NOT hold this document. Preserve the last confirmed
+  // base so a later retry can finish the same CAS delta.
+  if (
+    (typeof failed === 'number' && failed > 0) ||
+    (typeof storedBlocks === 'number' && storedBlocks !== blocks.length)
+  ) {
+    warn(
+      `document index for target ${target.id} is incomplete ` +
+        `(sent ${blocks.length} blocks, stored ${storedBlocks ?? 'unknown'}, ` +
+        `${
+          failed ?? 0
+        } failed embeds) - semantic search will refuse until a re-index succeeds`
+    );
+    return;
+  }
+  state.postedHash = digest;
+  state.confirmedBlocks = hashed?.confirmedBlocks ?? null;
+  state.confirmedBlockCount = blocks.length;
+};
+
+const syncSnapshot = (
+  snapshot: IndexSnapshot,
   baseUrl: string,
   targets: DocumentIndexTarget[],
   headers: () => Record<string, string>,
   force = false
 ): void => {
+  const { digest } = snapshot;
   const target = getDocumentTarget(targets);
   if (!target) return;
   const state = stateFor(target);
@@ -227,48 +439,34 @@ const syncSnapshot = (
   // The server already holds exactly this content - e.g. a burst of edits
   // that netted out to no change, or a reopen of the same document
   if (!force && state.postedHash === digest) return;
-  // Claim the digest before the request so two overlapping triggers cannot
-  // both POST the same content; drop the claim when the POST settles.
-  if (state.inFlightHash === digest) return;
+  // A delta's base must be the last confirmed server hash, so serialize each
+  // scope and retain only the newest snapshot that arrived while it was busy.
+  if (state.inFlightHash) {
+    if (state.inFlightHash !== digest)
+      state.pendingSync = { snapshot, baseUrl, targets, headers, force };
+    return;
+  }
   state.inFlightHash = digest;
 
-  postDocumentIndex({
-    baseUrl,
-    targets,
-    blocks,
-    headers,
-    contentHash: digest
-  })
-    .then(({ failed, storedBlocks }) => {
-      state.inFlightHash = null;
-      // The server reporting fewer blocks than were sent (or failed embeds)
-      // means the index does NOT hold this document. Refuse to mark it fresh:
-      // postedHash stays unset so the next trigger re-posts, and queries keep
-      // failing loud instead of silently missing content.
-      if (
-        (typeof failed === 'number' && failed > 0) ||
-        (typeof storedBlocks === 'number' && storedBlocks !== blocks.length)
-      ) {
-        state.postedHash = null;
-        warn(
-          `document index for target ${target.id} is incomplete ` +
-            `(sent ${blocks.length} blocks, stored ${
-              storedBlocks ?? 'unknown'
-            }, ` +
-            `${
-              failed ?? 0
-            } failed embeds) - semantic search will refuse until a re-index succeeds`
-        );
-        return;
-      }
-      state.postedHash = digest;
-    })
+  performSnapshotSync(snapshot, baseUrl, targets, headers, state, target)
     .catch((err) => {
-      state.inFlightHash = null;
       warn(
         `document index POST failed for target ${target.id} - semantic document search will return nothing`,
         err
       );
+    })
+    .finally(() => {
+      state.inFlightHash = null;
+      const pending = state.pendingSync;
+      state.pendingSync = null;
+      if (pending)
+        syncSnapshot(
+          pending.snapshot,
+          pending.baseUrl,
+          pending.targets,
+          pending.headers,
+          pending.force
+        );
     });
 };
 
