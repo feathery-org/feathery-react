@@ -3,6 +3,7 @@
 import type { DocxBridge } from '../assistantToolDispatch';
 import {
   applyDocumentEdits,
+  deriveSectionPattern,
   findDocumentOccurrences,
   getDocumentInventory
 } from './syncfusionDocumentOps';
@@ -18,6 +19,12 @@ export const createDocxEditorBridge = (getEditor: () => any): DocxBridge => ({
     const editor = getEditor();
     return editor
       ? getDocumentInventory(editor, input ?? {})
+      : unavailable('No in-form document editor is ready.');
+  },
+  getSectionPattern: async (input) => {
+    const editor = getEditor();
+    return editor
+      ? deriveSectionPattern(editor, input ?? {})
       : unavailable('No in-form document editor is ready.');
   },
   applyDocumentEdits: async (input) => {

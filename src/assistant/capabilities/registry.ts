@@ -602,3 +602,21 @@ export type AnchorlessDocumentOp = Exclude<
   Extract<DocumentCapability, { requiresAnchor: false }>['op'],
   'replace_all'
 >;
+
+/**
+ * Standalone client reads that are model-facing tools rather than edit-batch
+ * operations. Keep these out of `DOCUMENT_EDITOR_CAPABILITIES`: placing a read
+ * there would falsely advertise it as an `applyDocumentEdits` operation.
+ */
+export const DOCUMENT_EDITOR_READ_CAPABILITIES = [
+  {
+    tool: 'getSectionPattern',
+    params: { near: 'string?' },
+    requiresAnchor: false,
+    readOnly: true
+  }
+] as const;
+
+export type DocumentEditorReadCapability =
+  typeof DOCUMENT_EDITOR_READ_CAPABILITIES[number];
+export type DocumentEditorReadTool = DocumentEditorReadCapability['tool'];

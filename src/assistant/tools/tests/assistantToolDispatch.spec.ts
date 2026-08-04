@@ -5,6 +5,25 @@ import {
 import * as assistantToolDispatchExports from '../assistantToolDispatch';
 
 describe('document tool dispatch', () => {
+  it('routes getSectionPattern to the live read-only document bridge', async () => {
+    const getSectionPattern = jest.fn().mockResolvedValue({
+      ok: true,
+      pattern: { sequence: [] }
+    });
+
+    const result = await dispatchAssistantTool(
+      'getSectionPattern',
+      { near: '0;7' },
+      { docxBridge: { getSectionPattern } }
+    );
+
+    expect(result).toEqual({
+      handled: true,
+      output: { ok: true, pattern: { sequence: [] } }
+    });
+    expect(getSectionPattern).toHaveBeenCalledWith({ near: '0;7' });
+  });
+
   it('routes findDocumentOccurrences to the live document bridge', async () => {
     const findDocumentOccurrences = jest
       .fn()
@@ -31,13 +50,18 @@ describe('document tool dispatch', () => {
     'apply_document_edits'
   ])('does not claim unreachable snake_case alias %s', async (toolName) => {
     const handler = jest.fn();
-    const result = await dispatchAssistantTool(toolName, {}, {
-      docxBridge: {
-        getDocumentInventory: handler,
-        findDocumentOccurrences: handler,
-        applyDocumentEdits: handler
+    const result = await dispatchAssistantTool(
+      toolName,
+      {},
+      {
+        docxBridge: {
+          getDocumentInventory: handler,
+          getSectionPattern: handler,
+          findDocumentOccurrences: handler,
+          applyDocumentEdits: handler
+        }
       }
-    });
+    );
 
     expect(result).toEqual({ handled: false });
     expect(handler).not.toHaveBeenCalled();

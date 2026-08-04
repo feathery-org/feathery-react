@@ -2,6 +2,7 @@ import type { UIMessage } from 'ai';
 
 const DOCUMENT_TOOL_NAMES = new Set([
   'getDocumentInventory',
+  'getSectionPattern',
   'findDocumentOccurrences',
   'applyDocumentEdits'
 ]);

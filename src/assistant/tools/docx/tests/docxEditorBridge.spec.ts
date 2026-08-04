@@ -1,10 +1,8 @@
-import {
-  createDocxEditorBridge,
-  readDocxSelection
-} from '../docxEditorBridge';
+import { createDocxEditorBridge, readDocxSelection } from '../docxEditorBridge';
 import {
   applyDocumentEdits,
   buildIndexBlocks,
+  deriveSectionPattern,
   findDocumentOccurrences,
   getDocumentInventory
 } from '../syncfusionDocumentOps';
@@ -12,11 +10,13 @@ import {
 jest.mock('../syncfusionDocumentOps', () => ({
   ...jest.requireActual('../syncfusionDocumentOps'),
   applyDocumentEdits: jest.fn(),
+  deriveSectionPattern: jest.fn(),
   findDocumentOccurrences: jest.fn(),
   getDocumentInventory: jest.fn()
 }));
 
 const applyDocumentEditsMock = applyDocumentEdits as jest.Mock;
+const deriveSectionPatternMock = deriveSectionPattern as jest.Mock;
 const findDocumentOccurrencesMock = findDocumentOccurrences as jest.Mock;
 const getDocumentInventoryMock = getDocumentInventory as jest.Mock;
 
@@ -56,6 +56,18 @@ describe('createDocxEditorBridge', () => {
     expect(applyDocumentEditsMock).toHaveBeenCalledWith(editor, input);
   });
 
+  it('forwards section-pattern reads to the live document engine', async () => {
+    const editor = { id: 'editor' };
+    const input = { near: '0;7' };
+    const output = { ok: true, pattern: { sequence: [] } };
+    deriveSectionPatternMock.mockReturnValue(output);
+
+    const bridge = createDocxEditorBridge(() => editor);
+
+    await expect(bridge.getSectionPattern!(input)).resolves.toBe(output);
+    expect(deriveSectionPatternMock).toHaveBeenCalledWith(editor, input);
+  });
+
   it('forwards occurrence reads to the hardened engine and returns its result', async () => {
     const editor = { id: 'editor' };
     const input = { queries: ['premium'] };
@@ -86,6 +98,7 @@ describe('createDocxEditorBridge', () => {
 
   it.each([
     'getDocumentInventory',
+    'getSectionPattern',
     'applyDocumentEdits',
     'findDocumentOccurrences'
   ] as const)(
@@ -99,6 +112,7 @@ describe('createDocxEditorBridge', () => {
         message: 'No in-form document editor is ready.'
       });
       expect(getDocumentInventoryMock).not.toHaveBeenCalled();
+      expect(deriveSectionPatternMock).not.toHaveBeenCalled();
       expect(applyDocumentEditsMock).not.toHaveBeenCalled();
       expect(findDocumentOccurrencesMock).not.toHaveBeenCalled();
     }
