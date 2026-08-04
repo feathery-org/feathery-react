@@ -63,7 +63,9 @@ function loadAccentOverride() {
 // GitHub-style tracked-change rendering: insertions get a green highlight
 // and keep the document's font color; deletions get a red highlight with
 // red struck-through text. A replace pair reads as struck old text followed
-// by green new text — one edit, resolved together. Syncfusion draws the
+// by green new text — one edit, resolved together. Tracked table rows keep
+// their real cell shading under the same washes (the engine otherwise
+// repaints every cell with an opaque revision tint). Syncfusion draws the
 // document on CANVAS, so this is a renderer
 // patch, not CSS: `checkRevisionType()` is the single source feeding the
 // author-color text and the underline/strike decorations across every render
@@ -263,6 +265,93 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     return out;
   };
+
+  // Tracked table rows: inside renderCellBackground the engine REPLACES each
+  // cell's real background with an opaque revision tint (#e1f2fa for row
+  // insertions, #fce6f4 for row deletions), hiding the table's actual
+  // styling while the change is pending. Hide the row revision from the
+  // original call so the TRUE shading paints, then overlay the same
+  // translucent wash tracked text gets — real styling shows through.
+  if (typeof renderer.renderCellBackground === 'function') {
+    const originalRenderCellBackground =
+      renderer.renderCellBackground.bind(renderer);
+    renderer.renderCellBackground = (
+      height: number,
+      cellWidget: any,
+      leftMargin: number,
+      rightMargin: number,
+      lineWidth: number
+    ) => {
+      const rowFormat = cellWidget?.ownerRow?.rowFormat;
+      const count = rowFormat?.revisionLength ?? 0;
+      if (!count) {
+        return originalRenderCellBackground(
+          height,
+          cellWidget,
+          leftMargin,
+          rightMargin,
+          lineWidth
+        );
+      }
+      // Same choice the engine makes: the row's LAST revision decides.
+      let wash = INSERTION_HIGHLIGHT;
+      try {
+        const type = rowFormat.getRevision?.(count - 1)?.revisionType;
+        if (type === 'Deletion' || type === 'MoveFrom')
+          wash = DELETION_HIGHLIGHT;
+      } catch {
+        // Unreadable revision: keep the insertion wash.
+      }
+      // `revisionLength` is a configurable prototype getter; an own-property
+      // shadow hides the revision for exactly this call, and deleting the
+      // shadow restores the getter.
+      let shadowed = false;
+      try {
+        Object.defineProperty(rowFormat, 'revisionLength', {
+          value: 0,
+          configurable: true
+        });
+        shadowed = true;
+      } catch {
+        // Not shadowable: fall through to native tinting rather than lose
+        // the change indicator entirely.
+      }
+      let out;
+      try {
+        out = originalRenderCellBackground(
+          height,
+          cellWidget,
+          leftMargin,
+          rightMargin,
+          lineWidth
+        );
+      } finally {
+        if (shadowed) delete rowFormat.revisionLength;
+      }
+      if (shadowed) {
+        try {
+          // The original's own cell-rect math, scaled the same way.
+          const ctx = renderer.pageContext;
+          const left = cellWidget.x - leftMargin - lineWidth / 2;
+          const top =
+            cellWidget.y -
+            (cellWidget.margin.top - cellWidget.containerWidget.topBorderWidth);
+          const width =
+            cellWidget.width + leftMargin + rightMargin + lineWidth / 2;
+          ctx.fillStyle = wash;
+          ctx.fillRect(
+            renderer.getScaledValue(left, 1),
+            renderer.getScaledValue(top, 2),
+            renderer.getScaledValue(width),
+            renderer.getScaledValue(height)
+          );
+        } catch {
+          // Wash is decoration only; the cell already painted its shading.
+        }
+      }
+      return out;
+    };
+  }
 
   // Boundary ring around the active edit, drawn after the page renders so
   // the ring sits on top of everything. Runs are grouped by the LINE they
