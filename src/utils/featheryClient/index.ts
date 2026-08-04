@@ -43,6 +43,7 @@ import {
   getStaticUrl,
   HubActionOptions,
   inviteFormCollaborator as apiInviteFormCollaborator,
+  setTaskStatus as apiSetTaskStatus,
   PageSelectionInput,
   parseAPIError,
   setEnvironment,
@@ -1110,29 +1111,18 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   async setTaskStatus(templateId: string, taskStatusId: string) {
-    const { userId } = initInfo();
-    const data: Record<string, any> = {
-      form_key: this.formKey,
-      fuser_key: userId,
-      template_id: templateId,
-      task_status_id: taskStatusId || null
-    };
+    const { userId, collaboratorId, sdkKey } = initInfo();
+    const res = await apiSetTaskStatus(
+      sdkKey,
+      this.formKey,
+      templateId,
+      taskStatusId,
+      userId,
+      collaboratorId
+    );
 
-    const url = `${API_URL}collaborator/task_status/`;
-    return this._fetch(
-      url,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'PATCH',
-        body: JSON.stringify(data)
-      },
-      false
-    ).then(async (response) => {
-      if (response) {
-        if (response.ok) return await response.json();
-        else throw Error(parseAPIError(await response.json()));
-      }
-    });
+    if (res && !res.ok) throw Error(parseAPIError(JSON.parse(res.error)));
+    return res?.payload;
   }
 
   async setCollaboratorAsCompleted(templateId: string) {
