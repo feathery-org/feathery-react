@@ -91,7 +91,7 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
-  // Shared by the toolbar toggle, the panel's own ✕, and clicking an inline
+  // Shared by the panel's drawer handle, its ✕, and clicking an inline
   // tracked change (which re-shows the panel).
   const [changesPanelHidden, setChangesPanelHidden] = useState(false);
 
@@ -235,8 +235,6 @@ function DocxEditor({
       {editor && (
         <DocxToolbar
           editor={editor}
-          changesPanelHidden={changesPanelHidden}
-          onToggleChangesPanel={() => setChangesPanelHidden((h) => !h)}
           // Save stays visible even alongside a terminal action so users can
           // persist edits without committing to download/sign.
           onSave={onSave ? handleSave : undefined}

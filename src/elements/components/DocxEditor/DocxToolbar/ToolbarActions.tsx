@@ -4,7 +4,6 @@ import {
   ChevronDownIcon,
   DownloadIcon,
   SaveIcon,
-  SidePanelIcon,
   SignatureIcon,
   SpinnerIcon
 } from '../icons';
@@ -38,9 +37,6 @@ export interface ToolbarActionsProps {
   /** Narrow-toolbar mode: verbose content (the "Unsaved changes" label)
    *  collapses to keep room for the tool row. Set by useToolbarOverflow. */
   compact?: boolean;
-  /** Show/hide toggle for the suggested-changes review panel. */
-  changesPanelHidden?: boolean;
-  onToggleChangesPanel?: () => void;
 }
 
 // Save / Download / Sign — pinned to the toolbar's right edge. The forwarded
@@ -60,9 +56,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
       terminalActionLoading,
       saving,
       dirty,
-      compact,
-      changesPanelHidden,
-      onToggleChangesPanel
+      compact
     },
     ref
   ) {
@@ -86,32 +80,6 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
           zIndex: 1
         }}
       >
-        {onToggleChangesPanel && (
-          <button
-            type='button'
-            aria-label={
-              changesPanelHidden
-                ? 'Show suggested changes'
-                : 'Hide suggested changes'
-            }
-            aria-pressed={!changesPanelHidden}
-            title={
-              changesPanelHidden
-                ? 'Show suggested changes'
-                : 'Hide suggested changes'
-            }
-            onClick={onToggleChangesPanel}
-            css={{
-              ...downloadBtn,
-              padding: '0 8px',
-              // Filled state while the panel is visible.
-              background: changesPanelHidden ? '#fff' : ZINC[100],
-              color: changesPanelHidden ? ZINC[500] : ZINC[700]
-            }}
-          >
-            <SidePanelIcon width={16} height={16} />
-          </button>
-        )}
         {/* Always rendered, hidden while clean: this region's width feeds the
             tool row's clearance (useToolbarOverflow), so the indicator popping
             in and out must not change it — otherwise every first edit shoves

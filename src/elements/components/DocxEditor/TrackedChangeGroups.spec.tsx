@@ -220,7 +220,7 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
   });
 
-  it('✕ hides the panel; clicking an inline edit asks to show it again', () => {
+  it('drawer collapses via ✕ or handle; inline click or handle reopen it', () => {
     const revision = makeRevision();
     const editor = makeEditor([revision]);
     const onHiddenChange = jest.fn();
@@ -232,10 +232,14 @@ describe('TrackedChangeGroups', () => {
       />
     );
 
+    // Open: the ✕ collapses it, and no bookmark tab is shown.
+    expect(
+      screen.queryByLabelText('Expand suggested changes')
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Hide suggested changes'));
-    expect(onHiddenChange).toHaveBeenCalledWith(true);
+    expect(onHiddenChange).toHaveBeenLastCalledWith(true);
 
-    // Hidden renders nothing, but the component stays mounted listening.
+    // Collapsed: only the bookmark tab remains, and it reopens the panel.
     rerender(
       <TrackedChangeGroups
         editor={editor}
@@ -244,8 +248,11 @@ describe('TrackedChangeGroups', () => {
       />
     );
     expect(screen.queryByText('Suggested changes')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Expand suggested changes'));
+    expect(onHiddenChange).toHaveBeenLastCalledWith(false);
 
-    // Clicking the tracked change inline asks the host to show the panel.
+    // Clicking the tracked change inline also asks the host to show it.
+    onHiddenChange.mockClear();
     editor.selection.getCurrentRevision.mockReturnValue([revision]);
     act(() => editor.emit('selectionChange'));
     expect(onHiddenChange).toHaveBeenCalledWith(false);
