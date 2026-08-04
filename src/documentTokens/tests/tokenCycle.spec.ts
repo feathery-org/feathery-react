@@ -484,6 +484,62 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.log).toEqual([]);
   });
 
+  it('carries a text token without forcing it through the numeric path', () => {
+    const editor = fakeEditor([
+      control({ id: 'client', source: 'client', format: { kind: 'text' } }, 'Acme')
+    ]);
+    const cycle = attachTokenCycle(editor);
+
+    expect(cycle.getState().texts.get('client')).toBe('Acme');
+    expect(cycle.getState().values.has('client')).toBe(false);
+  });
+
+  it('never blanks a text token on blur', () => {
+    // The bug this guards: parseValue returns null for prose, so the numeric
+    // path would render undefined as '' and wipe the token.
+    const editor = fakeEditor([
+      control(
+        { id: 'client', source: 'client', format: { kind: 'text' } },
+        'Northwind Supply Co.'
+      )
+    ]);
+    attachTokenCycle(editor);
+
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+    editor.controls[0].value = 'Northwind Supply Company';
+    editor.setCaret(undefined);
+    editor.fire('selectionChange');
+
+    expect(editor.valueOf('client')).toBe('Northwind Supply Company');
+  });
+
+  it('writes a text token set from outside the document', () => {
+    const editor = fakeEditor([
+      control({ id: 'client', source: 'client', format: { kind: 'text' } }, 'Acme')
+    ]);
+    const cycle = attachTokenCycle(editor);
+
+    cycle.setTokenValue('client', 'Globex');
+
+    expect(editor.valueOf('client')).toBe('Globex');
+    expect(cycle.getState().texts.get('client')).toBe('Globex');
+  });
+
+  it('accepts letters typed into a text token', () => {
+    const editor = fakeEditor([
+      control({ id: 'client', source: 'client', format: { kind: 'text' } }, 'Acme')
+    ]);
+    attachTokenCycle(editor);
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+
+    const args: any = { key: 'z', event: { preventDefault: jest.fn() } };
+    editor.fire('keyDown', args);
+
+    expect(args.event.preventDefault).not.toHaveBeenCalled();
+  });
+
   it('stays inert against an editor with no content-control API', () => {
     // Older SyncFusion, or an instance still initialising. Tokens are a
     // feature of the document, never a requirement of the editor — failing to

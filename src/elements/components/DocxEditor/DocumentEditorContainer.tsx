@@ -31,6 +31,22 @@ const SYNCFUSION_TEST_SERVICE_URL =
 
 const isLocalBuild = process.env.BACKEND_ENV === 'local';
 
+/** A token's value key: one per token per row. */
+const valueKeyOf = (spec: any): string =>
+  spec.index === undefined || spec.index === null
+    ? spec.id
+    : `${spec.id}__${spec.index}`;
+
+/** The field value behind a token — indexed when the field is repeated. */
+const fieldValueFor = (spec: any): any => {
+  if (!spec.source) return undefined;
+  const value = fieldValues[spec.source];
+  if (spec.index === undefined || spec.index === null) {
+    return Array.isArray(value) ? value[0] : value;
+  }
+  return Array.isArray(value) ? value[spec.index] : undefined;
+};
+
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
 // matches this container and use its first document. Scans loaded form schemas
@@ -376,14 +392,34 @@ export default function DocumentEditorContainer({
       // because the editor is ready before its .docx has loaded.
       tokenCycle.current?.detach();
       tokenCycle.current = attachTokenCycle(editor, {
-        // Mirror token values into the submission's fields, so a token is a
-        // real answer and not just ink on a page.
-        onValuesChanged: (changed) => {
-          const specs = tokenCycle.current?.getState().specs ?? [];
+        // Token -> field. A repeated field is ONE key holding an array, so a
+        // row writes its own slot and leaves the others alone.
+        onValuesChanged: () => {
+          const cycle = tokenCycle.current;
+          if (!cycle) return;
+          const state = cycle.getState();
           const updates: Record<string, any> = {};
-          for (const spec of specs) {
-            const key = spec.source ?? spec.id;
-            if (changed.has(spec.id)) updates[key] = changed.get(spec.id);
+
+          for (const spec of state.specs) {
+            if (!spec.source) continue;
+            const key = valueKeyOf(spec);
+            const next =
+              spec.format?.kind === 'text'
+                ? state.texts.get(key)
+                : state.values.get(key);
+            if (next === undefined) continue;
+
+            if (spec.index === undefined || spec.index === null) {
+              updates[spec.source] = next;
+            } else {
+              const existing =
+                (updates[spec.source] as any[]) ??
+                (Array.isArray(fieldValues[spec.source])
+                  ? [...(fieldValues[spec.source] as any[])]
+                  : []);
+              existing[spec.index] = next;
+              updates[spec.source] = existing;
+            }
           }
           if (Object.keys(updates).length > 0) setFieldValues(updates);
         }

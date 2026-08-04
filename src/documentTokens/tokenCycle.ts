@@ -42,6 +42,8 @@ import {
 export type TokenState = {
   specs: TokenSpec[];
   values: Map<string, number>;
+  /** Text tokens, which never enter the numeric graph. */
+  texts: Map<string, string>;
   /** Formula and cycle failures, by token id. */
   errors: Map<string, string>;
   /** Validation failures, by token id. */
@@ -89,6 +91,7 @@ export const attachTokenCycle = (
 ): TokenCycle => {
   let plan: Plan = buildPlan([]);
   let values = new Map<string, number>();
+  let texts = new Map<string, string>();
   let editingId: string | null = null;
   let applying = false;
   const listeners = new Set<(state: TokenState) => void>();
@@ -96,6 +99,7 @@ export const attachTokenCycle = (
   const snapshot = (): TokenState => ({
     specs: [...plan.specs.values()],
     values: new Map(values),
+    texts: new Map(texts),
     errors: new Map(plan.errors),
     invalid: validationErrors(plan, values),
     focused: editingId
@@ -128,6 +132,11 @@ export const attachTokenCycle = (
     const entries = readTokens(editor);
     plan = buildPlan(entries.map(({ spec }) => spec));
     values = numericValues(entries);
+    texts = new Map(
+      entries
+        .filter(({ spec }) => spec.format?.kind === 'text')
+        .map(({ spec, value }) => [valueKey(spec), value])
+    );
     // One full pass on open, so a document is consistent before anyone
     // touches it — a template change could have left it stale.
     flush(recalc(plan, values).changed);
@@ -135,6 +144,20 @@ export const attachTokenCycle = (
   };
 
   const setTokenValue = (id: string, raw: string | number): TokenState => {
+    // A text token holds whatever it was given; nothing derives from it.
+    if (plan.specs.get(id)?.format?.kind === 'text') {
+      const text = String(raw);
+      if (texts.get(id) === text) return publish();
+      texts.set(id, text);
+      applying = true;
+      try {
+        writeValues(editor, [{ id, text }], { skipId: editingId ?? undefined });
+      } finally {
+        applying = false;
+      }
+      return publish();
+    }
+
     const parsed = typeof raw === 'number' ? raw : parseValue(raw);
     if (parsed === null || values.get(id) === parsed) return publish();
 
@@ -260,6 +283,15 @@ export const attachTokenCycle = (
 
     const entry = readTokens(editor).find((t) => valueKey(t.spec) === left);
     if (!entry) {
+      publish();
+      return;
+    }
+
+    if (plan.specs.get(left)?.format?.kind === 'text') {
+      if (texts.get(left) !== entry.value) {
+        texts.set(left, entry.value);
+        options.onValuesChanged?.(new Map());
+      }
       publish();
       return;
     }
