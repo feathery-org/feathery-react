@@ -509,6 +509,30 @@ describe('applyDocumentEdits', () => {
     expect(ed.enableTrackChanges).toBe(false); // restored afterwards
   });
 
+  it('suppresses public layout updates for the mutation phases and restores them', () => {
+    const ed = make([para('Quote: $5,500')]);
+    const layoutTransitions: boolean[] = [];
+    let enableLayout = true;
+    Object.defineProperty(ed, 'enableLayout', {
+      configurable: true,
+      get: () => enableLayout,
+      set: (value: boolean) => {
+        enableLayout = value;
+        layoutTransitions.push(value);
+      }
+    });
+
+    const result = applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+
+    expect(result.results[0].ok).toBe(true);
+    expect(layoutTransitions).toEqual([false, true]);
+    expect(ed.enableLayout).toBe(true);
+  });
+
   it('restores the prior author when an assistant batch fails', () => {
     const ed = make([para('Quote: $5,500')]);
     ed.currentUser = 'Existing author';
@@ -818,7 +842,7 @@ describe('applyDocumentEdits', () => {
     });
   });
 
-  it('real SDK: serializes one committed snapshot per op for assertion and refresh', () => {
+  it('real SDK: reuses each post-write verification snapshot for assertion and refresh', () => {
     const countSerializations = (editCount: number): number => {
       const originals = ['Alpha target', 'Beta target', 'Gamma target'];
       const replacements = ['Alpha revised', 'Beta revised', 'Gamma revised'];
@@ -840,6 +864,13 @@ describe('applyDocumentEdits', () => {
 
         expect(result.results.every((entry) => entry.ok)).toBe(true);
         const calls = serialize.mock.calls.length;
+        expect(result.warnings).toEqual(
+          expect.arrayContaining([
+            expect.stringMatching(
+              new RegExp(`^document_serialization: count=${calls}; total_ms=`)
+            )
+          ])
+        );
         serialize.mockRestore();
         rejectEveryRealRevision(ed);
         expect(ed.serialize()).toBe(before);
@@ -849,13 +880,76 @@ describe('applyDocumentEdits', () => {
       }
     };
 
-    // Initial snapshot + one post-write verification per op + one shared
-    // committed snapshot per op + final inventory. Before the reuse, the
-    // assertion serialized once more per op (5 calls for one, 11 for three).
+    // Initial snapshot + one post-write verification/committed snapshot per op
+    // + final inventory. Before reuse, the executor paid one additional
+    // committed snapshot per op (4 calls for one, 8 for three).
     expect({
       oneOperation: countSerializations(1),
       threeOperations: countSerializations(3)
-    }).toEqual({ oneOperation: 4, threeOperations: 8 });
+    }).toEqual({ oneOperation: 3, threeOperations: 5 });
+  });
+
+  it('real SDK: keeps a 12-op mixed batch to eight serializations on a large document', () => {
+    const table = (tableIndex: number) => ({
+      tableFormat: {},
+      rows: Array.from({ length: 5 }, (_, row) => ({
+        rowFormat: {},
+        cells: Array.from({ length: 4 }, (_, column) => ({
+          cellFormat: {},
+          blocks: [
+            { inlines: [{ text: `Table ${tableIndex} R${row} C${column}` }] }
+          ]
+        }))
+      }))
+    });
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            ...Array.from({ length: 240 }, (_, index) =>
+              para(`Synthetic paragraph ${index}`)
+            ),
+            ...Array.from({ length: 4 }, (_, index) => table(index))
+          ]
+        }
+      ]
+    });
+
+    try {
+      const serialize = jest.spyOn(ed, 'serialize');
+      const startedAt = performance.now();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          ...Array.from({ length: 6 }, (_, index) => ({
+            op: 'replace_text',
+            anchor: `0;${index}`,
+            find: `Synthetic paragraph ${index}`,
+            replace: `Revised synthetic paragraph ${index}`,
+            expect: `Synthetic paragraph ${index}`
+          })),
+          ...Array.from({ length: 6 }, (_, index) => ({
+            op: 'set_char_format',
+            anchor: `0;${index + 6}`,
+            bold: true,
+            expect: `Synthetic paragraph ${index + 6}`
+          }))
+        ]
+      });
+      const wallMs = performance.now() - startedAt;
+
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(serialize).toHaveBeenCalledTimes(8);
+      expect(result.warnings).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(
+            /^document_serialization: count=8; total_ms=\d+\.\d$/
+          )
+        ])
+      );
+      expect(wallMs).toBeGreaterThan(0);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
   });
 });
 
