@@ -44,6 +44,66 @@ describe('document tool dispatch', () => {
   });
 });
 
+describe('rule tool dispatch', () => {
+  const CATALOG = [{ id: 'rule-1', name: 'Calc Quote' }];
+
+  it('routes on the model-echoed input.ruleId, never the tool name', async () => {
+    const runLogicRule = jest.fn().mockResolvedValue({ ok: true });
+
+    const result = await dispatchAssistantTool(
+      'rule_some_decorative_name_zzzz',
+      { ruleId: 'rule-1', inputParams: { amount: 5 } },
+      { callableRules: CATALOG, runLogicRule }
+    );
+
+    expect(runLogicRule).toHaveBeenCalledWith('rule-1', { amount: 5 });
+    expect(result).toEqual({ handled: true, output: { ok: true } });
+  });
+
+  it('rejects a ruleId outside the catalog with a stale-session hint', async () => {
+    const runLogicRule = jest.fn();
+
+    const result = await dispatchAssistantTool(
+      'runLogicRule',
+      { ruleId: 'not-offered', inputParams: {} },
+      { callableRules: CATALOG, runLogicRule }
+    );
+
+    expect(runLogicRule).not.toHaveBeenCalled();
+    expect(result.handled).toBe(true);
+    expect(result.output).toMatchObject({ ok: false, error: 'unknown_rule' });
+    expect(result.output.message).toMatch(/stale/i);
+  });
+
+  it('reports handler_unavailable, not a stale session, when no form is connected', async () => {
+    const result = await dispatchAssistantTool(
+      'rule_calc_quote_rule',
+      { ruleId: 'rule-1', inputParams: {} },
+      { callableRules: CATALOG }
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.output).toMatchObject({
+      ok: false,
+      error: 'handler_unavailable'
+    });
+    expect(result.output.message).not.toMatch(/stale/i);
+  });
+
+  it('rejects an input with no ruleId envelope', async () => {
+    const runLogicRule = jest.fn();
+
+    const result = await dispatchAssistantTool(
+      'rule_calc_quote_rule',
+      { amount: 5 },
+      { callableRules: CATALOG, runLogicRule }
+    );
+
+    expect(runLogicRule).not.toHaveBeenCalled();
+    expect(result.output).toMatchObject({ ok: false, error: 'unknown_rule' });
+  });
+});
+
 describe('callable rule catalog', () => {
   it('does not mount server-side logic rules as browser tools', () => {
     const callable = buildCallableRules([
