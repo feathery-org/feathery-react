@@ -7601,6 +7601,13 @@ function groupRevisionsAtomic(
       resolvedAlone.add(index);
       resolveSingleRevision(members[index], isAccept);
     };
+    // Only a fresh lookup from the editor's live collection may re-arm a
+    // member. Undo can restore the same object while its closure still says
+    // "resolved"; detached repeat calls must remain no-ops.
+    (rev as any).robinReviveSelf = () => {
+      state.resolved = false;
+      resolvedAlone.delete(index);
+    };
     rev.accept = () => resolveAll(true);
     rev.reject = () => resolveAll(false);
   });
@@ -7661,6 +7668,44 @@ export function resolveRevisionsAsOneUndo(
       }
     }
   }
+}
+
+export interface RevisionGroupIdentity {
+  changeSetId: string;
+  group: string;
+  untagged?: boolean;
+}
+
+/**
+ * Resolve review groups from the editor's CURRENT revision collection. Undo
+ * can revive a revision as either a new JS object or the same bridge-bound
+ * object whose in-memory "resolved" closure is already spent. The persisted
+ * customData tag (or author for a human group) is the durable identity, so a
+ * click must re-read that collection and re-arm each live revision's
+ * single-revision binding rather than trusting a render-time object.
+ */
+export function resolveLiveRevisionGroupsAsOneUndo(
+  editor: LiveEditor,
+  groups: RevisionGroupIdentity[],
+  isAccept: boolean
+): LiveRevision[] {
+  const tagged = new Set(
+    groups
+      .filter((group) => !group.untagged)
+      .map((group) => `${group.changeSetId}\u0000${group.group}`)
+  );
+  const authors = new Set(
+    groups.filter((group) => group.untagged).map((group) => group.group)
+  );
+  const revisions = snapshotRevisions(editor).filter((revision) => {
+    const tag = parseRevisionGroupTag(revision.customData);
+    return tag
+      ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
+      : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
+  });
+  for (const revision of revisions) (revision as any).robinReviveSelf?.();
+  resolveRevisionsAsOneUndo(editor, revisions, isAccept);
+  return revisions;
 }
 
 /** Result of binding one change set's created revisions into accept groups. */

@@ -33,6 +33,7 @@ interface Props {
   /** Row-element registrar per chip (scroll-into-view bookkeeping). */
   chipRef: (chip: ChipView) => (el: HTMLDivElement | null) => void;
   onFocusChip: (chip: ChipView) => void;
+  onResolveGroup: (isAccept: boolean) => void;
   onResolveChips: (chips: ChipView[], isAccept: boolean) => void;
 }
 
@@ -45,6 +46,7 @@ export default function GroupCard({
   activeRevision,
   chipRef,
   onFocusChip,
+  onResolveGroup,
   onResolveChips
 }: Props) {
   return (
@@ -127,14 +129,14 @@ export default function GroupCard({
         <button
           type='button'
           css={btn}
-          onClick={() => onResolveChips(group.chips, true)}
+          onClick={() => onResolveGroup(true)}
         >
           Accept {group.chips.length}
         </button>
         <button
           type='button'
           css={rejectBtn}
-          onClick={() => onResolveChips(group.chips, false)}
+          onClick={() => onResolveGroup(false)}
         >
           Reject {group.chips.length}
         </button>

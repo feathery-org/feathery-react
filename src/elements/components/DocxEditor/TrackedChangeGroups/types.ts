@@ -1,3 +1,5 @@
+import type { RevisionGroupIdentity } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+
 /** One pending edit as the rail shows it. */
 export interface ChipView {
   revision: any;
@@ -8,7 +10,7 @@ export interface ChipView {
   author?: string;
 }
 
-export interface GroupView {
+export interface GroupView extends RevisionGroupIdentity {
   key: string;
   title: string;
   /** One author's manual edits rather than an assistant accept group. */
