@@ -6,6 +6,7 @@ import {
   MinimizeIcon,
   SpinnerIcon
 } from './icons';
+import { UNHANDLED_TOOL_ERROR } from './tools/assistantToolDispatch';
 import {
   DEFAULT_CHAT_COLOR,
   GRAY_200,
@@ -149,6 +150,10 @@ export interface ToolRow {
 
 const isRunningState = (s: string) =>
   s === 'input-streaming' || s === 'input-available';
+const isPlaceholder = (row: ToolRow) =>
+  typeof row.output === 'object' &&
+  row.output !== null &&
+  (row.output as { error?: unknown }).error === UNHANDLED_TOOL_ERROR;
 const isErrorRow = (row: ToolRow) =>
   row.state === 'output-error' ||
   (typeof row.output === 'object' &&
@@ -229,12 +234,12 @@ const hasDetail = (row: ToolRow): boolean => {
   return false;
 };
 
-const labelFor = (row: ToolRow): string => {
+const labelFor = (row: ToolRow, pending = false): string => {
   const labels = TOOL_LABELS[row.toolName] || {
     running: 'Working...',
     done: 'Done'
   };
-  if (isRunningState(row.state)) return labels.running;
+  if (pending || isRunningState(row.state)) return labels.running;
   if (isErrorRow(row)) return labels.done ?? 'Failed';
   return labels.done ?? labels.running;
 };
@@ -270,7 +275,9 @@ export const ToolChunk = ({
   linkColor = DEFAULT_CHAT_COLOR,
   isFirstChunk = false
 }: ToolChunkProps) => {
-  const isRunning = rows.some((r) => isRunningState(r.state));
+  const isRunning = rows.some(
+    (r) => isRunningState(r.state) || (!turnFinished && isPlaceholder(r))
+  );
   // Voice: keep showing "Working on it" until the following reply's audio arrives
   const chunkDone =
     !isRunning && !audioPending && (followedByText || turnFinished);
@@ -408,7 +415,12 @@ export const ToolChunk = ({
           }}
         >
           {labeledRows.map((row) => (
-            <ToolChunkRow key={row.key} row={row} linkColor={linkColor} />
+            <ToolChunkRow
+              key={row.key}
+              row={row}
+              pending={!turnFinished && isPlaceholder(row)}
+              linkColor={linkColor}
+            />
           ))}
         </div>
       )}
@@ -418,13 +430,14 @@ export const ToolChunk = ({
 
 interface ToolChunkRowProps {
   row: ToolRow;
+  pending: boolean;
   linkColor: string;
 }
 
-const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
+const ToolChunkRow = ({ row, pending, linkColor }: ToolChunkRowProps) => {
   const expandable = hasDetail(row);
-  const running = isRunningState(row.state);
-  const error = isErrorRow(row);
+  const running = pending || isRunningState(row.state);
+  const error = !running && isErrorRow(row);
   // Auto-expanded while running, collapses when output lands
   const [override, setOverride] = useState<boolean | null>(null);
   const expanded = override ?? running;
@@ -457,7 +470,9 @@ const ToolChunkRow = ({ row, linkColor }: ToolChunkRowProps) => {
         ) : (
           <CheckIcon css={{ width: '12px', height: '12px' }} />
         )}
-        <span css={running ? shimmerCss : undefined}>{labelFor(row)}</span>
+        <span css={running ? shimmerCss : undefined}>
+          {labelFor(row, pending)}
+        </span>
         {expandable && (
           <MinimizeIcon
             css={{
