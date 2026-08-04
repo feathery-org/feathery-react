@@ -245,39 +245,3 @@ export const insertToken = (
 /** The chrome colour for a token, derived from its kind rather than stored. */
 export const colorFor = (spec: TokenSpec): string =>
   spec.formula ? COMPUTED_COLOR : INPUT_COLOR;
-
-/**
- * Paint each token's chrome: inputs blue, computed grey.
- *
- * Colour is derived from the spec every time the document is read, never
- * stored, so a stale colour can never contradict a token's kind.
- *
- * SyncFusion exposes no public accessor for the live ContentControl objects —
- * `exportContentControlData()` returns copies — so this reaches into
- * `documentHelper.contentControlCollection` and no-ops when it is absent.
- * Failing to paint must never cost the values.
- */
-export const applyChrome = (editor: EditorLike): number => {
-  const collection = (editor as any)?.documentHelper?.contentControlCollection;
-  if (!Array.isArray(collection)) return 0;
-
-  let painted = 0;
-  for (const control of collection) {
-    const properties = control?.contentControlProperties;
-    const spec = decodeTag(properties?.tag ?? '');
-    if (!properties || !spec) continue;
-
-    properties.color = colorFor(spec);
-    properties.appearance = 'BoundingBox';
-    painted += 1;
-  }
-
-  if (painted > 0) {
-    // The properties are model state; nothing repaints on its own. The
-    // repaint itself moves the viewport, so hold it still.
-    withViewportPreserved(editor, () => {
-      (editor as any)?.documentHelper?.updateScrollBars?.();
-    });
-  }
-  return painted;
-};

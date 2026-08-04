@@ -20,6 +20,7 @@ import type { TokenCycle } from '../../../documentTokens/tokenCycle';
 import TokenPanel, {
   tokenPanelEnabled
 } from '../../../documentTokens/TokenPanel';
+import TokenOverlay from '../../../documentTokens/TokenOverlay';
 
 // Syncfusion's public test converter. Used ONLY in a local build: document
 // content is uploaded to a third party, which is fine for synthetic fixtures
@@ -357,6 +358,9 @@ export default function DocumentEditorContainer({
   const tokenCycle = useRef<TokenCycle | undefined>(undefined);
   // Dev-only token inspector; nothing renders unless the flag is set.
   const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
+  // The live editor, so the overlay can measure token rectangles.
+  const [tokenEditor, setTokenEditor] = useState<any>();
+  const editorHostRef = useRef<HTMLDivElement>(null);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -371,7 +375,20 @@ export default function DocumentEditorContainer({
       // document that declares none; the cycle re-reads on documentChange,
       // because the editor is ready before its .docx has loaded.
       tokenCycle.current?.detach();
-      tokenCycle.current = attachTokenCycle(editor);
+      tokenCycle.current = attachTokenCycle(editor, {
+        // Mirror token values into the submission's fields, so a token is a
+        // real answer and not just ink on a page.
+        onValuesChanged: (changed) => {
+          const specs = tokenCycle.current?.getState().specs ?? [];
+          const updates: Record<string, any> = {};
+          for (const spec of specs) {
+            const key = spec.source ?? spec.id;
+            if (changed.has(spec.id)) updates[key] = changed.get(spec.id);
+          }
+          if (Object.keys(updates).length > 0) setFieldValues(updates);
+        }
+      });
+      setTokenEditor(editor);
       if (tokenPanelEnabled(featheryWindow())) {
         setTokenPanelCycle(tokenCycle.current);
       }
@@ -400,9 +417,35 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
+  // Field -> token. The container re-renders when the form updates values, so
+  // comparing the sources each render picks up a change made anywhere else in
+  // the form without a subscription the SDK does not expose.
+  const tokenSources = (tokenCycle.current?.getState().specs ?? [])
+    .filter((spec) => spec.source)
+    .map((spec) => `${spec.id}=${fieldValues[spec.source as string] ?? ''}`)
+    .join('|');
+  useEffect(() => {
+    const cycle = tokenCycle.current;
+    if (!cycle) return;
+    for (const spec of cycle.getState().specs) {
+      if (!spec.source) continue;
+      const incoming = fieldValues[spec.source];
+      if (incoming === undefined || incoming === null || incoming === '')
+        continue;
+      cycle.setTokenValue(spec.id, incoming as any);
+    }
+  }, [tokenSources]);
+
   const box = (child: React.ReactNode) => (
-    <div css={wrap}>
+    <div css={wrap} ref={editorHostRef}>
       {child}
+      {tokenEditor && tokenCycle.current && (
+        <TokenOverlay
+          editor={tokenEditor}
+          cycle={tokenCycle.current}
+          hostRef={editorHostRef}
+        />
+      )}
       {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
     </div>
   );

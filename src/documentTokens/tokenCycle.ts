@@ -20,13 +20,7 @@
  * when the assistant asks it to. This watches the document and reacts.
  */
 
-import {
-  applyChrome,
-  EditorLike,
-  readTokens,
-  tokenAtCaret,
-  writeValues
-} from './controls';
+import { EditorLike, readTokens, tokenAtCaret, writeValues } from './controls';
 import { parseValue, renderValue } from './format';
 import { buildPlan, Plan, recalc, TokenSpec, validationErrors } from './plan';
 
@@ -78,7 +72,12 @@ const numericValues = (
 
 export const attachTokenCycle = (
   editor: CycleEditor,
-  options: { readBackDelayMs?: number } = {}
+  options: {
+    /** Called with every token whose value moved, so the host can mirror
+     *  them into form fields. Fires for computed tokens too — a total is as
+     *  worth submitting as the quantity that drove it. */
+    onValuesChanged?: (changed: Map<string, number>) => void;
+  } = {}
 ): TokenCycle => {
   let plan: Plan = buildPlan([]);
   let values = new Map<string, number>();
@@ -114,6 +113,7 @@ export const attachTokenCycle = (
     } finally {
       applying = false;
     }
+    options.onValuesChanged?.(new Map(changed));
   };
 
   const refresh = (): TokenState => {
@@ -123,7 +123,6 @@ export const attachTokenCycle = (
     // One full pass on open, so a document is consistent before anyone
     // touches it — a template change could have left it stale.
     flush(recalc(plan, values).changed);
-    applyChrome(editor);
     return publish();
   };
 
