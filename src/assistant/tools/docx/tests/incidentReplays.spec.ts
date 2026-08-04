@@ -11,6 +11,7 @@ import {
 import {
   applyDocumentEdits,
   flattenSfdt,
+  getDocumentInventory,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import {
@@ -54,6 +55,44 @@ const para = (text: string, styleName?: string) => ({
 const cell = (text: string) => ({
   cellFormat: {},
   blocks: [para(text)]
+});
+
+const styledIncidentCell = (
+  text: string,
+  rowIndex: number,
+  columnIndex: number
+) => ({
+  cellFormat:
+    rowIndex === 0
+      ? { shading: { backgroundColor: '#1F3864' } }
+      : rowIndex % 2 === 0
+      ? { shading: { backgroundColor: '#D9E2F3' } }
+      : {},
+  blocks: [
+    {
+      paragraphFormat: {
+        textAlignment: rowIndex === 0 ? 'Center' : 'Left'
+      },
+      inlines: [
+        {
+          text,
+          characterFormat: {
+            fontFamily:
+              rowIndex === 0
+                ? columnIndex === 0
+                  ? 'Arial'
+                  : 'Courier New'
+                : columnIndex === 0
+                ? 'Georgia'
+                : 'Times New Roman',
+            fontSize: rowIndex === 0 ? 12 : 9.5,
+            bold: rowIndex === 0,
+            ...(rowIndex === 0 ? { fontColor: '#FFFFFF' } : {})
+          }
+        }
+      ]
+    }
+  ]
 });
 
 const row = (...texts: string[]) => ({
@@ -128,7 +167,15 @@ const incidentDSfdt = () => {
       : `$${index},000`
   ]);
   const blocks: unknown[] = padding(19, 'Cyber section context');
-  blocks.push(table(rows));
+  blocks.push({
+    tableFormat: {},
+    rows: rows.map((texts, rowIndex) => ({
+      rowFormat: rowIndex === 0 ? { isHeader: true } : {},
+      cells: texts.map((text, columnIndex) =>
+        styledIncidentCell(text, rowIndex, columnIndex)
+      )
+    }))
+  });
   blocks.push(para('  '));
   return sfdtWithSectionSix(blocks);
 };
@@ -189,7 +236,12 @@ function expectHonestDuplicateTableOutcome(
     const byAnchor = new Map(
       blocks(editor).map((block) => [block.anchor, block.text] as const)
     );
-    const insertAnchor = payload.edits[0].anchor;
+    const requestedAnchor = payload.edits[0].anchor;
+    const requestedParts = requestedAnchor.split(';');
+    const insertAnchor =
+      requestedParts.length === 2
+        ? requestedAnchor
+        : `${requestedParts[0]};${Number(requestedParts[1]) + 1}`;
     expect(byAnchor.has(`${insertAnchor};0;0;0`)).toBe(true);
     for (const edit of cellWrites) {
       expect(byAnchor.get(edit.anchor)).toBe(edit.text);
@@ -199,6 +251,33 @@ function expectHonestDuplicateTableOutcome(
         (revision) => revision.revisionType === 'Deletion'
       )
     ).toHaveLength(0);
+    // This replay now asserts the inherited result deliberately: even when the
+    // recorded model omitted copy_table_format, the inserted grid adopts the
+    // source table's header, stripe and header-column typography.
+    const source = getDocumentInventory(editor as unknown as LiveEditor, {
+      scope: 'table_facts',
+      tableAnchor: '6;19'
+    });
+    const inherited = getDocumentInventory(editor as unknown as LiveEditor, {
+      scope: 'table_facts',
+      tableAnchor: insertAnchor
+    });
+    expect('table' in source && 'table' in inherited).toBe(true);
+    if ('table' in source && 'table' in inherited) {
+      expect(inherited.table.rows[0].isHeader).toBe(true);
+      expect(
+        inherited.table.rows.map((row) => row.appearance?.shading ?? null)
+      ).toEqual(
+        source.table.rows
+          .slice(0, inherited.table.rows.length)
+          .map((row) => row.appearance?.shading ?? null)
+      );
+    }
+    editor.selection.select(
+      `${insertAnchor};0;1;0;0`,
+      `${insertAnchor};0;1;0;${cellWrites[1]?.text.length ?? 0}`
+    );
+    expect(editor.selection.characterFormat.fontFamily).toBe('Courier New');
     return;
   }
 
