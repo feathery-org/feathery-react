@@ -602,6 +602,87 @@ describe('AssistantChat wiring (the regression guard)', () => {
     );
   });
 
+  it('compacts only the outbound history and leaves the current tool result exact', () => {
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={targets(DOC_ID)}
+        getJwt={() => 'JWT'}
+      />
+    );
+    const transport = (globalThis as any).__capturedTransportOpts;
+    const oldOutput = { inventory: [{ text: 'old inventory' }] };
+    const recentOutput = { ok: true, occurrences: [{ blockText: 'recent' }] };
+    const currentOutput = {
+      results: [{ ok: true, echo: 'current exact output' }],
+      changeSet: { status: 'applied', groups: [] }
+    };
+    const messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'one' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-getDocumentInventory',
+            toolCallId: 'call-old',
+            state: 'output-available',
+            input: {},
+            output: oldOutput
+          }
+        ]
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'two' }] },
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-findDocumentOccurrences',
+            toolCallId: 'call-recent',
+            state: 'output-available',
+            input: {},
+            output: recentOutput
+          }
+        ]
+      },
+      { id: 'u3', role: 'user', parts: [{ type: 'text', text: 'three' }] },
+      {
+        id: 'a3',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-applyDocumentEdits',
+            toolCallId: 'call-current',
+            state: 'output-available',
+            input: {},
+            output: currentOutput
+          }
+        ]
+      }
+    ];
+
+    const request = transport.prepareSendMessagesRequest({
+      id: 'chat-id',
+      messages,
+      body: transport.body(),
+      trigger: 'submit-message',
+      messageId: 'a3'
+    }).body;
+
+    const part = (message: { parts: unknown[] }, index = 0) =>
+      message.parts[index] as { output?: any; toolCallId?: string };
+    expect(part(messages[1]).output).toBe(oldOutput);
+    expect(part(request.messages[1]).output._digest).toContain(
+      'digested client-side'
+    );
+    expect(part(request.messages[3]).output).toBe(recentOutput);
+    expect(part(request.messages[5]).toolCallId).toBe('call-current');
+    expect(part(request.messages[5]).output).toBe(currentOutput);
+    expect(request.thread_id).toEqual(expect.any(String));
+  });
+
   it('indexes the incoming step under mount-before-unmount ordering and preserves the outgoing index', async () => {
     render(
       <AssistantChat

@@ -103,6 +103,7 @@ import {
 import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
+import { prepareAssistantRequest } from './messageHistory';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -538,6 +539,7 @@ const AssistantChat = ({
         ...buildChatBody(),
         thread_id: resolvedThreadId || sessionId
       }),
+      prepareSendMessagesRequest: prepareAssistantRequest,
       fetch: async (url: any, init?: any) => {
         let res: Response;
         if (voiceActiveRef.current) {
