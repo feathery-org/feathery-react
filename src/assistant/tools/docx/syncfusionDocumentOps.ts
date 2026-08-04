@@ -774,6 +774,8 @@ export interface FindDocumentOccurrencesBatchResult {
 // large and only exercised in a browser; unit tests supply a fake.
 export interface LiveEditor {
   serialize(): string;
+  /** Public SyncFusion bulk-update switch; absent on lightweight test doubles. */
+  enableLayout?: boolean;
   enableTrackChanges: boolean;
   currentUser: string;
   selection: {
@@ -2104,6 +2106,53 @@ function parseSfdt(raw: string): any {
   }
 }
 
+interface SerializationTiming {
+  count: number;
+  totalMs: number;
+}
+
+const serializationTimingByEditor = new WeakMap<
+  LiveEditor,
+  SerializationTiming
+>();
+
+function serializationClockMs(): number {
+  return typeof performance !== 'undefined' && performance.now
+    ? performance.now()
+    : Date.now();
+}
+
+/** Parse one editor snapshot and account for the expensive serialize call. */
+function serializeSfdt(editor: LiveEditor): any {
+  const timing = serializationTimingByEditor.get(editor);
+  const startedAt = serializationClockMs();
+  let raw = '';
+  try {
+    raw = editor.serialize();
+  } finally {
+    if (timing) {
+      timing.count++;
+      timing.totalMs += serializationClockMs() - startedAt;
+    }
+  }
+  return parseSfdt(raw);
+}
+
+function withSerializationTiming<T>(
+  editor: LiveEditor,
+  timing: SerializationTiming,
+  run: () => T
+): T {
+  const previous = serializationTimingByEditor.get(editor);
+  serializationTimingByEditor.set(editor, timing);
+  try {
+    return run();
+  } finally {
+    if (previous) serializationTimingByEditor.set(editor, previous);
+    else serializationTimingByEditor.delete(editor);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Live editor reads
 // ---------------------------------------------------------------------------
@@ -2118,12 +2167,12 @@ export function getDocumentInventory(
     column?: number;
   }
 ): InventoryResult {
-  const sfdt = parseSfdt(editor.serialize());
+  const sfdt = serializeSfdt(editor);
   return buildInventoryFromBlocks(flattenSfdt(sfdt), input, sfdt);
 }
 
 export function buildIndexBlocks(editor: LiveEditor): IndexBlock[] {
-  return buildIndexBlocksFromBlocks(flattenSfdt(parseSfdt(editor.serialize())));
+  return buildIndexBlocksFromBlocks(flattenSfdt(serializeSfdt(editor)));
 }
 
 export const MAX_LIVE_OCCURRENCE_QUERIES = 20;
@@ -2337,7 +2386,7 @@ function findOneDocumentOccurrences(
     const offsets = (search as any).textSearchResults?.innerList
       ? search.searchResults.getTextSearchResultsOffset() ?? []
       : [];
-    const sfdt = parseSfdt(editor.serialize());
+    const sfdt = serializeSfdt(editor);
     const byAnchor = new Map(
       flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
     );
@@ -2684,12 +2733,6 @@ function selectRange(
   endOffset: number
 ): void {
   editor.selection.select(`${anchor};${startOffset}`, `${anchor};${endOffset}`);
-}
-
-function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
-  return flattenSfdt(parseSfdt(editor.serialize())).find(
-    (block) => block.anchor === anchor
-  );
 }
 
 // What the whole document would read if every revision were rejected: pending
@@ -3414,9 +3457,10 @@ function verifySelectionWrite(
   editor: LiveEditor,
   range: SelectionRange,
   replacement: string
-): void {
-  if (!replacement) return;
-  const blocks = flattenSfdt(parseSfdt(editor.serialize()));
+): any | undefined {
+  if (!replacement) return undefined;
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
   let startIndex = blocks.findIndex(
     (block) => block.anchor === range.startAnchor
   );
@@ -3458,14 +3502,16 @@ function verifySelectionWrite(
         `actual: ${JSON.stringify(span)}`
       ]
     );
+  return sfdt;
 }
 
 function verifyWrittenText(
   editor: LiveEditor,
   anchor: string,
   expected: string
-): void {
-  const current = freshBlock(editor, anchor);
+): any {
+  const sfdt = serializeSfdt(editor);
+  const current = flattenSfdt(sfdt).find((block) => block.anchor === anchor);
   if (!current)
     throw new OpError(
       'post_write_anchor_not_found',
@@ -3486,6 +3532,7 @@ function verifyWrittenText(
       ]
     );
   }
+  return sfdt;
 }
 
 // SyncFusion's table structure methods default a missing/invalid count to 1.
@@ -3608,6 +3655,8 @@ interface OpSuccessExtras {
    * executor, never returned to the model.
    */
   appearanceWrite?: AppearanceWriteOutcome;
+  /** Fresh post-write snapshot reused by the executor's integrity checks. */
+  postWriteSfdt?: any;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -3838,7 +3887,7 @@ function writeAndVerifyFormulaResult(
     round: RoundingMode | null;
     decimals?: number;
   }
-): FlatBlock[] {
+): { blocks: FlatBlock[]; postWriteSfdt: any } {
   const { formulaText, evaluation, rendered, target, selfReferencing } = args;
   const targetAnchor = target.anchor;
   const targetTextBefore = target.text;
@@ -3858,13 +3907,28 @@ function writeAndVerifyFormulaResult(
 
   selectBlock(editor, target);
   replaceSelectedText(editor, rendered.renderedValue);
-  verifyWrittenText(editor, targetAnchor, rendered.renderedValue);
 
-  const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
+  const postWriteSfdt = serializeSfdt(editor);
+  const freshBlocks = flattenSfdt(postWriteSfdt);
   const freshResolver = makeFormulaResolver(freshBlocks);
   const freshByAnchor = new Map(
     freshBlocks.map((block) => [block.anchor, block])
   );
+  const writtenText = freshByAnchor.get(targetAnchor)?.text;
+  if (writtenText !== rendered.renderedValue) {
+    throw new OpError(
+      writtenText == null
+        ? 'post_write_anchor_not_found'
+        : 'text_verification_failed',
+      writtenText == null
+        ? `The edited anchor "${targetAnchor}" disappeared after the write.`
+        : `Text verification failed at "${targetAnchor}".`,
+      [
+        `expected: ${JSON.stringify(rendered.renderedValue)}`,
+        `actual: ${JSON.stringify(writtenText ?? null)}`
+      ]
+    );
+  }
   for (const [anchor, before] of Array.from(readBefore.entries())) {
     if (anchor === targetAnchor) continue;
     const after = freshByAnchor.get(anchor)?.text ?? null;
@@ -3928,7 +3992,7 @@ function writeAndVerifyFormulaResult(
       );
     }
   }
-  return freshBlocks;
+  return { blocks: freshBlocks, postWriteSfdt };
 }
 
 function runFormulaCellWrite(
@@ -4011,7 +4075,7 @@ function runFormulaCellWrite(
     };
   }
 
-  writeAndVerifyFormulaResult(editor, {
+  const written = writeAndVerifyFormulaResult(editor, {
     formulaText,
     evaluation,
     rendered,
@@ -4039,7 +4103,11 @@ function runFormulaCellWrite(
     verifiedByReRead: true
   };
   return {
-    formula: { ...withoutReceipt, receipt: buildFormulaReceipt(withoutReceipt) }
+    formula: {
+      ...withoutReceipt,
+      receipt: buildFormulaReceipt(withoutReceipt)
+    },
+    postWriteSfdt: written.postWriteSfdt
   };
 }
 
@@ -4249,6 +4317,7 @@ function runColumnFormulaWrite(
     );
 
   const rows: ColumnRowOutcome[] = [];
+  let postWriteSfdt: any;
   for (let row = startRow; row <= endRow; row++) {
     const targetAnchor = `${tableAnchor};${row};${column};${cellParagraph}`;
     const target = blocks.find(
@@ -4330,7 +4399,7 @@ function runColumnFormulaWrite(
     // Every write is proven exactly as strictly as a single-cell write, and the
     // post-write stream becomes the input map for the next row - so a column
     // whose formula reads an earlier row of itself still sees written values.
-    blocks = writeAndVerifyFormulaResult(editor, {
+    const written = writeAndVerifyFormulaResult(editor, {
       formulaText: source,
       evaluation,
       rendered,
@@ -4339,6 +4408,8 @@ function runColumnFormulaWrite(
       round: roundingMode,
       ...decimals
     });
+    blocks = written.blocks;
+    postWriteSfdt = written.postWriteSfdt;
     rows.push({
       row,
       anchor: targetAnchor,
@@ -4382,7 +4453,7 @@ function runColumnFormulaWrite(
       }
     };
   }
-  return { column: report };
+  return { column: report, postWriteSfdt };
 }
 
 // ---------------------------------------------------------------------------
@@ -4691,8 +4762,13 @@ export const ANCHORED_OP_HANDLERS: {
       if (replacement != null) {
         selectBlock(editor, block);
         replaceSelectedText(editor, String(replacement));
-        verifyWrittenText(editor, block.anchor, String(replacement));
-        return;
+        return {
+          postWriteSfdt: verifyWrittenText(
+            editor,
+            block.anchor,
+            String(replacement)
+          )
+        };
       }
       throw new OpError(
         'missing_find',
@@ -4727,11 +4803,10 @@ export const ANCHORED_OP_HANDLERS: {
       // their legacy selected-range replacement primitive. Production search
       // is required and always takes the guarded delete/read/insert path.
       editor.editor.insertText(String(replacement ?? ''));
-      verifyWrittenText(editor, block.anchor, next);
-      return;
+      return { postWriteSfdt: verifyWrittenText(editor, block.anchor, next) };
     }
     replaceSelectedText(editor, String(replacement ?? ''));
-    verifyWrittenText(editor, block.anchor, next);
+    return { postWriteSfdt: verifyWrittenText(editor, block.anchor, next) };
   },
   replace_selection: ({ editor, op, block, byAnchor }) => {
     const replacement = op.replace ?? (op as any).text ?? (op as any).newText;
@@ -4749,7 +4824,9 @@ export const ANCHORED_OP_HANDLERS: {
     // insertText, so SyncFusion authors the paired deletion/insertion revisions
     // atomically - see replaceSelectedText on why this must not be split.
     replaceSelectedText(editor, String(replacement));
-    verifySelectionWrite(editor, range, String(replacement));
+    return {
+      postWriteSfdt: verifySelectionWrite(editor, range, String(replacement))
+    };
   },
   delete_text: ({ editor, op, block, liveText }) => {
     const find = String(op.find ?? '');
@@ -4797,7 +4874,9 @@ export const ANCHORED_OP_HANDLERS: {
     selectBlock(editor, block);
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
-    verifyWrittenText(editor, block.anchor, replacement);
+    return {
+      postWriteSfdt: verifyWrittenText(editor, block.anchor, replacement)
+    };
   },
   set_cell_formula: ({ editor, op, block, byAnchor }) =>
     runFormulaCellWrite(editor, op, block, byAnchor),
@@ -5002,7 +5081,11 @@ export const ANCHORED_OP_HANDLERS: {
   },
   copy_table_format: ({ editor, op, block }) => {
     const { tableAnchor } = cellAnchorParts(block.anchor, 'copy_table_format');
-    return { appearanceWrite: runCopyTableFormat(editor, op, tableAnchor) };
+    const appearanceWrite = runCopyTableFormat(editor, op, tableAnchor);
+    return {
+      appearanceWrite,
+      postWriteSfdt: appearanceWrite.postWriteSfdt
+    };
   },
   restripe_table: ({ editor, op, block }) => {
     const { tableAnchor } = cellAnchorParts(block.anchor, 'restripe_table');
@@ -5928,7 +6011,7 @@ function liveTableAppearance(
   tableAnchor: string
 ): TableAppearance {
   const appearance = collectTableAppearance(
-    tableBlockAt(parseSfdt(editor.serialize()), tableAnchor)
+    tableBlockAt(serializeSfdt(editor), tableAnchor)
   );
   if (!appearance)
     throw new OpError(
@@ -6069,7 +6152,7 @@ function runCopyTableFormat(
   editor: LiveEditor,
   op: TypedEditOp<'copy_table_format'>,
   targetAnchor: string
-): AppearanceWriteOutcome {
+): AppearanceWriteOutcome & { postWriteSfdt?: any } {
   const sourceAnchor = normalizeTableAnchor(op.sourceTable);
   if (!sourceAnchor)
     throw new OpError(
@@ -6081,7 +6164,7 @@ function runCopyTableFormat(
       'copy_source_is_target',
       `copy_table_format was given the same table ("${targetAnchor}") as both source and target.`
     );
-  const sfdt = parseSfdt(editor.serialize());
+  const sfdt = serializeSfdt(editor);
   const source = collectTableAppearance(tableBlockAt(sfdt, sourceAnchor));
   if (!source)
     throw new OpError(
@@ -6094,7 +6177,15 @@ function runCopyTableFormat(
       'table_not_found',
       `No table answers to the anchor "${targetAnchor}".`
     );
-  return applyCopiedTableAppearance(editor, sourceAnchor, source, targetAnchor);
+  // Source and target came from the same just-produced snapshot and nothing
+  // has written yet, so carry the target forward instead of reserializing it.
+  return applyCopiedTableAppearance(
+    editor,
+    sourceAnchor,
+    source,
+    targetAnchor,
+    target
+  );
 }
 
 /**
@@ -6106,9 +6197,10 @@ function applyCopiedTableAppearance(
   editor: LiveEditor,
   sourceAnchor: string,
   source: TableAppearance,
-  targetAnchor: string
-): AppearanceWriteOutcome {
-  const target = liveTableAppearance(editor, targetAnchor);
+  targetAnchor: string,
+  resolvedTarget?: TableAppearance
+): AppearanceWriteOutcome & { postWriteSfdt?: any } {
+  const target = resolvedTarget ?? liveTableAppearance(editor, targetAnchor);
   const headerRows = inferHeaderRows(source);
   const banding = detectTableBanding(source);
   const report = emptyAppearanceReport();
@@ -6153,7 +6245,15 @@ function applyCopiedTableAppearance(
     }
     if (rowTouched) report.rowsWritten++;
   });
-  const after = liveTableAppearance(editor, targetAnchor);
+  const postWriteSfdt = serializeSfdt(editor);
+  const after = collectTableAppearance(
+    tableBlockAt(postWriteSfdt, targetAnchor)
+  );
+  if (!after)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${targetAnchor}". Re-read the structure and use a current anchor.`
+    );
   const mismatches: string[] = [];
   after.rows.forEach((row, rowIndex) => {
     const mapped =
@@ -6185,7 +6285,7 @@ function applyCopiedTableAppearance(
       `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
       mismatches
     );
-  return { report, restores };
+  return { report, restores, postWriteSfdt };
 }
 
 function readPostEditInventory(
@@ -7334,7 +7434,10 @@ function collectOpExtras(
   record: (restores: AppearanceRestore[]) => void
 ): Partial<EditResult> {
   if (!extras) return {};
-  const { appearanceWrite, ...rest } = extras;
+  const appearanceWrite = extras.appearanceWrite;
+  const rest = { ...extras };
+  delete rest.appearanceWrite;
+  delete rest.postWriteSfdt;
   if (appearanceWrite) record(appearanceWrite.restores);
   return {
     ...rest,
@@ -8384,6 +8487,17 @@ export function applyDocumentEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
+  const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
+  return withSerializationTiming(editor, serializationTiming, () =>
+    applyDocumentEditsMeasured(editor, input, serializationTiming)
+  );
+}
+
+function applyDocumentEditsMeasured(
+  editor: LiveEditor,
+  input: { edits: EditOp[]; changeSetId?: string; plan?: string },
+  serializationTiming: SerializationTiming
+): ApplyEditsResult {
   const edits = Array.isArray(input?.edits) ? input.edits : [];
   const results: Array<EditResult | undefined> = new Array(edits.length);
   const warnings: string[] = [];
@@ -8449,7 +8563,7 @@ export function applyDocumentEdits(
   };
   let anchorsMayHaveShifted = false;
   const refresh = (serializedSfdt?: any) => {
-    const sfdt = serializedSfdt ?? parseSfdt(editor.serialize());
+    const sfdt = serializedSfdt ?? serializeSfdt(editor);
     liveSfdt = sfdt;
     blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
@@ -8750,7 +8864,12 @@ export function applyDocumentEdits(
     (result, index) =>
       result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
   );
+  // SyncFusion's public bulk-update switch suppresses pagination/layout paint
+  // until the phase loops finish. Preserve an outer caller's already-disabled
+  // state; only this function's own true -> false transition is restored.
+  const suspendLayout = !preflightFailed && editor.enableLayout === true;
   try {
+    if (suspendLayout) editor.enableLayout = false;
     editor.enableTrackChanges = true;
     editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
     if (preflightFailed) {
@@ -8888,7 +9007,9 @@ export function applyDocumentEdits(
           // assertions and the refreshed anchor map. Serializing those
           // independently made every exhaustive batch pay two whole-document
           // passes per op.
-          const postWriteSfdt = parseSfdt(editor.serialize());
+          const postWriteSfdt =
+            (opExtras as OpSuccessExtras | undefined)?.postWriteSfdt ??
+            serializeSfdt(editor);
           if (storyWrite && priorAcceptStream !== undefined)
             assertStoryTextFrameReplacement(
               storyWrite,
@@ -8951,7 +9072,12 @@ export function applyDocumentEdits(
             );
             if (inheritanceAppearance)
               recordAppearanceRestores(op, inheritanceAppearance.restores);
-            refresh();
+            // Inheritance changes appearance only. Anchors, text, and both
+            // revision projections remain identical to postWriteSfdt, while
+            // every inherited property is verified through the public live
+            // selection API (table-copy verification carries its own fresh
+            // snapshot). Keep the content snapshot instead of serializing the
+            // whole document again.
           }
           results[index] = {
             ok: true,
@@ -9016,7 +9142,11 @@ export function applyDocumentEdits(
             target,
             byAnchor
           );
-          refresh();
+          // Formatting cannot shift blocks. Its CAS guard and resolved-format
+          // verification read the live public selection, and table appearance
+          // handlers take their own fresh snapshots where exact before/after
+          // state is required. Consecutive formatting ops therefore share the
+          // structural phase's anchor/text snapshot.
           results[index] = {
             ok: true,
             op: op.op,
@@ -9056,13 +9186,16 @@ export function applyDocumentEdits(
             };
           }
         }
-        refresh();
+        // The restored targets are pre-existing formatting locations. Nothing
+        // after this point resolves another edit anchor, and final inventory
+        // performs the required fresh read, so this snapshot had no consumer.
       }
     }
   } finally {
     editor.enableTrackChanges = priorTrackChanges;
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
+    if (suspendLayout) editor.enableLayout = true;
   }
 
   refuseReusedUserStatedFigures(results);
@@ -9120,6 +9253,11 @@ export function applyDocumentEdits(
     });
   }
   const inventory = readPostEditInventory(editor, warnings);
+  warnings.push(
+    `document_serialization: count=${
+      serializationTiming.count
+    }; total_ms=${serializationTiming.totalMs.toFixed(1)}`
+  );
   const response: ApplyEditsResult = {
     // results starts as a sparse array during preflight; Array#map skips holes,
     // so materialize every requested edit explicitly when a whole change set is
