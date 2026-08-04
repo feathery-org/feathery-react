@@ -2,6 +2,9 @@
 export interface MappingHubConfig {
   hub_id: string;
   excluded_field_ids?: string[];
+  // Hub field that identifies the import batch; the current user's key is
+  // stamped into it server-side. Never mapped from the spreadsheet.
+  transition_field_id?: string;
 }
 
 // Field schema returned by GET /api/hub/schema/.
@@ -28,5 +31,13 @@ export interface HubSchema {
 // Minimal client surface the modal needs (FeatheryClient satisfies this).
 export interface DataMappingClient {
   getHubSchemas: (hubIds: string[]) => Promise<{ hubs: HubSchema[] }>;
-  dataHubAction: (options: any) => Promise<any>;
+  uploadUnverifiedHubRows: (options: {
+    hubId: string;
+    rows: Record<string, any>[];
+    transitionFieldId?: string;
+  }) => Promise<any>;
+  getUnverifiedHubRows: (options: {
+    hubId: string;
+    transitionFieldId?: string;
+  }) => Promise<any>;
 }

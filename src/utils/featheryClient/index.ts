@@ -33,6 +33,8 @@ import { GetConfigParams } from '../internalState';
 import {
   apiFetch,
   dataHubAction as apiDataHubAction,
+  uploadUnverifiedHubRows as apiUploadUnverifiedHubRows,
+  getUnverifiedHubRows as apiGetUnverifiedHubRows,
   extractAIDocument,
   ExtractionActionOptions,
   forwardInboxEmail,
@@ -1181,15 +1183,38 @@ export default class FeatheryClient extends IntegrationClient {
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 
-  // Delegates to client-utils so the browser and the server-side lambdas share
-  // one request shape. Unverified-entry operations are fuser-scoped, and this
-  // is the layer that knows who the current user is; an explicit fuserKey
-  // still wins.
+  // Delegates to client-utils so the browser and the server-side lambdas
+  // share one request shape.
   async dataHubAction(options: HubActionOptions) {
+    const { sdkKey } = initInfo();
+    return apiDataHubAction(sdkKey, options, this.formKey);
+  }
+
+  // Import-batch operations (data mapping modal). When a transition field is
+  // configured on the button action, the current user's key is the batch
+  // value - stamped into that field server-side - so a user's pending import
+  // survives reloads without a dedicated backend column.
+  async uploadUnverifiedHubRows(options: {
+    hubId: string;
+    rows: Record<string, any>[];
+    transitionFieldId?: string;
+  }) {
     const { sdkKey, userId } = initInfo();
-    return apiDataHubAction(
+    return apiUploadUnverifiedHubRows(
       sdkKey,
-      { fuserKey: userId, ...options },
+      { ...options, transitionValue: userId },
+      this.formKey
+    );
+  }
+
+  async getUnverifiedHubRows(options: {
+    hubId: string;
+    transitionFieldId?: string;
+  }) {
+    const { sdkKey, userId } = initInfo();
+    return apiGetUnverifiedHubRows(
+      sdkKey,
+      { ...options, transitionValue: userId },
       this.formKey
     );
   }

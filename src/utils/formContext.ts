@@ -212,16 +212,13 @@ export const getFormContext = (formUuid: string) => {
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
-    // `rows` and `fuserKey` are deliberately not forwarded: writing
-    // unverified entries is the mapping modal's job, and the fuser always
-    // comes from the current user.
     dataHubAction: ({
       hubId,
       operation,
       entryId,
       data,
       where,
-      unverifiedData
+      verificationStatus
     }: HubActionOptions) =>
       formState.client.dataHubAction({
         hubId,
@@ -229,7 +226,7 @@ export const getFormContext = (formUuid: string) => {
         entryId,
         data,
         where,
-        unverifiedData
+        verificationStatus
       }),
     generateDocuments: ({
       documentIds,

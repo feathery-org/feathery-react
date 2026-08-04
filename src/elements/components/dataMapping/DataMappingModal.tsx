@@ -225,17 +225,31 @@ function DataMappingModal({
 
   const hubIds = useMemo(() => hubs.map((h) => h.hub_id), [hubs]);
 
+  const transitionFieldByHub = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    hubs.forEach((h) => {
+      map[h.hub_id] = h.transition_field_id || undefined;
+    });
+    return map;
+  }, [hubs]);
+
   const fieldsForHub = (hubId: string): HubFieldSchema[] => {
     const schema = schemas.find((h) => h.id === hubId);
     const excluded = excludedByHub[hubId];
-    return (schema?.fields || []).filter((f) => !excluded?.has(f.id));
+    const transitionField = transitionFieldByHub[hubId];
+    return (schema?.fields || []).filter(
+      (f) => !excluded?.has(f.id) && f.id !== transitionField
+    );
   };
 
   const refreshStagedCounts = async (hubList: HubSchema[]) => {
     const results = await Promise.all(
       hubList.map((hub) =>
         client
-          .dataHubAction({ hubId: hub.id, operation: 'get_unverified' })
+          .getUnverifiedHubRows({
+            hubId: hub.id,
+            transitionFieldId: transitionFieldByHub[hub.id]
+          })
           .then((r: any) => ({
             hubId: hub.id,
             count: (r?.entries || []).length
@@ -421,8 +435,9 @@ function DataMappingModal({
     });
 
   // Rows are left unverified on purpose: unverified rows are exempt from the hub's field
-  // requirements, so an import never fails validation. Nothing calls `finalize`.
-  // `stage` clears this user's existing unverified rows first, so this replaces them.
+  // requirements, so an import never fails validation. Nothing calls `verify`.
+  // Uploading clears this batch's existing unverified rows first, so this
+  // replaces them.
   const handleConfirm = async () => {
     setBusy(true);
     setActionError('');
@@ -433,10 +448,10 @@ function DataMappingModal({
         if (!st) continue;
         const rows = buildStagedRows(sheets, st.mapping);
         if (rows.length === 0) continue;
-        await client.dataHubAction({
+        await client.uploadUnverifiedHubRows({
           hubId: hub.id,
-          operation: 'upload_unverified',
-          rows
+          rows,
+          transitionFieldId: transitionFieldByHub[hub.id]
         });
       }
     } catch (e: any) {
@@ -644,7 +659,7 @@ function DataMappingModal({
         <button
           type='button'
           disabled={busy}
-          // `stage` clears the old unverified rows, so no delete call is needed.
+          // Uploading clears the old unverified rows, so no delete call is needed.
           onClick={() => {
             setActionError('');
             setView('import');
