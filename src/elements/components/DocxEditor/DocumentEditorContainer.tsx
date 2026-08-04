@@ -332,7 +332,6 @@ export default function DocumentEditorContainer({
           : [
               {
                 document_id: activeDocumentId,
-                role_id: null,
                 email: fillerEmail
               }
             ]

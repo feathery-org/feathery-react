@@ -553,8 +553,8 @@ describe('IntegrationClient', () => {
           envelope_action: 'fill',
           // A document with no role falls back to the shared signer field.
           signers: [
-            { document_id: 'doc1', role_id: null, email: 'test@example.com' },
-            { document_id: 'doc2', role_id: null, email: 'test@example.com' }
+            { document_id: 'doc1', email: 'test@example.com' },
+            { document_id: 'doc2', email: 'test@example.com' }
           ],
           filler_email: 'test@example.com',
           repeatable: true
