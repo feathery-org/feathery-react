@@ -28,6 +28,7 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
   let selected: string | null = null;
   let caret: ContentControlInfo | undefined;
   const handlers: Record<string, Array<() => void>> = {};
+  const domHandlers: Record<string, Array<() => void>> = {};
 
   const keyOf = (info: ContentControlInfo) =>
     valueKey(decodeTag(info.tag) as TokenSpec);
@@ -65,6 +66,21 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
       beginUndoAction: () => log.push('undo:begin'),
       endUndoAction: () => log.push('undo:end')
     },
+    // The canvas SyncFusion paints into, which is where dblclick is heard.
+    documentHelper: {
+      viewerContainer: {
+        scrollTop: 0,
+        scrollLeft: 0,
+        addEventListener: (event: string, handler: () => void) => {
+          domHandlers[event] = [...(domHandlers[event] ?? []), handler];
+        },
+        removeEventListener: (event: string, handler: () => void) => {
+          domHandlers[event] = (domHandlers[event] ?? []).filter(
+            (h) => h !== handler
+          );
+        }
+      }
+    },
     addEventListener: (event: string, handler: () => void) => {
       handlers[event] = [...(handlers[event] ?? []), handler];
     },
@@ -79,6 +95,8 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
     },
     fire: (event: string, args?: any) =>
       (handlers[event] ?? []).forEach((h: any) => h(args)),
+    fireDomDoubleClick: () =>
+      (domHandlers.dblclick ?? []).forEach((h: any) => h()),
     valueOf: (key: string) =>
       controls.find((c) => keyOf(c) === key)?.value as string,
     listenerCount: (event: string) => (handlers[event] ?? []).length
@@ -242,10 +260,161 @@ describe('attachTokenCycle — propagation', () => {
   });
 });
 
+describe('attachTokenCycle — undo propagates to the field', () => {
+  /** A field store that records writes, standing in for the form engine. */
+  const store = (initial: Record<string, any> = {}) => {
+    const values: Record<string, any> = { ...initial };
+    return {
+      values,
+      read: (spec: TokenSpec) =>
+        spec.source ? values[spec.source] : undefined,
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) => {
+        for (const { spec, value } of updates) {
+          if (spec.source) values[spec.source] = value;
+        }
+      }
+    };
+  };
+
+  const feeEditor = () =>
+    fakeEditor([
+      control(
+        { id: 'fee', source: 'fee', format: { kind: 'currency' } },
+        '$150.00'
+      ),
+      control(
+        { id: 'double', formula: 'fee * 2', format: { kind: 'currency' } },
+        '$300.00'
+      )
+    ]);
+
+  it('moves the field to whatever the undo restored', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('fee', 175);
+    expect(fields.values.fee).toBe(175);
+
+    // Syncfusion restores the text and reports the replay.
+    editor.controls[0].value = '$150.00';
+    editor.editorHistory.isUndoing = true;
+    editor.fire('contentChange');
+    editor.editorHistory.isUndoing = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fields.values.fee).toBe(150);
+    expect(editor.valueOf('double')).toBe('$300.00');
+  });
+
+  it('does not spring back on the next reconcile', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('fee', 175);
+    editor.controls[0].value = '$150.00';
+    editor.editorHistory.isUndoing = true;
+    editor.fire('contentChange');
+    editor.editorHistory.isUndoing = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    cycle.reconcile();
+    cycle.reconcile();
+
+    expect(editor.valueOf('fee')).toBe('$150.00');
+    expect(fields.values.fee).toBe(150);
+  });
+
+  it('ignores a content change that is not a replay', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    attachTokenCycle(editor, { fields });
+
+    // Someone typed; the blur path owns that, not this.
+    editor.controls[0].value = '$999.00';
+    editor.fire('contentChange');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fields.values.fee).toBe(150);
+  });
+
+  it('coalesces the several events one undo emits', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    const writes: number[] = [];
+    const counting = {
+      ...fields,
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) => {
+        writes.push(updates.length);
+        fields.write(updates);
+      }
+    };
+    const cycle = attachTokenCycle(editor, { fields: counting });
+
+    cycle.setTokenValue('fee', 175);
+    writes.length = 0;
+    editor.controls[0].value = '$150.00';
+    editor.editorHistory.isUndoing = true;
+    editor.fire('contentChange');
+    editor.fire('contentChange');
+    editor.fire('contentChange');
+    editor.editorHistory.isUndoing = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(writes).toEqual([1]);
+  });
+
+  it('takes a redo back to the redone value too', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('fee', 175);
+    editor.controls[0].value = '$150.00';
+    editor.editorHistory.isUndoing = true;
+    editor.fire('contentChange');
+    editor.editorHistory.isUndoing = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fields.values.fee).toBe(150);
+
+    editor.controls[0].value = '$175.00';
+    editor.editorHistory.isRedoing = true;
+    editor.fire('contentChange');
+    editor.editorHistory.isRedoing = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fields.values.fee).toBe(175);
+  });
+
+  it('never adopts a computed token, which is derived rather than entered', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    attachTokenCycle(editor, { fields });
+
+    // A stale derived value in the document must not become an input.
+    editor.controls[1].value = '$999.00';
+    editor.editorHistory.isUndoing = true;
+    editor.fire('contentChange');
+    editor.editorHistory.isUndoing = false;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(editor.valueOf('double')).toBe('$300.00');
+  });
+});
+
 describe('attachTokenCycle — one undo step per edit', () => {
   const moveCaret = (editor: any, into?: ContentControlInfo) => {
     editor.setCaret(into);
     editor.fire('selectionChange');
+  };
+
+  const type = (editor: any, text: string) => {
+    editor.fire('keyDown', {
+      key: text[0],
+      event: { preventDefault: () => {} }
+    });
+    editor.controls[1].value = text;
   };
 
   it('wraps the typing and the recalculation in a single action', () => {
@@ -254,7 +423,7 @@ describe('attachTokenCycle — one undo step per edit', () => {
     editor.log.length = 0;
 
     moveCaret(editor, editor.controls[1]); // caret enters unit_cost
-    editor.controls[1].value = '175'; // what the user types
+    type(editor, '175'); // the first keystroke opens the step
     moveCaret(editor, undefined); // caret leaves, committing
 
     // One action covering the commit and every dependent it moved, so Ctrl+Z
@@ -269,14 +438,43 @@ describe('attachTokenCycle — one undo step per edit', () => {
     expect(editor.valueOf('item_total__0')).toBe('$1,750.00');
   });
 
-  it('opens the action when the caret enters, before anything is typed', () => {
+  it('creates no undo entry for a caret move that changes nothing', () => {
+    // Opening on arrival left an empty entry behind for every pass through a
+    // token, which buried real edits and threw away the redo path.
     const editor = invoiceEditor();
     attachTokenCycle(editor);
     editor.log.length = 0;
 
     moveCaret(editor, editor.controls[1]);
+    moveCaret(editor, editor.controls[0]);
+    moveCaret(editor, undefined);
 
+    expect(editor.log.filter((l: string) => l === 'undo:begin')).toEqual([]);
+  });
+
+  it('opens the action on the first keystroke, not on arrival', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.log.length = 0;
+
+    moveCaret(editor, editor.controls[1]);
+    expect(editor.log).toEqual([]);
+
+    editor.fire('keyDown', { key: '1', event: { preventDefault: () => {} } });
     expect(editor.log).toEqual(['undo:begin']);
+  });
+
+  it('does not open on a key that only moves the caret', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    moveCaret(editor, editor.controls[1]);
+    editor.log.length = 0;
+
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab']) {
+      editor.fire('keyDown', { key, event: { preventDefault: () => {} } });
+    }
+
+    expect(editor.log).toEqual([]);
   });
 
   it('starts a fresh step when moving straight to another token', () => {
@@ -285,12 +483,12 @@ describe('attachTokenCycle — one undo step per edit', () => {
     editor.log.length = 0;
 
     moveCaret(editor, editor.controls[1]);
-    editor.controls[1].value = '175';
+    type(editor, '175');
     moveCaret(editor, editor.controls[0]); // straight into qty
 
-    // The first edit closed, the next opened — never one action for both.
+    // The edit closed on the way out; the next opens when it is typed.
     expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
-      2
+      1
     );
     expect(editor.log.filter((l: string) => l === 'undo:end')).toHaveLength(1);
   });
@@ -301,7 +499,7 @@ describe('attachTokenCycle — one undo step per edit', () => {
     moveCaret(editor, editor.controls[1]);
     editor.log.length = 0;
 
-    editor.controls[1].value = '175';
+    type(editor, '175');
     editor.fire('keyDown', { key: 'Enter' });
 
     expect(editor.log.filter((l: string) => l === 'undo:end')).toHaveLength(1);
@@ -311,6 +509,7 @@ describe('attachTokenCycle — one undo step per edit', () => {
     const editor = invoiceEditor();
     attachTokenCycle(editor);
     moveCaret(editor, editor.controls[1]);
+    type(editor, '175');
     editor.log.length = 0;
 
     editor.fire('keyDown', { key: 'Escape' });
@@ -323,6 +522,7 @@ describe('attachTokenCycle — one undo step per edit', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);
     moveCaret(editor, editor.controls[1]);
+    type(editor, '175');
     editor.log.length = 0;
 
     cycle.detach();
@@ -337,6 +537,7 @@ describe('attachTokenCycle — one undo step per edit', () => {
     editor.log.length = 0;
 
     moveCaret(editor, editor.controls[1]);
+    editor.fire('keyDown', { key: '1', event: { preventDefault: () => {} } });
 
     expect(editor.log).toEqual([]);
   });
@@ -931,7 +1132,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.controls[1].value).toBe('Globex');
   });
 
-  it('selects the value, not the control, on double click', () => {
+  it('selects the value, not the control, on double click', async () => {
     // SyncFusion selects the whole control, which is locked against deletion,
     // so the selection cannot be typed over.
     const editor = invoiceEditor();
@@ -940,7 +1141,9 @@ describe('attachTokenCycle — state and lifecycle', () => {
     editor.fire('selectionChange');
     editor.log.length = 0;
 
-    editor.fire('doubleClick');
+    editor.fireDomDoubleClick();
+    // The reselect is deferred a task so it lands after SyncFusion's own.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(
       editor.log.some((l: string) => l.startsWith('select ftk_qty__0'))

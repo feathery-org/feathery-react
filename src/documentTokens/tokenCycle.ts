@@ -110,6 +110,13 @@ const isReplayingHistory = (editor: EditorLike): boolean => {
   return Boolean(history?.isUndoing || history?.isRedoing);
 };
 
+/**
+ * Keys that can change a token's text: any single character, plus the two
+ * deletions. Everything else — arrows, Home/End, Tab, Escape, modifiers — only
+ * moves the caret and must not start an undo step.
+ */
+const CHANGES_CONTENT = /^(.|Backspace|Delete)$/;
+
 const isText = (spec?: TokenSpec): boolean =>
   (spec?.format?.kind ?? 'text') === 'text';
 
@@ -295,35 +302,48 @@ export const attachTokenCycle = (
     });
   };
 
-  /** Re-read the document and rebuild the graph. */
-  const refresh = (): TokenState => {
-    const entries = readTokens(editor);
-    plan = buildPlan(entries.map(({ spec }) => spec));
-
-    // A freshly opened envelope carries the values the server rendered into
-    // it. Whichever store owns a token ADOPTS its document value when it has
-    // none of its own — so opening a document never blanks it, and ownership
-    // still ends up in one place rather than being split.
+  /**
+   * Take the document's own token text into the stores that own those values.
+   *
+   * `whenUnset` limits it to tokens the owner holds nothing for, which is what
+   * opening an envelope wants — the server rendered values in, and adopting
+   * them keeps ownership in one place instead of splitting it.
+   *
+   * Without that flag the document is treated as authoritative for every input
+   * token, which is what an undo needs: Syncfusion has just restored the text
+   * the reader asked to get back, and the field has to follow or the next
+   * reconcile drags the old value forward again.
+   */
+  const adoptFromDocument = (options: { whenUnset?: boolean } = {}): void => {
     const adopt = new Map<
       FieldAccess,
       Array<{ spec: TokenSpec; value: TokenValue }>
     >();
-    for (const { spec, value } of entries) {
+
+    for (const { spec, value } of readTokens(editor)) {
       if (isComputed(spec) || value === PLACEHOLDER) continue;
       if (showsPlaceholder(editor, instanceKey(spec))) continue;
 
       const owner = ownerOf(spec);
-      if (owner.read(spec) !== undefined) continue;
+      const held = owner.read(spec);
+      if (options.whenUnset && held !== undefined) continue;
 
       const parsed = isText(spec) ? value : parseValue(value);
       if (parsed === null || parsed === undefined || parsed === '') continue;
+      if (held === parsed) continue;
 
       const pending = adopt.get(owner) ?? [];
       pending.push({ spec, value: parsed });
       adopt.set(owner, pending);
     }
-    for (const [owner, updates] of adopt) owner.write(updates);
 
+    for (const [owner, updates] of adopt) owner.write(updates);
+  };
+
+  /** Re-read the document and rebuild the graph. */
+  const refresh = (): TokenState => {
+    plan = buildPlan(readTokens(editor).map(({ spec }) => spec));
+    adoptFromDocument({ whenUnset: true });
     return reconcile();
   };
 
@@ -371,9 +391,6 @@ export const attachTokenCycle = (
     editingId = caretSpec ? valueKey(caretSpec) : null;
 
     if (leftInstance === null || leftId === null) {
-      // Entering a token: everything typed from here until the caret leaves
-      // belongs to one undo step, together with the recalculation it causes.
-      if (current !== null) openEditStep();
       publish({ ...snapshot, focused: editingId });
       return;
     }
@@ -389,9 +406,30 @@ export const attachTokenCycle = (
     } finally {
       // The edit is committed and its dependents written, so the step is done.
       closeEditStep();
-      // Moving straight from one token into another starts the next step.
-      if (current !== null) openEditStep();
     }
+  };
+
+  /**
+   * An undo or redo has changed the document, so move the fields to match.
+   *
+   * The reader asked for the text Syncfusion just restored, so that text is the
+   * truth for this moment. To the field it is an ordinary change — from what it
+   * holds now to the undone value — which is why nothing here needs a history
+   * of its own to stay in step with Syncfusion's.
+   *
+   * Deferred by a task because the replay is still running when this fires;
+   * reading now would take half-restored text. Coalesced, because a single undo
+   * emits several of these.
+   */
+  let adoptScheduled = false;
+  const onContentChange = (): void => {
+    if (applying || adoptScheduled || !isReplayingHistory(editor)) return;
+    adoptScheduled = true;
+    setTimeout(() => {
+      adoptScheduled = false;
+      adoptFromDocument();
+      reconcile();
+    }, 0);
   };
 
   /** A different document is open: nothing carries over. */
@@ -413,6 +451,12 @@ export const attachTokenCycle = (
 
     const id = valueKey(caretSpec);
     const spec = plan.specs.get(id);
+
+    // The undo step opens on the first keystroke that could change something,
+    // not when the caret arrives: opening on arrival meant every caret move
+    // through a token left an empty undo entry behind, which buried real edits
+    // and threw away the redo path.
+    if (CHANGES_CONTENT.test(key ?? '')) openEditStep();
 
     // An already-empty token swallows Backspace and Delete. The keystroke would
     // otherwise carry on past the value and consume the content control's own
@@ -485,11 +529,12 @@ export const attachTokenCycle = (
 
   editor.addEventListener?.('selectionChange', onSelectionChange);
   editor.addEventListener?.('documentChange', onDocumentChange);
+  editor.addEventListener?.('contentChange', onContentChange);
   editor.addEventListener?.('keyDown', onKeyDown);
-  editor.addEventListener?.('doubleClick', onDoubleClick);
 
-  // SyncFusion exposes no double-click event, so listen on the canvas it
-  // paints into, a frame later so the reselect lands after its own.
+  // SyncFusion emits no double-click event of its own — measured, the name is
+  // absent from its typings — so the canvas it paints into is the only path, a
+  // frame later so the reselect lands after SyncFusion's own handling.
   const surface: any = (editor as any)?.documentHelper?.viewerContainer;
   const onDomDoubleClick = () => setTimeout(onDoubleClick, 0);
   surface?.addEventListener?.('dblclick', onDomDoubleClick);
@@ -510,8 +555,8 @@ export const attachTokenCycle = (
       closeEditStep();
       editor.removeEventListener?.('selectionChange', onSelectionChange);
       editor.removeEventListener?.('documentChange', onDocumentChange);
+      editor.removeEventListener?.('contentChange', onContentChange);
       editor.removeEventListener?.('keyDown', onKeyDown);
-      editor.removeEventListener?.('doubleClick', onDoubleClick);
       surface?.removeEventListener?.('dblclick', onDomDoubleClick);
       listeners.clear();
     }
