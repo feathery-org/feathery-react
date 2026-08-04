@@ -7847,7 +7847,7 @@ interface PlannedTableAppearanceInheritance {
   targetRows?: number[];
   /** The pre-insert stripe an inserted row must restore below itself. */
   preserveBanding?: { fromRow: number; banding: TableBanding };
-  /** When no stripe resolves, the adjacent data-row fill for each new row. */
+  /** When no stripe resolves, the locally observed fill for each new row. */
   fallbackShadings?: Array<{ row: number; shading: string | null }>;
 }
 
@@ -8530,6 +8530,59 @@ function shortInsertBanding(source: TableAppearance): TableBanding | null {
   return { headerRows, period: 2, cycle: [first, second] };
 }
 
+/**
+ * Resolve a two-colour document convention for a table with only one data row.
+ * The recurring-section read already establishes document table banding with
+ * `detectTableBanding`; row insertion reuses the same evidence across sibling
+ * tables when its target is too short to prove a stripe by itself.
+ *
+ * The target's observed data fill fixes the cycle phase, and the inserted row
+ * takes the OTHER member. If no sibling proves an alternating pair containing
+ * that fill, this declines and the caller keeps the same local fill instead.
+ */
+function documentInsertBanding(
+  sfdt: any,
+  targetTableAnchor: string,
+  source: TableAppearance
+): TableBanding | null {
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const candidates: TableBanding[] = [];
+  sections.forEach((section, sectionIndex) => {
+    getBlocks(section).forEach((block, blockIndex) => {
+      const anchor = `${sectionIndex};${blockIndex}`;
+      if (anchor === targetTableAnchor || !getRows(block)) return;
+      const appearance = collectTableAppearance(block);
+      const banding = appearance ? detectTableBanding(appearance) : null;
+      if (
+        banding?.period === 2 &&
+        banding.cycle[0] !== banding.cycle[1] &&
+        source.rows.length === banding.headerRows + 1
+      )
+        candidates.push(banding);
+    });
+  });
+  if (!candidates.length) return null;
+
+  const shadings = rowShadings(source);
+  const matching = candidates.filter((banding) =>
+    banding.cycle.includes(shadings[banding.headerRows] ?? null)
+  );
+  const selected = modal(matching, (banding) =>
+    JSON.stringify(
+      [...banding.cycle].sort((left, right) =>
+        String(left).localeCompare(String(right))
+      )
+    )
+  )?.value;
+  if (!selected) return null;
+
+  const first = shadings[selected.headerRows];
+  if (first === undefined) return null;
+  const other = selected.cycle.find((shading) => shading !== first);
+  if (other === undefined) return null;
+  return { headerRows: selected.headerRows, period: 2, cycle: [first, other] };
+}
+
 function planTableInsertInheritance(
   editor: LiveEditor,
   op: EditOp,
@@ -8603,7 +8656,9 @@ function planRowInsertInheritance(
   // Strict: this fires without being asked, so a table with one highlighted row
   // must not be mistaken for a stripe.
   const banding =
-    detectTableBanding(source, { strict: true }) ?? shortInsertBanding(source);
+    detectTableBanding(source, { strict: true }) ??
+    shortInsertBanding(source) ??
+    documentInsertBanding(sfdt, tableAnchor, source);
   const shadings = rowShadings(source);
   const fallbackShadings = banding
     ? undefined
