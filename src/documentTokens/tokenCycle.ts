@@ -150,10 +150,26 @@ export const attachTokenCycle = (
    */
   const onKeyDown = (args: any): void => {
     const key = args?.event?.key ?? args?.key;
-    if (key !== 'Enter' && key !== 'Escape') return;
-
     const focused = tokenAtCaret(editor);
     if (!focused) return;
+
+    // A number token refuses characters it could never hold. Cheaper than
+    // repairing the text afterwards, and the user sees the rule immediately.
+    if (
+      key &&
+      key.length === 1 &&
+      !args?.event?.metaKey &&
+      !args?.event?.ctrlKey
+    ) {
+      const kind = plan.specs.get(focused.id)?.format?.kind ?? 'number';
+      if (kind !== 'text' && !/[0-9.,\-$%]/.test(key)) {
+        args?.event?.preventDefault?.();
+        if (args) args.isHandled = true;
+        return;
+      }
+    }
+
+    if (key !== 'Enter' && key !== 'Escape') return;
 
     args?.event?.preventDefault?.();
     if (args) args.isHandled = true;
@@ -187,13 +203,21 @@ export const attachTokenCycle = (
     publish();
   };
 
-  /** Rewrite a token's text if it no longer matches its declared format. */
+  /**
+   * Rewrite a token's text if it no longer matches its declared format.
+   *
+   * A number token can never keep non-numeric text: whatever survives
+   * parsing wins, else the last committed value, else zero. Letters typed
+   * into a currency field disappear when the caret leaves it.
+   */
   const reformat = (id: string, currentText: string): void => {
-    const value = values.get(id);
-    if (value === undefined) return;
+    const format = plan.specs.get(id)?.format;
+    if (format?.kind === 'text') return;
 
-    const canonical = renderValue(value, plan.specs.get(id)?.format);
+    const value = values.get(id) ?? parseValue(currentText) ?? 0;
+    const canonical = renderValue(value, format);
     if (canonical === currentText) return;
+    values.set(id, value);
 
     applying = true;
     try {

@@ -430,6 +430,47 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
   });
 
+  it('refuses a letter typed into a number token', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.setCaret(editor.controls[0]); // qty_1, a number
+    editor.fire('selectionChange');
+
+    const args: any = { key: 'a', event: { preventDefault: jest.fn() } };
+    editor.fire('keyDown', args);
+
+    expect(args.event.preventDefault).toHaveBeenCalled();
+    expect(args.isHandled).toBe(true);
+  });
+
+  it('allows digits and currency punctuation', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.setCaret(editor.controls[1]); // unit_cost, currency
+    editor.fire('selectionChange');
+
+    for (const key of ['5', '.', ',', '$', '-']) {
+      const args: any = { key, event: { preventDefault: jest.fn() } };
+      editor.fire('keyDown', args);
+      expect(args.event.preventDefault).not.toHaveBeenCalled();
+    }
+  });
+
+  it('scrubs non-numeric text on blur when nothing was ever committed', () => {
+    const editor = fakeEditor([
+      control({ id: 'fee', source: 'fee', format: { kind: 'currency' } }, '')
+    ]);
+    attachTokenCycle(editor);
+
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+    editor.controls[0].value = 'abc';
+    editor.setCaret(undefined);
+    editor.fire('selectionChange');
+
+    expect(editor.valueOf('fee')).toBe('$0.00');
+  });
+
   it('ignores Enter and Escape outside a token', () => {
     const editor = invoiceEditor();
     attachTokenCycle(editor);
