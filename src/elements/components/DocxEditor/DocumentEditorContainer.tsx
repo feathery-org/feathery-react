@@ -21,6 +21,15 @@ import TokenPanel, {
   tokenPanelEnabled
 } from '../../../documentTokens/TokenPanel';
 
+// Syncfusion's public test converter. Used ONLY in a local build: document
+// content is uploaded to a third party, which is fine for synthetic fixtures
+// and never for customer envelopes. Production goes through the Feathery
+// backend proxy, which fronts the self-hosted Word Processor.
+const SYNCFUSION_TEST_SERVICE_URL =
+  'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+
+const isLocalBuild = process.env.BACKEND_ENV === 'local';
+
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
 // matches this container and use its first document. Scans loaded form schemas
@@ -169,16 +178,20 @@ export default function DocumentEditorContainer({
   // Word Processor). window.featherySyncfusion may override for local smoke
   // tests; licenseKey is optional (server license lives on the Word Processor).
   const syncfusion = (featheryWindow() as any).featherySyncfusion ?? {};
-  const serviceUrl = syncfusion.serviceUrl || `${API_URL}document/editor/`;
+  const serviceUrl =
+    syncfusion.serviceUrl ||
+    (isLocalBuild ? SYNCFUSION_TEST_SERVICE_URL : `${API_URL}document/editor/`);
   // Read initState directly instead of initInfo() — initInfo() throws when the
   // SDK isn't initialized, but in editMode (designer preview, tests) this
   // component renders a placeholder and never needs the key.
   const { sdkKey } = initState;
   const serviceHeaders = useMemo(() => {
     if (syncfusion.headers) return syncfusion.headers;
+    // Never send a Feathery token to Syncfusion's public test service.
+    if (isLocalBuild && !syncfusion.serviceUrl) return [];
     if (sdkKey) return [{ Authorization: `Token ${sdkKey}` }];
     return [];
-  }, [sdkKey, syncfusion.headers]);
+  }, [sdkKey, syncfusion.headers, syncfusion.serviceUrl]);
 
   const loadEnvelope = useCallback(async () => {
     if (!documentId) return;
