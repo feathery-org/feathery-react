@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
-import { installRevisionGroupIsolation } from '../../../assistant/tools/syncfusionDocumentOps';
+import {
+  findReplaceCounterpart,
+  installRevisionGroupIsolation,
+  parseRevisionGroupTag
+} from '../../../assistant/tools/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
 
@@ -58,33 +62,129 @@ function loadAccentOverride() {
 }
 
 // GitHub-style tracked-change rendering: insertions get a green highlight,
-// deletions a red one, and revised text keeps its normal font color with no
-// underline or strikethrough. Syncfusion draws the document on CANVAS, so
-// this is a renderer patch, not CSS: `checkRevisionType()` is the single
-// source feeding the author-color text and the underline/strike decorations
-// across every render path (text, lists, images, paragraph marks) — blank it,
-// then paint our own word-level highlight behind revised runs using the same
-// geometry as Syncfusion's native highlighter fillRect.
+// deletions a red one, and a replace pair reads as red struck-through old
+// text followed by green new text — one edit, resolved together. Revised
+// text keeps its normal font color. Syncfusion draws the document on CANVAS,
+// so this is a renderer
+// patch, not CSS: `checkRevisionType()` is the single source feeding the
+// author-color text and the underline/strike decorations across every render
+// path (text, lists, images, paragraph marks) — blank it, then paint our own
+// word-level decoration using the same geometry as Syncfusion's native
+// highlighter fillRect. The patch also draws a boundary ring around the edit
+// the review UI marks active, and records each pending edit's on-canvas
+// geometry for overlays (margin gutter bars).
 const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 const INSERTION_HIGHLIGHT = '#d7e8b6';
 const DELETION_HIGHLIGHT = '#ffd4d2';
+const STRIKE_COLOR = 'rgba(23, 26, 28, 0.6)';
+// Boundary ring on the active edit (mockup's `.chg.on`): a single line drawn
+// fully INSIDE the highlight box, flush with its edge.
+const RING_LINE = 'rgba(43, 49, 52, 0.34)';
+const RING_WIDTH = 2;
+const RING_RADIUS = 4;
 
-function installRevisionHighlightRendering(ed: any) {
+// Editor-instance keys shared with the review UI and overlays.
+const ACTIVE_REVISION_KEY = '__robinActiveRevision';
+const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
+const REVISION_RECTS_KEY = '__robinRevisionRects';
+const AFTER_RENDER_KEY = '__robinAfterRender';
+
+/** One pending edit's painted extent, in viewport-canvas coordinates. */
+export interface RevisionRect {
+  kind: 'add' | 'del' | 'mod';
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Mark ONE edit as active in the document: the renderer draws a boundary
+ * ring around every run of that revision (and its replace counterpart).
+ * Repaints only when the value actually changes.
+ */
+export function setActiveInlineRevision(ed: any, revision: any): void {
+  if (!ed) return;
+  const next = revision ?? null;
+  if ((ed[ACTIVE_REVISION_KEY] ?? null) === next) return;
+  ed[ACTIVE_REVISION_KEY] = next;
+  try {
+    ed.viewer?.renderVisiblePages?.();
+  } catch {
+    // Repaint is best-effort; the next natural render picks the ring up.
+  }
+}
+
+/** The geometry recorded during the last render pass (see RevisionRect). */
+export function getRevisionRects(ed: any): Map<any, RevisionRect> {
+  return ed?.[REVISION_RECTS_KEY] ?? new Map();
+}
+
+/** Subscribe to "a render pass just finished" (single subscriber). */
+export function setAfterRenderCallback(ed: any, cb: (() => void) | null): void {
+  if (ed) ed[AFTER_RENDER_KEY] = cb ?? undefined;
+}
+
+// Exported for tests (installed automatically at editor create).
+export function installRevisionHighlightRendering(ed: any) {
   const renderer = ed?.documentHelper?.render;
   if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
   renderer[REVISION_RENDER_PATCH] = true;
 
-  const revisionHighlight = (elementBox: any): string | undefined => {
+  // What this box's tracked content is, for decoration purposes. A run that
+  // is both inserted and deleted (edited within an insertion) reads as a
+  // deletion.
+  const classifyBox = (
+    elementBox: any
+  ): { revision: any; kind: 'add' | 'del'; counterpart: any } | undefined => {
     const count = elementBox?.revisionLength ?? 0;
-    let highlight: string | undefined;
+    let revision: any;
+    let kind: 'add' | 'del' | undefined;
     for (let i = 0; i < count; i++) {
-      const type = elementBox.getRevision(i)?.revisionType;
-      // A run that is both (edited within an insertion) reads as a deletion.
-      if (type === 'Deletion' || type === 'MoveFrom') return DELETION_HIGHLIGHT;
-      if (type === 'Insertion' || type === 'MoveTo')
-        highlight = INSERTION_HIGHLIGHT;
+      const rev = elementBox.getRevision(i);
+      const type = rev?.revisionType;
+      if (type === 'Deletion' || type === 'MoveFrom') {
+        revision = rev;
+        kind = 'del';
+        break;
+      }
+      if (type === 'Insertion' || type === 'MoveTo') {
+        revision = rev;
+        kind = 'add';
+      }
     }
-    return highlight;
+    if (!kind) return undefined;
+    let counterpart: any;
+    try {
+      counterpart = findReplaceCounterpart(revision);
+    } catch {
+      counterpart = undefined;
+    }
+    return { revision, kind, counterpart };
+  };
+
+  // One gutter bar per edit: both halves of a replace accumulate under the
+  // deletion revision. Human (untagged) edits get no bar.
+  const recordRect = (
+    info: { revision: any; kind: 'add' | 'del'; counterpart: any },
+    box: { y: number; h: number }
+  ) => {
+    if (!parseRevisionGroupTag(info.revision?.customData)) return;
+    const rects: Map<any, RevisionRect> =
+      ed[REVISION_RECTS_KEY] ?? (ed[REVISION_RECTS_KEY] = new Map());
+    const key =
+      info.counterpart && info.kind === 'add'
+        ? info.counterpart
+        : info.revision;
+    const entry = rects.get(key);
+    if (entry) {
+      entry.top = Math.min(entry.top, box.y);
+      entry.bottom = Math.max(entry.bottom, box.y + box.h);
+    } else {
+      rects.set(key, {
+        kind: info.counterpart ? 'mod' : info.kind,
+        top: box.y,
+        bottom: box.y + box.h
+      });
+    }
   };
 
   renderer.checkRevisionType = () => [];
@@ -96,26 +196,174 @@ function installRevisionHighlightRendering(ed: any) {
     top: number,
     underlineY: number
   ) => {
-    const highlight = revisionHighlight(elementBox);
-    if (highlight && elementBox?.width > 0) {
+    const info = elementBox?.width > 0 ? classifyBox(elementBox) : undefined;
+    let box: { x: number; y: number; w: number; h: number } | undefined;
+    if (info) {
+      box = {
+        x: Math.floor(
+          renderer.getScaledValue(left + (elementBox.margin?.left ?? 0), 1)
+        ),
+        y: Math.floor(
+          renderer.getScaledValue(top + (elementBox.margin?.top ?? 0), 2) - 1
+        ),
+        w: Math.ceil(renderer.getScaledValue(elementBox.width) + 1),
+        h: Math.ceil(renderer.getScaledValue(elementBox.height) + 1)
+      };
       try {
         const ctx = renderer.pageContext;
-        ctx.fillStyle = highlight;
-        ctx.fillRect(
-          Math.floor(
-            renderer.getScaledValue(left + (elementBox.margin?.left ?? 0), 1)
-          ),
-          Math.floor(
-            renderer.getScaledValue(top + (elementBox.margin?.top ?? 0), 2) - 1
-          ),
-          Math.ceil(renderer.getScaledValue(elementBox.width) + 1),
-          Math.ceil(renderer.getScaledValue(elementBox.height) + 1)
-        );
+        ctx.fillStyle =
+          info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
+        ctx.fillRect(box.x, box.y, box.w, box.h);
       } catch {
         // Highlight is decoration only; the text itself must still render.
       }
+      recordRect(info, box);
     }
-    return originalRenderText(elementBox, left, top, underlineY);
+    const out = originalRenderText(elementBox, left, top, underlineY);
+    if (info && box) {
+      try {
+        const ctx = renderer.pageContext;
+        // The old half of a replace reads struck-through.
+        if (info.counterpart && info.kind === 'del') {
+          ctx.fillStyle = STRIKE_COLOR;
+          ctx.fillRect(
+            box.x,
+            Math.round(box.y + box.h * 0.55),
+            box.w,
+            Math.max(1, Math.round(renderer.getScaledValue(0.8)))
+          );
+        }
+        // Boxes of the active edit — both halves of a replace count as the
+        // one edit — are collected and rung ONCE at the end of the page
+        // render, so touching runs share a single merged ring. The line
+        // widget identifies which text line the run sits on.
+        const active = ed[ACTIVE_REVISION_KEY];
+        if (
+          active &&
+          (info.revision === active || info.counterpart === active)
+        ) {
+          (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
+            ...box,
+            line: elementBox.line
+          });
+        }
+      } catch {
+        // Decoration only; never break text rendering.
+      }
+    }
+    return out;
+  };
+
+  // Boundary ring around the active edit, drawn after the page renders so
+  // the ring sits on top of everything. Runs are grouped by the LINE they
+  // sit on (never merged across lines — the ±1px box fudge makes adjacent
+  // lines' boxes overlap vertically, which would union a wrapped edit into a
+  // paragraph-wide rectangle), and within a line only TOUCHING runs merge
+  // (a replace's delete+insert halves ring as one; disjoint runs of a split
+  // revision ring separately rather than swallowing untouched text between).
+  const drawActiveRing = (fromIndex: number) => {
+    const boxes: Array<{
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      line: any;
+    }> = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
+    if (!boxes.length) return;
+    const byLine = new Map<any, typeof boxes>();
+    for (const b of boxes) {
+      // Fall back to a coarse y-bucket if the line widget is unavailable.
+      const key = b.line ?? `y:${Math.round(b.y / 8)}`;
+      const group = byLine.get(key);
+      if (group) group.push(b);
+      else byLine.set(key, [b]);
+    }
+    const unions: Array<{
+      x: number;
+      y: number;
+      right: number;
+      bottom: number;
+    }> = [];
+    const TOUCH_GAP = 3;
+    for (const group of byLine.values()) {
+      const lineUnions: typeof unions = [];
+      for (const b of group.sort((a, z) => a.x - z.x)) {
+        const u = lineUnions[lineUnions.length - 1];
+        if (u && b.x <= u.right + TOUCH_GAP) {
+          u.x = Math.min(u.x, b.x);
+          u.y = Math.min(u.y, b.y);
+          u.right = Math.max(u.right, b.x + b.w);
+          u.bottom = Math.max(u.bottom, b.y + b.h);
+        } else {
+          lineUnions.push({
+            x: b.x,
+            y: b.y,
+            right: b.x + b.w,
+            bottom: b.y + b.h
+          });
+        }
+      }
+      unions.push(...lineUnions);
+    }
+    try {
+      const ctx = renderer.pageContext;
+      ctx.save();
+      ctx.strokeStyle = RING_LINE;
+      ctx.lineWidth = RING_WIDTH;
+      // Canvas strokes straddle the path, so inset by half the stroke width:
+      // the ring's OUTER edge lands exactly on the highlight boundary — no
+      // whitespace against the wash, no bleed into neighbouring characters.
+      const inset = RING_WIDTH / 2;
+      for (const u of unions) {
+        const x = u.x + inset;
+        const y = u.y + inset;
+        const w = u.right - u.x - RING_WIDTH;
+        const h = u.bottom - u.y - RING_WIDTH;
+        if (w <= 0 || h <= 0) continue;
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, RING_RADIUS);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, y, w, h);
+        }
+      }
+      ctx.restore();
+    } catch {
+      // Decoration only.
+    }
+  };
+
+  // Per-page hook on the renderer itself (renderWidgets renders ONE page):
+  // reset the geometry collections when the first visible page starts, draw
+  // this page's share of the active ring when it finishes (after its content,
+  // before the next page), and publish the pass when the last page is done.
+  // Hooking the renderer — not the viewer — survives whatever render path
+  // triggered the pass.
+  const originalRenderWidgets = renderer.renderWidgets.bind(renderer);
+  renderer.renderWidgets = (
+    page: any,
+    left: number,
+    top: number,
+    width: number,
+    height: number
+  ) => {
+    const visible: any[] = ed.viewer?.visiblePages ?? [];
+    if (!visible.length || visible[0] === page) {
+      ed[REVISION_RECTS_KEY] = new Map();
+      ed[ACTIVE_BOXES_KEY] = [];
+    }
+    const startCount = (ed[ACTIVE_BOXES_KEY] ?? []).length;
+    const out = originalRenderWidgets(page, left, top, width, height);
+    drawActiveRing(startCount);
+    if (!visible.length || visible[visible.length - 1] === page) {
+      try {
+        ed[AFTER_RENDER_KEY]?.();
+      } catch {
+        // A subscriber's failure must not break rendering.
+      }
+    }
+    return out;
   };
 }
 
