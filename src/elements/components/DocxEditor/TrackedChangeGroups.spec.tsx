@@ -98,6 +98,38 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
   });
 
+  it('keeps every review control from submitting the surrounding form', () => {
+    const editor = makeEditor([makeRevision()]);
+    const onHiddenChange = jest.fn();
+    const { rerender } = render(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden={false}
+        onHiddenChange={onHiddenChange}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    screen
+      .getAllByRole('button')
+      .filter((button) => button.tagName === 'BUTTON')
+      .forEach((button) => expect(button).toHaveAttribute('type', 'button'));
+
+    rerender(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden
+        onHiddenChange={onHiddenChange}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Expand suggested changes' })
+    ).toHaveAttribute('type', 'button');
+  });
+
   it('renders one card per group with a humanized title and a pending tally', () => {
     const editor = makeEditor([
       makeRevision({
