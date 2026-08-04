@@ -17,16 +17,9 @@
 
 import { bookmarkFor } from './controls';
 
-export interface TokenRect {
-  id: string;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  /** The editor's zoom, so the corner radius can scale with the text. */
-  zoom: number;
-}
-
+// TypeScript hoists type declarations; these three reference each other, so
+// no ordering satisfies the base rule.
+/* eslint-disable no-use-before-define */
 interface ElementLike {
   width?: number;
   height?: number;
@@ -54,6 +47,18 @@ interface DocumentHelperLike {
     get(name: string): (ElementLike & { line?: LineLike }) | undefined;
   };
   pages?: { boundingRectangle?: Rectangle }[];
+}
+
+/* eslint-enable no-use-before-define */
+
+export interface TokenRect {
+  id: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  /** The editor's zoom, so the corner radius can scale with the text. */
+  zoom: number;
 }
 
 /** Measure the on-screen rectangle of every given token id. */

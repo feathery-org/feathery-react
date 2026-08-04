@@ -51,7 +51,7 @@ export default function TokenOverlay({
 }: {
   editor: any;
   cycle: TokenCycle;
-  hostRef: React.RefObject<HTMLElement>;
+  hostRef: React.RefObject<HTMLElement | null>;
 }) {
   const [state, setState] = useState<TokenState>(() => cycle.getState());
   const [rects, setRects] = useState<TokenRect[]>([]);

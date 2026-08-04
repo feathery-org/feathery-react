@@ -360,7 +360,7 @@ export default function DocumentEditorContainer({
   const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
   // The live editor, so the overlay can measure token rectangles.
   const [tokenEditor, setTokenEditor] = useState<any>();
-  const editorHostRef = useRef<HTMLDivElement>(null);
+  const editorHostRef = useRef<HTMLElement | null>(null);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -437,7 +437,7 @@ export default function DocumentEditorContainer({
   }, [tokenSources]);
 
   const box = (child: React.ReactNode) => (
-    <div css={wrap} ref={editorHostRef}>
+    <div css={wrap} ref={editorHostRef as any}>
       {child}
       {tokenEditor && tokenCycle.current && (
         <TokenOverlay
