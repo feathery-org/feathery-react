@@ -92,7 +92,7 @@ interface PendingIndexSync {
   baseUrl: string;
   targets: DocumentIndexTarget[];
   headers: () => Record<string, string>;
-  force: boolean;
+  forceFull: boolean;
 }
 
 interface ScopeIndexState {
@@ -392,10 +392,12 @@ const performSnapshotSync = async (
   targets: DocumentIndexTarget[],
   headers: () => Record<string, string>,
   state: ScopeIndexState,
-  target: DocumentIndexTarget
+  target: DocumentIndexTarget,
+  forceFull: boolean
 ): Promise<void> => {
   const hashed = await hashSnapshot(blocks);
-  const delta = hashed ? buildDelta(blocks, digest, hashed, state) : null;
+  const delta =
+    !forceFull && hashed ? buildDelta(blocks, digest, hashed, state) : null;
   let result = await postDocumentIndex({
     baseUrl,
     targets,
@@ -444,7 +446,7 @@ const syncSnapshot = (
   baseUrl: string,
   targets: DocumentIndexTarget[],
   headers: () => Record<string, string>,
-  force = false
+  forceFull = false
 ): void => {
   const { digest } = snapshot;
   const target = getDocumentTarget(targets);
@@ -456,17 +458,25 @@ const syncSnapshot = (
 
   // The server already holds exactly this content - e.g. a burst of edits
   // that netted out to no change, or a reopen of the same document
-  if (!force && state.postedHash === digest) return;
+  if (!forceFull && state.postedHash === digest) return;
   // A delta's base must be the last confirmed server hash, so serialize each
   // scope and retain only the newest snapshot that arrived while it was busy.
   if (state.inFlightHash) {
     if (state.inFlightHash !== digest)
-      state.pendingSync = { snapshot, baseUrl, targets, headers, force };
+      state.pendingSync = { snapshot, baseUrl, targets, headers, forceFull };
     return;
   }
   state.inFlightHash = digest;
 
-  performSnapshotSync(snapshot, baseUrl, targets, headers, state, target)
+  performSnapshotSync(
+    snapshot,
+    baseUrl,
+    targets,
+    headers,
+    state,
+    target,
+    forceFull
+  )
     .catch((err) => {
       warn(
         `document index POST failed for target ${target.id} - semantic document search will return nothing`,
@@ -483,7 +493,7 @@ const syncSnapshot = (
           pending.baseUrl,
           pending.targets,
           pending.headers,
-          pending.force
+          pending.forceFull
         );
     });
 };
@@ -495,11 +505,11 @@ const indexNow = (
   baseUrl: string,
   targets: DocumentIndexTarget[],
   headers: () => Record<string, string>,
-  force = false
+  forceFull = false
 ): boolean => {
   const snapshot = readSnapshot(editor);
   if (!snapshot) return false;
-  syncSnapshot(snapshot, baseUrl, targets, headers, force);
+  syncSnapshot(snapshot, baseUrl, targets, headers, forceFull);
   return true;
 };
 
@@ -568,6 +578,11 @@ export function useDocumentIndex({
         return targets;
       };
 
+      const initialTarget = getDocumentTarget(currentTargets());
+      let currentScopeKey = initialTarget
+        ? documentTargetKey(initialTarget)
+        : null;
+
       let polls = 0;
       let lastDigest: string | null = null;
       let stablePolls = 0;
@@ -592,6 +607,7 @@ export function useDocumentIndex({
             }
             if (stablePolls >= INDEX_STABLE_POLLS) {
               settled = true;
+              currentScopeKey = documentTargetKey(envelopeTarget);
               syncSnapshot(snapshot, baseUrl, targets, headers);
               return;
             }
@@ -617,20 +633,21 @@ export function useDocumentIndex({
       // load-complete signal. It covers what the stability poll cannot: a load
       // that pauses mid-way for longer than the stability window, and it also
       // usually lands the index sooner than the next poll tick would. The
-      // serialize + POST are deferred off Syncfusion's dispatch stack. Even
-      // unchanged content is posted because regeneration may have selected a
-      // new server envelope.
+      // serialize + POST are deferred off Syncfusion's dispatch stack.
       const onDocumentChange = () => {
         later(() => {
           const targets = currentTargets();
-          if (
-            getDocumentTarget(targets) &&
-            // A regeneration can produce byte-identical content under a new
-            // envelope. Force this load-complete sync so the new envelope
-            // never inherits a local "already posted" assumption.
-            indexNow(editor, baseUrl, targets, headers, true)
-          )
+          const target = getDocumentTarget(targets);
+          if (!target) return;
+          const nextScopeKey = documentTargetKey(target);
+          const scopeChanged = currentScopeKey !== nextScopeKey;
+          // Only a changed envelope needs a byte-identical-tolerant full sync.
+          // Same-scope accept/reject events keep the normal delta path; its
+          // >60%-changed guard already promotes genuinely large changes to full.
+          if (indexNow(editor, baseUrl, targets, headers, scopeChanged)) {
+            currentScopeKey = nextScopeKey;
             settled = true;
+          }
         }, 0);
       };
 
@@ -649,8 +666,9 @@ export function useDocumentIndex({
         if (debounce) clearTimeout(debounce);
         debounce = later(() => {
           const targets = currentTargets();
-          if (getDocumentTarget(targets))
-            indexNow(editor, baseUrl, targets, headers);
+          const target = getDocumentTarget(targets);
+          if (target && indexNow(editor, baseUrl, targets, headers))
+            currentScopeKey = documentTargetKey(target);
         }, REINDEX_DEBOUNCE_MS);
       };
       try {
