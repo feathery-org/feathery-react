@@ -6094,6 +6094,21 @@ function runCopyTableFormat(
       'table_not_found',
       `No table answers to the anchor "${targetAnchor}".`
     );
+  return applyCopiedTableAppearance(editor, sourceAnchor, source, targetAnchor);
+}
+
+/**
+ * Copy a pre-resolved table look onto a live target. Automatic insert
+ * inheritance and explicit `copy_table_format` meet here, so both use the same
+ * cyclic row/column mapping and the same exact restore snapshots.
+ */
+function applyCopiedTableAppearance(
+  editor: LiveEditor,
+  sourceAnchor: string,
+  source: TableAppearance,
+  targetAnchor: string
+): AppearanceWriteOutcome {
+  const target = liveTableAppearance(editor, targetAnchor);
   const headerRows = inferHeaderRows(source);
   const banding = detectTableBanding(source);
   const report = emptyAppearanceReport();
@@ -6138,6 +6153,38 @@ function runCopyTableFormat(
     }
     if (rowTouched) report.rowsWritten++;
   });
+  const after = liveTableAppearance(editor, targetAnchor);
+  const mismatches: string[] = [];
+  after.rows.forEach((row, rowIndex) => {
+    const mapped =
+      source.rows[sourceRowForTarget(source, headerRows, rowIndex)];
+    if (!!row.isHeader !== !!mapped?.isHeader)
+      mismatches.push(
+        `row ${rowIndex} header: expected ${!!mapped?.isHeader}, got ${!!row.isHeader}`
+      );
+    for (let column = 0; column < row.cells.length; column++) {
+      const expected = copiedCellAppearance(
+        source,
+        banding,
+        headerRows,
+        rowIndex,
+        column
+      );
+      const actual = cellAppearanceAt(after, rowIndex, column);
+      if (!appearanceEquals(expected, actual))
+        mismatches.push(
+          `row ${rowIndex}, column ${column}: expected ${JSON.stringify(
+            expected
+          )}, got ${JSON.stringify(actual)}`
+        );
+    }
+  });
+  if (mismatches.length)
+    throw new OpError(
+      'inherited_appearance_mismatch',
+      `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
+      mismatches
+    );
   return { report, restores };
 }
 
@@ -7079,6 +7126,25 @@ const TABLE_APPEARANCE_OPS = new Set([
   'restripe_table'
 ]);
 
+interface PlannedTableAppearanceInheritance {
+  sourceTableAnchor: string;
+  targetTableAnchor: string;
+  source: TableAppearance;
+  /** Absent means every row of a newly inserted table. */
+  targetRows?: number[];
+  /** The strict pre-insert stripe an inserted row must restore below itself. */
+  preserveBanding?: { fromRow: number; banding: TableBanding };
+}
+
+interface PlannedInsertInheritance {
+  anchor: string;
+  expectedText?: string;
+  source?: FlatBlock;
+  inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
+  fallbackStyleName?: string;
+  tableAppearance?: PlannedTableAppearanceInheritance;
+}
+
 interface ChangeSetPlan {
   index: number;
   op: EditOp;
@@ -7093,13 +7159,12 @@ interface ChangeSetPlan {
   // in the same change set creates it. Same contract as deferredNewCell.
   deferredNewParagraph?: boolean;
   /**
-   * For `insert_row`: the stripe read from the table BEFORE the
-   * edit. It has to be captured here, because after the edit the pattern is
-   * genuinely ambiguous - a table whose band got doubled fits a LONGER period
-   * perfectly, so post-hoc detection would preserve the damage instead of the
-   * pattern. Absent when the table has no stripe or `preserveBanding: false`.
+   * The appearance and resolved text formats a structural insert inherits,
+   * captured before any write can move the source blocks. The same plan type is
+   * used by paragraph, table and row insertion so computed inheritance has one
+   * guarded apply boundary.
    */
-  bandingPreserve?: { tableAnchor: string; banding: TableBanding };
+  insertInheritance?: PlannedInsertInheritance[];
 }
 
 // Table ops which bring new, empty cells into existence. `insert_row` does it
@@ -7261,41 +7326,6 @@ function retargetTableScopedAnchor(
 }
 
 /**
- * The pre-edit stripe an `insert_row` must put back, when there is one.
- *
- * `delete_row` is deliberately NOT here. Under track changes SyncFusion marks the
- * row deleted and LEAVES IT IN PLACE until the revision is accepted (verified
- * against the real SDK - the row count does not move), so no row below it has
- * changed parity yet and restriping would be wrong. Once the deletion is
- * accepted, `restripe_table` is the repair.
- */
-function planBandingPreserve(
-  op: EditOp,
-  sfdt: any
-): ChangeSetPlan['bandingPreserve'] {
-  if (op.op !== 'insert_row') return undefined;
-  if (op.preserveBanding === false) return undefined;
-  const parts = String(op.anchor ?? '').split(';');
-  if (parts.length !== 5) return undefined;
-  const tableAnchor = `${parts[0]};${parts[1]}`;
-  const appearance = collectTableAppearance(tableBlockAt(sfdt, tableAnchor));
-  if (!appearance) return undefined;
-  // Strict: this fires without being asked, so a table with one highlighted row
-  // must not be mistaken for a striped one.
-  const banding = detectTableBanding(appearance, { strict: true });
-  return banding ? { tableAnchor, banding } : undefined;
-}
-
-/** The first row index an `insert_row` disturbs, from its resolved anchor. */
-function firstRowDisturbedBy(op: EditOp, anchor: string): number | null {
-  const parts = anchor.split(';');
-  if (parts.length !== 5) return null;
-  const row = Number(parts[2]);
-  if (!Number.isInteger(row) || row < 0) return null;
-  return op.above === true ? row : row + 1;
-}
-
-/**
  * Split a handler's success extras into the model-facing half and the
  * engine-internal appearance restores, which are collected rather than returned.
  */
@@ -7431,7 +7461,7 @@ function restoreCapturedFormat(
 }
 
 // ---------------------------------------------------------------------------
-// Computed format inheritance for inserted paragraphs
+// Computed format inheritance for inserted paragraphs, rows and tables
 // ---------------------------------------------------------------------------
 //
 // SyncFusion formats an insertion from its insertion POINT, so a section added
@@ -7441,21 +7471,16 @@ function restoreCapturedFormat(
 // is a step the model can skip, so the engine now computes the reference
 // itself: every paragraph an insert CREATES inherits the visible format of the
 // nearest preceding non-empty block in its own container, per paragraph role.
-// Mid-text inserts and cell text writes are untouched - SyncFusion's own
-// inheritance is correct there.
+// Mid-text inserts and writes into pre-existing cells are untouched -
+// SyncFusion's own inheritance is correct there. Writes into cells a structural
+// op just created use that op's preflight column-format plan.
 
-// One paragraph the insert brings into existence, with the reference that will
-// format it. `fallbackStyleName` marks the no-reference case: the paragraph is
+// One target the insert brings into existence. Paragraph targets carry the
+// resolved source snapshot that will format them. A table target carries the
+// appearance snapshot copied through the existing table-appearance machinery.
+// `fallbackStyleName` marks the no-reference paragraph case: the paragraph is
 // set to the document default style instead of wearing whatever format the
 // split donor happened to carry (e.g. a heading's).
-interface PlannedInsertInheritance {
-  anchor: string;
-  expectedText: string;
-  source?: FlatBlock;
-  inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
-  fallbackStyleName?: string;
-}
-
 const INSERTED_HEADING_MAX_CHARS = 80;
 // The block map's isHeading covers only built-in "Heading N"/Title styles;
 // real documents carry custom heading styles (the live document's headings are
@@ -7521,6 +7546,228 @@ function findComputedReference(
   return undefined;
 }
 
+function tableAnchorsInSection(sfdt: any, sectionIndex: number): string[] {
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const section = sections[sectionIndex];
+  if (!section) return [];
+  return getBlocks(section).flatMap((block, blockIndex) =>
+    getRows(block) ? [`${sectionIndex};${blockIndex}`] : []
+  );
+}
+
+/**
+ * The table a new table structurally follows. A cell anchor names its
+ * containing table directly. For a body insertion, an adjacent table is the
+ * true sibling; when a spacer/heading sits between them, the nearest table in
+ * the same SFDT section is the deterministic fallback requested by the
+ * inheritance contract. Ties prefer the preceding table.
+ */
+function sourceTableForInsert(
+  sfdt: any,
+  op: EditOp,
+  explicitSource?: FlatBlock
+): { anchor: string; appearance: TableAppearance } | undefined {
+  if (explicitSource?.kind === 'table_cell') {
+    const anchor = tableAnchorFromCellAnchor(explicitSource.anchor);
+    const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
+    if (appearance) return { anchor, appearance };
+  }
+  const requested = String(op.anchor ?? '').split(';');
+  const section = Number(requested[0]);
+  const block = Number(requested[1]);
+  if (!Number.isInteger(section) || !Number.isInteger(block)) return undefined;
+  if (requested.length >= 5) {
+    const anchor = `${section};${block}`;
+    const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
+    if (appearance) return { anchor, appearance };
+  }
+  const anchors = tableAnchorsInSection(sfdt, section);
+  const adjacent = anchors.filter((anchor) => {
+    const candidate = Number(anchor.split(';')[1]);
+    return Math.abs(candidate - block) === 1;
+  });
+  const candidates = adjacent.length ? adjacent : anchors;
+  candidates.sort((left, right) => {
+    const leftBlock = Number(left.split(';')[1]);
+    const rightBlock = Number(right.split(';')[1]);
+    const distance = Math.abs(leftBlock - block) - Math.abs(rightBlock - block);
+    return distance || leftBlock - rightBlock;
+  });
+  const anchor = candidates[0];
+  if (!anchor) return undefined;
+  const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
+  return appearance ? { anchor, appearance } : undefined;
+}
+
+function planTableCellFormats(
+  editor: LiveEditor,
+  blocks: FlatBlock[],
+  sourceTableAnchor: string,
+  sourceAppearance: TableAppearance,
+  targetTableAnchor: string,
+  targetRows: number[],
+  targetColumns: number
+): PlannedInsertInheritance[] {
+  const headerRows = inferHeaderRows(sourceAppearance);
+  const byAnchor = new Map(
+    blocks.map((block) => [block.anchor, block] as const)
+  );
+  const inheritedBySource = new Map<
+    string,
+    { characterFormat?: FormatBag; paragraphFormat?: FormatBag }
+  >();
+  const planned: PlannedInsertInheritance[] = [];
+  for (const targetRow of targetRows) {
+    const sourceRow = sourceRowForTarget(
+      sourceAppearance,
+      headerRows,
+      targetRow
+    );
+    const sourceColumns = sourceAppearance.rows[sourceRow]?.cells.length ?? 0;
+    if (!sourceColumns) continue;
+    for (let targetColumn = 0; targetColumn < targetColumns; targetColumn++) {
+      const sourceColumn = Math.min(targetColumn, sourceColumns - 1);
+      const sourceAnchor = `${sourceTableAnchor};${sourceRow};${sourceColumn};0`;
+      const source = byAnchor.get(sourceAnchor);
+      if (!source) continue;
+      let inherited = inheritedBySource.get(sourceAnchor);
+      if (!inherited) {
+        inherited = readEffectiveSourceFormat(editor, source);
+        inheritedBySource.set(sourceAnchor, inherited);
+      }
+      planned.push({
+        anchor: `${targetTableAnchor};${targetRow};${targetColumn};0`,
+        expectedText: '',
+        source,
+        inherited
+      });
+    }
+  }
+  return planned;
+}
+
+function planTableInsertInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  blocks: FlatBlock[],
+  sfdt: any,
+  explicitSource?: FlatBlock
+): PlannedInsertInheritance[] | undefined {
+  const targetTableAnchor = resultingInsertedTableAnchor(op.anchor);
+  if (!targetTableAnchor) return undefined;
+  const sourceTable = sourceTableForInsert(sfdt, op, explicitSource);
+  if (!sourceTable) return undefined;
+  const rows = positiveCount(op.rows);
+  const columns = positiveCount(op.columns);
+  const targetRows = Array.from({ length: rows }, (_, index) => index);
+  return [
+    {
+      anchor: targetTableAnchor,
+      tableAppearance: {
+        sourceTableAnchor: sourceTable.anchor,
+        targetTableAnchor,
+        source: sourceTable.appearance
+      }
+    },
+    ...planTableCellFormats(
+      editor,
+      blocks,
+      sourceTable.anchor,
+      sourceTable.appearance,
+      targetTableAnchor,
+      targetRows,
+      columns
+    )
+  ];
+}
+
+function planRowInsertInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  blocks: FlatBlock[],
+  sfdt: any
+): PlannedInsertInheritance[] | undefined {
+  const parts = String(op.anchor ?? '').split(';');
+  if (parts.length !== 5) return undefined;
+  const row = Number(parts[2]);
+  if (!Number.isInteger(row) || row < 0) return undefined;
+  const tableAnchor = `${parts[0]};${parts[1]}`;
+  const source = collectTableAppearance(tableBlockAt(sfdt, tableAnchor));
+  if (!source || !source.rows.length) return undefined;
+  const count = positiveCount(op.count);
+  const firstRow = op.above === true ? row : row + 1;
+  const targetRows = Array.from(
+    { length: count },
+    (_, index) => firstRow + index
+  );
+  const columns = Math.max(...source.rows.map((entry) => entry.cells.length));
+  const formats = planTableCellFormats(
+    editor,
+    blocks,
+    tableAnchor,
+    source,
+    tableAnchor,
+    targetRows,
+    columns
+  );
+  // `preserveBanding: false` is the explicit request for SyncFusion's raw row
+  // appearance. Typography still inherits, but no fill/border/header write is
+  // added by the engine.
+  if (op.preserveBanding === false) return formats.length ? formats : undefined;
+  // Strict: this fires without being asked, so a table with one highlighted row
+  // must not be mistaken for a stripe.
+  const banding = detectTableBanding(source, { strict: true });
+  return [
+    {
+      anchor: tableAnchor,
+      tableAppearance: {
+        sourceTableAnchor: tableAnchor,
+        targetTableAnchor: tableAnchor,
+        source,
+        targetRows,
+        ...(banding ? { preserveBanding: { fromRow: firstRow, banding } } : {})
+      }
+    },
+    ...formats
+  ];
+}
+
+function rebasePlannedInsertInheritance(
+  planned: PlannedInsertInheritance[] | undefined,
+  requestedOp: EditOp,
+  writtenOp: EditOp
+): PlannedInsertInheritance[] | undefined {
+  if (!planned || requestedOp.anchor === writtenOp.anchor) return planned;
+  const oldTableAnchor =
+    requestedOp.op === 'insert_table'
+      ? resultingInsertedTableAnchor(requestedOp.anchor)
+      : tableAnchorFromCellAnchor(requestedOp.anchor);
+  const newTableAnchor =
+    writtenOp.op === 'insert_table'
+      ? resultingInsertedTableAnchor(writtenOp.anchor)
+      : tableAnchorFromCellAnchor(writtenOp.anchor);
+  if (!oldTableAnchor || !newTableAnchor || oldTableAnchor === newTableAnchor)
+    return planned;
+  const rebaseAnchor = (anchor: string) =>
+    anchor === oldTableAnchor || anchor.startsWith(`${oldTableAnchor};`)
+      ? `${newTableAnchor}${anchor.slice(oldTableAnchor.length)}`
+      : anchor;
+  return planned.map((entry) => ({
+    ...entry,
+    anchor: rebaseAnchor(entry.anchor),
+    ...(entry.tableAppearance
+      ? {
+          tableAppearance: {
+            ...entry.tableAppearance,
+            targetTableAnchor: rebaseAnchor(
+              entry.tableAppearance.targetTableAnchor
+            )
+          }
+        }
+      : {})
+  }));
+}
+
 // Decide, BEFORE the insert runs, which created paragraphs will need a format
 // and from which reference. `explicit` carries a model-chosen source (an
 // `inheritFormatFrom` on the insert op itself), which replaces the computed
@@ -7529,19 +7776,31 @@ function findComputedReference(
 // for mid-text inserts (and for cell text), so the default must not interfere.
 function planInsertInheritance(
   editor: LiveEditor,
-  op: TypedEditOp<'insert_text'>,
+  op: EditOp,
   target: FlatBlock,
   blocks: FlatBlock[],
+  sfdt: any,
   explicit?: {
     source: FlatBlock;
     inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
   }
 ): PlannedInsertInheritance[] | undefined {
+  if (op.op === 'insert_table')
+    return planTableInsertInheritance(
+      editor,
+      op,
+      blocks,
+      sfdt,
+      explicit?.source
+    );
+  if (op.op === 'insert_row')
+    return planRowInsertInheritance(editor, op, blocks, sfdt);
+  if (op.op !== 'insert_text') return undefined;
   if (isLiveStoryAnchor(target.anchor)) return undefined;
-  const text = insertionText(op);
+  const text = insertionText(op as TypedEditOp<'insert_text'>);
   if (!text) return undefined;
   const segments = text.split(/\r\n|\r|\n/);
-  const offset = insertionPoint(op, target);
+  const offset = insertionPoint(op as TypedEditOp<'insert_text'>, target);
   const createsParagraphs = segments.length > 1;
   // Filling a previously-empty paragraph IS creating the paragraph in every
   // sense that matters for formatting: its only insertion-point donor is the
@@ -7653,10 +7912,44 @@ function applyInsertInheritance(
   editor: LiveEditor,
   planned: PlannedInsertInheritance[],
   byAnchor: Map<string, FlatBlock>
-): void {
+): AppearanceWriteOutcome | undefined {
+  const appearanceOutcomes: AppearanceWriteOutcome[] = [];
   for (const paragraph of planned) {
+    if (paragraph.tableAppearance) {
+      const appearance = paragraph.tableAppearance;
+      // A new table has no appearance of its own, so reproduce the whole
+      // sibling look. SyncFusion already clones an inserted row's non-banding
+      // cell appearance; rewriting its borders while the row is a pending
+      // insertion loses shared-edge borders in the real SDK, so the row path
+      // only restores the preflight stripe below.
+      if (!appearance.targetRows)
+        appearanceOutcomes.push(
+          applyCopiedTableAppearance(
+            editor,
+            appearance.sourceTableAnchor,
+            appearance.source,
+            appearance.targetTableAnchor
+          )
+        );
+      if (appearance.preserveBanding) {
+        appearanceOutcomes.push(
+          applyBandingRows(
+            editor,
+            appearance.targetTableAnchor,
+            liveTableAppearance(editor, appearance.targetTableAnchor),
+            appearance.preserveBanding.banding,
+            appearance.preserveBanding.fromRow
+          )
+        );
+      }
+      continue;
+    }
     const target = byAnchor.get(paragraph.anchor);
-    if (!target || target.text !== paragraph.expectedText) {
+    if (
+      !target ||
+      (paragraph.expectedText !== undefined &&
+        target.text !== paragraph.expectedText)
+    ) {
       // Lightweight test doubles do not split paragraphs on newline inserts; a
       // mounted DocumentEditor always does. Skip quietly for doubles, fail
       // loudly when the real editor's split did not land where computed.
@@ -7697,6 +7990,40 @@ function applyInsertInheritance(
         );
     }
   }
+  if (!appearanceOutcomes.length) return undefined;
+  const combined = appearanceOutcomes.reduce<AppearanceWriteOutcome>(
+    (combined, outcome) => ({
+      report: {
+        cellsWritten:
+          combined.report.cellsWritten + outcome.report.cellsWritten,
+        rowsWritten: combined.report.rowsWritten + outcome.report.rowsWritten,
+        cellsUnchanged:
+          combined.report.cellsUnchanged + outcome.report.cellsUnchanged,
+        ...((combined.report.rowsSkippedMixed ?? 0) +
+          (outcome.report.rowsSkippedMixed ?? 0) >
+        0
+          ? {
+              rowsSkippedMixed:
+                (combined.report.rowsSkippedMixed ?? 0) +
+                (outcome.report.rowsSkippedMixed ?? 0)
+            }
+          : {}),
+        ...(outcome.report.banding
+          ? { banding: outcome.report.banding }
+          : combined.report.banding
+          ? { banding: combined.report.banding }
+          : {}),
+        ...(outcome.report.sourceStyleName
+          ? { sourceStyleName: outcome.report.sourceStyleName }
+          : combined.report.sourceStyleName
+          ? { sourceStyleName: combined.report.sourceStyleName }
+          : {})
+      },
+      restores: [...combined.restores, ...outcome.restores]
+    }),
+    { report: emptyAppearanceReport(), restores: [] }
+  );
+  return combined.restores.length ? combined : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -8382,7 +8709,22 @@ export function applyDocumentEdits(
       return;
     }
     try {
-      const bandingPreserve = planBandingPreserve(op, liveSfdt);
+      const inherited = source
+        ? readEffectiveSourceFormat(editor, source)
+        : undefined;
+      const insertInheritance =
+        target &&
+        !isLiveStoryTarget(target) &&
+        (op.op === 'insert_table' || op.op === 'insert_row')
+          ? planInsertInheritance(
+              editor,
+              op,
+              target,
+              blocks,
+              liveSfdt,
+              source ? { source, inherited } : undefined
+            )
+          : undefined;
       plans.push({
         index,
         op,
@@ -8390,10 +8732,8 @@ export function applyDocumentEdits(
         source,
         ...(deferredNewCell ? { deferredNewCell: true } : {}),
         ...(deferredNewParagraph ? { deferredNewParagraph: true } : {}),
-        ...(bandingPreserve ? { bandingPreserve } : {}),
-        ...(source
-          ? { inherited: readEffectiveSourceFormat(editor, source) }
-          : {}),
+        ...(insertInheritance ? { insertInheritance } : {}),
+        ...(inherited ? { inherited } : {}),
         ...(target &&
         !isLiveStoryTarget(target) &&
         FORMAT_OPS.has(name) &&
@@ -8432,7 +8772,8 @@ export function applyDocumentEdits(
           | { target: LiveStoryTarget; replacement: string }
           | undefined;
         let trackedMutationTargetText: string | undefined;
-        let insertInheritance: PlannedInsertInheritance[] | undefined;
+        let insertInheritance = plan.insertInheritance;
+        let inheritanceAppearance: AppearanceWriteOutcome | undefined;
         let opExtras: OpSuccessExtras | void;
         try {
           if (op.op === 'replace_all') {
@@ -8486,6 +8827,12 @@ export function applyDocumentEdits(
               );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
+              insertInheritance = rebasePlannedInsertInheritance(
+                insertInheritance,
+                op,
+                writtenOp
+              );
+              if (insertInheritance) plan.insertInheritance = insertInheritance;
               trackedMutationTargetText = target.text;
               // The reversibility baseline: the whole-document reject
               // projection the last refresh built, so a tracked write costs no
@@ -8499,7 +8846,7 @@ export function applyDocumentEdits(
               // their pre-insert positions. An explicit inheritFormatFrom on
               // the op replaces the computed reference (its source and format
               // snapshot were captured at preflight).
-              if (op.op === 'insert_text') {
+              if (op.op === 'insert_text' && !insertInheritance) {
                 const explicitSource = plan.source
                   ? resolveChangeSetBlock(
                       blocks,
@@ -8514,6 +8861,7 @@ export function applyDocumentEdits(
                   writtenOp as TypedEditOp<'insert_text'>,
                   target,
                   blocks,
+                  liveSfdt,
                   explicitSource
                     ? { source: explicitSource, inherited: plan.inherited }
                     : undefined
@@ -8557,31 +8905,53 @@ export function applyDocumentEdits(
           );
           refresh(postWriteSfdt);
           assertInsertedTableIsAddressable(writtenOp, byAnchor);
-          if (insertInheritance) {
-            applyInsertInheritance(editor, insertInheritance, byAnchor);
-            refresh();
-          }
-          // Put the stripe back over the rows the insert/delete disturbed - the
-          // row itself and everything below it, whose parity has just flipped.
-          // Uses the pattern read BEFORE the edit, and the anchor as actually
-          // resolved, so it survives an earlier op having shifted the table.
-          let bandingReport: AppearanceWriteReport | undefined;
-          if (plan.bandingPreserve && writtenOp.anchor) {
-            const parts = writtenOp.anchor.split(';');
-            const tableAnchor = `${parts[0]};${parts[1]}`;
-            const fromRow = firstRowDisturbedBy(op, writtenOp.anchor);
-            if (fromRow != null) {
-              const outcome = applyBandingRows(
-                editor,
-                tableAnchor,
-                liveTableAppearance(editor, tableAnchor),
-                plan.bandingPreserve.banding,
-                fromRow
+          // Cell text aimed at a row/table created earlier in this batch gets
+          // the source-column format captured by that structural op's preflight
+          // plan. Apply after the text lands so verification observes the real
+          // run, not merely an empty insertion point.
+          if (op.op === 'set_cell_text' && writtenOp.anchor) {
+            const inheritedCell = plans
+              .filter((candidate) => candidate.index < index)
+              .flatMap((candidate) => candidate.insertInheritance ?? [])
+              .find(
+                (candidate) =>
+                  !candidate.tableAppearance &&
+                  candidate.anchor === writtenOp.anchor
               );
-              recordAppearanceRestores(op, outcome.restores);
-              bandingReport = outcome.report;
-              refresh();
-            }
+            if (inheritedCell)
+              insertInheritance = [
+                {
+                  ...inheritedCell,
+                  expectedText: byAnchor.get(writtenOp.anchor)?.text
+                }
+              ];
+          }
+          if (insertInheritance) {
+            // Text writes below format their populated cells themselves. The
+            // structural op still formats every other new cell now, including
+            // row-only/two-phase inserts, and always applies table appearance.
+            const cellsWrittenLater = new Set(
+              edits
+                .slice(index + 1)
+                .filter((candidate) => candidate?.op === 'set_cell_text')
+                .map((candidate) => String(candidate.anchor ?? ''))
+            );
+            const applicable =
+              op.op === 'insert_table' || op.op === 'insert_row'
+                ? insertInheritance.filter(
+                    (candidate) =>
+                      !!candidate.tableAppearance ||
+                      !cellsWrittenLater.has(candidate.anchor)
+                  )
+                : insertInheritance;
+            inheritanceAppearance = applyInsertInheritance(
+              editor,
+              applicable,
+              byAnchor
+            );
+            if (inheritanceAppearance)
+              recordAppearanceRestores(op, inheritanceAppearance.restores);
+            refresh();
           }
           results[index] = {
             ok: true,
@@ -8590,7 +8960,9 @@ export function applyDocumentEdits(
             ...collectOpExtras(opExtras, (restores) =>
               recordAppearanceRestores(op, restores)
             ),
-            ...(bandingReport ? { appearance: bandingReport } : {})
+            ...(inheritanceAppearance
+              ? { appearance: inheritanceAppearance.report }
+              : {})
           };
         } catch (err) {
           fail(index, op, err);

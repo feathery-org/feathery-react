@@ -219,6 +219,11 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   // --- Tables ----------------------------------------------------------------
   {
     // handler: applyAnchoredOp case 'insert_table'
+    //
+    // The new grid inherits the nearest sibling table's resolved appearance
+    // and per-column header/body text formats by default. Explicit appearance
+    // and character/paragraph formatting ops in the same change set run later
+    // and override only the properties they name.
     op: 'insert_table',
     params: { rows: 'int>0?', columns: 'int>0?' },
     requiresAnchor: true
@@ -239,6 +244,8 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // is unambiguous) and re-lays it from the new row down afterwards. Costs no
     // extra change cards, because appearance writes create no revisions. Send
     // `preserveBanding: false` to get SyncFusion's raw behaviour.
+    // The inserted cells also inherit the resolved character/paragraph format
+    // of the row they displace, cycling through the table body on append.
     op: 'insert_row',
     params: {
       above: 'boolean?',
