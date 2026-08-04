@@ -327,6 +327,47 @@ describe('TrackedChangeGroups', () => {
     expect(panel).toHaveFocus();
   });
 
+  it('forwards undo/redo chords from the focused panel to the editor history', () => {
+    const editor = makeEditor([makeRevision()]);
+    editor.editorHistory = { undo: jest.fn(), redo: jest.fn() };
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+
+    // The rail holds focus after panel actions; Syncfusion's own undo/redo
+    // handling never sees chords pressed here, so the panel forwards them.
+    fireEvent.keyDown(panel, { key: 'z', ctrlKey: true });
+    expect(editor.editorHistory.undo).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(panel, { key: 'z', metaKey: true });
+    expect(editor.editorHistory.undo).toHaveBeenCalledTimes(2);
+
+    fireEvent.keyDown(panel, { key: 'z', metaKey: true, shiftKey: true });
+    expect(editor.editorHistory.redo).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(panel, { key: 'y', ctrlKey: true });
+    expect(editor.editorHistory.redo).toHaveBeenCalledTimes(2);
+
+    // Plain A/R (no modifier) still resolves rather than forwarding.
+    expect(editor.editorHistory.undo).toHaveBeenCalledTimes(2);
+  });
+
+  it('hands focus to the editor when the last pending edit resolves', () => {
+    const insertion = makeRevision();
+    const revisions = [insertion];
+    insertion.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
+    });
+    const editor = makeEditor(revisions);
+    editor.focusIn = jest.fn();
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept 1' }));
+
+    // The rail unmounted; focus on <body> would swallow the next ⌘Z, so it
+    // goes back into the document instead.
+    expect(insertion.accept).toHaveBeenCalledTimes(1);
+    expect(container).toBeEmptyDOMElement();
+    expect(editor.focusIn).toHaveBeenCalledTimes(1);
+  });
+
   it('does not skip chips when selectRevision echoes a neighbouring selectionChange', () => {
     // Syncfusion's getCurrentRevision() after selectRevision often resolves to
     // an adjacent run (or clears). If that echo updates activeRevision, each

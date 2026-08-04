@@ -296,7 +296,17 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
     settleRevisions(revisions, isAccept);
     refresh();
-    refocusPanel();
+    // Resolving the last edit unmounts the rail; refocusing it then would
+    // leave keyboard focus on <body>, where neither the rail nor Syncfusion
+    // sees another keystroke (⌘Z after "Accept all" would go nowhere).
+    let remaining = 0;
+    try {
+      remaining = listRevisionGroups(editor).length;
+    } catch {
+      remaining = 0;
+    }
+    if (remaining) refocusPanel();
+    else editor?.focusIn?.();
   };
 
   const focusChip = (chip: ChipView) => {
@@ -342,8 +352,22 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const allChips = groups.flatMap((group) => group.chips);
 
   const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const key = event.key.toLowerCase();
+    // The rail keeps keyboard focus after its own actions so J/K/A/R keep
+    // working — which also means Syncfusion (whose undo/redo handling lives
+    // on its editable element) never sees ⌘Z/Ctrl+Z pressed here. Forward
+    // the undo/redo chords to the document history.
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      if (key === 'z' || key === 'y') {
+        event.preventDefault();
+        event.stopPropagation();
+        const history = editor?.editorHistory ?? editor?.editorHistoryModule;
+        if (key === 'y' || event.shiftKey) history?.redo?.();
+        else history?.undo?.();
+      }
+      return;
+    }
+    if (event.altKey) return;
     if (
       key === 'j' ||
       key === 'arrowdown' ||
