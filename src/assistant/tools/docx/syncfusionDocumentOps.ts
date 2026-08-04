@@ -10792,6 +10792,21 @@ function applyDocumentEditsMeasured(
                 }
               ];
           }
+          if (
+            op.op === 'insert_table' &&
+            Array.isArray(op.initialCells) &&
+            insertInheritance
+          ) {
+            insertInheritance = insertInheritance.map((candidate) =>
+              candidate.tableAppearance
+                ? candidate
+                : {
+                    ...candidate,
+                    expectedText: byAnchor.get(candidate.anchor)?.text
+                  }
+            );
+            plan.insertInheritance = insertInheritance;
+          }
           if (insertInheritance) {
             // Text writes below format their populated cells themselves. The
             // structural op still formats every other new cell now, including
