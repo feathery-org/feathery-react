@@ -10654,6 +10654,8 @@ function applyDocumentEditsMeasured(
                     ? { source: explicitSource, inherited: plan.inherited }
                     : undefined
                 );
+                if (insertInheritance)
+                  plan.insertInheritance = insertInheritance;
                 const boundary = insertInheritance?.find(
                   (candidate) => candidate.sectionBoundary
                 )?.sectionBoundary;
