@@ -5864,6 +5864,22 @@ export const ANCHORED_OP_HANDLERS: {
       positiveCount(op.rows),
       positiveCount(op.columns)
     );
+    if (Array.isArray(op.initialCells)) {
+      op.initialCells.forEach((row: unknown, rowIndex: number) => {
+        if (!Array.isArray(row)) return;
+        row.forEach((cell: unknown, columnIndex: number) => {
+          const text = String(cell ?? '');
+          if (!text) return;
+          selectRange(
+            editor,
+            `${insertionAnchor};${rowIndex};${columnIndex};0`,
+            0,
+            0
+          );
+          callEditor(editor, 'insertText', text);
+        });
+      });
+    }
   },
   // Structural table removal. SyncFusion operates on the table or row
   // containing the selection, which selectBlock placed at the anchor.
@@ -9880,6 +9896,33 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
   edits.forEach((op, index) => {
     if (op?.op !== 'insert_table') return;
     const anchor = String(op.anchor ?? '');
+    if (Array.isArray(op.initialCells)) {
+      const rows = positiveCount(op.rows);
+      const columns = positiveCount(op.columns);
+      const validShape =
+        op.initialCells.length === rows &&
+        op.initialCells.every(
+          (row: unknown) =>
+            Array.isArray(row) &&
+            row.length === columns &&
+            row.every((cell) => typeof cell === 'string')
+        );
+      if (!validShape) {
+        emptyTables.push({
+          index,
+          anchor,
+          size: `${rows}x${columns}`,
+          mismatchedCellWriteAnchors: ['invalid initialCells dimensions']
+        });
+        return;
+      }
+      if (
+        op.initialCells.some((row: string[]) =>
+          row.some((cell: string) => cell.trim().length > 0)
+        )
+      )
+        return;
+    }
     const resultingAnchor = resultingInsertedTableAnchor(op);
     const followingCellWriteAnchors = cellWriteTableAnchorsFollowingInsert(
       edits,
@@ -9901,6 +9944,16 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
   });
   if (!emptyTables.length) return null;
   const first = emptyTables[0];
+  if (
+    first.mismatchedCellWriteAnchors?.[0] === 'invalid initialCells dimensions'
+  ) {
+    return {
+      code: 'insert_table_initial_cells_invalid',
+      message: `insert_table at "${first.anchor}" declares a ${first.size} table, but initialCells does not have exactly that many string rows and columns. Nothing was written.`,
+      details: [`expected initialCells shape: ${first.size}`],
+      indices: [first.index]
+    };
+  }
   if (first.mismatchedCellWriteAnchors?.length) {
     return {
       code: 'insert_table_cell_anchor_mismatch',
