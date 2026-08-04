@@ -295,6 +295,46 @@ const fromScratchDocumentBandingFixture = () => {
   return doc;
 };
 
+const pendingRevisionTableInsertFixture = () => {
+  const sourceTable: any = inheritedTableFixture().sections[0].blocks[0];
+  sourceTable.rows.forEach((sourceRow: any) =>
+    sourceRow.cells.forEach((sourceCell: any, column: number) => {
+      sourceCell.cellFormat.verticalAlignment = 'Center';
+      sourceCell.cellFormat.borders = {
+        [column === 0 ? 'left' : 'right']: {
+          lineStyle: 'Single',
+          lineWidth: 0.5,
+          color: '#C5CBD1'
+        }
+      };
+    })
+  );
+  return {
+    sections: [
+      {
+        blocks: [
+          {
+            tableFormat: { preferredWidth: 300 },
+            rows: [
+              row(['Discount', 'Amount', 'Effective Date'], HEADER_FILL, true),
+              row(['Multi-Policy', '12%', '08/31/2026']),
+              row(['Safe Driver', '8%', '08/31/2026'], TINY_BAND_FILL),
+              row(['Paperless Billing', '2%', '09/15/2026'])
+            ]
+          },
+          { inlines: [{ text: 'Document table convention' }] },
+          { inlines: [{ text: 'Driver Information' }] },
+          sourceTable,
+          { inlines: [{ text: 'Heading insertion point' }] },
+          { inlines: [{ text: '' }] },
+          ...Array.from({ length: 22 }, () => ({ inlines: [{ text: '' }] })),
+          { inlines: [{ text: 'Premium Summary' }] }
+        ]
+      }
+    ]
+  };
+};
+
 /**
  * The captain's document: a sibling section whose Location Schedule is banded
  * (dark header row, then alternating rows starting UNFILLED), and a new section
@@ -1112,6 +1152,92 @@ describe('structural inserts inherit resolved table formatting by default', () =
       expect(
         resolvedTextFormat(ed, '0;4;2;0;0', '2:0').character.fontColor
       ).toBe('#1F1F1F');
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('inserts a wider striped table beside a large pending prose revision region', () => {
+    const ed = makeEditor(pendingRevisionTableInsertFixture());
+    try {
+      ed.enableTrackChanges = true;
+      for (let index = 0; index < 22; index++) {
+        const pending = apply(
+          ed,
+          [
+            {
+              op: 'insert_text',
+              anchor: `0;${6 + index}`,
+              position: 'end',
+              text: `Pending homeowners paragraph ${index + 1}`
+            }
+          ],
+          `pending-homeowners-section-${index + 1}`
+        );
+        expect(pending.results[0].ok).toBe(true);
+      }
+      expect(revisions(ed).length).toBeGreaterThanOrEqual(20);
+
+      const values = [
+        ['Discount', 'Amount', 'Effective Date'],
+        ['Multi-Policy', '12%', '08/31/2026'],
+        ['Safe Driver', '8%', '08/31/2026'],
+        ['Paperless Billing', '2%', '09/15/2026']
+      ];
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_table', anchor: '0;5', rows: 4, columns: 3 },
+          {
+            op: 'copy_table_format',
+            anchor: '0;5;0;0;0',
+            sourceTable: '0;3'
+          },
+          ...values.flatMap((rowValues, rowIndex) =>
+            rowValues.map((text, columnIndex) => ({
+              op: 'set_cell_text',
+              anchor: `0;5;${rowIndex};${columnIndex};0`,
+              text,
+              ...(rowIndex > 0 && columnIndex === 1
+                ? { literal: true }
+                : {})
+            }))
+          ),
+          {
+            op: 'insert_text',
+            anchor: '0;4',
+            expect: 'Heading insertion point',
+            text: ' Discounts Applied',
+            position: 'end'
+          },
+          {
+            op: 'apply_style',
+            anchor: '0;4',
+            expect: 'Heading insertion point Discounts Applied',
+            inheritFormatFrom: '0;2'
+          }
+        ],
+        'add-discounts-applied-table-encompass-auto'
+      );
+
+      expect(result.results).toHaveLength(16);
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(result.results[0].appearance?.banding).toEqual({
+        headerRows: 1,
+        period: 2,
+        cycle: [null, BAND_FILL]
+      });
+      const liveFills = Array.from({ length: 4 }, (_, rowIndex) => {
+        const position = `0;5;${rowIndex};0;0;0`;
+        ed.selection.select(position, position);
+        return ed.selection.cellFormat.background;
+      });
+      expect(liveFills).toEqual([
+        HEADER_FILL,
+        'empty',
+        BAND_FILL,
+        'empty'
+      ]);
     } finally {
       destroyEditor(ed);
     }

@@ -568,7 +568,9 @@ export function sourceRowForTarget(
  *
  * Columns clamp: a target column the source does not have takes the source
  * row's LAST cell, so a wider target keeps the source's edge look instead of
- * being left half-styled.
+ * being left half-styled. Side-specific perimeter borders remain perimeter
+ * borders: clamping a source edge cell into an interior target position must
+ * not duplicate its outer edge inside the target grid.
  *
  * The FILL, when the source is banded, comes from the detected cycle rather
  * than from the mapped row - cycling through an odd number of body rows would
@@ -579,7 +581,8 @@ export function copiedCellAppearance(
   banding: TableBanding | null,
   headerRows: number,
   targetRow: number,
-  targetColumn: number
+  targetColumn: number,
+  targetSize: { rows: number; columns: number }
 ): AppearanceFacts | undefined {
   const sourceRow = sourceRowForTarget(source, headerRows, targetRow);
   const rowFacts = source.rows[sourceRow];
@@ -588,11 +591,30 @@ export function copiedCellAppearance(
   const sourceColumn =
     columnCount > 0 ? Math.min(targetColumn, columnCount - 1) : 0;
   const base = cellAppearanceAt(source, sourceRow, sourceColumn);
-  if (!banding || targetRow < headerRows) return base;
+  const mapped: AppearanceFacts = { ...(base ?? {}) };
+  if (base?.borders && !base.borders.all) {
+    const borders = { ...base.borders };
+    if (sourceRow === 0 && targetRow !== 0) delete borders.top;
+    if (
+      sourceRow === source.rows.length - 1 &&
+      targetRow !== targetSize.rows - 1
+    )
+      delete borders.bottom;
+    if (sourceColumn === 0 && targetColumn !== 0) delete borders.left;
+    if (
+      sourceColumn === columnCount - 1 &&
+      targetColumn !== targetSize.columns - 1
+    )
+      delete borders.right;
+    if (Object.keys(borders).length) mapped.borders = borders;
+    else delete mapped.borders;
+  }
+  const mappedBase = Object.keys(mapped).length ? mapped : undefined;
+  if (!banding || targetRow < headerRows) return mappedBase;
   const shading = bandedShadingForRow(banding, targetRow);
-  if (shading === undefined) return base;
+  if (shading === undefined) return mappedBase;
   const withBand: AppearanceFacts = {
-    ...(base ?? {}),
+    ...(mappedBase ?? {}),
     ...(shading ? { shading } : {})
   };
   if (!shading) delete withBand.shading;
