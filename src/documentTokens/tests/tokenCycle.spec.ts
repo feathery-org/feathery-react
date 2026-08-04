@@ -12,7 +12,7 @@ import {
   decodeTag,
   encodeTag
 } from '../controls';
-import { TokenSpec } from '../plan';
+import { instanceKey, TokenSpec, valueKey } from '../plan';
 import { attachTokenCycle } from '../tokenCycle';
 
 const control = (spec: TokenSpec, value: string): ContentControlInfo => ({
@@ -29,13 +29,16 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
   let caret: ContentControlInfo | undefined;
   const handlers: Record<string, Array<() => void>> = {};
 
-  const idOf = (info: ContentControlInfo) => decodeTag(info.tag)?.id as string;
+  const keyOf = (info: ContentControlInfo) =>
+    valueKey(decodeTag(info.tag) as TokenSpec);
+  const addressOf = (info: ContentControlInfo) =>
+    instanceKey(decodeTag(info.tag) as TokenSpec);
 
   const editor: any = {
     log,
     controls,
     exportContentControlData: () => controls.map((c) => ({ ...c })),
-    getBookmarks: () => controls.map((c) => bookmarkFor(idOf(c))),
+    getBookmarks: () => controls.map((c) => bookmarkFor(addressOf(c))),
     selection: {
       getContentControlInfo: () => caret,
       selectBookmark: (name: string) => {
@@ -44,9 +47,9 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
     },
     editor: {
       insertText: (text: string) => {
-        const target = controls.find((c) => bookmarkFor(idOf(c)) === selected);
+        const target = controls.find((c) => bookmarkFor(addressOf(c)) === selected);
         if (target) {
-          log.push(`${idOf(target)}=${text}`);
+          log.push(`${keyOf(target)}=${text}`);
           target.value = text;
         }
       },
@@ -72,8 +75,8 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
     },
     fire: (event: string, args?: any) =>
       (handlers[event] ?? []).forEach((h: any) => h(args)),
-    valueOf: (id: string) =>
-      controls.find((c) => idOf(c) === id)?.value as string,
+    valueOf: (key: string) =>
+      controls.find((c) => keyOf(c) === key)?.value as string,
     listenerCount: (event: string) => (handlers[event] ?? []).length
   });
 };

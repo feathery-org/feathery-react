@@ -11,7 +11,7 @@ import {
   tokenAtCaret,
   writeValues
 } from '../controls';
-import { TokenSpec } from '../plan';
+import { instanceKey, TokenSpec, valueKey } from '../plan';
 
 /**
  * A stand-in for Syncfusion that records what the boundary asked it to do.
@@ -23,15 +23,17 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
   let selected: string | null = null;
   let caret: ContentControlInfo | undefined;
 
-  const idOf = (info: ContentControlInfo) => decodeTag(info.tag)?.id;
+  const keyOf = (info: ContentControlInfo) =>
+    valueKey(decodeTag(info.tag) as TokenSpec);
+  const addressOf = (info: ContentControlInfo) =>
+    instanceKey(decodeTag(info.tag) as TokenSpec);
 
   const editor: EditorLike & { log: string[]; controls: ContentControlInfo[] } =
     {
       log,
       controls,
       exportContentControlData: () => controls.map((c) => ({ ...c })),
-      getBookmarks: () =>
-        controls.map((c) => bookmarkFor(idOf(c) as string)).filter(Boolean),
+      getBookmarks: () => controls.map((c) => bookmarkFor(addressOf(c))),
       selection: {
         getContentControlInfo: () => caret,
         selectBookmark: (name: string, exclude?: boolean) => {
@@ -48,11 +50,9 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
       },
       editor: {
         insertText: (text: string) => {
-          const target = controls.find(
-            (c) => bookmarkFor(idOf(c) as string) === selected
-          );
+          const target = controls.find((c) => bookmarkFor(addressOf(c)) === selected);
           if (target) {
-            log.push(`write ${target.tag} = ${text}`);
+            log.push(`write ${keyOf(target)} = ${text}`);
             target.value = text;
           }
         },
@@ -135,7 +135,7 @@ describe('readTokens', () => {
         canDelete: false
       }
     ]);
-    expect(readTokens(editor).map((t) => t.spec.id)).toEqual(['qty__0']);
+    expect(readTokens(editor).map((t) => t.spec.id)).toEqual(['qty']);
   });
 });
 
@@ -143,7 +143,7 @@ describe('tokenAtCaret', () => {
   it('reports the token the caret is inside', () => {
     const editor = fakeEditor([control(qty, '10')]);
     editor.setCaret(control(qty, '10'));
-    expect(tokenAtCaret(editor)?.id).toBe('qty__0');
+    expect(tokenAtCaret(editor)?.id).toBe('qty');
   });
 
   it('reports nothing in ordinary prose', () => {
