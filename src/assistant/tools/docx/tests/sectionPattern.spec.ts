@@ -7,6 +7,7 @@ const paragraph = (
     level?: number;
     bold?: boolean;
     fontSize?: number;
+    beforeSpacing?: number;
     afterSpacing?: number;
     keepWithNext?: boolean;
   } = {}
@@ -14,6 +15,9 @@ const paragraph = (
   paragraphFormat: {
     styleName,
     ...(options.level != null ? { outlineLevel: `Level${options.level}` } : {}),
+    ...(options.beforeSpacing != null
+      ? { beforeSpacing: options.beforeSpacing }
+      : {}),
     ...(options.afterSpacing != null
       ? { afterSpacing: options.afterSpacing }
       : {}),
@@ -336,5 +340,77 @@ describe('deriveSectionPattern', () => {
         'table'
       ]);
     }
+  });
+
+  it('reports the recurring blank-paragraph and paragraph-spacing boundary convention', () => {
+    const section = (name: string) => [
+      paragraph(name, 'Heading 1', {
+        level: 1,
+        beforeSpacing: 12
+      }),
+      paragraph(`${name} body`, 'Body Text', { afterSpacing: 6 })
+    ];
+    const editor = editorFor([
+      ...section('North'),
+      paragraph(''),
+      ...section('South'),
+      paragraph(''),
+      ...section('East')
+    ]);
+
+    expect(deriveSectionPattern(editor as any).pattern.boundary).toEqual({
+      separator: {
+        value: ['empty_paragraph'],
+        confidence: { matches: 2, sampled: 2, level: 'medium' }
+      },
+      headingBeforeSpacing: {
+        value: 12,
+        confidence: { matches: 3, sampled: 3, level: 'high' }
+      },
+      endingParagraphAfterSpacing: {
+        value: 6,
+        confidence: { matches: 3, sampled: 3, level: 'high' }
+      }
+    });
+  });
+
+  it('reports direct sibling adjacency instead of inventing a separator', () => {
+    const section = (name: string) => [
+      paragraph(name, 'Heading 1', { level: 1 }),
+      paragraph(`${name} body`)
+    ];
+    const editor = editorFor([
+      ...section('North'),
+      ...section('South'),
+      ...section('East')
+    ]);
+
+    expect(
+      deriveSectionPattern(editor as any).pattern.boundary?.separator
+    ).toEqual({
+      value: [],
+      confidence: { matches: 2, sampled: 2, level: 'medium' }
+    });
+  });
+
+  it('reports page-break separators as the observed boundary mechanism', () => {
+    const section = (name: string) => [
+      paragraph(name, 'Heading 1', { level: 1 }),
+      paragraph(`${name} body`)
+    ];
+    const editor = editorFor([
+      ...section('North'),
+      paragraph('\f'),
+      ...section('South'),
+      paragraph('\f'),
+      ...section('East')
+    ]);
+
+    expect(
+      deriveSectionPattern(editor as any).pattern.boundary?.separator
+    ).toEqual({
+      value: ['page_break'],
+      confidence: { matches: 2, sampled: 2, level: 'medium' }
+    });
   });
 });
