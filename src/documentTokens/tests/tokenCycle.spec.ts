@@ -242,6 +242,106 @@ describe('attachTokenCycle — propagation', () => {
   });
 });
 
+describe('attachTokenCycle — one undo step per edit', () => {
+  const moveCaret = (editor: any, into?: ContentControlInfo) => {
+    editor.setCaret(into);
+    editor.fire('selectionChange');
+  };
+
+  it('wraps the typing and the recalculation in a single action', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.log.length = 0;
+
+    moveCaret(editor, editor.controls[1]); // caret enters unit_cost
+    editor.controls[1].value = '175'; // what the user types
+    moveCaret(editor, undefined); // caret leaves, committing
+
+    // One action covering the commit and every dependent it moved, so Ctrl+Z
+    // takes back the digits and the numbers together.
+    expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
+      1
+    );
+    expect(editor.log.filter((l: string) => l === 'undo:end')).toHaveLength(1);
+    expect(editor.log[0]).toBe('undo:begin');
+    expect(editor.log[editor.log.length - 1]).toBe('undo:end');
+    expect(editor.valueOf('unit_cost__0')).toBe('$175.00');
+    expect(editor.valueOf('item_total__0')).toBe('$1,750.00');
+  });
+
+  it('opens the action when the caret enters, before anything is typed', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.log.length = 0;
+
+    moveCaret(editor, editor.controls[1]);
+
+    expect(editor.log).toEqual(['undo:begin']);
+  });
+
+  it('starts a fresh step when moving straight to another token', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.log.length = 0;
+
+    moveCaret(editor, editor.controls[1]);
+    editor.controls[1].value = '175';
+    moveCaret(editor, editor.controls[0]); // straight into qty
+
+    // The first edit closed, the next opened — never one action for both.
+    expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
+      2
+    );
+    expect(editor.log.filter((l: string) => l === 'undo:end')).toHaveLength(1);
+  });
+
+  it('closes the action on Enter', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    moveCaret(editor, editor.controls[1]);
+    editor.log.length = 0;
+
+    editor.controls[1].value = '175';
+    editor.fire('keyDown', { key: 'Enter' });
+
+    expect(editor.log.filter((l: string) => l === 'undo:end')).toHaveLength(1);
+  });
+
+  it('closes the action on Escape', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    moveCaret(editor, editor.controls[1]);
+    editor.log.length = 0;
+
+    editor.fire('keyDown', { key: 'Escape' });
+
+    expect(editor.log.filter((l: string) => l === 'undo:end')).toHaveLength(1);
+  });
+
+  it('never leaves an action open on detach', () => {
+    // A stray open action would swallow every later edit into one step.
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    moveCaret(editor, editor.controls[1]);
+    editor.log.length = 0;
+
+    cycle.detach();
+
+    expect(editor.log).toEqual(['undo:end']);
+  });
+
+  it('opens no action while history is replaying', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.editorHistory.isUndoing = true;
+    editor.log.length = 0;
+
+    moveCaret(editor, editor.controls[1]);
+
+    expect(editor.log).toEqual([]);
+  });
+});
+
 describe('attachTokenCycle — a control never shows a placeholder', () => {
   const PLACEHOLDER = 'Click here or tap to insert text';
 

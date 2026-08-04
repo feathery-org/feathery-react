@@ -248,12 +248,15 @@ export const selectTokenValue = (
  *
  * The whole batch is one undo step: a single edit that moves four dependents
  * must revert as one, or Ctrl+Z leaves the document inconsistent with itself.
+ * Pass `group: false` when the caller already holds an undo action open — the
+ * typing that caused this write belongs in the same step as the write.
  */
 export const writeValues = (
   editor: EditorLike,
   updates: Array<{ id: string; text: string }>,
-  options: { skipId?: string } = {}
+  options: { skipId?: string; group?: boolean } = {}
 ): { written: string[]; missed: string[] } => {
+  const group = options.group ?? true;
   // A token may appear many times; every appearance shows the same value, so
   // one update fans out to each control that carries it.
   const appearances = new Map<
@@ -303,7 +306,7 @@ export const writeValues = (
   }
 
   withViewportPreserved(editor, () => {
-    editor.editorHistory?.beginUndoAction();
+    if (group) editor.editorHistory?.beginUndoAction();
     try {
       for (const { id, instance, text, was } of pending) {
         if (!selectValue(editor, instance, was)) {
@@ -314,7 +317,7 @@ export const writeValues = (
         if (!written.includes(id)) written.push(id);
       }
     } finally {
-      editor.editorHistory?.endUndoAction();
+      if (group) editor.editorHistory?.endUndoAction();
     }
   });
 

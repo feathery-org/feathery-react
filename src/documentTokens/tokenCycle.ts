@@ -140,6 +140,9 @@ export const attachTokenCycle = (
   let editingInstance: string | null = null;
   let editingId: string | null = null;
   let applying = false;
+  // True while an undo action is held open around someone's edit — see
+  // openEditStep.
+  let editStepOpen = false;
   const listeners = new Set<(state: TokenState) => void>();
 
   let snapshot: TokenState = {
@@ -201,6 +204,30 @@ export const attachTokenCycle = (
     return renderValue(numbers.get(key) ?? 0, spec?.format);
   };
 
+  /**
+   * Hold one undo action open across a whole edit.
+   *
+   * Typing into a token and the recalculation it causes are one act, so they
+   * must revert as one: opening the action when the caret enters a token and
+   * closing it after the commit puts the keystrokes and every derived write in
+   * the same step. Otherwise Ctrl+Z takes the numbers back but leaves the digits
+   * that produced them, which reads as the undo half-working.
+   *
+   * Opening is idempotent and closing is guaranteed — a stray open action would
+   * swallow every later edit into one giant step.
+   */
+  const openEditStep = (): void => {
+    if (editStepOpen || isReplayingHistory(editor)) return;
+    editStepOpen = true;
+    editor.editorHistory?.beginUndoAction();
+  };
+
+  const closeEditStep = (): void => {
+    if (!editStepOpen) return;
+    editStepOpen = false;
+    editor.editorHistory?.endUndoAction();
+  };
+
   /** Whether any appearance of a token is showing a placeholder. */
   const showsPlaceholderFor = (key: string): boolean =>
     readTokens(editor).some(
@@ -251,7 +278,8 @@ export const attachTokenCycle = (
     if (updates.length > 0 && !isReplayingHistory(editor)) {
       applying = true;
       try {
-        writeValues(editor, updates, { skipId });
+        // Do not open a second action inside the one held around the edit.
+        writeValues(editor, updates, { skipId, group: !editStepOpen });
       } finally {
         applying = false;
       }
@@ -343,25 +371,32 @@ export const attachTokenCycle = (
     editingId = caretSpec ? valueKey(caretSpec) : null;
 
     if (leftInstance === null || leftId === null) {
+      // Entering a token: everything typed from here until the caret leaves
+      // belongs to one undo step, together with the recalculation it causes.
+      if (current !== null) openEditStep();
       publish({ ...snapshot, focused: editingId });
       return;
     }
 
-    const entry = readTokens(editor).find(
-      (t) => instanceKey(t.spec) === leftInstance
-    );
-    // A control emptied by undo shows the placeholder; reconciling puts its
-    // value back instead of reading that in as content.
-    if (!entry || entry.value === PLACEHOLDER) {
-      reconcile();
-      return;
+    try {
+      const entry = readTokens(editor).find(
+        (t) => instanceKey(t.spec) === leftInstance
+      );
+      // A control emptied by undo shows the placeholder; reconciling puts its
+      // value back instead of reading that in as content.
+      if (!entry || entry.value === PLACEHOLDER) reconcile();
+      else setTokenValue(leftId, entry.value);
+    } finally {
+      // The edit is committed and its dependents written, so the step is done.
+      closeEditStep();
+      // Moving straight from one token into another starts the next step.
+      if (current !== null) openEditStep();
     }
-
-    setTokenValue(leftId, entry.value);
   };
 
   /** A different document is open: nothing carries over. */
   const onDocumentChange = (): void => {
+    closeEditStep();
     editingInstance = null;
     editingId = null;
     refresh();
@@ -419,15 +454,24 @@ export const attachTokenCycle = (
       );
       editingInstance = null;
       editingId = null;
-      if (entry && entry.value !== PLACEHOLDER) setTokenValue(id, entry.value);
-      else reconcile();
+      try {
+        if (entry && entry.value !== PLACEHOLDER)
+          setTokenValue(id, entry.value);
+        else reconcile();
+      } finally {
+        closeEditStep();
+      }
       return;
     }
 
     // Escape: the owner never took the edit, so reconciling restores it.
     editingInstance = null;
     editingId = null;
-    reconcile();
+    try {
+      reconcile();
+    } finally {
+      closeEditStep();
+    }
   };
 
   /**
@@ -462,6 +506,8 @@ export const attachTokenCycle = (
       return () => listeners.delete(listener);
     },
     detach: () => {
+      // Leaving an action open would swallow every later edit into one step.
+      closeEditStep();
       editor.removeEventListener?.('selectionChange', onSelectionChange);
       editor.removeEventListener?.('documentChange', onDocumentChange);
       editor.removeEventListener?.('keyDown', onKeyDown);
