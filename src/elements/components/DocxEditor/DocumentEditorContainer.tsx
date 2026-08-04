@@ -17,6 +17,9 @@ import {
 } from '../../../assistant/tools/docxEditorRegistry';
 import { attachTokenCycle } from '../../../documentTokens/tokenCycle';
 import type { TokenCycle } from '../../../documentTokens/tokenCycle';
+import TokenPanel, {
+  tokenPanelEnabled
+} from '../../../documentTokens/TokenPanel';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -328,6 +331,8 @@ export default function DocumentEditorContainer({
   // registration, never another mounted container's editor.
   const registeredEditor = useRef<any>(undefined);
   const tokenCycle = useRef<TokenCycle | undefined>(undefined);
+  // Dev-only token inspector; nothing renders unless the flag is set.
+  const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -343,6 +348,9 @@ export default function DocumentEditorContainer({
       // because the editor is ready before its .docx has loaded.
       tokenCycle.current?.detach();
       tokenCycle.current = attachTokenCycle(editor);
+      if (tokenPanelEnabled(featheryWindow())) {
+        setTokenPanelCycle(tokenCycle.current);
+      }
     },
     [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );
@@ -368,7 +376,12 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
-  const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
+  const box = (child: React.ReactNode) => (
+    <div css={wrap}>
+      {child}
+      {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
+    </div>
+  );
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!activeDocumentId && !envelope) {
