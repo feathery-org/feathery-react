@@ -174,7 +174,10 @@ export const writeValues = (
 ): { written: string[]; missed: string[] } => {
   // A token may appear many times; every appearance shows the same value, so
   // one update fans out to each control that carries it.
-  const appearances = new Map<string, Array<{ instance: string; text: string }>>();
+  const appearances = new Map<
+    string,
+    Array<{ instance: string; text: string }>
+  >();
   for (const { spec, value } of readTokens(editor)) {
     const key = valueKey(spec);
     const list = appearances.get(key) ?? [];

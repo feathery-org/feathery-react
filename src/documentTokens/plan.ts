@@ -79,7 +79,8 @@ const edgesFor = (
   for (const name of dependencies(ast)) {
     const rows = rowsById.get(name);
     if (!rows) continue;
-    const own = index === undefined || index === null ? name : `${name}__${index}`;
+    const own =
+      index === undefined || index === null ? name : `${name}__${index}`;
     if (rows.has(own)) deps.add(own);
     else rows.forEach((key) => deps.add(key));
   }

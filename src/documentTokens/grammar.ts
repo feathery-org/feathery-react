@@ -39,6 +39,9 @@ export type Node =
 
 type Lexeme = { kind: 'number' | 'wildcard' | 'ident' | 'op'; text: string };
 
+/** A token's value: a number, or every row of a repeated token. */
+export type TokenValues = Map<string, number | number[]>;
+
 // ── Lexer ───────────────────────────────────────────────────────────────────
 const PATTERNS: Array<[Lexeme['kind'] | 'space', RegExp]> = [
   ['space', /^\s+/],
@@ -258,9 +261,6 @@ const flatten = (node: Node, values: TokenValues): number[] => {
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .flatMap(([, value]) => (Array.isArray(value) ? value : [value]));
 };
-
-/** A token's value: a number, or every row of a repeated token. */
-export type TokenValues = Map<string, number | number[]>;
 
 const evaluateNode = (node: Node, values: TokenValues): number => {
   switch (node.kind) {
