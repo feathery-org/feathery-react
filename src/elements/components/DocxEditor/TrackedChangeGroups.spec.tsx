@@ -60,7 +60,7 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
     // Card titled by the author, tally as usual.
     expect(screen.getByText('Ayesha')).toBeInTheDocument();
-    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+    expect(screen.getByText('1 edit')).toBeInTheDocument();
 
     // Expanding shows the edit with its author attribution.
     fireEvent.click(screen.getByRole('button', { name: 'Expand Ayesha' }));
@@ -93,8 +93,8 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
     // Two pending edits in the premium group, one in the date group.
-    expect(screen.getByText('2 of 2')).toBeInTheDocument();
-    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+    expect(screen.getByText('2 edits')).toBeInTheDocument();
+    expect(screen.getByText('1 edit')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
@@ -135,7 +135,7 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
   });
 
-  it('focused-chip Accept resolves only that edit; the chip stays with a verdict', () => {
+  it('focused-chip Accept resolves only that edit; the resolved chip disappears', () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
@@ -159,14 +159,14 @@ describe('TrackedChangeGroups', () => {
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
 
-    // The resolved chip stays visible, faded, with its verdict; the group
-    // tally now shows one pending of two.
-    expect(screen.getByText('accepted')).toBeInTheDocument();
-    expect(screen.getByText('$5,500')).toBeInTheDocument();
-    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    // The resolved chip is gone; its group sibling stays pending.
+    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
+    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 pending')).toBeInTheDocument();
   });
 
-  it('group Accept resolves every pending member and flips the card to done', () => {
+  it('group Accept resolves every pending member and removes the card', () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
@@ -177,7 +177,7 @@ describe('TrackedChangeGroups', () => {
       revisions.splice(revisions.indexOf(insertion), 1);
     });
     const editor = makeEditor(revisions);
-    render(<TrackedChangeGroups editor={editor} />);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
 
@@ -185,10 +185,9 @@ describe('TrackedChangeGroups', () => {
     // would instead resolve whatever is contiguous to it.
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).toHaveBeenCalledTimes(1);
-    // The group stays visible as a done card.
-    expect(screen.getByText('Update premium')).toBeInTheDocument();
-    expect(screen.getByText('2 done')).toBeInTheDocument();
-    expect(screen.getByText('all clear')).toBeInTheDocument();
+    // Nothing pending is left, so the whole rail goes away.
+    expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('Accept all resolves every pending edit across groups', () => {
@@ -205,13 +204,12 @@ describe('TrackedChangeGroups', () => {
       revisions.splice(revisions.indexOf(date), 1);
     });
     const editor = makeEditor(revisions);
-    render(<TrackedChangeGroups editor={editor} />);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
     expect(premium.accept).toHaveBeenCalledTimes(1);
     expect(date.accept).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('all clear')).toBeInTheDocument();
-    expect(screen.getAllByText('1 done')).toHaveLength(2);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', () => {
@@ -228,8 +226,7 @@ describe('TrackedChangeGroups', () => {
       revisions.splice(revisions.indexOf(insertion), 1);
     });
     const editor = makeEditor(revisions);
-    const onResolve = jest.fn();
-    render(<TrackedChangeGroups editor={editor} onResolve={onResolve} />);
+    render(<TrackedChangeGroups editor={editor} />);
     const panel = screen.getByLabelText('Assistant tracked changes');
 
     // Navigation starts at the first pending chip and opens its card.
@@ -245,18 +242,16 @@ describe('TrackedChangeGroups', () => {
     fireEvent.keyDown(panel, { key: 'ArrowDown' });
     expect(deletion.select).toHaveBeenCalledTimes(2);
 
-    // A resolves only the focused chip and reports the toast copy.
+    // A resolves only the focused chip.
     fireEvent.keyDown(panel, { key: 'a' });
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
-    expect(onResolve).toHaveBeenLastCalledWith('Removed change accepted.');
 
     // ArrowDown selects the next still-pending chip; R rejects it.
     fireEvent.keyDown(panel, { key: 'ArrowDown' });
     expect(insertion.select).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(panel, { key: 'r' });
     expect(insertion.reject).toHaveBeenCalledTimes(1);
-    expect(onResolve).toHaveBeenLastCalledWith('Added change rejected.');
   });
 
   it('selects and scrolls the exact revision for keyboard and mouse navigation', () => {
@@ -400,10 +395,10 @@ describe('TrackedChangeGroups', () => {
       revisions.splice(revisions.indexOf(insertion), 1);
     });
     const editor = makeEditor(revisions);
-    render(<TrackedChangeGroups editor={editor} />);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     // ONE edit, not two.
-    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+    expect(screen.getByText('1 edit')).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
@@ -411,14 +406,13 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('$5,500')).toBeInTheDocument();
     expect(screen.getByText('$6,000')).toBeInTheDocument();
 
-    // One approval (focused chip) settles both underlying revisions; the
-    // group — its only edit resolved — collapses to a done card.
+    // One approval (focused chip) settles both underlying revisions; with
+    // its only edit resolved, the group — and the rail — disappear.
     fireEvent.click(screen.getByText('$6,000'));
     fireEvent.click(screen.getByLabelText('Accept this edit'));
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('1 done')).toBeInTheDocument();
-    expect(screen.getByText('all clear')).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('drawer collapses via ✕; inline click or the bookmark tab reopen it', () => {

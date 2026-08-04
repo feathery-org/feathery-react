@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
@@ -94,11 +94,6 @@ function DocxEditor({
   // Shared by the panel's drawer handle, its ✕, and clicking an inline
   // tracked change (which re-shows the panel).
   const [changesPanelHidden, setChangesPanelHidden] = useState(false);
-  const [resolutionToast, setResolutionToast] = useState<{
-    id: number;
-    message: string;
-  } | null>(null);
-  const resolutionToastId = useRef(0);
 
   const { containerRef, editor, loading, error, exportDoc } = useDocxEditor({
     source,
@@ -118,25 +113,6 @@ function DocxEditor({
     },
     onError
   });
-
-  useEffect(() => {
-    if (!resolutionToast) return;
-    const timer = setTimeout(() => setResolutionToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [resolutionToast]);
-
-  useEffect(() => setResolutionToast(null), [editor]);
-
-  const showResolutionToast = (message: string) => {
-    resolutionToastId.current += 1;
-    setResolutionToast({ id: resolutionToastId.current, message });
-  };
-
-  const undoResolution = () => {
-    const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-    history?.undo?.();
-    setResolutionToast(null);
-  };
 
   const triggerDownload = (blob: Blob, extension: 'docx' | 'pdf' = 'docx') => {
     const doc = featheryDoc();
@@ -337,67 +313,9 @@ function DocxEditor({
             editor={editor}
             hidden={changesPanelHidden}
             onHiddenChange={setChangesPanelHidden}
-            onResolve={showResolutionToast}
           />
         )}
       </div>
-      {resolutionToast && (
-        <div
-          role='status'
-          aria-live='polite'
-          css={{
-            position: 'absolute',
-            left: '50%',
-            bottom: 18,
-            transform: 'translateX(-50%)',
-            zIndex: 20,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            minHeight: 38,
-            padding: '0 10px 0 14px',
-            border: '1px solid #c8cfd2',
-            borderRadius: 9,
-            background: '#171a1c',
-            color: '#fff',
-            boxShadow: '0 6px 18px rgba(23, 26, 28, 0.24)',
-            fontSize: 12.5,
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <span>{resolutionToast.message}</span>
-          {(typeof editor?.editorHistory?.undo === 'function' ||
-            typeof editor?.editorHistoryModule?.undo === 'function') && (
-            <button
-              onClick={undoResolution}
-              css={{
-                height: 27,
-                padding: '0 8px',
-                border: '1px solid rgba(255, 255, 255, 0.34)',
-                borderRadius: 6,
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: '#fff',
-                cursor: 'pointer',
-                fontSize: 11.5,
-                fontWeight: 600,
-                '&:hover': { background: 'rgba(255, 255, 255, 0.18)' }
-              }}
-            >
-              Undo
-            </button>
-          )}
-          <span
-            aria-label='Keyboard shortcut Command Z'
-            css={{
-              color: 'rgba(255, 255, 255, 0.62)',
-              fontFamily: '"SF Mono", ui-monospace, Menlo, Consolas, monospace',
-              fontSize: 10.5
-            }}
-          >
-            ⌘Z
-          </span>
-        </div>
-      )}
     </div>
   );
 }

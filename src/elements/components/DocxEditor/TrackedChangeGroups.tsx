@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useReducer,
-  useRef,
-  useState
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listRevisionGroups,
   resolveRevisionsAsOneUndo,
@@ -12,15 +6,14 @@ import {
 } from '../../../assistant/tools/syncfusionDocumentOps';
 import { setActiveInlineRevision } from './useDocxEditor';
 
-// Review rail for assistant-authored tracked changes, one card per accept
-// group. A card expands to its individual edits ("chips"), each rendered as
-// a −/+ diff; the focused chip carries its own Accept/Reject, the card
-// carries group-wide ones, and the rail head carries Accept all/Reject all.
-// Resolution goes through the non-cascading single-revision path wrapped as
-// ONE undo unit. Resolved chips stay visible with their verdict (faded), and
-// a fully resolved group collapses to a "done" card — a session memory,
-// cleared when a different document opens. Human tracked edits carry no
-// group tag and are never shown here.
+// Review rail for pending tracked changes: one card per assistant accept
+// group, plus one card per human author's manual edits. A card expands to
+// its individual edits ("chips"), each rendered as a −/+ diff; the focused
+// chip carries its own Accept/Reject, the card carries group-wide ones, and
+// the rail head carries Accept all/Reject all. Resolution goes through the
+// non-cascading single-revision path wrapped as ONE undo unit. A resolved
+// edit leaves the rail immediately — an undo restores the revision and the
+// contentChange refresh brings its chip back.
 
 interface Props {
   editor: any;
@@ -29,29 +22,24 @@ interface Props {
    *  stays mounted while hidden so those listeners keep running. */
   hidden?: boolean;
   onHiddenChange?: (hidden: boolean) => void;
-  /** Lets the host show one undo toast for every panel resolution. */
-  onResolve?: (message: string) => void;
 }
 
-type Verdict = 'accepted' | 'rejected' | 'resolved';
-
-/** One edit as the rail remembers it: live while pending, snapshot after. */
-interface ChipMem {
+/** One pending edit as the rail shows it. */
+interface ChipView {
   revision: any;
   partner?: any;
   revisionType: string;
   text: string;
   beforeText?: string;
   author?: string;
-  verdict?: Verdict;
 }
 
-interface GroupMem {
+interface GroupView {
   key: string;
   title: string;
   /** One author's manual edits rather than an assistant accept group. */
   untagged?: boolean;
-  chips: ChipMem[];
+  chips: ChipView[];
 }
 
 // ---------------------------------------------------------------------------
@@ -120,17 +108,8 @@ const badgeOf = (revisionType: string) => {
   return { label: 'Edit', color: INK_2, background: PANEL_3 };
 };
 
-const resolutionLabelOf = (chip: ChipMem) => {
-  if (chip.revisionType === 'Insertion' || chip.revisionType === 'MoveTo')
-    return 'Added';
-  if (chip.revisionType === 'Deletion' || chip.revisionType === 'MoveFrom')
-    return 'Removed';
-  if (chip.revisionType === 'Replace') return 'Modified';
-  return 'Tracked';
-};
-
 // The −/+ rows a chip's diff shows.
-const diffRowsOf = (chip: ChipMem) => {
+const diffRowsOf = (chip: ChipView) => {
   const rows: Array<{ sign: '−' | '+'; text: string; del: boolean }> = [];
   if (chip.revisionType === 'Replace') {
     rows.push({ sign: '−', text: chip.beforeText ?? '', del: true });
@@ -148,7 +127,7 @@ const diffRowsOf = (chip: ChipMem) => {
 
 // A replace chip is one edit backed by two revisions; every resolve path
 // must settle both with the one decision.
-const chipRevisions = (chip: ChipMem) =>
+const chipRevisions = (chip: ChipView) =>
   chip.partner ? [chip.revision, chip.partner] : [chip.revision];
 
 const itemRevisions = (item: RevisionGroupItem) =>
@@ -166,17 +145,10 @@ const caretSvg = (
   </svg>
 );
 
-function TrackedChangeGroups({
-  editor,
-  hidden,
-  onHiddenChange,
-  onResolve
-}: Props) {
-  // Session memory of every edit the rail has seen, keyed by group. Live
-  // items merge into it on refresh; resolved chips keep their snapshot and
-  // verdict. Mutated in place, with a reducer tick to re-render.
-  const memoryRef = useRef<Map<string, GroupMem>>(new Map());
-  const [, bump] = useReducer((x: number) => x + 1, 0);
+function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
+  // Only live (pending) revisions render; a resolved edit disappears from
+  // the rail and reappears if the resolution is undone.
+  const [groups, setGroups] = useState<GroupView[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // The edit the document cursor sits inside (or the chip last clicked);
   // its chip is expanded, ringed, scrolled to, and shows its own actions.
@@ -209,91 +181,41 @@ function TrackedChangeGroups({
   );
 
   const refresh = useCallback(() => {
-    const memory = memoryRef.current;
     let views: ReturnType<typeof listRevisionGroups> = [];
     try {
       views = listRevisionGroups(editor);
     } catch {
       views = [];
     }
-    const matched = new Set<ChipMem>();
-    for (const view of views) {
-      const key = groupKeyOf(view.changeSetId, view.group);
-      let mem = memory.get(key);
-      if (!mem) {
-        mem = {
-          key,
-          // A human view's "group" IS the author name; keep it verbatim.
-          title: view.untagged ? view.group : humanizeGroupId(view.group),
-          untagged: view.untagged,
-          chips: []
-        };
-        memory.set(key, mem);
-      }
-      for (const item of view.items) {
-        const revs = itemRevisions(item);
-        let chip = mem.chips.find((c) =>
-          revs.some((rev) => rev === c.revision || rev === c.partner)
-        );
-        if (!chip) {
-          // An undone resolution comes back as NEW revision objects; revive
-          // the matching snapshot by content instead of duplicating it.
-          chip = mem.chips.find(
-            (c) =>
-              !!c.verdict &&
-              !matched.has(c) &&
-              c.revisionType === item.revisionType &&
-              c.text === item.text &&
-              c.beforeText === item.beforeText
-          );
-        }
-        if (chip) {
-          chip.revision = item.revision;
-          chip.partner = item.partner;
-          chip.revisionType = item.revisionType;
-          chip.text = item.text;
-          chip.beforeText = item.beforeText;
-          chip.author = item.author;
-          chip.verdict = undefined;
-          matched.add(chip);
-        } else {
-          const fresh: ChipMem = {
-            revision: item.revision,
-            partner: item.partner,
-            revisionType: item.revisionType,
-            text: item.text,
-            beforeText: item.beforeText,
-            author: item.author
-          };
-          mem.chips.push(fresh);
-          matched.add(fresh);
-        }
-      }
-    }
-    // A chip that vanished without a panel verdict was resolved elsewhere.
-    for (const mem of memory.values()) {
-      for (const chip of mem.chips) {
-        if (!matched.has(chip) && !chip.verdict) chip.verdict = 'resolved';
-      }
-    }
-    bump();
+    setGroups(
+      views.map((view) => ({
+        key: groupKeyOf(view.changeSetId, view.group),
+        // A human view's "group" IS the author name; keep it verbatim.
+        title: view.untagged ? view.group : humanizeGroupId(view.group),
+        untagged: view.untagged,
+        chips: view.items.map((item) => ({
+          revision: item.revision,
+          partner: item.partner,
+          revisionType: item.revisionType,
+          text: item.text,
+          beforeText: item.beforeText,
+          author: item.author
+        }))
+      }))
+    );
   }, [editor]);
 
-  // Assistant edits, manual edits and accept/reject all land as content
-  // changes; documentChange means a DIFFERENT document opened in place, so
-  // the review memory starts over.
+  // Assistant edits, manual edits, accept/reject and undo/redo all land as
+  // content changes; documentChange means a DIFFERENT document opened in
+  // place. Either way the rail re-reads the live revisions.
   useEffect(() => {
     if (!editor) return;
     refresh();
-    const onDocumentChange = () => {
-      memoryRef.current.clear();
-      refresh();
-    };
     editor.addEventListener?.('contentChange', refresh);
-    editor.addEventListener?.('documentChange', onDocumentChange);
+    editor.addEventListener?.('documentChange', refresh);
     return () => {
       editor.removeEventListener?.('contentChange', refresh);
-      editor.removeEventListener?.('documentChange', onDocumentChange);
+      editor.removeEventListener?.('documentChange', refresh);
     };
   }, [editor, refresh]);
 
@@ -369,39 +291,16 @@ function TrackedChangeGroups({
     }
   };
 
-  const stampVerdicts = (revisions: any[], verdict: Verdict) => {
-    const set = new Set(revisions);
-    for (const mem of memoryRef.current.values()) {
-      for (const chip of mem.chips) {
-        if (
-          (chip.revision && set.has(chip.revision)) ||
-          (chip.partner && set.has(chip.partner))
-        )
-          chip.verdict = verdict;
-      }
-    }
-  };
-
-  const resolveChips = (chips: ChipMem[], isAccept: boolean) => {
-    const pending = chips.filter((chip) => !chip.verdict);
-    if (!pending.length) return;
-    const revisions = pending.flatMap(chipRevisions).filter(Boolean);
+  const resolveChips = (chips: ChipView[], isAccept: boolean) => {
+    if (!chips.length) return;
+    const revisions = chips.flatMap(chipRevisions).filter(Boolean);
     settleRevisions(revisions, isAccept);
-    stampVerdicts(revisions, isAccept ? 'accepted' : 'rejected');
     refresh();
-    const subject =
-      pending.length === 1
-        ? `${resolutionLabelOf(pending[0])} change`
-        : `${pending.length} changes`;
-    onResolve?.(`${subject} ${isAccept ? 'accepted' : 'rejected'}.`);
     refocusPanel();
   };
 
-  const focusChip = (chip: ChipMem) => {
-    if (chip.verdict) return;
-    const group = [...memoryRef.current.values()].find((mem) =>
-      mem.chips.includes(chip)
-    );
+  const focusChip = (chip: ChipView) => {
+    const group = groups.find((mem) => mem.chips.includes(chip));
     if (group) {
       setExpanded((prev) =>
         prev[group.key] ? prev : { ...prev, [group.key]: true }
@@ -440,10 +339,7 @@ function TrackedChangeGroups({
     refocusPanel();
   };
 
-  const groups = [...memoryRef.current.values()];
-  const allChips = groups.flatMap((mem) => mem.chips);
-  const pendingChips = allChips.filter((chip) => !chip.verdict);
-  const totalPending = allChips.filter((chip) => !chip.verdict).length;
+  const allChips = groups.flatMap((group) => group.chips);
 
   const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -454,29 +350,28 @@ function TrackedChangeGroups({
       key === 'k' ||
       key === 'arrowup'
     ) {
-      if (!pendingChips.length) return;
+      if (!allChips.length) return;
       event.preventDefault();
       event.stopPropagation();
       const direction = key === 'j' || key === 'arrowdown' ? 1 : -1;
       const current = activeRevisionRef.current;
-      const currentIndex = pendingChips.findIndex(
+      const currentIndex = allChips.findIndex(
         (chip) => chip.revision === current || chip.partner === current
       );
       const nextIndex =
         currentIndex < 0
           ? direction > 0
             ? 0
-            : pendingChips.length - 1
-          : (currentIndex + direction + pendingChips.length) %
-            pendingChips.length;
+            : allChips.length - 1
+          : (currentIndex + direction + allChips.length) % allChips.length;
       // focusChip hands focus back to the rail after Syncfusion's selection
       // steals it, so the next J/K/arrow key stays with this handler.
-      focusChip(pendingChips[nextIndex]);
+      focusChip(allChips[nextIndex]);
       return;
     }
     if (key !== 'a' && key !== 'r') return;
     const current = activeRevisionRef.current;
-    const focused = pendingChips.find(
+    const focused = allChips.find(
       (chip) => chip.revision === current || chip.partner === current
     );
     if (!focused) return;
@@ -575,7 +470,7 @@ function TrackedChangeGroups({
                   color: INK_3
                 }}
               >
-                {totalPending ? `${totalPending} pending` : 'all clear'}
+                {`${allChips.length} pending`}
               </em>
               {onHiddenChange && (
                 <button
@@ -602,14 +497,12 @@ function TrackedChangeGroups({
             <div css={{ display: 'flex', gap: 6 }}>
               <button
                 css={{ ...btn, height: 29 }}
-                disabled={!totalPending}
                 onClick={() => resolveChips(allChips, true)}
               >
                 Accept all
               </button>
               <button
                 css={{ ...rejectBtn, height: 29 }}
-                disabled={!totalPending}
                 onClick={() => resolveChips(allChips, false)}
               >
                 Reject all
@@ -630,9 +523,7 @@ function TrackedChangeGroups({
             }}
           >
             {groups.map((mem) => {
-              const pending = mem.chips.filter((chip) => !chip.verdict);
-              const done = !pending.length;
-              const isOpen = !!expanded[mem.key] && !done;
+              const isOpen = !!expanded[mem.key];
               return (
                 <div
                   key={mem.key}
@@ -643,8 +534,7 @@ function TrackedChangeGroups({
                     border: `1px solid ${LINE}`,
                     borderRadius: 10,
                     boxShadow: CARD_SHADOW,
-                    overflow: 'hidden',
-                    opacity: done ? 0.5 : 1
+                    overflow: 'hidden'
                   }}
                 >
                   <button
@@ -652,7 +542,6 @@ function TrackedChangeGroups({
                     aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${
                       mem.title
                     }`}
-                    disabled={done}
                     onClick={() =>
                       setExpanded((prev) => ({
                         ...prev,
@@ -670,8 +559,8 @@ function TrackedChangeGroups({
                       textAlign: 'left',
                       font: 'inherit',
                       color: 'inherit',
-                      cursor: done ? 'default' : 'pointer',
-                      '&:hover': done ? {} : { background: PANEL_2 }
+                      cursor: 'pointer',
+                      '&:hover': { background: PANEL_2 }
                     }}
                   >
                     <span
@@ -680,7 +569,6 @@ function TrackedChangeGroups({
                         flex: 'none',
                         marginTop: 2,
                         color: INK_3,
-                        opacity: done ? 0 : 1,
                         display: 'inline-flex',
                         transform: isOpen ? 'rotate(90deg)' : 'none',
                         transition: 'transform 0.18s ease'
@@ -719,34 +607,32 @@ function TrackedChangeGroups({
                           whiteSpace: 'nowrap'
                         }}
                       >
-                        {done
-                          ? `${mem.chips.length} done`
-                          : `${pending.length} of ${mem.chips.length}`}
+                        {`${mem.chips.length} ${
+                          mem.chips.length === 1 ? 'edit' : 'edits'
+                        }`}
                       </span>
                     </span>
                   </button>
-                  {!done && (
-                    <div
-                      css={{
-                        display: 'flex',
-                        gap: 6,
-                        padding: '0 11px 10px 31px'
-                      }}
+                  <div
+                    css={{
+                      display: 'flex',
+                      gap: 6,
+                      padding: '0 11px 10px 31px'
+                    }}
+                  >
+                    <button
+                      css={btn}
+                      onClick={() => resolveChips(mem.chips, true)}
                     >
-                      <button
-                        css={btn}
-                        onClick={() => resolveChips(mem.chips, true)}
-                      >
-                        Accept {pending.length}
-                      </button>
-                      <button
-                        css={rejectBtn}
-                        onClick={() => resolveChips(mem.chips, false)}
-                      >
-                        Reject {pending.length}
-                      </button>
-                    </div>
-                  )}
+                      Accept {mem.chips.length}
+                    </button>
+                    <button
+                      css={rejectBtn}
+                      onClick={() => resolveChips(mem.chips, false)}
+                    >
+                      Reject {mem.chips.length}
+                    </button>
+                  </div>
                   {isOpen && (
                     <div
                       css={{
@@ -771,7 +657,6 @@ function TrackedChangeGroups({
                       />
                       {mem.chips.map((chip, index) => {
                         const isActive =
-                          !chip.verdict &&
                           !!activeRevision &&
                           (chip.revision === activeRevision ||
                             chip.partner === activeRevision);
@@ -780,7 +665,7 @@ function TrackedChangeGroups({
                           <div
                             key={index}
                             role='button'
-                            tabIndex={chip.verdict ? -1 : 0}
+                            tabIndex={0}
                             ref={(el) => {
                               if (el) rowRefs.current.set(chip.revision, el);
                               else rowRefs.current.delete(chip.revision);
@@ -804,14 +689,11 @@ function TrackedChangeGroups({
                               display: 'flex',
                               flexDirection: 'column',
                               gap: 8,
-                              cursor: chip.verdict ? 'default' : 'pointer',
-                              opacity: chip.verdict ? 0.44 : 1,
+                              cursor: 'pointer',
                               boxShadow: isActive
                                 ? `0 0 0 3px ${ACCENT_WASH}, ${CARD_SHADOW}`
                                 : undefined,
-                              '&:hover': chip.verdict
-                                ? {}
-                                : { background: PANEL_2 }
+                              '&:hover': { background: PANEL_2 }
                             }}
                           >
                             {/* Connector from the spine to this chip. */}
@@ -861,27 +743,6 @@ function TrackedChangeGroups({
                                   }}
                                 >
                                   {chip.author}
-                                </span>
-                              )}
-                              {chip.verdict && (
-                                <span
-                                  css={{
-                                    marginLeft: 'auto',
-                                    flex: 'none',
-                                    fontFamily: MONO,
-                                    fontSize: 9.5,
-                                    letterSpacing: '0.03em',
-                                    textTransform: 'uppercase',
-                                    fontWeight: 600,
-                                    color:
-                                      chip.verdict === 'accepted'
-                                        ? ADD
-                                        : chip.verdict === 'rejected'
-                                        ? DEL
-                                        : INK_3
-                                  }}
-                                >
-                                  {chip.verdict}
                                 </span>
                               )}
                             </div>
