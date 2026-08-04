@@ -55,8 +55,8 @@ export type TokenCycle = {
 };
 
 type CycleEditor = EditorLike & {
-  addEventListener?: (event: string, handler: () => void) => void;
-  removeEventListener?: (event: string, handler: () => void) => void;
+  addEventListener?: (event: string, handler: (args?: any) => void) => void;
+  removeEventListener?: (event: string, handler: (args?: any) => void) => void;
 };
 
 const numericValues = (
