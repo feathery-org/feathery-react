@@ -350,6 +350,52 @@ describe('document-index delta protocol', () => {
     expect(delta.anchorRemap).toHaveLength(15);
   });
 
+  it('sends one changed block after a full load containing repeated text', async () => {
+    const original = paragraphs(30);
+    original[5] = 'Repeated coverage heading';
+    original[25] = 'Repeated coverage heading';
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    const full = JSON.parse(indexPosts()[0][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(30);
+
+    editor.texts[15] = 'A single edited paragraph after the full index landed.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    expect(indexPosts()).toHaveLength(2);
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta.mode).toBe('delta');
+    expect(delta.blocks).toBeUndefined();
+    expect(delta.changedBlocks).toEqual([
+      expect.objectContaining({
+        text: 'A single edited paragraph after the full index landed.'
+      })
+    ]);
+  });
+
+  it('uses a full sync when one occurrence of repeated text changes', async () => {
+    const original = paragraphs(20);
+    original[5] = 'Repeated coverage heading';
+    original[15] = 'Repeated coverage heading';
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts[5] = 'Edited one occurrence of the repeated heading';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const full = JSON.parse(indexPosts()[1][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(20);
+  });
+
   it('uses a delta for a forced documentChange when the base is confirmed', async () => {
     const editor = blockEditor(paragraphs(20));
     mount();

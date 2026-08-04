@@ -99,8 +99,7 @@ interface ScopeIndexState {
   currentHash: string | null;
   postedHash: string | null;
   inFlightHash: string | null;
-  confirmedBlocks: Map<string, ConfirmedIndexBlock> | null;
-  confirmedBlockCount: number;
+  confirmedBlocks: Map<string, ConfirmedIndexBlock[]> | null;
   pendingSync: PendingIndexSync | null;
 }
 
@@ -118,7 +117,6 @@ const stateFor = (target: DocumentIndexTarget): ScopeIndexState => {
       postedHash: null,
       inFlightHash: null,
       confirmedBlocks: null,
-      confirmedBlockCount: 0,
       pendingSync: null
     };
     scopeState.set(targetKey, state);
@@ -246,8 +244,8 @@ const warn = (message: string, detail?: unknown) =>
     : console.warn(`Feathery: ${message}`, detail);
 
 interface HashedIndexSnapshot {
-  blocksByHash: Map<string, IndexBlock>;
-  confirmedBlocks: Map<string, ConfirmedIndexBlock>;
+  blocksByHash: Map<string, IndexBlock[]>;
+  confirmedBlocks: Map<string, ConfirmedIndexBlock[]>;
 }
 
 interface DocumentIndexDelta {
@@ -288,12 +286,16 @@ const hashSnapshot = async (
     // Web Crypto is unavailable. It simply remains on the full-sync path.
     return null;
   }
-  const blocksByHash = new Map<string, IndexBlock>();
-  const confirmedBlocks = new Map<string, ConfirmedIndexBlock>();
+  const blocksByHash = new Map<string, IndexBlock[]>();
+  const confirmedBlocks = new Map<string, ConfirmedIndexBlock[]>();
   blocks.forEach((block, index) => {
     const hash = hashes[index];
-    blocksByHash.set(hash, block);
-    confirmedBlocks.set(hash, { anchor: block.anchor, text: block.text });
+    const hashedBlocks = blocksByHash.get(hash) ?? [];
+    hashedBlocks.push(block);
+    blocksByHash.set(hash, hashedBlocks);
+    const confirmed = confirmedBlocks.get(hash) ?? [];
+    confirmed.push({ anchor: block.anchor, text: block.text });
+    confirmedBlocks.set(hash, confirmed);
   });
   return { blocksByHash, confirmedBlocks };
 };
@@ -306,23 +308,29 @@ const buildDelta = (
 ): DocumentIndexDelta | null => {
   const previous = state.confirmedBlocks;
   if (!state.postedHash || !previous) return null;
-  // A hash-addressed remap cannot distinguish duplicate identical text. The
-  // server would move every matching row to one anchor, so use a full sync.
-  if (
-    previous.size !== state.confirmedBlockCount ||
-    hashed.blocksByHash.size !== blocks.length
-  )
-    return null;
 
   const changedBlocks: IndexBlock[] = [];
   const removedHashes: string[] = [];
   const anchorRemap: { hash: string; anchor: string }[] = [];
-  hashed.blocksByHash.forEach((block, hash) => {
+  for (const [hash, current] of hashed.blocksByHash) {
     const prior = previous.get(hash);
-    if (!prior) changedBlocks.push(block);
-    else if (prior.anchor !== block.anchor)
-      anchorRemap.push({ hash, anchor: block.anchor });
-  });
+    if (!prior) {
+      if (current.length > 1) return null;
+      changedBlocks.push(...current);
+      continue;
+    }
+    // A hash-addressed removal/remap cannot select one occurrence of repeated
+    // identical text. Fall back only when that repeated group itself changed;
+    // unchanged duplicates elsewhere in the document do not block a delta.
+    if (
+      prior.length !== current.length ||
+      (current.length > 1 &&
+        current.some((block, index) => block.anchor !== prior[index].anchor))
+    )
+      return null;
+    if (prior[0].anchor !== current[0].anchor)
+      anchorRemap.push({ hash, anchor: current[0].anchor });
+  }
   previous.forEach((_block, hash) => {
     if (!hashed.blocksByHash.has(hash)) removedHashes.push(hash);
   });
@@ -389,7 +397,6 @@ const performSnapshotSync = async (
     // before rebuilding it with the same current full inventory.
     state.postedHash = null;
     state.confirmedBlocks = null;
-    state.confirmedBlockCount = 0;
     result = await postDocumentIndex({
       baseUrl,
       targets,
@@ -418,7 +425,6 @@ const performSnapshotSync = async (
   }
   state.postedHash = digest;
   state.confirmedBlocks = hashed?.confirmedBlocks ?? null;
-  state.confirmedBlockCount = blocks.length;
 };
 
 const syncSnapshot = (
