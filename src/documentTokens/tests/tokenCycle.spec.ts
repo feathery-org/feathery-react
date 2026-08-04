@@ -731,6 +731,29 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.valueOf('fee')).toBe('$42.00');
   });
 
+  it('does not judge a token mid-edit', () => {
+    const editor = fakeEditor([
+      control(
+        {
+          id: 'qty',
+          index: 0,
+          source: 'qty',
+          format: { kind: 'number' },
+          validate: { min: 1 }
+        },
+        '5'
+      )
+    ]);
+    const cycle = attachTokenCycle(editor);
+
+    // Caret inside: deleting on the way to a new number must not flash red.
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+    cycle.setTokenValue('qty__0', 0);
+
+    expect(cycle.getState().invalid.has('qty__0')).toBe(false);
+  });
+
   it('stops listening on detach', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);

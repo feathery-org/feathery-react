@@ -32,6 +32,7 @@ import {
 import { parseValue, renderValue } from './format';
 import {
   buildPlan,
+  instanceKey,
   Plan,
   recalc,
   TokenSpec,
@@ -119,6 +120,9 @@ export const attachTokenCycle = (
   const memory = memoryStore();
 
   let plan: Plan = buildPlan([]);
+  // The APPEARANCE being edited, not the value: two controls can carry the
+  // same token, and moving between them must still commit the first.
+  let editingInstance: string | null = null;
   let editingId: string | null = null;
   let applying = false;
   const listeners = new Set<(state: TokenState) => void>();
@@ -216,7 +220,15 @@ export const attachTokenCycle = (
       values: new Map(numbers),
       texts: new Map(texts),
       errors,
-      invalid: validationErrors(plan, numbers),
+      // A token mid-edit has no verdict yet: deleting a value on the way to
+      // typing a new one must not flash as invalid.
+      invalid: editingId
+        ? new Map(
+            [...validationErrors(plan, numbers)].filter(
+              ([key]) => key !== editingId
+            )
+          )
+        : validationErrors(plan, numbers),
       focused: editingId
     });
   };
@@ -287,17 +299,22 @@ export const attachTokenCycle = (
     if (applying) return;
 
     const caretSpec = tokenAtCaret(editor);
-    const current = caretSpec ? valueKey(caretSpec) : null;
-    if (current === editingId) return;
+    const current = caretSpec ? instanceKey(caretSpec) : null;
+    if (current === editingInstance) return;
 
-    const left = editingId;
-    editingId = current;
-    if (left === null) {
+    const leftInstance = editingInstance;
+    const leftId = editingId;
+    editingInstance = current;
+    editingId = caretSpec ? valueKey(caretSpec) : null;
+
+    if (leftInstance === null || leftId === null) {
       publish({ ...snapshot, focused: editingId });
       return;
     }
 
-    const entry = readTokens(editor).find((t) => valueKey(t.spec) === left);
+    const entry = readTokens(editor).find(
+      (t) => instanceKey(t.spec) === leftInstance
+    );
     // A control emptied by undo shows the placeholder; reconciling puts its
     // value back instead of reading that in as content.
     if (!entry || entry.value === PLACEHOLDER) {
@@ -305,11 +322,12 @@ export const attachTokenCycle = (
       return;
     }
 
-    setTokenValue(left, entry.value);
+    setTokenValue(leftId, entry.value);
   };
 
   /** A different document is open: nothing carries over. */
   const onDocumentChange = (): void => {
+    editingInstance = null;
     editingId = null;
     refresh();
   };
@@ -344,7 +362,11 @@ export const attachTokenCycle = (
     if (args) args.isHandled = true;
 
     if (key === 'Enter') {
-      const entry = readTokens(editor).find((t) => valueKey(t.spec) === id);
+      const instance = instanceKey(caretSpec);
+      const entry = readTokens(editor).find(
+        (t) => instanceKey(t.spec) === instance
+      );
+      editingInstance = null;
       editingId = null;
       if (entry && entry.value !== PLACEHOLDER) setTokenValue(id, entry.value);
       else reconcile();
@@ -352,6 +374,7 @@ export const attachTokenCycle = (
     }
 
     // Escape: the owner never took the edit, so reconciling restores it.
+    editingInstance = null;
     editingId = null;
     reconcile();
   };

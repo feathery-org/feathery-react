@@ -47,6 +47,9 @@ export type EditorLike = {
     select?: (start: string, end: string) => void;
     startOffset?: string;
     endOffset?: string;
+    /** The selected text, used to prove a range was actually selected. */
+    text?: string;
+    isEmpty?: boolean;
   };
   editor: {
     insertText: (text: string) => void;
@@ -144,13 +147,25 @@ export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
  * replacement lands strictly between them and they survive the write. That is
  * the effect the prototype needed zero-width sentinels to achieve.
  */
-const selectValue = (editor: EditorLike, instance: string): boolean => {
+const selectValue = (
+  editor: EditorLike,
+  instance: string,
+  currentText: string
+): boolean => {
   if (typeof editor?.getBookmarks !== 'function') return false;
   if (typeof editor?.selection?.selectBookmark !== 'function') return false;
 
   const bookmark = bookmarkFor(instance);
   if (!editor.getBookmarks().includes(bookmark)) return false;
   editor.selection.selectBookmark(bookmark, true);
+
+  // A write REPLACES a selected range. If the selection came back collapsed,
+  // inserting would append instead — which silently compounds a value on
+  // every pass (`100` becoming `100,100100`). Refuse rather than corrupt: a
+  // token that fails to update is visible, a mangled number is not.
+  const selected = editor.selection.text;
+  if (selected === undefined) return true; // host cannot report; trust it
+  if (selected === '') return currentText === '';
   return true;
 };
 
@@ -164,7 +179,12 @@ const selectValue = (editor: EditorLike, instance: string): boolean => {
 export const selectTokenValue = (
   editor: EditorLike,
   spec: TokenSpec
-): boolean => selectValue(editor, instanceKey(spec));
+): boolean => {
+  const current = readTokens(editor).find(
+    (entry) => instanceKey(entry.spec) === instanceKey(spec)
+  );
+  return selectValue(editor, instanceKey(spec), current?.value ?? '');
+};
 
 /**
  * Write new rendered values into their controls.
@@ -202,7 +222,12 @@ export const writeValues = (
 
   // Compare before writing — an unchanged appearance costs nothing, and the
   // token being typed in is skipped so the caret is never yanked mid-word.
-  const pending: Array<{ id: string; instance: string; text: string }> = [];
+  const pending: Array<{
+    id: string;
+    instance: string;
+    text: string;
+    was: string;
+  }> = [];
   for (const { id, text } of updates) {
     if (id === options.skipId) continue;
     const found = appearances.get(id);
@@ -212,7 +237,12 @@ export const writeValues = (
     }
     for (const appearance of found) {
       if (appearance.text !== text) {
-        pending.push({ id, instance: appearance.instance, text });
+        pending.push({
+          id,
+          instance: appearance.instance,
+          text,
+          was: appearance.text
+        });
       }
     }
   }
@@ -225,8 +255,8 @@ export const writeValues = (
   withViewportPreserved(editor, () => {
     editor.editorHistory?.beginUndoAction();
     try {
-      for (const { id, instance, text } of pending) {
-        if (!selectValue(editor, instance)) {
+      for (const { id, instance, text, was } of pending) {
+        if (!selectValue(editor, instance, was)) {
           missed.push(id);
           continue;
         }

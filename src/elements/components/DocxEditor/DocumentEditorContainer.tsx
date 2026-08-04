@@ -457,15 +457,13 @@ export default function DocumentEditorContainer({
   );
 
   // The form rerenders every consumer when a field changes, so this component
-  // re-renders too; reconciling here is what carries a field edit into the
-  // document. It is idempotent, so running it on every render is safe.
-  const fieldSignature = (tokenCycle.current?.getState().specs ?? [])
-    .filter((spec) => spec.source)
-    .map((spec) => `${valueKeyOf(spec)}=${formFieldAccess.read(spec) ?? ''}`)
-    .join('|');
+  // re-renders too — reconciling on every render is what carries a field edit
+  // into the document. It derives from current values and writes only what the
+  // document does not already show, so running it unconditionally is both
+  // cheaper to reason about than a change signature and impossible to miss.
   useEffect(() => {
     tokenCycle.current?.reconcile();
-  }, [fieldSignature]);
+  });
 
   const box = (child: React.ReactNode) => (
     <div css={wrap} ref={editorHostRef as any}>
