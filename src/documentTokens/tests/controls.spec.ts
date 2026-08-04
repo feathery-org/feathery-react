@@ -68,7 +68,8 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
       editorHistory: {
         beginUndoAction: () => log.push('undo:begin'),
         endUndoAction: () => log.push('undo:end')
-      }
+      },
+      documentHelper: { viewerContainer: { scrollTop: 0, scrollLeft: 0 } }
     };
 
   return Object.assign(editor, {
@@ -248,6 +249,31 @@ describe('writeValues', () => {
     expect(editor.selection.startOffset).toBe('0;2;7');
     expect(editor.selection.endOffset).toBe('0;2;7');
     expect(editor.log[editor.log.length - 1]).toBe('caret 0;2;7-0;2;7');
+  });
+
+  it('leaves the scroll position where it was', () => {
+    // Selecting a bookmark scrolls it into view; writing several tokens must
+    // not drag the page around under the user.
+    const editor = fakeEditor([
+      control(qty, '10'),
+      control(itemTotal, '$1,500.00')
+    ]);
+    const viewport = editor.documentHelper.viewerContainer;
+    viewport.scrollTop = 820;
+    viewport.scrollLeft = 40;
+    // Writing scrolls the viewport, the way selectBookmark does.
+    editor.editor.insertText = (text: string) => {
+      viewport.scrollTop = 0;
+      const target = editor.controls.find(
+        (c: ContentControlInfo) => c.value === '$1,500.00'
+      );
+      if (target) target.value = text;
+    };
+
+    writeValues(editor, [{ id: 'item_total_1', text: '$3,000.00' }]);
+
+    expect(viewport.scrollTop).toBe(820);
+    expect(viewport.scrollLeft).toBe(40);
   });
 
   it('addresses by bookmark, excluding the markers from the selection', () => {

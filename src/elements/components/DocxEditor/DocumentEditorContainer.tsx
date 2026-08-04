@@ -287,6 +287,17 @@ export default function DocumentEditorContainer({
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
       if (!envelope) return;
+      // A token that fails its own validation must not reach the envelope —
+      // these documents are financial or legal, so a bad number is worse
+      // than an unsaved edit.
+      const invalid = tokenCycle.current?.getState().invalid;
+      if (invalid && invalid.size > 0) {
+        const summary = [...invalid.entries()]
+          .map(([id, reason]) => `${id}: ${reason}`)
+          .join(', ');
+        setError(`Cannot save — ${invalid.size} token(s) invalid. ${summary}`);
+        return;
+      }
       const updated = await client.saveEnvelopeFile(
         envelope.id,
         blob,

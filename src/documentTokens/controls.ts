@@ -59,6 +59,34 @@ export type EditorLike = {
   };
 };
 
+/**
+ * Run `write`, leaving the caret and the scroll position where they were.
+ *
+ * Selecting a bookmark scrolls it into view, so writing several tokens drags
+ * the page around and dumps the user somewhere they did not ask to be.
+ * Propagation must be invisible except for the numbers that changed.
+ */
+const withViewportPreserved = <T>(editor: EditorLike, write: () => T): T => {
+  const container = (editor as any)?.documentHelper?.viewerContainer;
+  const scroll = container
+    ? { top: container.scrollTop, left: container.scrollLeft }
+    : null;
+  const caret =
+    editor.selection?.startOffset && editor.selection?.endOffset
+      ? { start: editor.selection.startOffset, end: editor.selection.endOffset }
+      : null;
+
+  try {
+    return write();
+  } finally {
+    if (caret) editor.selection.select?.(caret.start, caret.end);
+    if (container && scroll) {
+      container.scrollTop = scroll.top;
+      container.scrollLeft = scroll.left;
+    }
+  }
+};
+
 const isOurs = (info: ContentControlInfo): boolean =>
   typeof info.tag === 'string' && info.tag.startsWith(TAG_PREFIX);
 
@@ -161,27 +189,21 @@ export const writeValues = (
     return { written, missed: pending.map(({ id }) => id) };
   }
 
-  // Selecting each bookmark to write it leaves the caret at the last token
-  // touched. Propagation must not move the user's cursor, so put it back.
-  const caret =
-    editor.selection.startOffset && editor.selection.endOffset
-      ? { start: editor.selection.startOffset, end: editor.selection.endOffset }
-      : null;
-
-  editor.editorHistory?.beginUndoAction();
-  try {
-    for (const { id, text } of pending) {
-      if (!current.has(id) || !selectValue(editor, id)) {
-        missed.push(id);
-        continue;
+  withViewportPreserved(editor, () => {
+    editor.editorHistory?.beginUndoAction();
+    try {
+      for (const { id, text } of pending) {
+        if (!current.has(id) || !selectValue(editor, id)) {
+          missed.push(id);
+          continue;
+        }
+        editor.editor.insertText(text);
+        written.push(id);
       }
-      editor.editor.insertText(text);
-      written.push(id);
+    } finally {
+      editor.editorHistory?.endUndoAction();
     }
-  } finally {
-    editor.editorHistory?.endUndoAction();
-    if (caret) editor.selection.select?.(caret.start, caret.end);
-  }
+  });
 
   return { written, missed };
 };
@@ -251,10 +273,11 @@ export const applyChrome = (editor: EditorLike): number => {
   }
 
   if (painted > 0) {
-    // The properties are model state; nothing repaints on its own.
-    const viewer = (editor as any)?.documentHelper ?? (editor as any)?.viewer;
-    viewer?.updateScrollBars?.();
-    (editor as any)?.documentHelper?.owner?.viewer?.updateScrollBars?.();
+    // The properties are model state; nothing repaints on its own. The
+    // repaint itself moves the viewport, so hold it still.
+    withViewportPreserved(editor, () => {
+      (editor as any)?.documentHelper?.updateScrollBars?.();
+    });
   }
   return painted;
 };
