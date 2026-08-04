@@ -5273,6 +5273,15 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
   // author/type check and the tag check always apply to the same revision.
   const originalMatched = mod.isRevisionMatched.bind(mod);
   mod.isRevisionMatched = (item: any, type: any): boolean => {
+    // A type-less call is an OWNERSHIP check, not a combine decision: e.g.
+    // handleDeleteTracking asks "is this pending insertion the current
+    // user's own?" and, when yes, removes the text outright instead of
+    // layering a Deletion revision. Tag-gating that answer makes the engine
+    // treat the author's own pending text as foreign, leaving content
+    // rejecting can no longer restore (untracked_write on the second write
+    // over a pending insertion). Combine/extend calls always pass a
+    // concrete revision type; only those are group-scoped.
+    if (type === undefined || type === null) return originalMatched(item, type);
     const revisions: any[] =
       item && typeof item.revisionLength === 'number'
         ? Array.from(
