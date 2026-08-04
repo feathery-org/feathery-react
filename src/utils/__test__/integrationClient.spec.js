@@ -551,12 +551,12 @@ describe('IntegrationClient', () => {
           run_async: false,
           // Anything other than "sign" fills instead.
           envelope_action: 'fill',
-          // A document with no role falls back to the shared signer field.
+          // A document with no role falls back to the shared signer field,
+          // which is the filler's own, so they sign it themselves.
           signers: [
-            { document_id: 'doc1', email: 'test@example.com' },
-            { document_id: 'doc2', email: 'test@example.com' }
+            { document_id: 'doc1', email: 'test@example.com', filler: true },
+            { document_id: 'doc2', email: 'test@example.com', filler: true }
           ],
-          filler_email: 'test@example.com',
           repeatable: true
         })
       );

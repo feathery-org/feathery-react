@@ -469,17 +469,27 @@ export default class IntegrationClient {
     const roleDocumentIds = new Set(
       envelopeSigners.map((entry: any) => entry.document_id)
     );
+    // Whichever entries are the filler's own are flagged, so the backend
+    // opens those inline instead of emailing a link, and hands back only
+    // their signing token.
+    const isFiller = (email: string) =>
+      !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase();
     const signers = [
-      ...envelopeSigners.map((entry: any) => ({
-        document_id: entry.document_id,
-        role_id: entry.role_id,
-        email: fieldValues[entry.field_key]?.toString() ?? ''
-      })),
+      ...envelopeSigners.map((entry: any) => {
+        const email = fieldValues[entry.field_key]?.toString() ?? '';
+        return {
+          document_id: entry.document_id,
+          role_id: entry.role_id,
+          email,
+          filler: isFiller(email)
+        };
+      }),
       ...(action.documents ?? [])
         .filter((documentId: string) => !roleDocumentIds.has(documentId))
         .map((documentId: string) => ({
           document_id: documentId,
-          email: fillerEmail
+          email: fillerEmail,
+          filler: true
         }))
     ].filter((entry: any) => entry.email);
 
@@ -489,7 +499,6 @@ export default class IntegrationClient {
       documentIds: action.documents ?? [],
       userId,
       signers,
-      fillerEmail,
       repeatable: action.repeatable ?? false,
       runAsync,
       envelopeAction,
@@ -531,11 +540,7 @@ export default class IntegrationClient {
   // the backend convert the docx, so holding them back is what kept the draft
   // editable. Same list shape generation sends, where an omitted role_id means
   // the one email covers every role.
-  finalizeEnvelope(
-    envelopeId: string,
-    signers: Record<string, any>[] = [],
-    fillerEmail = ''
-  ) {
+  finalizeEnvelope(envelopeId: string, signers: Record<string, any>[] = []) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
     const options = {
@@ -543,8 +548,7 @@ export default class IntegrationClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fuser_key: userId ?? '',
-        signers,
-        filler_email: fillerEmail
+        signers
       }),
       keepalive: false
     };
