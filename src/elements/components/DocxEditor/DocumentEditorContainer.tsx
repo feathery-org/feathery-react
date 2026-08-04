@@ -16,7 +16,10 @@ import {
   unregisterDocxEditor
 } from '../../../assistant/tools/docxEditorRegistry';
 import { attachTokenCycle } from '../../../documentTokens/tokenCycle';
-import type { TokenCycle } from '../../../documentTokens/tokenCycle';
+import type {
+  FieldAccess,
+  TokenCycle
+} from '../../../documentTokens/tokenCycle';
 import TokenPanel, {
   tokenPanelEnabled
 } from '../../../documentTokens/TokenPanel';
@@ -38,25 +41,43 @@ const valueKeyOf = (spec: any): string =>
     : `${spec.id}__${spec.index}`;
 
 /**
- * The field value behind a token — indexed when the field is repeated.
+ * Token access to the form's field values.
  *
- * A repeated field is one key holding an array, but the same key holds a bare
- * scalar before any repeat exists. Treating the scalar as row 0 keeps a token
- * bound either way, instead of only the first row resolving.
+ * The single owner of a field-backed token's value is the form engine, so this
+ * reads straight from `fieldValues` and writes through `setFieldValues` — the
+ * same path a rendered input uses, which submits the value and rerenders every
+ * form. A repeated field is one key holding an array indexed by row; the same
+ * key holds a bare scalar before any repeat exists, so a scalar is treated as
+ * row 0 and a token stays bound either way.
  */
-const fieldValueFor = (spec: any): any => {
-  if (!spec.source) return undefined;
-  const value = fieldValues[spec.source];
-  const row = spec.index ?? 0;
-  if (Array.isArray(value)) return value[row];
-  return row === 0 ? value : undefined;
-};
-
-/** The rows of a repeated field, preserved so one row never clobbers another. */
-const fieldRows = (source: string): any[] => {
-  const value = fieldValues[source];
-  if (Array.isArray(value)) return [...value];
-  return value === undefined || value === null ? [] : [value];
+const formFieldAccess: FieldAccess = {
+  read: (spec) => {
+    if (!spec.source) return undefined;
+    const value = fieldValues[spec.source];
+    const row = spec.index ?? 0;
+    if (Array.isArray(value)) return value[row];
+    return row === 0 ? (value as any) : undefined;
+  },
+  write: (updates) => {
+    const next: Record<string, any> = {};
+    for (const { spec, value } of updates) {
+      if (!spec.source) continue;
+      if (spec.index === undefined || spec.index === null) {
+        next[spec.source] = value;
+        continue;
+      }
+      // Start from the existing rows so writing one never clobbers another.
+      const existing = next[spec.source] ?? fieldValues[spec.source];
+      const rows = Array.isArray(existing)
+        ? [...existing]
+        : existing === undefined || existing === null
+        ? []
+        : [existing];
+      rows[spec.index] = value;
+      next[spec.source] = rows;
+    }
+    if (Object.keys(next).length > 0) setFieldValues(next);
+  }
 };
 
 // The container carries no document. Its document is owned by the Generate
@@ -404,34 +425,7 @@ export default function DocumentEditorContainer({
       // because the editor is ready before its .docx has loaded.
       tokenCycle.current?.detach();
       tokenCycle.current = attachTokenCycle(editor, {
-        // Token -> field. A repeated field is ONE key holding an array, so a
-        // row writes its own slot and leaves the others alone.
-        onValuesChanged: () => {
-          const cycle = tokenCycle.current;
-          if (!cycle) return;
-          const state = cycle.getState();
-          const updates: Record<string, any> = {};
-
-          for (const spec of state.specs) {
-            if (!spec.source) continue;
-            const key = valueKeyOf(spec);
-            const next =
-              spec.format?.kind === 'text'
-                ? state.texts.get(key)
-                : state.values.get(key);
-            if (next === undefined) continue;
-
-            if (spec.index === undefined || spec.index === null) {
-              updates[spec.source] = next;
-            } else {
-              const rows =
-                (updates[spec.source] as any[]) ?? fieldRows(spec.source);
-              rows[spec.index] = next;
-              updates[spec.source] = rows;
-            }
-          }
-          if (Object.keys(updates).length > 0) setFieldValues(updates);
-        }
+        fields: formFieldAccess
       });
       setTokenEditor(editor);
       if (tokenPanelEnabled(featheryWindow())) {
@@ -462,24 +456,16 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
-  // Field -> token. The container re-renders when the form updates values, so
-  // comparing the sources each render picks up a change made anywhere else in
-  // the form without a subscription the SDK does not expose.
-  const tokenSources = (tokenCycle.current?.getState().specs ?? [])
+  // The form rerenders every consumer when a field changes, so this component
+  // re-renders too; reconciling here is what carries a field edit into the
+  // document. It is idempotent, so running it on every render is safe.
+  const fieldSignature = (tokenCycle.current?.getState().specs ?? [])
     .filter((spec) => spec.source)
-    .map((spec) => `${spec.id}=${fieldValues[spec.source as string] ?? ''}`)
+    .map((spec) => `${valueKeyOf(spec)}=${formFieldAccess.read(spec) ?? ''}`)
     .join('|');
   useEffect(() => {
-    const cycle = tokenCycle.current;
-    if (!cycle) return;
-    for (const spec of cycle.getState().specs) {
-      if (!spec.source) continue;
-      const incoming = fieldValues[spec.source];
-      if (incoming === undefined || incoming === null || incoming === '')
-        continue;
-      cycle.setTokenValue(spec.id, incoming as any);
-    }
-  }, [tokenSources]);
+    tokenCycle.current?.reconcile();
+  }, [fieldSignature]);
 
   const box = (child: React.ReactNode) => (
     <div css={wrap} ref={editorHostRef as any}>

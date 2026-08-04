@@ -574,7 +574,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(() => cycle.detach()).not.toThrow();
   });
 
-  it('settles dependents when an input arrives from outside', () => {
+  it('settles dependents when a value arrives from outside', () => {
     // A form field changing sets an input whose own value may already match,
     // so recompute is what keeps the derived values honest.
     const editor = invoiceEditor();
@@ -582,7 +582,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     // Simulate the graph going stale: a derived control edited out of band.
     editor.controls[7].value = '$0.00'; // subtotal
-    cycle.recompute();
+    cycle.reconcile();
 
     expect(editor.valueOf('subtotal')).toBe('$2,300.00');
   });
@@ -593,7 +593,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     // Undo emptied a control: SyncFusion shows its placeholder.
     editor.controls[0].value = 'Click here or tap to insert text';
-    cycle.recompute();
+    cycle.reconcile();
 
     expect(editor.valueOf('qty__0')).toBe('10');
   });
@@ -607,7 +607,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     editor.controls[0].value = 'Click here or tap to insert text';
     editor.controls[1].value = 'Click here or tap to insert text';
-    cycle.recompute();
+    cycle.reconcile();
 
     expect(editor.valueOf('fee')).toBe('$0.00');
     expect(editor.valueOf('note')).toBe('');
@@ -654,6 +654,81 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.log.some((l: string) => l.startsWith('select ftk_qty__0'))).toBe(
       true
     );
+  });
+
+  it('reads a field-backed token from the form, not from itself', () => {
+    // The form owns the value: the document follows it, never the reverse.
+    const store: Record<string, any> = { qty: [4, 0, 0] };
+    const fields = {
+      read: (spec: TokenSpec) =>
+        Array.isArray(store[spec.source as string])
+          ? store[spec.source as string][spec.index ?? 0]
+          : store[spec.source as string],
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) =>
+        updates.forEach(({ spec, value }) => {
+          const rows = store[spec.source as string] ?? [];
+          rows[spec.index ?? 0] = value;
+          store[spec.source as string] = rows;
+        })
+    };
+    const editor = fakeEditor([
+      control(
+        { id: 'qty', index: 0, source: 'qty', format: { kind: 'number' } },
+        '99'
+      ),
+      control(
+        { id: 'double', index: 0, formula: 'qty * 2', format: { kind: 'number' } },
+        '0'
+      )
+    ]);
+
+    const cycle = attachTokenCycle(editor, { fields });
+
+    // The document said 99; the field says 4, and the field wins.
+    expect(cycle.getState().values.get('qty__0')).toBe(4);
+    expect(editor.valueOf('qty__0')).toBe('4');
+    expect(editor.valueOf('double__0')).toBe('8');
+  });
+
+  it('writes a token edit into the form field that owns it', () => {
+    const store: Record<string, any> = { fee: 10 };
+    const fields = {
+      read: (spec: TokenSpec) => store[spec.source as string],
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) =>
+        updates.forEach(({ spec, value }) => {
+          store[spec.source as string] = value;
+        })
+    };
+    const editor = fakeEditor([
+      control({ id: 'fee', source: 'fee', format: { kind: 'currency' } }, '$10.00')
+    ]);
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('fee', 25);
+
+    expect(store.fee).toBe(25);
+    expect(editor.valueOf('fee')).toBe('$25.00');
+  });
+
+  it('adopts the value the server rendered when the field has none', () => {
+    // Opening an envelope must never blank it just because the form has not
+    // been given that field's value.
+    const store: Record<string, any> = {};
+    const fields = {
+      read: (spec: TokenSpec) => store[spec.source as string],
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) =>
+        updates.forEach(({ spec, value }) => {
+          store[spec.source as string] = value;
+        })
+    };
+    const editor = fakeEditor([
+      control({ id: 'fee', source: 'fee', format: { kind: 'currency' } }, '$42.00')
+    ]);
+
+    attachTokenCycle(editor, { fields });
+
+    expect(store.fee).toBe(42);
+    expect(editor.valueOf('fee')).toBe('$42.00');
   });
 
   it('stops listening on detach', () => {
