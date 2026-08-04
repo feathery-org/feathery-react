@@ -10,14 +10,7 @@
  * removed, or wildcard membership shifting. Value edits never rebuild it.
  */
 
-import {
-  dependencies,
-  evaluate,
-  FormulaError,
-  Node,
-  parse,
-  wildcardPrefixes
-} from './grammar';
+import { dependencies, evaluate, FormulaError, Node, parse } from './grammar';
 
 export type TokenFormat = {
   kind: 'currency' | 'number' | 'percent' | 'text';
@@ -31,14 +24,29 @@ export type TokenValidation = {
 };
 
 export type TokenSpec = {
+  /** The name the template author wrote — a field key when one matches. */
   id: string;
-  /** Field key for inputs; null for computed tokens. */
+  /** Row of a repeated field; absent for a scalar. */
+  index?: number | null;
+  /** Field key when the token is field-backed; absent for in-memory. */
   source?: string | null;
-  /** Expression string for computed tokens; null for inputs. */
+  /** Expression string for computed tokens; absent for inputs. */
   formula?: string | null;
+  /** Address of THIS appearance. A token may appear many times. */
+  instance?: string;
   format?: TokenFormat;
   validate?: TokenValidation;
 };
+
+/** Identifies a VALUE: one per token per row, shared by every appearance. */
+export const valueKey = (spec: TokenSpec): string =>
+  spec.index === undefined || spec.index === null
+    ? spec.id
+    : `${spec.id}__${spec.index}`;
+
+/** Identifies a CONTROL: unique per appearance in the document. */
+export const instanceKey = (spec: TokenSpec): string =>
+  spec.instance ?? valueKey(spec);
 
 export type Plan = {
   specs: Map<string, TokenSpec>;
@@ -55,32 +63,52 @@ const isComputed = (spec: TokenSpec): boolean =>
   typeof spec.formula === 'string' && spec.formula.trim().length > 0;
 
 /**
- * Every id a token depends on: direct references plus, for wildcards, every
- * id currently matching the prefix. The wildcard edges are what make
- * SUM(item_total_*) evaluate after the last item total, not before it.
+ * Resolve a formula's bare names to value keys, from the row it sits in.
+ *
+ * `qty * unit_cost` in row 2 depends on `qty__2` and `unit_cost__2`; the same
+ * formula on a scalar token depends on the scalar values. A scalar token
+ * referencing a repeated one depends on EVERY row of it, which is what makes
+ * SUM(item_total) evaluate after the last row.
  */
-const edgesFor = (ast: Node, allIds: string[]): Set<string> => {
-  const deps = dependencies(ast);
-  for (const prefix of wildcardPrefixes(ast)) {
-    for (const id of allIds) {
-      if (id.startsWith(prefix)) deps.add(id);
-    }
+const edgesFor = (
+  ast: Node,
+  index: number | null | undefined,
+  rowsById: Map<string, Set<string>>
+): Set<string> => {
+  const deps = new Set<string>();
+  for (const name of dependencies(ast)) {
+    const rows = rowsById.get(name);
+    if (!rows) continue;
+    const own = index === undefined || index === null ? name : `${name}__${index}`;
+    if (rows.has(own)) deps.add(own);
+    else rows.forEach((key) => deps.add(key));
   }
   return deps;
 };
 
 export const buildPlan = (specs: TokenSpec[]): Plan => {
-  const specMap = new Map(specs.map((s) => [s.id, s]));
+  // One entry per VALUE, not per appearance: a token used three times is one
+  // node in the graph with three controls pointing at it.
+  const specMap = new Map<string, TokenSpec>();
+  for (const spec of specs) specMap.set(valueKey(spec), spec);
+
+  // Which value keys exist for each bare name, so a row can bind its own.
+  const rowsById = new Map<string, Set<string>>();
+  for (const spec of specs) {
+    const rows = rowsById.get(spec.id) ?? new Set<string>();
+    rows.add(valueKey(spec));
+    rowsById.set(spec.id, rows);
+  }
+
   const asts = new Map<string, Node>();
   const errors = new Map<string, string>();
-  const ids = specs.map((s) => s.id);
 
-  for (const spec of specs) {
+  for (const [key, spec] of specMap) {
     if (!isComputed(spec)) continue;
     try {
-      asts.set(spec.id, parse(spec.formula as string));
+      asts.set(key, parse(spec.formula as string));
     } catch (err) {
-      errors.set(spec.id, (err as Error).message);
+      errors.set(key, (err as Error).message);
     }
   }
 
@@ -88,7 +116,7 @@ export const buildPlan = (specs: TokenSpec[]): Plan => {
   const needs = new Map<string, Set<string>>();
   const dependents = new Map<string, string[]>();
   for (const [id, ast] of asts) {
-    const deps = edgesFor(ast, ids);
+    const deps = edgesFor(ast, specMap.get(id)?.index, rowsById);
     needs.set(id, deps);
     for (const dep of deps) {
       const list = dependents.get(dep);
@@ -173,6 +201,38 @@ export type RecalcResult = {
  * no id is given (used once on open). `values` is updated in place with the
  * new results; the returned map holds only what moved.
  */
+/**
+ * The values one token can see: bare names bound to its own row, and — for a
+ * scalar token — every row of a repeated name as a list, so SUM(item_total)
+ * aggregates the column.
+ */
+const viewFor = (
+  plan: Plan,
+  values: Map<string, number>,
+  spec: TokenSpec
+): Map<string, number | number[]> => {
+  const scalar = spec.index === undefined || spec.index === null;
+  const view = new Map<string, number | number[]>();
+
+  for (const [key, other] of plan.specs) {
+    const value = values.get(key);
+    if (value === undefined) continue;
+    const otherScalar = other.index === undefined || other.index === null;
+
+    if (otherScalar) {
+      view.set(other.id, value);
+    } else if (!scalar && other.index === spec.index) {
+      view.set(other.id, value);
+    } else if (scalar) {
+      const existing = view.get(other.id);
+      if (Array.isArray(existing)) existing.push(value);
+      else view.set(other.id, [value]);
+    }
+  }
+
+  return view;
+};
+
 export const recalc = (
   plan: Plan,
   values: Map<string, number>,
@@ -184,9 +244,10 @@ export const recalc = (
 
   for (const id of targets) {
     const ast = plan.asts.get(id);
-    if (!ast) continue;
+    const spec = plan.specs.get(id);
+    if (!ast || !spec) continue;
     try {
-      const next = evaluate(ast, values);
+      const next = evaluate(ast, viewFor(plan, values, spec));
       if (values.get(id) !== next) {
         values.set(id, next);
         changed.set(id, next);

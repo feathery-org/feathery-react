@@ -8,7 +8,7 @@
  * of docs/superpowers/specs/2026-08-03-docx-linked-tokens-design.md.
  */
 
-import { TokenSpec } from './plan';
+import { instanceKey, TokenSpec, valueKey } from './plan';
 
 /** Prefix that marks a content control as ours, so we never touch the rest. */
 export const TAG_PREFIX = 'ftk:';
@@ -144,11 +144,11 @@ export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
  * replacement lands strictly between them and they survive the write. That is
  * the effect the prototype needed zero-width sentinels to achieve.
  */
-const selectValue = (editor: EditorLike, id: string): boolean => {
+const selectValue = (editor: EditorLike, instance: string): boolean => {
   if (typeof editor?.getBookmarks !== 'function') return false;
   if (typeof editor?.selection?.selectBookmark !== 'function') return false;
 
-  const bookmark = bookmarkFor(id);
+  const bookmark = bookmarkFor(instance);
   if (!editor.getBookmarks().includes(bookmark)) return false;
   editor.selection.selectBookmark(bookmark, true);
   return true;
@@ -172,17 +172,35 @@ export const writeValues = (
   updates: Array<{ id: string; text: string }>,
   options: { skipId?: string } = {}
 ): { written: string[]; missed: string[] } => {
-  const current = new Map(
-    readTokens(editor).map(({ spec, value }) => [spec.id, value])
-  );
+  // A token may appear many times; every appearance shows the same value, so
+  // one update fans out to each control that carries it.
+  const appearances = new Map<string, Array<{ instance: string; text: string }>>();
+  for (const { spec, value } of readTokens(editor)) {
+    const key = valueKey(spec);
+    const list = appearances.get(key) ?? [];
+    list.push({ instance: instanceKey(spec), text: value });
+    appearances.set(key, list);
+  }
+
   const written: string[] = [];
   const missed: string[] = [];
 
-  // Compare before writing — an unchanged token costs nothing, and the token
-  // being typed in is skipped so the caret is never yanked out mid-word.
-  const pending = updates.filter(
-    ({ id, text }) => id !== options.skipId && current.get(id) !== text
-  );
+  // Compare before writing — an unchanged appearance costs nothing, and the
+  // token being typed in is skipped so the caret is never yanked mid-word.
+  const pending: Array<{ id: string; instance: string; text: string }> = [];
+  for (const { id, text } of updates) {
+    if (id === options.skipId) continue;
+    const found = appearances.get(id);
+    if (!found) {
+      missed.push(id);
+      continue;
+    }
+    for (const appearance of found) {
+      if (appearance.text !== text) {
+        pending.push({ id, instance: appearance.instance, text });
+      }
+    }
+  }
   if (pending.length === 0) return { written, missed };
 
   if (typeof editor?.editor?.insertText !== 'function') {
@@ -192,13 +210,13 @@ export const writeValues = (
   withViewportPreserved(editor, () => {
     editor.editorHistory?.beginUndoAction();
     try {
-      for (const { id, text } of pending) {
-        if (!current.has(id) || !selectValue(editor, id)) {
+      for (const { id, instance, text } of pending) {
+        if (!selectValue(editor, instance)) {
           missed.push(id);
           continue;
         }
         editor.editor.insertText(text);
-        written.push(id);
+        if (!written.includes(id)) written.push(id);
       }
     } finally {
       editor.editorHistory?.endUndoAction();
@@ -235,7 +253,7 @@ export const insertToken = (
       canEdit: isComputed,
       canDelete: true
     });
-    editor.editor.insertBookmark?.(bookmarkFor(spec.id));
+    editor.editor.insertBookmark?.(bookmarkFor(instanceKey(spec)));
   } finally {
     editor.editorHistory?.endUndoAction();
   }

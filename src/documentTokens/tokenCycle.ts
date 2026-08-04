@@ -22,7 +22,14 @@
 
 import { EditorLike, readTokens, tokenAtCaret, writeValues } from './controls';
 import { parseValue, renderValue } from './format';
-import { buildPlan, Plan, recalc, TokenSpec, validationErrors } from './plan';
+import {
+  buildPlan,
+  Plan,
+  recalc,
+  TokenSpec,
+  validationErrors,
+  valueKey
+} from './plan';
 
 /**
  * A token commits when the caret LEAVES it, not on a timer.
@@ -64,8 +71,9 @@ const numericValues = (
 ): Map<string, number> => {
   const values = new Map<string, number>();
   for (const { spec, value } of entries) {
+    if (spec.format?.kind === 'text') continue;
     const parsed = parseValue(value);
-    if (parsed !== null) values.set(spec.id, parsed);
+    if (parsed !== null) values.set(valueKey(spec), parsed);
   }
   return values;
 };
@@ -150,8 +158,9 @@ export const attachTokenCycle = (
    */
   const onKeyDown = (args: any): void => {
     const key = args?.event?.key ?? args?.key;
-    const focused = tokenAtCaret(editor);
-    if (!focused) return;
+    const focusedSpec = tokenAtCaret(editor);
+    if (!focusedSpec) return;
+    const focused = { id: valueKey(focusedSpec) };
 
     // A number token refuses characters it could never hold. Cheaper than
     // repairing the text afterwards, and the user sees the rule immediately.
@@ -176,7 +185,7 @@ export const attachTokenCycle = (
 
     const id = focused.id;
     if (key === 'Enter') {
-      const entry = readTokens(editor).find((t) => t.spec.id === id);
+      const entry = readTokens(editor).find((t) => valueKey(t.spec) === id);
       const parsed = entry ? parseValue(entry.value) : null;
       editingId = null;
       if (parsed !== null && values.get(id) !== parsed)
@@ -237,7 +246,8 @@ export const attachTokenCycle = (
   const onSelectionChange = (): void => {
     if (applying) return;
 
-    const current = tokenAtCaret(editor)?.id ?? null;
+    const caretSpec = tokenAtCaret(editor);
+    const current = caretSpec ? valueKey(caretSpec) : null;
     if (current === editingId) return;
 
     const left = editingId;
@@ -248,7 +258,7 @@ export const attachTokenCycle = (
       return;
     }
 
-    const entry = readTokens(editor).find((t) => t.spec.id === left);
+    const entry = readTokens(editor).find((t) => valueKey(t.spec) === left);
     if (!entry) {
       publish();
       return;

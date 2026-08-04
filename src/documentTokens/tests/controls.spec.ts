@@ -87,10 +87,11 @@ const control = (spec: TokenSpec, value: string): ContentControlInfo => ({
   canDelete: true
 });
 
-const qty: TokenSpec = { id: 'qty_1', source: 'qty' };
+const qty: TokenSpec = { id: 'qty', index: 0, source: 'qty' };
 const itemTotal: TokenSpec = {
-  id: 'item_total_1',
-  formula: 'qty_1 * unit_cost_1'
+  id: 'item_total',
+  index: 0,
+  formula: 'qty * unit_cost'
 };
 
 describe('tag encoding', () => {
@@ -134,7 +135,7 @@ describe('readTokens', () => {
         canDelete: false
       }
     ]);
-    expect(readTokens(editor).map((t) => t.spec.id)).toEqual(['qty_1']);
+    expect(readTokens(editor).map((t) => t.spec.id)).toEqual(['qty__0']);
   });
 });
 
@@ -142,7 +143,7 @@ describe('tokenAtCaret', () => {
   it('reports the token the caret is inside', () => {
     const editor = fakeEditor([control(qty, '10')]);
     editor.setCaret(control(qty, '10'));
-    expect(tokenAtCaret(editor)?.id).toBe('qty_1');
+    expect(tokenAtCaret(editor)?.id).toBe('qty__0');
   });
 
   it('reports nothing in ordinary prose', () => {
@@ -159,16 +160,16 @@ describe('writeValues', () => {
       control(itemTotal, '$1,500.00')
     ]);
     const { written } = writeValues(editor, [
-      { id: 'item_total_1', text: '$3,000.00' }
+      { id: 'item_total__0', text: '$3,000.00' }
     ]);
 
-    expect(written).toEqual(['item_total_1']);
+    expect(written).toEqual(['item_total__0']);
     expect(editor.controls[1].value).toBe('$3,000.00');
   });
 
   it('does not touch a token whose value is unchanged', () => {
     const editor = fakeEditor([control(qty, '10')]);
-    const { written } = writeValues(editor, [{ id: 'qty_1', text: '10' }]);
+    const { written } = writeValues(editor, [{ id: 'qty__0', text: '10' }]);
 
     expect(written).toEqual([]);
     expect(editor.log).toEqual([]); // no undo action opened at all
@@ -182,13 +183,13 @@ describe('writeValues', () => {
     const { written } = writeValues(
       editor,
       [
-        { id: 'qty_1', text: '20' },
-        { id: 'item_total_1', text: '$3,000.00' }
+        { id: 'qty__0', text: '20' },
+        { id: 'item_total__0', text: '$3,000.00' }
       ],
-      { skipId: 'qty_1' }
+      { skipId: 'qty__0' }
     );
 
-    expect(written).toEqual(['item_total_1']);
+    expect(written).toEqual(['item_total__0']);
     expect(editor.controls[0].value).toBe('10');
   });
 
@@ -198,8 +199,8 @@ describe('writeValues', () => {
       control(itemTotal, '$1,500.00')
     ]);
     writeValues(editor, [
-      { id: 'qty_1', text: '20' },
-      { id: 'item_total_1', text: '$3,000.00' }
+      { id: 'qty__0', text: '20' },
+      { id: 'item_total__0', text: '$3,000.00' }
     ]);
 
     expect(editor.log.filter((l) => l === 'undo:begin')).toHaveLength(1);
@@ -220,18 +221,18 @@ describe('writeValues', () => {
       throw new Error('editor exploded');
     };
 
-    expect(() => writeValues(editor, [{ id: 'qty_1', text: '20' }])).toThrow();
+    expect(() => writeValues(editor, [{ id: 'qty__0', text: '20' }])).toThrow();
     expect(editor.log).toContain('undo:end');
   });
 
   it('reports a token it could not locate rather than failing silently', () => {
     const editor = fakeEditor([control(qty, '10')]);
     const { written, missed } = writeValues(editor, [
-      { id: 'ghost_1', text: '5' }
+      { id: 'ghost', text: '5' }
     ]);
 
     expect(written).toEqual([]);
-    expect(missed).toEqual(['ghost_1']);
+    expect(missed).toEqual(['ghost']);
   });
 
   it('puts the caret back where it was after propagating', () => {
@@ -244,7 +245,7 @@ describe('writeValues', () => {
     editor.selection.startOffset = '0;2;7';
     editor.selection.endOffset = '0;2;7';
 
-    writeValues(editor, [{ id: 'item_total_1', text: '$3,000.00' }]);
+    writeValues(editor, [{ id: 'item_total__0', text: '$3,000.00' }]);
 
     expect(editor.selection.startOffset).toBe('0;2;7');
     expect(editor.selection.endOffset).toBe('0;2;7');
@@ -270,7 +271,7 @@ describe('writeValues', () => {
       if (target) target.value = text;
     };
 
-    writeValues(editor, [{ id: 'item_total_1', text: '$3,000.00' }]);
+    writeValues(editor, [{ id: 'item_total__0', text: '$3,000.00' }]);
 
     expect(viewport.scrollTop).toBe(820);
     expect(viewport.scrollLeft).toBe(40);
@@ -278,25 +279,26 @@ describe('writeValues', () => {
 
   it('addresses by bookmark, excluding the markers from the selection', () => {
     const editor = fakeEditor([control(qty, '10')]);
-    writeValues(editor, [{ id: 'qty_1', text: '20' }]);
+    writeValues(editor, [{ id: 'qty__0', text: '20' }]);
 
     expect(editor.log).toContain(
-      `select ${bookmarkFor('qty_1')} exclusive=true`
+      `select ${bookmarkFor('qty__0')} exclusive=true`
     );
   });
 
   it('writes the right token when two share a rendered value', () => {
     // The failure mode text-searching had: both tokens read the same thing.
     const other: TokenSpec = {
-      id: 'item_total_2',
-      formula: 'qty_2 * unit_cost_2'
+      id: 'item_total',
+      index: 1,
+      formula: 'qty * unit_cost'
     };
     const editor = fakeEditor([
       control(itemTotal, '$0.00'),
       control(other, '$0.00')
     ]);
 
-    writeValues(editor, [{ id: 'item_total_2', text: '$99.00' }]);
+    writeValues(editor, [{ id: 'item_total__1', text: '$99.00' }]);
 
     expect(editor.controls[0].value).toBe('$0.00');
     expect(editor.controls[1].value).toBe('$99.00');
@@ -328,7 +330,7 @@ describe('insertToken', () => {
     expect(editor.log).toEqual([
       'undo:begin',
       `insert ${encodeTag(qty)} canEdit=false canDelete=true`,
-      `bookmark ${bookmarkFor('qty_1')}`,
+      `bookmark ${bookmarkFor('qty__0')}`,
       'undo:end'
     ]);
   });

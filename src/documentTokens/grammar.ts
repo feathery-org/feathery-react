@@ -245,15 +245,24 @@ const roundHalfAwayFromZero = (value: number, digits: number): number => {
   return (sign * Math.round(Math.abs(value) * factor)) / factor;
 };
 
-const flatten = (node: Node, values: Map<string, number>): number[] => {
+const flatten = (node: Node, values: TokenValues): number[] => {
+  // A repeated token resolves to every row's value, so SUM(item_total)
+  // aggregates a column without the caller naming the rows.
+  if (node.kind === 'ref') {
+    const value = values.get(node.id);
+    if (Array.isArray(value)) return value.filter((v) => Number.isFinite(v));
+  }
   if (node.kind !== 'wildcard') return [evaluateNode(node, values)];
   return [...values.entries()]
     .filter(([id]) => id.startsWith(node.prefix))
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([, value]) => value);
+    .flatMap(([, value]) => (Array.isArray(value) ? value : [value]));
 };
 
-const evaluateNode = (node: Node, values: Map<string, number>): number => {
+/** A token's value: a number, or every row of a repeated token. */
+export type TokenValues = Map<string, number | number[]>;
+
+const evaluateNode = (node: Node, values: TokenValues): number => {
   switch (node.kind) {
     case 'num':
       return node.value;
@@ -262,6 +271,11 @@ const evaluateNode = (node: Node, values: Map<string, number>): number => {
       const value = values.get(node.id);
       if (value === undefined) {
         throw new FormulaError(`unknown token ${JSON.stringify(node.id)}`);
+      }
+      if (Array.isArray(value)) {
+        throw new FormulaError(
+          `${node.id} is a repeated field; use an aggregate such as SUM(${node.id})`
+        );
       }
       return value;
     }
@@ -317,7 +331,7 @@ const evaluateNode = (node: Node, values: Map<string, number>): number => {
 /** Evaluate a formula (or a pre-parsed AST) against a map of token values. */
 export const evaluate = (
   formula: string | Node,
-  values: Map<string, number> | Record<string, number>
+  values: TokenValues | Record<string, number | number[]>
 ): number => {
   const node = typeof formula === 'string' ? parse(formula) : formula;
   const map = values instanceof Map ? values : new Map(Object.entries(values));

@@ -81,52 +81,46 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
 /** The prototype's invoice: two line items, subtotal, tax, total. */
 const invoiceEditor = () =>
   fakeEditor([
-    control({ id: 'qty_1', source: 'qty' }, '10'),
+    control({ id: 'qty', index: 0, source: 'qty' }, '10'),
     control(
-      { id: 'unit_cost_1', source: 'unit_cost', format: { kind: 'currency' } },
+      { id: 'unit_cost', index: 0, source: 'unit_cost', format: { kind: 'currency' } },
       '$150.00'
     ),
-    control({ id: 'qty_2', source: 'qty' }, '2'),
+    control({ id: 'qty', index: 1, source: 'qty' }, '2'),
     control(
-      { id: 'unit_cost_2', source: 'unit_cost', format: { kind: 'currency' } },
+      { id: 'unit_cost', index: 1, source: 'unit_cost', format: { kind: 'currency' } },
       '$400.00'
     ),
     control(
-      {
-        id: 'tax_percent_1',
-        source: 'tax_percent',
-        format: { kind: 'percent' }
-      },
+      { id: 'tax_percent', source: 'tax_percent', format: { kind: 'percent' } },
       '8.25%'
     ),
     control(
       {
-        id: 'item_total_1',
-        formula: 'qty_1 * unit_cost_1',
+        id: 'item_total',
+        index: 0,
+        formula: 'qty * unit_cost',
         format: { kind: 'currency' }
       },
       '$1,500.00'
     ),
     control(
       {
-        id: 'item_total_2',
-        formula: 'qty_2 * unit_cost_2',
+        id: 'item_total',
+        index: 1,
+        formula: 'qty * unit_cost',
         format: { kind: 'currency' }
       },
       '$800.00'
     ),
     control(
-      {
-        id: 'subtotal_1',
-        formula: 'SUM(item_total_*)',
-        format: { kind: 'currency' }
-      },
+      { id: 'subtotal', formula: 'SUM(item_total)', format: { kind: 'currency' } },
       '$2,300.00'
     ),
     control(
       {
-        id: 'total_1',
-        formula: 'subtotal_1 + ROUND(subtotal_1 * tax_percent_1 / 100, 2)',
+        id: 'total',
+        formula: 'subtotal + ROUND(subtotal * tax_percent / 100, 2)',
         format: { kind: 'currency' }
       },
       '$2,489.75'
@@ -139,8 +133,8 @@ describe('attachTokenCycle — propagation', () => {
     const state = attachTokenCycle(editor).getState();
 
     expect(state.specs).toHaveLength(9);
-    expect(state.values.get('qty_1')).toBe(10);
-    expect(state.values.get('unit_cost_1')).toBe(150);
+    expect(state.values.get('qty__0')).toBe(10);
+    expect(state.values.get('unit_cost__0')).toBe(150);
     expect(state.errors.size).toBe(0);
   });
 
@@ -154,49 +148,49 @@ describe('attachTokenCycle — propagation', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);
 
-    cycle.setTokenValue('qty_1', 20);
+    cycle.setTokenValue('qty__0', 20);
 
-    expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
-    expect(editor.valueOf('subtotal_1')).toBe('$3,800.00');
-    expect(editor.valueOf('total_1')).toBe('$4,113.50');
+    expect(editor.valueOf('item_total__0')).toBe('$3,000.00');
+    expect(editor.valueOf('subtotal')).toBe('$3,800.00');
+    expect(editor.valueOf('total')).toBe('$4,113.50');
   });
 
   it('leaves untouched branches alone', () => {
     const editor = invoiceEditor();
-    attachTokenCycle(editor).setTokenValue('qty_1', 20);
+    attachTokenCycle(editor).setTokenValue('qty__0', 20);
 
     expect(
       editor.log.filter((l: string) => l.startsWith('item_total_2='))
     ).toEqual([]);
-    expect(editor.valueOf('item_total_2')).toBe('$800.00');
+    expect(editor.valueOf('item_total__1')).toBe('$800.00');
   });
 
   it('reformats the edited token itself', () => {
     const editor = invoiceEditor();
-    attachTokenCycle(editor).setTokenValue('unit_cost_1', '175');
+    attachTokenCycle(editor).setTokenValue('unit_cost__0', '175');
 
-    expect(editor.valueOf('unit_cost_1')).toBe('$175.00');
+    expect(editor.valueOf('unit_cost__0')).toBe('$175.00');
   });
 
   it('accepts a typed value with currency punctuation', () => {
     const editor = invoiceEditor();
     const state = attachTokenCycle(editor).setTokenValue(
-      'unit_cost_1',
+      'unit_cost__0',
       '$1,750'
     );
 
-    expect(state.values.get('unit_cost_1')).toBe(1750);
-    expect(editor.valueOf('item_total_1')).toBe('$17,500.00');
+    expect(state.values.get('unit_cost__0')).toBe(1750);
+    expect(editor.valueOf('item_total__0')).toBe('$17,500.00');
   });
 
   it('ignores an unparseable value rather than zeroing the token', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);
 
-    cycle.setTokenValue('qty_1', 'not a number');
+    cycle.setTokenValue('qty__0', 'not a number');
 
-    expect(editor.valueOf('qty_1')).toBe('10');
-    expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
+    expect(editor.valueOf('qty__0')).toBe('10');
+    expect(editor.valueOf('item_total__0')).toBe('$1,500.00');
   });
 
   it('does nothing when the value has not actually changed', () => {
@@ -204,14 +198,14 @@ describe('attachTokenCycle — propagation', () => {
     const cycle = attachTokenCycle(editor);
     editor.log.length = 0;
 
-    cycle.setTokenValue('qty_1', 10);
+    cycle.setTokenValue('qty__0', 10);
 
     expect(editor.log).toEqual([]);
   });
 
   it('groups an edit and everything it moved into one undo action', () => {
     const editor = invoiceEditor();
-    attachTokenCycle(editor).setTokenValue('qty_1', 20);
+    attachTokenCycle(editor).setTokenValue('qty__0', 20);
 
     expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
       1
@@ -236,7 +230,7 @@ describe('attachTokenCycle — committing on blur', () => {
     editor.controls[0].value = '20';
     editor.fire('selectionChange'); // still inside qty_1
 
-    expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
+    expect(editor.valueOf('item_total__0')).toBe('$1,500.00');
   });
 
   it('commits and propagates once the caret leaves', () => {
@@ -247,9 +241,9 @@ describe('attachTokenCycle — committing on blur', () => {
     editor.controls[0].value = '20';
     blurFrom(editor, undefined); // caret moves out into prose
 
-    expect(cycle.getState().values.get('qty_1')).toBe(20);
-    expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
-    expect(editor.valueOf('subtotal_1')).toBe('$3,800.00');
+    expect(cycle.getState().values.get('qty__0')).toBe(20);
+    expect(editor.valueOf('item_total__0')).toBe('$3,000.00');
+    expect(editor.valueOf('subtotal')).toBe('$3,800.00');
   });
 
   it('commits when the caret moves straight into another token', () => {
@@ -260,7 +254,7 @@ describe('attachTokenCycle — committing on blur', () => {
     editor.controls[0].value = '20';
     blurFrom(editor, editor.controls[2]); // qty_1 -> qty_2, no prose between
 
-    expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
+    expect(editor.valueOf('item_total__0')).toBe('$3,000.00');
   });
 
   it('restores formatting on blur even when the number is unchanged', () => {
@@ -273,7 +267,7 @@ describe('attachTokenCycle — committing on blur', () => {
     editor.controls[1].value = '150.00'; // the user deleted just the $
     blurFrom(editor, undefined);
 
-    expect(editor.valueOf('unit_cost_1')).toBe('$150.00');
+    expect(editor.valueOf('unit_cost__0')).toBe('$150.00');
   });
 
   it('reformats a typed value into its declared format', () => {
@@ -284,19 +278,19 @@ describe('attachTokenCycle — committing on blur', () => {
     editor.controls[1].value = '1750';
     blurFrom(editor, undefined);
 
-    expect(editor.valueOf('unit_cost_1')).toBe('$1,750.00');
-    expect(editor.valueOf('item_total_1')).toBe('$17,500.00');
+    expect(editor.valueOf('unit_cost__0')).toBe('$1,750.00');
+    expect(editor.valueOf('item_total__0')).toBe('$17,500.00');
   });
 
   it('ignores its own writes', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);
 
-    cycle.setTokenValue('qty_1', 20);
-    const afterWrite = editor.valueOf('subtotal_1');
+    cycle.setTokenValue('qty__0', 20);
+    const afterWrite = editor.valueOf('subtotal');
     editor.fire('selectionChange');
 
-    expect(editor.valueOf('subtotal_1')).toBe(afterWrite);
+    expect(editor.valueOf('subtotal')).toBe(afterWrite);
   });
 
   it('ignores caret movement through ordinary prose', () => {
@@ -314,27 +308,27 @@ describe('attachTokenCycle — committing on blur', () => {
 describe('attachTokenCycle — state and lifecycle', () => {
   it('surfaces validation failures without blocking the edit', () => {
     const editor = fakeEditor([
-      control({ id: 'qty_1', source: 'qty', validate: { min: 1 } }, '10')
+      control({ id: 'qty', index: 0, source: 'qty', validate: { min: 1 } }, '10')
     ]);
-    const state = attachTokenCycle(editor).setTokenValue('qty_1', 0);
+    const state = attachTokenCycle(editor).setTokenValue('qty__0', 0);
 
-    expect(state.invalid.get('qty_1')).toMatch(/at least 1/);
-    expect(editor.valueOf('qty_1')).toBe('0');
+    expect(state.invalid.get('qty__0')).toMatch(/at least 1/);
+    expect(editor.valueOf('qty__0')).toBe('0');
   });
 
   it('attributes a broken formula without losing the rest', () => {
     const editor = fakeEditor([
-      control({ id: 'x_1', source: 'x' }, '4'),
-      control({ id: 'broken_1', formula: '(((' }, ''),
+      control({ id: 'x', source: 'x' }, '4'),
+      control({ id: 'broken', formula: '(((' }, ''),
       control(
-        { id: 'ok_1', formula: 'x_1 * 2', format: { kind: 'number' } },
+        { id: 'ok', formula: 'x * 2', format: { kind: 'number' } },
         '8'
       )
     ]);
-    const state = attachTokenCycle(editor).setTokenValue('x_1', 5);
+    const state = attachTokenCycle(editor).setTokenValue('x', 5);
 
-    expect(state.errors.has('broken_1')).toBe(true);
-    expect(editor.valueOf('ok_1')).toBe('10');
+    expect(state.errors.has('broken')).toBe(true);
+    expect(editor.valueOf('ok')).toBe('10');
   });
 
   it('notifies subscribers when values move', () => {
@@ -342,10 +336,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
     const cycle = attachTokenCycle(editor);
     const seen: number[] = [];
     cycle.subscribe((state) =>
-      seen.push(state.values.get('subtotal_1') as number)
+      seen.push(state.values.get('subtotal') as number)
     );
 
-    cycle.setTokenValue('qty_1', 20);
+    cycle.setTokenValue('qty__0', 20);
 
     expect(seen).toContain(3800);
   });
@@ -369,7 +363,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     cycle.refresh();
 
     // SUM(item_total_*) picked up the new row with no formula edit anywhere.
-    expect(editor.valueOf('subtotal_1')).toBe('$2,350.00');
+    expect(editor.valueOf('subtotal')).toBe('$2,350.00');
   });
 
   it('picks up tokens when the document finishes loading', () => {
@@ -379,9 +373,9 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(cycle.getState().specs).toHaveLength(0);
 
     editor.controls.push(
-      control({ id: 'qty_1', source: 'qty' }, '4'),
+      control({ id: 'qty__0', source: 'qty' }, '4'),
       control(
-        { id: 'double_1', formula: 'qty_1 * 2', format: { kind: 'number' } },
+        { id: 'double', formula: 'qty * 2', format: { kind: 'number' } },
         '0'
       )
     );
@@ -389,7 +383,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     expect(cycle.getState().specs).toHaveLength(2);
     // A stale value in the freshly loaded document is corrected immediately.
-    expect(editor.valueOf('double_1')).toBe('8');
+    expect(editor.valueOf('double')).toBe('8');
   });
 
   it('rebuilds rather than merges when a different document loads', () => {
@@ -397,10 +391,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
     const cycle = attachTokenCycle(editor);
 
     editor.controls.length = 0;
-    editor.controls.push(control({ id: 'other_1', source: 'other' }, '1'));
+    editor.controls.push(control({ id: 'other', source: 'other' }, '1'));
     editor.fire('documentChange');
 
-    expect(cycle.getState().specs.map((s) => s.id)).toEqual(['other_1']);
+    expect(cycle.getState().specs.map((s) => s.id)).toEqual(['other']);
   });
 
   it('commits the focused token on Enter', () => {
@@ -412,8 +406,8 @@ describe('attachTokenCycle — state and lifecycle', () => {
     editor.controls[0].value = '20';
     editor.fire('keyDown', { key: 'Enter' });
 
-    expect(cycle.getState().values.get('qty_1')).toBe(20);
-    expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
+    expect(cycle.getState().values.get('qty__0')).toBe(20);
+    expect(editor.valueOf('item_total__0')).toBe('$3,000.00');
   });
 
   it('restores the last committed value on Escape', () => {
@@ -425,9 +419,9 @@ describe('attachTokenCycle — state and lifecycle', () => {
     editor.controls[0].value = '999';
     editor.fire('keyDown', { key: 'Escape' });
 
-    expect(editor.valueOf('qty_1')).toBe('10');
-    expect(cycle.getState().values.get('qty_1')).toBe(10);
-    expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
+    expect(editor.valueOf('qty__0')).toBe('10');
+    expect(cycle.getState().values.get('qty__0')).toBe(10);
+    expect(editor.valueOf('item_total__0')).toBe('$1,500.00');
   });
 
   it('refuses a letter typed into a number token', () => {
@@ -492,7 +486,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(() => attachTokenCycle(bare)).not.toThrow();
     const cycle = attachTokenCycle(bare);
     expect(cycle.getState().specs).toEqual([]);
-    expect(() => cycle.setTokenValue('qty_1', 5)).not.toThrow();
+    expect(() => cycle.setTokenValue('qty__0', 5)).not.toThrow();
     expect(() => cycle.detach()).not.toThrow();
   });
 
