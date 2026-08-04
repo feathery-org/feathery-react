@@ -153,6 +153,23 @@ const controlFor = (editor: EditorLike, instance: string): object | null => {
 };
 
 /**
+ * Whether a control is showing Syncfusion's own placeholder text rather than a
+ * value — "Click here or tap to insert text", localised.
+ *
+ * A token's text must always be a field value or the empty rendering of its
+ * format, so a placeholder is never allowed to stand. The flag lives on the
+ * live element, so this reads the collection rather than the exported data.
+ */
+export const showsPlaceholder = (
+  editor: EditorLike,
+  instance: string
+): boolean =>
+  Boolean(
+    (controlFor(editor, instance) as any)?.contentControlProperties
+      ?.hasPlaceHolderText
+  );
+
+/**
  * Put the selection over a token's value, excluding the markers around it.
  *
  * The control comes first because it outlives the value. The bookmark is kept

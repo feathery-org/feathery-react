@@ -26,6 +26,7 @@ import {
   EditorLike,
   readTokens,
   selectTokenValue,
+  showsPlaceholder,
   tokenAtCaret,
   writeValues
 } from './controls';
@@ -93,6 +94,20 @@ export type TokenCycle = {
 type CycleEditor = EditorLike & {
   addEventListener?: (event: string, handler: (args?: any) => void) => void;
   removeEventListener?: (event: string, handler: (args?: any) => void) => void;
+};
+
+/**
+ * True while Syncfusion is replaying its own history.
+ *
+ * Writing into an undo is what turns it destructive: each write pushes a fresh
+ * history entry, so the stack never drains, and a write aimed at a document
+ * that is mid-restore lands against stale positions and compounds the text
+ * (`$800.00` and `7.00` becoming `$800.007.00`). Reading an undo as a user edit
+ * is just as wrong — restored text is not something anyone typed.
+ */
+const isReplayingHistory = (editor: EditorLike): boolean => {
+  const history = (editor as any)?.editorHistory;
+  return Boolean(history?.isUndoing || history?.isRedoing);
 };
 
 const isText = (spec?: TokenSpec): boolean =>
@@ -186,6 +201,14 @@ export const attachTokenCycle = (
     return renderValue(numbers.get(key) ?? 0, spec?.format);
   };
 
+  /** Whether any appearance of a token is showing a placeholder. */
+  const showsPlaceholderFor = (key: string): boolean =>
+    readTokens(editor).some(
+      ({ spec, value }) =>
+        valueKey(spec) === key &&
+        (value === PLACEHOLDER || showsPlaceholder(editor, instanceKey(spec)))
+    );
+
   const publish = (state: TokenState): TokenState => {
     snapshot = state;
     listeners.forEach((listener) => listener(state));
@@ -212,14 +235,23 @@ export const attachTokenCycle = (
         )
       : validationErrors(plan, numbers);
 
+    // The token being edited is normally left alone so the caret is not yanked
+    // mid-word — but Syncfusion drops its own placeholder into a control it
+    // considers empty, and that text is not a value. A token showing one loses
+    // its exemption, so "Click here or tap to insert text" can never stand. A
+    // genuinely empty value still waits for blur, which is what keeps a number
+    // cleared on the way to typing a new one from being overwritten.
+    const skipId =
+      editingId && !showsPlaceholderFor(editingId) ? editingId : undefined;
+
     const updates = [...plan.specs.keys()]
-      .filter((key) => key !== editingId)
+      .filter((key) => key !== skipId)
       .map((key) => ({ id: key, text: expectedText(key, texts, numbers) }));
 
-    if (updates.length > 0) {
+    if (updates.length > 0 && !isReplayingHistory(editor)) {
       applying = true;
       try {
-        writeValues(editor, updates, { skipId: editingId ?? undefined });
+        writeValues(editor, updates, { skipId });
       } finally {
         applying = false;
       }
@@ -250,6 +282,7 @@ export const attachTokenCycle = (
     >();
     for (const { spec, value } of entries) {
       if (isComputed(spec) || value === PLACEHOLDER) continue;
+      if (showsPlaceholder(editor, instanceKey(spec))) continue;
 
       const owner = ownerOf(spec);
       if (owner.read(spec) !== undefined) continue;
@@ -298,7 +331,7 @@ export const attachTokenCycle = (
    * rewritten under someone mid-word, and blur is when a value is finished.
    */
   const onSelectionChange = (): void => {
-    if (applying) return;
+    if (applying || isReplayingHistory(editor)) return;
 
     const caretSpec = tokenAtCaret(editor);
     const current = caretSpec ? instanceKey(caretSpec) : null;

@@ -242,6 +242,124 @@ describe('attachTokenCycle — propagation', () => {
   });
 });
 
+describe('attachTokenCycle — a control never shows a placeholder', () => {
+  const PLACEHOLDER = 'Click here or tap to insert text';
+
+  it('overwrites a placeholder even in the token being edited', () => {
+    // Normally the focused token is left alone so the caret is not yanked, but
+    // Syncfusion's placeholder is not a value and must never stand.
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.setCaret(editor.controls[1]); // unit_cost
+    editor.fire('selectionChange');
+
+    editor.controls[1].value = PLACEHOLDER;
+    cycle.reconcile();
+
+    expect(editor.valueOf('unit_cost__0')).toBe('$150.00');
+  });
+
+  it('still leaves a genuinely empty value alone until blur', () => {
+    // Clearing a number on the way to typing a new one must survive.
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.setCaret(editor.controls[1]);
+    editor.fire('selectionChange');
+
+    editor.controls[1].value = '';
+    cycle.reconcile();
+
+    expect(editor.valueOf('unit_cost__0')).toBe('');
+  });
+
+  it('shows the empty rendering when a token has no value at all', () => {
+    const editor = fakeEditor([
+      control(
+        { id: 'fee', source: 'fee', format: { kind: 'currency' } },
+        PLACEHOLDER
+      ),
+      control(
+        { id: 'note', source: 'note', format: { kind: 'text' } },
+        PLACEHOLDER
+      )
+    ]);
+    attachTokenCycle(editor);
+
+    expect(editor.valueOf('fee')).toBe('$0.00');
+    expect(editor.valueOf('note')).toBe('');
+  });
+
+  it('never adopts a placeholder as a field value', () => {
+    const editor = fakeEditor([
+      control(
+        { id: 'fee', source: 'fee', format: { kind: 'currency' } },
+        PLACEHOLDER
+      )
+    ]);
+    const state = attachTokenCycle(editor).getState();
+
+    expect(state.values.get('fee')).toBeUndefined();
+  });
+});
+
+describe('attachTokenCycle — while history is replaying', () => {
+  it('writes nothing during an undo', () => {
+    // Writing into an undo pushes new history entries, so the stack never
+    // drains, and the write lands against stale positions and compounds text.
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.editorHistory.isUndoing = true;
+    editor.log.length = 0;
+
+    // Whatever the document now shows, reconciling must not touch it.
+    editor.controls[1].value = '7';
+    cycle.reconcile();
+
+    expect(editor.log).toEqual([]);
+    expect(editor.valueOf('unit_cost__0')).toBe('7');
+  });
+
+  it('writes nothing during a redo', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.editorHistory.isRedoing = true;
+    editor.log.length = 0;
+
+    editor.controls[1].value = '7';
+    cycle.reconcile();
+
+    expect(editor.log).toEqual([]);
+  });
+
+  it('does not read restored text in as a user edit', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.setCaret(editor.controls[1]);
+    editor.fire('selectionChange');
+
+    // An undo moves the caret and rewrites the text; neither is someone typing.
+    editor.editorHistory.isUndoing = true;
+    editor.controls[1].value = 'restored junk';
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+
+    expect(editor.valueOf('item_total__0')).toBe('$1,500.00');
+  });
+
+  it('resumes writing once the replay is over', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.editorHistory.isUndoing = true;
+    cycle.reconcile();
+
+    editor.editorHistory.isUndoing = false;
+    editor.controls[1].value = '7';
+    cycle.reconcile();
+
+    expect(editor.valueOf('unit_cost__0')).toBe('$150.00');
+  });
+});
+
 describe('attachTokenCycle — committing on blur', () => {
   /** Move the caret into a control, then away, the way a user would. */
   const blurFrom = (editor: any, into?: ContentControlInfo) => {
