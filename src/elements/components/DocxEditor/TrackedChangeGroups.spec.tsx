@@ -1,7 +1,51 @@
+import 'jest-canvas-mock';
+import { randomFillSync } from 'crypto';
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  DocumentEditor,
+  Editor,
+  EditorHistory,
+  ImageResizer,
+  Search,
+  Selection,
+  SfdtExport
+} from '@syncfusion/ej2-documenteditor';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { RailErrorBoundary } from './index';
+import {
+  applyDocumentEdits,
+  installRevisionGroupIsolation,
+  LiveEditor
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
+
+DocumentEditor.Inject(
+  Editor,
+  Selection,
+  SfdtExport,
+  EditorHistory,
+  ImageResizer,
+  Search
+);
+
+const testWindow = featheryWindow();
+if (!testWindow.crypto?.getRandomValues) {
+  Object.defineProperty(testWindow, 'crypto', {
+    value: {
+      getRandomValues: (array: Uint8Array) => randomFillSync(array)
+    }
+  });
+}
+
+const jsdomGetComputedStyle = testWindow.getComputedStyle.bind(testWindow);
+testWindow.getComputedStyle = ((elt: Element) =>
+  jsdomGetComputedStyle(elt)) as typeof testWindow.getComputedStyle;
+
+if (!(testWindow.SVGElement.prototype as any).getBBox) {
+  (testWindow.SVGElement.prototype as any).getBBox = () =>
+    ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
+}
 
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
@@ -60,6 +104,40 @@ function makeRevision(
     select: jest.fn(),
     ...overrides
   };
+}
+
+function makeRealEditor(text = ''): DocumentEditor {
+  const host = featheryDoc().createElement('div');
+  host.style.width = '900px';
+  host.style.height = '700px';
+  featheryDoc().body.appendChild(host);
+  const editor = new DocumentEditor({
+    isReadOnly: false,
+    enableEditor: true,
+    enableSelection: true,
+    enableImageResizer: true,
+    enableSearch: true,
+    enableSfdtExport: true,
+    enableEditorHistory: true
+  });
+  editor.appendTo(host);
+  editor.open(
+    JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text }] }] }]
+    })
+  );
+  installRevisionGroupIsolation(editor as unknown as LiveEditor);
+  return editor;
+}
+
+function destroyRealEditor(editor: DocumentEditor): void {
+  const element = editor.element;
+  editor.destroy();
+  element?.remove();
+}
+
+function acceptOnlyGroup(): void {
+  fireEvent.click(screen.getByRole('button', { name: /^Accept \d+$/ }));
 }
 
 describe('TrackedChangeGroups', () => {
@@ -240,6 +318,26 @@ describe('TrackedChangeGroups', () => {
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     // Nothing pending is left, so the whole rail goes away.
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('group Reject resolves every pending member and removes the card', () => {
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const insertion = makeRevision();
+    const revisions = [deletion, insertion];
+    deletion.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(deletion), 1);
+    });
+    insertion.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
+    });
+    const editor = makeEditor(revisions);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject 2' }));
+
+    expect(deletion.reject).toHaveBeenCalledTimes(1);
+    expect(insertion.reject).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -765,5 +863,96 @@ describe('RailErrorBoundary', () => {
       </RailErrorBoundary>
     );
     expect(screen.getByTestId('rail-child')).toBeInTheDocument();
+  });
+
+  it('real SDK: native grouped table can be accepted again after undo', () => {
+    const editor = makeRealEditor();
+    let unmount = () => {};
+    try {
+      const settings = (editor as any).documentEditorSettings.revisionSettings;
+      const withGroup = (group: string, run: () => void) => {
+        const previous = settings.customData;
+        settings.customData = tag('native-cs', group);
+        try {
+          run();
+        } finally {
+          settings.customData = previous;
+        }
+      };
+      editor.enableTrackChanges = true;
+      editor.selection.moveToDocumentEnd();
+      withGroup('add-premium-table', () => {
+        editor.editor.insertText('Premium schedule for review:');
+        editor.editor.insertTable(3, 3);
+        const cells = [
+          'Item',
+          'Current',
+          'Proposed',
+          'Premium',
+          '$5,200',
+          '$5,500',
+          'Deductible',
+          '$1,000',
+          '$1,200'
+        ];
+        cells.forEach((text, index) => {
+          editor.editor.insertText(text);
+          if (index < cells.length - 1)
+            editor.selection.handleTabKey(true, false);
+        });
+      });
+      editor.selection.moveToDocumentEnd();
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      expect(screen.getByText('Add premium table')).toBeInTheDocument();
+      acceptOnlyGroup();
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBeGreaterThan(0);
+      expect(
+        screen.getByRole('button', { name: /^Accept \d+$/ })
+      ).toBeEnabled();
+      acceptOnlyGroup();
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
+  });
+
+  it('real SDK: bridge-created group can be accepted again after undo', () => {
+    const editor = makeRealEditor('Premium: $5,200');
+    let unmount = () => {};
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'bridge-cs',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '$5,200',
+            replace: '$5,500',
+            group: 'update-premium'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      acceptOnlyGroup();
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBe(2);
+      expect(
+        screen.getByRole('button', { name: /^Accept \d+$/ })
+      ).toBeEnabled();
+      acceptOnlyGroup();
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
   });
 });

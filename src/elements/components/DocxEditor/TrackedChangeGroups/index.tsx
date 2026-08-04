@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo,
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
 } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
@@ -126,6 +127,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     setGroups(
       views.map((view) => ({
         key: groupKeyOf(view.changeSetId, view.group),
+        changeSetId: view.changeSetId,
+        group: view.group,
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
@@ -255,6 +258,23 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     }
     if (remaining) refocusPanel();
     else quietly(() => editor?.focusIn?.());
+  };
+
+  const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
+    try {
+      resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept);
+    } catch {
+      // A stale revision range must not take the panel down.
+    }
+    refresh();
+    let remaining = 0;
+    try {
+      remaining = listRevisionGroups(editor).length;
+    } catch {
+      remaining = 0;
+    }
+    if (remaining) refocusPanel();
+    else editor?.focusIn?.();
   };
 
   const focusChip = (chip: ChipView) => {
@@ -388,7 +408,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           <RailHead
             pendingCount={allChips.length}
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
-            onResolveAll={(isAccept) => resolveChips(allChips, isAccept)}
+            onResolveAll={(isAccept) => resolveGroups(groups, isAccept)}
           />
           <div
             css={{
@@ -418,6 +438,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                   else rowRefs.current.delete(chip.revision);
                 }}
                 onFocusChip={focusChip}
+                onResolveGroup={(isAccept) => resolveGroups([mem], isAccept)}
                 onResolveChips={resolveChips}
               />
             ))}
