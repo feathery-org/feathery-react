@@ -268,6 +268,33 @@ const uniformTinyTableFixture = () => {
   return doc;
 };
 
+const fromScratchDocumentBandingFixture = () => {
+  const doc: any = singleDataRowTableFixture();
+  const [tinyTable, longerTable] = doc.sections[0].blocks;
+  longerTable.rows.push(
+    row(['Five', 'E']),
+    row(['Six', 'F'], TINY_BAND_FILL)
+  );
+  const shorterTable = {
+    tableFormat: { preferredWidth: 300 },
+    rows: [
+      row(['Location', 'Value'], HEADER_FILL, true),
+      row(['One', 'A']),
+      row(['Two', 'B'], BAND_FILL),
+      row(['Three', 'C']),
+      row(['Four', 'D'], BAND_FILL)
+    ]
+  };
+  doc.sections[0].blocks = [
+    longerTable,
+    shorterTable,
+    tinyTable,
+    { inlines: [{ text: 'Table spacer' }] },
+    { inlines: [{ text: 'Insert discounts here' }] }
+  ];
+  return doc;
+};
+
 /**
  * The captain's document: a sibling section whose Location Schedule is banded
  * (dark header row, then alternating rows starting UNFILLED), and a new section
@@ -1029,6 +1056,62 @@ describe('structural inserts inherit resolved table formatting by default', () =
 
       revisions(ed)[0].reject();
       expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('keeps a from-scratch table header out of the data stripe cycle', () => {
+    const ed = makeEditor(inheritedTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_table', anchor: '0;2', rows: 5, columns: 2 },
+        ...Array.from({ length: 5 }, (_, rowIndex) =>
+          Array.from({ length: 2 }, (_, columnIndex) => ({
+            op: 'set_cell_text',
+            anchor: `0;2;${rowIndex};${columnIndex};0`,
+            text: `${rowIndex}:${columnIndex}`
+          }))
+        ).flat()
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;2')).toEqual([
+        HEADER_FILL,
+        null,
+        BAND_FILL,
+        null,
+        BAND_FILL
+      ]);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('derives a new table data cycle from longer sampled tables, excluding their headers', () => {
+    const ed = makeEditor(fromScratchDocumentBandingFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_table', anchor: '0;4', rows: 4, columns: 2 },
+        ...Array.from({ length: 4 }, (_, rowIndex) =>
+          Array.from({ length: 2 }, (_, columnIndex) => ({
+            op: 'set_cell_text',
+            anchor: `0;4;${rowIndex};${columnIndex};0`,
+            text: `${rowIndex}:${columnIndex}`
+          }))
+        ).flat()
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;4')).toEqual([
+        HEADER_FILL,
+        null,
+        TINY_BAND_FILL,
+        null
+      ]);
+      expect(
+        resolvedTextFormat(ed, '0;4;2;0;0', '2:0').character.fontColor
+      ).toBe('#1F1F1F');
     } finally {
       destroyEditor(ed);
     }

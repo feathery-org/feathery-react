@@ -6815,11 +6815,12 @@ function applyCopiedTableAppearance(
   sourceAnchor: string,
   source: TableAppearance,
   targetAnchor: string,
-  resolvedTarget?: TableAppearance
+  resolvedTarget?: TableAppearance,
+  options: { banding?: TableBanding } = {}
 ): AppearanceWriteOutcome & { postWriteSfdt?: any } {
   const target = resolvedTarget ?? liveTableAppearance(editor, targetAnchor);
-  const headerRows = inferHeaderRows(source);
-  const banding = detectTableBanding(source);
+  const banding = options.banding ?? detectTableBanding(source);
+  const headerRows = banding?.headerRows ?? inferHeaderRows(source);
   const report = emptyAppearanceReport();
   const restores: AppearanceRestore[] = [];
   if (source.styleName) report.sourceStyleName = source.styleName;
@@ -7845,6 +7846,8 @@ interface PlannedTableAppearanceInheritance {
   source: TableAppearance;
   /** Absent means every row of a newly inserted table. */
   targetRows?: number[];
+  /** A document-sampled data-row cycle for a newly inserted table. */
+  banding?: TableBanding;
   /** The pre-insert stripe an inserted row must restore below itself. */
   preserveBanding?: { fromRow: number; banding: TableBanding };
   /** When no stripe resolves, the locally observed fill for each new row. */
@@ -8462,9 +8465,9 @@ function planTableCellFormats(
   targetTableAnchor: string,
   targetRows: number[],
   targetColumns: number,
-  sourceRows?: number[]
+  options: { sourceRows?: number[]; headerRows?: number } = {}
 ): PlannedInsertInheritance[] {
-  const headerRows = inferHeaderRows(sourceAppearance);
+  const headerRows = options.headerRows ?? inferHeaderRows(sourceAppearance);
   const byAnchor = new Map(
     blocks.map((block) => [block.anchor, block] as const)
   );
@@ -8475,7 +8478,7 @@ function planTableCellFormats(
   const planned: PlannedInsertInheritance[] = [];
   for (const [rowIndex, targetRow] of targetRows.entries()) {
     const sourceRow =
-      sourceRows?.[rowIndex] ??
+      options.sourceRows?.[rowIndex] ??
       sourceRowForTarget(sourceAppearance, headerRows, targetRow);
     const sourceColumns = sourceAppearance.rows[sourceRow]?.cells.length ?? 0;
     if (!sourceColumns) continue;
@@ -8530,6 +8533,51 @@ function shortInsertBanding(source: TableAppearance): TableBanding | null {
   return { headerRows, period: 2, cycle: [first, second] };
 }
 
+interface DocumentBandingCandidate {
+  banding: TableBanding;
+  dataRows: number;
+}
+
+/** Proven data-row cycles from the document's existing tables. */
+function documentBandingCandidates(
+  sfdt: any,
+  targetTableAnchor: string
+): DocumentBandingCandidate[] {
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const candidates: DocumentBandingCandidate[] = [];
+  sections.forEach((section, sectionIndex) => {
+    getBlocks(section).forEach((block, blockIndex) => {
+      const anchor = `${sectionIndex};${blockIndex}`;
+      if (anchor === targetTableAnchor || !getRows(block)) return;
+      const appearance = collectTableAppearance(block);
+      const banding = appearance ? detectTableBanding(appearance) : null;
+      if (appearance && banding)
+        candidates.push({
+          banding,
+          dataRows: appearance.rows.length - banding.headerRows
+        });
+    });
+  });
+  return candidates;
+}
+
+/**
+ * A new table has no body rows of its own to establish a cycle. Use the
+ * longest existing table that proves one: its larger body is the strongest
+ * document-local sample, and detectTableBanding has already excluded its
+ * leading header rows from the returned cycle.
+ */
+function documentTableBanding(
+  sfdt: any,
+  targetTableAnchor: string
+): TableBanding | null {
+  return (
+    documentBandingCandidates(sfdt, targetTableAnchor).sort(
+      (left, right) => right.dataRows - left.dataRows
+    )[0]?.banding ?? null
+  );
+}
+
 /**
  * Resolve a two-colour document convention for a table with only one data row.
  * The recurring-section read already establishes document table banding with
@@ -8545,22 +8593,14 @@ function documentInsertBanding(
   targetTableAnchor: string,
   source: TableAppearance
 ): TableBanding | null {
-  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const candidates: TableBanding[] = [];
-  sections.forEach((section, sectionIndex) => {
-    getBlocks(section).forEach((block, blockIndex) => {
-      const anchor = `${sectionIndex};${blockIndex}`;
-      if (anchor === targetTableAnchor || !getRows(block)) return;
-      const appearance = collectTableAppearance(block);
-      const banding = appearance ? detectTableBanding(appearance) : null;
-      if (
-        banding?.period === 2 &&
+  const candidates = documentBandingCandidates(sfdt, targetTableAnchor)
+    .map((candidate) => candidate.banding)
+    .filter(
+      (banding) =>
+        banding.period === 2 &&
         banding.cycle[0] !== banding.cycle[1] &&
         source.rows.length === banding.headerRows + 1
-      )
-        candidates.push(banding);
-    });
-  });
+    );
   if (!candidates.length) return null;
 
   const shadings = rowShadings(source);
@@ -8597,13 +8637,15 @@ function planTableInsertInheritance(
   const rows = positiveCount(op.rows);
   const columns = positiveCount(op.columns);
   const targetRows = Array.from({ length: rows }, (_, index) => index);
+  const banding = documentTableBanding(sfdt, targetTableAnchor);
   return [
     {
       anchor: targetTableAnchor,
       tableAppearance: {
         sourceTableAnchor: sourceTable.anchor,
         targetTableAnchor,
-        source: sourceTable.appearance
+        source: sourceTable.appearance,
+        ...(banding ? { banding } : {})
       }
     },
     ...planTableCellFormats(
@@ -8613,7 +8655,8 @@ function planTableInsertInheritance(
       sourceTable.appearance,
       targetTableAnchor,
       targetRows,
-      columns
+      columns,
+      { headerRows: banding?.headerRows }
     )
   ];
 }
@@ -8647,7 +8690,7 @@ function planRowInsertInheritance(
     tableAnchor,
     targetRows,
     columns,
-    sourceRows
+    { sourceRows }
   );
   // `preserveBanding: false` is the explicit request for SyncFusion's raw row
   // appearance. Typography still inherits, but no fill/border/header write is
@@ -8881,7 +8924,9 @@ function applyInsertInheritance(
             editor,
             appearance.sourceTableAnchor,
             appearance.source,
-            appearance.targetTableAnchor
+            appearance.targetTableAnchor,
+            undefined,
+            { banding: appearance.banding }
           )
         );
       if (appearance.preserveBanding) {
