@@ -37,7 +37,14 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
         selectBookmark: (name: string, exclude?: boolean) => {
           selected = name;
           log.push(`select ${name} exclusive=${Boolean(exclude)}`);
-        }
+        },
+        select: (start: string, end: string) => {
+          editor.selection.startOffset = start;
+          editor.selection.endOffset = end;
+          log.push(`caret ${start}-${end}`);
+        },
+        startOffset: '0;0;4',
+        endOffset: '0;0;4'
       },
       editor: {
         insertText: (text: string) => {
@@ -197,7 +204,13 @@ describe('writeValues', () => {
     expect(editor.log.filter((l) => l === 'undo:begin')).toHaveLength(1);
     expect(editor.log.filter((l) => l === 'undo:end')).toHaveLength(1);
     expect(editor.log[0]).toBe('undo:begin');
-    expect(editor.log[editor.log.length - 1]).toBe('undo:end');
+    // Every write falls inside the undo action; restoring the caret comes
+    // after it, since putting the cursor back is not an undoable edit.
+    const writes = editor.log
+      .map((l: string, i: number) => (l.startsWith('write ') ? i : -1))
+      .filter((i: number) => i >= 0);
+    const end = editor.log.indexOf('undo:end');
+    expect(Math.max(...writes)).toBeLessThan(end);
   });
 
   it('closes the undo action even when a write throws', () => {
@@ -218,6 +231,23 @@ describe('writeValues', () => {
 
     expect(written).toEqual([]);
     expect(missed).toEqual(['ghost_1']);
+  });
+
+  it('puts the caret back where it was after propagating', () => {
+    // Writing selects each bookmark in turn; the user's cursor must not end
+    // up parked on the last token that happened to move.
+    const editor = fakeEditor([
+      control(qty, '10'),
+      control(itemTotal, '$1,500.00')
+    ]);
+    editor.selection.startOffset = '0;2;7';
+    editor.selection.endOffset = '0;2;7';
+
+    writeValues(editor, [{ id: 'item_total_1', text: '$3,000.00' }]);
+
+    expect(editor.selection.startOffset).toBe('0;2;7');
+    expect(editor.selection.endOffset).toBe('0;2;7');
+    expect(editor.log[editor.log.length - 1]).toBe('caret 0;2;7-0;2;7');
   });
 
   it('addresses by bookmark, excluding the markers from the selection', () => {

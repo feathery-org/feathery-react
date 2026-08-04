@@ -20,12 +20,23 @@
  * when the assistant asks it to. This watches the document and reacts.
  */
 
-import { EditorLike, readTokens, tokenAtCaret, writeValues } from './controls';
+import {
+  applyChrome,
+  EditorLike,
+  readTokens,
+  tokenAtCaret,
+  writeValues
+} from './controls';
 import { parseValue, renderValue } from './format';
 import { buildPlan, Plan, recalc, TokenSpec, validationErrors } from './plan';
 
-/** Recalculating on every keystroke would rewrite the document mid-word. */
-const READ_BACK_DELAY_MS = 400;
+/**
+ * A token commits when the caret LEAVES it, not on a timer.
+ *
+ * Rewriting while someone is still typing moves the caret under their hands
+ * and turns one edit into several undo steps. Blur is also the moment the
+ * value is actually finished — a timer only guesses at it.
+ */
 
 export type TokenState = {
   specs: TokenSpec[];
@@ -69,13 +80,10 @@ export const attachTokenCycle = (
   editor: CycleEditor,
   options: { readBackDelayMs?: number } = {}
 ): TokenCycle => {
-  const delay = options.readBackDelayMs ?? READ_BACK_DELAY_MS;
-
   let plan: Plan = buildPlan([]);
   let values = new Map<string, number>();
   let editingId: string | null = null;
   let applying = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<(state: TokenState) => void>();
 
   const snapshot = (): TokenState => ({
@@ -115,6 +123,7 @@ export const attachTokenCycle = (
     // One full pass on open, so a document is consistent before anyone
     // touches it — a template change could have left it stale.
     flush(recalc(plan, values).changed);
+    applyChrome(editor);
     return publish();
   };
 
@@ -135,35 +144,60 @@ export const attachTokenCycle = (
     return publish();
   };
 
+  /** Rewrite a token's text if it no longer matches its declared format. */
+  const reformat = (id: string, currentText: string): void => {
+    const value = values.get(id);
+    if (value === undefined) return;
+
+    const canonical = renderValue(value, plan.specs.get(id)?.format);
+    if (canonical === currentText) return;
+
+    applying = true;
+    try {
+      writeValues(editor, [{ id, text: canonical }]);
+    } finally {
+      applying = false;
+    }
+  };
+
   /**
-   * Read an edit made in the document back into the graph.
+   * Commit the token the caret just left.
    *
-   * Ignores our own writes: `applying` is raised around every programmatic
-   * edit, so the write-back never reads itself as a user edit.
+   * Fires on selection movement rather than on a timer, so the document is
+   * only rewritten once the user has moved on. Our own writes are ignored:
+   * `applying` is raised around every programmatic edit.
    */
-  const onContentChange = (): void => {
+  const onSelectionChange = (): void => {
     if (applying) return;
 
-    const focused = tokenAtCaret(editor);
-    editingId = focused?.id ?? null;
-    if (!focused) return;
+    const current = tokenAtCaret(editor)?.id ?? null;
+    if (current === editingId) return;
 
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      const current = readTokens(editor).find((t) => t.spec.id === focused.id);
-      if (!current) return;
+    const left = editingId;
+    editingId = current;
 
-      const parsed = parseValue(current.value);
-      // Typing has stopped, so the token is no longer being edited and
-      // downstream writes may touch it again.
-      editingId = null;
-      if (parsed === null || values.get(focused.id) === parsed) {
-        publish();
-        return;
-      }
-      setTokenValue(focused.id, parsed);
-    }, delay);
+    if (left === null) {
+      publish();
+      return;
+    }
+
+    const entry = readTokens(editor).find((t) => t.spec.id === left);
+    if (!entry) {
+      publish();
+      return;
+    }
+
+    const parsed = parseValue(entry.value);
+    if (parsed !== null && values.get(left) !== parsed) {
+      setTokenValue(left, parsed);
+      return;
+    }
+
+    // The number did not move, but the text may still have lost its
+    // formatting — retyping `$175.00` as `175` parses to the same value.
+    // Blur is where a token gets its shape back.
+    reformat(left, entry.value);
+    publish();
   };
 
   /**
@@ -173,15 +207,11 @@ export const attachTokenCycle = (
    * every id, formula, and wildcard family has just changed.
    */
   const onDocumentChange = (): void => {
-    if (timer) {
-      clearTimeout(timer);
-      timer = null;
-    }
     editingId = null;
     refresh();
   };
 
-  editor.addEventListener?.('contentChange', onContentChange);
+  editor.addEventListener?.('selectionChange', onSelectionChange);
   editor.addEventListener?.('documentChange', onDocumentChange);
   refresh();
 
@@ -194,8 +224,7 @@ export const attachTokenCycle = (
       return () => listeners.delete(listener);
     },
     detach: () => {
-      if (timer) clearTimeout(timer);
-      editor.removeEventListener?.('contentChange', onContentChange);
+      editor.removeEventListener?.('selectionChange', onSelectionChange);
       editor.removeEventListener?.('documentChange', onDocumentChange);
       listeners.clear();
     }

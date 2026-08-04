@@ -44,6 +44,9 @@ export type EditorLike = {
   selection: {
     getContentControlInfo?: () => ContentControlInfo | undefined;
     selectBookmark: (name: string, excludeBookmarkStartEnd?: boolean) => void;
+    select?: (start: string, end: string) => void;
+    startOffset?: string;
+    endOffset?: string;
   };
   editor: {
     insertText: (text: string) => void;
@@ -158,6 +161,13 @@ export const writeValues = (
     return { written, missed: pending.map(({ id }) => id) };
   }
 
+  // Selecting each bookmark to write it leaves the caret at the last token
+  // touched. Propagation must not move the user's cursor, so put it back.
+  const caret =
+    editor.selection.startOffset && editor.selection.endOffset
+      ? { start: editor.selection.startOffset, end: editor.selection.endOffset }
+      : null;
+
   editor.editorHistory?.beginUndoAction();
   try {
     for (const { id, text } of pending) {
@@ -170,6 +180,7 @@ export const writeValues = (
     }
   } finally {
     editor.editorHistory?.endUndoAction();
+    if (caret) editor.selection.select?.(caret.start, caret.end);
   }
 
   return { written, missed };
@@ -212,3 +223,38 @@ export const insertToken = (
 /** The chrome colour for a token, derived from its kind rather than stored. */
 export const colorFor = (spec: TokenSpec): string =>
   spec.formula ? COMPUTED_COLOR : INPUT_COLOR;
+
+/**
+ * Paint each token's chrome: inputs blue, computed grey.
+ *
+ * Colour is derived from the spec every time the document is read, never
+ * stored, so a stale colour can never contradict a token's kind.
+ *
+ * SyncFusion exposes no public accessor for the live ContentControl objects —
+ * `exportContentControlData()` returns copies — so this reaches into
+ * `documentHelper.contentControlCollection` and no-ops when it is absent.
+ * Failing to paint must never cost the values.
+ */
+export const applyChrome = (editor: EditorLike): number => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  if (!Array.isArray(collection)) return 0;
+
+  let painted = 0;
+  for (const control of collection) {
+    const properties = control?.contentControlProperties;
+    const spec = decodeTag(properties?.tag ?? '');
+    if (!properties || !spec) continue;
+
+    properties.color = colorFor(spec);
+    properties.appearance = 'BoundingBox';
+    painted += 1;
+  }
+
+  if (painted > 0) {
+    // The properties are model state; nothing repaints on its own.
+    const viewer = (editor as any)?.documentHelper ?? (editor as any)?.viewer;
+    viewer?.updateScrollBars?.();
+    (editor as any)?.documentHelper?.owner?.viewer?.updateScrollBars?.();
+  }
+  return painted;
+};

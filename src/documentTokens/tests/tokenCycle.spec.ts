@@ -220,76 +220,91 @@ describe('attachTokenCycle — propagation', () => {
   });
 });
 
-describe('attachTokenCycle — reading edits made in the document', () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+describe('attachTokenCycle — committing on blur', () => {
+  /** Move the caret into a control, then away, the way a user would. */
+  const blurFrom = (editor: any, into?: ContentControlInfo) => {
+    editor.setCaret(into);
+    editor.fire('selectionChange');
+  };
 
-  it('picks up a typed value once typing stops', () => {
+  it('does not rewrite the document while the caret is still inside', () => {
     const editor = invoiceEditor();
-    const cycle = attachTokenCycle(editor, { readBackDelayMs: 400 });
+    attachTokenCycle(editor);
 
-    editor.setCaret(editor.controls[0]); // qty_1
+    blurFrom(editor, editor.controls[0]); // caret enters qty_1
     editor.controls[0].value = '20';
-    editor.fire('contentChange');
-    jest.advanceTimersByTime(400);
+    editor.fire('selectionChange'); // still inside qty_1
+
+    expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
+  });
+
+  it('commits and propagates once the caret leaves', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+
+    blurFrom(editor, editor.controls[0]);
+    editor.controls[0].value = '20';
+    blurFrom(editor, undefined); // caret moves out into prose
 
     expect(cycle.getState().values.get('qty_1')).toBe(20);
     expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
+    expect(editor.valueOf('subtotal_1')).toBe('$3,800.00');
   });
 
-  it('waits for typing to stop before rewriting the document', () => {
+  it('commits when the caret moves straight into another token', () => {
     const editor = invoiceEditor();
-    attachTokenCycle(editor, { readBackDelayMs: 400 });
+    attachTokenCycle(editor);
 
-    editor.setCaret(editor.controls[0]);
-    editor.controls[0].value = '2';
-    editor.fire('contentChange');
-    jest.advanceTimersByTime(200);
+    blurFrom(editor, editor.controls[0]);
     editor.controls[0].value = '20';
-    editor.fire('contentChange');
-    jest.advanceTimersByTime(200);
+    blurFrom(editor, editor.controls[2]); // qty_1 -> qty_2, no prose between
 
-    // Mid-typing: the intermediate "2" never propagated.
-    expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
-
-    jest.advanceTimersByTime(200);
     expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
   });
 
-  it('does not rewrite the token being typed in', () => {
+  it('restores formatting on blur even when the number is unchanged', () => {
+    // Retyping `$150.00` as `150` parses to the same value, so nothing
+    // propagates — but the token must still get its currency shape back.
     const editor = invoiceEditor();
-    attachTokenCycle(editor, { readBackDelayMs: 400 });
+    attachTokenCycle(editor);
 
-    editor.setCaret(editor.controls[0]);
-    editor.controls[0].value = '20';
-    editor.fire('contentChange');
-    jest.advanceTimersByTime(400);
+    blurFrom(editor, editor.controls[1]); // unit_cost_1
+    editor.controls[1].value = '150.00'; // the user deleted just the $
+    blurFrom(editor, undefined);
 
-    // Downstream moved; the edited token keeps exactly what was typed.
-    expect(editor.valueOf('qty_1')).toBe('20');
-    expect(editor.valueOf('subtotal_1')).toBe('$3,800.00');
+    expect(editor.valueOf('unit_cost_1')).toBe('$150.00');
+  });
+
+  it('reformats a typed value into its declared format', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+
+    blurFrom(editor, editor.controls[1]);
+    editor.controls[1].value = '1750';
+    blurFrom(editor, undefined);
+
+    expect(editor.valueOf('unit_cost_1')).toBe('$1,750.00');
+    expect(editor.valueOf('item_total_1')).toBe('$17,500.00');
   });
 
   it('ignores its own writes', () => {
     const editor = invoiceEditor();
-    const cycle = attachTokenCycle(editor, { readBackDelayMs: 400 });
+    const cycle = attachTokenCycle(editor);
 
-    // A programmatic write must not be read back as a user edit.
     cycle.setTokenValue('qty_1', 20);
     const afterWrite = editor.valueOf('subtotal_1');
-    jest.advanceTimersByTime(400);
+    editor.fire('selectionChange');
 
     expect(editor.valueOf('subtotal_1')).toBe(afterWrite);
   });
 
-  it('ignores edits made outside any token', () => {
+  it('ignores caret movement through ordinary prose', () => {
     const editor = invoiceEditor();
-    attachTokenCycle(editor, { readBackDelayMs: 400 });
+    attachTokenCycle(editor);
     editor.log.length = 0;
 
-    editor.setCaret(undefined); // ordinary prose
-    editor.fire('contentChange');
-    jest.advanceTimersByTime(400);
+    blurFrom(editor, undefined);
+    blurFrom(editor, undefined);
 
     expect(editor.log).toEqual([]);
   });
@@ -403,11 +418,11 @@ describe('attachTokenCycle — state and lifecycle', () => {
   it('stops listening on detach', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);
-    expect(editor.listenerCount('contentChange')).toBe(1);
+    expect(editor.listenerCount('selectionChange')).toBe(1);
     expect(editor.listenerCount('documentChange')).toBe(1);
 
     cycle.detach();
-    expect(editor.listenerCount('contentChange')).toBe(0);
+    expect(editor.listenerCount('selectionChange')).toBe(0);
     expect(editor.listenerCount('documentChange')).toBe(0);
   });
 });
