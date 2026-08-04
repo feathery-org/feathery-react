@@ -57,6 +57,13 @@ export type TokenCycle = {
   setTokenValue: (id: string, raw: string | number) => TokenState;
   /** Re-read the document and rebuild the plan, after a structural edit. */
   refresh: () => TokenState;
+  /**
+   * Re-evaluate every computed token against the current values, without
+   * rebuilding the graph. Values arriving from outside the document (a form
+   * field changing) go through `setTokenValue`, which returns early when the
+   * token itself did not move — this makes sure dependents still follow.
+   */
+  recompute: () => TokenState;
   /** Current state without touching the editor. */
   getState: () => TokenState;
   subscribe: (listener: (state: TokenState) => void) => () => void;
@@ -73,7 +80,7 @@ const numericValues = (
 ): Map<string, number> => {
   const values = new Map<string, number>();
   for (const { spec, value } of entries) {
-    if (spec.format?.kind === 'text') continue;
+    if ((spec.format?.kind ?? 'text') === 'text') continue;
     const parsed = parseValue(value);
     if (parsed !== null) values.set(valueKey(spec), parsed);
   }
@@ -134,7 +141,7 @@ export const attachTokenCycle = (
     values = numericValues(entries);
     texts = new Map(
       entries
-        .filter(({ spec }) => spec.format?.kind === 'text')
+        .filter(({ spec }) => (spec.format?.kind ?? 'text') === 'text')
         .map(({ spec, value }) => [valueKey(spec), value])
     );
     // One full pass on open, so a document is consistent before anyone
@@ -145,7 +152,7 @@ export const attachTokenCycle = (
 
   const setTokenValue = (id: string, raw: string | number): TokenState => {
     // A text token holds whatever it was given; nothing derives from it.
-    if (plan.specs.get(id)?.format?.kind === 'text') {
+    if ((plan.specs.get(id)?.format?.kind ?? 'text') === 'text') {
       const text = String(raw);
       if (texts.get(id) === text) return publish();
       texts.set(id, text);
@@ -193,7 +200,7 @@ export const attachTokenCycle = (
       !args?.event?.metaKey &&
       !args?.event?.ctrlKey
     ) {
-      const kind = plan.specs.get(focused.id)?.format?.kind ?? 'number';
+      const kind = plan.specs.get(focused.id)?.format?.kind ?? 'text';
       if (kind !== 'text' && !/[0-9.,\-$%]/.test(key)) {
         args?.event?.preventDefault?.();
         if (args) args.isHandled = true;
@@ -244,7 +251,7 @@ export const attachTokenCycle = (
    */
   const reformat = (id: string, currentText: string): void => {
     const format = plan.specs.get(id)?.format;
-    if (format?.kind === 'text') return;
+    if ((format?.kind ?? 'text') === 'text') return;
 
     const value = values.get(id) ?? parseValue(currentText) ?? 0;
     const canonical = renderValue(value, format);
@@ -287,7 +294,7 @@ export const attachTokenCycle = (
       return;
     }
 
-    if (plan.specs.get(left)?.format?.kind === 'text') {
+    if ((plan.specs.get(left)?.format?.kind ?? 'text') === 'text') {
       if (texts.get(left) !== entry.value) {
         texts.set(left, entry.value);
         options.onValuesChanged?.(new Map());
@@ -325,9 +332,24 @@ export const attachTokenCycle = (
   editor.addEventListener?.('documentChange', onDocumentChange);
   refresh();
 
+  const recompute = (): TokenState => {
+    recalc(plan, values);
+    // Offer every computed value, not just the ones the model moved: the
+    // write compares against the document, so this also repairs a control
+    // whose text drifted away from its value.
+    const derived = new Map<string, number>();
+    for (const id of plan.order) {
+      const value = values.get(id);
+      if (value !== undefined) derived.set(id, value);
+    }
+    flush(derived, editingId ?? undefined);
+    return publish();
+  };
+
   return {
     setTokenValue,
     refresh,
+    recompute,
     getState: snapshot,
     subscribe: (listener) => {
       listeners.add(listener);

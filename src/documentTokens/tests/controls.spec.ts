@@ -87,7 +87,12 @@ const control = (spec: TokenSpec, value: string): ContentControlInfo => ({
   canDelete: true
 });
 
-const qty: TokenSpec = { id: 'qty', index: 0, source: 'qty' };
+const qty: TokenSpec = {
+  id: 'qty',
+  index: 0,
+  source: 'qty',
+  format: { kind: 'number' }
+};
 const itemTotal: TokenSpec = {
   id: 'item_total',
   index: 0,

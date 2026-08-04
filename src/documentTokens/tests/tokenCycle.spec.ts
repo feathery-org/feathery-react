@@ -84,12 +84,18 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
 /** The prototype's invoice: two line items, subtotal, tax, total. */
 const invoiceEditor = () =>
   fakeEditor([
-    control({ id: 'qty', index: 0, source: 'qty' }, '10'),
+    control(
+      { id: 'qty', index: 0, source: 'qty', format: { kind: 'number' } },
+      '10'
+    ),
     control(
       { id: 'unit_cost', index: 0, source: 'unit_cost', format: { kind: 'currency' } },
       '$150.00'
     ),
-    control({ id: 'qty', index: 1, source: 'qty' }, '2'),
+    control(
+      { id: 'qty', index: 1, source: 'qty', format: { kind: 'number' } },
+      '2'
+    ),
     control(
       { id: 'unit_cost', index: 1, source: 'unit_cost', format: { kind: 'currency' } },
       '$400.00'
@@ -311,7 +317,13 @@ describe('attachTokenCycle — committing on blur', () => {
 describe('attachTokenCycle — state and lifecycle', () => {
   it('surfaces validation failures without blocking the edit', () => {
     const editor = fakeEditor([
-      control({ id: 'qty', index: 0, source: 'qty', validate: { min: 1 } }, '10')
+      control({
+        id: 'qty',
+        index: 0,
+        source: 'qty',
+        format: { kind: 'number' },
+        validate: { min: 1 }
+      }, '10')
     ]);
     const state = attachTokenCycle(editor).setTokenValue('qty__0', 0);
 
@@ -321,8 +333,8 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
   it('attributes a broken formula without losing the rest', () => {
     const editor = fakeEditor([
-      control({ id: 'x', source: 'x' }, '4'),
-      control({ id: 'broken', formula: '(((' }, ''),
+      control({ id: 'x', source: 'x', format: { kind: 'number' } }, '4'),
+      control({ id: 'broken', formula: '(((', format: { kind: 'number' } }, ''),
       control(
         { id: 'ok', formula: 'x * 2', format: { kind: 'number' } },
         '8'
@@ -352,9 +364,17 @@ describe('attachTokenCycle — state and lifecycle', () => {
     const cycle = attachTokenCycle(editor);
 
     editor.controls.push(
-      control({ id: 'qty', index: 2, source: 'qty' }, '1'),
       control(
-        { id: 'unit_cost', index: 2, source: 'unit_cost' },
+      { id: 'qty', index: 2, source: 'qty', format: { kind: 'number' } },
+      '1'
+    ),
+      control(
+        {
+          id: 'unit_cost',
+          index: 2,
+          source: 'unit_cost',
+          format: { kind: 'currency' }
+        },
         '$50.00'
       ),
       control(
@@ -380,7 +400,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(cycle.getState().specs).toHaveLength(0);
 
     editor.controls.push(
-      control({ id: 'qty', source: 'qty' }, '4'),
+      control({ id: 'qty', source: 'qty', format: { kind: 'number' } }, '4'),
       control(
         { id: 'double', formula: 'qty * 2', format: { kind: 'number' } },
         '0'
@@ -551,6 +571,19 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(cycle.getState().specs).toEqual([]);
     expect(() => cycle.setTokenValue('qty__0', 5)).not.toThrow();
     expect(() => cycle.detach()).not.toThrow();
+  });
+
+  it('settles dependents when an input arrives from outside', () => {
+    // A form field changing sets an input whose own value may already match,
+    // so recompute is what keeps the derived values honest.
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+
+    // Simulate the graph going stale: a derived control edited out of band.
+    editor.controls[7].value = '$0.00'; // subtotal
+    cycle.recompute();
+
+    expect(editor.valueOf('subtotal')).toBe('$2,300.00');
   });
 
   it('stops listening on detach', () => {

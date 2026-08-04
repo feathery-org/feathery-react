@@ -37,7 +37,7 @@ export const renderValue = (
   value: number | string | null | undefined,
   fmt?: TokenFormat
 ): string => {
-  const kind = fmt?.kind ?? 'number';
+  const kind = fmt?.kind ?? 'text';
   if (kind === 'text' || typeof value !== 'number' || !Number.isFinite(value)) {
     return value === null || value === undefined ? '' : String(value);
   }
