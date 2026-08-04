@@ -342,6 +342,42 @@ describe('deriveSectionPattern', () => {
     }
   });
 
+  it('treats an exact insertion-boundary heading as after the preceding real family, ignoring empty heading scaffolding', () => {
+    const policySections = [
+      ...lobSection('North Automobile'),
+      ...lobSection('South Automobile', { intro: true }),
+      ...lobSection('West Property')
+    ];
+    const scaffolding = Array.from({ length: 8 }, (_unused, index) =>
+      paragraph(index === 3 ? '\f' : '', 'Heading 1', { level: 1 })
+    );
+    const premiumAnchor = `0;${policySections.length + scaffolding.length}`;
+    const editor = editorFor([
+      ...policySections,
+      ...scaffolding,
+      paragraph('Premium Summary', 'Heading 1', { level: 1 }),
+      table(['Line', 'Premium'])
+    ]);
+
+    const result = deriveSectionPattern(editor as any, {
+      near: premiumAnchor
+    });
+
+    expect(result.sample).toMatchObject({
+      available: 4,
+      sampled: 3,
+      recurring: 3,
+      near: premiumAnchor
+    });
+    expect(result.pattern.sequence.map((element) => element.role)).toEqual([
+      'section_heading',
+      'subsection_heading',
+      'table',
+      'subsection_heading',
+      'table'
+    ]);
+  });
+
   it('reports the recurring blank-paragraph and paragraph-spacing boundary convention', () => {
     const section = (name: string) => [
       paragraph(name, 'Heading 1', {

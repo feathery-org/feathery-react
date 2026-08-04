@@ -225,7 +225,11 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // and character/paragraph formatting ops in the same change set run later
     // and override only the properties they name.
     op: 'insert_table',
-    params: { rows: 'int>0?', columns: 'int>0?' },
+    params: {
+      rows: 'int>0?',
+      columns: 'int>0?',
+      position: 'enum[before,after]?'
+    },
     requiresAnchor: true
   },
   {

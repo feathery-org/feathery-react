@@ -476,13 +476,16 @@ describe('W0 captain incident replays', () => {
     const editor = makeRealDocumentEditor(incidentDSfdt());
     try {
       const before = editor.serialize();
-      const result = replay(editor, incidentDChangeSets.d);
-      expectHonestDuplicateTableOutcome(
-        editor,
-        before,
-        incidentDChangeSets.d,
-        result
-      );
+      const payload = {
+        ...incidentDChangeSets.d,
+        edits: [
+          { ...incidentDChangeSets.d.edits[0], expect: undefined },
+          ...incidentDChangeSets.d.edits.slice(1)
+        ]
+      };
+      const result = replay(editor, payload);
+      expectHonestDuplicateTableOutcome(editor, before, payload, result);
+      expect(result.results[0].error).toBe('inserted_table_anchor_mismatch');
     } finally {
       destroyRealDocumentEditor(editor);
     }
