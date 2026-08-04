@@ -2,9 +2,11 @@ import {
   bookmarkFor,
   ContentControlInfo,
   decodeTag,
+  documentShape,
   EditorLike,
   encodeTag,
   readTokens,
+  shapeViolations,
   tokenAtCaret,
   writeValues
 } from '../controls';
@@ -383,5 +385,122 @@ describe('writeValues', () => {
 
     expect(editor.controls[0].value).toBe('$0.00');
     expect(editor.controls[1].value).toBe('$99.00');
+  });
+});
+
+describe('structural invariants', () => {
+  const shapeOf = (
+    entries: Array<[string, string]>
+  ): ReturnType<typeof documentShape> => ({
+    addresses: entries.map(([address]) => address),
+    text: new Map(entries)
+  });
+
+  it('accepts a write that only changed what it aimed at', () => {
+    const before = shapeOf([
+      ['qty__0', '10'],
+      ['item_total__0', '$1,500.00']
+    ]);
+    const after = shapeOf([
+      ['qty__0', '10'],
+      ['item_total__0', '$3,000.00']
+    ]);
+
+    expect(shapeViolations(before, after, new Set(['item_total__0']))).toEqual(
+      []
+    );
+  });
+
+  it('catches a token whose markers were destroyed', () => {
+    const before = shapeOf([
+      ['qty__0', '10'],
+      ['item_total__0', '$1,500.00']
+    ]);
+    const after = shapeOf([['qty__0', '10']]);
+
+    expect(shapeViolations(before, after, new Set(['item_total__0']))).toEqual([
+      'token count changed: 2 to 1',
+      'token item_total__0 vanished'
+    ]);
+  });
+
+  it('catches a duplicated control', () => {
+    const before = shapeOf([['qty__0', '10']]);
+    const after = shapeOf([
+      ['qty__0', '10'],
+      ['qty__0', '10']
+    ]);
+
+    expect(shapeViolations(before, after, new Set(['qty__0']))).toEqual([
+      'token count changed: 1 to 2',
+      'token qty__0 went from 1 to 2 appearances'
+    ]);
+  });
+
+  it('catches a token changed that nobody asked to change', () => {
+    // The compounding failure: a write landing on the wrong control.
+    const before = shapeOf([
+      ['qty__0', '10'],
+      ['cost__0', '$800.00']
+    ]);
+    const after = shapeOf([
+      ['qty__0', '10'],
+      ['cost__0', '$800.007.00']
+    ]);
+
+    expect(shapeViolations(before, after, new Set(['qty__0']))).toEqual([
+      'token cost__0 changed without being asked to: "$800.00" to "$800.007.00"'
+    ]);
+  });
+
+  it('reads a shape off the editor', () => {
+    const editor = fakeEditor([
+      control(qty, '10'),
+      control(itemTotal, '$60.00')
+    ]);
+    const shape = documentShape(editor);
+
+    expect(shape.addresses).toEqual(['qty__0', 'item_total__0']);
+    expect(shape.text.get('item_total__0')).toBe('$60.00');
+  });
+
+  it('reports nothing for a healthy write, and says so in the result', () => {
+    const editor = fakeEditor([
+      control(qty, '10'),
+      control(itemTotal, '$60.00')
+    ]);
+    const onViolation = jest.fn();
+
+    const result = writeValues(
+      editor,
+      [{ id: 'item_total__0', text: '$99.00' }],
+      { onViolation }
+    );
+
+    expect(result.violations).toEqual([]);
+    expect(onViolation).not.toHaveBeenCalled();
+  });
+
+  it('reports a write that corrupted an untargeted token', () => {
+    const editor = fakeEditor([
+      control(qty, '10'),
+      control(itemTotal, '$60.00')
+    ]);
+    const onViolation = jest.fn();
+    // A boundary that writes to the wrong control, the way a stale address does.
+    editor.editor.insertText = (text: string) => {
+      editor.controls[0].value = `${editor.controls[0].value}${text}`;
+    };
+
+    const result = writeValues(
+      editor,
+      [{ id: 'item_total__0', text: '$99.00' }],
+      { onViolation }
+    );
+
+    expect(result.violations).toEqual([
+      'token qty__0 changed without being asked to: "10" to "10$99.00"'
+    ]);
+    expect(onViolation).toHaveBeenCalledWith(result.violations);
   });
 });

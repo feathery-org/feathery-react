@@ -26,6 +26,35 @@ function loadStyles() {
     doc.head.appendChild(link);
   });
   loadAccentOverride();
+  hideContentControlMenuItems();
+}
+
+/**
+ * Take "Content Control Properties" and "Remove Content Control" out of the
+ * right-click menu.
+ *
+ * Linked tokens ARE content controls, and both commands break them: a removed
+ * control cannot be rebuilt — `insertContentControl` is a no-op in this version
+ * — and editing its tag detaches the token from its field.
+ *
+ * Done in CSS rather than by hiding the items, because Syncfusion sets
+ * `display` inline on every menu open and would undo anything set once; an
+ * `!important` rule beats that inline style. Matched on the id suffix, since the
+ * prefix is the editor's own element id, and applied globally because the menu
+ * renders in a portal on <body>.
+ */
+const MENU_STYLE_ID = 'feathery-docx-hide-cc-menu';
+function hideContentControlMenuItems() {
+  const doc = featheryDoc();
+  if (doc.getElementById(MENU_STYLE_ID)) return;
+  const style = doc.createElement('style');
+  style.id = MENU_STYLE_ID;
+  style.textContent = `
+    li[id$="_content_control_properties"],
+    li[id$="_remove_content_control"] {
+      display: none !important;
+    }`;
+  doc.head.appendChild(style);
 }
 
 // The Syncfusion tailwind3 theme's accent is indigo (--color-sf-primary

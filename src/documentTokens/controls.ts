@@ -237,6 +237,89 @@ export const selectTokenValue = (
 };
 
 /**
+ * The document's token STRUCTURE, as a fingerprint a write must not change.
+ *
+ * Every corruption this feature has produced showed up here first: a control
+ * whose markers were eaten (count drops), a token written twice over (an
+ * address appears twice), a value compounded onto itself rather than replacing
+ * it (text of an untargeted token changes). Comparing this before and after a
+ * write turns each of those from silent damage into a caught error.
+ *
+ * Text is included per address so an untargeted token changing can be spotted;
+ * the caller says which addresses it meant to touch.
+ */
+export type DocumentShape = {
+  addresses: string[];
+  text: Map<string, string>;
+};
+
+export const documentShape = (editor: EditorLike): DocumentShape => {
+  const addresses: string[] = [];
+  const text = new Map<string, string>();
+  for (const { spec, value } of readTokens(editor)) {
+    const instance = instanceKey(spec);
+    addresses.push(instance);
+    text.set(instance, value);
+  }
+  return { addresses, text };
+};
+
+/**
+ * What changed between two shapes that should not have.
+ *
+ * `intended` is the set of addresses the write aimed at; everything else must
+ * come back identical. Returns one message per violation, empty when the write
+ * was well behaved.
+ */
+export const shapeViolations = (
+  before: DocumentShape,
+  after: DocumentShape,
+  intended: Set<string>
+): string[] => {
+  const problems: string[] = [];
+
+  if (before.addresses.length !== after.addresses.length) {
+    problems.push(
+      `token count changed: ${before.addresses.length} to ${after.addresses.length}`
+    );
+  }
+
+  const counted = (list: string[]): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const item of list) counts.set(item, (counts.get(item) ?? 0) + 1);
+    return counts;
+  };
+  const beforeCounts = counted(before.addresses);
+  const afterCounts = counted(after.addresses);
+  for (const [address, count] of afterCounts) {
+    const was = beforeCounts.get(address) ?? 0;
+    if (count === was) continue;
+    problems.push(
+      was === 0
+        ? `token ${address} appeared`
+        : `token ${address} went from ${was} to ${count} appearances`
+    );
+  }
+  for (const address of beforeCounts.keys()) {
+    if (!afterCounts.has(address)) problems.push(`token ${address} vanished`);
+  }
+
+  for (const [address, was] of before.text) {
+    if (intended.has(address)) continue;
+    const now = after.text.get(address);
+    if (now !== undefined && now !== was) {
+      problems.push(
+        `token ${address} changed without being asked to: ${JSON.stringify(
+          was
+        )} to ${JSON.stringify(now)}`
+      );
+    }
+  }
+
+  return problems;
+};
+
+/**
  * Write new rendered values into their controls.
  *
  * `resetContentControlData` is NOT a write API — measured, it resets a control
@@ -250,12 +333,21 @@ export const selectTokenValue = (
  * must revert as one, or Ctrl+Z leaves the document inconsistent with itself.
  * Pass `group: false` when the caller already holds an undo action open — the
  * typing that caused this write belongs in the same step as the write.
+ *
+ * Every write is checked against the document's structure. Driving a rich-text
+ * editor as a data store means a write can damage far more than the value it
+ * aimed at, and each time that has happened it went unnoticed until someone
+ * looked at a document. `onViolation` receives what broke, with the token names.
  */
 export const writeValues = (
   editor: EditorLike,
   updates: Array<{ id: string; text: string }>,
-  options: { skipId?: string; group?: boolean } = {}
-): { written: string[]; missed: string[] } => {
+  options: {
+    skipId?: string;
+    group?: boolean;
+    onViolation?: (problems: string[]) => void;
+  } = {}
+): { written: string[]; missed: string[]; violations: string[] } => {
   const group = options.group ?? true;
   // A token may appear many times; every appearance shows the same value, so
   // one update fans out to each control that carries it.
@@ -299,11 +391,18 @@ export const writeValues = (
       }
     }
   }
-  if (pending.length === 0) return { written, missed };
+  if (pending.length === 0) return { written, missed, violations: [] };
 
   if (typeof editor?.editor?.insertText !== 'function') {
-    return { written, missed: pending.map(({ id }) => id) };
+    return {
+      written,
+      missed: pending.map(({ id }) => id),
+      violations: []
+    };
   }
+
+  const before = documentShape(editor);
+  const intended = new Set(pending.map(({ instance }) => instance));
 
   withViewportPreserved(editor, () => {
     if (group) editor.editorHistory?.beginUndoAction();
@@ -321,5 +420,8 @@ export const writeValues = (
     }
   });
 
-  return { written, missed };
+  const violations = shapeViolations(before, documentShape(editor), intended);
+  if (violations.length > 0) options.onViolation?.(violations);
+
+  return { written, missed, violations };
 };

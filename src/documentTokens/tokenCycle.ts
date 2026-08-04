@@ -20,6 +20,27 @@
  * `reconcile()` is idempotent — it derives everything from the current inputs
  * and writes only what the document does not already show — so calling it more
  * often than strictly necessary is free and can never lose an edit.
+ *
+ * TODO(docx-tokens): known gaps, kept here so they are not rediscovered the
+ * hard way. Detail in docs/superpowers/2026-08-04-docx-linked-tokens-handoff.md.
+ *
+ * 1. No gesture fuzz harness. Every defect in this feature was found by driving
+ *    a browser by hand, never by a test. A real DocumentEditor runs under jest
+ *    with jest-canvas-mock (see src/assistant/tools/tests/) — drive it with
+ *    random sequences of type/delete/undo/redo/caret-move/double-click and
+ *    assert `shapeViolations` after each step, printing the failing seed.
+ * 2. Redo after undoing a token edit is lost: adopting the restored values
+ *    writes to the document, and any write clears Syncfusion's redo stack.
+ * 3. Content controls have been seen DUPLICATED after clicking a double-click
+ *    selection. Never reproduced — aiming a gesture at a token needs on-screen
+ *    coordinates, which went away with tokenRects.ts; restore a test-only
+ *    version to chase it.
+ * 4. Editing happens in the document, so any gesture can damage the structure
+ *    the whole feature depends on. Making token text read-only and editing
+ *    through UI instead would remove that class of bug rather than defend
+ *    against each instance.
+ * 5. The dev TokenPanel keys rows by `spec.id`, so repeated tokens collide in
+ *    its readout — a panel display bug, not an engine one.
  */
 
 import {
@@ -161,6 +182,24 @@ export const attachTokenCycle = (
     focused: null
   };
 
+  /**
+   * A write damaged the document's structure.
+   *
+   * Loud on purpose: every corruption this feature has produced was invisible
+   * until someone opened a document and noticed a mangled number, so a broken
+   * invariant must not pass quietly. The write is already done — Syncfusion has
+   * no transaction to roll back — but the token names say exactly what to look
+   * at, which is the part that always took hours to work out.
+   */
+  const reportViolations = (problems: string[]): void => {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[feathery] docx token write broke the document:\n  ${problems.join(
+        '\n  '
+      )}`
+    );
+  };
+
   /** Where a token's value lives: its field, or here. */
   const ownerOf = (spec: TokenSpec): FieldAccess =>
     spec.source ? fields : memory;
@@ -286,7 +325,11 @@ export const attachTokenCycle = (
       applying = true;
       try {
         // Do not open a second action inside the one held around the edit.
-        writeValues(editor, updates, { skipId, group: !editStepOpen });
+        writeValues(editor, updates, {
+          skipId,
+          group: !editStepOpen,
+          onViolation: reportViolations
+        });
       } finally {
         applying = false;
       }
