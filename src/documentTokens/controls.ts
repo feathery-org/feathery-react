@@ -13,8 +13,30 @@ import { instanceKey, TokenSpec, valueKey } from './plan';
 /** Prefix that marks a content control as ours, so we never touch the rest. */
 export const TAG_PREFIX = 'ftk:';
 
-const INPUT_COLOR = '#2563EB';
-const COMPUTED_COLOR = '#9CA3AF';
+/**
+ * A token's background, as one of Word's fifteen highlight colours.
+ *
+ * Shading the RUNS rather than drawing HTML over the canvas is what makes this
+ * correct: it wraps with the text across lines, grows with the value, and can
+ * never drift out of position, because it IS the text's own formatting rather
+ * than a measurement of where the text was a frame ago.
+ *
+ * Only EDITABLE tokens are shaded, and that is measured rather than chosen: a
+ * computed token's control is locked (`sdtContentLocked`) and silently refuses
+ * character formatting — reading `highlightColor` back after setting it
+ * returns `NoColor`. So the shading says exactly one thing, which is the thing
+ * worth saying: this text is yours to change. A derived value is left as
+ * ordinary prose. Word's palette is fixed, with no alpha and no corner radius.
+ *
+ * `strip.py` drops `w:highlight` from token runs when the envelope is
+ * finalised or exported, so none of this reaches the reader.
+ */
+export type TokenShade = 'input' | 'invalid';
+
+const HIGHLIGHT: Record<TokenShade, string> = {
+  input: 'Turquoise',
+  invalid: 'Pink'
+};
 
 /**
  * Syncfusion's ContentControlInfo.
@@ -50,11 +72,11 @@ export type EditorLike = {
     /** The selected text, used to prove a range was actually selected. */
     text?: string;
     isEmpty?: boolean;
+    /** Formatting of the selected range. Only `highlightColor` is used. */
+    characterFormat?: { highlightColor?: string };
   };
   editor: {
     insertText: (text: string) => void;
-    insertContentControl?: (info: ContentControlInfo) => unknown;
-    insertBookmark?: (name: string) => void;
   };
   editorHistory?: {
     beginUndoAction: () => void;
@@ -272,39 +294,34 @@ export const writeValues = (
 };
 
 /**
- * Insert a token at the caret, as one undo step.
+ * Shade each token's text by what kind of token it is.
  *
- * Two markers go in: the content control carries the spec and the locks, and
- * a bookmark of the same id carries the address `writeValues` selects by.
+ * Deliberately NOT wrapped in an undo action: highlighting is presentation,
+ * and grouping it with nothing else would put a colour change on the undo
+ * stack, so Ctrl+Z would repaint instead of undoing the user's last edit.
  *
- * `canEdit`/`canDelete` are locks: a computed token is locked against editing,
- * and every token is locked against deletion.
+ * Returns the appearances whose shade was applied, so a caller can shade only
+ * on a change and leave a settled document alone.
  */
-export const insertToken = (
+export const shadeTokens = (
   editor: EditorLike,
-  spec: TokenSpec,
-  renderedValue: string,
-  label = spec.id
-): boolean => {
-  if (!editor.editor.insertContentControl) return false;
+  shades: Array<{ instance: string; shade: TokenShade }>
+): string[] => {
+  if (!editor?.selection?.characterFormat) return [];
 
-  const isComputed = Boolean(spec.formula);
-  editor.editorHistory?.beginUndoAction();
-  try {
-    editor.editor.insertContentControl({
-      title: label,
-      tag: encodeTag(spec),
-      value: renderedValue,
-      canEdit: isComputed,
-      canDelete: true
-    });
-    editor.editor.insertBookmark?.(bookmarkFor(instanceKey(spec)));
-  } finally {
-    editor.editorHistory?.endUndoAction();
-  }
-  return true;
+  const shaded: string[] = [];
+  withViewportPreserved(editor, () => {
+    for (const { instance, shade } of shades) {
+      const bookmark = bookmarkFor(instance);
+      if (!editor.getBookmarks().includes(bookmark)) continue;
+      editor.selection.selectBookmark(bookmark, true);
+      // Formatting a collapsed selection would set the caret's insertion
+      // format instead, colouring whatever the user types next.
+      if (editor.selection.text === '') continue;
+      const format = editor.selection.characterFormat;
+      if (format) format.highlightColor = HIGHLIGHT[shade];
+      shaded.push(instance);
+    }
+  });
+  return shaded;
 };
-
-/** The chrome colour for a token, derived from its kind rather than stored. */
-export const colorFor = (spec: TokenSpec): string =>
-  spec.formula ? COMPUTED_COLOR : INPUT_COLOR;

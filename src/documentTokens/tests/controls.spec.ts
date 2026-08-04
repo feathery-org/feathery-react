@@ -1,13 +1,12 @@
 
 import {
   bookmarkFor,
-  colorFor,
   ContentControlInfo,
   decodeTag,
   EditorLike,
   encodeTag,
-  insertToken,
   readTokens,
+  shadeTokens,
   tokenAtCaret,
   writeValues
 } from '../controls';
@@ -46,7 +45,18 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
           log.push(`caret ${start}-${end}`);
         },
         startOffset: '0;0;4',
-        endOffset: '0;0;4'
+        endOffset: '0;0;4',
+        // The value of whatever bookmark is currently selected, so a
+        // collapsed selection is distinguishable from a real range.
+        get text() {
+          return controls.find((c) => bookmarkFor(addressOf(c)) === selected)
+            ?.value;
+        },
+        characterFormat: {
+          set highlightColor(color: string) {
+            log.push(`highlight ${selected} ${color}`);
+          }
+        }
       },
       editor: {
         insertText: (text: string) => {
@@ -55,15 +65,7 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
             log.push(`write ${keyOf(target)} = ${text}`);
             target.value = text;
           }
-        },
-        insertContentControl: (info: ContentControlInfo) => {
-          log.push(
-            `insert ${info.tag} canEdit=${info.canEdit} canDelete=${info.canDelete}`
-          );
-          controls.push({ ...info });
-          return info;
-        },
-        insertBookmark: (name: string) => log.push(`bookmark ${name}`)
+        }
       },
       editorHistory: {
         beginUndoAction: () => log.push('undo:begin'),
@@ -92,6 +94,12 @@ const qty: TokenSpec = {
   index: 0,
   source: 'qty',
   format: { kind: 'number' }
+};
+const unitCost: TokenSpec = {
+  id: 'unit_cost',
+  index: 0,
+  source: 'unit_cost',
+  format: { kind: 'currency' }
 };
 const itemTotal: TokenSpec = {
   id: 'item_total',
@@ -310,40 +318,47 @@ describe('writeValues', () => {
   });
 });
 
-describe('insertToken', () => {
-  it('locks a computed token against editing and every token against deletion', () => {
-    const editor = fakeEditor([]);
-    insertToken(editor, itemTotal, '$1,500.00');
+describe('shadeTokens', () => {
+  it('shades an editable token, and marks a failing one', () => {
+    const editor = fakeEditor([control(qty, '10'), control(unitCost, '$150.00')]);
 
+    expect(
+      shadeTokens(editor, [
+        { instance: 'qty__0', shade: 'input' },
+        { instance: 'unit_cost__0', shade: 'invalid' }
+      ])
+    ).toEqual(['qty__0', 'unit_cost__0']);
+    expect(editor.log).toContain(`highlight ${bookmarkFor('qty__0')} Turquoise`);
     expect(editor.log).toContain(
-      `insert ${encodeTag(itemTotal)} canEdit=true canDelete=true`
+      `highlight ${bookmarkFor('unit_cost__0')} Pink`
     );
   });
 
-  it('leaves an input token editable but undeletable', () => {
-    const editor = fakeEditor([]);
-    insertToken(editor, qty, '10');
-
-    expect(editor.log).toContain(
-      `insert ${encodeTag(qty)} canEdit=false canDelete=true`
-    );
+  it('never enters the undo stack — Ctrl+Z must undo an edit, not a colour', () => {
+    const editor = fakeEditor([control(qty, '10')]);
+    shadeTokens(editor, [{ instance: 'qty__0', shade: 'input' }]);
+    expect(editor.log).not.toContain('undo:begin');
   });
 
-  it('is one undo step covering both markers', () => {
-    const editor = fakeEditor([]);
-    insertToken(editor, qty, '10');
-    expect(editor.log).toEqual([
-      'undo:begin',
-      `insert ${encodeTag(qty)} canEdit=false canDelete=true`,
-      `bookmark ${bookmarkFor('qty__0')}`,
-      'undo:end'
-    ]);
+  it('skips an appearance it cannot address', () => {
+    const editor = fakeEditor([control(qty, '10')]);
+    expect(
+      shadeTokens(editor, [{ instance: 'nope__9', shade: 'input' }])
+    ).toEqual([]);
   });
-});
 
-describe('colorFor', () => {
-  it('paints inputs blue and computed tokens grey', () => {
-    expect(colorFor(qty)).toBe('#2563EB');
-    expect(colorFor(itemTotal)).toBe('#9CA3AF');
+  it('refuses to shade a collapsed selection', () => {
+    // Colouring a caret sets the INSERTION format, tinting whatever is typed
+    // next instead of the value that is already there.
+    const editor = fakeEditor([control(qty, '')]);
+    expect(
+      shadeTokens(editor, [{ instance: 'qty__0', shade: 'input' }])
+    ).toEqual([]);
+  });
+
+  it('leaves the caret and the scroll position where they were', () => {
+    const editor = fakeEditor([control(qty, '10')]);
+    shadeTokens(editor, [{ instance: 'qty__0', shade: 'input' }]);
+    expect(editor.log).toContain('caret 0;0;4-0;0;4');
   });
 });

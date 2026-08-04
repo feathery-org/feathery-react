@@ -44,6 +44,15 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
       selectBookmark: (name: string) => {
         selected = name;
         log.push(`select ${name}`);
+      },
+      get text() {
+        return controls.find((c) => bookmarkFor(addressOf(c)) === selected)
+          ?.value;
+      },
+      characterFormat: {
+        set highlightColor(color: string) {
+          log.push(`highlight ${selected} ${color}`);
+        }
       }
     },
     editor: {
@@ -74,6 +83,10 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
     setCaret: (info?: ContentControlInfo) => {
       caret = info;
     },
+    /** Log entries that changed a value, as opposed to selecting or shading. */
+    writeLog: () => log.filter((entry) => entry.includes('=')),
+    shadeLog: () => log.filter((entry) => entry.startsWith('highlight ')),
+    clearLog: () => log.splice(0, log.length),
     fire: (event: string, args?: any) =>
       (handlers[event] ?? []).forEach((h: any) => h(args)),
     valueOf: (key: string) =>
@@ -86,7 +99,13 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
 const invoiceEditor = () =>
   fakeEditor([
     control(
-      { id: 'qty', index: 0, source: 'qty', format: { kind: 'number' } },
+      {
+        id: 'qty',
+        index: 0,
+        source: 'qty',
+        format: { kind: 'number' },
+        validate: { min: 1 }
+      },
       '10'
     ),
     control(
@@ -151,7 +170,7 @@ describe('attachTokenCycle — propagation', () => {
   it('writes nothing on attach when the document is already consistent', () => {
     const editor = invoiceEditor();
     attachTokenCycle(editor);
-    expect(editor.log).toEqual([]);
+    expect(editor.writeLog()).toEqual([]);
   });
 
   it('propagates one edit through the whole chain', () => {
@@ -215,13 +234,89 @@ describe('attachTokenCycle — propagation', () => {
 
   it('groups an edit and everything it moved into one undo action', () => {
     const editor = invoiceEditor();
-    attachTokenCycle(editor).setTokenValue('qty__0', 20);
+    const cycle = attachTokenCycle(editor);
+    editor.clearLog(); // attach shades every token; the edit is what matters
+    cycle.setTokenValue('qty__0', 20);
 
     expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
       1
     );
     expect(editor.log[0]).toBe('undo:begin');
-    expect(editor.log[editor.log.length - 1]).toBe('undo:end');
+    // Shading follows the write, outside the undo action on purpose: Ctrl+Z
+    // must undo the edit, not a colour.
+    const end = editor.log.indexOf('undo:end');
+    expect(editor.writeLog().every((w: string) => editor.log.indexOf(w) < end)).toBe(
+      true
+    );
+    expect(editor.shadeLog().every((s: string) => editor.log.indexOf(s) > end)).toBe(
+      true
+    );
+  });
+});
+
+describe('attachTokenCycle — shading', () => {
+  it('shades the editable tokens on open', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+
+    expect(editor.shadeLog()).toContain(
+      `highlight ${bookmarkFor('qty__0')} Turquoise`
+    );
+    expect(editor.shadeLog()).toContain(
+      `highlight ${bookmarkFor('tax_percent')} Turquoise`
+    );
+  });
+
+  it('never tries to shade a computed token, whose control refuses formatting', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+
+    // Measured against a real editor: a locked control silently drops the
+    // format, so reading highlightColor back returns NoColor. Attempting it
+    // every reconcile would be a wasted pass.
+    for (const computed of ['item_total__0', 'subtotal', 'total']) {
+      expect(
+        editor.shadeLog().some((s: string) => s.includes(bookmarkFor(computed)))
+      ).toBe(false);
+    }
+  });
+
+  it('leaves settled text alone rather than repainting every reconcile', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.clearLog();
+
+    cycle.reconcile();
+    cycle.reconcile();
+
+    expect(editor.shadeLog()).toEqual([]);
+  });
+
+  it('re-shades a value it just rewrote, since replaced text loses formatting', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.clearLog();
+
+    // unit_cost__0 is rewritten (reformatted to $175.00), so its shade goes
+    // back on; the untouched second row is left alone.
+    cycle.setTokenValue('unit_cost__0', '175');
+
+    expect(editor.shadeLog()).toContain(
+      `highlight ${bookmarkFor('unit_cost__0')} Turquoise`
+    );
+    expect(editor.shadeLog()).not.toContain(
+      `highlight ${bookmarkFor('unit_cost__1')} Turquoise`
+    );
+  });
+
+  it('marks a token failing its own validation', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+    editor.clearLog();
+
+    cycle.setTokenValue('qty__0', 0); // the spec declares min: 1
+
+    expect(editor.shadeLog()).toContain(`highlight ${bookmarkFor('qty__0')} Pink`);
   });
 });
 

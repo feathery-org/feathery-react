@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
-import { featheryWindow, openTab } from '../../../utils/browser';
+import { featheryDoc, featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
@@ -23,7 +23,6 @@ import type {
 import TokenPanel, {
   tokenPanelEnabled
 } from '../../../documentTokens/TokenPanel';
-import TokenOverlay from '../../../documentTokens/TokenOverlay';
 
 // Syncfusion's public test converter. Used ONLY in a local build: document
 // content is uploaded to a third party, which is fine for synthetic fixtures
@@ -33,6 +32,24 @@ const SYNCFUSION_TEST_SERVICE_URL =
   'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
 
 const isLocalBuild = process.env.BACKEND_ENV === 'local';
+
+/**
+ * The form input the user is typing in, or null when focus is anywhere else.
+ *
+ * Anything inside the editor is excluded: Syncfusion takes keystrokes through
+ * a hidden input of its own, so the document's own caret would otherwise look
+ * like a form field being edited and block the writes entirely.
+ */
+const focusedFormInput = (editorElement?: Element | null): HTMLElement | null => {
+  const active = featheryDoc()?.activeElement as HTMLElement | null;
+  if (!active) return null;
+  const tag = active.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !active.isContentEditable) {
+    return null;
+  }
+  if (editorElement?.contains(active)) return null;
+  return active;
+};
 
 /** A token's value key: one per token per row. */
 const valueKeyOf = (spec: any): string =>
@@ -407,9 +424,6 @@ export default function DocumentEditorContainer({
   const tokenCycle = useRef<TokenCycle | undefined>(undefined);
   // Dev-only token inspector; nothing renders unless the flag is set.
   const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
-  // The live editor, so the overlay can measure token rectangles.
-  const [tokenEditor, setTokenEditor] = useState<any>();
-  const editorHostRef = useRef<HTMLElement | null>(null);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -427,7 +441,6 @@ export default function DocumentEditorContainer({
       tokenCycle.current = attachTokenCycle(editor, {
         fields: formFieldAccess
       });
-      setTokenEditor(editor);
       if (tokenPanelEnabled(featheryWindow())) {
         setTokenPanelCycle(tokenCycle.current);
       }
@@ -461,20 +474,27 @@ export default function DocumentEditorContainer({
   // into the document. It derives from current values and writes only what the
   // document does not already show, so running it unconditionally is both
   // cheaper to reason about than a change signature and impossible to miss.
+  //
+  // Except while a form input has focus. Writing into the document steals
+  // focus, so a field edited character by character — a number cleared before
+  // the new one is typed — loses the caret on the first keystroke. Reconcile
+  // is idempotent, so waiting for that input's blur costs nothing but the
+  // document lagging one field behind, which is where the caret already is.
+  // Not a timer: a debounce would rewrite mid-word again, just later.
   useEffect(() => {
-    tokenCycle.current?.reconcile();
+    const editing = focusedFormInput(registeredEditor.current?.element);
+    if (!editing) {
+      tokenCycle.current?.reconcile();
+      return undefined;
+    }
+    const onBlur = () => tokenCycle.current?.reconcile();
+    editing.addEventListener('blur', onBlur, { once: true });
+    return () => editing.removeEventListener('blur', onBlur);
   });
 
   const box = (child: React.ReactNode) => (
-    <div css={wrap} ref={editorHostRef as any}>
+    <div css={wrap}>
       {child}
-      {tokenEditor && tokenCycle.current && (
-        <TokenOverlay
-          editor={tokenEditor}
-          cycle={tokenCycle.current}
-          hostRef={editorHostRef}
-        />
-      )}
       {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
     </div>
   );
