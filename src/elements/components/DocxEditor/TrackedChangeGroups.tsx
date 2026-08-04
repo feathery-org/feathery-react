@@ -88,6 +88,10 @@ const rejectBtn = {
   '&:hover': { borderColor: '#d08984', color: DEL, background: DEL_WASH }
 };
 
+// contentChange fires once per keystroke; one trailing refresh after typing
+// pauses is enough for the rail (refresh walks every revision + getRange).
+const CONTENT_REFRESH_DEBOUNCE_MS = 150;
+
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
 
@@ -206,15 +210,23 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   }, [editor]);
 
   // Assistant edits, manual edits, accept/reject and undo/redo all land as
-  // content changes; documentChange means a DIFFERENT document opened in
-  // place. Either way the rail re-reads the live revisions.
+  // content changes — one per keystroke while someone types, so those
+  // refreshes ride a short trailing debounce. documentChange means a
+  // DIFFERENT document opened in place; that rebuild is immediate so the
+  // rail never shows the previous document's cards.
   useEffect(() => {
     if (!editor) return;
     refresh();
-    editor.addEventListener?.('contentChange', refresh);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const debouncedRefresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
+    };
+    editor.addEventListener?.('contentChange', debouncedRefresh);
     editor.addEventListener?.('documentChange', refresh);
     return () => {
-      editor.removeEventListener?.('contentChange', refresh);
+      clearTimeout(timer);
+      editor.removeEventListener?.('contentChange', debouncedRefresh);
       editor.removeEventListener?.('documentChange', refresh);
     };
   }, [editor, refresh]);

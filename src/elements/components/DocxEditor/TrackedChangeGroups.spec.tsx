@@ -528,15 +528,48 @@ describe('TrackedChangeGroups', () => {
     ).toBeNull();
   });
 
-  it('refreshes when the editor content changes', () => {
-    const revisions: any[] = [];
-    const editor = makeEditor(revisions);
-    const { container } = render(<TrackedChangeGroups editor={editor} />);
-    expect(container).toBeEmptyDOMElement();
+  it('refreshes on content changes after a trailing debounce', () => {
+    jest.useFakeTimers();
+    try {
+      const revisions: any[] = [];
+      const editor = makeEditor(revisions);
+      const { container } = render(<TrackedChangeGroups editor={editor} />);
+      expect(container).toBeEmptyDOMElement();
 
-    // The assistant applies a tagged edit after mount; contentChange fires.
-    revisions.push(makeRevision());
-    act(() => editor.emit('contentChange'));
+      // The assistant applies a tagged edit after mount; contentChange fires
+      // once per keystroke, so the rail waits for the trailing pause instead
+      // of rebuilding on every event.
+      revisions.push(makeRevision());
+      act(() => {
+        editor.emit('contentChange');
+      });
+      expect(container).toBeEmptyDOMElement();
+      act(() => {
+        editor.emit('contentChange');
+      });
+      act(() => {
+        jest.advanceTimersByTime(149);
+      });
+      expect(container).toBeEmptyDOMElement();
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(screen.getByText('Update premium')).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('rebuilds immediately when a different document opens in place', () => {
+    const revisions = [makeRevision()];
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
     expect(screen.getByText('Update premium')).toBeInTheDocument();
+
+    // documentChange = another document replaced this one; the previous
+    // document's cards must not linger for a debounce interval.
+    revisions.splice(0, revisions.length);
+    act(() => editor.emit('documentChange'));
+    expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
   });
 });
