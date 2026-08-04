@@ -24,17 +24,17 @@
  * TODO(docx-tokens): known gaps, kept here so they are not rediscovered the
  * hard way. Detail in docs/superpowers/2026-08-04-docx-linked-tokens-handoff.md.
  *
- * 1. No gesture fuzz harness. Every defect in this feature was found by driving
- *    a browser by hand, never by a test. A real DocumentEditor runs under jest
- *    with jest-canvas-mock (see src/assistant/tools/tests/) — drive it with
- *    random sequences of type/delete/undo/redo/caret-move/double-click and
- *    assert `shapeViolations` after each step, printing the failing seed.
+ * 1. The fuzz harness (tests/fuzz.spec.ts) drives a real editor, but through its
+ *    API rather than real mouse and key events, and asserts structure only. Add
+ *    value invariants (a settled token's text must be what its owner holds),
+ *    more gesture kinds, and more seeds.
  * 2. Redo after undoing a token edit is lost: adopting the restored values
  *    writes to the document, and any write clears Syncfusion's redo stack.
  * 3. Content controls have been seen DUPLICATED after clicking a double-click
- *    selection. Never reproduced — aiming a gesture at a token needs on-screen
- *    coordinates, which went away with tokenRects.ts; restore a test-only
- *    version to chase it.
+ *    selection. Not reproduced: 125 random API-level gestures never broke the
+ *    structure, so it probably needs real mouse events. Aiming one at a token
+ *    needs on-screen coordinates, which went away with tokenRects.ts — restore
+ *    a test-only version to chase it.
  * 4. Editing happens in the document, so any gesture can damage the structure
  *    the whole feature depends on. Making token text read-only and editing
  *    through UI instead would remove that class of bug rather than defend
