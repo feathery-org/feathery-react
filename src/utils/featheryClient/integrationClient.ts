@@ -599,8 +599,8 @@ export default class IntegrationClient {
   // a signer is known up front). One-way — the envelope stops being editable.
   // Signers are supplied here rather than at generation: they're what makes
   // the backend convert the docx, so holding them back is what kept the draft
-  // editable. Same list shape generation sends, where a null role_id means the
-  // one email covers every role.
+  // editable. Same list shape generation sends, where an omitted role_id means
+  // the one email covers every role.
   finalizeEnvelope(
     envelopeId: string,
     signers: Record<string, any>[] = [],
