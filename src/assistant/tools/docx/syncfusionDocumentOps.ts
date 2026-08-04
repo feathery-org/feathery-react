@@ -2247,6 +2247,10 @@ function unitsAtLevel(blocks: FlatBlock[], level: number): SectionUnit[] {
   for (let start = 0; start < blocks.length; start++) {
     const heading = blocks[start];
     if (!heading.isHeading || heading.level !== level) continue;
+    // Empty styled headings and page-break-only title paragraphs are layout
+    // scaffolding, not sibling sections. Treating them as units lets a run of
+    // placeholders between two real sections become the dominant "family".
+    if (!heading.text.replace(/\f/g, '').trim()) continue;
     let end = blocks.length;
     for (let index = start + 1; index < blocks.length; index++) {
       if (blocks[index].isHeading && blocks[index].level <= level) {
@@ -2445,6 +2449,11 @@ function nearestUnitIndex(
   near?: string
 ): number | undefined {
   if (!near) return undefined;
+  // `near` is the insertion boundary. When it is exactly the first block of a
+  // section, the sibling immediately before that boundary is the relevant
+  // authoring example; an anchor inside a section still selects that section.
+  const boundary = units.findIndex((unit) => unit.blocks[0]?.anchor === near);
+  if (boundary > 0) return boundary - 1;
   const containing = units.findIndex((unit) => unitContainsAnchor(unit, near));
   if (containing >= 0) return containing;
   const blockIndex = blocks.findIndex(
@@ -5822,8 +5831,33 @@ export const ANCHORED_OP_HANDLERS: {
   insert_row: ({ editor, op }) => {
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
   },
-  insert_table: ({ editor, op, block }) => {
-    selectRange(editor, block.anchor, 0, 0);
+  insert_table: ({ editor, op, block, byAnchor }) => {
+    if (block.kind === 'table_cell')
+      throw new OpError(
+        'insert_table_requires_body_anchor',
+        'A top-level table cannot be inserted from inside an existing table cell. Use an addressable body paragraph or heading before/after the intended location; nothing was written.',
+        [`cell anchor: ${block.anchor}`]
+      );
+    const position =
+      typeof op.position === 'string' ? op.position.toLowerCase() : 'before';
+    let insertionAnchor = block.anchor;
+    if (position === 'after') {
+      const parts = block.anchor.split(';');
+      const blockIndex = Number(parts[1]);
+      const nextAnchor =
+        parts.length >= 2 && Number.isInteger(blockIndex)
+          ? `${parts[0]};${blockIndex + 1}`
+          : '';
+      const next = nextAnchor ? byAnchor.get(nextAnchor) : undefined;
+      if (!next)
+        throw new OpError(
+          'insert_table_after_requires_following_block',
+          'A table can be placed after this block only when the next body block is addressable. Anchor the next block with position "before" instead; nothing was written.',
+          [`anchor after ${block.anchor}: ${nextAnchor || 'unavailable'}`]
+        );
+      insertionAnchor = next.anchor;
+    }
+    selectRange(editor, insertionAnchor, 0, 0);
     callEditor(
       editor,
       'insertTable',
@@ -8187,6 +8221,8 @@ interface ChangeSetPlan {
   // An `insert_text` whose paragraph does not exist yet because an earlier break
   // in the same change set creates it. Same contract as deferredNewCell.
   deferredNewParagraph?: boolean;
+  /** The one table address populated after this insert in request order. */
+  expectedInsertedTableAnchor?: string;
   /**
    * The appearance and resolved text formats a structural insert inherits,
    * captured before any write can move the source blocks. The same plan type is
@@ -8244,21 +8280,75 @@ function tableAnchorFromCellAnchor(anchor: unknown): string {
  * the paragraph down. Inserting from a cell targets the first body block after
  * the containing table.
  */
-function resultingInsertedTableAnchor(anchor: unknown): string {
-  const parts = String(anchor ?? '').split(';');
-  if (parts.length === 2) return parts.join(';');
+function resultingInsertedTableAnchor(op: {
+  anchor?: unknown;
+  position?: unknown;
+}): string {
+  const parts = String(op.anchor ?? '').split(';');
+  const after = String(op.position ?? '').toLowerCase() === 'after';
+  if (parts.length === 2) {
+    const block = Number(parts[1]);
+    if (!Number.isInteger(block) || block < 0) return '';
+    return `${parts[0]};${block + (after ? 1 : 0)}`;
+  }
   if (parts.length < 5) return '';
   const block = Number(parts[1]);
   if (!Number.isInteger(block) || block < 0) return '';
   return `${parts[0]};${block + 1}`;
 }
 
+/**
+ * Cell writes for a newly inserted table immediately follow that insert and
+ * precede the next table insert. Their common table anchor is the caller's
+ * planned address for the new grid after earlier structural siblings have
+ * shifted the shared insertion boundary. The live executor still verifies
+ * that the table actually appears at this address before any cell can write.
+ */
+function cellWriteTableAnchorsFollowingInsert(
+  edits: EditOp[],
+  insertIndex: number
+): string[] {
+  const group = edits[insertIndex]?.group;
+  const anchors = new Set<string>();
+  for (let index = insertIndex + 1; index < edits.length; index++) {
+    const candidate = edits[index];
+    if (candidate?.op === 'insert_table') break;
+    if (candidate?.group !== group) continue;
+    if (
+      candidate?.op !== 'set_cell_text' &&
+      candidate?.op !== 'set_cell_formula'
+    )
+      continue;
+    const tableAnchor = tableAnchorFromCellAnchor(candidate.anchor);
+    if (tableAnchor) anchors.add(tableAnchor);
+  }
+  return [...anchors];
+}
+
+function expectedInsertedTableAnchor(
+  edits: EditOp[],
+  insertIndex: number
+): string | undefined {
+  const anchors = cellWriteTableAnchorsFollowingInsert(edits, insertIndex);
+  return anchors.length === 1 ? anchors[0] : undefined;
+}
+
 function assertInsertedTableIsAddressable(
   op: EditOp,
-  byAnchor: Map<string, FlatBlock>
+  byAnchor: Map<string, FlatBlock>,
+  expectedAnchor?: string
 ): void {
   if (op.op !== 'insert_table') return;
-  const resultingAnchor = resultingInsertedTableAnchor(op.anchor);
+  const resultingAnchor = resultingInsertedTableAnchor(op);
+  if (expectedAnchor && resultingAnchor !== expectedAnchor)
+    throw new OpError(
+      'inserted_table_anchor_mismatch',
+      `insert_table created a table at "${resultingAnchor}", but its following cell writes target "${expectedAnchor}". Nothing was written.`,
+      [
+        `actual resulting table anchor: ${resultingAnchor}`,
+        `planned cell-write table anchor: ${expectedAnchor}`
+      ]
+    );
   if (resultingAnchor && byAnchor.has(`${resultingAnchor};0;0;0`)) return;
   throw new OpError(
     'inserted_table_not_addressable',
@@ -8270,24 +8360,16 @@ function assertInsertedTableIsAddressable(
   );
 }
 
-function cellWriteTargetsTable(op: EditOp, tableAnchor: string): boolean {
-  return (
-    (op?.op === 'set_cell_text' || op?.op === 'set_cell_formula') &&
-    tableAnchorFromCellAnchor(op.anchor) === tableAnchor
-  );
-}
-
 function tableCreatedByEarlierInsert(edits: EditOp[], index: number): boolean {
   const tableAnchor = tableAnchorFromCellAnchor(edits[index]?.anchor);
   return (
     !!tableAnchor &&
-    edits
-      .slice(0, index)
-      .some(
-        (earlier) =>
-          earlier?.op === 'insert_table' &&
-          resultingInsertedTableAnchor(earlier.anchor) === tableAnchor
-      )
+    edits.some(
+      (earlier, earlierIndex) =>
+        earlierIndex < index &&
+        earlier?.op === 'insert_table' &&
+        expectedInsertedTableAnchor(edits, earlierIndex) === tableAnchor
+    )
   );
 }
 
@@ -8430,7 +8512,8 @@ function mayShiftAnchors(op: EditOp): boolean {
   // A selection replacement can swallow paragraph marks, so treat it as always
   // shifting: the anchors after it must be re-resolved, never reused.
   if (op.op === 'replace_selection') return true;
-  if (op.op === 'insert_text') return /[\r\n]/.test(String(op.text ?? ''));
+  if (op.op === 'insert_text')
+    return /[\r\n]/.test(insertionText(op as TypedEditOp<'insert_text'>));
   if (op.op === 'replace_text' || op.op === 'set_cell_text')
     return /[\r\n]/.test(String(op.replace ?? op.text ?? op.newText ?? ''));
   return !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op);
@@ -8554,7 +8637,8 @@ function resolveChangeSetBlock(
   blocks: FlatBlock[],
   anchor: string,
   baseline: FlatBlock | undefined,
-  anchorsMayHaveShifted: boolean
+  anchorsMayHaveShifted: boolean,
+  preferEquivalentDirect = false
 ): FlatBlock {
   const direct = blocks.find((block) => block.anchor === anchor);
   if (!baseline) {
@@ -8565,6 +8649,24 @@ function resolveChangeSetBlock(
     );
   }
   if (!anchorsMayHaveShifted && direct) return direct;
+  // Inheritance sources are read-only appearance donors. If the exact anchor
+  // still exposes the same block snapshot, copying from it is deterministic
+  // even when an unrelated structural edit elsewhere made other anchors move.
+  // Mutation targets do not use this carve-out: their logical occurrence must
+  // still be relocated conservatively.
+  if (
+    preferEquivalentDirect &&
+    direct &&
+    direct.kind === baseline.kind &&
+    direct.text === baseline.text &&
+    JSON.stringify(direct.format ?? {}) ===
+      JSON.stringify(baseline.format ?? {}) &&
+    JSON.stringify(direct.characterFormat ?? {}) ===
+      JSON.stringify(baseline.characterFormat ?? {}) &&
+    JSON.stringify(direct.paragraphFormat ?? {}) ===
+      JSON.stringify(baseline.paragraphFormat ?? {})
+  )
+    return direct;
   const matches = blocks.filter(
     (block) => block.kind === baseline.kind && block.text === baseline.text
   );
@@ -8939,7 +9041,7 @@ function planTableInsertInheritance(
   sfdt: any,
   explicitSource?: FlatBlock
 ): PlannedInsertInheritance[] | undefined {
-  const targetTableAnchor = resultingInsertedTableAnchor(op.anchor);
+  const targetTableAnchor = resultingInsertedTableAnchor(op);
   if (!targetTableAnchor) return undefined;
   const sourceTable = sourceTableForInsert(sfdt, op, explicitSource);
   if (!sourceTable) return undefined;
@@ -9045,11 +9147,11 @@ function rebasePlannedInsertInheritance(
   if (!planned || requestedOp.anchor === writtenOp.anchor) return planned;
   const oldTableAnchor =
     requestedOp.op === 'insert_table'
-      ? resultingInsertedTableAnchor(requestedOp.anchor)
+      ? resultingInsertedTableAnchor(requestedOp)
       : tableAnchorFromCellAnchor(requestedOp.anchor);
   const newTableAnchor =
     writtenOp.op === 'insert_table'
-      ? resultingInsertedTableAnchor(writtenOp.anchor)
+      ? resultingInsertedTableAnchor(writtenOp)
       : tableAnchorFromCellAnchor(writtenOp.anchor);
   if (!oldTableAnchor || !newTableAnchor || oldTableAnchor === newTableAnchor)
     return planned;
@@ -9775,40 +9877,24 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
     resultingAnchor?: string;
     mismatchedCellWriteAnchors?: string[];
   }> = [];
-  const cellWriteAnchors = Array.from(
-    new Set(
-      edits
-        .filter(
-          (candidate) =>
-            candidate?.op === 'set_cell_text' ||
-            candidate?.op === 'set_cell_formula'
-        )
-        .map((candidate) => tableAnchorFromCellAnchor(candidate.anchor))
-        .filter(Boolean)
-    )
-  );
-  const resultingTableAnchors = new Set(
-    edits
-      .filter((candidate) => candidate?.op === 'insert_table')
-      .map((candidate) => resultingInsertedTableAnchor(candidate.anchor))
-      .filter(Boolean)
-  );
   edits.forEach((op, index) => {
     if (op?.op !== 'insert_table') return;
     const anchor = String(op.anchor ?? '');
-    const resultingAnchor = resultingInsertedTableAnchor(anchor);
-    const hasCellWrites = edits.some((candidate) =>
-      cellWriteTargetsTable(candidate, resultingAnchor)
+    const resultingAnchor = resultingInsertedTableAnchor(op);
+    const followingCellWriteAnchors = cellWriteTableAnchorsFollowingInsert(
+      edits,
+      index
     );
-    if (hasCellWrites) return;
-    const mismatchedCellWriteAnchors = cellWriteAnchors.filter(
-      (candidate) => !resultingTableAnchors.has(candidate)
-    );
+    if (followingCellWriteAnchors.length === 1) return;
+    const mismatchedCellWriteAnchors =
+      followingCellWriteAnchors.length > 1
+        ? followingCellWriteAnchors
+        : undefined;
     emptyTables.push({
       index,
       anchor,
       size: `${positiveCount(op.rows)}x${positiveCount(op.columns)}`,
-      ...(mismatchedCellWriteAnchors.length
+      ...(mismatchedCellWriteAnchors?.length
         ? { resultingAnchor, mismatchedCellWriteAnchors }
         : {})
     });
@@ -10383,6 +10469,10 @@ function applyDocumentEditsMeasured(
               source ? { source, inherited } : undefined
             )
           : undefined;
+      const plannedTableAnchor =
+        op.op === 'insert_table'
+          ? expectedInsertedTableAnchor(edits, index)
+          : undefined;
       plans.push({
         index,
         op,
@@ -10391,6 +10481,9 @@ function applyDocumentEditsMeasured(
         ...(relocated ? { relocated } : {}),
         ...(deferredNewCell ? { deferredNewCell: true } : {}),
         ...(deferredNewParagraph ? { deferredNewParagraph: true } : {}),
+        ...(plannedTableAnchor
+          ? { expectedInsertedTableAnchor: plannedTableAnchor }
+          : {}),
         ...(insertInheritance ? { insertInheritance } : {}),
         ...(inherited ? { inherited } : {}),
         ...(target &&
@@ -10546,7 +10639,8 @@ function applyDocumentEditsMeasured(
                       blocks,
                       String(op.inheritFormatFrom),
                       plan.source,
-                      anchorsMayHaveShifted
+                      anchorsMayHaveShifted,
+                      true
                     )
                   : undefined;
                 insertInheritance = planInsertInheritance(
@@ -10617,7 +10711,11 @@ function applyDocumentEditsMeasured(
             trackedMutationTargetText
           );
           refresh(postWriteSfdt);
-          assertInsertedTableIsAddressable(writtenOp, byAnchor);
+          assertInsertedTableIsAddressable(
+            writtenOp,
+            byAnchor,
+            plan.expectedInsertedTableAnchor
+          );
           // Cell text aimed at a row/table created earlier in this batch gets
           // the source-column format captured by that structural op's preflight
           // plan. Apply after the text lands so verification observes the real
@@ -10727,14 +10825,67 @@ function applyDocumentEditsMeasured(
           // text match then reports `anchor_relocation_ambiguous` for an op that
           // had no ambiguity at all. A row insert never moves a table's block
           // anchor, so the direct anchor is the right answer here.
-          const target = resolveChangeSetBlock(
-            blocks,
-            op.anchor,
+          const baselineTarget =
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
-              : undefined,
-            anchorsMayHaveShifted && !TABLE_SCOPED_FORMAT_OPS.has(op.op)
-          );
+              : undefined;
+          let target: FlatBlock;
+          let createdTarget: FlatBlock | undefined;
+          if (!baselineTarget && op.expect != null) {
+            for (let prior = plans.length - 1; prior >= 0; prior--) {
+              const creator = plans[prior];
+              if (
+                creator.index >= index ||
+                creator.op.op !== 'insert_text' ||
+                creator.op.anchor !== op.anchor ||
+                opGroupId(creator.op, changeSetId) !== groupId
+              )
+                continue;
+              const inheritedTarget = creator.insertInheritance?.find(
+                (candidate) => candidate.expectedText === String(op.expect)
+              );
+              if (!inheritedTarget) continue;
+              const live = byAnchor.get(inheritedTarget.anchor);
+              if (live && expectTextMatches(op.expect, live.text)) {
+                createdTarget = live;
+                break;
+              }
+            }
+          }
+          if (createdTarget) {
+            target = createdTarget;
+          } else if (
+            !baselineTarget &&
+            anchorsMayHaveShifted &&
+            !TABLE_SCOPED_FORMAT_OPS.has(op.op) &&
+            op.expect != null
+          ) {
+            // This format target did not exist at preflight: an earlier insert
+            // created it. Resolve the model's expected text against the live
+            // post-structure map instead of blindly taking the old boundary's
+            // now-occupied numeric anchor.
+            const attempt = attemptAnchorRelocation(blocks, op);
+            if ('target' in attempt) target = attempt.target;
+            else {
+              const noMatch = attempt.details.some((detail) =>
+                detail.includes('matching blocks: none')
+              );
+              throw new OpError(
+                noMatch
+                  ? 'anchor_relocation_not_found'
+                  : 'anchor_relocation_ambiguous',
+                `The formatting target created earlier in this change set could not be identified deterministically.`,
+                attempt.details
+              );
+            }
+          } else {
+            target = resolveChangeSetBlock(
+              blocks,
+              op.anchor,
+              baselineTarget,
+              anchorsMayHaveShifted && !TABLE_SCOPED_FORMAT_OPS.has(op.op)
+            );
+          }
           appliedRelocation =
             target.anchor !== op.anchor
               ? {
@@ -10747,7 +10898,8 @@ function applyDocumentEditsMeasured(
                 blocks,
                 String(op.inheritFormatFrom),
                 plan.source,
-                anchorsMayHaveShifted
+                anchorsMayHaveShifted,
+                true
               )
             : undefined;
           resolvedFormatTargets.set(index, target);

@@ -2161,7 +2161,7 @@ describe('styling ops (no silent success)', () => {
             position: 'after',
             text: 'Inserted A'
           },
-          // Source B's original 0;3 anchor shifts after the first insertion.
+          // The original 0;3 anchor follows Source B after the first insertion.
           {
             op: 'insert_text',
             anchor: '0;3',
@@ -2199,8 +2199,8 @@ describe('styling ops (no silent success)', () => {
         ['0;1', 'Inserted A', 11],
         ['0;2', 'Existing A', undefined],
         ['0;3', 'Unrelated middle paragraph', undefined],
-        ['0;4', 'Inserted B', 13],
-        ['0;5', 'Source B', 13],
+        ['0;4', 'Source B', 13],
+        ['0;5', 'Inserted B', 13],
         ['0;6', 'Existing B', undefined]
       ]);
       expect(
@@ -2210,10 +2210,10 @@ describe('styling ops (no silent success)', () => {
         selectRealBlock(ed, '0;1', 'Inserted A').paragraphFormat.afterSpacing
       ).toBe(8);
       expect(
-        selectRealBlock(ed, '0;4', 'Inserted B').characterFormat.fontSize
+        selectRealBlock(ed, '0;5', 'Inserted B').characterFormat.fontSize
       ).toBe(13);
       expect(
-        selectRealBlock(ed, '0;4', 'Inserted B').paragraphFormat.afterSpacing
+        selectRealBlock(ed, '0;5', 'Inserted B').paragraphFormat.afterSpacing
       ).toBe(16);
     } finally {
       destroyRealDocumentEditor(ed);
@@ -3584,6 +3584,150 @@ describe('insert_table requires same-batch cell writes', () => {
           '$1,000'
         ])
       );
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: insert_table position after preserves both neighboring paragraphs and lands at the declared address', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Before' }] },
+            { inlines: [{ text: 'After' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'table-after-paragraph',
+        edits: [
+          {
+            op: 'insert_table',
+            anchor: '0;0',
+            expect: 'Before',
+            position: 'after',
+            rows: 1,
+            columns: 2
+          },
+          { op: 'set_cell_text', anchor: '0;1;0;0;0', text: 'Field' },
+          { op: 'set_cell_text', anchor: '0;1;0;1;0', text: 'Value' }
+        ]
+      });
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(blockTexts(ed)).toEqual(['Before', 'Field', 'Value', 'After']);
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: composes several populated tables at one stable section boundary in one group', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              paragraphFormat: { styleName: 'Title' },
+              inlines: [{ text: 'Next Section' }]
+            },
+            { inlines: [{ text: 'End' }] }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const group = 'g01-new-section';
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'multi-table-section-at-stable-boundary',
+        edits: [
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            expect: 'Next Section',
+            position: 'before',
+            text: 'New Section'
+          },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            expect: 'Next Section',
+            position: 'before',
+            text: 'Policy Information'
+          },
+          {
+            op: 'insert_table',
+            group,
+            anchor: '0;0',
+            expect: 'Next Section',
+            rows: 2,
+            columns: 2
+          },
+          { op: 'set_cell_text', group, anchor: '0;2;0;0;0', text: 'Field' },
+          { op: 'set_cell_text', group, anchor: '0;2;0;1;0', text: 'Value' },
+          { op: 'set_cell_text', group, anchor: '0;2;1;0;0', text: 'Carrier' },
+          {
+            op: 'set_cell_text',
+            group,
+            anchor: '0;2;1;1;0',
+            text: 'Example Co.'
+          },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            expect: 'Next Section',
+            position: 'before',
+            text: 'Deductibles'
+          },
+          {
+            op: 'insert_table',
+            group,
+            anchor: '0;0',
+            expect: 'Next Section',
+            rows: 2,
+            columns: 2
+          },
+          { op: 'set_cell_text', group, anchor: '0;4;0;0;0', text: 'Type' },
+          { op: 'set_cell_text', group, anchor: '0;4;0;1;0', text: 'Amount' },
+          { op: 'set_cell_text', group, anchor: '0;4;1;0;0', text: 'Base' },
+          { op: 'set_cell_text', group, anchor: '0;4;1;1;0', text: '$1,000' }
+        ]
+      });
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(result.changeSet).toMatchObject({
+        status: 'applied',
+        groups: [expect.objectContaining({ id: group })]
+      });
+      expect(blockTexts(ed)).toEqual([
+        'New Section',
+        'Policy Information',
+        'Field',
+        'Value',
+        'Carrier',
+        'Example Co.',
+        'Deductibles',
+        'Type',
+        'Amount',
+        'Base',
+        '$1,000',
+        'Next Section',
+        'End'
+      ]);
+
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
