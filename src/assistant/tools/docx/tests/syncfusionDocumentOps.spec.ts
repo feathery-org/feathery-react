@@ -12,6 +12,7 @@ import {
   flattenSfdt,
   buildInventoryFromBlocks,
   buildIndexBlocksFromBlocks,
+  deriveSectionPattern,
   anchorFromOffset,
   findDocumentOccurrences,
   readSelection,
@@ -3085,8 +3086,12 @@ describe('assistant-defined accept groups', () => {
       ]);
       expect(views.map((v) => v.items[0].text)).toEqual(['AAA', 'BBB']);
       // Adjacent but both insertions (and different groups): not a replace.
-      expect(findReplaceCounterpart(views[0].items[0].revision)).toBeUndefined();
-      expect(findReplaceCounterpart(views[1].items[0].revision)).toBeUndefined();
+      expect(
+        findReplaceCounterpart(views[0].items[0].revision)
+      ).toBeUndefined();
+      expect(
+        findReplaceCounterpart(views[1].items[0].revision)
+      ).toBeUndefined();
 
       // Untagged (human) writes keep native merge behavior: adjacent
       // insertions still combine into one revision. Count the raw revision
@@ -4641,6 +4646,54 @@ describe('inheritance by default (S4b)', () => {
     styles: hilbStyles
   });
 
+  const sectionBoundarySfdt = (separator: '' | 'blank' | 'double' | 'page') => {
+    const section = (name: string) => [
+      {
+        paragraphFormat: {
+          styleName: 'Heading 1',
+          beforeSpacing: 12
+        },
+        inlines: [{ text: name, characterFormat: { bold: true, fontSize: 16 } }]
+      },
+      {
+        paragraphFormat: { styleName: 'Body Text', afterSpacing: 6 },
+        inlines: [{ text: `${name} body` }]
+      }
+    ];
+    const between = () =>
+      separator === 'blank' || separator === 'double'
+        ? Array.from({ length: separator === 'double' ? 2 : 1 }, () => ({
+            inlines: [{ text: '' }]
+          }))
+        : separator === 'page'
+        ? [{ inlines: [{ text: '\f' }] }]
+        : [];
+    return {
+      sections: [
+        {
+          blocks: [
+            ...section('North'),
+            ...between(),
+            ...section('South'),
+            ...between(),
+            ...section('East')
+          ]
+        }
+      ],
+      styles: [
+        ...hilbStyles,
+        {
+          type: 'Paragraph',
+          name: 'Heading 1',
+          basedOn: 'Normal',
+          next: 'Body Text',
+          characterFormat: { bold: true, fontSize: 16 },
+          paragraphFormat: { outlineLevel: 'Level1', beforeSpacing: 12 }
+        }
+      ]
+    };
+  };
+
   const CELL_PARA_PROPS = [
     'textAlignment',
     'leftIndent',
@@ -4701,6 +4754,169 @@ describe('inheritance by default (S4b)', () => {
       expect(body.characterFormat.bold).toBe(false);
       expect(body.paragraphFormat.afterSpacing).toBe(8);
       expect(body.paragraphFormat.lineSpacing).toBeCloseTo(1.15, 5);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a new section inherits one blank paragraph above and below in its own accept group', () => {
+    const ed = makeRealDocumentEditor(sectionBoundarySfdt('blank'));
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'section-boundary-blank',
+        edits: [
+          {
+            op: 'insert_text',
+            group: 'new-section',
+            anchor: '0;2',
+            text: 'Inserted\nInserted body'
+          }
+        ]
+      });
+
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'insert_text' });
+      expect(blockTexts(ed)).toEqual([
+        'North',
+        'North body',
+        '',
+        'Inserted',
+        'Inserted body',
+        '',
+        'South',
+        'South body',
+        '',
+        'East',
+        'East body'
+      ]);
+      expect(
+        selectRealBlock(ed, '0;3', 'Inserted').paragraphFormat.beforeSpacing
+      ).toBe(12);
+      expect(
+        selectRealBlock(ed, '0;4', 'Inserted body').paragraphFormat.afterSpacing
+      ).toBe(6);
+      expect(res.changeSet?.groups).toEqual([
+        expect.objectContaining({
+          id: 'new-section',
+          opIndices: [0],
+          revisionCount: expect.any(Number)
+        })
+      ]);
+      const cards = listRevisionGroups(ed as unknown as LiveEditor);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].group).toBe('new-section');
+      cards[0].items[0].revision.accept?.();
+      expect(listRevisionGroups(ed as unknown as LiveEditor)).toHaveLength(0);
+      expect(blockTexts(ed).slice(2, 7)).toEqual([
+        '',
+        'Inserted',
+        'Inserted body',
+        '',
+        'South'
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a new section inherits direct adjacency without padding', () => {
+    const ed = makeRealDocumentEditor(sectionBoundarySfdt(''));
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'section-boundary-none',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;2',
+            position: 'before',
+            text: 'Inserted\nInserted body'
+          }
+        ]
+      });
+
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'insert_text' });
+      expect(blockTexts(ed)).toEqual([
+        'North',
+        'North body',
+        'Inserted',
+        'Inserted body',
+        'South',
+        'South body',
+        'East',
+        'East body'
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a new section inherits a double-blank convention without hardcoding one line', () => {
+    const ed = makeRealDocumentEditor(sectionBoundarySfdt('double'));
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'section-boundary-double',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;2',
+            text: 'Inserted\nInserted body'
+          }
+        ]
+      });
+
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'insert_text' });
+      expect(blockTexts(ed).slice(0, 10)).toEqual([
+        'North',
+        'North body',
+        '',
+        '',
+        'Inserted',
+        'Inserted body',
+        '',
+        '',
+        'South',
+        'South body'
+      ]);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a new section inherits page-break section boundaries', () => {
+    const ed = makeRealDocumentEditor(sectionBoundarySfdt('page'));
+    try {
+      expect(
+        deriveSectionPattern(ed as unknown as LiveEditor).pattern.boundary
+          ?.separator
+      ).toEqual({
+        value: ['page_break'],
+        confidence: { matches: 2, sampled: 2, level: 'medium' }
+      });
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'section-boundary-page',
+        edits: [
+          {
+            op: 'insert_text',
+            anchor: '0;3',
+            position: 'before',
+            text: 'Inserted\nInserted body'
+          }
+        ]
+      });
+
+      expect(res.results[0]).toMatchObject({ ok: true, op: 'insert_text' });
+      expect(blockTexts(ed)).toEqual([
+        'North',
+        'North body',
+        '\f',
+        'Inserted',
+        'Inserted body',
+        '\f',
+        'South',
+        'South body',
+        '\f',
+        'East',
+        'East body'
+      ]);
     } finally {
       destroyRealDocumentEditor(ed);
     }

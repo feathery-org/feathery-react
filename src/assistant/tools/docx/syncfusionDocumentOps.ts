@@ -183,6 +183,16 @@ export interface SectionPatternTable {
   styleName?: SectionPatternValue<string>;
 }
 
+export type SectionBoundaryElement = 'empty_paragraph' | 'page_break';
+
+export interface SectionPatternBoundary {
+  /** Ordered paragraph-level separator observed between sibling sections. */
+  separator: SectionPatternValue<SectionBoundaryElement[]>;
+  /** Paragraph spacing is reported separately because it does not add blocks. */
+  headingBeforeSpacing?: SectionPatternValue<number>;
+  endingParagraphAfterSpacing?: SectionPatternValue<number>;
+}
+
 export interface SectionPatternResult {
   ok: true;
   pattern: {
@@ -190,6 +200,7 @@ export interface SectionPatternResult {
     sequence: SectionPatternSequenceElement[];
     tables: SectionPatternTable[];
     roles: Record<string, SectionPatternRoleFormat>;
+    boundary?: SectionPatternBoundary;
   };
   sample: {
     available: number;
@@ -2649,6 +2660,84 @@ function observedValue<T>(
     : undefined;
 }
 
+function boundaryElement(block: FlatBlock): SectionBoundaryElement | undefined {
+  if (block.kind !== 'paragraph') return undefined;
+  if (block.text === '\f') return 'page_break';
+  return block.text.trim() ? undefined : 'empty_paragraph';
+}
+
+function separatorBeforeUnit(
+  blocks: FlatBlock[],
+  unit: SectionUnit
+): SectionBoundaryElement[] | undefined {
+  let priorSibling = false;
+  for (let index = unit.start - 1; index >= 0; index--) {
+    const block = blocks[index];
+    if (block.isHeading && block.level <= unit.blocks[0].level) {
+      priorSibling = true;
+      break;
+    }
+  }
+  if (!priorSibling) return undefined;
+
+  const separator: SectionBoundaryElement[] = [];
+  for (let index = unit.start - 1; index >= 0; index--) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    separator.unshift(element);
+  }
+  return separator;
+}
+
+function endingParagraphForUnit(unit: SectionUnit): FlatBlock | undefined {
+  for (let index = unit.blocks.length - 1; index >= 1; index--) {
+    const block = unit.blocks[index];
+    if (boundaryElement(block)) continue;
+    return block.kind === 'paragraph' ? block : undefined;
+  }
+  return undefined;
+}
+
+function sectionBoundaryPattern(
+  blocks: FlatBlock[],
+  units: SectionUnit[]
+): SectionPatternBoundary {
+  const separators = units
+    .map((unit) => separatorBeforeUnit(blocks, unit))
+    .filter(
+      (separator): separator is SectionBoundaryElement[] =>
+        separator !== undefined
+    );
+  const selectedSeparator = modal(separators);
+  const separator = selectedSeparator
+    ? {
+        value: selectedSeparator.value,
+        confidence: patternConfidence(
+          selectedSeparator.count,
+          separators.length
+        )
+      }
+    : {
+        value: [] as SectionBoundaryElement[],
+        confidence: patternConfidence(0, 0)
+      };
+  const headingBeforeSpacing = observedValue(
+    units.map((unit) => unit.blocks[0]?.paragraphFormat?.beforeSpacing),
+    units.length
+  );
+  const endingParagraphAfterSpacing = observedValue(
+    units.map(
+      (unit) => endingParagraphForUnit(unit)?.paragraphFormat?.afterSpacing
+    ),
+    units.length
+  );
+  return {
+    separator,
+    ...(headingBeforeSpacing ? { headingBeforeSpacing } : {}),
+    ...(endingParagraphAfterSpacing ? { endingParagraphAfterSpacing } : {})
+  };
+}
+
 function tablePatterns(sfdt: any, units: SectionUnit[]): SectionPatternTable[] {
   const observations = units.map((unit) =>
     tableAnchorsForUnit(unit).map((anchor) => tableObservation(sfdt, anchor))
@@ -2833,7 +2922,8 @@ export function deriveSectionPattern(
       },
       sequence,
       tables: tablePatterns(sfdt, units),
-      roles
+      roles,
+      boundary: sectionBoundaryPattern(blocks, units)
     },
     sample: {
       available: availableUnits.length,
@@ -8070,6 +8160,16 @@ interface PlannedInsertInheritance {
   inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
   fallbackStyleName?: string;
   tableAppearance?: PlannedTableAppearanceInheritance;
+  sectionBoundary?: {
+    text: string;
+    separator: SectionBoundaryElement[];
+    beforeSeparator: SectionBoundaryElement[];
+    afterSeparator: SectionBoundaryElement[];
+    firstAnchor: string;
+    lastAnchor: string;
+    lastLength: number;
+    afterAnchor?: string;
+  };
 }
 
 interface ChangeSetPlan {
@@ -8973,6 +9073,121 @@ function rebasePlannedInsertInheritance(
   }));
 }
 
+function sectionTextCore(text: string): string | undefined {
+  const lines = text.split(/\r\n|\r|\n/);
+  const content = (line: string) => line.replace(/\f/g, '').trim().length > 0;
+  const first = lines.findIndex(content);
+  let last = lines.length - 1;
+  while (last >= first && !content(lines[last])) last--;
+  if (first < 0 || last <= first) return undefined;
+  const core = lines.slice(first, last + 1).join('\n');
+  return segmentLooksLikeHeading(core.split('\n'), 0) ? core : undefined;
+}
+
+function planSectionBoundaryInheritance(
+  target: FlatBlock,
+  blocks: FlatBlock[],
+  text: string,
+  offset: number
+): PlannedInsertInheritance['sectionBoundary'] | undefined {
+  if (target.kind === 'table_cell') return undefined;
+  const core = sectionTextCore(text);
+  if (!core) return undefined;
+  const level = chooseSectionLevel(blocks, target.anchor);
+  if (level === undefined) return undefined;
+  const sampledUnits = sampleSectionUnits(
+    unitsAtLevel(blocks, level),
+    target.anchor
+  );
+  const sampledSequences = sampledUnits.map((unit) =>
+    sequenceForUnit(unit).slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
+  );
+  const family = selectSectionFamily(
+    blocks,
+    sampledUnits,
+    sampledSequences,
+    target.anchor
+  );
+  if (family.units.length < 2) return undefined;
+  const observed = sectionBoundaryPattern(blocks, family.units).separator;
+  if (observed.confidence.level === 'low') return undefined;
+
+  const hasLeadingText = target.text.slice(0, offset).length > 0;
+  const hasTrailingText = target.text.slice(offset).length > 0;
+  const normalized = `${hasLeadingText ? '\n' : ''}${core}${
+    hasTrailingText ? '\n' : ''
+  }`;
+  const segments = normalized.split('\n');
+  const firstContent = segments.findIndex((segment) => segment.trim());
+  let lastContent = segments.length - 1;
+  while (lastContent >= 0 && !segments[lastContent].trim()) lastContent--;
+  const anchorParts = target.anchor.split(';');
+  const blockIndexBase = Number(anchorParts.pop());
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (
+    firstContent < 0 ||
+    lastContent < firstContent ||
+    targetIndex < 0 ||
+    !Number.isInteger(blockIndexBase)
+  )
+    return undefined;
+  const anchorAt = (index: number) =>
+    [...anchorParts, blockIndexBase + index].join(';');
+  const previousSeparator: SectionBoundaryElement[] = [];
+  for (let index = targetIndex - 1; index >= 0; index--) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    previousSeparator.unshift(element);
+  }
+  const followingSeparator: SectionBoundaryElement[] = [];
+  for (let index = targetIndex + 1; index < blocks.length; index++) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    followingSeparator.push(element);
+  }
+  const prefixMissing = (
+    desired: SectionBoundaryElement[],
+    existing: SectionBoundaryElement[]
+  ) =>
+    JSON.stringify(desired.slice(0, existing.length)) ===
+    JSON.stringify(existing)
+      ? desired.slice(existing.length)
+      : desired;
+  const suffixMissing = (
+    desired: SectionBoundaryElement[],
+    existing: SectionBoundaryElement[]
+  ) =>
+    JSON.stringify(desired.slice(desired.length - existing.length)) ===
+    JSON.stringify(existing)
+      ? desired.slice(0, desired.length - existing.length)
+      : desired;
+  const beforeSeparator = hasLeadingText
+    ? observed.value
+    : prefixMissing(observed.value, previousSeparator);
+  const afterSeparator = hasTrailingText
+    ? observed.value
+    : suffixMissing(observed.value, followingSeparator);
+  const nextBlock = blocks[targetIndex + 1];
+  const afterAnchor = hasTrailingText
+    ? anchorAt(segments.length - 1)
+    : nextBlock?.anchor.split(';').length === 2
+    ? anchorAt(segments.length)
+    : undefined;
+  if (!observed.value.length && normalized === text) return undefined;
+  return {
+    text: normalized,
+    separator: observed.value,
+    beforeSeparator,
+    afterSeparator,
+    firstAnchor: anchorAt(firstContent),
+    lastAnchor: anchorAt(lastContent),
+    lastLength: segments[lastContent].replace(/\t/g, '').length,
+    ...(afterAnchor ? { afterAnchor } : {})
+  };
+}
+
 // Decide, BEFORE the insert runs, which created paragraphs will need a format
 // and from which reference. `explicit` carries a model-chosen source (an
 // `inheritFormatFrom` on the insert op itself), which replaces the computed
@@ -9002,10 +9217,12 @@ function planInsertInheritance(
     return planRowInsertInheritance(editor, op, blocks, sfdt);
   if (op.op !== 'insert_text') return undefined;
   if (isLiveStoryAnchor(target.anchor)) return undefined;
-  const text = insertionText(op as TypedEditOp<'insert_text'>);
+  let text = insertionText(op as TypedEditOp<'insert_text'>);
   if (!text) return undefined;
-  const segments = text.split(/\r\n|\r|\n/);
   const offset = insertionPoint(op as TypedEditOp<'insert_text'>, target);
+  const boundary = planSectionBoundaryInheritance(target, blocks, text, offset);
+  if (boundary) text = boundary.text;
+  const segments = text.split(/\r\n|\r|\n/);
   const createsParagraphs = segments.length > 1;
   // Filling a previously-empty paragraph IS creating the paragraph in every
   // sense that matters for formatting: its only insertion-point donor is the
@@ -9047,7 +9264,9 @@ function planInsertInheritance(
     return inherited;
   };
 
-  const planned: PlannedInsertInheritance[] = [];
+  const planned: PlannedInsertInheritance[] = boundary
+    ? [{ anchor: target.anchor, sectionBoundary: boundary }]
+    : [];
   segments.forEach((segment, index) => {
     // The current-text projection drops tab inlines, so compare without them.
     const expectedText = segment.replace(/\t/g, '');
@@ -9120,6 +9339,7 @@ function applyInsertInheritance(
 ): AppearanceWriteOutcome | undefined {
   const appearanceOutcomes: AppearanceWriteOutcome[] = [];
   for (const paragraph of planned) {
+    if (paragraph.sectionBoundary) continue;
     if (paragraph.tableAppearance) {
       const appearance = paragraph.tableAppearance;
       // A new table has no appearance of its own, so reproduce the whole
@@ -9240,6 +9460,110 @@ function applyInsertInheritance(
     { report: emptyAppearanceReport(), restores: [] }
   );
   return combined.restores.length ? combined : undefined;
+}
+
+function shiftBodyBlockAnchor(anchor: string, amount: number): string {
+  const parts = anchor.split(';');
+  const index = Number(parts[1]);
+  return parts.length === 2 && Number.isInteger(index)
+    ? `${parts[0]};${index + amount}`
+    : anchor;
+}
+
+function insertSectionSeparatorBeforeAnchor(
+  editor: LiveEditor,
+  anchor: string,
+  separator: SectionBoundaryElement[]
+): string {
+  let targetAnchor = anchor;
+  for (const [index, element] of separator.entries()) {
+    selectRange(editor, targetAnchor, 0, 0);
+    editor.editor.insertText('\n');
+    if (element === 'page_break') {
+      selectRange(editor, targetAnchor, 0, 0);
+      editor.editor.insertText('\f');
+    }
+    targetAnchor = shiftBodyBlockAnchor(anchor, index + 1);
+  }
+  return targetAnchor;
+}
+
+function shiftPlannedBodyAnchor(
+  anchor: string,
+  firstAnchor: string,
+  lastAnchor: string,
+  amount: number
+): string {
+  const parts = anchor.split(';');
+  const first = firstAnchor.split(';');
+  const last = lastAnchor.split(';');
+  if (
+    parts.length !== 2 ||
+    first.length !== 2 ||
+    last.length !== 2 ||
+    parts[0] !== first[0] ||
+    parts[0] !== last[0]
+  )
+    return anchor;
+  const index = Number(parts[1]);
+  const firstIndex = Number(first[1]);
+  const lastIndex = Number(last[1]);
+  return Number.isInteger(index) && index >= firstIndex && index <= lastIndex
+    ? `${parts[0]};${index + amount}`
+    : anchor;
+}
+
+function applySectionBoundaryInheritance(
+  editor: LiveEditor,
+  planned: PlannedInsertInheritance[]
+): PlannedInsertInheritance[] {
+  const boundary = planned.find(
+    (entry) => entry.sectionBoundary
+  )?.sectionBoundary;
+  if (!boundary || !boundary.separator.length) return planned;
+
+  if (boundary.afterAnchor && boundary.afterSeparator.length) {
+    insertSectionSeparatorBeforeAnchor(
+      editor,
+      boundary.afterAnchor,
+      boundary.afterSeparator
+    );
+  } else if (boundary.afterSeparator.length) {
+    let anchor = boundary.lastAnchor;
+    let offset = boundary.lastLength;
+    for (const element of boundary.afterSeparator) {
+      selectRange(editor, anchor, offset, offset);
+      editor.editor.insertText('\n');
+      anchor = shiftBodyBlockAnchor(anchor, 1);
+      offset = 0;
+      if (element === 'page_break') {
+        selectRange(editor, anchor, 0, 0);
+        editor.editor.insertText('\f');
+        offset = 1;
+      }
+    }
+  }
+
+  if (!boundary.beforeSeparator.length) return planned;
+  insertSectionSeparatorBeforeAnchor(
+    editor,
+    boundary.firstAnchor,
+    boundary.beforeSeparator
+  );
+  const shift = boundary.beforeSeparator.length;
+  return planned.map((entry) =>
+    entry.sectionBoundary
+      ? entry
+      : {
+          ...entry,
+          anchor: shiftPlannedBodyAnchor(
+            entry.anchor,
+            boundary.firstAnchor,
+            boundary.lastAnchor,
+            shift
+          )
+        }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -10236,8 +10560,24 @@ function applyDocumentEditsMeasured(
                     ? { source: explicitSource, inherited: plan.inherited }
                     : undefined
                 );
+                const boundary = insertInheritance?.find(
+                  (candidate) => candidate.sectionBoundary
+                )?.sectionBoundary;
+                if (boundary) writtenOp = { ...writtenOp, text: boundary.text };
               }
               opExtras = applyAnchoredOp(editor, writtenOp, target, byAnchor);
+              if (
+                op.op === 'insert_text' &&
+                insertInheritance?.some(
+                  (candidate) => candidate.sectionBoundary
+                )
+              ) {
+                insertInheritance = applySectionBoundaryInheritance(
+                  editor,
+                  insertInheritance
+                );
+                plan.insertInheritance = insertInheritance;
+              }
             }
             // A skipped no-op wrote nothing, so it cannot have shifted anything.
             if (mayShiftAnchors(op) && !(opExtras as OpSuccessExtras)?.noOp)
