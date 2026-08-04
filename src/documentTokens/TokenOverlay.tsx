@@ -19,6 +19,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { valueKey } from './plan';
 import { TokenCycle, TokenState } from './tokenCycle';
 import {
   findViewerSurface,
@@ -80,17 +81,22 @@ export default function TokenOverlay({
     let frame = 0;
 
     const tick = () => {
-      // Measure every APPEARANCE, and remember which value each belongs to so
-      // the colour follows the token while the rectangle follows the control.
-      const pairs = tokenBookmarks(editor);
-      valueOfInstance.current = new Map(pairs);
-      const next = measureTokenRects(
-        editor,
-        pairs.map(([instance]) => instance)
-      );
-      if (!sameRects(rectsRef.current, next)) {
-        rectsRef.current = next;
-        setRects(next);
+      try {
+        // Measure every APPEARANCE, and remember which value each belongs to
+        // so colour follows the token while geometry follows the control.
+        const pairs = tokenBookmarks(editor);
+        valueOfInstance.current = new Map(pairs);
+        const next = measureTokenRects(
+          editor,
+          pairs.map(([instance]) => instance)
+        );
+        if (!sameRects(rectsRef.current, next)) {
+          rectsRef.current = next;
+          setRects(next);
+        }
+      } catch {
+        // Reading the layout tree can throw mid-edit. Losing one frame is
+        // fine; losing the loop would drop the colour for the whole session.
       }
       frame = requestAnimationFrame(tick);
     };
@@ -101,8 +107,10 @@ export default function TokenOverlay({
 
   if (!surface || rects.length === 0) return null;
 
+  // Keyed by VALUE, not by token name: a row's key is `item_total__0`, so
+  // comparing against the bare name leaves every row looking like an input.
   const computedIds = new Set(
-    state.specs.filter((spec) => spec.formula).map((spec) => spec.id)
+    state.specs.filter((spec) => spec.formula).map((spec) => valueKey(spec))
   );
 
   // Rendered INTO the editor's scrolling surface, not the wrapper: the

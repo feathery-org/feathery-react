@@ -169,7 +169,9 @@ export const attachTokenCycle = (
     // A text token holds whatever it was given; nothing derives from it.
     if ((plan.specs.get(id)?.format?.kind ?? 'text') === 'text') {
       const text = String(raw);
-      if (texts.get(id) === text) return publish();
+      // No early return on an unchanged value: a token can appear several
+      // times, and the appearance the user did NOT edit still needs writing.
+      // writeValues compares each appearance, so this stays idempotent.
       texts.set(id, text);
       applying = true;
       try {
@@ -181,10 +183,15 @@ export const attachTokenCycle = (
     }
 
     const parsed = typeof raw === 'number' ? raw : parseValue(raw);
-    if (parsed === null || values.get(id) === parsed) return publish();
+    if (parsed === null) return publish();
 
+    // Even when this token's own value is unchanged, its other appearances
+    // may be stale, so fall through to the write rather than returning.
+    const moved = values.get(id) !== parsed;
     values.set(id, parsed);
-    const { changed, errors } = recalc(plan, values, id);
+    const { changed, errors } = moved
+      ? recalc(plan, values, id)
+      : { changed: new Map<string, number>(), errors: plan.errors };
     plan = { ...plan, errors };
 
     // The edited token is rewritten too — reformatting what the user typed —
@@ -363,7 +370,13 @@ export const attachTokenCycle = (
 
   editor.addEventListener?.('selectionChange', onSelectionChange);
   editor.addEventListener?.('keyDown', onKeyDown);
+  // SyncFusion exposes no double-click event, so listen on the canvas the
+  // editor paints into. Deferred a frame so our reselect lands after
+  // SyncFusion has finished selecting the control itself.
   editor.addEventListener?.('doubleClick', onDoubleClick);
+  const surface: any = (editor as any)?.documentHelper?.viewerContainer;
+  const onDomDoubleClick = () => setTimeout(onDoubleClick, 0);
+  surface?.addEventListener?.('dblclick', onDomDoubleClick);
   editor.addEventListener?.('documentChange', onDocumentChange);
   refresh();
 
@@ -414,6 +427,7 @@ export const attachTokenCycle = (
       editor.removeEventListener?.('selectionChange', onSelectionChange);
       editor.removeEventListener?.('keyDown', onKeyDown);
       editor.removeEventListener?.('doubleClick', onDoubleClick);
+      surface?.removeEventListener?.('dblclick', onDomDoubleClick);
       editor.removeEventListener?.('documentChange', onDocumentChange);
       listeners.clear();
     }

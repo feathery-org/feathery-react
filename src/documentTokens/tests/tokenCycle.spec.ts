@@ -613,6 +613,33 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.valueOf('note')).toBe('');
   });
 
+  it('updates every appearance of a token, not only the edited one', () => {
+    // Two controls carrying the same value: editing one must move both.
+    const first = control(
+      { id: 'client', source: 'client', format: { kind: 'text' } },
+      'Acme'
+    );
+    const second = {
+      ...control(
+        { id: 'client', source: 'client', format: { kind: 'text' } },
+        'Acme'
+      ),
+      tag: encodeTag({
+        id: 'client',
+        source: 'client',
+        format: { kind: 'text' },
+        instance: 'client#1'
+      })
+    };
+    const editor = fakeEditor([first, second]);
+    const cycle = attachTokenCycle(editor);
+
+    cycle.setTokenValue('client', 'Globex');
+
+    expect(editor.controls[0].value).toBe('Globex');
+    expect(editor.controls[1].value).toBe('Globex');
+  });
+
   it('selects the value, not the control, on double click', () => {
     // SyncFusion selects the whole control, which is locked against deletion,
     // so the selection cannot be typed over.
