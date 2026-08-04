@@ -3,8 +3,7 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
   findReplaceCounterpart,
-  installRevisionGroupIsolation,
-  parseRevisionGroupTag
+  installRevisionGroupIsolation
 } from '../../../assistant/tools/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
@@ -74,8 +73,9 @@ function loadAccentOverride() {
 // the review UI marks active, and records each pending edit's on-canvas
 // geometry for overlays (margin gutter bars).
 const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
-const INSERTION_HIGHLIGHT = '#d7e8b6';
-const DELETION_HIGHLIGHT = '#ffd4d2';
+// The add/del washes from the design mockup's light palette.
+const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
+const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
 const STRIKE_COLOR = 'rgba(23, 26, 28, 0.6)';
 // Boundary ring on the active edit (mockup's `.chg.on`): a single line drawn
 // fully INSIDE the highlight box, flush with its edge.
@@ -161,13 +161,13 @@ export function installRevisionHighlightRendering(ed: any) {
     return { revision, kind, counterpart };
   };
 
-  // One gutter bar per edit: both halves of a replace accumulate under the
-  // deletion revision. Human (untagged) edits get no bar.
+  // One gutter bar per edit — human edits included, since the review rail
+  // shows them too. Both halves of a replace accumulate under the deletion
+  // revision.
   const recordRect = (
     info: { revision: any; kind: 'add' | 'del'; counterpart: any },
     box: { y: number; h: number }
   ) => {
-    if (!parseRevisionGroupTag(info.revision?.customData)) return;
     const rects: Map<any, RevisionRect> =
       ed[REVISION_RECTS_KEY] ?? (ed[REVISION_RECTS_KEY] = new Map());
     const key =

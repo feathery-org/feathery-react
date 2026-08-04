@@ -5504,12 +5504,18 @@ export interface RevisionGroupItem {
    *  `revision` holds the deletion and `partner` the insertion, so one
    *  approval must resolve both. */
   partner?: LiveRevision;
+  /** Who made the edit (the revision's author string). */
+  author?: string;
 }
 
-/** One assistant-defined accept group with its live member revisions. */
+/** One accept group with its live member revisions: an assistant-defined
+ *  group (tagged), or one author's manual tracked edits (untagged). */
 export interface RevisionGroupView {
   changeSetId: string;
+  /** The assistant's group id, or the author name for untagged views. */
   group: string;
+  /** True when this view aggregates one author's manual (untagged) edits. */
+  untagged?: boolean;
   items: RevisionGroupItem[];
 }
 
@@ -5582,11 +5588,20 @@ export function findReplaceCounterpart(
   return counterpart;
 }
 
+// Two revisions form one replace when their group identity matches: the same
+// assistant tag, or — for human (untagged) edits — the same author.
+function sameEditUnit(a: LiveRevision, b: LiveRevision): boolean {
+  const tagA = parseRevisionGroupTag(a.customData);
+  const tagB = parseRevisionGroupTag(b.customData);
+  if (tagA && tagB)
+    return tagA.changeSetId === tagB.changeSetId && tagA.group === tagB.group;
+  if (!tagA && !tagB) return String(a.author ?? '') === String(b.author ?? '');
+  return false;
+}
+
 function computeReplaceCounterpart(
   revision: LiveRevision
 ): LiveRevision | undefined {
-  const tag = parseRevisionGroupTag(revision.customData);
-  if (!tag) return undefined;
   const type = String(revision.revisionType ?? '');
   if (type !== 'Deletion' && type !== 'Insertion') return undefined;
   let range: any[];
@@ -5609,13 +5624,7 @@ function computeReplaceCounterpart(
     const otherType = String(other.revisionType ?? '');
     if (otherType !== (type === 'Deletion' ? 'Insertion' : 'Deletion'))
       continue;
-    const otherTag = parseRevisionGroupTag(other.customData);
-    if (
-      !otherTag ||
-      otherTag.changeSetId !== tag.changeSetId ||
-      otherTag.group !== tag.group
-    )
-      continue;
+    if (!sameEditUnit(revision, other)) continue;
     const deletion = type === 'Deletion' ? revision : other;
     const insertion = type === 'Deletion' ? other : revision;
     if (isReplacePair(deletion, insertion)) return other;
@@ -5627,17 +5636,22 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
   for (const revision of snapshotRevisions(editor)) {
     const tag = parseRevisionGroupTag(revision.customData);
-    if (!tag) continue;
-    const key = `${tag.changeSetId} ${tag.group}`;
+    const author = String(revision.author ?? '').trim() || 'Unknown author';
+    // Assistant edits group by their accept-group tag; human edits group by
+    // who made them.
+    const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
     let view = views.get(key);
     if (!view) {
-      view = { changeSetId: tag.changeSetId, group: tag.group, items: [] };
+      view = tag
+        ? { changeSetId: tag.changeSetId, group: tag.group, items: [] }
+        : { changeSetId: '', group: author, untagged: true, items: [] };
       views.set(key, view);
     }
     const item: RevisionGroupItem = {
       revision,
       revisionType: String(revision.revisionType ?? ''),
-      text: revisionRangeText(revision)
+      text: revisionRangeText(revision),
+      author
     };
     const prev = view.items[view.items.length - 1];
     if (

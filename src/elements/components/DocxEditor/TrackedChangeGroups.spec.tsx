@@ -32,6 +32,7 @@ function makeRevision(
   return {
     revisionType: 'Insertion',
     customData: tag('cs-1', 'update-premium'),
+    author: 'Robin (assistant)',
     getRange: () => [{ text: '$6,000' }],
     accept: jest.fn(),
     reject: jest.fn(),
@@ -41,16 +42,42 @@ function makeRevision(
 }
 
 describe('TrackedChangeGroups', () => {
-  it('renders nothing when the document has no assistant-tagged revisions', () => {
-    const editor = makeEditor([
-      // A human's manual tracked edit: no group tag.
-      makeRevision({ customData: null })
-    ]);
+  it('renders nothing when the document has no tracked changes at all', () => {
+    const editor = makeEditor([]);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('renders one card per group with a humanized title and change count', () => {
+  it("shows a human's manual tracked edits as an author-titled card", () => {
+    const editor = makeEditor([
+      // A human's manual tracked edit: no group tag, author-attributed.
+      makeRevision({
+        customData: null,
+        author: 'Ayesha',
+        getRange: () => [{ text: 'A human tracked edit.' }]
+      })
+    ]);
+    render(<TrackedChangeGroups editor={editor} />);
+    // Card titled by the author, tally as usual.
+    expect(screen.getByText('Ayesha')).toBeInTheDocument();
+    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+
+    // Expanding shows the edit with its author attribution.
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Ayesha' }));
+    expect(screen.getByText('A human tracked edit.')).toBeInTheDocument();
+    expect(screen.getAllByText('Ayesha').length).toBeGreaterThan(1);
+  });
+
+  it('shows the author on assistant chips too', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+  });
+
+  it('renders one card per group with a humanized title and a pending tally', () => {
     const editor = makeEditor([
       makeRevision({
         revisionType: 'Deletion',
@@ -65,12 +92,13 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
     expect(screen.getByText('Update premium')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
-    // Two revisions in the premium group, one in the date group.
-    expect(screen.getByText('2 edits')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    // Two pending edits in the premium group, one in the date group.
+    expect(screen.getByText('2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+    expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
-  it('expands a card to its individual edits and navigates on click', () => {
+  it('expands a card to diff-row chips and focuses/navigates on chip click', () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
@@ -79,7 +107,7 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor([deletion, insertion]);
     render(<TrackedChangeGroups editor={editor} />);
 
-    // Collapsed by default: no per-edit rows yet.
+    // Collapsed by default: no chips yet.
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
 
     fireEvent.click(
@@ -87,27 +115,35 @@ describe('TrackedChangeGroups', () => {
     );
     expect(screen.getByText('$5,500')).toBeInTheDocument();
     expect(screen.getByText('$6,000')).toBeInTheDocument();
+    expect(screen.getByText('Removed')).toBeInTheDocument();
+    expect(screen.getByText('Added')).toBeInTheDocument();
 
+    // Clicking a chip focuses it (actions appear, aria-current set) and
+    // navigates the document to the revision.
     fireEvent.click(screen.getByText('$5,500'));
     expect(deletion.select).toHaveBeenCalled();
     expect(insertion.select).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Accept this edit')).toBeInTheDocument();
 
-    // Collapse hides the rows again.
+    // Collapse hides the chips again.
     fireEvent.click(
       screen.getByRole('button', { name: 'Collapse Update premium' })
     );
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
   });
 
-  it('row ✓/✗ resolves a single edit without touching the rest of the group', () => {
+  it('focused-chip Accept resolves only that edit; the chip stays with a verdict', () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
       getRange: () => [{ text: '$5,500' }]
     });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
-    // Emulate the live editor: an individually resolved revision leaves the
-    // collection while its group siblings stay pending.
+    // Emulate the live editor: a resolved revision leaves the collection
+    // while its group sibling stays pending.
     deletion.accept.mockImplementation(() => {
       revisions.splice(revisions.indexOf(deletion), 1);
     });
@@ -117,24 +153,23 @@ describe('TrackedChangeGroups', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
-    fireEvent.click(screen.getAllByLabelText('Accept this edit')[0]);
+    fireEvent.click(screen.getByText('$5,500'));
+    fireEvent.click(screen.getByLabelText('Accept this edit'));
 
-    // Only the clicked row's revision resolved; its sibling is untouched and
-    // the click did not double as row navigation.
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
-    expect(deletion.select).not.toHaveBeenCalled();
 
-    // The panel refreshed: the resolved row is gone, the sibling remains.
-    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
-    expect(screen.getByText('$6,000')).toBeInTheDocument();
+    // The resolved chip stays visible, faded, with its verdict; the group
+    // tally now shows one pending of two.
+    expect(screen.getByText('accepted')).toBeInTheDocument();
+    expect(screen.getByText('$5,500')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2')).toBeInTheDocument();
   });
 
-  it('group Accept resolves every member, not just the first or contiguous ones', () => {
+  it('group Accept resolves every pending member and flips the card to done', () => {
     const deletion = makeRevision({ revisionType: 'Deletion' });
     const insertion = makeRevision();
     const revisions = [deletion, insertion];
-    // Emulate the live editor: resolved revisions leave the collection.
     deletion.accept.mockImplementation(() => {
       revisions.splice(revisions.indexOf(deletion), 1);
     });
@@ -144,50 +179,42 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
 
     // Every member resolved exactly once — a native accept on one member
     // would instead resolve whatever is contiguous to it.
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+    // The group stays visible as a done card.
+    expect(screen.getByText('Update premium')).toBeInTheDocument();
+    expect(screen.getByText('2 done')).toBeInTheDocument();
+    expect(screen.getByText('all clear')).toBeInTheDocument();
   });
 
-  it('clicking a tracked change in the document navigates the panel to it', () => {
-    const deletion = makeRevision({
-      revisionType: 'Deletion',
-      getRange: () => [{ text: '$5,500' }]
+  it('Accept all resolves every pending edit across groups', () => {
+    const premium = makeRevision();
+    const date = makeRevision({
+      customData: tag('cs-1', 'fix-effective-date'),
+      getRange: () => [{ text: '2026-02-01' }]
     });
-    const insertion = makeRevision();
-    const editor = makeEditor([deletion, insertion]);
+    const revisions = [premium, date];
+    premium.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(premium), 1);
+    });
+    date.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(date), 1);
+    });
+    const editor = makeEditor(revisions);
     render(<TrackedChangeGroups editor={editor} />);
 
-    // Collapsed: the rows are not rendered yet.
-    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
-
-    // The user clicks inside the deletion in the document.
-    editor.selection.getCurrentRevision.mockReturnValue([deletion]);
-    act(() => editor.emit('selectionChange'));
-
-    // Its group auto-expanded and its row is marked current.
-    expect(
-      screen.getByText('$5,500').closest('[aria-current="true"]')
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('$6,000').closest('[aria-current="true"]')
-    ).toBeNull();
-
-    // Moving the cursor off any tracked change clears the mark but leaves
-    // the group expanded.
-    editor.selection.getCurrentRevision.mockReturnValue(undefined);
-    act(() => editor.emit('selectionChange'));
-    expect(screen.getByText('$5,500')).toBeInTheDocument();
-    expect(
-      screen.getByText('$5,500').closest('[aria-current="true"]')
-    ).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+    expect(premium.accept).toHaveBeenCalledTimes(1);
+    expect(date.accept).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('all clear')).toBeInTheDocument();
+    expect(screen.getAllByText('1 done')).toHaveLength(2);
   });
 
-  it('folds a replace pair into one edit; one approval resolves both halves', () => {
+  it('folds a replace pair into one Replaced chip; one approval settles both halves', () => {
     // A replace: the deletion's last range element links directly to the
     // insertion's first (nextNode), same as the live engine produces.
     const newRun = { text: '$6,000' };
@@ -207,20 +234,25 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
 
     // ONE edit, not two.
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 of 1')).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
-    expect(screen.getByText('$5,500 → $6,000')).toBeInTheDocument();
+    expect(screen.getByText('Replaced')).toBeInTheDocument();
+    expect(screen.getByText('$5,500')).toBeInTheDocument();
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
 
-    // One ✓ settles both underlying revisions.
+    // One approval (focused chip) settles both underlying revisions; the
+    // group — its only edit resolved — collapses to a done card.
+    fireEvent.click(screen.getByText('$6,000'));
     fireEvent.click(screen.getByLabelText('Accept this edit'));
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+    expect(screen.getByText('1 done')).toBeInTheDocument();
+    expect(screen.getByText('all clear')).toBeInTheDocument();
   });
 
-  it('drawer collapses via ✕ or handle; inline click or handle reopen it', () => {
+  it('drawer collapses via ✕; inline click or the bookmark tab reopen it', () => {
     const revision = makeRevision();
     const editor = makeEditor([revision]);
     const onHiddenChange = jest.fn();
@@ -256,6 +288,40 @@ describe('TrackedChangeGroups', () => {
     editor.selection.getCurrentRevision.mockReturnValue([revision]);
     act(() => editor.emit('selectionChange'));
     expect(onHiddenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('clicking a tracked change in the document navigates the rail to it', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const editor = makeEditor([deletion, insertion]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // Collapsed: the chips are not rendered yet.
+    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+
+    // The user clicks inside the deletion in the document.
+    editor.selection.getCurrentRevision.mockReturnValue([deletion]);
+    act(() => editor.emit('selectionChange'));
+
+    // Its group auto-expanded and its chip is marked current.
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeNull();
+
+    // Moving the cursor off any tracked change clears the mark but leaves
+    // the group expanded.
+    editor.selection.getCurrentRevision.mockReturnValue(undefined);
+    act(() => editor.emit('selectionChange'));
+    expect(screen.getByText('$5,500')).toBeInTheDocument();
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeNull();
   });
 
   it('refreshes when the editor content changes', () => {
