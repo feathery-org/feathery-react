@@ -189,6 +189,59 @@ const inheritedTableFixture = () => {
   };
 };
 
+const singleDataRowTableFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            {
+              // The V2 document's visual header is not marked with Word's
+              // isHeader flag; its dark fill and white text are the evidence.
+              rowFormat: {},
+              cells: ['Field', 'Value'].map((text) =>
+                styledCell(
+                  text,
+                  { fontFamily: 'Arial', fontSize: 10, fontColor: '#FFFFFF' },
+                  { textAlignment: 'Left', afterSpacing: 0 },
+                  HEADER_FILL
+                )
+              )
+            },
+            {
+              rowFormat: {},
+              cells: ['Named Insured', 'Robert M Jamerson'].map((text) =>
+                styledCell(
+                  text,
+                  { fontFamily: 'Arial', fontSize: 10, fontColor: '#1F1F1F' },
+                  { textAlignment: 'Left', afterSpacing: 0 },
+                  BAND_FILL
+                )
+              )
+            }
+          ]
+        }
+      ]
+    }
+  ]
+});
+
+const shortStripedTableFixture = () => {
+  const doc: any = singleDataRowTableFixture();
+  doc.sections[0].blocks[0].rows.push({
+    rowFormat: {},
+    cells: ['Named Insured', 'Kristi L Jamerson'].map((text) =>
+      styledCell(
+        text,
+        { fontFamily: 'Arial', fontSize: 10, fontColor: '#1F1F1F' },
+        { textAlignment: 'Left', afterSpacing: 0 }
+      )
+    )
+  });
+  return doc;
+};
+
 /**
  * The captain's document: a sibling section whose Location Schedule is banded
  * (dark header row, then alternating rows starting UNFILLED), and a new section
@@ -811,6 +864,69 @@ describe('restripe_table', () => {
 });
 
 describe('structural inserts inherit resolved table formatting by default', () => {
+  it('inherits dark text from the only data row, never the unflagged visual header', () => {
+    const ed = makeEditor(singleDataRowTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;1;1;0' },
+        { op: 'set_cell_text', anchor: '0;0;2;0;0', text: 'Named Insured' },
+        { op: 'set_cell_text', anchor: '0;0;2;1;0', text: 'Kristi L Jamerson' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(
+        resolvedTextFormat(ed, '0;0;2;0;0', 'Named Insured').character.fontColor
+      ).toBe('#1F1F1F');
+      expect(
+        resolvedTextFormat(ed, '0;0;2;1;0', 'Kristi L Jamerson').character
+          .fontColor
+      ).toBe('#1F1F1F');
+      expect(
+        resolvedTextFormat(ed, '0;0;0;0;0', 'Field').character.fontColor
+      ).toBe('#FFFFFF');
+      expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('inherits the adjacent data-row fill when one data row cannot prove a stripe', () => {
+    const ed = makeEditor(singleDataRowTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;1;1;0' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;0')).toEqual([HEADER_FILL, BAND_FILL, BAND_FILL]);
+      expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('continues a short table stripe even when strict banding detection declines', () => {
+    const ed = makeEditor(shortStripedTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;2;1;0' },
+        { op: 'set_cell_text', anchor: '0;0;3;0;0', text: 'Named Insured' },
+        { op: 'set_cell_text', anchor: '0;0;3;1;0', text: 'Jane Doe' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;0')).toEqual([
+        HEADER_FILL,
+        BAND_FILL,
+        null,
+        BAND_FILL
+      ]);
+      expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
   it('gives a new table its nearest sibling appearance and per-column header/body text formats', () => {
     const ed = makeEditor(inheritedTableFixture());
     try {

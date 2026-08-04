@@ -6735,6 +6735,36 @@ function applyBandingRows(
   return { report, restores };
 }
 
+/** Enforce only the inserted rows' resolved fallback fills. */
+function applyPlannedRowShadings(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  planned: Array<{ row: number; shading: string | null }>
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const restores: AppearanceRestore[] = [];
+  for (const { row, shading } of planned) {
+    const cells = current.rows[row]?.cells ?? [];
+    let rowTouched = false;
+    for (let column = 0; column < cells.length; column++) {
+      const before = cellAppearanceAt(current, row, column);
+      if ((before?.shading ?? null) === shading) {
+        report.cellsUnchanged++;
+        continue;
+      }
+      const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+      const write: AppearanceWrite = { shading };
+      writeAppearance(editor, cellAnchor, write, 'cell');
+      restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
+      report.cellsWritten++;
+      rowTouched = true;
+    }
+    if (rowTouched) report.rowsWritten++;
+  }
+  return { report, restores };
+}
+
 function runCopyTableFormat(
   editor: LiveEditor,
   op: TypedEditOp<'copy_table_format'>,
@@ -7815,8 +7845,10 @@ interface PlannedTableAppearanceInheritance {
   source: TableAppearance;
   /** Absent means every row of a newly inserted table. */
   targetRows?: number[];
-  /** The strict pre-insert stripe an inserted row must restore below itself. */
+  /** The pre-insert stripe an inserted row must restore below itself. */
   preserveBanding?: { fromRow: number; banding: TableBanding };
+  /** When no stripe resolves, the adjacent data-row fill for each new row. */
+  fallbackShadings?: Array<{ row: number; shading: string | null }>;
 }
 
 interface PlannedInsertInheritance {
@@ -8429,7 +8461,8 @@ function planTableCellFormats(
   sourceAppearance: TableAppearance,
   targetTableAnchor: string,
   targetRows: number[],
-  targetColumns: number
+  targetColumns: number,
+  sourceRows?: number[]
 ): PlannedInsertInheritance[] {
   const headerRows = inferHeaderRows(sourceAppearance);
   const byAnchor = new Map(
@@ -8440,12 +8473,10 @@ function planTableCellFormats(
     { characterFormat?: FormatBag; paragraphFormat?: FormatBag }
   >();
   const planned: PlannedInsertInheritance[] = [];
-  for (const targetRow of targetRows) {
-    const sourceRow = sourceRowForTarget(
-      sourceAppearance,
-      headerRows,
-      targetRow
-    );
+  for (const [rowIndex, targetRow] of targetRows.entries()) {
+    const sourceRow =
+      sourceRows?.[rowIndex] ??
+      sourceRowForTarget(sourceAppearance, headerRows, targetRow);
     const sourceColumns = sourceAppearance.rows[sourceRow]?.cells.length ?? 0;
     if (!sourceColumns) continue;
     for (let targetColumn = 0; targetColumn < targetColumns; targetColumn++) {
@@ -8467,6 +8498,36 @@ function planTableCellFormats(
     }
   }
   return planned;
+}
+
+/**
+ * A row insert's typography comes from the row at its new position (the row it
+ * displaces), or the last existing row when appended. Unlike whole-table copy,
+ * it must not cycle: on a two-row table whose visual header lacks `isHeader`,
+ * cycling an appended target wraps to row zero and turns body text white.
+ */
+function sourceRowsForInsertedRows(
+  source: TableAppearance,
+  targetRows: number[]
+): number[] {
+  const lastRow = source.rows.length - 1;
+  return targetRows.map((targetRow) => Math.min(targetRow, lastRow));
+}
+
+/**
+ * Strict detection deliberately needs corroboration before automatic
+ * restriping. A visual header plus exactly two differently filled data rows is
+ * the small-table exception: those two neighbours state the next alternating
+ * fill unambiguously, even though neither band can occur twice yet.
+ */
+function shortInsertBanding(source: TableAppearance): TableBanding | null {
+  const headerRows = inferHeaderRows(source);
+  const body = rowShadings(source).slice(headerRows);
+  if (headerRows === 0 || body.length !== 2) return null;
+  const [first, second] = body;
+  if (first === undefined || second === undefined || first === second)
+    return null;
+  return { headerRows, period: 2, cycle: [first, second] };
 }
 
 function planTableInsertInheritance(
@@ -8523,6 +8584,7 @@ function planRowInsertInheritance(
     { length: count },
     (_, index) => firstRow + index
   );
+  const sourceRows = sourceRowsForInsertedRows(source, targetRows);
   const columns = Math.max(...source.rows.map((entry) => entry.cells.length));
   const formats = planTableCellFormats(
     editor,
@@ -8531,7 +8593,8 @@ function planRowInsertInheritance(
     source,
     tableAnchor,
     targetRows,
-    columns
+    columns,
+    sourceRows
   );
   // `preserveBanding: false` is the explicit request for SyncFusion's raw row
   // appearance. Typography still inherits, but no fill/border/header write is
@@ -8539,7 +8602,15 @@ function planRowInsertInheritance(
   if (op.preserveBanding === false) return formats.length ? formats : undefined;
   // Strict: this fires without being asked, so a table with one highlighted row
   // must not be mistaken for a stripe.
-  const banding = detectTableBanding(source, { strict: true });
+  const banding =
+    detectTableBanding(source, { strict: true }) ?? shortInsertBanding(source);
+  const shadings = rowShadings(source);
+  const fallbackShadings = banding
+    ? undefined
+    : targetRows.flatMap((targetRow, index) => {
+        const shading = shadings[sourceRows[index]];
+        return shading === undefined ? [] : [{ row: targetRow, shading }];
+      });
   return [
     {
       anchor: tableAnchor,
@@ -8548,7 +8619,11 @@ function planRowInsertInheritance(
         targetTableAnchor: tableAnchor,
         source,
         targetRows,
-        ...(banding ? { preserveBanding: { fromRow: firstRow, banding } } : {})
+        ...(banding
+          ? { preserveBanding: { fromRow: firstRow, banding } }
+          : fallbackShadings?.length
+          ? { fallbackShadings }
+          : {})
       }
     },
     ...formats
@@ -8764,6 +8839,15 @@ function applyInsertInheritance(
             appearance.preserveBanding.fromRow
           )
         );
+      }
+      if (appearance.fallbackShadings) {
+        const fallback = applyPlannedRowShadings(
+          editor,
+          appearance.targetTableAnchor,
+          liveTableAppearance(editor, appearance.targetTableAnchor),
+          appearance.fallbackShadings
+        );
+        if (fallback.report.cellsWritten) appearanceOutcomes.push(fallback);
       }
       continue;
     }
