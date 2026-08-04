@@ -74,7 +74,11 @@ const lex = (source: string): Lexeme[] => {
 class Parser {
   private pos = 0;
 
-  constructor(private readonly lexemes: Lexeme[]) {}
+  private readonly lexemes: Lexeme[];
+
+  constructor(lexemes: Lexeme[]) {
+    this.lexemes = lexemes;
+  }
 
   private peek(): Lexeme | undefined {
     return this.lexemes[this.pos];

@@ -15,6 +15,8 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docxEditorRegistry';
+import { attachTokenCycle } from '../../../documentTokens/tokenCycle';
+import type { TokenCycle } from '../../../documentTokens/tokenCycle';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -325,6 +327,7 @@ export default function DocumentEditorContainer({
   // retain the editor object as well so cleanup can only remove this exact
   // registration, never another mounted container's editor.
   const registeredEditor = useRef<any>(undefined);
+  const tokenCycle = useRef<TokenCycle | undefined>(undefined);
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -335,6 +338,11 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
+      // Linked tokens keep themselves up to date from here on. Inert for a
+      // document that declares none; the cycle re-reads on documentChange,
+      // because the editor is ready before its .docx has loaded.
+      tokenCycle.current?.detach();
+      tokenCycle.current = attachTokenCycle(editor);
     },
     [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );
@@ -351,6 +359,8 @@ export default function DocumentEditorContainer({
   }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
   useEffect(
     () => () => {
+      tokenCycle.current?.detach();
+      tokenCycle.current = undefined;
       if (containerId && registeredEditor.current) {
         unregisterDocxEditor(containerId, registeredEditor.current, formId);
       }

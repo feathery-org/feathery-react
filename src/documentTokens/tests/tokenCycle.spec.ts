@@ -179,7 +179,10 @@ describe('attachTokenCycle — propagation', () => {
 
   it('accepts a typed value with currency punctuation', () => {
     const editor = invoiceEditor();
-    const state = attachTokenCycle(editor).setTokenValue('unit_cost_1', '$1,750');
+    const state = attachTokenCycle(editor).setTokenValue(
+      'unit_cost_1',
+      '$1,750'
+    );
 
     expect(state.values.get('unit_cost_1')).toBe(1750);
     expect(editor.valueOf('item_total_1')).toBe('$17,500.00');
@@ -209,7 +212,9 @@ describe('attachTokenCycle — propagation', () => {
     const editor = invoiceEditor();
     attachTokenCycle(editor).setTokenValue('qty_1', 20);
 
-    expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(1);
+    expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
+      1
+    );
     expect(editor.log[0]).toBe('undo:begin');
     expect(editor.log[editor.log.length - 1]).toBe('undo:end');
   });
@@ -351,12 +356,58 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(editor.valueOf('subtotal_1')).toBe('$2,350.00');
   });
 
+  it('picks up tokens when the document finishes loading', () => {
+    // The editor is ready before its .docx is — attaching finds nothing.
+    const editor = fakeEditor([]);
+    const cycle = attachTokenCycle(editor);
+    expect(cycle.getState().specs).toHaveLength(0);
+
+    editor.controls.push(
+      control({ id: 'qty_1', source: 'qty' }, '4'),
+      control(
+        { id: 'double_1', formula: 'qty_1 * 2', format: { kind: 'number' } },
+        '0'
+      )
+    );
+    editor.fire('documentChange');
+
+    expect(cycle.getState().specs).toHaveLength(2);
+    // A stale value in the freshly loaded document is corrected immediately.
+    expect(editor.valueOf('double_1')).toBe('8');
+  });
+
+  it('rebuilds rather than merges when a different document loads', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+
+    editor.controls.length = 0;
+    editor.controls.push(control({ id: 'other_1', source: 'other' }, '1'));
+    editor.fire('documentChange');
+
+    expect(cycle.getState().specs.map((s) => s.id)).toEqual(['other_1']);
+  });
+
+  it('stays inert against an editor with no content-control API', () => {
+    // Older SyncFusion, or an instance still initialising. Tokens are a
+    // feature of the document, never a requirement of the editor — failing to
+    // read them must not take the editor down.
+    const bare: any = { selection: {}, editor: {} };
+
+    expect(() => attachTokenCycle(bare)).not.toThrow();
+    const cycle = attachTokenCycle(bare);
+    expect(cycle.getState().specs).toEqual([]);
+    expect(() => cycle.setTokenValue('qty_1', 5)).not.toThrow();
+    expect(() => cycle.detach()).not.toThrow();
+  });
+
   it('stops listening on detach', () => {
     const editor = invoiceEditor();
     const cycle = attachTokenCycle(editor);
     expect(editor.listenerCount('contentChange')).toBe(1);
+    expect(editor.listenerCount('documentChange')).toBe(1);
 
     cycle.detach();
     expect(editor.listenerCount('contentChange')).toBe(0);
+    expect(editor.listenerCount('documentChange')).toBe(0);
   });
 });

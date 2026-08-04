@@ -166,7 +166,23 @@ export const attachTokenCycle = (
     }, delay);
   };
 
+  /**
+   * A different document is now open. The editor is often ready before its
+   * .docx has loaded, so attaching alone would find no tokens — this is what
+   * actually picks them up, and it rebuilds the graph from scratch because
+   * every id, formula, and wildcard family has just changed.
+   */
+  const onDocumentChange = (): void => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    editingId = null;
+    refresh();
+  };
+
   editor.addEventListener?.('contentChange', onContentChange);
+  editor.addEventListener?.('documentChange', onDocumentChange);
   refresh();
 
   return {
@@ -180,6 +196,7 @@ export const attachTokenCycle = (
     detach: () => {
       if (timer) clearTimeout(timer);
       editor.removeEventListener?.('contentChange', onContentChange);
+      editor.removeEventListener?.('documentChange', onDocumentChange);
       listeners.clear();
     }
   };

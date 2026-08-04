@@ -72,22 +72,31 @@ export const decodeTag = (tag: string): TokenSpec | null => {
   }
 };
 
-/** Every token in the document, in document order. Ignores foreign controls. */
+/**
+ * Every token in the document, in document order. Ignores foreign controls.
+ *
+ * Returns nothing when the editor does not expose the content-control API —
+ * an older SyncFusion, or an instance still initialising. Tokens are a feature
+ * of the document, never a requirement of the editor: failing to read them
+ * must not take the editor down with it.
+ */
 export const readTokens = (
   editor: EditorLike
 ): Array<{ spec: TokenSpec; value: string }> =>
-  editor
-    .exportContentControlData()
-    .filter(isOurs)
-    .map((info) => ({ spec: decodeTag(info.tag), value: info.value }))
-    .filter(
-      (entry): entry is { spec: TokenSpec; value: string } =>
-        entry.spec !== null
-    );
+  typeof editor?.exportContentControlData !== 'function'
+    ? []
+    : editor
+        .exportContentControlData()
+        .filter(isOurs)
+        .map((info) => ({ spec: decodeTag(info.tag), value: info.value }))
+        .filter(
+          (entry): entry is { spec: TokenSpec; value: string } =>
+            entry.spec !== null
+        );
 
 /** The token the caret sits in, or null when the caret is in ordinary prose. */
 export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
-  const info = editor.selection.getContentControlInfo?.();
+  const info = editor?.selection?.getContentControlInfo?.();
   if (!info?.tag) return null;
   return decodeTag(info.tag);
 };
@@ -105,6 +114,9 @@ export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
  * the effect the prototype needed zero-width sentinels to achieve.
  */
 const selectValue = (editor: EditorLike, id: string): boolean => {
+  if (typeof editor?.getBookmarks !== 'function') return false;
+  if (typeof editor?.selection?.selectBookmark !== 'function') return false;
+
   const bookmark = bookmarkFor(id);
   if (!editor.getBookmarks().includes(bookmark)) return false;
   editor.selection.selectBookmark(bookmark, true);
@@ -141,6 +153,10 @@ export const writeValues = (
     ({ id, text }) => id !== options.skipId && current.get(id) !== text
   );
   if (pending.length === 0) return { written, missed };
+
+  if (typeof editor?.editor?.insertText !== 'function') {
+    return { written, missed: pending.map(({ id }) => id) };
+  }
 
   editor.editorHistory?.beginUndoAction();
   try {
