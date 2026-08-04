@@ -696,6 +696,163 @@ describe('applyDocumentEdits', () => {
     expect(ed.doc.sections[0].blocks[0].inlines[0].text).toBe('Quote: $5,500');
   });
 
+  it('relocates a stale anchor when expect identifies exactly one current block', () => {
+    const ed = make([para('Concurrent note'), para('Quote: $5,500')]);
+    const res = applyDocumentEdits(ed, {
+      changeSetId: 'relocate-unique-expect',
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;0',
+          expect: 'Quote: $5,500',
+          find: '5,500',
+          replace: '6,000'
+        }
+      ]
+    });
+
+    expect(res.results[0]).toMatchObject({
+      ok: true,
+      anchor: '0;1',
+      relocated: { from: '0;0', to: '0;1' }
+    });
+    expect(ed.doc.sections[0].blocks[1].inlines[0].text).toBe('Quote: $6,000');
+  });
+
+  it('relocates a missing anchor when find identifies exactly one current block', () => {
+    const ed = make([para('Only matching phrase')]);
+    const res = applyDocumentEdits(ed, {
+      changeSetId: 'relocate-unique-find',
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;9',
+          find: 'matching',
+          replace: 'relocated'
+        }
+      ]
+    });
+
+    expect(res.results[0]).toMatchObject({
+      ok: true,
+      anchor: '0;0',
+      relocated: { from: '0;9', to: '0;0' }
+    });
+    expect(ed.doc.sections[0].blocks[0].inlines[0].text).toBe(
+      'Only relocated phrase'
+    );
+  });
+
+  it('an ambiguous relocation refuses only its group and lets a sibling group land', () => {
+    const ed = make([
+      para('Repeated target'),
+      para('Repeated target'),
+      para('Independent target')
+    ]);
+    const res = applyDocumentEdits(ed, {
+      changeSetId: 'relocate-ambiguous-groups',
+      edits: [
+        {
+          op: 'replace_text',
+          group: 'ambiguous',
+          anchor: '0;9',
+          expect: 'Repeated target',
+          find: 'Repeated',
+          replace: 'Changed'
+        },
+        {
+          op: 'replace_text',
+          group: 'ambiguous',
+          anchor: '0;0',
+          find: 'Repeated',
+          replace: 'Changed'
+        },
+        {
+          op: 'replace_text',
+          group: 'independent',
+          anchor: '0;2',
+          expect: 'Independent target',
+          find: 'Independent',
+          replace: 'Applied'
+        }
+      ]
+    });
+
+    expect(res.results[0]).toMatchObject({
+      ok: false,
+      error: 'anchor_not_found'
+    });
+    expect(res.results[0].details).toEqual(
+      expect.arrayContaining([expect.stringContaining('matching blocks (2)')])
+    );
+    expect(res.results[1]).toMatchObject({
+      ok: false,
+      error: 'change_set_failed'
+    });
+    expect(res.results[2]).toMatchObject({ ok: true });
+    expect(
+      ed.doc.sections[0].blocks.map((block) => block.inlines[0].text)
+    ).toEqual(['Repeated target', 'Repeated target', 'Applied target']);
+  });
+
+  it('refuses an exact relocation match in a different table cell', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              tableFormat: {},
+              rows: [
+                {
+                  rowFormat: {},
+                  cells: [
+                    {
+                      cellFormat: {},
+                      blocks: [{ inlines: [{ text: 'Original cell' }] }]
+                    },
+                    {
+                      cellFormat: {},
+                      blocks: [{ inlines: [{ text: 'Moved value' }] }]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+    try {
+      const res = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'no-cross-cell-relocation',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0;0;0;1',
+            expect: 'Moved value',
+            find: 'Moved',
+            replace: 'Changed'
+          }
+        ]
+      });
+
+      expect(res.results[0]).toMatchObject({
+        ok: false,
+        error: 'anchor_not_found'
+      });
+      expect(res.results[0].details).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('different table/cell container')
+        ])
+      );
+      expect(selectRealBlock(ed, '0;0;0;1;0', 'Moved value').text).toBe(
+        'Moved value'
+      );
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('reports anchor_not_found and text_not_found', () => {
     const ed = make([para('Quote: $5,500')]);
     const res = applyDocumentEdits(ed, {
@@ -753,7 +910,7 @@ describe('applyDocumentEdits', () => {
       );
       expect(res.results[1]).toMatchObject({
         ok: false,
-        error: 'change_set_preflight_failed'
+        error: 'change_set_failed'
       });
       expect(history.undo).not.toHaveBeenCalled();
       expect(history.redo).not.toHaveBeenCalled();
@@ -1611,7 +1768,7 @@ describe('live occurrence search and scoped replacement', () => {
         expect.arrayContaining([
           expect.objectContaining({
             ok: false,
-            error: 'change_set_preflight_failed'
+            error: 'change_set_failed'
           }),
           expect.objectContaining({
             anchor: '0;0;S;1;0',
@@ -1838,6 +1995,10 @@ describe('styling ops (no silent success)', () => {
             {
               paragraphFormat: { styleName: 'noTOCheading2' },
               inlines: [{ text: 'Other target' }]
+            },
+            {
+              paragraphFormat: { styleName: 'noTOCheading2' },
+              inlines: [{ text: 'Failing sibling' }]
             }
           ]
         }
@@ -1882,18 +2043,37 @@ describe('styling ops (no silent success)', () => {
       const res = applyDocumentEdits(editor, {
         changeSetId: 'fault-injected-format-change-set',
         edits: [
-          { op: 'apply_style', anchor: '0;2', inheritFormatFrom: '0;0' },
-          { op: 'apply_style', anchor: '0;1', inheritFormatFrom: '0;0' }
+          {
+            op: 'apply_style',
+            group: 'survivor',
+            anchor: '0;2',
+            inheritFormatFrom: '0;0'
+          },
+          {
+            op: 'apply_style',
+            group: 'failing-format-group',
+            anchor: '0;3',
+            inheritFormatFrom: '0;0'
+          },
+          {
+            op: 'apply_style',
+            group: 'failing-format-group',
+            anchor: '0;1',
+            inheritFormatFrom: '0;0'
+          }
         ]
       });
 
-      // The unaffected location is physically written, but the response never
-      // reports a partial logical success; both writes are one rejectable group.
+      // A mid-apply failure rolls back both members of its group, while the
+      // independently reviewable sibling group stays applied and reports ok.
       expect(res.results[0]).toMatchObject({
+        ok: true
+      });
+      expect(res.results[1]).toMatchObject({
         ok: false,
         error: 'change_set_failed'
       });
-      expect(res.results[1]).toMatchObject({
+      expect(res.results[2]).toMatchObject({
         ok: false,
         error: 'inherited_format_mismatch'
       });
@@ -1901,13 +2081,16 @@ describe('styling ops (no silent success)', () => {
         id: 'fault-injected-format-change-set',
         status: 'failed'
       });
-      expect(res.results[1].details).toContain(
+      expect(res.results[2].details).toContain(
         'characterFormat.fontSize: expected 11, got 20'
       );
-      // Inspect real editor state, not merely the response: the first location
-      // was initially formatted then compensated after its sibling failed.
+      // Inspect real editor state, not merely the response: the survivor stays
+      // formatted and both members of the failed group are back at baseline.
       expect(
         selectRealBlock(ed, '0;2', 'Other target').characterFormat.fontSize
+      ).toBe(11);
+      expect(
+        selectRealBlock(ed, '0;3', 'Failing sibling').characterFormat.fontSize
       ).toBe(20);
       expect(
         selectRealBlock(ed, '0;1', 'Target').characterFormat.fontSize
@@ -3269,8 +3452,7 @@ describe('tracked inserts never author deletions', () => {
             op: 'insert_text',
             anchor: '6;26',
             group: 'g01-add-homeowners-section',
-            text:
-              'Homeowners Insurance\n\nCoverages and Limits\n\nForms & Endorsements\n\n',
+            text: 'Homeowners Insurance\n\nCoverages and Limits\n\nForms & Endorsements\n\n',
             find: '',
             replace: '',
             expectLength: 0
@@ -5098,9 +5280,11 @@ describe('heading level detection', () => {
       for (const label of ['Company Name', 'Rating', 'Financial Size']) {
         const block = blocks.find((b) => b.text === label);
         expect(block?.format?.styleName).toBe('H1');
-        expect({ label, isHeading: block?.isHeading, level: block?.level }).toEqual(
-          { label, isHeading: false, level: -1 }
-        );
+        expect({
+          label,
+          isHeading: block?.isHeading,
+          level: block?.level
+        }).toEqual({ label, isHeading: false, level: -1 });
       }
     } finally {
       destroyRealDocumentEditor(ed);
