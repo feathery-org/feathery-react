@@ -101,6 +101,7 @@ const revisions = (ed: DocumentEditor): any[] => {
 
 const HEADER_FILL = '#1F3864';
 const BAND_FILL = '#D9E2F3';
+const TINY_BAND_FILL = '#E6E6E6';
 
 const cell = (text: string, background?: string) => ({
   cellFormat: {
@@ -215,11 +216,20 @@ const singleDataRowTableFixture = () => ({
                 styledCell(
                   text,
                   { fontFamily: 'Arial', fontSize: 10, fontColor: '#1F1F1F' },
-                  { textAlignment: 'Left', afterSpacing: 0 },
-                  BAND_FILL
+                  { textAlignment: 'Left', afterSpacing: 0 }
                 )
               )
             }
+          ]
+        },
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            row(['Vehicle', 'Value'], HEADER_FILL, true),
+            row(['One', 'A']),
+            row(['Two', 'B'], TINY_BAND_FILL),
+            row(['Three', 'C']),
+            row(['Four', 'D'], TINY_BAND_FILL)
           ]
         }
       ]
@@ -228,6 +238,22 @@ const singleDataRowTableFixture = () => ({
 });
 
 const shortStripedTableFixture = () => {
+  const doc: any = singleDataRowTableFixture();
+  doc.sections[0].blocks[0].rows.push({
+    rowFormat: {},
+    cells: ['Named Insured', 'Kristi L Jamerson'].map((text) =>
+      styledCell(
+        text,
+        { fontFamily: 'Arial', fontSize: 10, fontColor: '#1F1F1F' },
+        { textAlignment: 'Left', afterSpacing: 0 },
+        TINY_BAND_FILL
+      )
+    )
+  });
+  return doc;
+};
+
+const uniformTinyTableFixture = () => {
   const doc: any = singleDataRowTableFixture();
   doc.sections[0].blocks[0].rows.push({
     rowFormat: {},
@@ -890,7 +916,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
     }
   });
 
-  it('inherits the adjacent data-row fill when one data row cannot prove a stripe', () => {
+  it('continues document-level striping when the target has one white data row', () => {
     const ed = makeEditor(singleDataRowTableFixture());
     try {
       const result = apply(ed, [
@@ -898,14 +924,18 @@ describe('structural inserts inherit resolved table formatting by default', () =
       ]);
 
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
-      expect(fills(ed, '0;0')).toEqual([HEADER_FILL, BAND_FILL, BAND_FILL]);
+      expect(fills(ed, '0;0')).toEqual([
+        HEADER_FILL,
+        null,
+        TINY_BAND_FILL
+      ]);
       expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
     } finally {
       destroyEditor(ed);
     }
   });
 
-  it('continues a short table stripe even when strict banding detection declines', () => {
+  it('continues an alternating tiny-table stripe from its two data rows', () => {
     const ed = makeEditor(shortStripedTableFixture());
     try {
       const result = apply(ed, [
@@ -917,10 +947,25 @@ describe('structural inserts inherit resolved table formatting by default', () =
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
       expect(fills(ed, '0;0')).toEqual([
         HEADER_FILL,
-        BAND_FILL,
         null,
-        BAND_FILL
+        TINY_BAND_FILL,
+        null
       ]);
+      expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('continues a uniform tiny-table fill instead of importing document striping', () => {
+    const ed = makeEditor(uniformTinyTableFixture());
+    try {
+      const result = apply(ed, [
+        { op: 'insert_row', anchor: '0;0;2;1;0' }
+      ]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;0')).toEqual([HEADER_FILL, null, null, null]);
       expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
     } finally {
       destroyEditor(ed);
