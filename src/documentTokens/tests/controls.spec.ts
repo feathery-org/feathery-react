@@ -25,17 +25,27 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
   const addressOf = (info: ContentControlInfo) =>
     instanceKey(decodeTag(info.tag) as TokenSpec);
 
+  // Bookmarks a reader has destroyed by deleting a value outright. Measured:
+  // the control survives that, the bookmark does not.
+  const destroyed = new Set<string>();
+
   const editor: EditorLike & { log: string[]; controls: ContentControlInfo[] } =
     {
       log,
       controls,
       exportContentControlData: () => controls.map((c) => ({ ...c })),
-      getBookmarks: () => controls.map((c) => bookmarkFor(addressOf(c))),
+      getBookmarks: () =>
+        controls
+          .filter((c) => !destroyed.has(addressOf(c)))
+          .map((c) => bookmarkFor(addressOf(c))),
       selection: {
         getContentControlInfo: () => caret,
         selectBookmark: (name: string, exclude?: boolean) => {
-          selected = name;
-          log.push(`select ${name} exclusive=${Boolean(exclude)}`);
+          const found = controls.find(
+            (c) => bookmarkFor(addressOf(c)) === name
+          );
+          selected = found ? addressOf(found) : null;
+          log.push(`select bookmark ${name} exclusive=${Boolean(exclude)}`);
         },
         select: (start: string, end: string) => {
           editor.selection.startOffset = start;
@@ -44,18 +54,15 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
         },
         startOffset: '0;0;4',
         endOffset: '0;0;4',
-        // The value of whatever bookmark is currently selected, so a
+        // The value of whatever appearance is currently selected, so a
         // collapsed selection is distinguishable from a real range.
         get text() {
-          return controls.find((c) => bookmarkFor(addressOf(c)) === selected)
-            ?.value;
+          return controls.find((c) => addressOf(c) === selected)?.value;
         }
       },
       editor: {
         insertText: (text: string) => {
-          const target = controls.find(
-            (c) => bookmarkFor(addressOf(c)) === selected
-          );
+          const target = controls.find((c) => addressOf(c) === selected);
           if (target) {
             log.push(`write ${keyOf(target)} = ${text}`);
             target.value = text;
@@ -66,12 +73,36 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
         beginUndoAction: () => log.push('undo:begin'),
         endUndoAction: () => log.push('undo:end')
       },
-      documentHelper: { viewerContainer: { scrollTop: 0, scrollLeft: 0 } }
+      documentHelper: {
+        viewerContainer: { scrollTop: 0, scrollLeft: 0 },
+        // Syncfusion's own collection: control start elements carrying the tag.
+        contentControlCollection: controls.map((c) => ({
+          contentControlProperties: { tag: c.tag }
+        }))
+      }
     };
+
+  // The private range API the boundary prefers, since it outlives the bookmark.
+  (editor.selection as any).selectContentControlInternal = (control: any) => {
+    const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+    selected = spec ? instanceKey(spec) : null;
+    log.push(`select control ${selected}`);
+  };
 
   return Object.assign(editor, {
     setCaret: (info?: ContentControlInfo) => {
       caret = info;
+    },
+    /** Delete a value the way a reader does: the bookmark goes with it. */
+    emptyValue: (instance: string) => {
+      const target = controls.find((c) => addressOf(c) === instance);
+      if (target) target.value = '';
+      destroyed.add(instance);
+    },
+    /** Drop the private range API, to prove the bookmark fallback still works. */
+    withoutControlApi: () => {
+      delete (editor.selection as any).selectContentControlInternal;
+      delete (editor as any).documentHelper.contentControlCollection;
     }
   });
 };
@@ -89,6 +120,12 @@ const qty: TokenSpec = {
   index: 0,
   source: 'qty',
   format: { kind: 'number' }
+};
+const unitCost: TokenSpec = {
+  id: 'unit_cost',
+  index: 0,
+  source: 'unit_cost',
+  format: { kind: 'currency' }
 };
 const itemTotal: TokenSpec = {
   id: 'item_total',
@@ -279,13 +316,55 @@ describe('writeValues', () => {
     expect(viewport.scrollLeft).toBe(40);
   });
 
-  it('addresses by bookmark, excluding the markers from the selection', () => {
+  it('addresses a value by its content control', () => {
     const editor = fakeEditor([control(qty, '10')]);
     writeValues(editor, [{ id: 'qty__0', text: '20' }]);
 
+    expect(editor.log).toContain('select control qty__0');
+    expect(editor.controls[0].value).toBe('20');
+  });
+
+  it('reformats a value whose bookmark the reader destroyed', () => {
+    // Deleting a value outright takes its bookmark with it, measured against a
+    // real editor. The control survives, so the value must still be writable —
+    // otherwise a cleared token never gets its formatting back.
+    const editor = fakeEditor([control(unitCost, '$150.00')]);
+    editor.emptyValue('unit_cost__0');
+    editor.controls[0].value = '100'; // what the reader retyped
+
+    const { written, missed } = writeValues(editor, [
+      { id: 'unit_cost__0', text: '$100.00' }
+    ]);
+
+    expect(missed).toEqual([]);
+    expect(written).toEqual(['unit_cost__0']);
+    expect(editor.controls[0].value).toBe('$100.00');
+  });
+
+  it('writes into a token the reader left empty', () => {
+    const editor = fakeEditor([control(unitCost, '$150.00')]);
+    editor.emptyValue('unit_cost__0');
+
+    const { missed } = writeValues(editor, [
+      { id: 'unit_cost__0', text: '$0.00' }
+    ]);
+
+    expect(missed).toEqual([]);
+    expect(editor.controls[0].value).toBe('$0.00');
+  });
+
+  it('falls back to the bookmark when the private range API is gone', () => {
+    // A version bump could take selectContentControlInternal away; an untouched
+    // token must still be addressable.
+    const editor = fakeEditor([control(qty, '10')]);
+    editor.withoutControlApi();
+
+    writeValues(editor, [{ id: 'qty__0', text: '20' }]);
+
     expect(editor.log).toContain(
-      `select ${bookmarkFor('qty__0')} exclusive=true`
+      `select bookmark ${bookmarkFor('qty__0')} exclusive=true`
     );
+    expect(editor.controls[0].value).toBe('20');
   });
 
   it('writes the right token when two share a rendered value', () => {

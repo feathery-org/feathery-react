@@ -131,33 +131,71 @@ export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
 };
 
 /**
+ * The content control carrying a token, found by its tag.
+ *
+ * `contentControlCollection` and `selectContentControlInternal` are private
+ * Syncfusion surface, accepted deliberately: the control is the only durable
+ * address a token has. Measured — **deleting a value destroys its bookmark**
+ * (the first backspace over a selected value takes the bookmark with it) while
+ * the control survives and still reports its contents. Addressing by bookmark
+ * therefore fails permanently for any token the reader has cleared, which is
+ * exactly the "formatting never comes back" symptom.
+ */
+const controlFor = (editor: EditorLike, instance: string): object | null => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  if (!Array.isArray(collection)) return null;
+  return (
+    collection.find((control: any) => {
+      const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+      return spec !== null && instanceKey(spec) === instance;
+    }) ?? null
+  );
+};
+
+/**
+ * Put the selection over a token's value, excluding the markers around it.
+ *
+ * The control comes first because it outlives the value. The bookmark is kept
+ * as a fallback for the case where this private API is gone after a version
+ * bump — it addresses an untouched token perfectly well, and
+ * `excludeBookmarkStartEnd` keeps its markers out of the replacement.
+ */
+const selectInner = (editor: EditorLike, instance: string): boolean => {
+  const control = controlFor(editor, instance);
+  const selectControl = (editor as any)?.selection
+    ?.selectContentControlInternal;
+  if (control && typeof selectControl === 'function') {
+    selectControl.call(editor.selection, control);
+    return true;
+  }
+
+  if (typeof editor?.getBookmarks !== 'function') return false;
+  if (typeof editor?.selection?.selectBookmark !== 'function') return false;
+  const bookmark = bookmarkFor(instance);
+  if (!editor.getBookmarks().includes(bookmark)) return false;
+  editor.selection.selectBookmark(bookmark, true);
+  return true;
+};
+
+/**
  * Select a token's value, ready to be replaced.
  *
- * Content controls expose no public "range of this control", so each token
- * also carries a bookmark of the same id purely as an address. Selecting by
- * bookmark is exact — searching for the rendered text would pick the wrong
- * token the moment two of them read `$0.00`.
- *
- * `excludeBookmarkStartEnd` keeps the markers out of the selection, so the
- * replacement lands strictly between them and they survive the write. That is
- * the effect the prototype needed zero-width sentinels to achieve.
+ * Selecting by address is exact — searching for the rendered text would pick
+ * the wrong token the moment two of them read `$0.00`.
  */
 const selectValue = (
   editor: EditorLike,
   instance: string,
   currentText: string
 ): boolean => {
-  if (typeof editor?.getBookmarks !== 'function') return false;
-  if (typeof editor?.selection?.selectBookmark !== 'function') return false;
-
-  const bookmark = bookmarkFor(instance);
-  if (!editor.getBookmarks().includes(bookmark)) return false;
-  editor.selection.selectBookmark(bookmark, true);
+  if (!selectInner(editor, instance)) return false;
 
   // A write REPLACES a selected range. If the selection came back collapsed,
   // inserting would append instead — which silently compounds a value on
   // every pass (`100` becoming `100,100100`). Refuse rather than corrupt: a
-  // token that fails to update is visible, a mangled number is not.
+  // token that fails to update is visible, a mangled number is not. An empty
+  // selection is correct when the value itself is empty; there is nothing to
+  // replace, so the insert lands inside the control as measured.
   const selected = editor.selection.text;
   if (selected === undefined) return true; // host cannot report; trust it
   if (selected === '') return currentText === '';

@@ -482,6 +482,53 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(args.isHandled).toBe(true);
   });
 
+  it('lets a value be cleared', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.setCaret(editor.controls[1]); // unit_cost, still holding $150.00
+    editor.fire('selectionChange');
+
+    const args: any = {
+      key: 'Backspace',
+      event: { preventDefault: jest.fn() }
+    };
+    editor.fire('keyDown', args);
+
+    expect(args.event.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('swallows Backspace once a token is already empty', () => {
+    // Deleting THROUGH an empty value consumes the content control's markers,
+    // and a destroyed control cannot be rebuilt.
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.controls[1].value = '';
+    editor.setCaret(editor.controls[1]);
+    editor.fire('selectionChange');
+
+    const args: any = {
+      key: 'Backspace',
+      event: { preventDefault: jest.fn() }
+    };
+    editor.fire('keyDown', args);
+
+    expect(args.event.preventDefault).toHaveBeenCalled();
+    expect(args.isHandled).toBe(true);
+  });
+
+  it('swallows Delete once a token is already empty', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.controls[1].value = '';
+    editor.setCaret(editor.controls[1]);
+    editor.fire('selectionChange');
+
+    const args: any = { key: 'Delete', event: { preventDefault: jest.fn() } };
+    editor.fire('keyDown', args);
+
+    expect(args.event.preventDefault).toHaveBeenCalled();
+  });
+
   it('allows digits and currency punctuation', () => {
     const editor = invoiceEditor();
     attachTokenCycle(editor);

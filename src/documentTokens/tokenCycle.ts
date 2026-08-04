@@ -346,6 +346,22 @@ export const attachTokenCycle = (
     const id = valueKey(caretSpec);
     const spec = plan.specs.get(id);
 
+    // An already-empty token swallows Backspace and Delete. The keystroke would
+    // otherwise carry on past the value and consume the content control's own
+    // markers, and a destroyed control cannot be rebuilt — `insertContentControl`
+    // is a no-op — so the token would be gone for the rest of the session.
+    // Clearing a value is fine; deleting THROUGH it is not.
+    if (key === 'Backspace' || key === 'Delete') {
+      const here = readTokens(editor).find(
+        (t) => instanceKey(t.spec) === instanceKey(caretSpec)
+      );
+      if (here && (here.value === '' || here.value === PLACEHOLDER)) {
+        args?.event?.preventDefault?.();
+        if (args) args.isHandled = true;
+      }
+      return;
+    }
+
     if (
       key &&
       key.length === 1 &&
