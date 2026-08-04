@@ -348,6 +348,51 @@ describe('document-index delta protocol', () => {
     expect(delta.changedBlocks).toHaveLength(1);
     expect(delta.changedBlocks[0].text).toContain('newly inserted');
     expect(delta.anchorRemap).toHaveLength(15);
+    expect(delta.anchorRemap).toContainEqual({
+      hash: await _hashDocumentIndexBlockText(original[15]),
+      anchor: '0;16'
+    });
+  });
+
+  it('keeps delta sync when an insertion shifts repeated-text anchors', async () => {
+    const original = paragraphs(30);
+    original[20] = '$';
+    original[25] = '$';
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    const initial = JSON.parse(indexPosts()[0][1].body);
+    expect(initial.mode).toBeUndefined();
+    expect(initial.blocks).toHaveLength(30);
+
+    editor.texts = [
+      ...original.slice(0, 10),
+      'Inserted text that shifts every following block anchor.',
+      ...original.slice(10)
+    ];
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    expect(indexPosts()).toHaveLength(2);
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta.mode).toBe('delta');
+    expect(delta.blocks).toBeUndefined();
+    expect(delta.changedBlocks).toEqual([
+      expect.objectContaining({
+        anchor: '0;10',
+        text: 'Inserted text that shifts every following block anchor.'
+      })
+    ]);
+    expect(delta.anchorRemap).toEqual(
+      expect.arrayContaining([
+        {
+          hash: await _hashDocumentIndexBlockText('$'),
+          anchors: ['0;21', '0;26']
+        }
+      ])
+    );
   });
 
   it('sends one changed block after a full load containing repeated text', async () => {
@@ -487,6 +532,21 @@ describe('document-index delta protocol', () => {
     const full = JSON.parse(indexPosts()[1][1].body);
     expect(full.mode).toBeUndefined();
     expect(full.blocks).toHaveLength(10);
+  });
+
+  it('counts repeated-group remap arrays in the compaction guard', async () => {
+    const editor = blockEditor(['$', '$', 'end']);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts = ['start', ...editor.texts];
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const full = JSON.parse(indexPosts()[1][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(4);
   });
 });
 
