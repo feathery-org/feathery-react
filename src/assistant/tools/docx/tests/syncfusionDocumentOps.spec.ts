@@ -26,6 +26,7 @@ import {
   parseRevisionGroupTag,
   rebindRevisionGroups,
   resolveRevisionIndividually,
+  resolveLiveRevisionGroupsAsOneUndo,
   resolveRevisionsAsOneUndo
 } from '../syncfusionDocumentOps';
 
@@ -3614,6 +3615,93 @@ describe('insert_table requires same-batch cell writes', () => {
       expect(blockTexts(ed)).toEqual(
         expect.arrayContaining(['Label', 'Value', 'Example', '$10'])
       );
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: accepting a multi-table sibling section preserves top-to-bottom order', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [{ blocks: [{ inlines: [{ text: 'Premium Summary' }] }] }]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      const group = 'g01-new-section';
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'new-section-before-summary',
+        edits: [
+          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'New Section' },
+          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Policy Information' },
+          {
+            op: 'insert_table',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            rows: 2,
+            columns: 2,
+            initialCells: [
+              ['Policy', 'Term'],
+              ['P-123', '2026 - 2027']
+            ]
+          },
+          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Coverages' },
+          {
+            op: 'insert_table',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            rows: 4,
+            columns: 2,
+            initialCells: [
+              ['Coverage', 'Limit'],
+              ['First', '$100'],
+              ['Second', '$200'],
+              ['Third', '$300']
+            ]
+          },
+          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Deductibles' },
+          {
+            op: 'insert_table',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            rows: 2,
+            columns: 2,
+            initialCells: [
+              ['Type', 'Amount'],
+              ['Base', '$1,000']
+            ]
+          }
+        ]
+      });
+
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+      const live = ed as unknown as LiveEditor;
+      resolveLiveRevisionGroupsAsOneUndo(live, listRevisionGroups(live), true);
+      expect(ed.revisions.length).toBe(0);
+      expect(blockTexts(ed)).toEqual([
+        'New Section',
+        'Policy Information',
+        'Policy',
+        'Term',
+        'P-123',
+        '2026 - 2027',
+        'Coverages',
+        'Coverage',
+        'Limit',
+        'First',
+        '$100',
+        'Second',
+        '$200',
+        'Third',
+        '$300',
+        'Deductibles',
+        'Type',
+        'Amount',
+        'Base',
+        '$1,000',
+        'Premium Summary'
+      ]);
     } finally {
       destroyRealDocumentEditor(ed);
     }

@@ -7792,7 +7792,11 @@ export function resolveRevisionsAsOneUndo(
     }
   }
   try {
-    for (const revision of revisions) {
+    // SyncFusion's own grouped accept/reject loop always resolves the last
+    // live revision first. Structural insertions share mutable ranges; walking
+    // them forwards can relocate later table rows across earlier headings when
+    // the review group is accepted. Preserve the SDK's reverse-order contract.
+    for (const revision of [...revisions].reverse()) {
       try {
         resolveRevisionIndividually(revision, isAccept);
       } catch {
@@ -7837,15 +7841,59 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   const authors = new Set(
     groups.filter((group) => group.untagged).map((group) => group.group)
   );
-  const revisions = snapshotRevisions(editor).filter((revision) => {
+  const matchesGroup = (revision: LiveRevision) => {
     const tag = parseRevisionGroupTag(revision.customData);
     return tag
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
-  });
-  for (const revision of revisions) (revision as any).robinReviveSelf?.();
-  resolveRevisionsAsOneUndo(editor, revisions, isAccept);
-  return revisions;
+  };
+  const initial = snapshotRevisions(editor).filter(matchesGroup);
+  const resolved: LiveRevision[] = [];
+  const editorModule: any = (editor as any).editorModule ?? editor.editor;
+  const history: any =
+    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
+  let complex = false;
+  if (
+    initial.length > 1 &&
+    typeof editorModule?.initComplexHistory === 'function'
+  ) {
+    try {
+      editorModule.initComplexHistory(isAccept ? 'Accept All' : 'Reject All');
+      complex = true;
+    } catch {
+      complex = false;
+    }
+  }
+  try {
+    // Use the CURRENT collection every time, exactly like SyncFusion's native
+    // grouped resolver (`revision[revision.length - 1]`). Accepting a table
+    // revision can replace or merge neighbouring revision objects, so a fixed
+    // snapshot leaves stale members behind and can reflow their rows over
+    // earlier section content.
+    let budget = Math.max(20, initial.length * 4);
+    while (budget-- > 0) {
+      const current = snapshotRevisions(editor).filter(matchesGroup);
+      if (!current.length) break;
+      const revision = current[current.length - 1];
+      (revision as any).robinReviveSelf?.();
+      resolved.push(revision);
+      try {
+        resolveRevisionIndividually(revision, isAccept);
+      } catch {
+        // Try the next live tail; the bounded budget prevents a stale range
+        // from trapping the review rail in a resolution loop.
+      }
+    }
+  } finally {
+    if (complex) {
+      try {
+        history?.updateComplexHistory?.();
+      } catch {
+        // History bookkeeping must never break the resolution itself.
+      }
+    }
+  }
+  return resolved;
 }
 
 /** Result of binding one change set's created revisions into accept groups. */
