@@ -70,7 +70,8 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
     setCaret: (info?: ContentControlInfo) => {
       caret = info;
     },
-    fire: (event: string) => (handlers[event] ?? []).forEach((h) => h()),
+    fire: (event: string, args?: any) =>
+      (handlers[event] ?? []).forEach((h: any) => h(args)),
     valueOf: (id: string) =>
       controls.find((c) => idOf(c) === id)?.value as string,
     listenerCount: (event: string) => (handlers[event] ?? []).length
@@ -400,6 +401,45 @@ describe('attachTokenCycle — state and lifecycle', () => {
     editor.fire('documentChange');
 
     expect(cycle.getState().specs.map((s) => s.id)).toEqual(['other_1']);
+  });
+
+  it('commits the focused token on Enter', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+    editor.controls[0].value = '20';
+    editor.fire('keyDown', { key: 'Enter' });
+
+    expect(cycle.getState().values.get('qty_1')).toBe(20);
+    expect(editor.valueOf('item_total_1')).toBe('$3,000.00');
+  });
+
+  it('restores the last committed value on Escape', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+    editor.controls[0].value = '999';
+    editor.fire('keyDown', { key: 'Escape' });
+
+    expect(editor.valueOf('qty_1')).toBe('10');
+    expect(cycle.getState().values.get('qty_1')).toBe(10);
+    expect(editor.valueOf('item_total_1')).toBe('$1,500.00');
+  });
+
+  it('ignores Enter and Escape outside a token', () => {
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.setCaret(undefined);
+    editor.log.length = 0;
+
+    editor.fire('keyDown', { key: 'Enter' });
+    editor.fire('keyDown', { key: 'Escape' });
+
+    expect(editor.log).toEqual([]);
   });
 
   it('stays inert against an editor with no content-control API', () => {

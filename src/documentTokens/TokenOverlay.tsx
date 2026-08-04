@@ -17,6 +17,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { TokenCycle, TokenState } from './tokenCycle';
 import {
@@ -27,12 +28,12 @@ import {
 } from './tokenRects';
 
 const FILL = {
-  input: 'rgba(37, 99, 235, 0.13)',
-  inputFocused: 'rgba(37, 99, 235, 0.28)',
-  computed: 'rgba(156, 163, 175, 0.16)',
-  computedFocused: 'rgba(156, 163, 175, 0.30)',
-  invalid: 'rgba(185, 28, 28, 0.18)',
-  invalidFocused: 'rgba(185, 28, 28, 0.32)'
+  input: 'rgba(37, 99, 235, 0.30)',
+  inputFocused: 'rgba(37, 99, 235, 0.52)',
+  computed: 'rgba(107, 114, 128, 0.28)',
+  computedFocused: 'rgba(107, 114, 128, 0.48)',
+  invalid: 'rgba(185, 28, 28, 0.34)',
+  invalidFocused: 'rgba(185, 28, 28, 0.55)'
 };
 
 const fillFor = (state: TokenState, id: string, computed: boolean): string => {
@@ -96,12 +97,23 @@ export default function TokenOverlay({
     state.specs.filter((spec) => spec.formula).map((spec) => spec.id)
   );
 
+  // Rendered INTO the editor's scrolling surface, not the wrapper: the
+  // measured coordinates are relative to that surface, and living inside it
+  // means the overlay tracks scrolling with no scroll maths of its own.
+  //
   // No z-index: making this a stacking context would blend the fill against
   // the layer instead of the canvas beneath it, hiding the text.
-  return (
+  return createPortal(
     <div
       data-testid='docx-token-overlay'
-      style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: 0,
+        height: 0,
+        pointerEvents: 'none'
+      }}
     >
       {rects.map((rect) => (
         <div
@@ -119,6 +131,7 @@ export default function TokenOverlay({
           }}
         />
       ))}
-    </div>
+    </div>,
+    surface
   );
 }

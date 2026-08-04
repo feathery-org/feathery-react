@@ -143,6 +143,50 @@ export const attachTokenCycle = (
     return publish();
   };
 
+  /**
+   * Enter commits the token under the caret; Escape puts back the last
+   * committed value. Without these the only way to finish an edit is to
+   * click elsewhere, and there is no way to abandon one at all.
+   */
+  const onKeyDown = (args: any): void => {
+    const key = args?.event?.key ?? args?.key;
+    if (key !== 'Enter' && key !== 'Escape') return;
+
+    const focused = tokenAtCaret(editor);
+    if (!focused) return;
+
+    args?.event?.preventDefault?.();
+    if (args) args.isHandled = true;
+
+    const id = focused.id;
+    if (key === 'Enter') {
+      const entry = readTokens(editor).find((t) => t.spec.id === id);
+      const parsed = entry ? parseValue(entry.value) : null;
+      editingId = null;
+      if (parsed !== null && values.get(id) !== parsed)
+        setTokenValue(id, parsed);
+      else if (entry) reformat(id, entry.value);
+      publish();
+      return;
+    }
+
+    // Escape: the graph never took the edit, so rewriting from `values`
+    // restores exactly what was last committed.
+    editingId = null;
+    const restored = values.get(id);
+    if (restored !== undefined) {
+      applying = true;
+      try {
+        writeValues(editor, [
+          { id, text: renderValue(restored, plan.specs.get(id)?.format) }
+        ]);
+      } finally {
+        applying = false;
+      }
+    }
+    publish();
+  };
+
   /** Rewrite a token's text if it no longer matches its declared format. */
   const reformat = (id: string, currentText: string): void => {
     const value = values.get(id);
@@ -211,6 +255,7 @@ export const attachTokenCycle = (
   };
 
   editor.addEventListener?.('selectionChange', onSelectionChange);
+  editor.addEventListener?.('keyDown', onKeyDown);
   editor.addEventListener?.('documentChange', onDocumentChange);
   refresh();
 
@@ -224,6 +269,7 @@ export const attachTokenCycle = (
     },
     detach: () => {
       editor.removeEventListener?.('selectionChange', onSelectionChange);
+      editor.removeEventListener?.('keyDown', onKeyDown);
       editor.removeEventListener?.('documentChange', onDocumentChange);
       listeners.clear();
     }
