@@ -145,6 +145,10 @@ const fingerprint = (blocks: IndexBlock[]): string => {
   return `${serialized.length}:${hash}`;
 };
 
+export type DocumentIndexAnchorRemap =
+  | { hash: string; anchor: string }
+  | { hash: string; anchors: string[] };
+
 export type PostDocumentIndexArgs = {
   // `${origin}/agent/assistant/` - the same base the chat posts to.
   baseUrl: string;
@@ -160,7 +164,7 @@ export type PostDocumentIndexArgs = {
     baseHash: string;
     changedBlocks: IndexBlock[];
     removedHashes: string[];
-    anchorRemap: { hash: string; anchor: string }[];
+    anchorRemap: DocumentIndexAnchorRemap[];
   };
 };
 
@@ -252,7 +256,7 @@ interface DocumentIndexDelta {
   baseHash: string;
   changedBlocks: IndexBlock[];
   removedHashes: string[];
-  anchorRemap: { hash: string; anchor: string }[];
+  anchorRemap: DocumentIndexAnchorRemap[];
 }
 
 export const DOCUMENT_INDEX_DELTA_CHANGED_RATIO = 0.6;
@@ -311,7 +315,7 @@ const buildDelta = (
 
   const changedBlocks: IndexBlock[] = [];
   const removedHashes: string[] = [];
-  const anchorRemap: { hash: string; anchor: string }[] = [];
+  const anchorRemap: DocumentIndexAnchorRemap[] = [];
   for (const [hash, current] of hashed.blocksByHash) {
     const prior = previous.get(hash);
     if (!prior) {
@@ -319,21 +323,29 @@ const buildDelta = (
       changedBlocks.push(...current);
       continue;
     }
-    // A hash-addressed removal/remap cannot select one occurrence of repeated
-    // identical text. Fall back only when that repeated group itself changed;
-    // unchanged duplicates elsewhere in the document do not block a delta.
+    // A repeated group can be remapped only while its occurrences still pair
+    // one-to-one in document order. An add/remove is ambiguous, so that sync
+    // stays on the full path.
     if (
       prior.length !== current.length ||
-      (current.length > 1 &&
-        current.some((block, index) => block.anchor !== prior[index].anchor))
+      current.some((block, index) => block.text !== prior[index].text)
     )
       return null;
-    if (prior[0].anchor !== current[0].anchor)
+    if (current.every((block, index) => block.anchor === prior[index].anchor))
+      continue;
+    if (current.length === 1)
       anchorRemap.push({ hash, anchor: current[0].anchor });
+    else
+      anchorRemap.push({
+        hash,
+        anchors: current.map((block) => block.anchor)
+      });
   }
-  previous.forEach((_block, hash) => {
-    if (!hashed.blocksByHash.has(hash)) removedHashes.push(hash);
-  });
+  for (const [hash, prior] of previous) {
+    if (hashed.blocksByHash.has(hash)) continue;
+    if (prior.length > 1) return null;
+    removedHashes.push(hash);
+  }
 
   if (changedBlocks.length / blocks.length > DOCUMENT_INDEX_DELTA_CHANGED_RATIO)
     return null;
