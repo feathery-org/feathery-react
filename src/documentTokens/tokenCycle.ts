@@ -26,8 +26,6 @@ import {
   EditorLike,
   readTokens,
   selectTokenValue,
-  shadeTokens,
-  TokenShade,
   tokenAtCaret,
   writeValues
 } from './controls';
@@ -128,8 +126,6 @@ export const attachTokenCycle = (
   let editingId: string | null = null;
   let applying = false;
   const listeners = new Set<(state: TokenState) => void>();
-  /** The shade each appearance already carries, so settled text is left alone. */
-  const shadeShown = new Map<string, TokenShade>();
 
   let snapshot: TokenState = {
     specs: [],
@@ -190,41 +186,6 @@ export const attachTokenCycle = (
     return renderValue(numbers.get(key) ?? 0, spec?.format);
   };
 
-  /**
-   * Shade the tokens the reader may edit, and mark the ones failing.
-   *
-   * Computed tokens are skipped: their controls are locked and refuse
-   * character formatting, so attempting it would be a wasted pass on every
-   * reconcile. Leaving them as plain prose is also the honest signal — they
-   * are not editable.
-   *
-   * Only appearances whose shade actually changed are touched. The document is
-   * reconciled constantly, and repainting settled text every pass would be a
-   * stream of pointless formatting writes.
-   */
-  const applyShading = (
-    invalid: Map<string, string>,
-    errors: Map<string, string>
-  ): void => {
-    const wanted: Array<{ instance: string; shade: TokenShade }> = [];
-
-    for (const { spec } of readTokens(editor)) {
-      if (isComputed(spec)) continue;
-      const key = valueKey(spec);
-      const instance = instanceKey(spec);
-      const shade: TokenShade =
-        invalid.has(key) || errors.has(key) ? 'invalid' : 'input';
-      if (shadeShown.get(instance) === shade) continue;
-      wanted.push({ instance, shade });
-    }
-    if (wanted.length === 0) return;
-
-    const applied = new Set(shadeTokens(editor, wanted));
-    for (const { instance, shade } of wanted) {
-      if (applied.has(instance)) shadeShown.set(instance, shade);
-    }
-  };
-
   const publish = (state: TokenState): TokenState => {
     snapshot = state;
     listeners.forEach((listener) => listener(state));
@@ -258,18 +219,7 @@ export const attachTokenCycle = (
     if (updates.length > 0) {
       applying = true;
       try {
-        const { written } = writeValues(editor, updates, {
-          skipId: editingId ?? undefined
-        });
-        // Replaced text does not reliably keep the formatting it replaced, so
-        // anything just rewritten needs its shade applied again.
-        const rewritten = new Set(written);
-        for (const { spec } of readTokens(editor)) {
-          if (rewritten.has(valueKey(spec))) {
-            shadeShown.delete(instanceKey(spec));
-          }
-        }
-        applyShading(invalid, errors);
+        writeValues(editor, updates, { skipId: editingId ?? undefined });
       } finally {
         applying = false;
       }
@@ -289,8 +239,6 @@ export const attachTokenCycle = (
   const refresh = (): TokenState => {
     const entries = readTokens(editor);
     plan = buildPlan(entries.map(({ spec }) => spec));
-    // Different controls, so nothing is known about what any of them shows.
-    shadeShown.clear();
 
     // A freshly opened envelope carries the values the server rendered into
     // it. Whichever store owns a token ADOPTS its document value when it has

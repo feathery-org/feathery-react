@@ -40,7 +40,9 @@ const isLocalBuild = process.env.BACKEND_ENV === 'local';
  * a hidden input of its own, so the document's own caret would otherwise look
  * like a form field being edited and block the writes entirely.
  */
-const focusedFormInput = (editorElement?: Element | null): HTMLElement | null => {
+const focusedFormInput = (
+  editorElement?: Element | null
+): HTMLElement | null => {
   const active = featheryDoc()?.activeElement as HTMLElement | null;
   if (!active) return null;
   const tag = active.tagName;
@@ -50,12 +52,6 @@ const focusedFormInput = (editorElement?: Element | null): HTMLElement | null =>
   if (editorElement?.contains(active)) return null;
   return active;
 };
-
-/** A token's value key: one per token per row. */
-const valueKeyOf = (spec: any): string =>
-  spec.index === undefined || spec.index === null
-    ? spec.id
-    : `${spec.id}__${spec.index}`;
 
 /**
  * Token access to the form's field values.

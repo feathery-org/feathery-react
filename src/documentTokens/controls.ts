@@ -14,31 +14,6 @@ import { instanceKey, TokenSpec, valueKey } from './plan';
 export const TAG_PREFIX = 'ftk:';
 
 /**
- * A token's background, as one of Word's fifteen highlight colours.
- *
- * Shading the RUNS rather than drawing HTML over the canvas is what makes this
- * correct: it wraps with the text across lines, grows with the value, and can
- * never drift out of position, because it IS the text's own formatting rather
- * than a measurement of where the text was a frame ago.
- *
- * Only EDITABLE tokens are shaded, and that is measured rather than chosen: a
- * computed token's control is locked (`sdtContentLocked`) and silently refuses
- * character formatting — reading `highlightColor` back after setting it
- * returns `NoColor`. So the shading says exactly one thing, which is the thing
- * worth saying: this text is yours to change. A derived value is left as
- * ordinary prose. Word's palette is fixed, with no alpha and no corner radius.
- *
- * `strip.py` drops `w:highlight` from token runs when the envelope is
- * finalised or exported, so none of this reaches the reader.
- */
-export type TokenShade = 'input' | 'invalid';
-
-const HIGHLIGHT: Record<TokenShade, string> = {
-  input: 'Turquoise',
-  invalid: 'Pink'
-};
-
-/**
  * Syncfusion's ContentControlInfo.
  *
  * WARNING: `canEdit` and `canDelete` are LOCK flags whose names say the
@@ -72,8 +47,6 @@ export type EditorLike = {
     /** The selected text, used to prove a range was actually selected. */
     text?: string;
     isEmpty?: boolean;
-    /** Formatting of the selected range. Only `highlightColor` is used. */
-    characterFormat?: { highlightColor?: string };
   };
   editor: {
     insertText: (text: string) => void;
@@ -291,37 +264,4 @@ export const writeValues = (
   });
 
   return { written, missed };
-};
-
-/**
- * Shade each token's text by what kind of token it is.
- *
- * Deliberately NOT wrapped in an undo action: highlighting is presentation,
- * and grouping it with nothing else would put a colour change on the undo
- * stack, so Ctrl+Z would repaint instead of undoing the user's last edit.
- *
- * Returns the appearances whose shade was applied, so a caller can shade only
- * on a change and leave a settled document alone.
- */
-export const shadeTokens = (
-  editor: EditorLike,
-  shades: Array<{ instance: string; shade: TokenShade }>
-): string[] => {
-  if (!editor?.selection?.characterFormat) return [];
-
-  const shaded: string[] = [];
-  withViewportPreserved(editor, () => {
-    for (const { instance, shade } of shades) {
-      const bookmark = bookmarkFor(instance);
-      if (!editor.getBookmarks().includes(bookmark)) continue;
-      editor.selection.selectBookmark(bookmark, true);
-      // Formatting a collapsed selection would set the caret's insertion
-      // format instead, colouring whatever the user types next.
-      if (editor.selection.text === '') continue;
-      const format = editor.selection.characterFormat;
-      if (format) format.highlightColor = HIGHLIGHT[shade];
-      shaded.push(instance);
-    }
-  });
-  return shaded;
 };

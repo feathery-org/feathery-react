@@ -48,24 +48,18 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
       get text() {
         return controls.find((c) => bookmarkFor(addressOf(c)) === selected)
           ?.value;
-      },
-      characterFormat: {
-        set highlightColor(color: string) {
-          log.push(`highlight ${selected} ${color}`);
-        }
       }
     },
     editor: {
       insertText: (text: string) => {
-        const target = controls.find((c) => bookmarkFor(addressOf(c)) === selected);
+        const target = controls.find(
+          (c) => bookmarkFor(addressOf(c)) === selected
+        );
         if (target) {
           log.push(`${keyOf(target)}=${text}`);
           target.value = text;
         }
-      },
-      insertContentControl: (info: ContentControlInfo) =>
-        controls.push({ ...info }),
-      insertBookmark: () => undefined
+      }
     },
     editorHistory: {
       beginUndoAction: () => log.push('undo:begin'),
@@ -83,10 +77,6 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
     setCaret: (info?: ContentControlInfo) => {
       caret = info;
     },
-    /** Log entries that changed a value, as opposed to selecting or shading. */
-    writeLog: () => log.filter((entry) => entry.includes('=')),
-    shadeLog: () => log.filter((entry) => entry.startsWith('highlight ')),
-    clearLog: () => log.splice(0, log.length),
     fire: (event: string, args?: any) =>
       (handlers[event] ?? []).forEach((h: any) => h(args)),
     valueOf: (key: string) =>
@@ -99,17 +89,16 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
 const invoiceEditor = () =>
   fakeEditor([
     control(
-      {
-        id: 'qty',
-        index: 0,
-        source: 'qty',
-        format: { kind: 'number' },
-        validate: { min: 1 }
-      },
+      { id: 'qty', index: 0, source: 'qty', format: { kind: 'number' } },
       '10'
     ),
     control(
-      { id: 'unit_cost', index: 0, source: 'unit_cost', format: { kind: 'currency' } },
+      {
+        id: 'unit_cost',
+        index: 0,
+        source: 'unit_cost',
+        format: { kind: 'currency' }
+      },
       '$150.00'
     ),
     control(
@@ -117,7 +106,12 @@ const invoiceEditor = () =>
       '2'
     ),
     control(
-      { id: 'unit_cost', index: 1, source: 'unit_cost', format: { kind: 'currency' } },
+      {
+        id: 'unit_cost',
+        index: 1,
+        source: 'unit_cost',
+        format: { kind: 'currency' }
+      },
       '$400.00'
     ),
     control(
@@ -143,7 +137,11 @@ const invoiceEditor = () =>
       '$800.00'
     ),
     control(
-      { id: 'subtotal', formula: 'SUM(item_total)', format: { kind: 'currency' } },
+      {
+        id: 'subtotal',
+        formula: 'SUM(item_total)',
+        format: { kind: 'currency' }
+      },
       '$2,300.00'
     ),
     control(
@@ -170,7 +168,7 @@ describe('attachTokenCycle — propagation', () => {
   it('writes nothing on attach when the document is already consistent', () => {
     const editor = invoiceEditor();
     attachTokenCycle(editor);
-    expect(editor.writeLog()).toEqual([]);
+    expect(editor.log).toEqual([]);
   });
 
   it('propagates one edit through the whole chain', () => {
@@ -234,89 +232,13 @@ describe('attachTokenCycle — propagation', () => {
 
   it('groups an edit and everything it moved into one undo action', () => {
     const editor = invoiceEditor();
-    const cycle = attachTokenCycle(editor);
-    editor.clearLog(); // attach shades every token; the edit is what matters
-    cycle.setTokenValue('qty__0', 20);
+    attachTokenCycle(editor).setTokenValue('qty__0', 20);
 
     expect(editor.log.filter((l: string) => l === 'undo:begin')).toHaveLength(
       1
     );
     expect(editor.log[0]).toBe('undo:begin');
-    // Shading follows the write, outside the undo action on purpose: Ctrl+Z
-    // must undo the edit, not a colour.
-    const end = editor.log.indexOf('undo:end');
-    expect(editor.writeLog().every((w: string) => editor.log.indexOf(w) < end)).toBe(
-      true
-    );
-    expect(editor.shadeLog().every((s: string) => editor.log.indexOf(s) > end)).toBe(
-      true
-    );
-  });
-});
-
-describe('attachTokenCycle — shading', () => {
-  it('shades the editable tokens on open', () => {
-    const editor = invoiceEditor();
-    attachTokenCycle(editor);
-
-    expect(editor.shadeLog()).toContain(
-      `highlight ${bookmarkFor('qty__0')} Turquoise`
-    );
-    expect(editor.shadeLog()).toContain(
-      `highlight ${bookmarkFor('tax_percent')} Turquoise`
-    );
-  });
-
-  it('never tries to shade a computed token, whose control refuses formatting', () => {
-    const editor = invoiceEditor();
-    attachTokenCycle(editor);
-
-    // Measured against a real editor: a locked control silently drops the
-    // format, so reading highlightColor back returns NoColor. Attempting it
-    // every reconcile would be a wasted pass.
-    for (const computed of ['item_total__0', 'subtotal', 'total']) {
-      expect(
-        editor.shadeLog().some((s: string) => s.includes(bookmarkFor(computed)))
-      ).toBe(false);
-    }
-  });
-
-  it('leaves settled text alone rather than repainting every reconcile', () => {
-    const editor = invoiceEditor();
-    const cycle = attachTokenCycle(editor);
-    editor.clearLog();
-
-    cycle.reconcile();
-    cycle.reconcile();
-
-    expect(editor.shadeLog()).toEqual([]);
-  });
-
-  it('re-shades a value it just rewrote, since replaced text loses formatting', () => {
-    const editor = invoiceEditor();
-    const cycle = attachTokenCycle(editor);
-    editor.clearLog();
-
-    // unit_cost__0 is rewritten (reformatted to $175.00), so its shade goes
-    // back on; the untouched second row is left alone.
-    cycle.setTokenValue('unit_cost__0', '175');
-
-    expect(editor.shadeLog()).toContain(
-      `highlight ${bookmarkFor('unit_cost__0')} Turquoise`
-    );
-    expect(editor.shadeLog()).not.toContain(
-      `highlight ${bookmarkFor('unit_cost__1')} Turquoise`
-    );
-  });
-
-  it('marks a token failing its own validation', () => {
-    const editor = invoiceEditor();
-    const cycle = attachTokenCycle(editor);
-    editor.clearLog();
-
-    cycle.setTokenValue('qty__0', 0); // the spec declares min: 1
-
-    expect(editor.shadeLog()).toContain(`highlight ${bookmarkFor('qty__0')} Pink`);
+    expect(editor.log[editor.log.length - 1]).toBe('undo:end');
   });
 });
 
@@ -413,13 +335,16 @@ describe('attachTokenCycle — committing on blur', () => {
 describe('attachTokenCycle — state and lifecycle', () => {
   it('surfaces validation failures without blocking the edit', () => {
     const editor = fakeEditor([
-      control({
-        id: 'qty',
-        index: 0,
-        source: 'qty',
-        format: { kind: 'number' },
-        validate: { min: 1 }
-      }, '10')
+      control(
+        {
+          id: 'qty',
+          index: 0,
+          source: 'qty',
+          format: { kind: 'number' },
+          validate: { min: 1 }
+        },
+        '10'
+      )
     ]);
     const state = attachTokenCycle(editor).setTokenValue('qty__0', 0);
 
@@ -431,10 +356,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     const editor = fakeEditor([
       control({ id: 'x', source: 'x', format: { kind: 'number' } }, '4'),
       control({ id: 'broken', formula: '(((', format: { kind: 'number' } }, ''),
-      control(
-        { id: 'ok', formula: 'x * 2', format: { kind: 'number' } },
-        '8'
-      )
+      control({ id: 'ok', formula: 'x * 2', format: { kind: 'number' } }, '8')
     ]);
     const state = attachTokenCycle(editor).setTokenValue('x', 5);
 
@@ -461,9 +383,9 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     editor.controls.push(
       control(
-      { id: 'qty', index: 2, source: 'qty', format: { kind: 'number' } },
-      '1'
-    ),
+        { id: 'qty', index: 2, source: 'qty', format: { kind: 'number' } },
+        '1'
+      ),
       control(
         {
           id: 'unit_cost',
@@ -602,7 +524,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
   it('carries a text token without forcing it through the numeric path', () => {
     const editor = fakeEditor([
-      control({ id: 'client', source: 'client', format: { kind: 'text' } }, 'Acme')
+      control(
+        { id: 'client', source: 'client', format: { kind: 'text' } },
+        'Acme'
+      )
     ]);
     const cycle = attachTokenCycle(editor);
 
@@ -632,7 +557,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
   it('writes a text token set from outside the document', () => {
     const editor = fakeEditor([
-      control({ id: 'client', source: 'client', format: { kind: 'text' } }, 'Acme')
+      control(
+        { id: 'client', source: 'client', format: { kind: 'text' } },
+        'Acme'
+      )
     ]);
     const cycle = attachTokenCycle(editor);
 
@@ -644,7 +572,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
   it('accepts letters typed into a text token', () => {
     const editor = fakeEditor([
-      control({ id: 'client', source: 'client', format: { kind: 'text' } }, 'Acme')
+      control(
+        { id: 'client', source: 'client', format: { kind: 'text' } },
+        'Acme'
+      )
     ]);
     attachTokenCycle(editor);
     editor.setCaret(editor.controls[0]);
@@ -746,9 +677,9 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     editor.fire('doubleClick');
 
-    expect(editor.log.some((l: string) => l.startsWith('select ftk_qty__0'))).toBe(
-      true
-    );
+    expect(
+      editor.log.some((l: string) => l.startsWith('select ftk_qty__0'))
+    ).toBe(true);
   });
 
   it('reads a field-backed token from the form, not from itself', () => {
@@ -772,7 +703,12 @@ describe('attachTokenCycle — state and lifecycle', () => {
         '99'
       ),
       control(
-        { id: 'double', index: 0, formula: 'qty * 2', format: { kind: 'number' } },
+        {
+          id: 'double',
+          index: 0,
+          formula: 'qty * 2',
+          format: { kind: 'number' }
+        },
         '0'
       )
     ]);
@@ -795,7 +731,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
         })
     };
     const editor = fakeEditor([
-      control({ id: 'fee', source: 'fee', format: { kind: 'currency' } }, '$10.00')
+      control(
+        { id: 'fee', source: 'fee', format: { kind: 'currency' } },
+        '$10.00'
+      )
     ]);
     const cycle = attachTokenCycle(editor, { fields });
 
@@ -817,7 +756,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
         })
     };
     const editor = fakeEditor([
-      control({ id: 'fee', source: 'fee', format: { kind: 'currency' } }, '$42.00')
+      control(
+        { id: 'fee', source: 'fee', format: { kind: 'currency' } },
+        '$42.00'
+      )
     ]);
 
     attachTokenCycle(editor, { fields });
