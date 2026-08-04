@@ -20,7 +20,13 @@
  * when the assistant asks it to. This watches the document and reacts.
  */
 
-import { EditorLike, readTokens, tokenAtCaret, writeValues } from './controls';
+import {
+  EditorLike,
+  readTokens,
+  selectTokenValue,
+  tokenAtCaret,
+  writeValues
+} from './controls';
 import { parseValue, renderValue } from './format';
 import {
   buildPlan,
@@ -30,6 +36,12 @@ import {
   validationErrors,
   valueKey
 } from './plan';
+
+/**
+ * SyncFusion's placeholder for an emptied content control. Undo can leave a
+ * token showing this instead of a value, so it is treated as "no text".
+ */
+const PLACEHOLDER = 'Click here or tap to insert text';
 
 /**
  * A token commits when the caret LEAVES it, not on a timer.
@@ -142,7 +154,10 @@ export const attachTokenCycle = (
     texts = new Map(
       entries
         .filter(({ spec }) => (spec.format?.kind ?? 'text') === 'text')
-        .map(({ spec, value }) => [valueKey(spec), value])
+        .map(({ spec, value }) => [
+          valueKey(spec),
+          value === PLACEHOLDER ? '' : value
+        ])
     );
     // One full pass on open, so a document is consistent before anyone
     // touches it — a template change could have left it stale.
@@ -294,6 +309,13 @@ export const attachTokenCycle = (
       return;
     }
 
+    if (entry.value === PLACEHOLDER) {
+      // Undo emptied the control; put its value back rather than reading the
+      // placeholder in as text.
+      recompute();
+      return;
+    }
+
     if ((plan.specs.get(left)?.format?.kind ?? 'text') === 'text') {
       if (texts.get(left) !== entry.value) {
         texts.set(left, entry.value);
@@ -327,22 +349,55 @@ export const attachTokenCycle = (
     refresh();
   };
 
+  /**
+   * Double-clicking inside a token selects the CONTROL, which is locked
+   * against deletion, so the selection cannot be typed over — the gesture
+   * looks broken. Reselect the value itself, excluding the markers, which is
+   * what "select the word I clicked" should mean here.
+   */
+  const onDoubleClick = (): void => {
+    const spec = tokenAtCaret(editor);
+    if (!spec) return;
+    selectTokenValue(editor, spec);
+  };
+
   editor.addEventListener?.('selectionChange', onSelectionChange);
   editor.addEventListener?.('keyDown', onKeyDown);
+  editor.addEventListener?.('doubleClick', onDoubleClick);
   editor.addEventListener?.('documentChange', onDocumentChange);
   refresh();
 
+  /**
+   * The text a token should be showing right now.
+   *
+   * A token always matches its value: a number falls back to 0 and text to
+   * the empty string unless the field or declaration says otherwise. That is
+   * what makes the placeholder undo can leave behind self-correcting.
+   */
+  const expectedText = (id: string): string => {
+    const spec = plan.specs.get(id);
+    const kind = spec?.format?.kind ?? 'text';
+    if (kind === 'text') return texts.get(id) ?? '';
+    return renderValue(values.get(id) ?? 0, spec?.format);
+  };
+
   const recompute = (): TokenState => {
     recalc(plan, values);
-    // Offer every computed value, not just the ones the model moved: the
-    // write compares against the document, so this also repairs a control
-    // whose text drifted away from its value.
-    const derived = new Map<string, number>();
-    for (const id of plan.order) {
-      const value = values.get(id);
-      if (value !== undefined) derived.set(id, value);
+    // Offer EVERY token, not just the ones the model moved: the write
+    // compares against the document, so this repairs any control whose text
+    // drifted from its value — including a placeholder left behind by undo.
+    const updates: Array<{ id: string; text: string }> = [];
+    for (const id of plan.specs.keys()) {
+      if (id === editingId) continue;
+      updates.push({ id, text: expectedText(id) });
     }
-    flush(derived, editingId ?? undefined);
+
+    applying = true;
+    try {
+      writeValues(editor, updates, { skipId: editingId ?? undefined });
+    } finally {
+      applying = false;
+    }
     return publish();
   };
 
@@ -358,6 +413,7 @@ export const attachTokenCycle = (
     detach: () => {
       editor.removeEventListener?.('selectionChange', onSelectionChange);
       editor.removeEventListener?.('keyDown', onKeyDown);
+      editor.removeEventListener?.('doubleClick', onDoubleClick);
       editor.removeEventListener?.('documentChange', onDocumentChange);
       listeners.clear();
     }

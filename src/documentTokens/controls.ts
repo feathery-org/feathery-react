@@ -155,6 +155,18 @@ const selectValue = (editor: EditorLike, instance: string): boolean => {
 };
 
 /**
+ * Select a token's value — the text only, not the control around it.
+ *
+ * Exported so a double-click can replace SyncFusion's default, which selects
+ * the whole content control. That control is locked against deletion, so the
+ * selection cannot be typed over and the gesture appears to do nothing.
+ */
+export const selectTokenValue = (
+  editor: EditorLike,
+  spec: TokenSpec
+): boolean => selectValue(editor, instanceKey(spec));
+
+/**
  * Write new rendered values into their controls.
  *
  * `resetContentControlData` is NOT a write API — measured, it resets a control

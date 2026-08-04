@@ -43,6 +43,7 @@ const fakeEditor = (controls: ContentControlInfo[]) => {
       getContentControlInfo: () => caret,
       selectBookmark: (name: string) => {
         selected = name;
+        log.push(`select ${name}`);
       }
     },
     editor: {
@@ -584,6 +585,48 @@ describe('attachTokenCycle — state and lifecycle', () => {
     cycle.recompute();
 
     expect(editor.valueOf('subtotal')).toBe('$2,300.00');
+  });
+
+  it('replaces the placeholder undo can leave behind', () => {
+    const editor = invoiceEditor();
+    const cycle = attachTokenCycle(editor);
+
+    // Undo emptied a control: SyncFusion shows its placeholder.
+    editor.controls[0].value = 'Click here or tap to insert text';
+    cycle.recompute();
+
+    expect(editor.valueOf('qty__0')).toBe('10');
+  });
+
+  it('defaults a number token to zero and a text token to empty', () => {
+    const editor = fakeEditor([
+      control({ id: 'fee', source: 'fee', format: { kind: 'currency' } }, ''),
+      control({ id: 'note', source: 'note', format: { kind: 'text' } }, '')
+    ]);
+    const cycle = attachTokenCycle(editor);
+
+    editor.controls[0].value = 'Click here or tap to insert text';
+    editor.controls[1].value = 'Click here or tap to insert text';
+    cycle.recompute();
+
+    expect(editor.valueOf('fee')).toBe('$0.00');
+    expect(editor.valueOf('note')).toBe('');
+  });
+
+  it('selects the value, not the control, on double click', () => {
+    // SyncFusion selects the whole control, which is locked against deletion,
+    // so the selection cannot be typed over.
+    const editor = invoiceEditor();
+    attachTokenCycle(editor);
+    editor.setCaret(editor.controls[0]);
+    editor.fire('selectionChange');
+    editor.log.length = 0;
+
+    editor.fire('doubleClick');
+
+    expect(editor.log.some((l: string) => l.startsWith('select ftk_qty__0'))).toBe(
+      true
+    );
   });
 
   it('stops listening on detach', () => {
