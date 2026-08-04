@@ -8,6 +8,7 @@ const DOCUMENT_TOOL_NAMES = new Set([
 ]);
 const RETAINED_DOCUMENT_RESULTS = 2;
 const DIGEST_MARKER = '[digested client-side: full result in earlier turn]';
+const INTERRUPTED_TOOL_ERROR = 'Tool call interrupted.';
 const ANNOUNCEMENT_LIMIT = 300;
 
 type MessagePart = UIMessage['parts'][number];
@@ -30,6 +31,15 @@ const documentToolName = (part: MessagePart): string | undefined => {
   return typeof name === 'string' && DOCUMENT_TOOL_NAMES.has(name)
     ? name
     : undefined;
+};
+
+const isDanglingToolPart = (part: MessagePart): boolean => {
+  const record = part as UnknownRecord;
+  const type = typeof record.type === 'string' ? record.type : '';
+  return (
+    (type === 'dynamic-tool' || type.startsWith('tool-')) &&
+    (record.state === 'input-streaming' || record.state === 'input-available')
+  );
 };
 
 const summarizeGroups = (groups: unknown): UnknownRecord | undefined => {
@@ -79,9 +89,10 @@ const digestDocumentOutput = (value: unknown): UnknownRecord => {
 };
 
 /**
- * Compact completed document-tool outputs only in the outbound copy. Results
- * in the active turn remain byte-for-byte intact because the SDK needs them to
- * match toolCallId to output before it can continue the turn.
+ * Repair dangling historical tool calls and compact completed document-tool
+ * outputs only in the outbound copy. Parts in the active turn remain
+ * byte-for-byte intact because the SDK may still be streaming or matching
+ * their toolCallId to an output.
  */
 export function prepareAssistantMessagesForRequest(
   messages: UIMessage[]
@@ -105,6 +116,20 @@ export function prepareAssistantMessagesForRequest(
 
     for (let j = parts.length - 1; j >= 0; j--) {
       const part = parts[j] as MessagePart & UnknownRecord;
+      if (
+        message.role === 'assistant' &&
+        !currentTurn &&
+        isDanglingToolPart(part)
+      ) {
+        parts[j] = {
+          ...part,
+          state: 'output-error',
+          errorText: INTERRUPTED_TOOL_ERROR
+        } as MessagePart;
+        partsChanged = true;
+        changed = true;
+        continue;
+      }
       if (!documentToolName(part) || part.state !== 'output-available')
         continue;
 

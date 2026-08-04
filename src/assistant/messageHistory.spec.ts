@@ -43,6 +43,25 @@ const tool = (
 
 const outputOf = (message: UIMessage): any => (message.parts[0] as any).output;
 
+const pendingTool = (
+  id: string,
+  name: string,
+  state: 'input-streaming' | 'input-available',
+  dynamic = false
+): UIMessage => ({
+  id: `message-${id}`,
+  role: 'assistant',
+  parts: [
+    {
+      type: dynamic ? 'dynamic-tool' : `tool-${name}`,
+      ...(dynamic ? { toolName: name } : {}),
+      toolCallId: id,
+      state,
+      input: { query: id }
+    } as any
+  ]
+});
+
 describe('assistant outbound message history', () => {
   it('digests old document results while retaining summaries under 1KB', () => {
     const inventory = tool('inventory', 'getDocumentInventory', {
@@ -166,29 +185,76 @@ describe('assistant outbound message history', () => {
     expect(JSON.stringify(digest).length).toBeLessThan(1_000);
   });
 
-  it('leaves pending and non-document tools untouched', () => {
-    const pending = tool('pending', 'getDocumentInventory', { wait: true });
-    (pending.parts[0] as any).state = 'input-available';
-    delete (pending.parts[0] as any).output;
+  it('closes dangling historical tool calls as interrupted before sending', () => {
+    const streaming = pendingTool(
+      'streaming',
+      'readAttachment',
+      'input-streaming',
+      true
+    );
+    const available = pendingTool(
+      'available',
+      'getDocumentInventory',
+      'input-available'
+    );
+    const messages = [user('turn-1'), streaming, available, user('turn-2')];
+    const snapshot = JSON.stringify(messages);
+
+    const prepared = prepareAssistantRequest({
+      id: 'chat-id',
+      messages,
+      body: undefined,
+      trigger: 'submit-message',
+      messageId: undefined
+    }).body.messages as UIMessage[];
+
+    expect(JSON.stringify(messages)).toBe(snapshot);
+    expect(prepared).not.toBe(messages);
+    expect(prepared[1].parts[0]).toEqual({
+      ...(streaming.parts[0] as any),
+      state: 'output-error',
+      errorText: 'Tool call interrupted.'
+    });
+    expect(prepared[2].parts[0]).toEqual({
+      ...(available.parts[0] as any),
+      state: 'output-error',
+      errorText: 'Tool call interrupted.'
+    });
+  });
+
+  it('leaves active-turn streaming tool parts untouched', () => {
+    const streaming = pendingTool(
+      'streaming',
+      'readAttachment',
+      'input-streaming',
+      true
+    );
+    const available = pendingTool(
+      'available',
+      'getDocumentInventory',
+      'input-available'
+    );
+    const messages = [user('turn'), streaming, available];
+    const snapshot = JSON.stringify(messages);
+
+    const prepared = prepareAssistantMessagesForRequest(messages);
+
+    expect(prepared).toBe(messages);
+    expect(JSON.stringify(prepared)).toBe(snapshot);
+  });
+
+  it('leaves normal histories byte-identical', () => {
     const unrelated = tool('other', 'setFieldValue', {
       ok: true,
       echo: heavy('field')
     });
-    const messages = [
-      user('turn-1'),
-      pending,
-      user('turn-2'),
-      unrelated,
-      user('turn-3'),
-      tool('new-1', 'getDocumentInventory', { inventory: [heavy('new-1')] }),
-      user('turn-4'),
-      tool('new-2', 'findDocumentOccurrences', {
-        ok: true,
-        occurrences: [heavy('new-2')]
-      })
-    ];
+    const messages = [user('turn-1'), unrelated, user('turn-2')];
+    const snapshot = JSON.stringify(messages);
 
-    expect(prepareAssistantMessagesForRequest(messages)).toBe(messages);
+    const prepared = prepareAssistantMessagesForRequest(messages);
+
+    expect(prepared).toBe(messages);
+    expect(JSON.stringify(prepared)).toBe(snapshot);
   });
 
   it('preserves the default transport body contract and thread context', () => {
