@@ -352,12 +352,16 @@ describe('attachTokenCycle — state and lifecycle', () => {
     const cycle = attachTokenCycle(editor);
 
     editor.controls.push(
-      control({ id: 'qty_3', source: 'qty' }, '1'),
-      control({ id: 'unit_cost_3', source: 'unit_cost' }, '$50.00'),
+      control({ id: 'qty', index: 2, source: 'qty' }, '1'),
+      control(
+        { id: 'unit_cost', index: 2, source: 'unit_cost' },
+        '$50.00'
+      ),
       control(
         {
-          id: 'item_total_3',
-          formula: 'qty_3 * unit_cost_3',
+          id: 'item_total',
+          index: 2,
+          formula: 'qty * unit_cost',
           format: { kind: 'currency' }
         },
         '$50.00'
@@ -365,7 +369,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     );
     cycle.refresh();
 
-    // SUM(item_total_*) picked up the new row with no formula edit anywhere.
+    // SUM(item_total) picked up the new row with no formula edit anywhere.
     expect(editor.valueOf('subtotal')).toBe('$2,350.00');
   });
 
@@ -376,7 +380,7 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(cycle.getState().specs).toHaveLength(0);
 
     editor.controls.push(
-      control({ id: 'qty__0', source: 'qty' }, '4'),
+      control({ id: 'qty', source: 'qty' }, '4'),
       control(
         { id: 'double', formula: 'qty * 2', format: { kind: 'number' } },
         '0'
