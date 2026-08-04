@@ -323,23 +323,33 @@ export default function DocumentEditorContainer({
         // any, the shared signer field covers every role instead.
         const roleSigners = (targetAction?.envelope_signers ?? [])
           .filter((entry: any) => entry.document_id === activeDocumentId)
-          .map((entry: any) => ({
-            document_id: entry.document_id,
-            role_id: entry.role_id,
-            email: fieldValues[entry.field_key]?.toString() ?? ''
-          }));
+          .map((entry: any) => {
+            const email = fieldValues[entry.field_key]?.toString() ?? '';
+            return {
+              document_id: entry.document_id,
+              role_id: entry.role_id,
+              email,
+              // Flagged entries are the ones this filler opens and signs
+              // inline.
+              filler:
+                !!fillerEmail &&
+                email.toLowerCase() === fillerEmail.toLowerCase()
+            };
+          });
         const signers = (
           roleSigners.length || !activeDocumentId
             ? roleSigners
             : // role_id left off rather than nulled - the backend rejects an
               // explicit null, and omitting it covers every role.
-              [{ document_id: activeDocumentId, email: fillerEmail }]
+              [
+                {
+                  document_id: activeDocumentId,
+                  email: fillerEmail,
+                  filler: true
+                }
+              ]
         ).filter((entry: any) => entry.email);
-        finalized = await client.finalizeEnvelope(
-          envelope.id,
-          signers,
-          fillerEmail
-        );
+        finalized = await client.finalizeEnvelope(envelope.id, signers);
         setFinalizedId(envelope.id);
       }
 

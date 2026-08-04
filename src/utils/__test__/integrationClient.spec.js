@@ -553,7 +553,7 @@ describe('IntegrationClient', () => {
           envelope_action: 'fill',
           // A document with no role falls back to the shared signer field,
           // and role_id is left off rather than nulled. That email is the
-          // filler's own, so each entry is flagged as theirs to sign inline.
+          // filler's own, so they sign it themselves.
           signers: [
             { document_id: 'doc1', email: 'test@example.com', filler: true },
             { document_id: 'doc2', email: 'test@example.com', filler: true }
