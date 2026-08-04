@@ -212,29 +212,24 @@ export const getFormContext = (formUuid: string) => {
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
+    // `rows` and `fuserKey` are deliberately not forwarded: writing
+    // unverified entries is the mapping modal's job, and the fuser always
+    // comes from the current user.
     dataHubAction: ({
       hubId,
       operation,
       entryId,
       data,
       where,
-      includeDrafts,
-      skipValidation
-    }: // Not in @feathery/client-utils' HubActionOptions yet. `rows` and
-    // `fuserKey` are deliberately not forwarded - writing drafts is the mapping
-    // modal's job and the fuser always comes from the current user.
-    HubActionOptions & {
-      includeDrafts?: 'all' | 'onlyDrafts';
-      skipValidation?: boolean;
-    }) =>
+      unverifiedData
+    }: HubActionOptions) =>
       formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
         data,
         where,
-        includeDrafts,
-        skipValidation
+        unverifiedData
       }),
     generateDocuments: ({
       documentIds,

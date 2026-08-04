@@ -32,6 +32,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
   apiFetch,
+  dataHubAction as apiDataHubAction,
   extractAIDocument,
   ExtractionActionOptions,
   forwardInboxEmail,
@@ -41,6 +42,7 @@ import {
   getCdnUrl,
   getS3Url,
   getStaticUrl,
+  HubActionOptions,
   inviteFormCollaborator as apiInviteFormCollaborator,
   PageSelectionInput,
   parseAPIError,
@@ -1179,75 +1181,17 @@ export default class FeatheryClient extends IntegrationClient {
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 
-  async dataHubAction(options: {
-    hubId: string;
-    operation: string;
-    entryId?: string;
-    data?: Record<string, any>;
-    where?: any[];
-    rows?: Record<string, any>[];
-    // `get` only. Omitted means saved rows only; when set, each entry carries
-    // a `draft` boolean.
-    includeDrafts?: 'all' | 'onlyDrafts';
-    // `finalize` only: skip the field-rule / required / uniqueness gate, which
-    // draft rows were never held to on the way in.
-    skipValidation?: boolean;
-  }) {
+  // Delegates to client-utils so the browser and the server-side lambdas share
+  // one request shape. Unverified-entry operations are fuser-scoped, and this
+  // is the layer that knows who the current user is; an explicit fuserKey
+  // still wins.
+  async dataHubAction(options: HubActionOptions) {
     const { sdkKey, userId } = initInfo();
-    const {
-      hubId,
-      operation,
-      entryId,
-      data,
-      where,
-      rows,
-      includeDrafts,
-      skipValidation
-    } = options;
-    // get/create/update/delete must NOT carry a fuser_key so their requests stay
-    // byte-identical to the pre-feature behavior. `finalize` isn't scoped either.
-    const FUSER_SCOPED_OPS = [
-      'stage',
-      'get_staged',
-      'update_staged',
-      'delete_staged'
-    ];
-    const resolvedFuserKey = FUSER_SCOPED_OPS.includes(operation)
-      ? userId
-      : undefined;
-    const url = `${API_URL}hub/${hubId}/action/`;
-    const res = await apiFetch(
+    return apiDataHubAction(
       sdkKey,
-      url,
-      {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-        body: JSON.stringify({
-          operation,
-          entry_id: entryId,
-          data,
-          rows,
-          fuser_key: resolvedFuserKey,
-          // Wire key keeps the backend's `include_staged` spelling.
-          ...(includeDrafts ? { include_staged: includeDrafts } : {}),
-          ...(skipValidation ? { skip_validation: true } : {}),
-          // Map each condition to the backend's snake_case shape.
-          where: where?.map((cond: any) =>
-            'entryId' in cond
-              ? { entry_id: cond.entryId }
-              : { field_id: cond.fieldId, value: cond.value }
-          ),
-          form_key: this.formKey
-        })
-      },
-      false
+      { fuserKey: userId, ...options },
+      this.formKey
     );
-    if (res) {
-      if (res.status === 204) return null;
-      if (res.ok) return await res.json();
-      throw Error(parseAPIError(await res.json()));
-    }
-    return null;
   }
 
   async getHubSchemas(hubIds: string[]) {

@@ -235,7 +235,7 @@ function DataMappingModal({
     const results = await Promise.all(
       hubList.map((hub) =>
         client
-          .dataHubAction({ hubId: hub.id, operation: 'get_staged' })
+          .dataHubAction({ hubId: hub.id, operation: 'get_unverified' })
           .then((r: any) => ({
             hubId: hub.id,
             count: (r?.entries || []).length
@@ -250,7 +250,7 @@ function DataMappingModal({
     return counts;
   };
 
-  // Entry screen: in-memory draft -> mapping step, else leftover dirty rows ->
+  // Entry screen: in-memory draft -> mapping step, else leftover unverified rows ->
   // resume, else dropzone.
   useEffect(() => {
     let cancelled = false;
@@ -420,9 +420,9 @@ function DataMappingModal({
       return { ...prev, [activeHubId]: { ...cur, mapping } };
     });
 
-  // Rows are left dirty on purpose: dirty rows are exempt from the hub's field
+  // Rows are left unverified on purpose: unverified rows are exempt from the hub's field
   // requirements, so an import never fails validation. Nothing calls `finalize`.
-  // `stage` clears this user's existing dirty rows first, so this replaces them.
+  // `stage` clears this user's existing unverified rows first, so this replaces them.
   const handleConfirm = async () => {
     setBusy(true);
     setActionError('');
@@ -433,7 +433,11 @@ function DataMappingModal({
         if (!st) continue;
         const rows = buildStagedRows(sheets, st.mapping);
         if (rows.length === 0) continue;
-        await client.dataHubAction({ hubId: hub.id, operation: 'stage', rows });
+        await client.dataHubAction({
+          hubId: hub.id,
+          operation: 'upload_unverified',
+          rows
+        });
       }
     } catch (e: any) {
       setActionError(e?.message || 'Failed to save the mapped rows.');
@@ -640,7 +644,7 @@ function DataMappingModal({
         <button
           type='button'
           disabled={busy}
-          // `stage` clears the old dirty rows, so no delete call is needed.
+          // `stage` clears the old unverified rows, so no delete call is needed.
           onClick={() => {
             setActionError('');
             setView('import');
