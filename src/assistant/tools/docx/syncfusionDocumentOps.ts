@@ -7005,7 +7005,8 @@ function applyCopiedTableAppearance(
         banding,
         headerRows,
         row,
-        column
+        column,
+        { rows: target.rows.length, columns: targetRow.cells.length }
       );
       const before = cellAppearanceAt(target, row, column);
       if (appearanceEquals(desired, before)) {
@@ -7048,7 +7049,8 @@ function applyCopiedTableAppearance(
         banding,
         headerRows,
         rowIndex,
-        column
+        column,
+        { rows: after.rows.length, columns: row.cells.length }
       );
       const actual = cellAppearanceAt(after, rowIndex, column);
       if (!appearanceEquals(expected, actual))
