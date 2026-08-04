@@ -3619,6 +3619,45 @@ describe('insert_table requires same-batch cell writes', () => {
     }
   });
 
+  it('real SDK: atomic cell text remains verifiable while inheriting a sibling table', () => {
+    const sfdt = locationScheduleSfdt();
+    sfdt.sections[0].blocks.splice(2, 0, { inlines: [{ text: '' }] });
+    const ed = makeRealDocumentEditor(sfdt);
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'filled-table-with-inheritance',
+        edits: [
+          {
+            op: 'insert_table',
+            anchor: '0;3',
+            rows: 2,
+            columns: 3,
+            initialCells: [
+              ['Loc #', 'Address', 'City'],
+              ['0094', '2 King St W', 'Toronto']
+            ]
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'insert_table' });
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+      expect(blockTexts(ed)).toEqual(
+        expect.arrayContaining([
+          'Loc #',
+          'Address',
+          'City',
+          '0094',
+          '2 King St W',
+          'Toronto'
+        ])
+      );
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: insert_table position after preserves both neighboring paragraphs and lands at the declared address', () => {
     const ed = makeRealDocumentEditor({
       sections: [
