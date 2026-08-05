@@ -6013,13 +6013,18 @@ export const ANCHORED_OP_HANDLERS: {
     const write = appearanceWriteFromOp(op);
     const current = liveTableAppearance(editor, tableAnchor);
     const before = cellAppearanceAt(current, row, column);
-    writeAppearance(editor, block.anchor, write, 'cell');
+    const transaction = runAppearanceTransaction(editor, (record) => {
+      record({
+        cellAnchor: block.anchor,
+        write: restoreWriteFor(before, write)
+      });
+      writeAppearance(editor, block.anchor, write, 'cell');
+      return { ...emptyAppearanceReport(), cellsWritten: 1 };
+    });
     return {
       appearanceWrite: {
-        report: { ...emptyAppearanceReport(), cellsWritten: 1 },
-        restores: [
-          { cellAnchor: block.anchor, write: restoreWriteFor(before, write) }
-        ]
+        report: transaction.result,
+        restores: transaction.restores
       }
     };
   },
@@ -6042,34 +6047,36 @@ export const ANCHORED_OP_HANDLERS: {
         'row_not_found',
         `Row ${row} of table "${tableAnchor}" has no cells.`
       );
-    const restores: AppearanceRestore[] = [];
-    if (isHeaderField != null) {
-      const wanted = !!isHeaderField;
-      if (wanted !== !!current.rows[row].isHeader) {
-        writeRowIsHeader(editor, block.anchor, wanted);
-        restores.push({
-          cellAnchor: block.anchor,
-          rowIsHeader: !!current.rows[row].isHeader
-        });
+    const transaction = runAppearanceTransaction(editor, (record) => {
+      if (isHeaderField != null) {
+        const wanted = !!isHeaderField;
+        if (wanted !== !!current.rows[row].isHeader) {
+          record({
+            cellAnchor: block.anchor,
+            rowIsHeader: !!current.rows[row].isHeader
+          });
+          writeRowIsHeader(editor, block.anchor, wanted);
+        }
       }
-    }
-    let cellsWritten = 0;
-    if (write) {
-      // One selectRow write would set every cell at once, but the RESTORE has to
-      // be per cell (the cells may have differed before), so the write is per
-      // cell too - one path, and the inverse is exact by construction.
-      for (let column = 0; column < cells.length; column++) {
-        const cellAnchor = cellAnchorOf(tableAnchor, row, column);
-        const before = cellAppearanceAt(current, row, column);
-        writeAppearance(editor, cellAnchor, write, 'cell');
-        restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
-        cellsWritten++;
+      let cellsWritten = 0;
+      if (write) {
+        // One selectRow write would set every cell at once, but the RESTORE has
+        // to be per cell (the cells may have differed before), so the write is
+        // per cell too - one path, and the inverse is exact by construction.
+        for (let column = 0; column < cells.length; column++) {
+          const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+          const before = cellAppearanceAt(current, row, column);
+          record({ cellAnchor, write: restoreWriteFor(before, write) });
+          writeAppearance(editor, cellAnchor, write, 'cell');
+          cellsWritten++;
+        }
       }
-    }
+      return { ...emptyAppearanceReport(), cellsWritten, rowsWritten: 1 };
+    });
     return {
       appearanceWrite: {
-        report: { ...emptyAppearanceReport(), cellsWritten, rowsWritten: 1 },
-        restores
+        report: transaction.result,
+        restores: transaction.restores
       }
     };
   },
@@ -7094,6 +7101,39 @@ function replayAppearanceRestores(
   }
 }
 
+/**
+ * Appearance is not tracked by SyncFusion. Keep every helper that writes it
+ * atomic by owning its inverse before the corresponding live write and
+ * replaying the complete local journal when either a write or its verification
+ * throws. Successful callers receive that same journal for later group reject.
+ */
+function runAppearanceTransaction<T>(
+  editor: LiveEditor,
+  work: (record: (restore: AppearanceRestore) => void) => T
+): { result: T; restores: AppearanceRestore[] } {
+  const restores: AppearanceRestore[] = [];
+  try {
+    return {
+      result: work((restore) => restores.push(restore)),
+      restores
+    };
+  } catch (error) {
+    try {
+      replayAppearanceRestores(editor, restores);
+    } catch (rollbackError) {
+      throw new OpError(
+        'appearance_rollback_failed',
+        'A table appearance write failed and its exact restore did not complete.',
+        [
+          `write failure: ${describeUnexpectedError(error)}`,
+          `restore failure: ${describeUnexpectedError(rollbackError)}`
+        ]
+      );
+    }
+    throw error;
+  }
+}
+
 const emptyAppearanceReport = (): AppearanceWriteReport => ({
   cellsWritten: 0,
   rowsWritten: 0,
@@ -7114,32 +7154,33 @@ function applyBandingRows(
   fromRow: number
 ): AppearanceWriteOutcome {
   const report = emptyAppearanceReport();
-  const restores: AppearanceRestore[] = [];
   const shadings = rowShadings(current);
   const start = Math.max(fromRow, banding.headerRows);
   let skipped = 0;
-  for (let row = start; row < current.rows.length; row++) {
-    const wanted = bandedShadingForRow(banding, row);
-    if (wanted === undefined) continue;
-    if (shadings[row] === undefined) {
-      skipped++;
-      continue;
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (let row = start; row < current.rows.length; row++) {
+      const wanted = bandedShadingForRow(banding, row);
+      if (wanted === undefined) continue;
+      if (shadings[row] === undefined) {
+        skipped++;
+        continue;
+      }
+      if (shadings[row] === wanted) continue;
+      const cells = current.rows[row].cells;
+      for (let column = 0; column < cells.length; column++) {
+        const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+        const before = cellAppearanceAt(current, row, column);
+        const write: AppearanceWrite = { shading: wanted };
+        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        report.cellsWritten++;
+      }
+      report.rowsWritten++;
     }
-    if (shadings[row] === wanted) continue;
-    const cells = current.rows[row].cells;
-    for (let column = 0; column < cells.length; column++) {
-      const cellAnchor = cellAnchorOf(tableAnchor, row, column);
-      const before = cellAppearanceAt(current, row, column);
-      const write: AppearanceWrite = { shading: wanted };
-      writeAppearance(editor, cellAnchor, write, 'cell');
-      restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
-      report.cellsWritten++;
-    }
-    report.rowsWritten++;
-  }
+  });
   report.banding = banding;
   if (skipped) report.rowsSkippedMixed = skipped;
-  return { report, restores };
+  return { report, restores: transaction.restores };
 }
 
 /** Enforce only the inserted rows' resolved fallback fills. */
@@ -7150,26 +7191,27 @@ function applyPlannedRowShadings(
   planned: Array<{ row: number; shading: string | null }>
 ): AppearanceWriteOutcome {
   const report = emptyAppearanceReport();
-  const restores: AppearanceRestore[] = [];
-  for (const { row, shading } of planned) {
-    const cells = current.rows[row]?.cells ?? [];
-    let rowTouched = false;
-    for (let column = 0; column < cells.length; column++) {
-      const before = cellAppearanceAt(current, row, column);
-      if ((before?.shading ?? null) === shading) {
-        report.cellsUnchanged++;
-        continue;
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (const { row, shading } of planned) {
+      const cells = current.rows[row]?.cells ?? [];
+      let rowTouched = false;
+      for (let column = 0; column < cells.length; column++) {
+        const before = cellAppearanceAt(current, row, column);
+        if ((before?.shading ?? null) === shading) {
+          report.cellsUnchanged++;
+          continue;
+        }
+        const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+        const write: AppearanceWrite = { shading };
+        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        report.cellsWritten++;
+        rowTouched = true;
       }
-      const cellAnchor = cellAnchorOf(tableAnchor, row, column);
-      const write: AppearanceWrite = { shading };
-      writeAppearance(editor, cellAnchor, write, 'cell');
-      restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
-      report.cellsWritten++;
-      rowTouched = true;
+      if (rowTouched) report.rowsWritten++;
     }
-    if (rowTouched) report.rowsWritten++;
-  }
-  return { report, restores };
+  });
+  return { report, restores: transaction.restores };
 }
 
 function runCopyTableFormat(
@@ -7229,90 +7271,96 @@ function applyCopiedTableAppearance(
   const banding = options.banding ?? detectTableBanding(source);
   const headerRows = banding?.headerRows ?? inferHeaderRows(source);
   const report = emptyAppearanceReport();
-  const restores: AppearanceRestore[] = [];
   if (source.styleName) report.sourceStyleName = source.styleName;
   if (banding) report.banding = banding;
-  target.rows.forEach((targetRow, row) => {
-    // The same mapping copiedCellAppearance uses, so the header flag and the
-    // cell appearance can never be taken from two different source rows.
-    const mapped = source.rows[sourceRowForTarget(source, headerRows, row)];
-    let rowTouched = false;
-    const wantsHeader = !!mapped?.isHeader;
-    if (wantsHeader !== !!targetRow.isHeader && targetRow.cells.length) {
-      const cellAnchor = cellAnchorOf(targetAnchor, row, 0);
-      writeRowIsHeader(editor, cellAnchor, wantsHeader);
-      restores.push({ cellAnchor, rowIsHeader: !!targetRow.isHeader });
-      rowTouched = true;
-    }
-    for (let column = 0; column < targetRow.cells.length; column++) {
-      const desired = copiedCellAppearance(
-        source,
-        banding,
-        headerRows,
-        row,
-        column,
-        { rows: target.rows.length, columns: targetRow.cells.length }
-      );
-      const before = cellAppearanceAt(target, row, column);
-      if (appearanceEquals(desired, before)) {
-        report.cellsUnchanged++;
-        continue;
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    target.rows.forEach((targetRow, row) => {
+      // The same mapping copiedCellAppearance uses, so the header flag and the
+      // cell appearance can never be taken from two different source rows.
+      const mapped = source.rows[sourceRowForTarget(source, headerRows, row)];
+      let rowTouched = false;
+      const wantsHeader = !!mapped?.isHeader;
+      if (wantsHeader !== !!targetRow.isHeader && targetRow.cells.length) {
+        const cellAnchor = cellAnchorOf(targetAnchor, row, 0);
+        record({ cellAnchor, rowIsHeader: !!targetRow.isHeader });
+        writeRowIsHeader(editor, cellAnchor, wantsHeader);
+        rowTouched = true;
       }
-      const cellAnchor = cellAnchorOf(targetAnchor, row, column);
-      const write = appearanceWriteFor(desired, {
-        shading: true,
-        verticalAlignment: true,
-        borders: true
-      });
-      writeAppearance(editor, cellAnchor, write, 'cell');
-      restores.push({ cellAnchor, write: restoreWriteFor(before, write) });
-      report.cellsWritten++;
-      rowTouched = true;
-    }
-    if (rowTouched) report.rowsWritten++;
-  });
-  const postWriteSfdt = serializeSfdt(editor);
-  const after = collectTableAppearance(
-    tableBlockAt(postWriteSfdt, targetAnchor)
-  );
-  if (!after)
-    throw new OpError(
-      'table_not_found',
-      `No table answers to the anchor "${targetAnchor}". Re-read the structure and use a current anchor.`
-    );
-  const mismatches: string[] = [];
-  after.rows.forEach((row, rowIndex) => {
-    const mapped =
-      source.rows[sourceRowForTarget(source, headerRows, rowIndex)];
-    if (!!row.isHeader !== !!mapped?.isHeader)
-      mismatches.push(
-        `row ${rowIndex} header: expected ${!!mapped?.isHeader}, got ${!!row.isHeader}`
-      );
-    for (let column = 0; column < row.cells.length; column++) {
-      const expected = copiedCellAppearance(
-        source,
-        banding,
-        headerRows,
-        rowIndex,
-        column,
-        { rows: after.rows.length, columns: row.cells.length }
-      );
-      const actual = cellAppearanceAt(after, rowIndex, column);
-      if (!appearanceEquals(expected, actual))
-        mismatches.push(
-          `row ${rowIndex}, column ${column}: expected ${JSON.stringify(
-            expected
-          )}, got ${JSON.stringify(actual)}`
+      for (let column = 0; column < targetRow.cells.length; column++) {
+        const desired = copiedCellAppearance(
+          source,
+          banding,
+          headerRows,
+          row,
+          column,
+          { rows: target.rows.length, columns: targetRow.cells.length }
         );
-    }
-  });
-  if (mismatches.length)
-    throw new OpError(
-      'inherited_appearance_mismatch',
-      `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
-      mismatches
+        const before = cellAppearanceAt(target, row, column);
+        if (appearanceEquals(desired, before)) {
+          report.cellsUnchanged++;
+          continue;
+        }
+        const cellAnchor = cellAnchorOf(targetAnchor, row, column);
+        const write = appearanceWriteFor(desired, {
+          shading: true,
+          verticalAlignment: true,
+          borders: true
+        });
+        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        report.cellsWritten++;
+        rowTouched = true;
+      }
+      if (rowTouched) report.rowsWritten++;
+    });
+    const postWriteSfdt = serializeSfdt(editor);
+    const after = collectTableAppearance(
+      tableBlockAt(postWriteSfdt, targetAnchor)
     );
-  return { report, restores, postWriteSfdt };
+    if (!after)
+      throw new OpError(
+        'table_not_found',
+        `No table answers to the anchor "${targetAnchor}". Re-read the structure and use a current anchor.`
+      );
+    const mismatches: string[] = [];
+    after.rows.forEach((row, rowIndex) => {
+      const mapped =
+        source.rows[sourceRowForTarget(source, headerRows, rowIndex)];
+      if (!!row.isHeader !== !!mapped?.isHeader)
+        mismatches.push(
+          `row ${rowIndex} header: expected ${!!mapped?.isHeader}, got ${!!row.isHeader}`
+        );
+      for (let column = 0; column < row.cells.length; column++) {
+        const expected = copiedCellAppearance(
+          source,
+          banding,
+          headerRows,
+          rowIndex,
+          column,
+          { rows: after.rows.length, columns: row.cells.length }
+        );
+        const actual = cellAppearanceAt(after, rowIndex, column);
+        if (!appearanceEquals(expected, actual))
+          mismatches.push(
+            `row ${rowIndex}, column ${column}: expected ${JSON.stringify(
+              expected
+            )}, got ${JSON.stringify(actual)}`
+          );
+      }
+    });
+    if (mismatches.length)
+      throw new OpError(
+        'inherited_appearance_mismatch',
+        `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
+        mismatches
+      );
+    return postWriteSfdt;
+  });
+  return {
+    report,
+    restores: transaction.restores,
+    postWriteSfdt: transaction.result
+  };
 }
 
 function readPostEditInventory(
@@ -9649,128 +9697,133 @@ function applyInsertInheritance(
   byAnchor: Map<string, FlatBlock>
 ): AppearanceWriteOutcome | undefined {
   const appearanceOutcomes: AppearanceWriteOutcome[] = [];
-  for (const paragraph of planned) {
-    if (paragraph.sectionBoundary) continue;
-    if (paragraph.tableAppearance) {
-      const appearance = paragraph.tableAppearance;
-      // A new table has no appearance of its own, so reproduce the whole
-      // sibling look. SyncFusion already clones an inserted row's non-banding
-      // cell appearance; rewriting its borders while the row is a pending
-      // insertion loses shared-edge borders in the real SDK, so the row path
-      // only restores the preflight stripe below.
-      if (!appearance.targetRows)
-        appearanceOutcomes.push(
-          applyCopiedTableAppearance(
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (const paragraph of planned) {
+      if (paragraph.sectionBoundary) continue;
+      if (paragraph.tableAppearance) {
+        const appearance = paragraph.tableAppearance;
+        // A new table has no appearance of its own, so reproduce the whole
+        // sibling look. SyncFusion already clones an inserted row's non-banding
+        // cell appearance; rewriting its borders while the row is a pending
+        // insertion loses shared-edge borders in the real SDK, so the row path
+        // only restores the preflight stripe below.
+        if (!appearance.targetRows) {
+          const outcome = applyCopiedTableAppearance(
             editor,
             appearance.sourceTableAnchor,
             appearance.source,
             appearance.targetTableAnchor,
             undefined,
             { banding: appearance.banding }
-          )
-        );
-      if (appearance.preserveBanding) {
-        appearanceOutcomes.push(
-          applyBandingRows(
+          );
+          appearanceOutcomes.push(outcome);
+          outcome.restores.forEach(record);
+        }
+        if (appearance.preserveBanding) {
+          const outcome = applyBandingRows(
             editor,
             appearance.targetTableAnchor,
             liveTableAppearance(editor, appearance.targetTableAnchor),
             appearance.preserveBanding.banding,
             appearance.preserveBanding.fromRow
-          )
-        );
+          );
+          appearanceOutcomes.push(outcome);
+          outcome.restores.forEach(record);
+        }
+        if (appearance.fallbackShadings) {
+          const fallback = applyPlannedRowShadings(
+            editor,
+            appearance.targetTableAnchor,
+            liveTableAppearance(editor, appearance.targetTableAnchor),
+            appearance.fallbackShadings
+          );
+          if (fallback.report.cellsWritten) {
+            appearanceOutcomes.push(fallback);
+            fallback.restores.forEach(record);
+          }
+        }
+        continue;
       }
-      if (appearance.fallbackShadings) {
-        const fallback = applyPlannedRowShadings(
-          editor,
-          appearance.targetTableAnchor,
-          liveTableAppearance(editor, appearance.targetTableAnchor),
-          appearance.fallbackShadings
-        );
-        if (fallback.report.cellsWritten) appearanceOutcomes.push(fallback);
-      }
-      continue;
-    }
-    const target = byAnchor.get(paragraph.anchor);
-    if (
-      !target ||
-      (paragraph.expectedText !== undefined &&
-        target.text !== paragraph.expectedText)
-    ) {
-      // Lightweight test doubles do not split paragraphs on newline inserts; a
-      // mounted DocumentEditor always does. Skip quietly for doubles, fail
-      // loudly when the real editor's split did not land where computed.
-      if (!(editor as any).element && !(editor as any).documentHelper) return;
-      throw new OpError(
-        'inherited_paragraph_not_found',
-        `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
-        [
-          `expected: ${JSON.stringify(paragraph.expectedText)}`,
-          `actual: ${JSON.stringify(target?.text)}`
-        ]
-      );
-    }
-    if (paragraph.source) {
-      applyResolvedInheritedFormat(
-        editor,
-        paragraph.source,
-        target,
-        paragraph.inherited ??
-          readEffectiveSourceFormat(editor, paragraph.source)
-      );
-    } else if (paragraph.fallbackStyleName) {
-      selectParagraph(editor, target);
-      callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
-      selectParagraph(editor, target);
-      const resolved = comparableFormatValue(
-        editor.selection?.paragraphFormat?.styleName
-      );
-      if (resolved !== paragraph.fallbackStyleName)
+      const target = byAnchor.get(paragraph.anchor);
+      if (
+        !target ||
+        (paragraph.expectedText !== undefined &&
+          target.text !== paragraph.expectedText)
+      ) {
+        // Lightweight test doubles do not split paragraphs on newline inserts;
+        // a mounted DocumentEditor always does. Skip quietly for doubles, fail
+        // loudly when the real editor's split did not land where computed.
+        if (!(editor as any).element && !(editor as any).documentHelper)
+          continue;
         throw new OpError(
-          'inherited_format_mismatch',
-          `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
+          'inherited_paragraph_not_found',
+          `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
           [
-            `paragraphFormat.styleName: expected ${JSON.stringify(
-              paragraph.fallbackStyleName
-            )}, got ${JSON.stringify(resolved)}`
+            `expected: ${JSON.stringify(paragraph.expectedText)}`,
+            `actual: ${JSON.stringify(target?.text)}`
           ]
         );
+      }
+      if (paragraph.source) {
+        applyResolvedInheritedFormat(
+          editor,
+          paragraph.source,
+          target,
+          paragraph.inherited ??
+            readEffectiveSourceFormat(editor, paragraph.source)
+        );
+      } else if (paragraph.fallbackStyleName) {
+        selectParagraph(editor, target);
+        callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
+        selectParagraph(editor, target);
+        const resolved = comparableFormatValue(
+          editor.selection?.paragraphFormat?.styleName
+        );
+        if (resolved !== paragraph.fallbackStyleName)
+          throw new OpError(
+            'inherited_format_mismatch',
+            `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
+            [
+              `paragraphFormat.styleName: expected ${JSON.stringify(
+                paragraph.fallbackStyleName
+              )}, got ${JSON.stringify(resolved)}`
+            ]
+          );
+      }
     }
-  }
-  if (!appearanceOutcomes.length) return undefined;
-  const combined = appearanceOutcomes.reduce<AppearanceWriteOutcome>(
-    (combined, outcome) => ({
-      report: {
-        cellsWritten:
-          combined.report.cellsWritten + outcome.report.cellsWritten,
-        rowsWritten: combined.report.rowsWritten + outcome.report.rowsWritten,
-        cellsUnchanged:
-          combined.report.cellsUnchanged + outcome.report.cellsUnchanged,
-        ...((combined.report.rowsSkippedMixed ?? 0) +
+    return appearanceOutcomes.reduce<AppearanceWriteReport>(
+      (combined, outcome) => ({
+        cellsWritten: combined.cellsWritten + outcome.report.cellsWritten,
+        rowsWritten: combined.rowsWritten + outcome.report.rowsWritten,
+        cellsUnchanged: combined.cellsUnchanged + outcome.report.cellsUnchanged,
+        ...((combined.rowsSkippedMixed ?? 0) +
           (outcome.report.rowsSkippedMixed ?? 0) >
         0
           ? {
               rowsSkippedMixed:
-                (combined.report.rowsSkippedMixed ?? 0) +
+                (combined.rowsSkippedMixed ?? 0) +
                 (outcome.report.rowsSkippedMixed ?? 0)
             }
           : {}),
         ...(outcome.report.banding
           ? { banding: outcome.report.banding }
-          : combined.report.banding
-          ? { banding: combined.report.banding }
+          : combined.banding
+          ? { banding: combined.banding }
           : {}),
         ...(outcome.report.sourceStyleName
           ? { sourceStyleName: outcome.report.sourceStyleName }
-          : combined.report.sourceStyleName
-          ? { sourceStyleName: combined.report.sourceStyleName }
+          : combined.sourceStyleName
+          ? { sourceStyleName: combined.sourceStyleName }
           : {})
-      },
-      restores: [...combined.restores, ...outcome.restores]
-    }),
-    { report: emptyAppearanceReport(), restores: [] }
-  );
-  return combined.restores.length ? combined : undefined;
+      }),
+      emptyAppearanceReport()
+    );
+  });
+  if (!transaction.restores.length) return undefined;
+  return {
+    report: transaction.result,
+    restores: transaction.restores
+  };
 }
 
 function shiftBodyBlockAnchor(anchor: string, amount: number): string {
