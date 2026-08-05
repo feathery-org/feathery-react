@@ -242,6 +242,24 @@ const controlFor = (editor: EditorLike, instance: string): object | null => {
 };
 
 /**
+ * Every control by instance key, decoded once. `controlFor` re-decodes the
+ * whole collection per lookup, which is fine for one token and quadratic for
+ * a batch — `writeValues` builds this once per pass instead.
+ */
+const controlIndex = (editor: EditorLike): Map<string, object> => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  const found = new Map<string, object>();
+  if (!Array.isArray(collection)) return found;
+  for (const control of collection) {
+    const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+    if (spec !== null && !found.has(instanceKey(spec))) {
+      found.set(instanceKey(spec), control);
+    }
+  }
+  return found;
+};
+
+/**
  * Whether a control is showing Syncfusion's own placeholder text rather than a
  * value — "Click here or tap to insert text", localised.
  *
@@ -251,11 +269,12 @@ const controlFor = (editor: EditorLike, instance: string): object | null => {
  */
 export const showsPlaceholder = (
   editor: EditorLike,
-  instance: string
+  instance: string,
+  lookup?: Map<string, object>
 ): boolean =>
   Boolean(
-    (controlFor(editor, instance) as any)?.contentControlProperties
-      ?.hasPlaceHolderText
+    ((lookup?.get(instance) ?? controlFor(editor, instance)) as any)
+      ?.contentControlProperties?.hasPlaceHolderText
   );
 
 /**
@@ -266,8 +285,12 @@ export const showsPlaceholder = (
  * bump — it addresses an untouched token perfectly well, and
  * `excludeBookmarkStartEnd` keeps its markers out of the replacement.
  */
-const selectInner = (editor: EditorLike, instance: string): boolean => {
-  const control = controlFor(editor, instance);
+const selectInner = (
+  editor: EditorLike,
+  instance: string,
+  lookup?: Map<string, object>
+): boolean => {
+  const control = lookup?.get(instance) ?? controlFor(editor, instance);
   const selectControl = (editor as any)?.selection
     ?.selectContentControlInternal;
   if (control && typeof selectControl === 'function') {
@@ -292,9 +315,10 @@ const selectInner = (editor: EditorLike, instance: string): boolean => {
 const selectValue = (
   editor: EditorLike,
   instance: string,
-  currentText: string
+  currentText: string,
+  lookup?: Map<string, object>
 ): boolean => {
-  if (!selectInner(editor, instance)) return false;
+  if (!selectInner(editor, instance, lookup)) return false;
 
   // A write REPLACES a selected range. If the selection came back collapsed,
   // inserting would append instead — which silently compounds a value on
@@ -310,7 +334,7 @@ const selectValue = (
   // refusing it left a grown row reading "Click here or tap to insert text"
   // forever — the token looked unlinked because nothing could ever write to it.
   if (selected === '') {
-    return currentText === '' || showsPlaceholder(editor, instance);
+    return currentText === '' || showsPlaceholder(editor, instance, lookup);
   }
   return true;
 };
@@ -499,12 +523,14 @@ export const writeValues = (
 
   const before = documentShape(editor);
   const intended = new Set(pending.map(({ instance }) => instance));
+  // One decoded pass over the collection for the whole batch.
+  const lookup = controlIndex(editor);
 
   withViewportPreserved(editor, () => {
     if (group) editor.editorHistory?.beginUndoAction();
     try {
       for (const { id, instance, text, was } of pending) {
-        if (!selectValue(editor, instance, was)) {
+        if (!selectValue(editor, instance, was, lookup)) {
           missed.push(id);
           continue;
         }

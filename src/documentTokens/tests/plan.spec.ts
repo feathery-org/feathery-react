@@ -1,6 +1,5 @@
 
 import {
-  affected,
   buildPlan,
   recalc,
   TokenSpec,
@@ -41,12 +40,6 @@ describe('buildPlan', () => {
     expect(at('tax_amount')).toBeLessThan(at('total'));
   });
 
-  it('makes a scalar aggregate depend on every row', () => {
-    const { dependents } = buildPlan(invoice());
-    expect(dependents.get('item_total__0')).toContain('subtotal');
-    expect(dependents.get('item_total__1')).toContain('subtotal');
-  });
-
   it('only plans computed tokens', () => {
     const { order } = buildPlan(invoice());
     expect(order).not.toContain('qty__0');
@@ -73,7 +66,7 @@ describe('recalc', () => {
     recalc(plan, values);
 
     values.set('qty__0', 20);
-    const { changed } = recalc(plan, values, 'qty__0');
+    const { changed } = recalc(plan, values);
 
     expect(changed.get('item_total__0')).toBe(3000);
     expect(changed.get('subtotal')).toBe(3800);
@@ -88,7 +81,7 @@ describe('recalc', () => {
     recalc(plan, values);
 
     values.set('qty__0', 10); // same value as before
-    const { changed } = recalc(plan, values, 'qty__0');
+    const { changed } = recalc(plan, values);
     expect(changed.size).toBe(0);
   });
 
@@ -140,25 +133,8 @@ describe('wildcard dependencies', () => {
     expect(values.get('total')).toBe(7);
 
     values.set('fee_shipping', 8);
-    const { changed } = recalc(plan, values, 'fee_shipping');
+    const { changed } = recalc(plan, values);
     expect(changed.get('total')).toBe(10);
-  });
-});
-
-describe('affected', () => {
-  it('returns descendants in evaluation order', () => {
-    const plan = buildPlan(invoice());
-    expect(affected(plan, 'qty__0')).toEqual([
-      'item_total__0',
-      'subtotal',
-      'tax_amount',
-      'total'
-    ]);
-  });
-
-  it('returns nothing for a token nobody depends on', () => {
-    const plan = buildPlan(invoice());
-    expect(affected(plan, 'total')).toEqual([]);
   });
 });
 

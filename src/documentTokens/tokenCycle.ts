@@ -137,10 +137,29 @@ export type TokenState = {
 export const saveBlockers = (state: TokenState): string | null => {
   const problems = [...state.invalid.entries(), ...state.errors.entries()];
   if (problems.length === 0) return null;
-  const summary = problems
-    .map(([id, reason]) => `${id}: ${reason}`)
-    .join(', ');
+  const summary = problems.map(([id, reason]) => `${id}: ${reason}`).join(', ');
   return `Cannot save — ${problems.length} token(s) invalid. ${summary}`;
+};
+
+/**
+ * A cheap change signature over every field the plan reads.
+ *
+ * The container reconciles on render; comparing this string is what lets it
+ * skip the O(document) control walk when no relevant field has moved.
+ */
+export const tokenFieldSignature = (
+  specs: TokenSpec[],
+  read: (key: string) => unknown
+): string => {
+  const keys = new Set<string>();
+  for (const spec of specs) {
+    if (spec.source) keys.add(spec.source);
+    for (const name of spec.reads ?? []) keys.add(name);
+  }
+  return [...keys]
+    .sort()
+    .map((key) => `${key}=${JSON.stringify(read(key)) ?? ''}`)
+    .join('|');
 };
 
 export type TokenCycle = {

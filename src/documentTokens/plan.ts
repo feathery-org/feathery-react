@@ -2,9 +2,9 @@
  * The recalculation plan.
  *
  * Built once when the editor opens and reused for every value edit. A plan
- * holds the parsed ASTs, a topological evaluation order, and a reverse
- * dependency map, so editing one token evaluates only its descendants instead
- * of the whole document.
+ * holds the parsed ASTs and a topological evaluation order; every reconcile
+ * re-evaluates the whole document, which stays cheap because a plan holds one
+ * node per VALUE and evaluation is arithmetic over a map.
  *
  * Rebuilt only on STRUCTURAL change — a formula edited, a token inserted or
  * removed, or wildcard membership shifting. Value edits never rebuild it.
@@ -71,8 +71,6 @@ export type Plan = {
   asts: Map<string, Node>;
   /** Evaluation order. Tokens in a cycle are excluded. */
   order: string[];
-  /** id → tokens whose formulas depend on it, directly. */
-  dependents: Map<string, string[]>;
   /** id → why this token cannot be evaluated (bad formula, cycle). */
   errors: Map<string, string>;
 };
@@ -158,17 +156,10 @@ export const buildPlan = (specs: TokenSpec[]): Plan => {
     }
   }
 
-  // Forward edges (token → what it needs) and the reverse map used at recalc.
+  // Forward edges: token → what it needs, for the topological sort.
   const needs = new Map<string, Set<string>>();
-  const dependents = new Map<string, string[]>();
   for (const [id, ast] of asts) {
-    const deps = edgesFor(ast, specMap.get(id)?.index, rowsById);
-    needs.set(id, deps);
-    for (const dep of deps) {
-      const list = dependents.get(dep);
-      if (list) list.push(id);
-      else dependents.set(dep, [id]);
-    }
+    needs.set(id, edgesFor(ast, specMap.get(id)?.index, rowsById));
   }
 
   // Depth-first topological sort with a three-colour marker. A token reached
@@ -211,28 +202,7 @@ export const buildPlan = (specs: TokenSpec[]): Plan => {
     }
   }
 
-  return { specs: specMap, asts, order, dependents, errors };
-};
-
-/**
- * Every token that must be re-evaluated when `id` changes, in evaluation
- * order. Excludes `id` itself — it is the input, not a result.
- */
-export const affected = (plan: Plan, id: string): string[] => {
-  const reached = new Set<string>();
-  const queue = [id];
-
-  while (queue.length > 0) {
-    const current = queue.shift() as string;
-    for (const dependent of plan.dependents.get(current) ?? []) {
-      if (!reached.has(dependent)) {
-        reached.add(dependent);
-        queue.push(dependent);
-      }
-    }
-  }
-
-  return plan.order.filter((each) => reached.has(each));
+  return { specs: specMap, asts, order, errors };
 };
 
 export type RecalcResult = {
@@ -242,11 +212,6 @@ export type RecalcResult = {
   errors: Map<string, string>;
 };
 
-/**
- * Evaluate the tokens downstream of `changedId`, or the whole document when
- * no id is given (used once on open). `values` is updated in place with the
- * new results; the returned map holds only what moved.
- */
 /**
  * The values one token can see: bare names bound to its own row, and — for a
  * scalar token — every row of a repeated name as a list, so SUM(item_total)
@@ -279,16 +244,18 @@ const viewFor = (
   return view;
 };
 
+/**
+ * Evaluate the whole document in plan order. `values` is updated in place;
+ * the returned map holds only what moved.
+ */
 export const recalc = (
   plan: Plan,
-  values: Map<string, number>,
-  changedId?: string
+  values: Map<string, number>
 ): RecalcResult => {
-  const targets = changedId ? affected(plan, changedId) : plan.order;
   const changed = new Map<string, number>();
   const errors = new Map<string, string>(plan.errors);
 
-  for (const id of targets) {
+  for (const id of plan.order) {
     const ast = plan.asts.get(id);
     const spec = plan.specs.get(id);
     if (!ast || !spec) continue;

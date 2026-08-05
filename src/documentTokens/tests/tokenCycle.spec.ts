@@ -13,7 +13,12 @@ import {
   encodeTag
 } from '../controls';
 import { instanceKey, TokenSpec, valueKey } from '../plan';
-import { attachTokenCycle, saveBlockers, TokenState } from '../tokenCycle';
+import {
+  attachTokenCycle,
+  saveBlockers,
+  tokenFieldSignature,
+  TokenState
+} from '../tokenCycle';
 
 const control = (spec: TokenSpec, value: string): ContentControlInfo => ({
   title: spec.id,
@@ -1452,6 +1457,38 @@ describe('attachTokenCycle — state and lifecycle', () => {
     cycle.detach();
     expect(editor.listenerCount('selectionChange')).toBe(0);
     expect(editor.listenerCount('documentChange')).toBe(0);
+  });
+});
+
+describe('tokenFieldSignature', () => {
+  const specs: TokenSpec[] = [
+    { id: 'qty', source: 'qty', index: 0 },
+    { id: 'tax', formula: 'subtotal * tax_pct / 100', reads: ['tax_pct'] }
+  ];
+
+  it('moves when a source or read field changes, and only then', () => {
+    const values: Record<string, unknown> = {
+      qty: [1, 2],
+      tax_pct: 13,
+      unrelated: 'x'
+    };
+    const read = (key: string) => values[key];
+    const before = tokenFieldSignature(specs, read);
+
+    values.unrelated = 'changed';
+    expect(tokenFieldSignature(specs, read)).toBe(before);
+
+    values.tax_pct = 14;
+    expect(tokenFieldSignature(specs, read)).not.toBe(before);
+  });
+
+  it('sees a row edit inside a repeated field', () => {
+    const values: Record<string, unknown> = { qty: [1, 2], tax_pct: 13 };
+    const read = (key: string) => values[key];
+    const before = tokenFieldSignature(specs, read);
+
+    values.qty = [1, 5];
+    expect(tokenFieldSignature(specs, read)).not.toBe(before);
   });
 });
 

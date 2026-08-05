@@ -17,7 +17,8 @@ import {
 } from '../../../assistant/tools/docxEditorRegistry';
 import {
   attachTokenCycle,
-  saveBlockers
+  saveBlockers,
+  tokenFieldSignature
 } from '../../../documentTokens/tokenCycle';
 import type {
   FieldAccess,
@@ -485,10 +486,10 @@ export default function DocumentEditorContainer({
   );
 
   // The form rerenders every consumer when a field changes, so this component
-  // re-renders too — reconciling on every render is what carries a field edit
-  // into the document. It derives from current values and writes only what the
-  // document does not already show, so running it unconditionally is both
-  // cheaper to reason about than a change signature and impossible to miss.
+  // re-renders too — reconciling on render is what carries a field edit into
+  // the document. Most renders touch nothing the plan reads, and reconcile
+  // walks the whole control collection, so a signature over just the fields
+  // the plan reads decides whether this render owes a pass.
   //
   // Except while a form input has focus. Writing into the document steals
   // focus, so a field edited character by character — a number cleared before
@@ -496,13 +497,28 @@ export default function DocumentEditorContainer({
   // is idempotent, so waiting for that input's blur costs nothing but the
   // document lagging one field behind, which is where the caret already is.
   // Not a timer: a debounce would rewrite mid-word again, just later.
+  const lastReconciled = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const cycle = tokenCycle.current;
+    if (!cycle) return undefined;
+    const signature = tokenFieldSignature(
+      cycle.getState().specs,
+      (key) => fieldValues[key]
+    );
+    if (signature === lastReconciled.current) return undefined;
     const editing = focusedFormInput(registeredEditor.current?.element);
     if (!editing) {
-      tokenCycle.current?.reconcile();
+      lastReconciled.current = signature;
+      cycle.reconcile();
       return undefined;
     }
-    const onBlur = () => tokenCycle.current?.reconcile();
+    const onBlur = () => {
+      lastReconciled.current = tokenFieldSignature(
+        cycle.getState().specs,
+        (key) => fieldValues[key]
+      );
+      cycle.reconcile();
+    };
     editing.addEventListener('blur', onBlur, { once: true });
     return () => editing.removeEventListener('blur', onBlur);
   });
