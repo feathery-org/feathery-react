@@ -178,7 +178,7 @@ export type FieldMapping = Record<string, ColumnRef>;
 
 // Fields mapped to different sheets are zipped by row index; shorter sheets
 // yield blanks on the extra rows.
-export function buildStagedRows(
+export function buildUnverifiedRows(
   sheets: NormalizedSheet[],
   mapping: FieldMapping
 ): Record<string, string>[] {

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MODAL_Z_INDEX } from '../../../utils/styles';
 import { featheryDoc } from '../../../utils/browser';
 import {
-  buildStagedRows,
+  buildUnverifiedRows,
   ColumnRef,
   FieldMapping,
   isSpreadsheetFile,
@@ -10,6 +10,7 @@ import {
   normalizeSpreadsheet,
   parseWorkbook
 } from '../../../utils/spreadsheet';
+import HoverTooltip from '../HoverTooltip';
 import {
   DataMappingClient,
   HubFieldSchema,
@@ -18,8 +19,6 @@ import {
 } from './types';
 
 const MAX_PREVIEW_ROWS = 5;
-// Below this viewport offset there isn't room to render a tooltip above its icon.
-const TOOLTIP_FLIP_THRESHOLD = 140;
 
 interface DataMappingModalProps {
   hubs: MappingHubConfig[];
@@ -79,8 +78,8 @@ function autoMap(
   return mapping;
 }
 
-// The tip is position:fixed so it escapes the modal's scrolling panes; no
-// ancestor here creates a fixed containing block.
+// Field help icon; the shared HoverTooltip portals to document.body, so it
+// escapes the modal's scrolling panes and flips when out of room.
 function FieldInfoTip({
   field,
   fontFamily
@@ -89,24 +88,9 @@ function FieldInfoTip({
   fontFamily: string;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
-  const [tip, setTip] = useState<{
-    top: number;
-    left: number;
-    below: boolean;
-  } | null>(null);
+  const [show, setShow] = useState(false);
 
   const description = (field.description ?? '').trim();
-
-  const show = () => {
-    const rect = btnRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const below = rect.top < TOOLTIP_FLIP_THRESHOLD;
-    setTip({
-      top: below ? rect.bottom + 8 : rect.top - 8,
-      left: rect.left + rect.width / 2,
-      below
-    });
-  };
 
   if (!description) return null;
 
@@ -116,13 +100,12 @@ function FieldInfoTip({
         ref={btnRef}
         type='button'
         aria-label={`About ${field.key}`}
-        title=''
         // Presentational only: hover/focus reveals the tip, click does nothing.
         onClick={(e) => e.preventDefault()}
-        onMouseEnter={show}
-        onMouseLeave={() => setTip(null)}
-        onFocus={show}
-        onBlur={() => setTip(null)}
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
         css={{
           flexShrink: 0,
           marginLeft: '6px',
@@ -146,36 +129,16 @@ function FieldInfoTip({
       >
         i
       </button>
-      {tip && (
-        <div
-          role='tooltip'
-          css={{
-            position: 'fixed',
-            top: `${tip.top}px`,
-            left: `${tip.left}px`,
-            transform: tip.below
-              ? 'translateX(-50%)'
-              : 'translate(-50%, -100%)',
-            zIndex: MODAL_Z_INDEX + 1,
-            backgroundColor: '#18181b',
-            color: '#fff',
-            padding: '8px 10px',
-            borderRadius: '6px',
-            fontSize: '12px',
-            fontWeight: 400,
-            lineHeight: 1.4,
-            fontFamily,
-            width: 'max-content',
-            maxWidth: '280px',
-            whiteSpace: 'normal',
-            textAlign: 'left',
-            pointerEvents: 'none',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-          }}
-        >
-          {description}
-        </div>
-      )}
+      <HoverTooltip
+        show={show}
+        triggerRef={btnRef}
+        text={description}
+        id={`hub-field-${field.id}`}
+        placement='top'
+        offset={8}
+        maxWidth='280px'
+        onHide={() => setShow(false)}
+      />
     </>
   );
 }
@@ -338,14 +301,16 @@ function DataMappingModal({
   const isLastStep = activeStep >= schemas.length - 1;
 
   const totalStaged = Object.values(stagedCounts).reduce((n, c) => n + c, 0);
-  // Memoized: buildStagedRows walks every row of every mapped column.
+  // Memoized: buildUnverifiedRows walks every row of every mapped column.
   const totalMappedRows = useMemo(
     () =>
       sheets.length === 0
         ? 0
         : schemas.reduce((n, hub) => {
             const st = perHub[hub.id];
-            return n + (st ? buildStagedRows(sheets, st.mapping).length : 0);
+            return (
+              n + (st ? buildUnverifiedRows(sheets, st.mapping).length : 0)
+            );
           }, 0),
     [sheets, schemas, perHub]
   );
@@ -446,7 +411,7 @@ function DataMappingModal({
       for (const hub of schemas) {
         const st = perHub[hub.id];
         if (!st) continue;
-        const rows = buildStagedRows(sheets, st.mapping);
+        const rows = buildUnverifiedRows(sheets, st.mapping);
         if (rows.length === 0) continue;
         await client.uploadUnverifiedHubRows({
           hubId: hub.id,
