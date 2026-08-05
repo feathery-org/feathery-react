@@ -221,6 +221,7 @@ import { isNum } from '../utils/primitives';
 import {
   editorContainerId,
   getSignUrl,
+  getSubmissionSignUrl,
   isDocusignSignAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
@@ -237,7 +238,10 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
-import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
+import {
+  ENVELOPE_LABELS,
+  useEnvelopeGenerationToast
+} from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
 import type {
@@ -1244,7 +1248,14 @@ function Form({
               // completion signal. `envAction` has to be passed: in the editor
               // flow action.envelope_action is 'open_in_editor', and the outcome
               // is the toolbar button the filler pressed.
-              openTab(getSignUrl(action.redirect));
+              //
+              // Only ever opened as a signer: the batch returns the filler's
+              // own token when they sign it, and there's nothing for them to
+              // open when it doesn't.
+              const signerId = (data.signers ?? []).find(
+                (s: any) => s.signer_id
+              )?.signer_id;
+              if (signerId) openTab(getSignUrl(signerId, action.redirect));
             }
           };
           const data = await client.generateEnvelopes(action, signerEmail);
@@ -2887,8 +2898,21 @@ function Form({
               // outcome is the toolbar button the filler pressed.
               return;
             }
+            // One entry comes back per signable envelope, carrying an id only
+            // when the filler signs it first. One signer link covers the rest
+            // of the batch they can sign.
+            const responseSigners = data.signers ?? [];
+            const matchedSigner = responseSigners.find((s: any) => s.signer_id);
+            if (!matchedSigner) {
+              // Nothing in the batch for the filler to sign themselves.
+              if (responseSigners.some((s: any) => s.invited))
+                updateEnvelopeGeneration(envelopeId, {
+                  labels: { ...ENVELOPE_LABELS, complete: 'Sent for Signature' }
+                });
+              return;
+            }
             // Sign files
-            const url = getSignUrl(action.redirect);
+            const url = getSignUrl(matchedSigner.signer_id, action.redirect);
             if (action.redirect) {
               const eventData: Record<string, any> = {
                 step_key: activeStep.key,
@@ -3007,7 +3031,7 @@ function Form({
         // Enter the existing envelope sign flow for this submission's
         // documents WITHOUT regenerating (which would overwrite editor edits).
         // Same redirect/openTab behavior as the generate 'sign' branch above.
-        const url = getSignUrl(action.redirect);
+        const url = getSubmissionSignUrl(action.redirect);
         if (action.redirect) {
           await client.registerEvent({
             step_key: activeStep.key,
