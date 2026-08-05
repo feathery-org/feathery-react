@@ -59,6 +59,35 @@ describe('token grammar — shared contract', () => {
     expect(CASES.some((c) => c.error !== undefined)).toBe(true);
     expect(CASES.some((c) => c.expectText !== undefined)).toBe(true);
   });
+
+  it('matches the pinned cross-repo fixture hash', () => {
+    // The Python twin pins the SAME constant over its own copy. Editing one
+    // copy fails this until the other copy — and both constants — move too,
+    // which is the only cross-repo sync check CI can run.
+    const stable = (value: unknown): string => {
+      if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+      if (value !== null && typeof value === 'object') {
+        const entries = Object.keys(value as Record<string, unknown>)
+          .sort()
+          .map(
+            (key) =>
+              `${JSON.stringify(key)}:${stable(
+                (value as Record<string, unknown>)[key]
+              )}`
+          );
+        return `{${entries.join(',')}}`;
+      }
+      return JSON.stringify(value);
+    };
+    // eslint-disable-next-line global-require
+    const hash = require('crypto')
+      .createHash('sha256')
+      .update(stable(CASES), 'utf8')
+      .digest('hex');
+    expect(hash).toBe(
+      'c44d26259d1f99dabb4141dabcaab16c86b4d76d325badf84a51671d6bb59d57'
+    );
+  });
 });
 
 describe('dependency extraction', () => {
