@@ -36,6 +36,7 @@ import {
   listRevisionGroups,
   parseRevisionGroupTag,
   rebindRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo,
   rejectProjectionStream,
   LiveEditor,
   TableFacts
@@ -185,6 +186,39 @@ const rejectGroup = (ed: DocumentEditor, group: string) => {
 // ---------------------------------------------------------------------------
 
 describe('one change set that edits content AND restripes a table', () => {
+  it('rebuilds layout once after accepting a multi-revision table group', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_row', anchor: '0;1;2;0;0' },
+          {
+            op: 'set_cell_text',
+            anchor: '0;1;1;0;0',
+            text: 'A1 rewritten'
+          }
+        ],
+        'relayout-after-accept'
+      );
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(revisions(ed).length).toBeGreaterThan(1);
+
+      const layout = (ed as any).documentHelper.layout;
+      const layoutSpy = jest.spyOn(layout, 'layoutWholeDocument');
+      resolveLiveRevisionGroupsAsOneUndo(
+        ed as unknown as LiveEditor,
+        listRevisionGroups(ed as unknown as LiveEditor),
+        true
+      );
+
+      expect(revisions(ed)).toHaveLength(0);
+      expect(layoutSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
   it('is ONE grouped card, and rejecting it restores appearance and content', () => {
     const ed = makeEditor(twoTables());
     try {
