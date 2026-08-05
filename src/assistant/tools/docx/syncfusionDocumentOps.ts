@@ -13110,7 +13110,21 @@ function applyDocumentEditsMeasured(
     }
   }
   const preflightFailed = !!batchRefusal || preflightFailures.length > 0;
+  // Batch layout is required for large change sets, but assigning the public
+  // enableLayout property queues onPropertyChanged. SyncFusion later handles
+  // that queue with refreshLayout(), which unconditionally Control-Homes the
+  // selection before repagination. Muted setProperties changes the same layout
+  // gate without queuing navigation; one explicit layoutWholeDocument below
+  // pays the deferred pagination cost while the silent edit boundary is active.
+  const suspendLayout = !batchRefusal && editor.enableLayout === true;
+  const setLayoutWithoutPropertyChange = (enabled: boolean) => {
+    const liveEditor = editor as any;
+    if (typeof liveEditor.setProperties === 'function')
+      liveEditor.setProperties({ enableLayout: enabled }, true);
+    else editor.enableLayout = enabled;
+  };
   try {
+    if (suspendLayout) setLayoutWithoutPropertyChange(false);
     editor.enableTrackChanges = true;
     editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
     if (batchRefusal) {
@@ -13615,6 +13629,10 @@ function applyDocumentEditsMeasured(
     editor.enableTrackChanges = priorTrackChanges;
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
+    if (suspendLayout) {
+      setLayoutWithoutPropertyChange(true);
+      (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
+    }
   }
 
   refuseReusedUserStatedFigures(results);
