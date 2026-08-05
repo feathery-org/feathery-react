@@ -228,6 +228,7 @@ export const getFormContext = (formUuid: string) => {
       documentIds,
       signerEmail,
       envelopeAction,
+      signMethod,
       toolbarActions,
       repeatable,
       download,
@@ -239,9 +240,11 @@ export const getFormContext = (formUuid: string) => {
       documentIds: string[];
       signerEmail?: string;
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
+      signMethod?: 'feathery' | 'docusign';
       // Only for envelopeAction 'open_in_editor': which buttons the editor
-      // toolbar offers.
-      toolbarActions?: ('sign' | 'download' | 'save')[];
+      // toolbar offers. 'draft' is DocuSign-only (it finalizes as a sign with
+      // draft=true).
+      toolbarActions?: ('sign' | 'download' | 'save' | 'draft')[];
       repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
@@ -250,21 +253,23 @@ export const getFormContext = (formUuid: string) => {
       saveDocumentFieldKey?: string;
     }) => {
       const usesRichOptions =
+        !!signMethod ||
         !!signerEmail ||
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable;
-      // A signer email, the editor, and the sign/save envelope actions all need
-      // the same endpoint + editor flow the Generate Documents action uses, so
-      // route through the <Form />-registered flow when any are requested.
-      // Otherwise keep the simple, backward-compatible client path (template
-      // fill / merge / download).
+      // DocuSign, a signer email, the editor, and the sign/save envelope
+      // actions all need the same endpoint + editor flow the Generate Documents
+      // action uses, so route through the <Form />-registered flow when any are
+      // requested. Otherwise keep the simple, backward-compatible client path
+      // (template fill / merge / download).
       if (formState.generateEnvelopeFlow && usesRichOptions) {
         return formState.generateEnvelopeFlow(
           {
             type: 'open_fuser_envelopes',
             documents: documentIds,
             envelope_action: envelopeAction,
+            sign_method: signMethod,
             editor_toolbar_actions: toolbarActions,
             repeatable,
             merge_docs: merge,

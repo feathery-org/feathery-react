@@ -641,8 +641,8 @@ describe('IntegrationClient', () => {
             documents: action.documents,
             run_async: false,
             envelope_action: 'open_in_editor',
-            editor_toolbar_actions: [],
             merge_docs: false,
+            editor_toolbar_actions: [],
             signer_email: 'test@example.com',
             repeatable: true
           }),
@@ -711,6 +711,139 @@ describe('IntegrationClient', () => {
         message: 'Envelope limit exceeded'
       });
     });
+
+    it('sends sign_method to the generate endpoint directly for a plain docusign sign', async () => {
+      // client-utils' generateFormDocuments can't forward sign_method any
+      // more than it can the editor action, so a docusign sign action must
+      // also route through the direct call even outside the review flow.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        sign_method: 'docusign'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest
+          .fn()
+          .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      const [url, options] = global.fetch.mock.calls[0];
+      expect(url).toBe(`${API_URL}document/form/generate/`);
+      const body = JSON.parse(options.body);
+      expect(body.sign_method).toBe('docusign');
+      expect(body.envelope_action).toBe('sign');
+      expect(body.editor_toolbar_actions).toBeUndefined();
+      expect(result).toEqual({
+        docusign_envelope_id: 'ds-1',
+        status: 'sent'
+      });
+    });
+
+    it('sends sign_method alongside the editor action when both are present', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        envelope_action: 'open_in_editor',
+        editor_toolbar_actions: ['sign'],
+        sign_method: 'docusign'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+          expires_at: '2026-07-15T00:00:00Z'
+        })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBe('docusign');
+      expect(body.envelope_action).toBe('open_in_editor');
+      expect(body.editor_toolbar_actions).toEqual(['sign']);
+    });
+
+    it('does not send sign_method when the action omits it (regression)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        documents: ['doc1'],
+        run_async: false,
+        envelope_action: 'open_in_editor'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          documents: [{ envelope_id: 'env-1', pdf_url: 'https://x/1.pdf' }],
+          expires_at: '2026-07-15T00:00:00Z'
+        })
+      });
+
+      await integrationClient.generateEnvelopes(action);
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBeUndefined();
+    });
+
+    it('routes a non-docusign sign_method through the library path, not the direct call (regression)', async () => {
+      // Only sign_method: 'docusign' needs the direct call to carry the flag
+      // through; other sign_method values (e.g. Feathery's own hosted eSign)
+      // must still go through @feathery/client-utils' generateFormDocuments,
+      // same as when sign_method is absent entirely.
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        envelope_signer_field_key: 'signer_field',
+        documents: ['doc1', 'doc2'],
+        repeatable: true,
+        run_async: false,
+        envelope_action: 'download',
+        sign_method: 'feathery'
+      };
+
+      Object.assign(fieldValues, { signer_field: 'test@example.com' });
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['file1.pdf', 'file2.pdf'] })
+      });
+
+      const result = await integrationClient.generateEnvelopes(action);
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        `${API_URL}document/form/generate/`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Token test_sdk_key'
+          },
+          method: 'POST',
+          body: JSON.stringify({
+            form_key: formKey,
+            fuser_key: 'test_user_id',
+            documents: action.documents,
+            run_async: false,
+            envelope_action: 'fill',
+            merge_docs: false,
+            signer_email: 'test@example.com',
+            repeatable: true
+          }),
+          cache: 'no-store',
+          keepalive: true
+        }
+      );
+      expect(result).toEqual({ files: ['file1.pdf', 'file2.pdf'] });
+    });
   });
 
   describe('finalizeEnvelopeReview', () => {
@@ -745,6 +878,7 @@ describe('IntegrationClient', () => {
             envelopes: [{ envelope_id: 'env-1' }],
             envelope_action: 'download',
             merge_docs: false,
+            draft: false,
             run_async: false
           }),
           cache: 'no-store',
@@ -959,6 +1093,54 @@ describe('IntegrationClient', () => {
       });
       // POST + exactly one poll — no retry storm.
       expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends sign_method in the payload when present', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = {
+        ...baseAction,
+        run_async: false,
+        sign_method: 'docusign'
+      };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest
+          .fn()
+          .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
+      });
+
+      const result = await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'sign'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBe('docusign');
+      expect(result).toEqual({
+        docusign_envelope_id: 'ds-1',
+        status: 'sent'
+      });
+    });
+
+    it('does not send sign_method when the action omits it (regression)', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+      const action = { ...baseAction, run_async: false };
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ files: ['merged.pdf'] })
+      });
+
+      await integrationClient.finalizeEnvelopeReview(action, {
+        envelopes: [{ envelopeId: 'env-1' }],
+        envelopeAction: 'download'
+      });
+
+      const body = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(body.sign_method).toBeUndefined();
     });
   });
 

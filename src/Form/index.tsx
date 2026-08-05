@@ -218,7 +218,11 @@ import {
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
-import { editorContainerId, getSignUrl } from '../utils/document';
+import {
+  editorContainerId,
+  getSignUrl,
+  isDocusignSignAction
+} from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
@@ -1229,10 +1233,17 @@ function Form({
               const newValues = { [action.save_document_field_key]: files };
               updateFieldValues(newValues);
               client.submitCustom(newValues);
-            } else if (!envAction || envAction === 'sign') {
+            } else if (
+              (!envAction || envAction === 'sign') &&
+              !isDocusignSignAction(action, envAction)
+            ) {
               // Feathery hosted eSign: open the signing page. The action-flow
               // redirect/registerEvent variant is step-specific, so it's not
-              // run for logic-rule invocations.
+              // run for logic-rule invocations. DocuSign has no Feathery sign
+              // URL — its {docusign_envelope_id, status} response is itself the
+              // completion signal. `envAction` has to be passed: in the editor
+              // flow action.envelope_action is 'open_in_editor', and the outcome
+              // is the toolbar button the filler pressed.
               openTab(getSignUrl(action.redirect));
             }
           };
@@ -1248,10 +1259,15 @@ function Form({
               setReviewViewerPayload({
                 payload: data,
                 action,
-                onFinalize: async ({ envelopes, envelopeAction }: any) => {
+                onFinalize: async ({
+                  envelopes,
+                  envelopeAction,
+                  draft
+                }: any) => {
                   const result = await client.finalizeEnvelopeReview(action, {
                     envelopes,
-                    envelopeAction
+                    envelopeAction,
+                    draft
                   });
                   if (!result) {
                     return { status: 'error', message: 'Finalize failed' };
@@ -2862,6 +2878,15 @@ function Form({
           if (editorContainerId(action)) return;
           const envAction = actingAction ?? action.envelope_action;
           if (!envAction || envAction === 'sign') {
+            if (isDocusignSignAction(action, envAction)) {
+              // DocuSign sign has no Feathery sign URL to redirect to — the
+              // `{docusign_envelope_id, status}` response (already validated
+              // for errors above) is itself the completion signal, so just
+              // continue the flow. `envAction` has to be passed: in the editor
+              // flow action.envelope_action is 'open_in_editor', and the
+              // outcome is the toolbar button the filler pressed.
+              return;
+            }
             // Sign files
             const url = getSignUrl(action.redirect);
             if (action.redirect) {
@@ -2937,14 +2962,17 @@ function Form({
               action,
               onFinalize: async ({
                 envelopes,
-                envelopeAction
+                envelopeAction,
+                draft
               }: {
                 envelopes: { envelopeId: string }[];
                 envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+                draft: boolean;
               }) => {
                 const result = await client.finalizeEnvelopeReview(action, {
                   envelopes,
-                  envelopeAction
+                  envelopeAction,
+                  draft
                 });
                 // A missing result is a failure, not a success: _fetch
                 // resolves undefined on a network blip / 403 / 409, and
