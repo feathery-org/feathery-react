@@ -71,7 +71,8 @@ describe('parseSfdt', () => {
       inlines: [{ characterFormat: {}, text: 'second' }]
     });
     const parsed = parseSfdt(JSON.stringify(doc));
-    const cell = parsed.sections[1].find((b) => b.kind === 'table')!.cells![0][0];
+    const cell = parsed.sections[1].find((b) => b.kind === 'table')!
+      .cells![0][0];
     // Should be a single merged text run, not three separate runs
     expect(cell).toEqual([{ kind: 'text', text: firstParaText + '\nsecond' }]);
   });
