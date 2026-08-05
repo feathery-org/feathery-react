@@ -105,6 +105,7 @@ import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
 import { createRoundSelectionRequestPreparer } from './messageHistory';
 import { coalesceAssistantMessages } from './messageRendering';
+import { scrollChatContainerToBottom } from './chatScroll';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -490,7 +491,7 @@ const AssistantChat = ({
   const pinToBottom = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el || !atBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
+    scrollChatContainerToBottom(el);
   }, []);
 
   const colors = useMemo(
