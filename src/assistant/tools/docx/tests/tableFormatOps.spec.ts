@@ -429,6 +429,33 @@ const resolvedTextFormat = (
   };
 };
 
+const liveBorderState = (ed: DocumentEditor, tableAnchor: string) => {
+  ed.selection.select(
+    `${tableAnchor};0;0;0;0`,
+    `${tableAnchor};0;0;0;0`
+  );
+  const cell = (ed as any).selection.start.paragraph.associatedCell;
+  const table = cell.ownerTable.combineWidget((ed as any).viewer);
+  const value = (border: any) => ({
+    defined: border.isBorderDefined,
+    style: border.lineStyle,
+    width: border.lineWidth,
+    color: border.color
+  });
+  const members = ['top', 'bottom', 'left', 'right', 'horizontal', 'vertical'];
+  const cellType = cell.constructor;
+  return {
+    table: members.map((member) => value(table.tableFormat.borders[member])),
+    storedCell: members.map((member) => value(cell.cellFormat.borders[member])),
+    renderedCell: [
+      cellType.getCellTopBorder(cell),
+      cellType.getCellBottomBorder(cell),
+      cellType.getCellLeftBorder(cell),
+      cellType.getCellRightBorder(cell)
+    ].map(value)
+  };
+};
+
 // ---------------------------------------------------------------------------
 
 describe('what SyncFusion 34.1.31 does with table appearance', () => {
@@ -1076,7 +1103,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       expect(fills(ed, '0;2')).toEqual([HEADER_FILL, null, BAND_FILL]);
       expect(facts(ed, '0;2').rows[0].isHeader).toBe(true);
-      expect(facts(ed, '0;2').rows[0].appearance?.borders).toEqual({
+      expect(facts(ed, '0;2').appearance?.borders).toEqual({
         all: { style: 'Single', width: 0.5, color: '#7F7F7F' }
       });
       expect(resolvedTextFormat(ed, '0;2;0;0;0', 'New code')).toMatchObject({
@@ -1106,6 +1133,58 @@ describe('structural inserts inherit resolved table formatting by default', () =
       expect(ed.serialize()).toBe(before);
     } finally {
       destroyEditor(ed);
+    }
+  });
+
+  it('normalizes composed borders to the same renderer state as a table-format apply', () => {
+    const composed = makeEditor(inheritedTableFixture());
+    const dialogApplied = makeEditor(twoTables());
+    try {
+      const result = apply(composed, [
+        {
+          op: 'insert_table',
+          anchor: '0;2',
+          rows: 3,
+          columns: 2,
+          initialCells: [
+            ['Code', 'Description'],
+            ['A5', 'Fifth row'],
+            ['A6', 'Sixth row']
+          ]
+        }
+      ]);
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      // SyncFusion's Borders and Shading OK path applies the six borders at
+      // tableFormat and clears redundant row/cell borders. A whole-table
+      // applyBorders call produces that same normalized renderer state.
+      dialogApplied.selection.select(
+        '0;2;0;0;0;0',
+        '0;2;0;0;0;0'
+      );
+      dialogApplied.selection.selectTable();
+      dialogApplied.editor.applyBorders({
+        type: 'AllBorders',
+        borderColor: '#7F7F7F',
+        lineWidth: 0.5,
+        borderStyle: 'Single'
+      });
+
+      const composedState = liveBorderState(composed, '0;2');
+      expect(facts(composed, '0;2').appearance?.borders).toEqual(
+        facts(dialogApplied, '0;2').appearance?.borders
+      );
+      expect(composedState).toEqual(liveBorderState(dialogApplied, '0;2'));
+      expect(composedState.table.every((border) => border.defined)).toBe(true);
+      expect(composedState.storedCell.every((border) => !border.defined)).toBe(
+        true
+      );
+      expect(
+        composedState.renderedCell.every((border) => border.defined)
+      ).toBe(true);
+    } finally {
+      destroyEditor(composed);
+      destroyEditor(dialogApplied);
     }
   });
 

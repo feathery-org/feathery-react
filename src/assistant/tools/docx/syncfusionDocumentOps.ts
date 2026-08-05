@@ -77,6 +77,7 @@ import {
   copiedCellAppearance,
   detectTableBanding,
   inferHeaderRows,
+  resolvedCellAppearanceAt,
   rowShadings,
   sourceRowForTarget,
   TableAppearance,
@@ -6146,15 +6147,13 @@ export const ANCHORLESS_OP_HANDLERS: {
     if (editor.revisions?.acceptAll) {
       editor.revisions.acceptAll();
       invalidateDocumentLayout(editor);
-    }
-    else throw new OpError('unsupported_op', 'No revisions to accept.');
+    } else throw new OpError('unsupported_op', 'No revisions to accept.');
   },
   reject_all_revisions: ({ editor }) => {
     if (editor.revisions?.rejectAll) {
       editor.revisions.rejectAll();
       invalidateDocumentLayout(editor);
-    }
-    else throw new OpError('unsupported_op', 'No revisions to reject.');
+    } else throw new OpError('unsupported_op', 'No revisions to reject.');
   },
   go_to_body: ({ editor }) => {
     // selection.goToBody does not exist in ej2-documenteditor (verified on
@@ -7078,6 +7077,79 @@ function writeAppearance(
   }
 }
 
+const TABLE_BORDER_MEMBERS = [
+  ['top', 'TopBorder'],
+  ['bottom', 'BottomBorder'],
+  ['left', 'LeftBorder'],
+  ['right', 'RightBorder'],
+  ['horizontal', 'InsideHorizontalBorder'],
+  ['vertical', 'InsideVerticalBorder']
+] as const;
+
+function writeTableBorders(
+  editor: LiveEditor,
+  tableAnchor: string,
+  borders: BorderWrite[]
+): void {
+  const cellAnchor = cellAnchorOf(tableAnchor, 0, 0);
+  const selectTable = () => {
+    selectForAppearance(editor, cellAnchor, 'cell');
+    callSelection(editor, 'selectTable');
+  };
+  selectTable();
+  for (const border of borders) {
+    callEditor(editor, 'applyBorders', {
+      type: border.type,
+      borderStyle: border.style,
+      ...(border.width != null ? { lineWidth: border.width } : {}),
+      ...(border.color ? { borderColor: border.color } : {})
+    });
+    selectTable();
+  }
+}
+
+/** Capture all six table border members before a table-level normalization. */
+function liveTableBorderRestore(
+  editor: LiveEditor,
+  tableAnchor: string
+): BorderWrite[] {
+  selectForAppearance(editor, cellAnchorOf(tableAnchor, 0, 0), 'cell');
+  const cell = (editor as any).selection?.start?.paragraph?.associatedCell;
+  const table = cell?.ownerTable?.combineWidget?.((editor as any).viewer);
+  const borders = table?.tableFormat?.borders;
+  const writes: BorderWrite[] = [{ type: 'NoBorder', style: 'None' }];
+  for (const [member, type] of TABLE_BORDER_MEMBERS) {
+    const border = borders?.[member];
+    const style = String(border?.lineStyle ?? 'None');
+    if (!border?.isBorderDefined || style === 'None' || style === 'Cleared')
+      continue;
+    const width = Number(border.lineWidth);
+    const color = String(border.color ?? '');
+    writes.push({
+      type,
+      style,
+      ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+      ...(color && color !== 'empty' ? { color } : {})
+    });
+  }
+  return writes;
+}
+
+function tableBordersMatchAll(
+  writes: BorderWrite[],
+  expected: BorderFacts
+): boolean {
+  return TABLE_BORDER_MEMBERS.every(([, type]) => {
+    const write = writes.find((entry) => entry.type === type);
+    return (
+      write?.style === expected.style &&
+      (write.width ?? 0) === (expected.width ?? 0) &&
+      (write.color ?? '#000000').toUpperCase() ===
+        (expected.color ?? '#000000').toUpperCase()
+    );
+  });
+}
+
 function writeRowIsHeader(
   editor: LiveEditor,
   cellAnchor: string,
@@ -7100,6 +7172,12 @@ function replayAppearanceRestores(
 ): void {
   for (let index = restores.length - 1; index >= 0; index--) {
     const restore = restores[index];
+    if (restore.tableBorders)
+      writeTableBorders(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableBorders
+      );
     if (restore.rowIsHeader !== undefined)
       writeRowIsHeader(editor, restore.cellAnchor, restore.rowIsHeader);
     if (restore.write)
@@ -7279,6 +7357,52 @@ function applyCopiedTableAppearance(
   const report = emptyAppearanceReport();
   if (source.styleName) report.sourceStyleName = source.styleName;
   if (banding) report.banding = banding;
+  const desiredRows = target.rows.map((targetRow, row) =>
+    targetRow.cells.map((_, column) =>
+      copiedCellAppearance(source, banding, headerRows, row, column, {
+        rows: target.rows.length,
+        columns: targetRow.cells.length
+      })
+    )
+  );
+  const desiredBorders = desiredRows.flat().map((entry) => entry?.borders);
+  const firstAllBorder = desiredBorders[0]?.all;
+  const uniformAllBorder =
+    !!firstAllBorder &&
+    desiredBorders.length > 0 &&
+    desiredBorders.every(
+      (borders) =>
+        !!borders?.all &&
+        Object.keys(borders).length === 1 &&
+        appearanceEquals(
+          { borders: { all: firstAllBorder } },
+          { borders: { all: borders.all } }
+        )
+    )
+      ? firstAllBorder
+      : undefined;
+  const targetHasCellBorders = target.rows.some((row, rowIndex) =>
+    row.cells.some(
+      (_, column) => !!cellAppearanceAt(target, rowIndex, column)?.borders
+    )
+  );
+  const tableBordersBefore = uniformAllBorder
+    ? liveTableBorderRestore(editor, targetAnchor)
+    : undefined;
+  const tableAlreadyNormalized =
+    !!uniformAllBorder &&
+    !targetHasCellBorders &&
+    !!tableBordersBefore &&
+    tableBordersMatchAll(tableBordersBefore, uniformAllBorder);
+  const normalizeTableBorders = !!uniformAllBorder && !tableAlreadyNormalized;
+  const withoutBorders = (
+    appearance: AppearanceFacts | undefined
+  ): AppearanceFacts | undefined => {
+    if (!appearance) return undefined;
+    const rest = { ...appearance };
+    delete rest.borders;
+    return Object.keys(rest).length ? rest : undefined;
+  };
   const transaction = runAppearanceTransaction(editor, (record) => {
     target.rows.forEach((targetRow, row) => {
       // The same mapping copiedCellAppearance uses, so the header flag and the
@@ -7293,24 +7417,40 @@ function applyCopiedTableAppearance(
         rowTouched = true;
       }
       for (let column = 0; column < targetRow.cells.length; column++) {
-        const desired = copiedCellAppearance(
-          source,
-          banding,
-          headerRows,
-          row,
-          column,
-          { rows: target.rows.length, columns: targetRow.cells.length }
-        );
+        const desired = desiredRows[row][column];
         const before = cellAppearanceAt(target, row, column);
-        if (appearanceEquals(desired, before)) {
-          report.cellsUnchanged++;
+        const resolvedBefore = uniformAllBorder
+          ? resolvedCellAppearanceAt(target, row, column)
+          : before;
+        const desiredCell = uniformAllBorder ? withoutBorders(desired) : desired;
+        const beforeCell = uniformAllBorder
+          ? withoutBorders(resolvedBefore)
+          : resolvedBefore;
+        const borderChanged =
+          !!uniformAllBorder &&
+          !appearanceEquals(
+            { borders: resolvedBefore?.borders },
+            { borders: { all: uniformAllBorder } }
+          );
+        const cellAnchor = cellAnchorOf(targetAnchor, row, column);
+        if (normalizeTableBorders && before?.borders)
+          record({
+            cellAnchor,
+            write: { borders: borderWritesFor(before.borders) }
+          });
+        if (appearanceEquals(desiredCell, beforeCell)) {
+          if (borderChanged) {
+            report.cellsWritten++;
+            rowTouched = true;
+          } else {
+            report.cellsUnchanged++;
+          }
           continue;
         }
-        const cellAnchor = cellAnchorOf(targetAnchor, row, column);
-        const write = appearanceWriteFor(desired, {
+        const write = appearanceWriteFor(desiredCell, {
           shading: true,
           verticalAlignment: true,
-          borders: true
+          borders: !uniformAllBorder
         });
         record({ cellAnchor, write: restoreWriteFor(before, write) });
         writeAppearance(editor, cellAnchor, write, 'cell');
@@ -7319,6 +7459,24 @@ function applyCopiedTableAppearance(
       }
       if (rowTouched) report.rowsWritten++;
     });
+    if (normalizeTableBorders && uniformAllBorder) {
+      writeTableBorders(editor, targetAnchor, [
+        {
+          type: 'AllBorders',
+          style: uniformAllBorder.style,
+          ...(uniformAllBorder.width != null
+            ? { width: uniformAllBorder.width }
+            : {}),
+          ...(uniformAllBorder.color ? { color: uniformAllBorder.color } : {})
+        }
+      ]);
+      // Replay runs newest-first: restore the table border layer before putting
+      // back any cell-level overrides that the normalized write cleared.
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableBorders: tableBordersBefore
+      });
+    }
     const postWriteSfdt = serializeSfdt(editor);
     const after = collectTableAppearance(
       tableBlockAt(postWriteSfdt, targetAnchor)
@@ -7345,7 +7503,9 @@ function applyCopiedTableAppearance(
           column,
           { rows: after.rows.length, columns: row.cells.length }
         );
-        const actual = cellAppearanceAt(after, rowIndex, column);
+        const actual = uniformAllBorder
+          ? resolvedCellAppearanceAt(after, rowIndex, column)
+          : cellAppearanceAt(after, rowIndex, column);
         if (!appearanceEquals(expected, actual))
           mismatches.push(
             `row ${rowIndex}, column ${column}: expected ${JSON.stringify(
