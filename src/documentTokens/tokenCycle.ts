@@ -300,6 +300,18 @@ export const attachTokenCycle = (
         // a display function can reach one.
         const seen = new Map<string, any>(numbers);
         for (const [id, value] of texts) seen.set(id, value);
+
+        // A display formula names the BARE field (`UPPER(description)`), while
+        // the values above are keyed by row (`description__0`). Bind this
+        // token's own row under its bare name, exactly as a formula's view
+        // does — without it every repeated token's transform failed to resolve
+        // and fell through to the untransformed text, silently.
+        for (const [otherKey, other] of plan.specs) {
+          if (other.index !== spec.index) continue;
+          const value = texts.get(otherKey) ?? numbers.get(otherKey);
+          if (value !== undefined) seen.set(other.id, value);
+        }
+
         return String(evaluate(spec.display, seen));
       } catch {
         // A display that cannot be evaluated must not blank the token — but a

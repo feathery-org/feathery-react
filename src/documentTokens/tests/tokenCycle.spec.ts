@@ -315,6 +315,34 @@ describe('attachTokenCycle — the new tag syntax', () => {
     expect(editor.valueOf('note')).toBe('NORTHSTAR');
   });
 
+  it('applies a display transform to a REPEATED token', () => {
+    // `{{ description | upper }}` in a table row. The display formula names the
+    // bare field, but the values were offered under their row keys
+    // (`description__0`), so evaluation always failed and silently fell back to
+    // the untransformed text — the transform never applied to any table row.
+    const editor = fakeEditor([
+      control(
+        {
+          id: 'description',
+          source: 'description',
+          index: 0,
+          format: { kind: 'text' },
+          display: 'UPPER(description)'
+        },
+        'Leather Sofa'
+      )
+    ]);
+    attachTokenCycle(editor, {
+      fields: {
+        read: (spec: TokenSpec) =>
+          spec.source === 'description' ? 'Leather Sofa' : undefined,
+        write: () => undefined
+      }
+    });
+
+    expect(editor.valueOf('description__0')).toBe('LEATHER SOFA');
+  });
+
   it('shows nothing, not 0, when a displayed text value is cleared', () => {
     // `{{ description | upper }}` emptied. The display cannot evaluate over a
     // name with no value, and the fallback used the numeric path — so clearing
