@@ -35,17 +35,22 @@ const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
 
+// Every swallowed editor error in this file goes through here: hidden at
+// default console levels (teardown noise stays out of production logs), but
+// inspectable via the browser's verbose/debug level so a RECURRING failure
+// that isn't teardown — a real regression — stays visible to developers.
+const debugSwallowed = (error: unknown) =>
+  console.debug('Feathery: tracked-changes rail editor call failed.', error);
+
 // Any raw call into the EJ2 instance can throw once the editor is mid-destroy
 // (step navigation tears the document down under a still-mounted rail; EJ2's
 // observer internals then hit `Object.keys(null)`). A dead editor must read as
-// a no-op, never as a crash that unmounts the form step — but keep the error
-// inspectable at debug level so a recurring failure that ISN'T teardown noise
-// (a real regression) stays visible to developers.
+// a no-op, never as a crash that unmounts the form step.
 const quietly = (fn: () => void) => {
   try {
     fn();
   } catch (error) {
-    console.debug('Feathery: tracked-changes rail editor call failed.', error);
+    debugSwallowed(error);
   }
 };
 
@@ -103,7 +108,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       const changes = editor?.revisions?.changes;
       if (Array.isArray(changes)) return changes.length;
       return editor?.revisions?.length ?? 0;
-    } catch {
+    } catch (error) {
+      debugSwallowed(error);
       return 0;
     }
   }, [editor]);
@@ -112,7 +118,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     let views: ReturnType<typeof listRevisionGroups> = [];
     try {
       views = listRevisionGroups(editor);
-    } catch {
+    } catch (error) {
+      debugSwallowed(error);
       views = [];
     }
     lastRevisionCountRef.current = revisionCount();
@@ -171,7 +178,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       try {
         const current = editor.selection?.getCurrentRevision?.();
         revisions = Array.isArray(current) ? current : current ? [current] : [];
-      } catch {
+      } catch (error) {
+        debugSwallowed(error);
         revisions = [];
       }
       if (revisions.length) {
@@ -191,8 +199,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
               return;
             }
           }
-        } catch {
+        } catch (error) {
           // A torn-down selection mid-teardown must not take the panel down.
+          debugSwallowed(error);
         }
       }
       // The cursor is not on an assistant edit: nothing is active.
@@ -224,8 +233,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const settleRevisions = (revisions: any[], isAccept: boolean) => {
     try {
       resolveRevisionsAsOneUndo(editor, revisions, isAccept);
-    } catch {
+    } catch (error) {
       // A stale revision range must not take the panel down.
+      debugSwallowed(error);
     }
   };
 
@@ -239,7 +249,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     let remaining = 0;
     try {
       remaining = listRevisionGroups(editor).length;
-    } catch {
+    } catch (error) {
+      debugSwallowed(error);
       remaining = 0;
     }
     if (remaining) refocusPanel();
@@ -274,8 +285,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       } else {
         chip.revision?.select?.();
       }
-    } catch {
+    } catch (error) {
       // Navigation is best-effort; a disposed range is simply not selectable.
+      debugSwallowed(error);
     } finally {
       queueMicrotask(() => {
         ignoreSelectionRef.current = false;
