@@ -74,7 +74,7 @@ commits. SHAs below are from the current rebased `hilb-fresh` history.
 | ---------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ac90a1d2` | rewritten | Its per-anchor post-write guards now delegate to the shared block-span verifier. Table appearance and grounded numeric writes remain intact.          |
 | `32397351` | keep      | Structural formatting inheritance is independent of expectation ordering and is proven by the oracle's measurements inside both halves.               |
-| `71203dcd` | rewritten | Serialized snapshot reuse remains, but verified snapshots are invalidated when later section-boundary inheritance changes topology.                   |
+| `71203dcd` | rewritten | Verified snapshots are invalidated after topology changes; its queued public `enableLayout` toggle was removed because it deferred Control-Home.      |
 | `1306793c` | rewritten | Per-group relocation remains; preflight relocation now reads simulated post-prior-op text while the write plan retains the real baseline block.       |
 | `54f9bca1` | keep      | Stable attached-section boundaries are structural composition, not the split verifier.                                                                |
 | `68bfba67` | keep      | Live-order structural revision resolution is required for lossless accept/reject and does not alter text expectations.                                |
@@ -102,3 +102,4 @@ commits. SHAs below are from the current rebased `hilb-fresh` history.
 | `72942510` | rewritten | Removed its 1.5-second monkey-patch. Control-Home is now suppressed only for the synchronous document-edit transaction that triggers it.              |
 | `d3c79b51` | keep      | Host geometry changes use the narrower native editor resize API; no timer or broad container refresh remains.                                         |
 | `eadef169` | keep      | Makes every engine-owned selection non-navigating and blocks layout Control-Home only while the atomic edit call is on the stack, with exact cleanup. |
+| `415ab772` | keep      | Removes the bulk-layout property toggle whose deferred `refreshLayout()` unconditionally moved selection and viewport to the document start.          |
