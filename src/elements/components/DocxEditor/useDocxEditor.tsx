@@ -3,7 +3,8 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
   findReplaceCounterpart,
-  installRevisionGroupIsolation
+  installRevisionGroupIsolation,
+  preserveDocumentViewDuring
 } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
@@ -700,7 +701,34 @@ export function useDocxEditor({
     return editor.saveAsBlob('Docx');
   }, [editor]);
 
-  const resize = useCallback(() => containerInstRef.current?.resize?.(), []);
+  const resizeEditor = useCallback(
+    (refitZoom = false) => {
+      const container = containerInstRef.current;
+      if (!container) return;
+      if (!editor) {
+        container.resize?.();
+        return;
+      }
+      // DocumentEditorContainer#resize delegates to Syncfusion's full
+      // refreshLayout, which moves the selection to the document start before
+      // rebuilding. Keep Ayesha's host-resize owner, but run that existing
+      // mechanism through the engine's one visual-silence boundary so a review
+      // rail refresh cannot become navigation.
+      preserveDocumentViewDuring(editor, () => {
+        // Syncfusion latches this in its window handler; it gates re-measure.
+        editor.isContainerResize = false;
+        container.resize?.();
+        // resize() relays out but never refits the zoom, and the built-in
+        // status bar only redraws its label when told to.
+        if (refitZoom && editor.viewer?.zoomType === 'FitPageWidth') {
+          editor.fitPage('FitPageWidth');
+          container.statusBar?.updateZoomContent?.();
+        }
+      });
+    },
+    [editor]
+  );
+  const resize = useCallback(() => resizeEditor(), [resizeEditor]);
 
   // DocumentEditorContainer caches its layout geometry at `created` and never
   // observes its host box, so a later resize leaves it laid out against stale
@@ -721,15 +749,7 @@ export function useDocxEditor({
         // layout it does not recover from when the box returns.
         const { width, height } = el.getBoundingClientRect();
         if (width > 0 && height > 0) {
-          // Syncfusion latches this in its window handler, it gates re-measure
-          editor.isContainerResize = false;
-          containerInstRef.current?.resize?.();
-          // resize() relays out but never refits the zoom, and the built-in
-          // status bar only redraws its label when told to
-          if (editor.viewer?.zoomType === 'FitPageWidth') {
-            editor.fitPage('FitPageWidth');
-            containerInstRef.current?.statusBar?.updateZoomContent?.();
-          }
+          resizeEditor(true);
         }
       });
     });
@@ -738,7 +758,7 @@ export function useDocxEditor({
       if (frame) featheryWindow().cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [editor]);
+  }, [editor, resizeEditor]);
 
   return { containerRef, editor, loading, error, exportDoc, resize };
 }
