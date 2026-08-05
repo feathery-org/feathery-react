@@ -29,6 +29,11 @@ import {
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
 import { editorContainerId, isDocusignSignAction } from '../document';
 
+// A configured Generate Documents entry in the ordered `documents` array: a
+// template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
+// The SDK forwards these verbatim (action config -> request field).
+export type GenerateDocumentRef = string | { kind: string; [key: string]: any };
+
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
   'Failed to fetch',
@@ -486,8 +491,20 @@ export default class IntegrationClient {
     // generate response's `envelopes` metadata, which the review payload
     // replaces, and it presents its own editing surface instead of the review
     // viewer. Targeting a container therefore keeps the plain generate flow.
+    // A polymorphic entry has to take the direct call too. client-utils'
+    // generateFormDocuments interpolates `documentIds` straight into its poll
+    // URL, so a {kind:'quik'} entry stringifies to "[object Object]" and never
+    // matches the backend's document_cache_keys ("quik" for that item). The
+    // documents generate fine and then the first poll 400s "No document
+    // generation". generateEnvelopesForEditor maps the keys correctly.
+    const hasPolymorphicDocument = documentIds.some(
+      (doc: GenerateDocumentRef) => typeof doc !== 'string'
+    );
+
     if (
-      (openInEditor || isDocusignSignAction(action)) &&
+      (openInEditor ||
+        isDocusignSignAction(action) ||
+        hasPolymorphicDocument) &&
       !editorContainerId(action)
     ) {
       return await this.generateEnvelopesForEditor({
@@ -614,7 +631,7 @@ export default class IntegrationClient {
     envelopeAction,
     signMethod
   }: {
-    documentIds: string[];
+    documentIds: GenerateDocumentRef[];
     signerEmail: string;
     repeatable: boolean;
     runAsync: boolean;
@@ -660,7 +677,20 @@ export default class IntegrationClient {
     if (!response.ok) return { status: 'error', message: parseAPIError(data) };
     if (!runAsync || data.documents) return data;
 
-    const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${documentIds}`;
+    // Poll `dids` must match the backend's document_cache_keys: a template's
+    // UUID string, or the literal "quik" for the quik item. Interpolating the
+    // raw array would stringify a {kind:'quik'} entry to "[object Object]" and
+    // never match the cache.
+    const dids = documentIds
+      .map((doc) =>
+        typeof doc === 'string'
+          ? doc
+          : doc.kind === 'quik'
+          ? 'quik'
+          : String(doc.document_id)
+      )
+      .join(',');
+    const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${dids}`;
     return await this.pollUntilComplete(
       pollUrl,
       this.ENVELOPE_CHECK_INTERVAL,
