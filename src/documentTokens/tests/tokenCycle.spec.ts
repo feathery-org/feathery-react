@@ -260,6 +260,109 @@ describe('attachTokenCycle — propagation', () => {
   });
 });
 
+describe('attachTokenCycle — the new tag syntax', () => {
+  const store = (initial: Record<string, any> = {}) => {
+    const values: Record<string, any> = { ...initial };
+    return {
+      values,
+      read: (spec: TokenSpec) =>
+        spec.source ? values[spec.source] : undefined,
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) => {
+        for (const { spec, value } of updates) {
+          if (spec.source) values[spec.source] = value;
+        }
+      }
+    };
+  };
+
+  it('renders a field through its display transform', () => {
+    // `{{ note | upper }}` — the field holds what was typed, the document shows
+    // it transformed.
+    const editor = fakeEditor([
+      control(
+        {
+          id: 'note',
+          source: 'note',
+          format: { kind: 'text' },
+          display: 'UPPER(note)'
+        },
+        'acme'
+      )
+    ]);
+    attachTokenCycle(editor, { fields: store({ note: 'acme' }) });
+
+    expect(editor.valueOf('note')).toBe('ACME');
+  });
+
+  it('keeps the field holding what was typed, not the transformed text', () => {
+    const editor = fakeEditor([
+      control(
+        {
+          id: 'note',
+          source: 'note',
+          format: { kind: 'text' },
+          display: 'UPPER(note)'
+        },
+        'ACME'
+      )
+    ]);
+    const fields = store({ note: 'acme' });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('note', 'northstar');
+
+    expect(fields.values.note).toBe('northstar');
+    expect(editor.valueOf('note')).toBe('NORTHSTAR');
+  });
+
+  it('resolves a formula reading a field with no token of its own', () => {
+    // `{{ ROUND(cost * tax_pct / 100, 2) }}` where tax_pct appears nowhere in
+    // the document — the old plan reported "unknown token tax_pct".
+    const editor = fakeEditor([
+      control(
+        { id: 'cost', source: 'cost', format: { kind: 'currency' } },
+        '$200.00'
+      ),
+      control(
+        {
+          id: 'tax',
+          formula: 'ROUND(cost * tax_pct / 100, 2)',
+          reads: ['cost', 'tax_pct'],
+          format: { kind: 'currency' }
+        },
+        '$0.00'
+      )
+    ]);
+    const state = attachTokenCycle(editor, {
+      fields: store({ cost: 200, tax_pct: 13 })
+    }).getState();
+
+    expect([...state.errors]).toEqual([]);
+    expect(editor.valueOf('tax')).toBe('$26.00');
+  });
+
+  it('moves a formula when the field it reads changes, with no token to write', () => {
+    const editor = fakeEditor([
+      control(
+        {
+          id: 'tax',
+          formula: 'ROUND(cost * tax_pct / 100, 2)',
+          reads: ['cost', 'tax_pct'],
+          format: { kind: 'currency' }
+        },
+        '$26.00'
+      )
+    ]);
+    const fields = store({ cost: 200, tax_pct: 13 });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    fields.values.tax_pct = 25;
+    cycle.reconcile();
+
+    expect(editor.valueOf('tax')).toBe('$50.00');
+  });
+});
+
 describe('attachTokenCycle — undo propagates to the field', () => {
   /** A field store that records writes, standing in for the form engine. */
   const store = (initial: Record<string, any> = {}) => {

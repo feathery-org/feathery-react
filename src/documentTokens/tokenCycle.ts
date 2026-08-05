@@ -53,6 +53,7 @@ import {
   tokenAtCaret,
   writeValues
 } from './controls';
+import { evaluate } from './grammar';
 import { parseValue, renderValue } from './format';
 import {
   buildPlan,
@@ -252,13 +253,36 @@ export const attachTokenCycle = (
     return { texts, numbers, errors };
   };
 
-  /** The text a token should show. Numbers default to 0, text to ''. */
+  /**
+   * The text a token should show. Numbers default to 0, text to ''.
+   *
+   * A display transform decides the rendering while the field keeps whatever
+   * the reader typed — `UPPER(note)` shows `ACME` over a field holding `acme`,
+   * exactly as a currency format shows `$30.00` over `30`.
+   */
   const expectedText = (
     key: string,
     texts: Map<string, string>,
     numbers: Map<string, number>
   ): string => {
     const spec = plan.specs.get(key);
+
+    if (spec?.display) {
+      try {
+        // Display functions work on text, so the raw strings go in alongside
+        // the numbers; the numeric evaluator never sees a string because only
+        // a display function can reach one.
+        const seen = new Map<string, any>(numbers);
+        for (const [id, value] of texts) seen.set(id, value);
+        return String(evaluate(spec.display, seen));
+      } catch {
+        // A display that cannot be evaluated must not blank the token.
+        return (
+          texts.get(key) ?? renderValue(numbers.get(key) ?? 0, spec?.format)
+        );
+      }
+    }
+
     if (isText(spec)) return texts.get(key) ?? '';
     return renderValue(numbers.get(key) ?? 0, spec?.format);
   };

@@ -32,6 +32,17 @@ export type TokenSpec = {
   source?: string | null;
   /** Expression string for computed tokens; absent for inputs. */
   formula?: string | null;
+  /**
+   * How an editable field is SHOWN, when a display transform was piped onto it.
+   * The field still holds what the reader types; this only decides the
+   * rendering, the same way a currency format does.
+   */
+  display?: string | null;
+  /**
+   * Field keys a formula reads. Those fields may have no token of their own
+   * anywhere in the document, and the value still has to move when they change.
+   */
+  reads?: string[] | null;
   /** Address of THIS appearance. A token may appear many times. */
   instance?: string;
   format?: TokenFormat;
@@ -92,6 +103,25 @@ export const buildPlan = (specs: TokenSpec[]): Plan => {
   // node in the graph with three controls pointing at it.
   const specMap = new Map<string, TokenSpec>();
   for (const spec of specs) specMap.set(valueKey(spec), spec);
+
+  // A formula may read a field that has no token in the document. Seed an input
+  // node for it so the graph can resolve the name and the value still moves
+  // when that field changes. Nothing writes these: they have no appearance.
+  for (const spec of specs) {
+    for (const name of spec.reads ?? []) {
+      const key =
+        spec.index === undefined || spec.index === null
+          ? name
+          : `${name}__${spec.index}`;
+      if (specMap.has(key)) continue;
+      specMap.set(key, {
+        id: name,
+        source: name,
+        index: spec.index,
+        format: { kind: 'number' }
+      });
+    }
+  }
 
   // Which value keys exist for each bare name, so a row can bind its own.
   const rowsById = new Map<string, Set<string>>();
