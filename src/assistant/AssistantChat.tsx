@@ -104,6 +104,7 @@ import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
 import { prepareAssistantRequest } from './messageHistory';
+import { coalesceAssistantMessages } from './messageRendering';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -716,25 +717,10 @@ const AssistantChat = ({
     : attachments;
   const showAttachmentBar = stagedAttachments.length > 0 || !!attachmentError;
 
-  const messages = useMemo(() => {
-    const combined: typeof rawMessages = [];
-    for (const m of rawMessages) {
-      const prev = combined[combined.length - 1] as any;
-      if (
-        prev &&
-        prev.role === 'assistant' &&
-        (m as any).role === 'assistant'
-      ) {
-        combined[combined.length - 1] = {
-          ...prev,
-          parts: [...(prev.parts ?? []), ...((m as any).parts ?? [])]
-        } as any;
-      } else {
-        combined.push(m);
-      }
-    }
-    return combined;
-  }, [rawMessages]);
+  const messages = useMemo(
+    () => coalesceAssistantMessages(rawMessages),
+    [rawMessages]
+  );
 
   useEffect(() => {
     pinToBottom();
