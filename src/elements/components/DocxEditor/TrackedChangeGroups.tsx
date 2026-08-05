@@ -3,7 +3,7 @@ import {
   listRevisionGroups,
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
-} from '../../../assistant/tools/syncfusionDocumentOps';
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import { setActiveInlineRevision } from './useDocxEditor';
 
 // Review rail for pending tracked changes: one card per assistant accept

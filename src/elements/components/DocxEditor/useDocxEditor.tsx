@@ -4,7 +4,7 @@ import { dynamicImport } from '../../../integrations/utils';
 import {
   findReplaceCounterpart,
   installRevisionGroupIsolation
-} from '../../../assistant/tools/syncfusionDocumentOps';
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
 
