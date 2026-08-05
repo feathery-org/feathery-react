@@ -179,10 +179,18 @@ const memoryStore = (): FieldAccess => {
   };
 };
 
+/**
+ * The one live cycle per editor. Two cycles on one editor fight: each one's
+ * structure watchdog treats the other's row-building as damage and undoes it
+ * mid-grow — measured, this halved every grown row. Attaching supersedes.
+ */
+const activeCycle = new WeakMap<object, () => void>();
+
 export const attachTokenCycle = (
   editor: CycleEditor,
   options: { fields?: FieldAccess } = {}
 ): TokenCycle => {
+  activeCycle.get(editor)?.();
   // Without a host the cycle still works, holding field values in memory —
   // used by tests and by a document opened outside a form.
   const fields = options.fields ?? memoryStore();
@@ -883,6 +891,19 @@ export const attachTokenCycle = (
   const onDomDoubleClick = () => setTimeout(onDoubleClick, 0);
   surface?.addEventListener?.('dblclick', onDomDoubleClick);
 
+  const detach = (): void => {
+    // Leaving an action open would swallow every later edit into one step.
+    closeEditStep();
+    editor.removeEventListener?.('selectionChange', onSelectionChange);
+    editor.removeEventListener?.('documentChange', onDocumentChange);
+    editor.removeEventListener?.('contentChange', onContentChange);
+    editor.removeEventListener?.('keyDown', onKeyDown);
+    surface?.removeEventListener?.('dblclick', onDomDoubleClick);
+    listeners.clear();
+    if (activeCycle.get(editor) === detach) activeCycle.delete(editor);
+  };
+  activeCycle.set(editor, detach);
+
   refresh();
 
   return {
@@ -894,15 +915,6 @@ export const attachTokenCycle = (
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    detach: () => {
-      // Leaving an action open would swallow every later edit into one step.
-      closeEditStep();
-      editor.removeEventListener?.('selectionChange', onSelectionChange);
-      editor.removeEventListener?.('documentChange', onDocumentChange);
-      editor.removeEventListener?.('contentChange', onContentChange);
-      editor.removeEventListener?.('keyDown', onKeyDown);
-      surface?.removeEventListener?.('dblclick', onDomDoubleClick);
-      listeners.clear();
-    }
+    detach
   };
 };

@@ -35,6 +35,13 @@ const controlsOf = (editor: EditorLike): any[] => {
 const specOf = (control: any): TokenSpec | null =>
   decodeTag(control?.contentControlProperties?.tag ?? '');
 
+/** The table row widget a control sits in, walked by identity. */
+const rowOf = (control: any): any => {
+  const paragraph = control?.line?.paragraph;
+  const cell = paragraph?.associatedCell ?? paragraph?.containerWidget;
+  return cell?.ownerRow ?? cell?.containerWidget;
+};
+
 /**
  * How a structural step reports something it could not do.
  *
@@ -201,15 +208,18 @@ export const growGroup = (
 
       // The collection is kept in DOCUMENT order, so the new control is NOT
       // the last entry — taking the last one retags whichever token follows the
-      // table, destroying it. Find the control that was not there before.
+      // table, destroying it. A before/after set difference fails too: the
+      // editor can REPLACE the collection array, so old references never match.
       //
-      // Deliberately NOT "the first untagged control": a foreign content control
-      // in the document is untagged too, and retagging one would make someone
-      // else's control ours.
-      const existing = new Set(controlsOf(editor));
+      // The new control is the untagged one sitting in the row just built.
+      // Scoping to that row by identity is what keeps a foreign untagged
+      // control elsewhere in the document from being retagged as ours.
+      const targetRow = group.table.childWidgets?.[newRow];
       (editor as any).editor?.insertContentControl?.('Text');
       const built = controlsOf(editor).find(
-        (candidate) => !existing.has(candidate)
+        (candidate) =>
+          !candidate?.contentControlProperties?.tag &&
+          rowOf(candidate) === targetRow
       );
       if (!built?.contentControlProperties) {
         onProblem(

@@ -657,12 +657,7 @@ describe('a row deleted from the MIDDLE', () => {
     destroy();
   });
 
-  // KNOWN BUG, not yet fixed: growing a row after a deletion creates only the
-  // FIRST cell's control. After the first new control is tagged the caret is
-  // still inside it, and `insertContentControl` bails when the selection sits
-  // inside an existing content control, so the second cell is skipped. The
-  // caret has to be moved clear of the new control before the next insert.
-  it.skip('grows back onto the FREED index, linked and showing values', () => {
+  it('grows back onto the FREED index, linked and showing values', () => {
     const { editor, fields, destroy } = setup();
     deleteMiddle(editor);
     expect(fields.values.qty).toEqual([11, 33]);
