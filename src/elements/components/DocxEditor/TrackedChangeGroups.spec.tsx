@@ -955,4 +955,79 @@ describe('RailErrorBoundary', () => {
       destroyRealEditor(editor);
     }
   });
+
+  it('real SDK: an individual chip accepts again from its button after undo', () => {
+    const editor = makeRealEditor('Premium: $5,200');
+    let unmount = () => {};
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'individual-button-cs',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '$5,200',
+            replace: '$5,500',
+            group: 'update-premium'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      );
+      fireEvent.click(screen.getByText('$5,500'));
+      fireEvent.click(screen.getByLabelText('Accept this edit'));
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBe(2);
+      fireEvent.click(screen.getByText('$5,500'));
+      fireEvent.click(screen.getByLabelText('Accept this edit'));
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
+  });
+
+  it('real SDK: an individual chip rejects again from the keyboard after undo', () => {
+    const editor = makeRealEditor('Premium: $5,200');
+    let unmount = () => {};
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'individual-keyboard-cs',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '$5,200',
+            replace: '$5,500',
+            group: 'update-premium'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      let panel = screen.getByLabelText('Assistant tracked changes');
+      fireEvent.keyDown(panel, { key: 'j' });
+      fireEvent.keyDown(panel, { key: 'r' });
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBe(2);
+      panel = screen.getByLabelText('Assistant tracked changes');
+      fireEvent.keyDown(panel, { key: 'j' });
+      fireEvent.keyDown(panel, { key: 'r' });
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toContain('$5,200');
+      expect(editor.serialize()).not.toContain('$5,500');
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
+  });
 });
