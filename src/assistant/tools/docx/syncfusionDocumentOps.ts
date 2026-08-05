@@ -313,13 +313,8 @@ export interface EditOp {
   op: string;
   anchor?: string;
   expect?: string;
-  /**
-   * Assistant-defined accept/reject unit. Ops sharing a `group` within one
-   * change set resolve together from a single accept or reject decision; ops
-   * without one default to the change set id (today's all-or-nothing shape).
-   * The group is stamped into each created revision's `customData`, so it
-   * survives SFDT/DOCX round-trips and is rebindable after reload.
-   */
+  /** Accept/reject unit: same-`group` ops resolve together (default: the
+   *  change set id). Persisted in revision `customData`, survives reload. */
   group?: string;
   [field: string]: any;
 }
@@ -556,13 +551,8 @@ export interface ApplyEditsResult {
     // first-class grouped card in the revisions UI.
     revisionGrouping: 'bridge_bound_revision_cards' | 'no_revisions';
     uiGrouping: 'requires_cross_layer_group_card';
-    /**
-     * The accept/reject units this change set created: one entry per
-     * assistant-defined `group` (ops without one share the change set id).
-     * Accepting or rejecting ANY revision of a group resolves exactly that
-     * group. `revisionCount` is the number of live revisions bound to the
-     * group; a group whose ops all no-opped reports 0 - nothing to review.
-     */
+    /** Accept units created: one entry per `group` (ungrouped ops share the
+     *  change set id). A group whose ops all no-opped reports 0 revisions. */
     groups: Array<{
       id: string;
       opIndices: number[];
@@ -689,9 +679,8 @@ export interface LiveEditor {
   // eslint-disable-next-line no-use-before-define
   revisions?: LiveRevisionCollection;
   // SyncFusion stamps `revisionSettings.customData` onto every revision it
-  // creates while the value is set; the write path uses it to tag each op's
-  // revisions with their accept group. Optional so unit-test fakes without it
-  // simply skip tagging.
+  // creates while set — the accept-group tagging channel. Optional: fakes
+  // without it skip tagging.
   documentEditorSettings?: {
     revisionSettings?: { customData?: string | null; [k: string]: any };
     [k: string]: any;
@@ -710,11 +699,8 @@ export interface LiveRevision {
   customData?: string | null;
   accept?(): void;
   reject?(): void;
-  /**
-   * SyncFusion-internal single-revision resolve (`isAccept`, `isGroupAcceptOrReject`).
-   * Preferred over `accept`/`reject`, whose public path consults the pane's
-   * adjacency `groupedView` and resolves same-author/same-type NEIGHBOURS too.
-   */
+  /** Engine-internal single-revision resolve; preferred over accept/reject,
+   *  whose public path also resolves adjacent same-author/type NEIGHBOURS. */
   handleAcceptReject?(isAccept: boolean, isGroupAcceptOrReject: boolean): void;
   /** Public SyncFusion navigation: select this revision's range in the document. */
   select?(): void;
@@ -5145,18 +5131,14 @@ function rejectCreatedRevisions(
       'A failed change set created a revision that could not be rejected.'
     );
   for (const revision of revisions) {
-    // Single-revision path first: the public reject() cascades through the
-    // pane's adjacency groupedView and could reject neighbouring revisions
-    // this change set never created.
+    // Never the public reject(): its adjacency cascade could reject
+    // neighbouring revisions this change set never created.
     resolveSingleRevision(captureNativeResolvers(revision), false);
   }
 }
 
-// The durable link between "one assistant-defined accept group" and the
-// SyncFusion revisions it produced. The tag is written through SyncFusion's
-// `revisionSettings.customData`, which the engine stamps onto every revision
-// created while it is set and which round-trips through SFDT/DOCX - unlike the
-// in-memory accept/reject bindings, which die with the JS objects.
+// Durable accept-group tag, carried in revision customData: unlike the
+// in-memory bindings, it round-trips through SFDT/DOCX.
 const REVISION_GROUP_TAG_VERSION = 1;
 
 export interface RevisionGroupTag {
@@ -5200,15 +5182,10 @@ export function parseRevisionGroupTag(
   return undefined;
 }
 
-// Resolve ONE revision without SyncFusion's adjacency cascade. The public
-// `accept()`/`reject()` route through the pane's `groupedView`, which lumps
-// same-author/same-type NEIGHBOURING revisions into one card and resolves the
-// whole card - that is exactly how accepting one assistant edit used to drag
-// unrelated edits along. `handleAcceptReject` is the engine's own
-// single-revision path (the one its group loop calls per member). It is
-// internal, so feature-detect it and keep the public call as the fallback;
-// note it does not fire `beforeAcceptRejectChanges` (`accept()` fires that
-// before delegating).
+// Resolve ONE revision without the adjacency cascade: public accept/reject
+// resolve the pane's whole same-author/type neighbour card. The internal
+// `handleAcceptReject` is feature-detected (fallback: public call); note it
+// skips `beforeAcceptRejectChanges`.
 function resolveSingleRevision(
   natives: {
     accept?: () => void;
@@ -5225,11 +5202,9 @@ function resolveSingleRevision(
   if (fn) fn();
 }
 
-// Point SyncFusion's revision tagger at this op's accept group: every revision
-// the editor creates until the next stamp carries the tag in `customData`
-// (editor.js stamps `revisionSettings.customData` onto each new revision).
-// Editors without `revisionSettings` (unit-test fakes) simply skip tagging and
-// fall back to change-set-wide grouping.
+// Every revision created until the next stamp carries this op's group tag.
+// Editors without `revisionSettings` (test fakes) skip tagging and fall back
+// to change-set-wide grouping.
 function stampRevisionGroup(
   editor: LiveEditor,
   changeSetId: string,
@@ -5243,13 +5218,10 @@ function stampRevisionGroup(
   );
 }
 
-// SyncFusion coalesces adjacent same-author/same-type revisions into ONE
-// revision object (`isRevisionMatched` checks only author + type), which
-// silently folds a second accept group's tracked content into the first
-// group's revision - the second tag never lands. Gate the engine's merge
-// predicates on the group tag so revisions only combine within one group.
-// Everything untagged (human edits, foreign customData) normalizes to the
-// same empty key and keeps native merge behavior.
+// SyncFusion coalesces adjacent same-author/same-type revisions into one
+// object, silently folding a second group's content (and losing its tag)
+// into the first — so gate the engine's merge predicates on the group tag.
+// Untagged content normalizes to one empty key: native merge behavior.
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 
 function revisionTagKey(customData: unknown): string {
@@ -5263,24 +5235,18 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
   if (mod[REVISION_ISOLATION_INSTALLED]) return;
   mod[REVISION_ISOLATION_INSTALLED] = true;
 
-  // The tag new content would carry: the engine stamps
-  // `revisionSettings.customData` onto every revision it creates.
+  // The tag new content would carry.
   const activeKey = () =>
     revisionTagKey(editor.documentEditorSettings?.revisionSettings?.customData);
 
-  // "May this new tracked content extend `item`?" `item` is a Revision or an
-  // element carrying revisions; unwrap to single revisions so the original
-  // author/type check and the tag check always apply to the same revision.
+  // "May this new tracked content extend `item`?" Unwrap element revisions so
+  // the author/type check and the tag check apply to the same revision.
   const originalMatched = mod.isRevisionMatched.bind(mod);
   mod.isRevisionMatched = (item: any, type: any): boolean => {
-    // A type-less call is an OWNERSHIP check, not a combine decision: e.g.
-    // handleDeleteTracking asks "is this pending insertion the current
-    // user's own?" and, when yes, removes the text outright instead of
-    // layering a Deletion revision. Tag-gating that answer makes the engine
-    // treat the author's own pending text as foreign, leaving content
-    // rejecting can no longer restore (untracked_write on the second write
-    // over a pending insertion). Combine/extend calls always pass a
-    // concrete revision type; only those are group-scoped.
+    // Type-less calls are OWNERSHIP checks ("is this pending insertion my
+    // own?" → remove outright, no Deletion layered) and must stay native:
+    // tag-gating them leaves content rejecting cannot restore. Only the
+    // typed combine/extend calls are group-scoped.
     if (type === undefined || type === null) return originalMatched(item, type);
     const revisions: any[] =
       item && typeof item.revisionLength === 'number'
@@ -5319,13 +5285,10 @@ function captureNativeResolvers(rev: LiveRevision) {
   };
 }
 
-// Bind a set of revisions authored by ONE logical edit group so per-card
-// accept/reject is all-or-nothing within the group and NEVER wider. The first
-// accept/reject on any member resolves the whole group with that single
-// decision; later clicks on already-resolved members are no-ops. Each native
-// handler is wrapped in try/catch so a stale-range throw on a later member
-// cannot undo the first member's (safe) result. Single-revision groups are
-// bound too: the wrapper is what routes around the pane's adjacency cascade.
+// Bind one edit group's revisions so accept/reject on ANY member resolves
+// the whole group — never wider — through the non-cascading path. Later
+// calls on resolved members are no-ops; single-revision groups are bound
+// too (the wrapper is what routes around the adjacency cascade).
 function groupRevisionsAtomic(
   group: LiveRevision[],
   changeSetId?: string,
@@ -5368,13 +5331,9 @@ function groupRevisionsAtomic(
   });
 }
 
-/**
- * Resolve ONE tracked revision without resolving the rest of its accept group
- * and without SyncFusion's adjacency cascade. Group-bound revisions route
- * through the native resolvers captured at bind time (their public
- * accept/reject were rewired to whole-group resolution); unbound revisions
- * take the same single-revision path directly.
- */
+/** Resolve ONE revision — not its accept group, no adjacency cascade.
+ *  Group-bound revisions use the natives captured at bind time (their public
+ *  accept/reject were rewired to whole-group resolution). */
 export function resolveRevisionIndividually(
   revision: LiveRevision,
   isAccept: boolean
@@ -5387,14 +5346,9 @@ export function resolveRevisionIndividually(
   resolveSingleRevision(captureNativeResolvers(revision), isAccept);
 }
 
-/**
- * Resolve several revisions as ONE undoable operation. Resolving them
- * one-by-one records one history entry each, so undo peels the unit apart —
- * e.g. undoing an accepted replace restores only its inserted half, which
- * then reads as a plain insertion. Wrap the batch in the engine's complex
- * history (the same mechanism its native Accept All uses) so a single undo
- * restores the whole unit.
- */
+/** Resolve several revisions as ONE undo step via the engine's complex
+ *  history (native Accept All's mechanism) — per-revision entries would let
+ *  undo peel the unit apart (e.g. a replace reviving only its insert half). */
 export function resolveRevisionsAsOneUndo(
   editor: LiveEditor,
   revisions: LiveRevision[],
@@ -5441,10 +5395,9 @@ interface RevisionGroupingReport {
   revisionsByGroup: Map<string, number>;
 }
 
-// Diff the revisions created by this change set (against a pre-batch snapshot),
-// partition them by the group tag each revision carries in `customData`, and
-// bind each partition atomically. Revisions with no readable tag (test fakes,
-// editors without `revisionSettings`) fall back into the change-set-wide group.
+// Partition this change set's created revisions by their customData group
+// tag and bind each partition atomically; untaggable revisions fall back to
+// the change-set-wide group.
 function groupNewRevisions(
   editor: LiveEditor,
   before: LiveRevision[],
@@ -5469,10 +5422,8 @@ function groupNewRevisions(
   return { revisionCount: created.length, revisionsByGroup };
 }
 
-// The change-set result's account of its accept units: which edits form each
-// group and how many live revisions the group ended up bound to. Derived from
-// the ops (the declaration) and the post-write partition (the fact), so a
-// group whose writes all no-opped is visibly empty rather than missing.
+// changeSet.groups: ops declare the units, the post-write partition supplies
+// the facts — a group whose writes all no-opped reports visibly empty.
 function reportRevisionGroups(
   edits: EditOp[],
   changeSetId: string,
@@ -5503,15 +5454,13 @@ export interface RevisionGroupItem {
   revision: LiveRevision;
   /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | 'Replace' | ''. */
   revisionType: string;
-  /** Readable excerpt of the tracked content; empty for pure structure.
-   *  For a Replace this is the INSERTED (new) text. */
+  /** Excerpt of the tracked content (Replace: the NEW text); empty for
+   *  pure structure. */
   text: string;
-  /** Replace only: the deleted (old) text, so review UI can render a
-   *  `− old / + new` diff. */
+  /** Replace only: the deleted (old) text for a `− old / + new` diff. */
   beforeText?: string;
-  /** A replace is ONE edit made of two revisions (delete old + insert new);
-   *  `revision` holds the deletion and `partner` the insertion, so one
-   *  approval must resolve both. */
+  /** Replace only: the insertion half (`revision` holds the deletion) —
+   *  one approval must resolve both. */
   partner?: LiveRevision;
   /** Who made the edit (the revision's author string). */
   author?: string;
@@ -5528,10 +5477,8 @@ export interface RevisionGroupView {
   items: RevisionGroupItem[];
 }
 
-// The visible text a revision's tracked range holds. SyncFusion's range items
-// are text runs (with `.text`) interleaved with structural markers (paragraph
-// marks, row formats) that have none; the excerpt is for a review card, so
-// structure simply contributes nothing and the card falls back to a label.
+// The range's visible text: structural markers (paragraph marks, row
+// formats) have no `.text` and contribute nothing.
 function revisionRangeText(revision: LiveRevision): string {
   let range: any[];
   try {
@@ -5547,18 +5494,8 @@ function revisionRangeText(revision: LiveRevision): string {
   return out.trim();
 }
 
-/**
- * The assistant-tagged accept groups currently pending in the editor, in
- * revision-collection order, each with its live member revisions. Foreign or
- * untagged revisions (a human's manual tracked edits) are not included - they
- * remain the native pane's business. This is the read model for a grouped
- * review card UI; resolving a group is just calling accept()/reject() on any
- * member (the atomic binding does the rest).
- */
-// A tracked replace is a Deletion (old text) immediately followed in the
-// document by an Insertion (new text): the deletion range's last element is
-// linked directly to the insertion range's first. To a reviewer that is ONE
-// edit, so the pair folds into one 'Replace' item.
+// A tracked replace is a Deletion whose range links directly to an adjacent
+// Insertion's first element — ONE edit to a reviewer.
 function isReplacePair(
   deletion: LiveRevision,
   insertion: LiveRevision
@@ -5578,14 +5515,9 @@ function isReplacePair(
 // Memo key for findReplaceCounterpart: null = computed, no counterpart.
 const REPLACE_COUNTERPART_MEMO = '__robinReplaceCounterpart';
 
-/**
- * The other half of a tracked replace, from either side: the adjacent
- * same-group Insertion for a Deletion, or the adjacent same-group Deletion
- * for an Insertion. Lets a consumer holding ONE revision (e.g. the canvas
- * renderer classifying an element box) treat the pair as a single edit.
- * Memoized on the revision objects — the two halves are created together,
- * so the linkage is stable for the revision's lifetime.
- */
+/** The other half of a tracked replace, from either side. Memoized on the
+ *  revision objects — the halves are created together, so the linkage is
+ *  stable for the revision's lifetime. */
 export function findReplaceCounterpart(
   revision: LiveRevision
 ): LiveRevision | undefined {
@@ -5641,6 +5573,8 @@ function computeReplaceCounterpart(
   return undefined;
 }
 
+/** Review-rail read model: pending revisions grouped by accept-group tag
+ *  (human/untagged edits group by author), replace pairs folded to one item. */
 export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   const views = new Map<string, RevisionGroupView>();
   for (const revision of snapshotRevisions(editor)) {
@@ -5681,15 +5615,9 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
   return [...views.values()];
 }
 
-/**
- * Rebuild accept-group bindings from the tags persisted in each revision's
- * `customData`. The in-memory wrappers installed at write time do not survive
- * a save/reload (or a fresh editor mount over an existing document); the tags
- * do. Safe to call repeatedly - already-bound revisions are skipped - and a
- * no-op for documents with no assistant-tagged revisions.
- *
- * @returns the number of revisions (re)bound into groups.
- */
+/** Rebuild accept-group bindings from persisted customData tags — the
+ *  in-memory wrappers die on save/reload, the tags don't. Idempotent
+ *  (bound revisions are skipped). Returns how many revisions were bound. */
 export function rebindRevisionGroups(editor: LiveEditor): number {
   const partitions = new Map<
     string,
@@ -6460,10 +6388,8 @@ export function applyDocumentEdits(
   // replaced the text it targeted rather than landing beside it.
   let rejectStream = '';
   let acceptStream = '';
-  // Catch-all rebind: revisions from earlier change sets (or an earlier
-  // session over a reloaded document) whose in-memory bindings are gone get
-  // their accept groups rebuilt from the persisted customData tags before any
-  // new writes land. Idempotent - bound revisions are skipped.
+  // Catch-all: rebuild bindings lost to reload/earlier sessions before any
+  // new writes land.
   rebindRevisionGroups(editor);
   // Adjacent writes from different accept groups must not coalesce into one
   // revision; see installRevisionGroupIsolation. Idempotent.

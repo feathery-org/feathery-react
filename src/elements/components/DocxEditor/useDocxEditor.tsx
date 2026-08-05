@@ -60,20 +60,11 @@ function loadAccentOverride() {
   doc.head.appendChild(style);
 }
 
-// GitHub-style tracked-change rendering: insertions get a green highlight
-// and keep the document's font color; deletions get a red highlight with
-// red struck-through text. A replace pair reads as struck old text followed
-// by green new text — one edit, resolved together. Tracked table rows keep
-// their real cell shading under the same washes (the engine otherwise
-// repaints every cell with an opaque revision tint). Syncfusion draws the
-// document on CANVAS, so this is a renderer
-// patch, not CSS: `checkRevisionType()` is the single source feeding the
-// author-color text and the underline/strike decorations across every render
-// path (text, lists, images, paragraph marks) — blank it, then paint our own
-// word-level decoration using the same geometry as Syncfusion's native
-// highlighter fillRect. The patch also draws a boundary ring around the edit
-// the review UI marks active, and records each pending edit's on-canvas
-// geometry for overlays (margin gutter bars).
+// GitHub-style tracked-change rendering: green wash for insertions, red wash
+// + red struck text for deletions, replace = struck old + green new. The
+// document is drawn on CANVAS, so this is a renderer patch, not CSS — blank
+// `checkRevisionType()` (sole source of native revision styling) and paint
+// our own decoration; also rings the active edit and records edit geometry.
 const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
 const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
@@ -100,11 +91,8 @@ export interface RevisionRect {
   bottom: number;
 }
 
-/**
- * Mark ONE edit as active in the document: the renderer draws a boundary
- * ring around every run of that revision (and its replace counterpart).
- * Repaints only when the value actually changes.
- */
+/** Mark ONE edit active: the renderer rings that revision's runs (and its
+ *  replace counterpart's). Repaints only on change. */
 export function setActiveInlineRevision(ed: any, revision: any): void {
   if (!ed) return;
   const next = revision ?? null;
@@ -133,9 +121,8 @@ export function installRevisionHighlightRendering(ed: any) {
   if (!renderer || renderer[REVISION_RENDER_PATCH]) return;
   renderer[REVISION_RENDER_PATCH] = true;
 
-  // What this box's tracked content is, for decoration purposes. A run that
-  // is both inserted and deleted (edited within an insertion) reads as a
-  // deletion.
+  // A run that is both inserted and deleted (edited within an insertion)
+  // reads as a deletion.
   const classifyBox = (
     elementBox: any
   ): { revision: any; kind: 'add' | 'del'; counterpart: any } | undefined => {
@@ -165,9 +152,8 @@ export function installRevisionHighlightRendering(ed: any) {
     return { revision, kind, counterpart };
   };
 
-  // One gutter bar per edit — human edits included, since the review rail
-  // shows them too. Both halves of a replace accumulate under the deletion
-  // revision.
+  // One gutter bar per edit (human edits included); a replace's halves
+  // accumulate under the deletion revision.
   const recordRect = (
     info: { revision: any; kind: 'add' | 'del'; counterpart: any },
     box: { y: number; h: number }
@@ -225,12 +211,9 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     let out;
     if (info?.kind === 'del') {
-      // Deleted text renders through the engine's own revision styling,
-      // but in OUR palette: checkRevisionType feeds both the glyph color
-      // and the native single-strike decoration, so deleted runs come out
-      // red and struck through with the engine's baseline-aware geometry.
-      // The fake entry carries no Insertion type, so no underline appears,
-      // and the swap lasts only for this call.
+      // Per-call swap: the fake Deletion entry makes the engine itself draw
+      // red glyphs + its baseline-aware single strike (no Insertion type in
+      // the entry → no underline).
       const prevCheck = renderer.checkRevisionType;
       renderer.checkRevisionType = () => [
         { type: 'Deletion', color: DELETION_TEXT_COLOR }
@@ -245,10 +228,8 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     if (info && box) {
       try {
-        // Boxes of the active edit — both halves of a replace count as the
-        // one edit — are collected and rung ONCE at the end of the page
-        // render, so touching runs share a single merged ring. The line
-        // widget identifies which text line the run sits on.
+        // Active-edit boxes (either replace half counts) are rung ONCE at
+        // page end so touching runs share a merged ring; `line` scopes them.
         const active = ed[ACTIVE_REVISION_KEY];
         if (
           active &&
@@ -266,12 +247,10 @@ export function installRevisionHighlightRendering(ed: any) {
     return out;
   };
 
-  // Tracked table rows: inside renderCellBackground the engine REPLACES each
-  // cell's real background with an opaque revision tint (#e1f2fa for row
-  // insertions, #fce6f4 for row deletions), hiding the table's actual
-  // styling while the change is pending. Hide the row revision from the
-  // original call so the TRUE shading paints, then overlay the same
-  // translucent wash tracked text gets — real styling shows through.
+  // Tracked table rows: the engine REPLACES each cell's real background with
+  // an opaque revision tint, hiding the table's styling. Hide the row
+  // revision from the original call so true shading paints, then overlay the
+  // same translucent wash tracked text gets.
   if (typeof renderer.renderCellBackground === 'function') {
     const originalRenderCellBackground =
       renderer.renderCellBackground.bind(renderer);
@@ -302,9 +281,8 @@ export function installRevisionHighlightRendering(ed: any) {
       } catch {
         // Unreadable revision: keep the insertion wash.
       }
-      // `revisionLength` is a configurable prototype getter; an own-property
-      // shadow hides the revision for exactly this call, and deleting the
-      // shadow restores the getter.
+      // `revisionLength` is a configurable prototype getter: an own-property
+      // shadow hides it for this call; deleting the shadow restores it.
       let shadowed = false;
       try {
         Object.defineProperty(rowFormat, 'revisionLength', {
@@ -353,13 +331,10 @@ export function installRevisionHighlightRendering(ed: any) {
     };
   }
 
-  // Boundary ring around the active edit, drawn after the page renders so
-  // the ring sits on top of everything. Runs are grouped by the LINE they
-  // sit on (never merged across lines — the ±1px box fudge makes adjacent
-  // lines' boxes overlap vertically, which would union a wrapped edit into a
-  // paragraph-wide rectangle), and within a line only TOUCHING runs merge
-  // (a replace's delete+insert halves ring as one; disjoint runs of a split
-  // revision ring separately rather than swallowing untouched text between).
+  // Active-edit boundary ring, drawn after page content. Boxes group by LINE
+  // (the ±1px fudge overlaps adjacent lines vertically — cross-line unions
+  // would ring the whole paragraph) and only TOUCHING runs merge within a
+  // line, so a replace rings as one while disjoint runs ring separately.
   const drawActiveRing = (fromIndex: number) => {
     const boxes: Array<{
       x: number;
@@ -409,9 +384,8 @@ export function installRevisionHighlightRendering(ed: any) {
       ctx.save();
       ctx.strokeStyle = RING_LINE;
       ctx.lineWidth = RING_WIDTH;
-      // Canvas strokes straddle the path, so inset by half the stroke width:
-      // the ring's OUTER edge lands exactly on the highlight boundary — no
-      // whitespace against the wash, no bleed into neighbouring characters.
+      // Strokes straddle the path: inset by half the width so the ring's
+      // OUTER edge lands on the highlight boundary (no gap, no bleed).
       const inset = RING_WIDTH / 2;
       for (const u of unions) {
         const x = u.x + inset;
@@ -433,12 +407,9 @@ export function installRevisionHighlightRendering(ed: any) {
     }
   };
 
-  // Per-page hook on the renderer itself (renderWidgets renders ONE page):
-  // reset the geometry collections when the first visible page starts, draw
-  // this page's share of the active ring when it finishes (after its content,
-  // before the next page), and publish the pass when the last page is done.
-  // Hooking the renderer — not the viewer — survives whatever render path
-  // triggered the pass.
+  // Per-page hook (renderWidgets renders ONE page): reset collections on the
+  // first visible page, ring each page after its content, publish after the
+  // last. Hooking the renderer — not the viewer — survives every render path.
   const originalRenderWidgets = renderer.renderWidgets.bind(renderer);
   renderer.renderWidgets = (
     page: any,
@@ -627,18 +598,12 @@ export function useDocxEditor({
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
-          // The grouped review panel (TrackedChangeGroups) is this editor's
-          // review surface. Syncfusion auto-opens its own Changes pane the
-          // moment tracked changes appear (reviewPaneHelper), covering the
-          // panel — mark the pane user-closed, the same switch its ✕ sets,
-          // so the auto-open never fires.
+          // TrackedChangeGroups is the review surface: mark the native
+          // Changes pane user-closed (its ✕'s own switch) so its auto-open
+          // never fires and covers the panel.
           ed.showRevisions = false;
           if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
-          // Tagged tracked changes from different accept groups must not
-          // coalesce into one revision; see installRevisionGroupIsolation.
           installRevisionGroupIsolation(ed);
-          // GitHub-style change rendering: green/red highlights, no author
-          // color, no underline/strikethrough.
           installRevisionHighlightRendering(ed);
         } catch {
           // Review-pane/grouping setup must never block the editor mount.

@@ -3,15 +3,10 @@
 // pattern used for Calendly, Plaid, etc.) so the multi-MB library never enters
 // the SDK bundle.
 //
-// KEEP IN LOCKSTEP with @syncfusion/ej2-documenteditor in package.json —
-// constants.spec.ts enforces it. The tracked-changes review experience
-// patches engine INTERNALS (handleAcceptReject, isRevisionMatched,
-// checkRevisionType, renderTextElementBox, renderWidgets, selectRevision's
-// skipGroupSelect flag) that were probed against this exact version; tests
-// exercise the node_modules copy while production loads this CDN copy, so a
-// version skew would void everything the real-SDK tests prove. Bumping the
-// version means re-running the DocxEditor + assistant ops suites and a
-// harness walkthrough.
+// KEEP IN LOCKSTEP with @syncfusion/ej2-documenteditor in package.json
+// (constants.spec.ts enforces it): the tracked-changes work patches engine
+// internals probed against this exact version, and tests exercise the
+// node_modules copy while production loads this CDN copy.
 export const EJ2_VERSION = '34.1.31';
 
 const CDN_BASE = `https://cdn.syncfusion.com/ej2/${EJ2_VERSION}`;

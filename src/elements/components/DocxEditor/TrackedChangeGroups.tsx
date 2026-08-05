@@ -7,19 +7,15 @@ import {
 import { setActiveInlineRevision } from './useDocxEditor';
 
 // Review rail for pending tracked changes: one card per assistant accept
-// group, plus one card per human author's manual edits. A card expands to
-// its individual edits ("chips"), each rendered as a −/+ diff; the focused
-// chip carries its own Accept/Reject, the card carries group-wide ones, and
-// the rail head carries Accept all/Reject all. Resolution goes through the
-// non-cascading single-revision path wrapped as ONE undo unit. A resolved
-// edit leaves the rail immediately — an undo restores the revision and the
-// contentChange refresh brings its chip back.
+// group (plus one per human author), expanding to −/+ diff "chips" with
+// per-chip, per-card and rail-wide resolution — all through the
+// non-cascading path as ONE undo unit. Resolved edits leave the rail;
+// an undo brings them back via the contentChange refresh.
 
 interface Props {
   editor: any;
-  /** Controlled visibility: the host owns it so the drawer handle, the
-   *  panel's own ✕, and click-on-an-inline-edit all agree. The component
-   *  stays mounted while hidden so those listeners keep running. */
+  /** Host-owned visibility (drawer handle, ✕, inline click all agree);
+   *  stays mounted while hidden so the listeners keep running. */
   hidden?: boolean;
   onHiddenChange?: (hidden: boolean) => void;
 }
@@ -157,20 +153,17 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // The edit the document cursor sits inside (or the chip last clicked);
   // its chip is expanded, ringed, scrolled to, and shows its own actions.
   const [activeRevision, setActiveRevision] = useState<any>(null);
-  // Mirrors activeRevision for keyboard stepping: selectRevision fires
-  // selectionChange synchronously, and that handler must not fight the
-  // chip we just chose (it can resolve to a neighbour and skip every other
-  // edit). The ref is the keyboard handler's source of truth.
+  // Keyboard stepping reads this ref, not state: selectRevision echoes a
+  // synchronous selectionChange that can resolve to a NEIGHBOUR and make
+  // every arrow press skip an edit.
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Syncfusion's enableAutoFocus steals keyboard focus into its editable div
-  // whenever the selection changes (selectRevision, accept/reject re-layout).
-  // Every panel-initiated action must hand focus back to the rail, or the
-  // next arrow/J/K press moves the DOCUMENT CARET instead of stepping chips —
-  // which reads as the keyboard skipping edits.
+  // Syncfusion steals focus into its editable div on every selection change;
+  // panel actions must take it back or the next J/K press moves the DOCUMENT
+  // CARET instead of stepping chips.
   const refocusPanel = () => {
     panelRef.current?.focus({ preventScroll: true });
   };
@@ -209,11 +202,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     );
   }, [editor]);
 
-  // Assistant edits, manual edits, accept/reject and undo/redo all land as
-  // content changes — one per keystroke while someone types, so those
-  // refreshes ride a short trailing debounce. documentChange means a
-  // DIFFERENT document opened in place; that rebuild is immediate so the
-  // rail never shows the previous document's cards.
+  // contentChange (edits, resolutions, undo — one per keystroke) refreshes
+  // on a trailing debounce; documentChange (a DIFFERENT document opened in
+  // place) rebuilds immediately so stale cards never linger.
   useEffect(() => {
     if (!editor) return;
     refresh();
@@ -231,14 +222,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     };
   }, [editor, refresh]);
 
-  // Clicking a tracked change inline in the document navigates the rail to
-  // that edit. getCurrentRevision() is the same cursor→revision mapping the
-  // native pane uses on selection change; recompute the groups inside the
-  // handler so the lookup never works from a stale closure.
-  // Programmatic chip focus (keyboard/click) selects a revision on purpose —
-  // ignore the echo selectionChange so Syncfusion's cursor mapping cannot
-  // overwrite the chip we just stepped to (adjacent edits otherwise land on
-  // the neighbour and every arrow key appears to skip one).
+  // Inline click → rail navigation via the native cursor→revision mapping.
+  // Programmatic chip focus sets ignoreSelectionRef so its selectionChange
+  // echo cannot re-land on a neighbouring edit.
   useEffect(() => {
     if (!editor) return;
     const onSelectionChange = () => {
@@ -291,10 +277,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     });
   });
 
-  // Resolve a set of revisions through the non-cascading single-revision
-  // path (a revision's public accept/reject can be SyncFusion's native
-  // handler, which resolves whatever is CONTIGUOUS to it — not the group),
-  // wrapped so the whole set is ONE undo step.
+  // Non-cascading resolve (native accept/reject settles whatever is
+  // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const settleRevisions = (revisions: any[], isAccept: boolean) => {
     try {
       resolveRevisionsAsOneUndo(editor, revisions, isAccept);
@@ -308,9 +292,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
     settleRevisions(revisions, isAccept);
     refresh();
-    // Resolving the last edit unmounts the rail; refocusing it then would
-    // leave keyboard focus on <body>, where neither the rail nor Syncfusion
-    // sees another keystroke (⌘Z after "Accept all" would go nowhere).
+    // Resolving the last edit unmounts the rail — focus would land on
+    // <body>, where nobody sees the next ⌘Z.
     let remaining = 0;
     try {
       remaining = listRevisionGroups(editor).length;
@@ -329,19 +312,17 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       );
     }
     commitActiveRevision(chip.revision);
-    // Suppress the selectionChange echo from selectRevision (sync, and any
-    // trailing updateFocus microtask) so it cannot reassign activeRevision.
+    // Suppress selectRevision's selectionChange echo (sync + trailing
+    // microtask) so it cannot reassign activeRevision.
     ignoreSelectionRef.current = true;
     try {
-      // The public revision.select() may expand the selection to Syncfusion's
-      // adjacent same-author/type group. Its internal selector accepts a
-      // skipGroupSelect flag, which keeps navigation on this exact chip.
+      // skipGroupSelect keeps navigation on this exact chip — the public
+      // revision.select() may expand to the adjacent same-author/type group.
       const selection = editor?.selectionModule;
       if (typeof selection?.selectRevision === 'function') {
         selection.selectRevision(chip.revision, undefined, undefined, true);
-        // selectRevision normally scrolls while painting the selection. Make
-        // the jump explicit as well: some host/layout combinations suppress
-        // that implicit scroll while focus remains in the review rail.
+        // Explicit scroll too: some host/layout combos suppress the implicit
+        // one while focus stays in the rail.
         if (selection.start && selection.end) {
           editor.documentHelper?.scrollToPosition?.(
             selection.start,
@@ -365,10 +346,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
 
   const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
-    // The rail keeps keyboard focus after its own actions so J/K/A/R keep
-    // working — which also means Syncfusion (whose undo/redo handling lives
-    // on its editable element) never sees ⌘Z/Ctrl+Z pressed here. Forward
-    // the undo/redo chords to the document history.
+    // The rail holds focus for J/K/A/R, so Syncfusion never sees undo/redo
+    // chords pressed here — forward them to the document history.
     if ((event.ctrlKey || event.metaKey) && !event.altKey) {
       if (key === 'z' || key === 'y') {
         event.preventDefault();
@@ -427,9 +406,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         minHeight: 0
       }}
     >
-      {/* Bookmark-tab handle on the window's right edge, shown only while the
-          panel is collapsed (the panel's ✕ is the way to close it). Overlaid,
-          so it consumes no layout width. */}
+      {/* Bookmark-tab handle, shown only while collapsed (✕ closes the
+          panel). Overlaid, so it consumes no layout width. */}
       {onHiddenChange && hidden && (
         <button
           aria-label='Expand suggested changes'

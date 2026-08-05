@@ -339,15 +339,10 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
-      // The full tracked-changes review experience (render patch, native
-      // pane suppression, TrackedChangeGroups rail) ships with DocxEditor
-      // itself — hosted forms get it through the render above. This site
-      // adds only what a RELOADED document needs: accept groups persist in
-      // each revision's customData, but their in-memory accept/reject
-      // bindings die with the previous editor instance, so rebuild them for
-      // whatever document this editor holds. (Isolation is installed by
-      // useDocxEditor at create; the call here is an idempotent safety net.)
-      // Never allowed to affect editor registration.
+      // The review experience (render patch, pane suppression, rail) ships
+      // with DocxEditor itself; this site only rebuilds the accept-group
+      // bindings a RELOADED document lost (isolation here is an idempotent
+      // safety net). Never allowed to affect editor registration.
       try {
         rebindRevisionGroups(editor);
         installRevisionGroupIsolation(editor);
