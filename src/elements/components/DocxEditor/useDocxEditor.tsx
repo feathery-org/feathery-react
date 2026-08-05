@@ -449,6 +449,27 @@ export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
   installRevisionHighlightRendering(ed);
 }
 
+export function resizeDocxEditor(
+  container: any,
+  editor: any,
+  refitZoom = false
+): void {
+  if (!container) return;
+  if (!editor) {
+    container.resize?.();
+    return;
+  }
+  preserveDocumentViewDuring(editor, () => {
+    editor.isContainerResize = false;
+    if (typeof editor.resize === 'function') editor.resize();
+    else container.resize?.();
+    if (refitZoom && editor.viewer?.zoomType === 'FitPageWidth') {
+      editor.fitPage('FitPageWidth');
+      container.statusBar?.updateZoomContent?.();
+    }
+  });
+}
+
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
   const res = await fetch(source.url);
@@ -711,27 +732,11 @@ export function useDocxEditor({
   const resizeEditor = useCallback(
     (refitZoom = false) => {
       const container = containerInstRef.current;
-      if (!container) return;
-      if (!editor) {
-        container.resize?.();
-        return;
-      }
       // DocumentEditorContainer#resize enters refreshLayout, which homes the
       // cursor before rebuilding. The editor's own resize API performs the
       // required geometry refresh without that navigation side effect; keep
       // Ayesha's host-resize owner but use the narrower native operation.
-      preserveDocumentViewDuring(editor, () => {
-        // Syncfusion latches this in its window handler; it gates re-measure.
-        editor.isContainerResize = false;
-        if (typeof editor.resize === 'function') editor.resize();
-        else container.resize?.();
-        // resize() relays out but never refits the zoom, and the built-in
-        // status bar only redraws its label when told to.
-        if (refitZoom && editor.viewer?.zoomType === 'FitPageWidth') {
-          editor.fitPage('FitPageWidth');
-          container.statusBar?.updateZoomContent?.();
-        }
-      });
+      resizeDocxEditor(container, editor, refitZoom);
     },
     [editor]
   );
