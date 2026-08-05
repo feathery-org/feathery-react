@@ -168,6 +168,8 @@ export interface AppearanceRestore {
   cellAnchor: string;
   write?: AppearanceWrite;
   rowIsHeader?: boolean;
+  /** Table-level border topology captured before a normalized table write. */
+  tableBorders?: BorderWrite[];
 }
 
 /** The model-facing account of what an appearance op did. */
@@ -265,7 +267,10 @@ function sameBorder(a?: BorderFacts, b?: BorderFacts): boolean {
   return a.style === b.style && a.width === b.width && a.color === b.color;
 }
 
-function readBorders(format: any): BorderFactsBySide | undefined {
+function readBorders(
+  format: any,
+  requireInsideForAll = false
+): BorderFactsBySide | undefined {
   const raw = sfdtValue(format, 'borders', 'bdrs');
   if (!raw) return undefined;
   const sides: Record<BorderSide, BorderFacts | undefined> = {
@@ -278,7 +283,10 @@ function readBorders(format: any): BorderFactsBySide | undefined {
   if (!present.length) return undefined;
   if (
     present.length === BORDER_SIDES.length &&
-    BORDER_SIDES.every((side) => sameBorder(sides[side], sides.top))
+    BORDER_SIDES.every((side) => sameBorder(sides[side], sides.top)) &&
+    (!requireInsideForAll ||
+      (sameBorder(readBorder(sfdtValue(raw, 'horizontal', 'h')), sides.top) &&
+        sameBorder(readBorder(sfdtValue(raw, 'vertical', 'v')), sides.top)))
   )
     return { all: sides.top };
   const out: BorderFactsBySide = {};
@@ -306,7 +314,11 @@ function readVerticalAlignment(raw: any): CellVerticalAlignment | undefined {
   return value === 'Top' ? undefined : value;
 }
 
-function readAppearanceFrom(format: any, withAlignment: boolean) {
+function readAppearanceFrom(
+  format: any,
+  withAlignment: boolean,
+  tableLevel = false
+) {
   const shading = readColor(
     sfdtValue(
       sfdtValue(format, 'shading', 'sd') ?? {},
@@ -314,7 +326,7 @@ function readAppearanceFrom(format: any, withAlignment: boolean) {
       'bgc'
     )
   );
-  const borders = readBorders(format);
+  const borders = readBorders(format, tableLevel);
   const verticalAlignment = withAlignment
     ? readVerticalAlignment(sfdtValue(format, 'verticalAlignment', 'va'))
     : undefined;
@@ -373,7 +385,7 @@ export function collectTableAppearance(
       cells: shared ? cells.map(() => undefined) : cells
     };
   });
-  const tableLevel = readAppearanceFrom(tableFormat, false);
+  const tableLevel = readAppearanceFrom(tableFormat, false, true);
   return {
     ...(typeof styleName === 'string' && styleName.trim()
       ? { styleName: styleName.trim() }
@@ -406,6 +418,28 @@ export function cellAppearanceAt(
   const rowFacts = appearance.rows[row];
   if (!rowFacts) return undefined;
   return rowFacts.cells[column] ?? rowFacts.appearance;
+}
+
+/**
+ * One cell's rendered appearance after SyncFusion's table-level fallback.
+ * The serializer keeps table borders at `tableFormat` even though the renderer
+ * resolves them for every cell; copy comparisons must use that same resolved
+ * view or they rewrite an already-correct table into redundant cell borders.
+ */
+export function resolvedCellAppearanceAt(
+  appearance: TableAppearance,
+  row: number,
+  column: number
+): AppearanceFacts | undefined {
+  const table = appearance.appearance;
+  const cell = cellAppearanceAt(appearance, row, column);
+  if (!table) return cell;
+  if (!cell) return table;
+  return {
+    ...(table.shading ? { shading: table.shading } : {}),
+    ...(table.borders ? { borders: table.borders } : {}),
+    ...cell
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -590,7 +624,7 @@ export function copiedCellAppearance(
   const columnCount = rowFacts.cells.length;
   const sourceColumn =
     columnCount > 0 ? Math.min(targetColumn, columnCount - 1) : 0;
-  const base = cellAppearanceAt(source, sourceRow, sourceColumn);
+  const base = resolvedCellAppearanceAt(source, sourceRow, sourceColumn);
   const mapped: AppearanceFacts = { ...(base ?? {}) };
   if (base?.borders && !base.borders.all) {
     const borders = { ...base.borders };
