@@ -90,6 +90,25 @@ const formFieldAccess: FieldAccess = {
       next[spec.source] = rows;
     }
     if (Object.keys(next).length > 0) setFieldValues(next);
+  },
+  rowCount: (source) => {
+    const value = fieldValues[source];
+    if (Array.isArray(value)) return value.length;
+    // A repeated field holds a bare scalar before any repeat exists, which is
+    // one row; nothing at all is no rows.
+    return value === undefined || value === null ? 0 : 1;
+  },
+  removeRow: (sources, index) => {
+    const next: Record<string, any> = {};
+    for (const source of sources) {
+      const value = fieldValues[source];
+      if (!Array.isArray(value)) continue;
+      if (index < 0 || index >= value.length) continue;
+      // A splice, not a blank: the rows below move up, which is what the
+      // document just did when the row was deleted.
+      next[source] = [...value.slice(0, index), ...value.slice(index + 1)];
+    }
+    if (Object.keys(next).length > 0) setFieldValues(next);
   }
 };
 

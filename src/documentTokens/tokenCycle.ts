@@ -56,6 +56,16 @@ import {
 import { evaluate } from './grammar';
 import { parseValue, renderValue } from './format';
 import {
+  deletedRows,
+  groupLength,
+  growGroup,
+  liveTokens,
+  repeatGroups,
+  rowSnapshot,
+  RowSnapshot,
+  shrinkGroup
+} from './rows';
+import {
   buildPlan,
   instanceKey,
   Plan,
@@ -87,6 +97,18 @@ export type FieldAccess = {
   read: (spec: TokenSpec) => TokenValue | undefined;
   /** Write field values, batched so one update covers every token that moved. */
   write: (updates: Array<{ spec: TokenSpec; value: TokenValue }>) => void;
+  /**
+   * How many rows a repeated field holds, so the document can match it.
+   * Absent means the host cannot say, and rows are left as the document has them.
+   */
+  rowCount?: (source: string) => number | undefined;
+  /**
+   * Drop row `index` from these fields, shifting later rows down.
+   *
+   * A splice, not a blank: deleting the middle of three line items has to leave
+   * two, or the row comes straight back on the next sync.
+   */
+  removeRow?: (sources: string[], index: number) => void;
 };
 
 export type TokenState = {
@@ -174,6 +196,10 @@ export const attachTokenCycle = (
   // True while an undo action is held open around someone's edit — see
   // openEditStep.
   let editStepOpen = false;
+  // The repeat rows the document had when we last looked. A row deleted through
+  // the editor's own context menu is spotted by comparing against this, because
+  // the token collection still lists the deleted row's controls.
+  let lastRows: RowSnapshot = [];
   const listeners = new Set<(state: TokenState) => void>();
 
   let snapshot: TokenState = {
@@ -314,7 +340,7 @@ export const attachTokenCycle = (
 
   /** Whether any appearance of a token is showing a placeholder. */
   const showsPlaceholderFor = (key: string): boolean =>
-    readTokens(editor).some(
+    liveTokens(editor).some(
       ({ spec, value }) =>
         valueKey(spec) === key &&
         (value === PLACEHOLDER || showsPlaceholder(editor, instanceKey(spec)))
@@ -334,6 +360,26 @@ export const attachTokenCycle = (
    * repairs a control left showing its placeholder, all in one pass.
    */
   const reconcile = (): TokenState => {
+    // Rows first: the graph has to know about a row before values are written
+    // into it. Skipped mid-edit so a table never restructures under the caret.
+    //
+    // Flagged as ours for the same reason a write is: adding or removing a row
+    // CHANGES the token set, which is exactly what the structure watchdog exists
+    // to undo. Without this it reverts our own row and the growth half-lands.
+    if (!editingId && !applying && !isReplayingHistory(editor)) {
+      applying = true;
+      let moved = false;
+      try {
+        moved = syncRows();
+      } finally {
+        applying = false;
+        lastGood = documentShape(editor);
+      }
+      if (moved) {
+        plan = buildPlan(liveTokens(editor).map(({ spec }) => spec));
+      }
+    }
+
     const { texts, numbers, errors } = derive();
 
     // A token mid-edit has no verdict yet: deleting a value on the way to
@@ -376,6 +422,8 @@ export const attachTokenCycle = (
       }
     }
 
+    lastRows = rowSnapshot(editor);
+
     return publish({
       specs: [...plan.specs.values()],
       values: new Map(numbers),
@@ -404,7 +452,7 @@ export const attachTokenCycle = (
       Array<{ spec: TokenSpec; value: TokenValue }>
     >();
 
-    for (const { spec, value } of readTokens(editor)) {
+    for (const { spec, value } of liveTokens(editor)) {
       if (isComputed(spec) || value === PLACEHOLDER) continue;
       if (showsPlaceholder(editor, instanceKey(spec))) continue;
 
@@ -424,9 +472,46 @@ export const attachTokenCycle = (
     for (const [owner, updates] of adopt) owner.write(updates);
   };
 
+  /**
+   * Bring the document's repeat rows in step with the fields, then rebuild.
+   *
+   * The document is a view of the field: however many rows the field holds is
+   * how many the table shows. Growing builds the missing rows from the last one
+   * as a template; shrinking drops the surplus off the end, which is what keeps
+   * every surviving row's index correct.
+   */
+  const syncRows = (): boolean => {
+    if (typeof fields.rowCount !== 'function') return false;
+    let structural = false;
+
+    for (const group of repeatGroups(editor)) {
+      const lengths = group.sources
+        .map((source) => fields.rowCount?.(source))
+        .filter((count): count is number => typeof count === 'number');
+      if (lengths.length === 0) continue;
+
+      const target = Math.max(...lengths);
+      const current = groupLength(group);
+      // Never collapse a repeat to nothing: the last row is the template every
+      // later row is built from, and a table with no token rows cannot grow back.
+      if (target === current || target < 1) continue;
+
+      const { texts, numbers } = derive();
+      const changed =
+        target > current
+          ? growGroup(editor, group, target, (spec) =>
+              expectedText(valueKey(spec), texts, numbers)
+            ).length > 0
+          : shrinkGroup(editor, group, target).length > 0;
+      structural = structural || changed;
+    }
+
+    return structural;
+  };
+
   /** Re-read the document and rebuild the graph. */
   const refresh = (): TokenState => {
-    plan = buildPlan(readTokens(editor).map(({ spec }) => spec));
+    plan = buildPlan(liveTokens(editor).map(({ spec }) => spec));
     adoptFromDocument({ whenUnset: true });
     return reconcile();
   };
@@ -581,10 +666,37 @@ export const attachTokenCycle = (
    * reading now would take half-restored text. Coalesced, because a single undo
    * emits several of these.
    */
+  /**
+   * A row deleted in the editor has to leave the field, not just the page.
+   *
+   * The reader used the table's own context menu, so the document is already
+   * short a row; splicing the field is what stops the next sync putting it back.
+   * Highest index first, so each splice leaves the lower ones still valid.
+   */
+  const adoptRowDeletions = (): boolean => {
+    if (typeof fields.removeRow !== 'function') return false;
+    const gone = deletedRows(lastRows, rowSnapshot(editor));
+    if (gone.length === 0) return false;
+
+    for (const { sources, indexes } of gone) {
+      const backed = sources.filter(Boolean);
+      if (backed.length === 0) continue;
+      for (const index of [...indexes].sort((a, b) => b - a)) {
+        fields.removeRow?.(backed, index);
+      }
+    }
+    return true;
+  };
+
   let adoptScheduled = false;
   const onContentChange = (): void => {
     if (applying) return;
     if (!isReplayingHistory(editor)) {
+      if (adoptRowDeletions()) {
+        lastRows = rowSnapshot(editor);
+        refresh();
+        return;
+      }
       guardStructure();
       return;
     }

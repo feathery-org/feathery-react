@@ -147,14 +147,18 @@ const tags = (editor: DocumentEditor): string[] =>
     });
 
 const tableOf = (editor: DocumentEditor): any =>
-  (editor as any).documentHelper?.pages?.[0]?.bodyWidgets?.[0]?.childWidgets?.[0];
+  (editor as any).documentHelper?.pages?.[0]?.bodyWidgets?.[0]
+    ?.childWidgets?.[0];
 
 const rowCount = (editor: DocumentEditor): number =>
   tableOf(editor)?.childWidgets?.length ?? -1;
 
 const selectCell = (editor: DocumentEditor, row: number, col: number): void => {
   const target = tableOf(editor).childWidgets[row].childWidgets[col];
-  (editor.selection as any).selectParagraphInternal(target.childWidgets[0], true);
+  (editor.selection as any).selectParagraphInternal(
+    target.childWidgets[0],
+    true
+  );
 };
 
 const qtySpec = (index: number): TokenSpec => ({
@@ -168,7 +172,12 @@ describe('table rows carrying token content controls', () => {
   it('parses a table of inline content controls from sfdt', () => {
     const { editor, destroy } = openTable(2);
     expect(rowCount(editor)).toBe(3);
-    expect(tags(editor)).toEqual(['qty__0', 'amount__0', 'qty__1', 'amount__1']);
+    expect(tags(editor)).toEqual([
+      'qty__0',
+      'amount__0',
+      'qty__1',
+      'amount__1'
+    ]);
     destroy();
   });
 
@@ -181,7 +190,12 @@ describe('table rows carrying token content controls', () => {
     (editor.editor as any).insertRow(false, 1);
 
     expect(rowCount(editor)).toBe(4);
-    expect(tags(editor)).toEqual(['qty__0', 'amount__0', 'qty__1', 'amount__1']);
+    expect(tags(editor)).toEqual([
+      'qty__0',
+      'amount__0',
+      'qty__1',
+      'amount__1'
+    ]);
     destroy();
   });
 
@@ -256,6 +270,79 @@ describe('table rows carrying token content controls', () => {
 
     expect(sfdt).not.toContain('contentControlProperties');
     expect(sfdt).toContain('ftk');
+    destroy();
+  });
+
+  it('MEASURE: walking from a control up to its table row', () => {
+    const { editor, destroy } = openTable(2);
+    const control: any = controlsOf(editor)[2]; // qty__1
+    const chain: string[] = [];
+    let node: any = control;
+    for (let i = 0; i < 8 && node; i += 1) {
+      chain.push(node.constructor?.name ?? typeof node);
+      node = node.line ?? node.paragraph ?? node.associatedCell ?? node.containerWidget ?? node.ownerRow ?? node.ownerTable;
+    }
+    // eslint-disable-next-line no-console
+    console.log('WALK chain:', chain.join(' -> '));
+
+    const paragraph = control.line?.paragraph;
+    const cellW = paragraph?.associatedCell ?? paragraph?.containerWidget;
+    const rowW = cellW?.ownerRow ?? cellW?.containerWidget;
+    const tableW = rowW?.ownerTable ?? rowW?.containerWidget;
+    // eslint-disable-next-line no-console
+    console.log(
+      'cell:', cellW?.constructor?.name,
+      ' row:', rowW?.constructor?.name,
+      ' rowIndex:', rowW?.rowIndex,
+      ' table:', tableW?.constructor?.name,
+      ' cellIndex:', cellW?.cellIndex,
+      ' tableRows:', tableW?.childWidgets?.length
+    );
+    expect(true).toBe(true);
+    destroy();
+  });
+
+  it('MEASURE: the full grow recipe', () => {
+    const { editor, destroy } = openTable(2);
+
+    // 1. Put the selection in the last token row, by token address.
+    const last: any = controlsOf(editor).find((c: any) =>
+      (c?.contentControlProperties?.tag ?? '').includes('"index":1')
+    );
+    (editor.selection as any).selectContentControlInternal(last);
+
+    // 2. One row below it.
+    (editor.editor as any).insertRow(false, 1);
+    // eslint-disable-next-line no-console
+    console.log('after insertRow rows:', rowCount(editor));
+
+    // 3. Build a token in each cell of the new row.
+    const built: string[] = [];
+    for (let col = 0; col < 2; col += 1) {
+      selectCell(editor, 3, col);
+      editor.editor.insertText(col === 0 ? '3' : '$30.00');
+      selectCell(editor, 3, col);
+      (editor.editor as any).insertContentControl('Text');
+      const controls = controlsOf(editor);
+      const fresh = controls[controls.length - 1];
+      const spec: TokenSpec =
+        col === 0
+          ? { id: 'qty', source: 'qty', index: 2, format: { kind: 'number' } }
+          : { id: 'amount', index: 2, formula: 'qty * 10', format: { kind: 'currency' } };
+      fresh.contentControlProperties.tag = encodeTag(spec);
+      fresh.contentControlProperties.title = spec.id;
+      built.push(instanceKey(spec));
+    }
+    // eslint-disable-next-line no-console
+    console.log('GROW built:', built, '\n  tags:', tags(editor));
+
+    // 4. Survive a save.
+    editor.open(editor.serialize());
+    // eslint-disable-next-line no-console
+    console.log('GROW after reopen rows:', rowCount(editor), 'tags:', tags(editor));
+    // eslint-disable-next-line no-console
+    console.log('GROW values:', (editor as any).exportContentControlData().map((i: any) => i.value));
+    expect(true).toBe(true);
     destroy();
   });
 });
