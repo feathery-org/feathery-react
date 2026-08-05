@@ -93,7 +93,7 @@ describe('responsiveStyles', () => {
       expect(actual).toMatchObject({
         fontSize: '20px',
         color: '#FF0000',
-        fontFamily: 'Arial'
+        fontFamily: 'Arial, sans-serif'
       });
     });
   });
@@ -136,7 +136,7 @@ describe('responsiveStyles', () => {
       expect(actual).toMatchObject({
         fontSize: '20px',
         color: '#FF0000',
-        fontFamily: 'Arial',
+        fontFamily: 'Arial, sans-serif',
         marginBottom: '12px'
       });
     });
@@ -190,6 +190,40 @@ describe('responsiveStyles', () => {
     it('uses an explicit label_text_align over the default', () => {
       const actual = buildFieldLabelTarget({ label_text_align: 'center' });
       expect(actual.textAlign).toBe('center');
+    });
+  });
+
+  describe('transformFontFamilies', () => {
+    const transform = (families) =>
+      new ResponsiveStyles(
+        mockElement,
+        [],
+        false,
+        DEFAULT_MOBILE_BREAKPOINT
+      ).transformFontFamilies(families);
+
+    it('quotes each family with spaces, not the whole stack', () => {
+      expect(transform('Founders Grotesk, Helvetica Neue, Arial')).toBe(
+        "'Founders Grotesk', 'Helvetica Neue', Arial, sans-serif"
+      );
+    });
+
+    it('appends a generic fallback so native select popups do not fall back to serif', () => {
+      expect(transform('Founders Grotesk')).toBe(
+        "'Founders Grotesk', sans-serif"
+      );
+    });
+
+    it('leaves an existing generic fallback alone', () => {
+      expect(transform('Playfair Display, serif')).toBe(
+        "'Playfair Display', serif"
+      );
+    });
+
+    it('normalizes double quotes to single quotes', () => {
+      expect(transform('"Founders Grotesk", monospace')).toBe(
+        "'Founders Grotesk', monospace"
+      );
     });
   });
 });

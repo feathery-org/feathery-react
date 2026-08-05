@@ -10,6 +10,22 @@ import { CSSProperties } from 'react';
 
 export const DEFAULT_MOBILE_BREAKPOINT = 478;
 
+const GENERIC_FONT_FAMILIES = [
+  'serif',
+  'sans-serif',
+  'monospace',
+  'cursive',
+  'fantasy',
+  'system-ui',
+  'ui-serif',
+  'ui-sans-serif',
+  'ui-monospace',
+  'ui-rounded',
+  'inherit',
+  'initial',
+  'unset'
+];
+
 export const getViewport = (breakpoint = DEFAULT_MOBILE_BREAKPOINT) => {
   return featheryWindow().innerWidth > breakpoint ? 'desktop' : 'mobile';
 };
@@ -439,19 +455,23 @@ export default class ResponsiveStyles {
   }
 
   transformFontFamilies(families: string) {
-    families = families.replace(/"/g, "'");
-    families = families
+    const parsed = families
+      .replace(/"/g, "'")
       .split(',')
-      .map((family) => {
-        family = family.trim();
-        if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
-          // Font families with spaces must be quoted
-          return `'${families}'`;
-        }
-        return family;
-      })
-      .join(', ');
-    return families;
+      .map((family) => family.trim())
+      .filter(Boolean)
+      .map((family) =>
+        // Font families with spaces must be quoted
+        family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)
+          ? `'${family}'`
+          : family
+      );
+    // Native select popups can't load the form's webfonts, so without a generic
+    // fallback the browser renders the options in its own serif default rather
+    // than something close to the configured font
+    if (!GENERIC_FONT_FAMILIES.includes(parsed[parsed.length - 1]))
+      parsed.push('sans-serif');
+    return parsed.join(', ');
   }
 
   applyFontFamily(target: string, prefix = '') {
