@@ -714,6 +714,15 @@ export function useDocxEditor({
       // rebuilding. Keep Ayesha's host-resize owner, but run that existing
       // mechanism through the engine's one visual-silence boundary so a review
       // rail refresh cannot become navigation.
+      // Syncfusion's resize -> refreshLayout homes the cursor
+      // (moveToDocumentStart -> scroll-to-top) on a DEFERRED timer that
+      // outlives any synchronous restore, so a programmatic resize could
+      // yank the viewport seconds later. During our resize window the home
+      // routine has no user value: stub it for the deferred phase outright.
+      const sel: any = editor.selection;
+      const origHome = sel?.handleControlHomeKey;
+      const stubbed = typeof origHome === 'function';
+      if (stubbed) sel.handleControlHomeKey = () => {};
       preserveDocumentViewDuring(editor, () => {
         // Syncfusion latches this in its window handler; it gates re-measure.
         editor.isContainerResize = false;
@@ -725,6 +734,13 @@ export function useDocxEditor({
           container.statusBar?.updateZoomContent?.();
         }
       });
+      if (stubbed) {
+        const win = featheryWindow();
+        win.setTimeout(() => {
+          if (sel.handleControlHomeKey !== origHome)
+            sel.handleControlHomeKey = origHome;
+        }, 1500);
+      }
     },
     [editor]
   );
