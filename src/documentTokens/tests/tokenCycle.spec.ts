@@ -504,6 +504,25 @@ describe('attachTokenCycle — undo propagates to the field', () => {
     expect(fields.values.fee).toBe(150);
   });
 
+  it('a replay adoption scheduled before detach never runs after it', async () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('fee', 175);
+    editor.controls[0].value = '$150.00';
+    editor.editorHistory.isUndoing = true;
+    editor.fire('contentChange');
+    editor.editorHistory.isUndoing = false;
+
+    // Unmounted before the deferred adopt fires: a detached cycle must not
+    // keep writing into the field through a dead editor reference.
+    cycle.detach();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fields.values.fee).toBe(175);
+  });
+
   it('coalesces the several events one undo emits', async () => {
     const editor = feeEditor();
     const fields = store({ fee: 150 });

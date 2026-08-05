@@ -780,7 +780,7 @@ export const attachTokenCycle = (
     return true;
   };
 
-  let adoptScheduled = false;
+  let adoptTimer: ReturnType<typeof setTimeout> | null = null;
   const onContentChange = (): void => {
     if (applying) return;
     if (!isReplayingHistory(editor)) {
@@ -792,10 +792,9 @@ export const attachTokenCycle = (
       guardStructure();
       return;
     }
-    if (adoptScheduled) return;
-    adoptScheduled = true;
-    setTimeout(() => {
-      adoptScheduled = false;
+    if (adoptTimer !== null) return;
+    adoptTimer = setTimeout(() => {
+      adoptTimer = null;
       adoptFromDocument();
       reconcile();
     }, 0);
@@ -806,6 +805,10 @@ export const attachTokenCycle = (
     closeEditStep();
     editingInstance = null;
     editingId = null;
+    // The watchdog baseline and row snapshot describe the OLD document;
+    // comparing the new one against them would read the swap as damage.
+    lastGood = null;
+    lastRows = [];
     refresh();
   };
 
@@ -905,12 +908,20 @@ export const attachTokenCycle = (
   // absent from its typings — so the canvas it paints into is the only path, a
   // frame later so the reselect lands after SyncFusion's own handling.
   const surface: any = (editor as any)?.documentHelper?.viewerContainer;
-  const onDomDoubleClick = () => setTimeout(onDoubleClick, 0);
+  let dblclickTimer: ReturnType<typeof setTimeout> | null = null;
+  const onDomDoubleClick = () => {
+    dblclickTimer = setTimeout(onDoubleClick, 0);
+  };
   surface?.addEventListener?.('dblclick', onDomDoubleClick);
 
   const detach = (): void => {
     // Leaving an action open would swallow every later edit into one step.
     closeEditStep();
+    // A deferred adopt or reselect would run against a destroyed editor.
+    if (adoptTimer !== null) clearTimeout(adoptTimer);
+    adoptTimer = null;
+    if (dblclickTimer !== null) clearTimeout(dblclickTimer);
+    dblclickTimer = null;
     editor.removeEventListener?.('selectionChange', onSelectionChange);
     editor.removeEventListener?.('documentChange', onDocumentChange);
     editor.removeEventListener?.('contentChange', onContentChange);
