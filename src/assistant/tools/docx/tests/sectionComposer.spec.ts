@@ -523,6 +523,97 @@ describe('insert_section deterministic composer', () => {
     }
   });
 
+  it.each([
+    ['保险责任', '保险责任'],
+    ['Policy 保费 Summary', 'policy 保费 summary']
+  ])('resolves the Unicode section name %s', (heading, requested) => {
+    const sfdt = fixture();
+    const premium = sfdt.sections[0].blocks.find(
+      (block: any) => block.inlines?.[0]?.text === 'Premium Summary'
+    ) as any;
+    premium.inlines[0].text = heading;
+    const editor = makeEditor(sfdt);
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: `unicode-section-${heading}`,
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: `before:${requested}`,
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'insert_section'
+      });
+      const texts = flattenSfdt(JSON.parse(editor.serialize())).map(
+        (block) => block.text
+      );
+      expect(texts.indexOf('New Policy Section')).toBeLessThan(
+        texts.indexOf(heading)
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('does not treat a punctuation-only heading as a named section', () => {
+    const sfdt = fixture();
+    sfdt.sections[0].blocks.push(paragraph('!!!', 'Heading 1'));
+    const editor = makeEditor(sfdt);
+    try {
+      const before = editor.serialize();
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'punctuation-only-section',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: 'before:!!!',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'section_target_not_found'
+      });
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('skips empty-normalized headings for an unrelated English request', () => {
+    const sfdt = fixture();
+    sfdt.sections[0].blocks.push(paragraph('!!!', 'Heading 1'));
+    const editor = makeEditor(sfdt);
+    try {
+      const before = editor.serialize();
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'empty-normalized-candidate',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: 'before:Unrelated English Section',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'section_target_not_found'
+      });
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   it('resolves after:<name> after the section last content', () => {
     const editor = makeEditor();
     try {

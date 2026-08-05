@@ -10812,10 +10812,10 @@ interface NamedComposerSectionTarget {
 function composerSectionName(value: string): string {
   return value
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\p{M}+/gu, '')
     .toLowerCase()
     .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .replace(/^the\s+/, '')
     .replace(/\s+section$/, '')
     .trim();
@@ -10885,6 +10885,7 @@ function matchingComposerSections(
   if (exact.length) return exact;
   return entries.filter((entry) => {
     const candidate = composerSectionName(entry.heading.text);
+    if (!candidate) return false;
     return candidate.includes(requested) || requested.includes(candidate);
   });
 }
