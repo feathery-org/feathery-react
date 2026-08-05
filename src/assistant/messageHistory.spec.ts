@@ -1,6 +1,7 @@
 import type { UIMessage } from 'ai';
 
 import {
+  createRoundSelectionRequestPreparer,
   prepareAssistantMessagesForRequest,
   prepareAssistantRequest
 } from './messageHistory';
@@ -274,6 +275,71 @@ describe('assistant outbound message history', () => {
       messages,
       trigger: 'submit-message',
       messageId: 'message-id'
+    });
+  });
+
+  it('pins selection content and offsets to the user message for every tool continuation', () => {
+    const prepare = createRoundSelectionRequestPreparer();
+    const originalSelection = {
+      anchor: '0;4',
+      startOffset: '0;4;0',
+      endOffset: '0;4;58',
+      text: 'Our firm supports clients throughout the policy lifecycle.',
+      isCollapsed: false
+    };
+    const firstMessages = [user('turn-1')];
+    const first = prepare({
+      id: 'chat-id',
+      messages: firstMessages,
+      body: { selection: originalSelection },
+      trigger: 'submit-message',
+      messageId: 'turn-1'
+    }).body;
+
+    originalSelection.text = '\r';
+    const continuation = prepare({
+      id: 'chat-id',
+      messages: [
+        ...firstMessages,
+        tool('inventory', 'getDocumentInventory', { inventory: [] })
+      ],
+      body: {
+        selection: {
+          anchor: '0;0',
+          startOffset: '0;0;0',
+          endOffset: '0;0;1',
+          text: '\r',
+          isCollapsed: false
+        }
+      },
+      trigger: 'submit-message',
+      messageId: 'message-inventory'
+    }).body;
+
+    expect(first.selection).toEqual({
+      ...originalSelection,
+      text: 'Our firm supports clients throughout the policy lifecycle.'
+    });
+    expect(continuation.selection).toEqual(first.selection);
+
+    const next = prepare({
+      id: 'chat-id',
+      messages: [...firstMessages, user('turn-2')],
+      body: {
+        selection: {
+          anchor: '0;6',
+          startOffset: '0;6;3',
+          endOffset: '0;6;13',
+          text: '. Our firm',
+          isCollapsed: false
+        }
+      },
+      trigger: 'submit-message',
+      messageId: 'turn-2'
+    }).body;
+    expect(next.selection).toMatchObject({
+      anchor: '0;6',
+      text: '. Our firm'
     });
   });
 

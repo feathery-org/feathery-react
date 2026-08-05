@@ -4287,6 +4287,209 @@ function offsetString(value: unknown): string {
     : '';
 }
 
+interface SelectionTextRunBlock {
+  block: FlatBlock;
+  start: number;
+  textEnd: number;
+  markEnd: number;
+}
+
+interface SelectionTextRun {
+  container: string;
+  text: string;
+  blocks: SelectionTextRunBlock[];
+}
+
+interface LocatedSelectionRange {
+  target: FlatBlock;
+  startOffset: string;
+  endOffset: string;
+}
+
+type SelectionRelocationAttempt =
+  | { range: LocatedSelectionRange; relocated?: { from: string; to: string } }
+  | { details: string[] };
+
+// Body paragraphs form one searchable story, while every table cell is its own
+// selection container. Starting a fresh run whenever the flattened walk enters
+// a different container also prevents a body match from jumping across a table.
+function selectionSearchContainer(anchor: string): string {
+  const parts = String(anchor).split(';');
+  return parts.length >= 5 ? `cell:${parts.slice(0, 4).join(';')}` : 'body';
+}
+
+function selectionTextRuns(blocks: FlatBlock[]): SelectionTextRun[] {
+  const runs: SelectionTextRun[] = [];
+  for (const block of blocks) {
+    const container = selectionSearchContainer(block.anchor);
+    let run = runs[runs.length - 1];
+    if (!run || run.container !== container) {
+      run = { container, text: '', blocks: [] };
+      runs.push(run);
+    }
+    const start = run.text.length;
+    run.blocks.push({
+      block,
+      start,
+      textEnd: start + block.length,
+      markEnd: start + block.length + 1
+    });
+    // SyncFusion Selection exposes paragraph boundaries as carriage returns.
+    run.text += `${block.text}\r`;
+  }
+  return runs;
+}
+
+function selectionIdentityMatches(op: EditOp, text: string): boolean {
+  if (op.expect == null) return false;
+  const expect = String(op.expect);
+  const expectLength =
+    typeof op.expectLength === 'number' && op.expectLength > 0
+      ? op.expectLength
+      : null;
+  return expectLength == null
+    ? text === expect
+    : text.length === expectLength && text.startsWith(expect);
+}
+
+function declaredSelectionText(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>,
+  runs: SelectionTextRun[]
+): string | undefined {
+  const anchor = String(op.anchor ?? '');
+  const block = byAnchor.get(anchor);
+  if (!block) return undefined;
+  const startOffset = offsetString(op.startOffset) || `${anchor};0`;
+  const endOffset = offsetString(op.endOffset) || `${anchor};${block.length}`;
+  const start = offsetParts(startOffset);
+  const end = offsetParts(endOffset);
+  if (start.anchor !== anchor) return undefined;
+  const run = runs.find((candidate) =>
+    candidate.blocks.some((entry) => entry.block.anchor === start.anchor)
+  );
+  if (!run) return undefined;
+  const startEntry = run.blocks.find(
+    (entry) => entry.block.anchor === start.anchor
+  );
+  const endEntry = run.blocks.find(
+    (entry) => entry.block.anchor === end.anchor
+  );
+  if (!startEntry || !endEntry) return undefined;
+  if (
+    start.offset < 0 ||
+    start.offset > startEntry.block.length ||
+    end.offset < 0 ||
+    end.offset > endEntry.block.length + 1
+  )
+    return undefined;
+  const from = startEntry.start + start.offset;
+  const to = endEntry.start + end.offset;
+  return from < to ? run.text.slice(from, to) : undefined;
+}
+
+function declaredSelectionCrossesContainer(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>
+): boolean {
+  const start = byAnchor.get(String(op.anchor ?? ''));
+  const end = offsetParts(offsetString(op.endOffset));
+  const endBlock = byAnchor.get(end.anchor);
+  return !!(
+    start &&
+    endBlock &&
+    rangeContainer(start.anchor) !== rangeContainer(endBlock.anchor)
+  );
+}
+
+function rangeAtRunPosition(
+  run: SelectionTextRun,
+  start: number,
+  end: number
+): LocatedSelectionRange | undefined {
+  const startEntry = run.blocks.find(
+    (entry) => start >= entry.start && start <= entry.textEnd
+  );
+  const endEntry = run.blocks.find(
+    (entry) => end > entry.start && end <= entry.markEnd
+  );
+  if (!startEntry || !endEntry) return undefined;
+  if (
+    rangeContainer(startEntry.block.anchor) !==
+    rangeContainer(endEntry.block.anchor)
+  )
+    return undefined;
+  return {
+    target: startEntry.block,
+    startOffset: `${startEntry.block.anchor};${start - startEntry.start}`,
+    endOffset: `${endEntry.block.anchor};${end - endEntry.start}`
+  };
+}
+
+// Selection relocation is the range-shaped extension of the existing anchor
+// doctrine below: content is authoritative, matches must be unique, and a
+// table/cell boundary is never crossed. It consumes the request-time identity;
+// it does not consult the mutable UI selection.
+function attemptSelectionRelocation(
+  blocks: FlatBlock[],
+  op: EditOp
+): SelectionRelocationAttempt {
+  const from = String(op.anchor ?? '');
+  const expect = op.expect == null ? '' : String(op.expect);
+  const expectLength =
+    typeof op.expectLength === 'number' && op.expectLength > 0
+      ? op.expectLength
+      : expect.length;
+  const attempted = `selection relocation attempted from "${from}" using \`expect\` ${JSON.stringify(
+    expect
+  )}${op.expectLength ? ` and length ${expectLength}` : ''}`;
+  if (!expect || expectLength < expect.length)
+    return {
+      details: [
+        attempted,
+        'selection content identity is empty or internally inconsistent'
+      ]
+    };
+
+  const matches: LocatedSelectionRange[] = [];
+  for (const run of selectionTextRuns(blocks)) {
+    let cursor = 0;
+    while (cursor <= run.text.length - expect.length) {
+      const start = run.text.indexOf(expect, cursor);
+      if (start < 0) break;
+      const end = start + expectLength;
+      if (
+        end <= run.text.length &&
+        run.text.slice(start, end).startsWith(expect)
+      ) {
+        const range = rangeAtRunPosition(run, start, end);
+        if (range && sameRelocationContainer(from, range.target.anchor))
+          matches.push(range);
+      }
+      cursor = start + Math.max(expect.length, 1);
+    }
+  }
+
+  if (!matches.length)
+    return { details: [attempted, 'matching selection ranges: none'] };
+  if (matches.length > 1)
+    return {
+      details: [
+        attempted,
+        `matching selection ranges (${matches.length}): ${matches
+          .map((match) => `${match.startOffset}..${match.endOffset}`)
+          .join(', ')}`
+      ]
+    };
+  const range = matches[0];
+  return {
+    range,
+    ...(range.target.anchor !== from
+      ? { relocated: { from, to: range.target.anchor } }
+      : {})
+  };
+}
+
 function resolveSelectionRange(
   editor: LiveEditor,
   op: EditOp,
@@ -12287,6 +12490,55 @@ function applyDocumentEditsMeasured(
       } catch (err) {
         fail(index, op, err);
         return;
+      }
+    }
+    if (name === 'replace_selection') {
+      const suppliedStart = offsetString(op.startOffset);
+      // A start offset that names a different anchor is malformed, not drift.
+      // Preserve resolveSelectionRange's specific refusal instead of guessing.
+      const startDisagrees =
+        suppliedStart && anchorFromOffset(suppliedStart) !== String(op.anchor);
+      const runs = selectionTextRuns(blocks);
+      const declaredText = declaredSelectionText(op, byAnchor, runs);
+      const hasPinnedLength =
+        typeof op.expectLength === 'number' && op.expectLength > 0;
+      const declaredStartsWithExpect =
+        declaredText != null &&
+        op.expect != null &&
+        declaredText.startsWith(String(op.expect));
+      if (
+        !startDisagrees &&
+        !declaredSelectionCrossesContainer(op, byAnchor) &&
+        op.expect != null &&
+        !selectionIdentityMatches(op, declaredText ?? '') &&
+        // A pinned prefix at the declared start plus a conflicting total
+        // length is a bad CAS claim, not evidence that the range moved. Keep
+        // assertSelectionGuard's measured refusal instead of expanding it.
+        !(hasPinnedLength && declaredStartsWithExpect)
+      ) {
+        const attempt = attemptSelectionRelocation(blocks, op);
+        if ('range' in attempt) {
+          target = attempt.range.target;
+          relocated = attempt.relocated;
+          op = {
+            ...op,
+            anchor: attempt.range.target.anchor,
+            startOffset: attempt.range.startOffset,
+            endOffset: attempt.range.endOffset
+          };
+        } else {
+          results[index] = {
+            ok: false,
+            op: name,
+            anchor: op.anchor,
+            error: 'stale_anchor',
+            details: [
+              ...staleAnchorDetails(op.expect, declaredText ?? ''),
+              ...attempt.details
+            ]
+          };
+          return;
+        }
       }
     }
     // `set_cell_text` may address a cell an earlier op in this same change set

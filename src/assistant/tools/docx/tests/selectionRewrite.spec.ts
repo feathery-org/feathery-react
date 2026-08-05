@@ -516,6 +516,45 @@ describe("readSelection reports the selection's full extent", () => {
 });
 
 describe('replace_selection: every selection shape lands in one attempt', () => {
+  it('real SDK: a ghosted UI selection relocates the sent range by its content', () => {
+    const shifted = onePargraphDoc();
+    shifted.sections[0].blocks.splice(
+      1,
+      0,
+      para('New context inserted before the selected paragraph.')
+    );
+    const ed = makeRealDocumentEditor(shifted);
+    try {
+      ed.enableTrackChanges = true;
+      // The round was sent while COMMITMENT lived at 0;1. By apply time the
+      // UI range is gone and a new paragraph has shifted that content to 0;2.
+      ed.selection.select('0;0;0', '0;0;0');
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'ghost-selection-relocation',
+        edits: [
+          {
+            op: 'replace_selection',
+            anchor: '0;1',
+            startOffset: '0;1;0',
+            endOffset: `0;1;${COMMITMENT.length}`,
+            replace: ONE_STATEMENT,
+            expect: COMMITMENT
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'replace_selection',
+        anchor: '0;2',
+        relocated: { from: '0;1', to: '0;2' }
+      });
+      expect(blockTexts(ed)[2]).toBe(ONE_STATEMENT);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: a single-run selection (a sub-range of one paragraph)', () => {
     const ed = makeRealDocumentEditor(onePargraphDoc());
     try {
