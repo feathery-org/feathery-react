@@ -3210,6 +3210,35 @@ export function preserveDocumentViewDuring<T>(
     }
     if (documentHelper)
       documentHelper.skipScrollToPosition = previousSkipScroll;
+    // SyncFusion completes resize/relayout on deferred frames and can home the
+    // cursor (moveToDocumentStart -> scroll-to-top) AFTER the synchronous
+    // restore above. Hold the view through two trailing frames so the user
+    // never sees the deferred bounce; a real user scroll in between wins.
+    if (viewer && typeof scrollTop === 'number') {
+      const win = (viewer.ownerDocument?.defaultView || window) as Window;
+      let holds = 2;
+      let lastSeen = viewer.scrollTop;
+      const hold = () => {
+        if (viewer.scrollTop !== lastSeen && viewer.scrollTop < 150 && scrollTop > 600) {
+          if (documentHelper) documentHelper.skipScrollToPosition = true;
+          if (
+            typeof startOffset === 'string' &&
+            typeof endOffset === 'string' &&
+            editor.selection &&
+            (editor.selection.startOffset !== startOffset ||
+              editor.selection.endOffset !== endOffset)
+          )
+            editor.selection.select(startOffset, endOffset);
+          viewer.scrollTop = scrollTop;
+          if (typeof scrollLeft === 'number') viewer.scrollLeft = scrollLeft;
+          if (documentHelper)
+            documentHelper.skipScrollToPosition = previousSkipScroll;
+        }
+        lastSeen = viewer.scrollTop;
+        if (--holds > 0) win.requestAnimationFrame(hold);
+      };
+      win.requestAnimationFrame(hold);
+    }
   }
 }
 
