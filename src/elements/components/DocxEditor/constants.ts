@@ -2,6 +2,11 @@
 // loaded from Syncfusion's CDN at runtime (via the same dynamicImport/script
 // pattern used for Calendly, Plaid, etc.) so the multi-MB library never enters
 // the SDK bundle.
+//
+// KEEP IN LOCKSTEP with @syncfusion/ej2-documenteditor in package.json
+// (constants.spec.ts enforces it): the tracked-changes work patches engine
+// internals probed against this exact version, and tests exercise the
+// node_modules copy while production loads this CDN copy.
 export const EJ2_VERSION = '34.1.31';
 
 const CDN_BASE = `https://cdn.syncfusion.com/ej2/${EJ2_VERSION}`;

@@ -18,7 +18,7 @@ import {
   findDocumentOccurrences,
   flattenSfdt,
   LiveEditor
-} from '../syncfusionDocumentOps';
+} from '../docx/syncfusionDocumentOps';
 import { dispatchAssistantTool } from '../assistantToolDispatch';
 import { runLogicRuleById } from '../../../Form/logic';
 import internalState from '../../../utils/internalState';
@@ -108,7 +108,7 @@ const TITLE_RULE = {
 
 const seed = (fields: Record<string, any>) => {
   internalState[FORM] = {
-    client: { runServerSideLogicRule: jest.fn() },
+    client: {},
     logicRules: [TITLE_RULE],
     fields,
     extractedSharedCodeInfo: [],
@@ -116,18 +116,16 @@ const seed = (fields: Record<string, any>) => {
   } as any;
 };
 
-const dispatchTitleRule = (input: Record<string, any>) =>
-  dispatchAssistantTool('rule_fm_set_advisor_title_c07c', input, {
-    callableRules: [
-      {
-        id: TITLE_RULE.id,
-        name: TITLE_RULE.name,
-        server_side: false
-      }
-    ],
-    runLogicRule: (ruleId, inputParams) =>
-      runLogicRuleById(ruleId, inputParams, FORM, { documentPresent: true })
-  });
+const dispatchTitleRule = (params: Record<string, any>) =>
+  dispatchAssistantTool(
+    'rule_fm_set_advisor_title_c07c',
+    { ruleId: TITLE_RULE.id, inputParams: params },
+    {
+      callableRules: [{ id: TITLE_RULE.id, name: TITLE_RULE.name }],
+      runLogicRule: (ruleId, inputParams) =>
+        runLogicRuleById(ruleId, inputParams, FORM, { documentPresent: true })
+    }
+  );
 
 afterEach(() => {
   Object.keys(internalState).forEach((k) => delete (internalState as any)[k]);

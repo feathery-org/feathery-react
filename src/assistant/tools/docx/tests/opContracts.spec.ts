@@ -36,7 +36,7 @@ import {
   EditOp,
   MutationGuardCoverage
 } from '../syncfusionDocumentOps';
-import { DOCUMENT_EDITOR_CAPABILITIES } from '../../capabilities/registry';
+import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
 
 DocumentEditor.Inject(
   Editor,

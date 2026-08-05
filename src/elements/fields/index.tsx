@@ -400,6 +400,9 @@ function applyFieldStyles(field: any, styles: any) {
           textAlign: justifyContentTextAlignMap[a]
         })
       );
+      styles.apply('bc', 'gap', (gap: number) => ({
+        gap: gap ? `${gap}px` : undefined
+      }));
       styles.applyHeight('bc', '', true);
       styles.apply(
         'field',

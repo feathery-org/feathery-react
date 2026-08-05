@@ -1,20 +1,22 @@
 // Robin assistant tool dispatch for the docx-editor surface. This module is
 // deliberately SyncFusion-free: it never imports the editor. It only calls
-// handlers/objects the host hands in (a docx bridge, a custom-handler map, a
-// local rule execution allowlist, and a runLogicRuleById fn), so @feathery/react stays
-// decoupled from the editor implementation.
+// handlers/objects the host hands in (a docx bridge, a local rule execution
+// allowlist, and a runLogicRuleById fn), so @feathery/react stays decoupled
+// from the editor implementation.
 
 import type { LogicRuleTransportResult } from '../../utils/logicRuleResult';
 
 export type RunLogicRuleResult = LogicRuleTransportResult;
 
-// Per-tool-call budgets: reads must not stall the turn beyond a minute; edit
-// batches (track-changes, large docs) get more headroom.
+// Per-tool-call budgets: docx reads a minute, edit batches more headroom, and
+// rules the 240s logic-lambda ceiling since rule code can await long work
+// like extractions
 export const TOOL_TIMEOUT_READ_MS = 60_000;
 export const TOOL_TIMEOUT_APPLY_MS = 90_000;
+export const TOOL_TIMEOUT_RULE_MS = 240_000;
 
 // Docx bridge injected by the host - thin async handlers that drive the live
-// DocxEditor instance. Both are optional so an absent bridge degrades to a
+// DocxEditor instance. All are optional so an absent bridge degrades to a
 // synthetic error rather than a hung turn.
 export type DocxBridge = {
   getDocumentInventory?: (input: any) => Promise<any>;
@@ -23,33 +25,14 @@ export type DocxBridge = {
 };
 
 // A designer-defined `trigger_event === 'tool'` rule used only to authorize and
-// resolve a server-selected rule tool call back to a local rule id.
+// resolve a server-selected rule tool call back to a local rule id. ai-services
+// builds the model-facing catalog from the backend, never from this
 export type CallableRule = {
   id: string;
   name: string;
-  description?: string;
-  purpose?: string;
-  server_side: boolean;
-  parameters?: Array<{
-    name: string;
-    type: 'string' | 'number' | 'boolean' | 'file';
-    description?: string;
-    required?: boolean;
-    // The form field this parameter feeds (metadata.tool.parameters[].field),
-    // forwarded so Robin can ground/clarify against the latest live state.
-    field?: string;
-    [key: string]: any;
-  }>;
-  // The form fields the rule reads/writes (metadata.tool.allowed_fields),
-  // forwarded as description context so Robin can match current live values.
-  allowed_fields?: string[];
-  // Preserve the server-provided rule metadata so ai-services receives the
-  // complete host catalog without a discovery round trip.
-  metadata?: Record<string, any>;
 };
 
 export type AssistantToolContext = {
-  customToolHandlers?: Record<string, (input: any) => Promise<any>>;
   docxBridge?: DocxBridge;
   callableRules?: CallableRule[];
   runLogicRule?: (
@@ -82,15 +65,18 @@ const syntheticError = (error: string, message: string) => ({
  * An error output ends the turn visibly and tells the model something it can act
  * on, which is strictly better than silence in every case.
  */
+export const UNHANDLED_TOOL_ERROR = 'unhandled_tool';
+
 export const unhandledToolOutput = (toolName: string) =>
   syntheticError(
-    'unhandled_tool',
+    UNHANDLED_TOOL_ERROR,
     `This client has no handler for the tool "${toolName}", so it cannot be executed here. ` +
       'Do not retry it; use a different tool, or tell the user what you could not do.'
   );
 
-// Race a handler against a timeout. On timeout we RESOLVE (never reject) with a
-// synthetic error so addToolOutput always fires and the model can recover.
+// Race a handler against a timeout, RESOLVING (never rejecting) with a
+// synthetic error so addToolOutput always fires. User JS cannot be aborted,
+// so the message stays honest that its work may still land
 export async function withToolTimeout<T>(
   run: () => Promise<T>,
   ms: number,
@@ -103,7 +89,9 @@ export async function withToolTimeout<T>(
         resolve(
           syntheticError(
             'timeout',
-            `Tool "${toolName}" timed out after ${Math.round(ms / 1000)}s.`
+            `Tool "${toolName}" timed out after ${Math.round(
+              ms / 1000
+            )}s. It was not cancelled and may still complete and change state: re-read the current state before further edits instead of blindly retrying.`
           )
         ),
       ms
@@ -126,44 +114,16 @@ export async function withToolTimeout<T>(
   }
 }
 
-// Mirror ai-services' rule tool naming: `rule_<slug>_<first4-of-id>`, where slug
-// is the sanitized rule name. Kept in lockstep so a tool the model calls
-// resolves back to its rule here.
-export const sanitizeRuleSlug = (name: string): string =>
-  (name || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 40) || 'rule';
-
-export const ruleToolName = (rule: CallableRule): string =>
-  `rule_${sanitizeRuleSlug(rule.name)}_${(rule.id || '').slice(0, 4)}`;
-
-// Resolve a tool call to a rule id STRICTLY from the catalog. A model-echoed id
-// is never trusted on its own: it is only accepted when it exists in the
-// catalog, so the model cannot invoke a rule the host did not offer.
+// Resolve a rule tool call STRICTLY from the catalog. The envelope's ruleId
+// literal is the routing key (tool names are decoration), and the model-echoed
+// id is only accepted when the catalog offers it
 export const resolveRuleId = (
-  toolName: string,
   input: any,
   callableRules: CallableRule[]
 ): string | null => {
-  if (toolName === 'runLogicRule') {
-    const echoed = input?.ruleId;
-    const match = callableRules.find((r) => r.id === echoed);
-    return match ? match.id : null;
-  }
-  if (toolName.startsWith('rule_')) {
-    // Prefer an exact regenerated-name match; fall back to the trailing
-    // id-suffix segment so slight slug drift across repos still resolves.
-    const exact = callableRules.find((r) => ruleToolName(r) === toolName);
-    if (exact) return exact.id;
-    const suffix = toolName.slice(toolName.lastIndexOf('_') + 1);
-    const bySuffix = callableRules.filter(
-      (r) => (r.id || '').slice(0, 4) === suffix
-    );
-    return bySuffix.length === 1 ? bySuffix[0].id : null;
-  }
-  return null;
+  const echoed = input?.ruleId;
+  const match = callableRules.find((r) => r.id === echoed);
+  return match ? match.id : null;
 };
 
 const isRuleTool = (toolName: string): boolean =>
@@ -178,18 +138,7 @@ export async function dispatchAssistantTool(
   input: any,
   ctx: AssistantToolContext
 ): Promise<ToolDispatchResult> {
-  // 1) Host-supplied custom handlers win over everything else.
-  const custom = ctx.customToolHandlers?.[toolName];
-  if (custom) {
-    const output = await withToolTimeout(
-      () => custom(input),
-      TOOL_TIMEOUT_READ_MS,
-      toolName
-    );
-    return { handled: true, output };
-  }
-
-  // 2) Built-in docx bridge reads/edits.
+  // 1) Built-in docx bridge reads/edits.
   if (toolName === 'getDocumentInventory') {
     const handler = ctx.docxBridge?.getDocumentInventory;
     const output = handler
@@ -233,28 +182,33 @@ export async function dispatchAssistantTool(
     return { handled: true, output };
   }
 
-  // 3) Designer-defined logic-rule tools.
+  // 2) Designer-defined logic-rule tools.
   if (isRuleTool(toolName)) {
-    const callableRules = ctx.callableRules ?? [];
-    const ruleId = resolveRuleId(toolName, input, callableRules);
-    if (!ruleId || !ctx.runLogicRule) {
+    const run = ctx.runLogicRule;
+    if (!run) {
+      return {
+        handled: true,
+        output: syntheticError(
+          'handler_unavailable',
+          'No live form is connected to run rules against.'
+        )
+      };
+    }
+    const ruleId = resolveRuleId(input, ctx.callableRules ?? []);
+    if (!ruleId) {
       return {
         handled: true,
         output: syntheticError(
           'unknown_rule',
-          `Could not resolve tool "${toolName}" to a callable rule.`
+          `Could not resolve tool "${toolName}" to a rule on this form. ` +
+            'The form session may be stale: rules added or changed since the form loaded are only picked up on reload.'
         )
       };
     }
-    // rule_* tools carry params directly; the generic fallback nests them.
-    const inputParams =
-      toolName === 'runLogicRule'
-        ? ((input?.inputParams ?? {}) as Record<string, any>)
-        : ((input ?? {}) as Record<string, any>);
-    const run = ctx.runLogicRule;
+    const inputParams = (input?.inputParams ?? {}) as Record<string, any>;
     const output = await withToolTimeout(
       () => run(ruleId, inputParams),
-      TOOL_TIMEOUT_APPLY_MS,
+      TOOL_TIMEOUT_RULE_MS,
       toolName
     );
     return { handled: true, output };
@@ -276,33 +230,4 @@ export const buildCallableRules = (logicRules: any[] = []): CallableRule[] =>
         r.enabled !== false &&
         r.valid !== false
     )
-    .map((r) => {
-      const rule: CallableRule = {
-        id: r.id,
-        name: r.name,
-        description: r.description,
-        server_side: !!r.server_side,
-        parameters: r?.metadata?.tool?.parameters ?? [],
-        ...(r.metadata ? { metadata: r.metadata } : {})
-      };
-      const purpose = r.purpose ?? r.metadata?.tool?.purpose;
-      if (purpose) rule.purpose = purpose;
-      const allowedFields = r?.metadata?.tool?.allowed_fields;
-      if (Array.isArray(allowedFields) && allowedFields.length > 0) {
-        rule.allowed_fields = allowedFields.filter(
-          (f: unknown): f is string => typeof f === 'string' && !!f
-        );
-      }
-      return rule;
-    });
-
-// Keep per-request metadata under `context`, where ai-services reads targets,
-// selection, and panel_runtime. The backend adopts a new attachment session only from the
-// top-level `thread_id`, so mirror the resolved thread id in both places.
-export const buildAssistantRequestBody = (
-  context: Record<string, unknown>,
-  threadId: string | null
-): { thread_id: string | null; context: Record<string, unknown> } => ({
-  thread_id: threadId || null,
-  context: { ...context, threadId: threadId || null }
-});
+    .map((r) => ({ id: r.id, name: r.name }));

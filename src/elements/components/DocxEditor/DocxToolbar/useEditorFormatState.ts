@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react';
 
+// EJ2 reports fontColor as 8-digit hex when alpha is involved — '#00000000'
+// (transparent black) IS its "automatic" color, i.e. most ordinary text. The
+// value feeds <input type='color'>, which accepts ONLY '#rrggbb'; anything
+// else logs a browser warning on every selection change. Drop the alpha pair
+// and map anything still non-conforming (named colors, 'empty') to black.
+export const toInputHex = (color: string): string => {
+  const hex = /^#[0-9a-fA-F]{8}$/.test(color) ? color.slice(0, 7) : color;
+  return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#000000';
+};
+
 // Formatting state mirrored from the live Syncfusion DocumentEditor: tracks
 // the editor's selectionChange / zoomFactorChange events so the toolbar's
 // active states follow the cursor.
@@ -23,7 +33,7 @@ export function useEditorFormatState(editor: any) {
       setStrike(cf.strikethrough !== 'None');
       if (cf.fontFamily) setFontFamily(cf.fontFamily);
       if (cf.fontSize) setFontSize(cf.fontSize);
-      if (cf.fontColor) setFontColor(cf.fontColor);
+      if (cf.fontColor) setFontColor(toInputHex(cf.fontColor));
       setStyleName(pf.styleName || 'Normal');
       setAlignment(pf.textAlignment || 'Left');
     };
