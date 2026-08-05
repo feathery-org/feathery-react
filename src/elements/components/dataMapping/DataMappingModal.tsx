@@ -155,7 +155,7 @@ function DataMappingModal({
   const [view, setView] = useState<'resume' | 'import'>('import');
   const [activeStep, setActiveStep] = useState(0);
 
-  const [stagedCounts, setStagedCounts] = useState<Record<string, number>>({});
+  const [unverifiedCounts, setUnverifiedCounts] = useState<Record<string, number>>({});
 
   // Header row is NOT assumed to be line 1; `sheets` slices at the chosen one.
   const [rawSheets, setRawSheets] = useState<
@@ -205,7 +205,7 @@ function DataMappingModal({
     );
   };
 
-  const refreshStagedCounts = async (hubList: HubSchema[]) => {
+  const refreshUnverifiedCounts = async (hubList: HubSchema[]) => {
     const results = await Promise.all(
       hubList.map((hub) =>
         client
@@ -223,7 +223,7 @@ function DataMappingModal({
     results.forEach((r) => {
       counts[r.hubId] = r.count;
     });
-    setStagedCounts(counts);
+    setUnverifiedCounts(counts);
     return counts;
   };
 
@@ -239,7 +239,7 @@ function DataMappingModal({
           .map((id) => schemaResp.hubs.find((h) => h.id === id))
           .filter(Boolean) as HubSchema[];
 
-        const counts = await refreshStagedCounts(orderedSchemas);
+        const counts = await refreshUnverifiedCounts(orderedSchemas);
         if (cancelled) return;
 
         const draft = draftCache.get(draftKey(hubIds));
@@ -249,9 +249,9 @@ function DataMappingModal({
           setHeaderRows(draft.headerRows);
           setPerHub(draft.perHub);
         }
-        const hasStaged = Object.values(counts).some((n) => n > 0);
+        const hasUnverified = Object.values(counts).some((n) => n > 0);
         setSchemas(orderedSchemas);
-        setView(!draft && hasStaged ? 'resume' : 'import');
+        setView(!draft && hasUnverified ? 'resume' : 'import');
         setActiveStep(0);
         setLoading(false);
       } catch {
@@ -281,13 +281,14 @@ function DataMappingModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // Match the backdrop: no closing mid-upload.
+      if (e.key === 'Escape' && !busy) onClose();
     };
     const doc = featheryDoc();
     doc.addEventListener('keydown', onKey);
     dialogRef.current?.focus();
     return () => doc.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, busy]);
 
   const fontFamily =
     responsiveStyles?.getTarget?.('fc')?.fontFamily ?? 'sans-serif';
@@ -300,7 +301,7 @@ function DataMappingModal({
 
   const isLastStep = activeStep >= schemas.length - 1;
 
-  const totalStaged = Object.values(stagedCounts).reduce((n, c) => n + c, 0);
+  const totalUnverified = Object.values(unverifiedCounts).reduce((n, c) => n + c, 0);
   // Memoized: buildUnverifiedRows walks every row of every mapped column.
   const totalMappedRows = useMemo(
     () =>
@@ -421,7 +422,7 @@ function DataMappingModal({
       }
     } catch (e: any) {
       setActionError(e?.message || 'Failed to save the mapped rows.');
-      await refreshStagedCounts(schemas).catch(() => ({}));
+      await refreshUnverifiedCounts(schemas).catch(() => ({}));
       setBusy(false);
       return;
     }
@@ -602,12 +603,12 @@ function DataMappingModal({
     const resumeBody = (
       <div css={{ color: '#3f3f46', lineHeight: 1.5 }}>
         <div css={{ fontWeight: 600, marginBottom: '6px' }}>
-          {totalStaged} row{totalStaged === 1 ? '' : 's'} already imported
+          {totalUnverified} row{totalUnverified === 1 ? '' : 's'} already imported
         </div>
         <div css={{ color: '#71717a' }}>
-          A previous upload put {totalStaged === 1 ? 'this row' : 'these rows'}{' '}
+          A previous upload put {totalUnverified === 1 ? 'this row' : 'these rows'}{' '}
           into {schemas.length > 1 ? 'these data hubs' : 'this data hub'}.
-          Uploading a new file replaces {totalStaged === 1 ? 'it' : 'them'}.
+          Uploading a new file replaces {totalUnverified === 1 ? 'it' : 'them'}.
         </div>
       </div>
     );
@@ -1001,9 +1002,9 @@ function DataMappingModal({
       <span css={{ color: '#3f3f46', fontSize: '13px', marginRight: '4px' }}>
         Save {totalMappedRows} row{totalMappedRows === 1 ? '' : 's'} into{' '}
         {schemas.length > 1 ? 'the data hubs' : 'the data hub'}?
-        {totalStaged > 0 &&
-          ` This replaces the ${totalStaged} row${
-            totalStaged === 1 ? '' : 's'
+        {totalUnverified > 0 &&
+          ` This replaces the ${totalUnverified} row${
+            totalUnverified === 1 ? '' : 's'
           } from your previous upload.`}
       </span>
       <button
