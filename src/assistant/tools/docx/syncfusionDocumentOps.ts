@@ -12749,7 +12749,6 @@ function applyDocumentEditsMeasured(
     const simulatedByAnchor = new Map(
       simulatedBlocks.map((block) => [block.anchor, block] as const)
     );
-    const simulatedIndexedTarget = simulatedByAnchor.get(op.anchor);
     // A formatting op can intentionally point at the future anchor created by
     // an earlier insert. Its expect value identifies that future paragraph and
     // prevents today's occupant of the same hierarchical index being captured
@@ -12761,8 +12760,8 @@ function applyDocumentEditsMeasured(
     const formatExpectMismatch =
       FORMAT_OPS.has(name) &&
       op.expect != null &&
-      simulatedIndexedTarget != null &&
-      !expectTextMatches(op.expect, simulatedIndexedTarget.text);
+      indexedTarget != null &&
+      !expectTextMatches(op.expect, indexedTarget.text);
     let target: FlatBlock | LiveStoryTarget | undefined =
       formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
@@ -12868,7 +12867,7 @@ function applyDocumentEditsMeasured(
     // content already exists exactly once, though, this is ordinary anchor
     // drift and we can bind the plan to that current block now.
     if (!target && formatExpectMismatch && hasStructuralEdits) {
-      const attempt = attemptAnchorRelocation(simulatedBlocks, op);
+      const attempt = attemptAnchorRelocation(blocks, op);
       if ('target' in attempt) {
         target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
         relocated = attempt.relocated;
