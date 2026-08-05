@@ -447,7 +447,9 @@ export const attachTokenCycle = (
         if (missed.length > 0) {
           // eslint-disable-next-line no-console
           console.warn(
-            `[feathery] could not write ${missed.length} docx token(s): ${missed.join(', ')}`
+            `[feathery] could not write ${
+              missed.length
+            } docx token(s): ${missed.join(', ')}`
           );
         }
       } finally {

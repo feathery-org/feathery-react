@@ -427,7 +427,8 @@ export const writeValues = (
           // `hasPlaceHolderText` does not remove it (measured). Deleting the
           // selection does, and the control stays usable afterwards. A host
           // without `delete` falls back rather than silently doing nothing.
-          if (typeof editor.editor.delete === 'function') editor.editor.delete();
+          if (typeof editor.editor.delete === 'function')
+            editor.editor.delete();
           else editor.editor.insertText(text);
         } else {
           editor.editor.insertText(text);
