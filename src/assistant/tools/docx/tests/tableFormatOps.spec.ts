@@ -271,10 +271,12 @@ const uniformTinyTableFixture = () => {
 const fromScratchDocumentBandingFixture = () => {
   const doc: any = singleDataRowTableFixture();
   const [tinyTable, longerTable] = doc.sections[0].blocks;
-  longerTable.rows.push(
-    row(['Five', 'E']),
-    row(['Six', 'F'], TINY_BAND_FILL)
-  );
+  longerTable.rows.push(row(['Five', 'E']), row(['Six', 'F'], TINY_BAND_FILL));
+  // The nearest sibling's body must prove nothing either way - a uniform body
+  // would be replicated as-is instead of deferring to the document sample.
+  tinyTable.rows[1].cells[0].cellFormat.shading = {
+    backgroundColor: '#FFF2CC'
+  };
   const shorterTable = {
     tableFormat: { preferredWidth: 300 },
     rows: [
@@ -430,10 +432,7 @@ const resolvedTextFormat = (
 };
 
 const liveBorderState = (ed: DocumentEditor, tableAnchor: string) => {
-  ed.selection.select(
-    `${tableAnchor};0;0;0;0`,
-    `${tableAnchor};0;0;0;0`
-  );
+  ed.selection.select(`${tableAnchor};0;0;0;0`, `${tableAnchor};0;0;0;0`);
   const cell = (ed as any).selection.start.paragraph.associatedCell;
   const table = cell.ownerTable.combineWidget((ed as any).viewer);
   const value = (border: any) => ({
@@ -453,6 +452,100 @@ const liveBorderState = (ed: DocumentEditor, tableAnchor: string) => {
       cellType.getCellLeftBorder(cell),
       cellType.getCellRightBorder(cell)
     ].map(value)
+  };
+};
+
+const liveRowBorderState = (ed: DocumentEditor, tableAnchor: string) => {
+  ed.selection.select(`${tableAnchor};0;0;0;0`, `${tableAnchor};0;0;0;0`);
+  const cell = (ed as any).selection.start.paragraph.associatedCell;
+  const table = cell.ownerTable.combineWidget((ed as any).viewer);
+  const members = ['top', 'bottom', 'left', 'right', 'horizontal', 'vertical'];
+  return table.childWidgets.map((rowEntry: any) =>
+    members.map((member) => {
+      const border = rowEntry.rowFormat.borders[member];
+      return {
+        defined: border.isBorderDefined,
+        style: border.lineStyle,
+        width: border.lineWidth,
+        color: border.color
+      };
+    })
+  );
+};
+
+const liveTableGeometry = (ed: DocumentEditor, tableAnchor: string) => {
+  ed.selection.select(`${tableAnchor};0;0;0;0`, `${tableAnchor};0;0;0;0`);
+  const cell = (ed as any).selection.start.paragraph.associatedCell;
+  const table = cell.ownerTable.combineWidget((ed as any).viewer);
+  const row = [...table.childWidgets].sort(
+    (left: any, right: any) =>
+      right.childWidgets.length - left.childWidgets.length
+  )[0];
+  return {
+    preferredWidth: table.tableFormat.preferredWidth,
+    preferredWidthType: table.tableFormat.preferredWidthType,
+    leftIndent: table.tableFormat.leftIndent,
+    tableAlignment: table.tableFormat.tableAlignment,
+    allowAutoFit: table.tableFormat.allowAutoFit,
+    columns: row.childWidgets.map((entry: any) => ({
+      preferredWidth: entry.cellFormat.preferredWidth,
+      preferredWidthType: entry.cellFormat.preferredWidthType,
+      cellWidth: entry.cellFormat.cellWidth
+    }))
+  };
+};
+
+const liveTableProperties = (ed: DocumentEditor, tableAnchor: string) => {
+  ed.selection.select(`${tableAnchor};0;0;0;0`, `${tableAnchor};0;0;0;0`);
+  const cell = (ed as any).selection.start.paragraph.associatedCell;
+  const table = cell.ownerTable.combineWidget((ed as any).viewer);
+  const marginFacts = (format: any) => ({
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null
+  });
+  const rowFacts = (format: any) => {
+    const gridBefore = Number(format.gridBefore) || 0;
+    const gridAfter = Number(format.gridAfter) || 0;
+    return {
+      height: format.height,
+      heightType: format.heightType,
+      allowBreakAcrossPages: format.allowBreakAcrossPages,
+      isHeader: format.isHeader,
+      gridBefore,
+      // A zero grid offset carries no width; SyncFusion spells the inert
+      // type 'Point' after a docx parse and 'Auto' after a fresh insert.
+      // Compare the one canonical value, exactly as the engine reads it.
+      gridBeforeWidth: gridBefore ? Number(format.gridBeforeWidth) || 0 : 0,
+      gridBeforeWidthType: gridBefore ? format.gridBeforeWidthType : 'Auto',
+      gridAfter,
+      gridAfterWidth: gridAfter ? Number(format.gridAfterWidth) || 0 : 0,
+      gridAfterWidthType: gridAfter ? format.gridAfterWidthType : 'Auto',
+      leftIndent: Number(format.leftIndent) || 0,
+      leftMargin: format.leftMargin ?? null,
+      rightMargin: format.rightMargin ?? null,
+      topMargin: format.topMargin ?? null,
+      bottomMargin: format.bottomMargin ?? null
+    };
+  };
+  return {
+    table: {
+      cellSpacing: table.tableFormat.cellSpacing,
+      ...marginFacts(table.tableFormat),
+      bidi: table.tableFormat.bidi,
+      styleName: table.tableFormat.styleName,
+      title: table.tableFormat.title,
+      description: table.tableFormat.description,
+      horizontalPositionAbs: table.tableFormat.horizontalPositionAbs,
+      horizontalPosition: table.tableFormat.horizontalPosition
+    },
+    rows: table.childWidgets.map((rowEntry: any) => ({
+      row: rowFacts(rowEntry.rowFormat),
+      cells: rowEntry.childWidgets.map((cellEntry: any) =>
+        marginFacts(cellEntry.cellFormat)
+      )
+    }))
   };
 };
 
@@ -532,9 +625,9 @@ describe('the read reports how a table is built', () => {
     try {
       const table = facts(ed, '0;1');
       // The pattern IS the list of row fills.
-      expect(table.rows.map((entry) => entry.appearance?.shading ?? null)).toEqual(
-        [HEADER_FILL, null, BAND_FILL, null, BAND_FILL]
-      );
+      expect(
+        table.rows.map((entry) => entry.appearance?.shading ?? null)
+      ).toEqual([HEADER_FILL, null, BAND_FILL, null, BAND_FILL]);
       expect(table.rows[0].isHeader).toBe(true);
       expect(table.rows[1].isHeader).toBeUndefined();
       // A row whose cells agree is described ONCE - no per-cell repetition.
@@ -764,13 +857,92 @@ describe('copy_table_format', () => {
         facts(ed, '0;2').rows.map((entry) =>
           entry.cells.map((c) => c.text).join('|')
         )
-      ).toEqual([
-        'Loc #|Address',
-        '5|E St',
-        '6|F St',
-        '7|G St',
-        '8|H St'
+      ).toEqual(['Loc #|Address', '5|E St', '6|F St', '7|G St', '8|H St']);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('copies table placement and same-count column proportions', () => {
+    const doc: any = twoTables();
+    const [source, target] = doc.sections[0].blocks.slice(1, 3);
+    source.tableFormat = {
+      preferredWidth: 360,
+      preferredWidthType: 'Point',
+      leftIndent: 36,
+      tableAlignment: 'Left',
+      allowAutoFit: false,
+      cellSpacing: 3,
+      leftMargin: 9,
+      rightMargin: 8,
+      topMargin: 7,
+      bottomMargin: 6,
+      bidi: true,
+      title: 'Explicit copy source',
+      description: 'Full table format'
+    };
+    target.tableFormat = {
+      preferredWidth: 80,
+      preferredWidthType: 'Percent',
+      leftIndent: 0,
+      tableAlignment: 'Center',
+      allowAutoFit: true
+    };
+    for (const table of [source, target])
+      for (const [rowIndex, rowEntry] of table.rows.entries()) {
+        if (table === source)
+          rowEntry.rowFormat = {
+            ...rowEntry.rowFormat,
+            height: 22 + rowIndex,
+            heightType: 'Exactly',
+            allowBreakAcrossPages: false
+          };
+        rowEntry.cells.forEach((entry: any, column: number) => {
+          entry.cellFormat.preferredWidth =
+            table === source ? [120, 240][column] : 50;
+          entry.cellFormat.preferredWidthType =
+            table === source ? 'Point' : 'Percent';
+          if (table === source)
+            Object.assign(entry.cellFormat, {
+              leftMargin: 4 + column,
+              rightMargin: 5 + column,
+              topMargin: 6 + column,
+              bottomMargin: 7 + column
+            });
+        });
+      }
+    const ed = makeEditor(doc);
+    try {
+      const sourceGeometry = liveTableGeometry(ed, '0;1');
+      const result = apply(ed, [
+        { op: 'copy_table_format', anchor: '0;2;0;0;0', sourceTable: '0;1' }
       ]);
+
+      expect(result.results[0].ok).toBe(true);
+      const targetGeometry = liveTableGeometry(ed, '0;2');
+      expect(targetGeometry).toMatchObject({
+        preferredWidth: 360,
+        preferredWidthType: 'Point',
+        leftIndent: 36,
+        tableAlignment: 'Left',
+        allowAutoFit: false,
+        columns: [
+          {
+            preferredWidth: 120,
+            preferredWidthType: 'Point',
+            cellWidth: 120
+          },
+          {
+            preferredWidth: 240,
+            preferredWidthType: 'Point',
+            cellWidth: 240
+          }
+        ]
+      });
+      expect(targetGeometry.columns).toEqual(sourceGeometry.columns);
+      expect(liveTableProperties(ed, '0;2')).toEqual(
+        liveTableProperties(ed, '0;1')
+      );
     } finally {
       destroyEditor(ed);
     }
@@ -836,7 +1008,7 @@ describe('copy_table_format', () => {
     }
   });
 
-  it('reports a source table style it cannot assign, rather than implying it did', () => {
+  it('copies and reports the source table style', () => {
     const doc: any = twoTables();
     doc.sections[0].blocks[1].tableFormat.styleName = 'TableGrid';
     const ed = makeEditor(doc);
@@ -845,7 +1017,7 @@ describe('copy_table_format', () => {
         { op: 'copy_table_format', anchor: '0;2;0;0;0', sourceTable: '0;1' }
       ]);
       expect(result.results[0].appearance?.sourceStyleName).toBe('TableGrid');
-      expect(facts(ed, '0;2').styleName).toBeUndefined();
+      expect(facts(ed, '0;2').styleName).toBe('TableGrid');
     } finally {
       destroyEditor(ed);
     }
@@ -900,9 +1072,7 @@ describe('restripe_table', () => {
         BAND_FILL,
         BAND_FILL
       ]);
-      const result = apply(ed, [
-        { op: 'restripe_table', anchor: '0;1;0;0;0' }
-      ]);
+      const result = apply(ed, [{ op: 'restripe_table', anchor: '0;1;0;0;0' }]);
       expect(result.results[0].ok).toBe(true);
       expect(fills(ed, '0;1')).toEqual([
         HEADER_FILL,
@@ -920,9 +1090,7 @@ describe('restripe_table', () => {
     const ed = makeEditor(twoTables());
     try {
       const before = ed.serialize();
-      const result = apply(ed, [
-        { op: 'restripe_table', anchor: '0;2;0;0;0' }
-      ]);
+      const result = apply(ed, [{ op: 'restripe_table', anchor: '0;2;0;0;0' }]);
       expect(result.results[0]).toMatchObject({ ok: true });
       expect(result.results[0].appearance).toMatchObject({
         noBandingDetected: true,
@@ -975,9 +1143,7 @@ describe('restripe_table', () => {
     try {
       ed.selection.select('0;1;3;1;0;0', '0;1;3;1;0;0');
       ed.selection.cellFormat.background = '#FFF2CC';
-      const result = apply(ed, [
-        { op: 'restripe_table', anchor: '0;1;0;0;0' }
-      ]);
+      const result = apply(ed, [{ op: 'restripe_table', anchor: '0;1;0;0;0' }]);
       expect(result.results[0].appearance).toMatchObject({
         rowsSkippedMixed: 1,
         cellsWritten: 0
@@ -1018,19 +1184,67 @@ describe('structural inserts inherit resolved table formatting by default', () =
     }
   });
 
-  it('continues document-level striping when the target has one white data row', () => {
-    const ed = makeEditor(singleDataRowTableFixture());
+  it('keeps wrapped data rows off an unflagged header when the sibling has one data row', () => {
+    // The live V2 document's Team Member table: a dark unflagged banner over
+    // exactly one white data row. A 3-row insert wraps the row cycle, and the
+    // wrap must repeat the DATA row - the banner is not part of the stripe,
+    // and the sibling's uniform white body outranks the striped table further
+    // away in the document.
+    const doc: any = {
+      sections: [
+        {
+          blocks: [
+            {
+              tableFormat: { preferredWidth: 300 },
+              rows: [
+                row(['Coverage', 'Amount'], HEADER_FILL, true),
+                row(['One', 'A']),
+                row(['Two', 'B'], TINY_BAND_FILL),
+                row(['Three', 'C']),
+                row(['Four', 'D'], TINY_BAND_FILL)
+              ]
+            },
+            { inlines: [{ text: 'Distant striped table spacer' }] },
+            singleDataRowTableFixture().sections[0].blocks[0],
+            { inlines: [{ text: 'Sibling table spacer' }] },
+            { inlines: [{ text: 'Insert here' }] }
+          ]
+        }
+      ]
+    };
+    const ed = makeEditor(doc);
     try {
       const result = apply(ed, [
-        { op: 'insert_row', anchor: '0;0;1;1;0' }
+        {
+          op: 'insert_table',
+          anchor: '0;4',
+          rows: 3,
+          columns: 2,
+          initialCells: [
+            ['Office Location', 'Phone'],
+            ['Tampa', '(813) 555-0100'],
+            ['Miami', '(305) 555-0200']
+          ]
+        }
       ]);
 
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
-      expect(fills(ed, '0;0')).toEqual([
-        HEADER_FILL,
-        null,
-        TINY_BAND_FILL
-      ]);
+      expect(fills(ed, '0;4')).toEqual([HEADER_FILL, null, null]);
+      expect(
+        resolvedTextFormat(ed, '0;4;2;0;0', 'Miami').character.fontColor
+      ).toBe('#1F1F1F');
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('continues document-level striping when the target has one white data row', () => {
+    const ed = makeEditor(singleDataRowTableFixture());
+    try {
+      const result = apply(ed, [{ op: 'insert_row', anchor: '0;0;1;1;0' }]);
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(fills(ed, '0;0')).toEqual([HEADER_FILL, null, TINY_BAND_FILL]);
       expect(facts(ed, '0;0').rows[0].appearance?.shading).toBe(HEADER_FILL);
     } finally {
       destroyEditor(ed);
@@ -1062,9 +1276,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
   it('continues a uniform tiny-table fill instead of importing document striping', () => {
     const ed = makeEditor(uniformTinyTableFixture());
     try {
-      const result = apply(ed, [
-        { op: 'insert_row', anchor: '0;0;2;1;0' }
-      ]);
+      const result = apply(ed, [{ op: 'insert_row', anchor: '0;0;2;1;0' }]);
 
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
       expect(fills(ed, '0;0')).toEqual([HEADER_FILL, null, null, null]);
@@ -1158,10 +1370,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
       // SyncFusion's Borders and Shading OK path applies the six borders at
       // tableFormat and clears redundant row/cell borders. A whole-table
       // applyBorders call produces that same normalized renderer state.
-      dialogApplied.selection.select(
-        '0;2;0;0;0;0',
-        '0;2;0;0;0;0'
-      );
+      dialogApplied.selection.select('0;2;0;0;0;0', '0;2;0;0;0;0');
       dialogApplied.selection.selectTable();
       dialogApplied.editor.applyBorders({
         type: 'AllBorders',
@@ -1179,12 +1388,207 @@ describe('structural inserts inherit resolved table formatting by default', () =
       expect(composedState.storedCell.every((border) => !border.defined)).toBe(
         true
       );
-      expect(
-        composedState.renderedCell.every((border) => border.defined)
-      ).toBe(true);
+      expect(composedState.renderedCell.every((border) => border.defined)).toBe(
+        true
+      );
     } finally {
       destroyEditor(composed);
       destroyEditor(dialogApplied);
+    }
+  });
+
+  it('inherits sibling width and equal-splits it when the new column count differs', () => {
+    const doc: any = inheritedTableFixture();
+    const source = doc.sections[0].blocks[0];
+    source.tableFormat = {
+      ...source.tableFormat,
+      preferredWidth: 360,
+      preferredWidthType: 'Point',
+      leftIndent: 36,
+      tableAlignment: 'Left',
+      allowAutoFit: false
+    };
+    for (const rowEntry of source.rows)
+      rowEntry.cells.forEach((entry: any, column: number) => {
+        entry.cellFormat.preferredWidth = [120, 240][column];
+        entry.cellFormat.preferredWidthType = 'Point';
+      });
+    const ed = makeEditor(doc);
+    try {
+      source.rows.forEach((_: any, rowIndex: number) => {
+        ed.selection.select(
+          `0;0;${rowIndex};0;0;0`,
+          `0;0;${rowIndex};0;0;0`
+        );
+        ed.selection.selectRow();
+        ed.editor.applyBorders({
+          type: 'AllBorders',
+          borderColor: '#C5CBD1',
+          lineWidth: 0.5,
+          borderStyle: 'Single'
+        });
+      });
+      const result = apply(ed, [
+        {
+          op: 'insert_table',
+          anchor: '0;2',
+          rows: 2,
+          columns: 3,
+          initialCells: [
+            ['Code', 'Description', 'Status'],
+            ['A1', 'First row', 'Open']
+          ]
+        }
+      ]);
+
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(liveTableGeometry(ed, '0;2')).toMatchObject({
+        preferredWidth: 360,
+        preferredWidthType: 'Point',
+        leftIndent: 36,
+        tableAlignment: 'Left',
+        allowAutoFit: false,
+        columns: [
+          {
+            preferredWidth: 120,
+            preferredWidthType: 'Point',
+            cellWidth: 120
+          },
+          {
+            preferredWidth: 120,
+            preferredWidthType: 'Point',
+            cellWidth: 120
+          },
+          {
+            preferredWidth: 120,
+            preferredWidthType: 'Point',
+            cellWidth: 120
+          }
+        ]
+      });
+      expect(liveRowBorderState(ed, '0;2')).toEqual(
+        liveRowBorderState(ed, '0;0').slice(0, 2)
+      );
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('inherits the complete sibling table, row, and cell format layers', () => {
+    const doc: any = inheritedTableFixture();
+    const source = doc.sections[0].blocks[0];
+    source.tableFormat = {
+      ...source.tableFormat,
+      cellSpacing: 3,
+      leftMargin: 9,
+      rightMargin: 8,
+      topMargin: 7,
+      bottomMargin: 6,
+      bidi: true,
+      title: 'Sibling format source',
+      description: 'All structural table formatting is inherited'
+    };
+    source.rows.forEach((rowEntry: any, rowIndex: number) => {
+      rowEntry.rowFormat = {
+        ...rowEntry.rowFormat,
+        height: 24 + rowIndex,
+        heightType: 'Exactly',
+        allowBreakAcrossPages: false,
+        leftMargin: 11 + rowIndex,
+        rightMargin: 12 + rowIndex,
+        topMargin: 13 + rowIndex,
+        bottomMargin: 14 + rowIndex,
+        leftIndent: 15 + rowIndex
+      };
+      rowEntry.cells.forEach((entry: any, column: number) => {
+        entry.cellFormat = {
+          ...entry.cellFormat,
+          leftMargin: 4 + column,
+          rightMargin: 5 + column,
+          topMargin: 6 + column,
+          bottomMargin: 7 + column,
+          verticalAlignment: 'Center'
+        };
+      });
+    });
+    const ed = makeEditor(doc);
+    try {
+      const result = apply(ed, [
+        {
+          op: 'insert_table',
+          anchor: '0;2',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Code', 'Description'],
+            ['A1', 'First row']
+          ]
+        }
+      ]);
+
+      expect(result.results[0]).toMatchObject({ ok: true });
+      const sourceProperties = liveTableProperties(ed, '0;0');
+      const targetProperties = liveTableProperties(ed, '0;2');
+      expect(targetProperties.table).toEqual(sourceProperties.table);
+      expect(targetProperties.rows).toEqual(sourceProperties.rows.slice(0, 2));
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(
+        appearanceSnapshot(ed, '0;0').slice(0, 2)
+      );
+      expect(liveBorderState(ed, '0;2')).toEqual(liveBorderState(ed, '0;0'));
+      expect(liveRowBorderState(ed, '0;2')).toEqual(
+        liveRowBorderState(ed, '0;0').slice(0, 2)
+      );
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('writes canonical inert grid facts instead of per-path SDK spellings', () => {
+    // A docx import reads back gridBefore/gridAfter width types as 'Point'
+    // even when the grid offsets are zero, while a freshly inserted table
+    // reads back 'Auto'. Both spell the same absent offset, so the copy must
+    // land the one canonical value rather than fail verification on it.
+    const doc: any = inheritedTableFixture();
+    const source = doc.sections[0].blocks[0];
+    for (const [rowIndex, rowEntry] of source.rows.entries())
+      rowEntry.rowFormat = {
+        ...rowEntry.rowFormat,
+        // A real difference (height) makes the copy write, so the write
+        // payload's canonical grid facts become observable on the target.
+        height: 24 + rowIndex,
+        heightType: 'Exactly',
+        gridBefore: 0,
+        gridBeforeWidth: 0,
+        gridBeforeWidthType: 'Point',
+        gridAfter: 0,
+        gridAfterWidth: 0,
+        gridAfterWidthType: 'Point'
+      };
+    const ed = makeEditor(doc);
+    try {
+      const result = apply(ed, [
+        {
+          op: 'insert_table',
+          anchor: '0;2',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Code', 'Description'],
+            ['A1', 'First row']
+          ]
+        }
+      ]);
+
+      expect(result.results[0]).toMatchObject({ ok: true });
+      ed.selection.select('0;2;0;0;0;0', '0;2;0;0;0;0');
+      const cell = (ed as any).selection.start.paragraph.associatedCell;
+      const table = cell.ownerTable.combineWidget((ed as any).viewer);
+      for (const rowEntry of table.childWidgets) {
+        expect(rowEntry.rowFormat.gridBeforeWidthType).toBe('Auto');
+        expect(rowEntry.rowFormat.gridAfterWidthType).toBe('Auto');
+      }
+    } finally {
+      destroyEditor(ed);
     }
   });
 
@@ -1285,9 +1689,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
               op: 'set_cell_text',
               anchor: `0;5;${rowIndex};${columnIndex};0`,
               text,
-              ...(rowIndex > 0 && columnIndex === 1
-                ? { literal: true }
-                : {})
+              ...(rowIndex > 0 && columnIndex === 1 ? { literal: true } : {})
             }))
           ),
           {
@@ -1319,12 +1721,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
         ed.selection.select(position, position);
         return ed.selection.cellFormat.background;
       });
-      expect(liveFills).toEqual([
-        HEADER_FILL,
-        'empty',
-        BAND_FILL,
-        'empty'
-      ]);
+      expect(liveFills).toEqual([HEADER_FILL, 'empty', BAND_FILL, 'empty']);
     } finally {
       destroyEditor(ed);
     }
@@ -1554,9 +1951,9 @@ describe('inserting and deleting rows keeps the banding correct', () => {
         BAND_FILL,
         null
       ]);
-      expect(
-        facts(ed, '0;1').rows[3].cells.map((entry) => entry.text)
-      ).toEqual(['2a', 'B2 St']);
+      expect(facts(ed, '0;1').rows[3].cells.map((entry) => entry.text)).toEqual(
+        ['2a', 'B2 St']
+      );
     } finally {
       destroyEditor(ed);
     }
@@ -1906,10 +2303,17 @@ describe('the appearance ops refuse an empty or malformed request', () => {
       'invalid_border_type'
     ],
     [
-      { op: 'set_cell_format', anchor: '0;1;1;0;0', verticalAlignment: 'Middle' },
+      {
+        op: 'set_cell_format',
+        anchor: '0;1;1;0;0',
+        verticalAlignment: 'Middle'
+      },
       'invalid_vertical_alignment'
     ],
-    [{ op: 'set_cell_format', anchor: '0;0', shading: '#FFF2CC' }, 'not_a_cell_anchor'],
+    [
+      { op: 'set_cell_format', anchor: '0;0', shading: '#FFF2CC' },
+      'not_a_cell_anchor'
+    ],
     [{ op: 'set_row_format', anchor: '0;1;1;0;0' }, 'missing_format']
   ])('%j -> %s', (edit, error) => {
     const ed = makeEditor(twoTables());

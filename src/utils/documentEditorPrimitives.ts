@@ -67,11 +67,84 @@ export interface AppearanceWrite {
   borders?: BorderWrite[];
 }
 
+export type TableWidthType = 'Auto' | 'Percent' | 'Point';
+export type TableAlignment = 'Left' | 'Center' | 'Right';
+
+/** Table-level geometry shared by automatic composition and copy_table_format. */
+export interface TableLayoutFacts {
+  preferredWidth: number;
+  preferredWidthType: TableWidthType;
+  leftIndent: number;
+  tableAlignment: TableAlignment;
+  allowAutoFit: boolean;
+  /** One preferred width per logical column, all expressed in the same type. */
+  columnWidths?: number[];
+  columnWidthType?: TableWidthType;
+}
+
+/**
+ * Non-visual SDK format values copied with a sibling table. Geometry and
+ * appearance stay in their existing normalized facts so their equality and
+ * border-topology rules remain single-sourced.
+ */
+export interface TablePropertyFacts {
+  cellSpacing: number;
+  leftMargin: number | null;
+  rightMargin: number | null;
+  topMargin: number | null;
+  bottomMargin: number | null;
+  bidi: boolean;
+  styleName?: string;
+  title?: string;
+  description?: string;
+  horizontalPositionAbs?: string;
+  horizontalPosition?: number;
+}
+
+export interface RowPropertyFacts {
+  allowBreakAcrossPages: boolean;
+  height: number;
+  heightType: string;
+  gridBefore: number;
+  gridBeforeWidth: number;
+  gridBeforeWidthType: TableWidthType;
+  gridAfter: number;
+  gridAfterWidth: number;
+  gridAfterWidthType: TableWidthType;
+  leftMargin: number | null;
+  rightMargin: number | null;
+  topMargin: number | null;
+  bottomMargin: number | null;
+  leftIndent: number;
+}
+
+export interface CellPropertyFacts {
+  leftMargin: number | null;
+  rightMargin: number | null;
+  topMargin: number | null;
+  bottomMargin: number | null;
+}
+
+/** Exact non-appearance inverse for one complete table-format copy. */
+export interface TablePropertyRestore {
+  table: TablePropertyFacts;
+  rows: Array<{
+    row: RowPropertyFacts;
+    cells: CellPropertyFacts[];
+  }>;
+}
+
 export interface AppearanceRestore {
   cellAnchor: string;
   write?: AppearanceWrite;
   rowIsHeader?: boolean;
   tableBorders?: BorderWrite[];
+  /** Row-level border topology captured before a sibling-format copy. */
+  rowBorders?: BorderWrite[];
+  /** Table and column geometry captured before a copied-layout write. */
+  tableLayout?: TableLayoutFacts;
+  /** Exact table, row, and cell properties captured before a sibling copy. */
+  tableProperties?: TablePropertyRestore;
 }
 
 export function preserveDocumentViewDuring<T>(
@@ -227,6 +300,132 @@ function parsePersistedAppearanceWrite(value: unknown): AppearanceWrite | null {
     : null;
 }
 
+function finiteNumber(
+  raw: Record<string, unknown>,
+  key: string
+): number | null {
+  const value = raw[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function parseTablePropertyFacts(value: unknown): TablePropertyFacts | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (finiteNumber(raw, 'cellSpacing') === null) return null;
+  if (
+    ['leftMargin', 'rightMargin', 'topMargin', 'bottomMargin'].some(
+      (key) => raw[key] !== null && finiteNumber(raw, key) === null
+    )
+  )
+    return null;
+  if (
+    raw.horizontalPosition !== undefined &&
+    finiteNumber(raw, 'horizontalPosition') === null
+  )
+    return null;
+  if (typeof raw.bidi !== 'boolean') return null;
+  const strings = [
+    'styleName',
+    'title',
+    'description',
+    'horizontalPositionAbs'
+  ];
+  if (
+    strings.some(
+      (key) => raw[key] !== undefined && typeof raw[key] !== 'string'
+    )
+  )
+    return null;
+  return raw as unknown as TablePropertyFacts;
+}
+
+function parseRowPropertyFacts(value: unknown): RowPropertyFacts | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const numeric = [
+    'height',
+    'gridBefore',
+    'gridBeforeWidth',
+    'gridAfter',
+    'gridAfterWidth',
+    'leftIndent'
+  ];
+  if (numeric.some((key) => finiteNumber(raw, key) === null)) return null;
+  if (
+    ['leftMargin', 'rightMargin', 'topMargin', 'bottomMargin'].some(
+      (key) => raw[key] !== null && finiteNumber(raw, key) === null
+    )
+  )
+    return null;
+  if (typeof raw.allowBreakAcrossPages !== 'boolean') return null;
+  if (typeof raw.heightType !== 'string') return null;
+  if (
+    !['Auto', 'Percent', 'Point'].includes(String(raw.gridBeforeWidthType)) ||
+    !['Auto', 'Percent', 'Point'].includes(String(raw.gridAfterWidthType))
+  )
+    return null;
+  return raw as unknown as RowPropertyFacts;
+}
+
+function parseCellPropertyFacts(value: unknown): CellPropertyFacts | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (
+    ['leftMargin', 'rightMargin', 'topMargin', 'bottomMargin'].some(
+      (key) => raw[key] !== null && finiteNumber(raw, key) === null
+    )
+  )
+    return null;
+  return raw as unknown as CellPropertyFacts;
+}
+
+function parseTablePropertyRestore(
+  value: unknown
+): TablePropertyRestore | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const table = parseTablePropertyFacts(raw.table);
+  if (!table || !Array.isArray(raw.rows)) return null;
+  const rows: TablePropertyRestore['rows'] = [];
+  for (const item of raw.rows) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const rowRaw = item as Record<string, unknown>;
+    const row = parseRowPropertyFacts(rowRaw.row);
+    if (!row || !Array.isArray(rowRaw.cells)) return null;
+    const cells = rowRaw.cells.map(parseCellPropertyFacts);
+    if (cells.some((cell) => !cell)) return null;
+    rows.push({ row, cells: cells as CellPropertyFacts[] });
+  }
+  return { table, rows };
+}
+
+function parseTableLayoutFacts(value: unknown): TableLayoutFacts | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (
+    finiteNumber(raw, 'preferredWidth') === null ||
+    finiteNumber(raw, 'leftIndent') === null ||
+    !['Auto', 'Percent', 'Point'].includes(String(raw.preferredWidthType)) ||
+    !['Left', 'Center', 'Right'].includes(String(raw.tableAlignment)) ||
+    typeof raw.allowAutoFit !== 'boolean'
+  )
+    return null;
+  if (
+    raw.columnWidths !== undefined &&
+    (!Array.isArray(raw.columnWidths) ||
+      raw.columnWidths.some(
+        (width) => typeof width !== 'number' || !Number.isFinite(width)
+      ))
+  )
+    return null;
+  if (
+    raw.columnWidthType !== undefined &&
+    !['Auto', 'Percent', 'Point'].includes(String(raw.columnWidthType))
+  )
+    return null;
+  return raw as unknown as TableLayoutFacts;
+}
+
 function parsePersistedAppearanceRestores(
   value: unknown
 ): AppearanceRestore[] | undefined {
@@ -254,7 +453,29 @@ function parsePersistedAppearanceRestores(
         : parsePersistedBorderWrites(raw.tableBorders);
     if (raw.tableBorders !== undefined && !tableBorders?.length)
       return undefined;
-    if (raw.rowIsHeader === undefined && !write && !tableBorders)
+    const rowBorders =
+      raw.rowBorders === undefined
+        ? undefined
+        : parsePersistedBorderWrites(raw.rowBorders);
+    if (raw.rowBorders !== undefined && !rowBorders?.length) return undefined;
+    const tableLayout =
+      raw.tableLayout === undefined
+        ? undefined
+        : parseTableLayoutFacts(raw.tableLayout);
+    if (raw.tableLayout !== undefined && !tableLayout) return undefined;
+    const tableProperties =
+      raw.tableProperties === undefined
+        ? undefined
+        : parseTablePropertyRestore(raw.tableProperties);
+    if (raw.tableProperties !== undefined && !tableProperties) return undefined;
+    if (
+      raw.rowIsHeader === undefined &&
+      !write &&
+      !tableBorders &&
+      !rowBorders &&
+      !tableLayout &&
+      !tableProperties
+    )
       return undefined;
     restores.push({
       cellAnchor: raw.cellAnchor,
@@ -262,7 +483,10 @@ function parsePersistedAppearanceRestores(
         ? { rowIsHeader: raw.rowIsHeader }
         : {}),
       ...(write ? { write } : {}),
-      ...(tableBorders ? { tableBorders } : {})
+      ...(tableBorders ? { tableBorders } : {}),
+      ...(rowBorders ? { rowBorders } : {}),
+      ...(tableLayout ? { tableLayout } : {}),
+      ...(tableProperties ? { tableProperties } : {})
     });
   }
   return restores;
@@ -740,12 +964,115 @@ const applyBorders = (editor: LiveEditor, borders: BorderWrite[]) => {
   }
 };
 
+/** The rendered table widget an anchor names, or undefined when none does. */
+export function liveTableWidgetAt(
+  editor: LiveEditor,
+  tableAnchor: string
+): any {
+  selectForAppearance(editor, `${tableAnchor};0;0;0`, 'cell');
+  const cell = (editor as any).selection?.start?.paragraph?.associatedCell;
+  return cell?.ownerTable?.combineWidget?.((editor as any).viewer);
+}
+
+const assignFacts = (target: any, facts: Record<string, unknown>): void => {
+  for (const [property, value] of Object.entries(facts))
+    target[property] = value;
+};
+
+/**
+ * Write sampled table, row, and cell SDK properties straight onto the rendered
+ * widget formats. The engine's post-write verification, not this writer, is
+ * what proves the values landed.
+ */
+export function writeTableProperties(
+  editor: LiveEditor,
+  tableAnchor: string,
+  restore: TablePropertyRestore
+): void {
+  const table = liveTableWidgetAt(editor, tableAnchor);
+  if (!table) return;
+  assignFacts(
+    table.tableFormat,
+    restore.table as unknown as Record<string, unknown>
+  );
+  (table.childWidgets ?? []).forEach((row: any, rowIndex: number) => {
+    const sourceRow = restore.rows[rowIndex];
+    if (!sourceRow) return;
+    const { height, heightType, ...rowFacts } = sourceRow.row;
+    assignFacts(row.rowFormat, rowFacts as unknown as Record<string, unknown>);
+    // SyncFusion clears an explicit height when its type changes. Apply the
+    // type first so the sampled sibling height survives the normalization.
+    row.rowFormat.heightType = heightType;
+    row.rowFormat.height = height;
+    (row.childWidgets ?? []).forEach((cell: any, column: number) => {
+      const sourceCell = sourceRow.cells[column];
+      if (sourceCell)
+        assignFacts(
+          cell.cellFormat,
+          sourceCell as unknown as Record<string, unknown>
+        );
+    });
+  });
+}
+
+/** Write table placement, width mode, and per-column widths via the public API. */
+export function writeTableLayout(
+  editor: LiveEditor,
+  tableAnchor: string,
+  layout: TableLayoutFacts
+): void {
+  const firstCell = `${tableAnchor};0;0;0`;
+  const selectTable = () => {
+    selectForAppearance(editor, firstCell, 'cell');
+    editor.selection?.selectTable?.();
+  };
+  selectTable();
+  editor.editor?.autoFitTable?.(
+    layout.allowAutoFit ? 'FitToContents' : 'FixedColumnWidth'
+  );
+  const columnWidths = layout.columnWidths ?? [];
+  for (let column = 0; column < columnWidths.length; column++) {
+    selectForAppearance(editor, `${tableAnchor};0;${column};0`, 'cell');
+    editor.selection?.selectColumn?.();
+    const cellFormat = editor.selection?.cellFormat;
+    if (!cellFormat) continue;
+    cellFormat.preferredWidth = columnWidths[column];
+    cellFormat.preferredWidthType = layout.columnWidthType ?? 'Auto';
+  }
+  // FixedColumnWidth first establishes the SDK's defined cell-width flags. Run
+  // it again after the sampled widths land so the live table grid is rebuilt
+  // from those widths rather than the equal grid SyncFusion inserted.
+  if (!layout.allowAutoFit && columnWidths.length) {
+    selectTable();
+    editor.editor?.autoFitTable?.('FixedColumnWidth');
+  }
+  selectTable();
+  const tableFormat = editor.selection?.tableFormat;
+  if (!tableFormat) return;
+  tableFormat.preferredWidthType = layout.preferredWidthType;
+  tableFormat.preferredWidth = layout.preferredWidth;
+  tableFormat.tableAlignment = layout.tableAlignment;
+  tableFormat.leftIndent = layout.leftIndent;
+}
+
 const replayAppearanceRestores = (
   editor: LiveEditor,
   restores: AppearanceRestore[]
 ) => {
   for (let index = restores.length - 1; index >= 0; index--) {
     const restore = restores[index];
+    if (restore.tableProperties)
+      writeTableProperties(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableProperties
+      );
+    if (restore.tableLayout)
+      writeTableLayout(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableLayout
+      );
     if (restore.tableBorders) {
       const tableAnchor = restore.cellAnchor.split(';').slice(0, 2).join(';');
       const cellAnchor = `${tableAnchor};0;0;0`;
@@ -757,6 +1084,13 @@ const replayAppearanceRestores = (
       for (const border of restore.tableBorders) {
         applyBorders(editor, [border]);
         selectTable();
+      }
+    }
+    if (restore.rowBorders) {
+      selectForAppearance(editor, restore.cellAnchor, 'row');
+      for (const border of restore.rowBorders) {
+        applyBorders(editor, [border]);
+        selectForAppearance(editor, restore.cellAnchor, 'row');
       }
     }
     if (restore.rowIsHeader !== undefined) {

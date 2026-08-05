@@ -28,12 +28,22 @@
 //   * a colour is stored verbatim, with no normalisation. The read therefore
 //     upper-cases it so that reading a `#d9e2f3` source and writing it into a
 //     target produces a target that reads back equal to the source.
-import type { AppearanceRestore } from '../../../utils/documentEditorPrimitives';
+import type {
+  AppearanceRestore,
+  TableLayoutFacts
+} from '../../../utils/documentEditorPrimitives';
 
 export type {
   AppearanceRestore,
   AppearanceWrite,
-  BorderWrite
+  BorderWrite,
+  CellPropertyFacts,
+  RowPropertyFacts,
+  TableAlignment,
+  TableLayoutFacts,
+  TablePropertyFacts,
+  TablePropertyRestore,
+  TableWidthType
 } from '../../../utils/documentEditorPrimitives';
 
 const OPTIMIZED_LINE_STYLES = [
@@ -74,6 +84,8 @@ const OPTIMIZED_LINE_STYLES = [
 const NO_BORDER_STYLES = new Set(['None', 'Cleared']);
 
 const VERTICAL_ALIGNMENTS = ['Top', 'Center', 'Bottom'] as const;
+const WIDTH_TYPES = ['Auto', 'Percent', 'Point'] as const;
+const TABLE_ALIGNMENTS = ['Left', 'Center', 'Right'] as const;
 
 export type CellVerticalAlignment = typeof VERTICAL_ALIGNMENTS[number];
 
@@ -130,6 +142,8 @@ export interface TableAppearance {
   styleName?: string;
   /** Table-level fill/borders, when set. */
   appearance?: AppearanceFacts;
+  /** Width, placement, and column proportions, when the source states them. */
+  layout?: TableLayoutFacts;
   rows: Array<
     RowAppearanceFacts & {
       /** Every cell, in column order. An unstyled cell is `undefined`. */
@@ -162,9 +176,8 @@ export interface AppearanceWriteReport {
   /** Set when no stripe could be proven, so the table was deliberately untouched. */
   noBandingDetected?: true;
   /**
-   * The source table's Word table style. Reported, not applied: SyncFusion
-   * 34.1.31 exposes no public route to assign a table style, and the copy
-   * reproduces the resulting look cell by cell instead.
+   * The source table's Word table style, copied with the rest of its sampled
+   * table-format facts and reported for observability.
    */
   sourceStyleName?: string;
 }
@@ -291,6 +304,133 @@ function readVerticalAlignment(raw: any): CellVerticalAlignment | undefined {
   return value === 'Top' ? undefined : value;
 }
 
+function readEnum<T extends readonly string[]>(
+  raw: any,
+  values: T
+): T[number] | undefined {
+  if (typeof raw === 'number') return values[raw];
+  if (typeof raw !== 'string') return undefined;
+  return values.find(
+    (member) => member.toLowerCase() === raw.trim().toLowerCase()
+  );
+}
+
+function readColumnLayout(
+  rawRows: any[]
+): Pick<TableLayoutFacts, 'columnWidths' | 'columnWidthType'> | undefined {
+  const candidates = rawRows
+    .map((row) => sfdtCells(row))
+    .filter((cells) => cells.length > 0)
+    .sort((left, right) => right.length - left.length);
+  for (const cells of candidates) {
+    if (
+      cells.some(
+        (cell) =>
+          Number(sfdtValue(sfdtCellFormat(cell), 'columnSpan', 'colsp')) > 1
+      )
+    )
+      continue;
+    const formats = cells.map(sfdtCellFormat);
+    const preferred = formats.map((format) =>
+      Number(sfdtValue(format, 'preferredWidth', 'pw'))
+    );
+    const widthTypes = formats.map(
+      (format) =>
+        readEnum(sfdtValue(format, 'preferredWidthType', 'pwt'), WIDTH_TYPES) ??
+        'Auto'
+    );
+    if (
+      preferred.every((width) => Number.isFinite(width) && width > 0) &&
+      widthTypes.every((type) => type === widthTypes[0])
+    )
+      return { columnWidths: preferred, columnWidthType: widthTypes[0] };
+    const rendered = formats.map((format) =>
+      Number(sfdtValue(format, 'cellWidth', 'cw'))
+    );
+    if (rendered.every((width) => Number.isFinite(width) && width > 0))
+      return { columnWidths: rendered, columnWidthType: 'Point' };
+  }
+  return undefined;
+}
+
+function readTableLayout(
+  tableFormat: any,
+  rawRows: any[]
+): TableLayoutFacts | undefined {
+  const columnLayout = readColumnLayout(rawRows);
+  const rawPreferredWidth = sfdtValue(tableFormat, 'preferredWidth', 'pw');
+  const rawPreferredWidthType = sfdtValue(
+    tableFormat,
+    'preferredWidthType',
+    'pwt'
+  );
+  const rawLeftIndent = sfdtValue(tableFormat, 'leftIndent', 'lin');
+  const rawAlignment = sfdtValue(tableFormat, 'tableAlignment', 'ta');
+  const rawAllowAutoFit = sfdtValue(tableFormat, 'allowAutoFit', 'auft');
+  const hasTableLayout =
+    rawPreferredWidth !== undefined ||
+    rawPreferredWidthType !== undefined ||
+    rawLeftIndent !== undefined ||
+    rawAlignment !== undefined ||
+    rawAllowAutoFit !== undefined;
+  if (!hasTableLayout && !columnLayout) return undefined;
+  const preferredWidth = Number(rawPreferredWidth);
+  const leftIndent = Number(rawLeftIndent);
+  return {
+    preferredWidth: Number.isFinite(preferredWidth) ? preferredWidth : 0,
+    preferredWidthType: readEnum(rawPreferredWidthType, WIDTH_TYPES) ?? 'Auto',
+    leftIndent: Number.isFinite(leftIndent) ? leftIndent : 0,
+    tableAlignment: readEnum(rawAlignment, TABLE_ALIGNMENTS) ?? 'Left',
+    allowAutoFit:
+      rawAllowAutoFit === undefined ? true : Boolean(rawAllowAutoFit),
+    ...columnLayout
+  };
+}
+
+/** Scale one sibling layout to a target grid without inventing document values. */
+export function tableLayoutForTarget(
+  source: TableLayoutFacts | undefined,
+  targetColumns: number
+): TableLayoutFacts | undefined {
+  if (!source) return undefined;
+  const widths = source.columnWidths;
+  if (!widths?.length || targetColumns <= 0)
+    return { ...source, columnWidths: undefined, columnWidthType: undefined };
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  const columnWidths =
+    widths.length === targetColumns
+      ? [...widths]
+      : Array.from({ length: targetColumns }, () => total / targetColumns);
+  return { ...source, columnWidths };
+}
+
+export function tableLayoutEquals(
+  a?: TableLayoutFacts,
+  b?: TableLayoutFacts,
+  tolerance = 0.01
+): boolean {
+  if (!a || !b) return !a && !b;
+  if (
+    Math.abs(a.preferredWidth - b.preferredWidth) > tolerance ||
+    a.preferredWidthType !== b.preferredWidthType ||
+    Math.abs(a.leftIndent - b.leftIndent) > tolerance ||
+    a.tableAlignment !== b.tableAlignment ||
+    a.allowAutoFit !== b.allowAutoFit
+  )
+    return false;
+  const ac = a.columnWidths;
+  const bc = b.columnWidths;
+  // An omitted sampled grid means the source did not state column
+  // proportions. SyncFusion may still materialize rendered widths after
+  // layout; those are not a competing inherited value.
+  if (!ac) return true;
+  if (!bc || a.columnWidthType !== b.columnWidthType) return false;
+  return (
+    ac.length === bc.length &&
+    ac.every((width, index) => Math.abs(width - bc[index]) <= tolerance)
+  );
+}
+
 function readAppearanceFrom(
   format: any,
   withAlignment: boolean,
@@ -363,11 +503,13 @@ export function collectTableAppearance(
     };
   });
   const tableLevel = readAppearanceFrom(tableFormat, false, true);
+  const layout = readTableLayout(tableFormat, rawRows);
   return {
     ...(typeof styleName === 'string' && styleName.trim()
       ? { styleName: styleName.trim() }
       : {}),
     ...(tableLevel ? { appearance: tableLevel } : {}),
+    ...(layout ? { layout } : {}),
     rows
   };
 }
@@ -457,6 +599,23 @@ export function rowShadings(appearance: TableAppearance): RowShading[] {
 }
 
 /**
+ * The one fill every data row of a table shares, or undefined when the table
+ * has no data rows or their fills differ. A uniform body is a statement of the
+ * sibling's own look - a new table copying that sibling replicates it instead
+ * of importing an unrelated table's stripe.
+ */
+export function uniformDataRowShading(
+  appearance: TableAppearance
+): string | null | undefined {
+  // eslint-disable-next-line no-use-before-define
+  const body = rowShadings(appearance).slice(inferHeaderRows(appearance));
+  if (!body.length) return undefined;
+  const first = body[0];
+  if (first === undefined) return undefined;
+  return body.every((value) => value === first) ? first : undefined;
+}
+
+/**
  * How many leading rows sit above the stripe.
  *
  * Word's own `isHeader` flag decides it when the table carries one. Otherwise a
@@ -469,7 +628,8 @@ export function inferHeaderRows(appearance: TableAppearance): number {
     flagged++;
   if (flagged > 0) return Math.min(flagged, appearance.rows.length - 1);
   const shadings = rowShadings(appearance);
-  if (shadings.length < 3) return 0;
+  // A banner needs at least one row below it to be a banner OVER.
+  if (shadings.length < 2) return 0;
   const first = shadings[0];
   if (first === undefined) return 0;
   const recurs = shadings.slice(1).some((value) => value === first);

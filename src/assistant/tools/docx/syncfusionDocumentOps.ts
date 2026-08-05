@@ -82,19 +82,30 @@ import {
   sourceRowForTarget,
   TableAppearance,
   TableBanding,
-  tableIsUnstyled
+  CellPropertyFacts,
+  TableLayoutFacts,
+  TablePropertyRestore,
+  RowPropertyFacts,
+  TablePropertyFacts,
+  tableLayoutEquals,
+  tableLayoutForTarget,
+  tableIsUnstyled,
+  uniformDataRowShading
 } from './tableAppearance';
 import {
   createdRevisions,
   groupRevisionsAtomic,
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
+  liveTableWidgetAt,
   parseRevisionGroupTag,
   preserveDocumentViewDuring,
   rebindRevisionGroups,
   resolveRevisionIndividually,
   revisionGroupTag,
-  snapshotRevisions
+  snapshotRevisions,
+  writeTableLayout,
+  writeTableProperties
 } from '../../../utils/documentEditorPrimitives';
 import type {
   LiveEditor,
@@ -7492,15 +7503,230 @@ function writeTableBorders(
   }
 }
 
-/** Capture all six table border members before a table-level normalization. */
-function liveTableBorderRestore(
+function tableWidgetAt(editor: LiveEditor, tableAnchor: string): any {
+  const table = liveTableWidgetAt(editor, tableAnchor);
+  if (!table)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${tableAnchor}".`
+    );
+  return table;
+}
+
+// SyncFusion spells "unset" differently per code path (a docx import reads
+// back null where a fresh insert reads back undefined), so the shared facts
+// reader collapses them, keeping desired-vs-after equality about real values.
+function tablePropertyFacts(format: any): TablePropertyFacts {
+  return {
+    cellSpacing: Number(format.cellSpacing) || 0,
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null,
+    bidi: !!format.bidi,
+    styleName: format.styleName ?? undefined,
+    title: format.title ?? undefined,
+    description: format.description ?? undefined,
+    horizontalPositionAbs: format.horizontalPositionAbs ?? undefined,
+    horizontalPosition: format.horizontalPosition ?? undefined
+  };
+}
+
+function rowPropertyFacts(format: any): RowPropertyFacts {
+  const gridBefore = Number(format.gridBefore) || 0;
+  const gridAfter = Number(format.gridAfter) || 0;
+  return {
+    allowBreakAcrossPages: format.allowBreakAcrossPages !== false,
+    height: Number(format.height) || 0,
+    heightType: String(format.heightType ?? 'AtLeast'),
+    gridBefore,
+    // A zero grid offset has no width: Word only stores wBefore/wAfter beside
+    // a positive gridBefore/gridAfter, and SyncFusion normalizes the inert
+    // type differently per code path ('Point' after import, 'Auto' after a
+    // fresh insert). Read the inert fields as their one canonical value.
+    gridBeforeWidth: gridBefore ? Number(format.gridBeforeWidth) || 0 : 0,
+    gridBeforeWidthType: gridBefore
+      ? format.gridBeforeWidthType ?? 'Auto'
+      : 'Auto',
+    gridAfter,
+    gridAfterWidth: gridAfter ? Number(format.gridAfterWidth) || 0 : 0,
+    gridAfterWidthType: gridAfter
+      ? format.gridAfterWidthType ?? 'Auto'
+      : 'Auto',
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null,
+    leftIndent: Number(format.leftIndent) || 0
+  };
+}
+
+function cellPropertyFacts(format: any): CellPropertyFacts {
+  return {
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null
+  };
+}
+
+function liveTablePropertyRestore(
   editor: LiveEditor,
   tableAnchor: string
-): BorderWrite[] {
-  selectForAppearance(editor, cellAnchorOf(tableAnchor, 0, 0), 'cell');
-  const cell = (editor as any).selection?.start?.paragraph?.associatedCell;
-  const table = cell?.ownerTable?.combineWidget?.((editor as any).viewer);
-  const borders = table?.tableFormat?.borders;
+): TablePropertyRestore {
+  const table = tableWidgetAt(editor, tableAnchor);
+  return {
+    table: tablePropertyFacts(table.tableFormat),
+    rows: (table.childWidgets ?? []).map((row: any) => ({
+      row: rowPropertyFacts(row.rowFormat),
+      cells: (row.childWidgets ?? []).map((cell: any) =>
+        cellPropertyFacts(cell.cellFormat)
+      )
+    }))
+  };
+}
+
+function tablePropertiesForTarget(
+  source: TablePropertyRestore,
+  sourceAppearance: TableAppearance,
+  headerRows: number,
+  target: TablePropertyRestore
+): TablePropertyRestore {
+  return {
+    table: source.table,
+    rows: target.rows.map((targetRow, rowIndex) => {
+      const sourceRow =
+        source.rows[sourceRowForTarget(sourceAppearance, headerRows, rowIndex)];
+      return sourceRow
+        ? {
+            row: sourceRow.row,
+            cells: targetRow.cells.map(
+              (_, column) =>
+                sourceRow.cells[Math.min(column, sourceRow.cells.length - 1)]
+            )
+          }
+        : targetRow;
+    })
+  };
+}
+
+function tablePropertiesEqual(
+  left: TablePropertyRestore,
+  right: TablePropertyRestore
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function resolveLiveSourceTableAnchor(
+  editor: LiveEditor,
+  intendedAnchor: string,
+  targetAnchor: string,
+  source: TableAppearance
+): string {
+  try {
+    tableWidgetAt(editor, intendedAnchor);
+    return intendedAnchor;
+  } catch {
+    // A structural insert before a following sibling shifts the live anchor;
+    // its preflight appearance remains the stable identity for the search.
+  }
+  const sfdt = serializeSfdt(editor);
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  for (let section = 0; section < sections.length; section++) {
+    const blocks = getBlocks(sections[section]);
+    for (let block = 0; block < blocks.length; block++) {
+      const anchor = `${section};${block}`;
+      if (anchor === targetAnchor || !getRows(blocks[block])) continue;
+      const appearance = collectTableAppearance(blocks[block]);
+      if (appearance && JSON.stringify(appearance) === JSON.stringify(source))
+        return anchor;
+    }
+  }
+  throw new OpError(
+    'table_not_found',
+    `No table answers to the anchor "${intendedAnchor}".`
+  );
+}
+
+/**
+ * SyncFusion coalesces cell-edge writes when tables use cell spacing. Copy the
+ * sibling's stored border objects after the public writes so separated tables
+ * retain the same defined flags and therefore paint exactly like the source.
+ */
+function copySeparatedTableBorders(
+  editor: LiveEditor,
+  sourceAnchor: string,
+  targetAnchor: string,
+  sourceAppearance: TableAppearance,
+  headerRows: number
+): void {
+  const source = tableWidgetAt(editor, sourceAnchor);
+  const target = tableWidgetAt(editor, targetAnchor);
+  target.tableFormat.borders.copyFormat(source.tableFormat.borders);
+  const sourceRows: any[] = source.childWidgets ?? [];
+  (target.childWidgets ?? []).forEach((targetRow: any, rowIndex: number) => {
+    const sourceRow =
+      sourceRows[sourceRowForTarget(sourceAppearance, headerRows, rowIndex)];
+    const sourceCells: any[] = sourceRow?.childWidgets ?? [];
+    (targetRow.childWidgets ?? []).forEach(
+      (targetCell: any, column: number) => {
+        const sourceCell =
+          sourceCells[Math.min(column, sourceCells.length - 1)];
+        if (sourceCell)
+          targetCell.cellFormat.borders.copyFormat(
+            sourceCell.cellFormat.borders
+          );
+      }
+    );
+  });
+}
+
+function liveTableLayout(
+  editor: LiveEditor,
+  tableAnchor: string
+): TableLayoutFacts {
+  const table = tableWidgetAt(editor, tableAnchor);
+  const format = table.tableFormat;
+  const rows: any[] = table.childWidgets ?? [];
+  const cells: any[] = [...rows].sort(
+    (left, right) =>
+      (right.childWidgets?.length ?? 0) - (left.childWidgets?.length ?? 0)
+  )[0]?.childWidgets;
+  let columnWidths: number[] | undefined;
+  let columnWidthType: TableLayoutFacts['columnWidthType'];
+  if (cells?.length) {
+    const preferred = cells.map((cell) =>
+      Number(cell.cellFormat?.preferredWidth)
+    );
+    const types = cells.map((cell) => cell.cellFormat?.preferredWidthType);
+    if (
+      preferred.every((width) => Number.isFinite(width) && width > 0) &&
+      types.every((type) => type === types[0])
+    ) {
+      columnWidths = preferred;
+      columnWidthType = types[0];
+    } else {
+      const rendered = cells.map((cell) => Number(cell.cellFormat?.cellWidth));
+      if (rendered.every((width) => Number.isFinite(width) && width > 0)) {
+        columnWidths = rendered;
+        columnWidthType = 'Point';
+      }
+    }
+  }
+  return {
+    preferredWidth: Number(format.preferredWidth) || 0,
+    preferredWidthType: format.preferredWidthType ?? 'Auto',
+    leftIndent: Number(format.leftIndent) || 0,
+    tableAlignment: format.tableAlignment ?? 'Left',
+    allowAutoFit: format.allowAutoFit ?? true,
+    ...(columnWidths && columnWidthType
+      ? { columnWidths, columnWidthType }
+      : {})
+  };
+}
+
+/** Capture all six table/row border members as replayable public writes. */
+function borderRestoreFor(borders: any): BorderWrite[] {
   const writes: BorderWrite[] = [{ type: 'NoBorder', style: 'None' }];
   for (const [member, type] of TABLE_BORDER_MEMBERS) {
     const border = borders?.[member];
@@ -7517,6 +7743,44 @@ function liveTableBorderRestore(
     });
   }
   return writes;
+}
+
+/** Capture all six table border members before a table-level normalization. */
+function liveTableBorderRestore(
+  editor: LiveEditor,
+  tableAnchor: string
+): BorderWrite[] {
+  return borderRestoreFor(
+    tableWidgetAt(editor, tableAnchor).tableFormat.borders
+  );
+}
+
+function liveRowBorderRestores(
+  editor: LiveEditor,
+  tableAnchor: string
+): BorderWrite[][] {
+  return (tableWidgetAt(editor, tableAnchor).childWidgets ?? []).map(
+    (row: any) => borderRestoreFor(row.rowFormat.borders)
+  );
+}
+
+function copyMappedRowBorders(
+  editor: LiveEditor,
+  sourceAnchor: string,
+  targetAnchor: string,
+  sourceAppearance: TableAppearance,
+  headerRows: number
+): void {
+  const sourceRows: any[] =
+    tableWidgetAt(editor, sourceAnchor).childWidgets ?? [];
+  const targetRows: any[] =
+    tableWidgetAt(editor, targetAnchor).childWidgets ?? [];
+  targetRows.forEach((targetRow, rowIndex) => {
+    const sourceRow =
+      sourceRows[sourceRowForTarget(sourceAppearance, headerRows, rowIndex)];
+    if (sourceRow)
+      targetRow.rowFormat.borders.copyFormat(sourceRow.rowFormat.borders);
+  });
 }
 
 function tableBordersMatchAll(
@@ -7556,11 +7820,30 @@ function replayAppearanceRestores(
 ): void {
   for (let index = restores.length - 1; index >= 0; index--) {
     const restore = restores[index];
+    if (restore.tableProperties)
+      writeTableProperties(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableProperties
+      );
+    if (restore.tableLayout)
+      writeTableLayout(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableLayout
+      );
     if (restore.tableBorders)
       writeTableBorders(
         editor,
         restore.cellAnchor.split(';').slice(0, 2).join(';'),
         restore.tableBorders
+      );
+    if (restore.rowBorders)
+      writeAppearance(
+        editor,
+        restore.cellAnchor,
+        { borders: restore.rowBorders },
+        'row'
       );
     if (restore.rowIsHeader !== undefined)
       writeRowIsHeader(editor, restore.cellAnchor, restore.rowIsHeader);
@@ -7738,6 +8021,47 @@ function applyCopiedTableAppearance(
   const target = resolvedTarget ?? liveTableAppearance(editor, targetAnchor);
   const banding = options.banding ?? detectTableBanding(source);
   const headerRows = banding?.headerRows ?? inferHeaderRows(source);
+  const liveSourceAnchor = resolveLiveSourceTableAnchor(
+    editor,
+    sourceAnchor,
+    targetAnchor,
+    source
+  );
+  const sourceProperties = liveTablePropertyRestore(editor, liveSourceAnchor);
+  const targetProperties = liveTablePropertyRestore(editor, targetAnchor);
+  const desiredProperties = tablePropertiesForTarget(
+    sourceProperties,
+    source,
+    headerRows,
+    targetProperties
+  );
+  const copyProperties = !tablePropertiesEqual(
+    desiredProperties,
+    targetProperties
+  );
+  const sourceRowBorders = liveRowBorderRestores(editor, liveSourceAnchor);
+  const rowBordersBefore = liveRowBorderRestores(editor, targetAnchor);
+  const desiredRowBorders = target.rows.map(
+    (_, rowIndex) =>
+      sourceRowBorders[sourceRowForTarget(source, headerRows, rowIndex)] ?? [
+        { type: 'NoBorder', style: 'None' }
+      ]
+  );
+  const copyRowBorders =
+    JSON.stringify(desiredRowBorders) !== JSON.stringify(rowBordersBefore);
+  const targetColumns = target.rows.reduce(
+    (widest, row) => Math.max(widest, row.cells.length),
+    0
+  );
+  const desiredLayout = tableLayoutForTarget(
+    liveTableLayout(editor, liveSourceAnchor),
+    targetColumns
+  );
+  const copyLayout =
+    !!desiredLayout && !tableLayoutEquals(desiredLayout, target.layout);
+  const layoutBefore = copyLayout
+    ? liveTableLayout(editor, targetAnchor)
+    : undefined;
   const report = emptyAppearanceReport();
   if (source.styleName) report.sourceStyleName = source.styleName;
   if (banding) report.banding = banding;
@@ -7751,7 +8075,9 @@ function applyCopiedTableAppearance(
   );
   const desiredBorders = desiredRows.flat().map((entry) => entry?.borders);
   const firstAllBorder = desiredBorders[0]?.all;
+  const separatedBorders = sourceProperties.table.cellSpacing > 0;
   const uniformAllBorder =
+    !separatedBorders &&
     !!firstAllBorder &&
     desiredBorders.length > 0 &&
     desiredBorders.every(
@@ -7770,9 +8096,10 @@ function applyCopiedTableAppearance(
       (_, column) => !!cellAppearanceAt(target, rowIndex, column)?.borders
     )
   );
-  const tableBordersBefore = uniformAllBorder
-    ? liveTableBorderRestore(editor, targetAnchor)
-    : undefined;
+  const tableBordersBefore =
+    uniformAllBorder || separatedBorders
+      ? liveTableBorderRestore(editor, targetAnchor)
+      : undefined;
   const tableAlreadyNormalized =
     !!uniformAllBorder &&
     !targetHasCellBorders &&
@@ -7788,6 +8115,13 @@ function applyCopiedTableAppearance(
     return Object.keys(rest).length ? rest : undefined;
   };
   const transaction = runAppearanceTransaction(editor, (record) => {
+    if (copyProperties) {
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableProperties: targetProperties
+      });
+      writeTableProperties(editor, targetAnchor, desiredProperties);
+    }
     target.rows.forEach((targetRow, row) => {
       // The same mapping copiedCellAppearance uses, so the header flag and the
       // cell appearance can never be taken from two different source rows.
@@ -7863,6 +8197,44 @@ function applyCopiedTableAppearance(
         tableBorders: tableBordersBefore
       });
     }
+    if (copyLayout && desiredLayout && layoutBefore) {
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableLayout: layoutBefore
+      });
+      writeTableLayout(editor, targetAnchor, desiredLayout);
+    }
+    if (copyRowBorders) {
+      rowBordersBefore.forEach((rowBorders, rowIndex) =>
+        record({
+          cellAnchor: cellAnchorOf(targetAnchor, rowIndex, 0),
+          rowBorders
+        })
+      );
+      copyMappedRowBorders(
+        editor,
+        liveSourceAnchor,
+        targetAnchor,
+        source,
+        headerRows
+      );
+    }
+    if (separatedBorders) {
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableBorders: tableBordersBefore
+      });
+      copySeparatedTableBorders(
+        editor,
+        liveSourceAnchor,
+        targetAnchor,
+        source,
+        headerRows
+      );
+    }
+    if (copyProperties || copyLayout || copyRowBorders || separatedBorders)
+      invalidateDocumentLayout(editor);
+    const afterProperties = liveTablePropertyRestore(editor, targetAnchor);
     const postWriteSfdt = serializeSfdt(editor);
     const after = collectTableAppearance(
       tableBlockAt(postWriteSfdt, targetAnchor)
@@ -7873,6 +8245,25 @@ function applyCopiedTableAppearance(
         `No table answers to the anchor "${targetAnchor}". Re-read the structure and use a current anchor.`
       );
     const mismatches: string[] = [];
+    if (!tablePropertiesEqual(desiredProperties, afterProperties))
+      mismatches.push(
+        `table properties: expected ${JSON.stringify(
+          desiredProperties
+        )}, got ${JSON.stringify(afterProperties)}`
+      );
+    const afterRowBorders = liveRowBorderRestores(editor, targetAnchor);
+    if (JSON.stringify(desiredRowBorders) !== JSON.stringify(afterRowBorders))
+      mismatches.push(
+        `row borders: expected ${JSON.stringify(
+          desiredRowBorders
+        )}, got ${JSON.stringify(afterRowBorders)}`
+      );
+    if (desiredLayout && !tableLayoutEquals(desiredLayout, after.layout))
+      mismatches.push(
+        `table layout: expected ${JSON.stringify(
+          desiredLayout
+        )}, got ${JSON.stringify(after.layout)}`
+      );
     after.rows.forEach((row, rowIndex) => {
       const mapped =
         source.rows[sourceRowForTarget(source, headerRows, rowIndex)];
@@ -9350,13 +9741,15 @@ function planTableInsertInheritance(
   const rows = positiveCount(op.rows);
   const columns = positiveCount(op.columns);
   const targetRows = Array.from({ length: rows }, (_, index) => index);
-  // An explicit source is the composer's same-family/same-ordinal table. Its
-  // own proven stripe outranks an unrelated document-wide table; fall back to
-  // the existing document sample only when that sibling is too short to prove
-  // a cycle by itself.
+  // The sibling reference is the authority on the new table's look: its own
+  // proven stripe outranks an unrelated document-wide table, and a uniform
+  // body (every data row one fill) is replicated as-is. Only a sibling whose
+  // body proves nothing either way defers to the document sample.
   const banding =
-    (explicitSource ? detectTableBanding(sourceTable.appearance) : null) ??
-    documentTableBanding(sfdt, targetTableAnchor);
+    detectTableBanding(sourceTable.appearance) ??
+    (uniformDataRowShading(sourceTable.appearance) !== undefined
+      ? null
+      : documentTableBanding(sfdt, targetTableAnchor));
   return [
     {
       anchor: targetTableAnchor,
