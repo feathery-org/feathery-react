@@ -345,4 +345,47 @@ describe('table rows carrying token content controls', () => {
     expect(true).toBe(true);
     destroy();
   });
+
+  it('MEASURE: how to clear a fresh control placeholder', () => {
+    const { editor, destroy } = openTable(2);
+    selectCell(editor, 2, 0);
+    (editor.editor as any).insertRow(false, 1);
+    selectCell(editor, 3, 0);
+    const before = new Set(controlsOf(editor));
+    (editor.editor as any).insertContentControl('Text');
+    const built: any = controlsOf(editor).find((c) => !before.has(c));
+    built.contentControlProperties.tag = encodeTag(qtySpec(2));
+
+    const valueOf = () =>
+      (editor as any).exportContentControlData().find((d: any) =>
+        (d.tag || '').includes('"index":2')
+      )?.value;
+    const flag = () => built.contentControlProperties.hasPlaceHolderText;
+    // eslint-disable-next-line no-console
+    console.log('A fresh:', JSON.stringify(valueOf()), 'flag:', flag());
+
+    // 1. clear the flag alone
+    built.contentControlProperties.hasPlaceHolderText = false;
+    // eslint-disable-next-line no-console
+    console.log('B flag=false ->', JSON.stringify(valueOf()));
+
+    // 2. select the contents and delete
+    (editor.selection as any).selectContentControlInternal(built);
+    try {
+      (editor.editor as any).delete();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log('delete threw:', (e as Error).message);
+    }
+    // eslint-disable-next-line no-console
+    console.log('C after delete ->', JSON.stringify(valueOf()), 'flag:', flag());
+
+    // 3. write a real value afterwards, to prove it is still usable
+    (editor.selection as any).selectContentControlInternal(built);
+    (editor.editor as any).insertText('9');
+    // eslint-disable-next-line no-console
+    console.log('D after write  ->', JSON.stringify(valueOf()));
+    expect(true).toBe(true);
+    destroy();
+  });
 });

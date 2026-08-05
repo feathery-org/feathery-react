@@ -57,6 +57,8 @@ import { evaluate } from './grammar';
 import { parseValue, renderValue } from './format';
 import {
   deletedRows,
+  pruneDeleted,
+  renumberGroup,
   groupLength,
   growGroup,
   liveTokens,
@@ -419,8 +421,15 @@ export const attachTokenCycle = (
     const skipId =
       editingId && !showsPlaceholderFor(editingId) ? editingId : undefined;
 
+    // Only tokens the document actually carries. The plan also holds seeded
+    // input nodes for fields a formula reads but that have no control anywhere
+    // (`tax_pct`), and offering those to the write reports them as unreachable
+    // every pass.
+    const present = new Set(
+      liveTokens(editor).map(({ spec }) => valueKey(spec))
+    );
     const updates = [...plan.specs.keys()]
-      .filter((key) => key !== skipId)
+      .filter((key) => key !== skipId && present.has(key))
       .map((key) => ({ id: key, text: expectedText(key, texts, numbers) }));
 
     if (updates.length > 0 && !isReplayingHistory(editor)) {
@@ -715,6 +724,19 @@ export const attachTokenCycle = (
         fields.removeRow?.(backed, index);
       }
     }
+
+    // Drop the dead controls FIRST. `deleteRow` leaves them in the collection,
+    // and renumbering a survivor onto a dead entry's address would make both
+    // unreadable — the survivor would look deleted too.
+    pruneDeleted(editor);
+
+    // Then close the gap. Deleting the middle of {0,1,2} leaves controls tagged
+    // 0 and 2 over a field now holding two values, so the survivor reads
+    // nothing — and the adopt that follows would take its own text back INTO
+    // the field, undoing the splice. Renumbering restores index == array
+    // position, which every read and write depends on.
+    for (const group of repeatGroups(editor)) renumberGroup(editor, group);
+
     return true;
   };
 

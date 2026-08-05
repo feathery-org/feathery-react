@@ -50,6 +50,8 @@ export type EditorLike = {
   };
   editor: {
     insertText: (text: string) => void;
+    /** Clears a selection. The only way to remove a control's placeholder. */
+    delete?: () => void;
   };
   editorHistory?: {
     beginUndoAction: () => void;
@@ -419,7 +421,17 @@ export const writeValues = (
           missed.push(id);
           continue;
         }
-        editor.editor.insertText(text);
+        if (text === '') {
+          // `insertText('')` leaves the control showing Syncfusion's
+          // placeholder, which is real content, not a rendering flag — clearing
+          // `hasPlaceHolderText` does not remove it (measured). Deleting the
+          // selection does, and the control stays usable afterwards. A host
+          // without `delete` falls back rather than silently doing nothing.
+          if (typeof editor.editor.delete === 'function') editor.editor.delete();
+          else editor.editor.insertText(text);
+        } else {
+          editor.editor.insertText(text);
+        }
         if (!written.includes(id)) written.push(id);
       }
     } finally {

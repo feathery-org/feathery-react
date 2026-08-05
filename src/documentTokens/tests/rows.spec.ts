@@ -532,6 +532,22 @@ describe('the cycle keeps rows in step with the field', () => {
     destroy();
   });
 
+  it('NEVER leaves a placeholder in a grown row, even with no value', () => {
+    // A new item has no description yet. The control still must not read
+    // "Click here or tap to insert text" — that is Syncfusion's content, not a
+    // value, and it cannot be cleared by unsetting a flag.
+    const { editor, destroy } = open(2);
+    const fields = store({ qty: [1, 2] });
+    const cycle = attachTokenCycle(editor as any, { fields });
+
+    fields.values.qty = [1, 2, 3];
+    cycle.reconcile();
+
+    const values = readTokens(editor as any).map(({ value }) => value);
+    expect(values.join(' | ')).not.toContain('Click here or tap to insert');
+    destroy();
+  });
+
   it('never collapses a repeat to no rows at all', () => {
     // The last row is the template every grown row is built from, so a table
     // with none could never grow back.
@@ -552,6 +568,105 @@ describe('the cycle keeps rows in step with the field', () => {
     attachTokenCycle(editor as any, { fields: withoutCount as any });
 
     expect(tableRows(editor)).toBe(3);
+    destroy();
+  });
+});
+
+describe('a row deleted from the MIDDLE', () => {
+  const store = (initial: Record<string, any[]>) => {
+    const values: Record<string, any[]> = { ...initial };
+    return {
+      values,
+      read: (spec: TokenSpec) =>
+        spec.source ? values[spec.source]?.[spec.index ?? 0] : undefined,
+      write: (updates: Array<{ spec: TokenSpec; value: any }>) => {
+        for (const { spec, value } of updates) {
+          if (!spec.source) continue;
+          const rows = [...(values[spec.source] ?? [])];
+          rows[spec.index ?? 0] = value;
+          values[spec.source] = rows;
+        }
+      },
+      rowCount: (source: string) => values[source]?.length ?? 0,
+      removeRow: (sources: string[], index: number) => {
+        for (const source of sources) {
+          const rows = values[source];
+          if (!Array.isArray(rows) || index >= rows.length) continue;
+          values[source] = [...rows.slice(0, index), ...rows.slice(index + 1)];
+        }
+      }
+    };
+  };
+
+  const deleteMiddle = (editor: DocumentEditor) => {
+    const table = (editor as any).documentHelper.pages[0].bodyWidgets[0]
+      .childWidgets[0];
+    const para = table.childWidgets[2].childWidgets[0].childWidgets[0];
+    (editor.selection as any).selectParagraphInternal(para, true);
+    (editor.editor as any).deleteRow();
+  };
+
+  const setup = () => {
+    const opened = open(3);
+    const fields = store({ qty: [11, 22, 33] });
+    attachTokenCycle(opened.editor as any, { fields });
+    return { ...opened, fields };
+  };
+
+  it('splices the field instead of re-adopting the deleted row', () => {
+    // The survivor kept its old tag, found no value at that index, and adopted
+    // its own text BACK into the field — leaving a duplicate behind.
+    const { editor, fields, destroy } = setup();
+    deleteMiddle(editor);
+    expect(fields.values.qty).toEqual([11, 33]);
+    destroy();
+  });
+
+  it('renumbers the surviving rows to close the gap', () => {
+    // Index MUST equal the field array position; a gap breaks every read.
+    const { editor, destroy } = setup();
+    deleteMiddle(editor);
+    expect([...repeatGroups(editor as any)[0].rows.keys()].sort()).toEqual([
+      0, 1
+    ]);
+    destroy();
+  });
+
+  it('drops the deleted row out of the control collection', () => {
+    // Left behind, a dead entry shares an address with the renumbered survivor
+    // and both become unreadable.
+    const { editor, destroy } = setup();
+    deleteMiddle(editor);
+    expect(staleControls(editor as any)).toEqual([]);
+    expect(readTokens(editor as any).map(({ spec }) => instanceKey(spec))).toEqual(
+      ['qty__0', 'amount__0', 'qty__1', 'amount__1', 'subtotal']
+    );
+    destroy();
+  });
+
+  it('keeps every surviving row readable and correctly valued', () => {
+    const { editor, destroy } = setup();
+    deleteMiddle(editor);
+    const found = addresses(editor);
+    expect(found).toContain('qty__1');
+    expect(found).toContain('amount__1');
+    destroy();
+  });
+
+  it('grows onto the next free index afterwards, still linked', () => {
+    // With a gap left behind, a grow picked index 3 against a field whose next
+    // slot was 2, so the new tokens were created unlinked.
+    const { editor, fields, destroy } = setup();
+    deleteMiddle(editor);
+
+    fields.values.qty = [11, 33, 55];
+    const cycle = attachTokenCycle(editor as any, { fields });
+    cycle.reconcile();
+
+    expect([...repeatGroups(editor as any)[0].rows.keys()].sort()).toEqual([
+      0, 1, 2
+    ]);
+    expect(addresses(editor)).toContain('qty__2');
     destroy();
   });
 });

@@ -205,14 +205,15 @@ export const growGroup = (
   // Fill the new controls now they carry their tags. One pass for the whole
   // batch, through the write path that is already proven against this editor.
   //
-  // Empty text is dropped, never written: insertText('') over a fresh control's
-  // placeholder deletes the placeholder and takes the control with it. A caller
-  // that cannot yet render a value — a derived token whose graph has not been
-  // rebuilt — leaves it showing the placeholder for the reconcile that follows.
-  const filled = added
-    .map((spec) => ({ id: valueKey(spec), text: textFor(spec) }))
-    .filter(({ text }) => text !== '');
-  if (filled.length > 0) writeValues(editor, filled);
+  // Empty text is written too, not skipped: a control arrives showing
+  // Syncfusion's placeholder, and the write is what clears it. Leaving it meant
+  // a new row read "Click here or tap to insert text" until someone typed.
+  if (added.length > 0) {
+    writeValues(
+      editor,
+      added.map((spec) => ({ id: valueKey(spec), text: textFor(spec) }))
+    );
+  }
 
   return added;
 };
@@ -313,4 +314,76 @@ export const liveTokens = (
   return readTokens(editor).filter(
     (entry) => !dead.has(instanceKey(entry.spec))
   );
+};
+
+/**
+ * Renumber a group's rows to 0..n-1 in document order.
+ *
+ * A control's repeat index MUST equal its index in the field's array — every
+ * read and write goes through that number. Deleting a row in the middle breaks
+ * it: the survivors keep their original tags, so `{0,1,2}` minus row 1 leaves
+ * controls tagged `0` and `2` over a field holding two values. The control
+ * tagged `2` then reads nothing and adopts its own text back into the field,
+ * and the next grown row picks index 3 against a field whose next slot is 2.
+ *
+ * Returns true when anything moved.
+ */
+export const renumberGroup = (
+  editor: EditorLike,
+  group: RepeatGroup
+): boolean => {
+  // Document order, which is what the field's values must line up with.
+  const inOrder = [...group.rows.entries()].sort(
+    ([, leftRow], [, rightRow]) => leftRow - rightRow
+  );
+
+  let moved = false;
+  inOrder.forEach(([oldIndex], position) => {
+    if (oldIndex === position) return;
+    for (const { spec } of group.cells.get(oldIndex) ?? []) {
+      const control = controlsOf(editor).find((candidate) => {
+        const found = specOf(candidate);
+        return found !== null && instanceKey(found) === instanceKey(spec);
+      });
+      if (!control?.contentControlProperties) continue;
+
+      // Keep the appearance suffix: a token used twice in one row needs both
+      // controls to stay separately addressable.
+      const occurrence = /#(\d+)$/.exec(spec.instance ?? '');
+      const renumbered: TokenSpec = { ...spec, index: position };
+      if (occurrence) {
+        renumbered.instance = `${spec.id}__${position}#${occurrence[1]}`;
+      } else {
+        delete (renumbered as any).instance;
+      }
+      control.contentControlProperties.tag = encodeTag(renumbered);
+      moved = true;
+    }
+  });
+
+  return moved;
+};
+
+/**
+ * Drop controls whose row was deleted out of Syncfusion's own collection.
+ *
+ * `deleteRow` leaves them behind (measured), and filtering them out by address
+ * is not enough: renumbering a survivor can give it the same address as a dead
+ * entry, and then both disappear. Removing them is the only way the collection
+ * stays a truthful list of what the document holds.
+ */
+export const pruneDeleted = (editor: EditorLike): string[] => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  if (!Array.isArray(collection)) return [];
+
+  const dropped: string[] = [];
+  for (let at = collection.length - 1; at >= 0; at -= 1) {
+    const spec = specOf(collection[at]);
+    if (!spec) continue;
+    const placement = placementOf(collection[at]);
+    if (placement === null || isLive(placement)) continue;
+    dropped.push(instanceKey(spec));
+    collection.splice(at, 1);
+  }
+  return dropped;
 };
