@@ -624,6 +624,16 @@ export function useDocxEditor({
         if (!ed) {
           throw new Error('Document editor instance missing after create');
         }
+        // SyncFusion rebuilds its page DOM after a tracked edit. Chromium's
+        // generic scroll anchoring then treats that controlled relayout as
+        // newly inserted page content and adjusts scrollTop a frame after the
+        // editor transaction has restored its viewport. The editor already
+        // owns cursor/viewport mapping, so leave browser anchoring disabled on
+        // its private scroller and let SyncFusion remain the sole scroll owner.
+        const viewer = ed.documentHelper?.viewerContainer as
+          | HTMLElement
+          | undefined;
+        if (viewer) viewer.style.overflowAnchor = 'none';
         ed.isReadOnly = isReadOnly;
         ed.addEventListener('contentChange', () => {
           if (ignoreContentChangeRef.current) return;
