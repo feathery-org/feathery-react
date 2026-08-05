@@ -150,6 +150,67 @@ const fixture = () => ({
   ]
 });
 
+const nestedFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        paragraph('About', 'Heading 1'),
+        paragraph('About overview', 'Section Body'),
+        paragraph('A Long-Term Perspective', 'Heading 2'),
+        paragraph('Long-term perspective body', 'Subsection Body'),
+        paragraph('Services', 'Heading 1'),
+        paragraph('Services overview', 'Section Body'),
+        paragraph('Advice', 'Heading 2'),
+        paragraph('Advice body', 'Subsection Body'),
+        paragraph('Planning', 'Heading 2'),
+        paragraph('Planning body', 'Subsection Body'),
+        paragraph('Contact', 'Heading 1'),
+        paragraph('Contact overview', 'Section Body')
+      ]
+    }
+  ],
+  styles: [
+    {
+      type: 'Paragraph',
+      name: 'Normal',
+      next: 'Normal',
+      characterFormat: { fontSize: 11 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Section Body',
+      basedOn: 'Normal',
+      next: 'Section Body',
+      characterFormat: { fontSize: 11 },
+      paragraphFormat: { afterSpacing: 10 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Subsection Body',
+      basedOn: 'Normal',
+      next: 'Subsection Body',
+      characterFormat: { fontSize: 10 },
+      paragraphFormat: { afterSpacing: 4 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Heading 1',
+      basedOn: 'Normal',
+      next: 'Section Body',
+      characterFormat: { bold: true, fontSize: 20, fontColor: '#17365D' },
+      paragraphFormat: { outlineLevel: 'Level1', beforeSpacing: 14 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Heading 2',
+      basedOn: 'Normal',
+      next: 'Subsection Body',
+      characterFormat: { bold: true, fontSize: 13, fontColor: '#000000' },
+      paragraphFormat: { outlineLevel: 'Level2', beforeSpacing: 6 }
+    }
+  ]
+});
+
 function makeEditor(sfdt = fixture()): DocumentEditor {
   const host = document.createElement('div');
   host.style.width = '900px';
@@ -249,6 +310,59 @@ function tableFactsByHeader(editor: DocumentEditor, header: string) {
 }
 
 describe('insert_section deterministic composer', () => {
+  it('inherits title and paragraph roles from the named subsection anchor family', () => {
+    const editor = makeEditor(nestedFixture());
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'named-subsection-family',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: 'after:A Long-Term Perspective',
+            sectionSpec: {
+              title: 'Our Commitments to the Client',
+              blocks: [
+                {
+                  role: 'paragraph',
+                  text: 'We commit to clear advice and durable partnership.'
+                }
+              ]
+            }
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      const flattened = flattenSfdt(JSON.parse(editor.serialize()));
+      const title = flattened.find(
+        (block) => block.text === 'Our Commitments to the Client'
+      );
+      const body = flattened.find(
+        (block) =>
+          block.text === 'We commit to clear advice and durable partnership.'
+      );
+      if (!title || !body) throw new Error('inserted subsection was not found');
+
+      expect(title.level).toBe(2);
+      editor.selection.select(
+        `${title.anchor};0`,
+        `${title.anchor};${title.text.length}`
+      );
+      expect(editor.selection.paragraphFormat.styleName).toBe('Heading 2');
+      editor.selection.select(
+        `${body.anchor};0`,
+        `${body.anchor};${body.text.length}`
+      );
+      expect(editor.selection.paragraphFormat.styleName).toBe(
+        'Subsection Body'
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   it('assembles five semantic blocks including two populated tables as one sibling-shaped group', () => {
     const editor = makeEditor();
     try {

@@ -131,7 +131,100 @@ const editorFor = (blocks: any[]) => ({
   serialize: () => JSON.stringify({ sections: [{ blocks }] })
 });
 
+const nestedSectionFamilies = () => [
+  paragraph('About', 'Top-Level Heading', {
+    level: 1,
+    bold: true,
+    fontSize: 20
+  }),
+  paragraph('About overview', 'Top-Level Body', { fontSize: 11 }),
+  paragraph('A Long-Term Perspective', 'Subsection Heading', {
+    level: 2,
+    bold: true,
+    fontSize: 13
+  }),
+  paragraph('Long-term perspective body', 'Subsection Body', { fontSize: 10 }),
+  paragraph('Personal Service', 'Subsection Heading', {
+    level: 2,
+    bold: true,
+    fontSize: 13
+  }),
+  paragraph('Personal service body', 'Subsection Body', { fontSize: 10 }),
+  paragraph('Services', 'Top-Level Heading', {
+    level: 1,
+    bold: true,
+    fontSize: 20
+  }),
+  paragraph('Services overview', 'Top-Level Body', { fontSize: 11 }),
+  paragraph('Advice', 'Subsection Heading', {
+    level: 2,
+    bold: true,
+    fontSize: 13
+  }),
+  paragraph('Advice body', 'Subsection Body', { fontSize: 10 }),
+  paragraph('Planning', 'Subsection Heading', {
+    level: 2,
+    bold: true,
+    fontSize: 13
+  }),
+  paragraph('Planning body', 'Subsection Body', { fontSize: 10 }),
+  paragraph('Contact', 'Top-Level Heading', {
+    level: 1,
+    bold: true,
+    fontSize: 20
+  }),
+  paragraph('Contact overview', 'Top-Level Body', { fontSize: 11 })
+];
+
 describe('deriveSectionPattern', () => {
+  it('uses the exact subsection anchor family for its heading and paragraph roles', () => {
+    const result = deriveSectionPattern(
+      editorFor(nestedSectionFamilies()) as any,
+      {
+        near: '0;2'
+      }
+    );
+
+    expect(result.pattern.sectionLevel?.value).toBe(2);
+    expect(result.pattern.roles).toMatchObject({
+      section_heading: {
+        styleName: 'Subsection Heading',
+        characterFormat: { bold: true, fontSize: 13 }
+      },
+      intro_paragraph: {
+        styleName: 'Subsection Body',
+        characterFormat: { fontSize: 10 }
+      }
+    });
+  });
+
+  it('keeps the exact top-level anchor in the top-level section family', () => {
+    const result = deriveSectionPattern(
+      editorFor(nestedSectionFamilies()) as any,
+      {
+        near: '0;0'
+      }
+    );
+
+    expect(result.pattern.sectionLevel?.value).toBe(1);
+    expect(result.pattern.roles).toMatchObject({
+      section_heading: { styleName: 'Top-Level Heading' },
+      intro_paragraph: { styleName: 'Top-Level Body' }
+    });
+  });
+
+  it('uses the dominant family when no anchor is supplied', () => {
+    const result = deriveSectionPattern(
+      editorFor(nestedSectionFamilies()) as any
+    );
+
+    expect(result.pattern.sectionLevel?.value).toBe(1);
+    expect(result.pattern.roles).toMatchObject({
+      section_heading: { styleName: 'Top-Level Heading' },
+      intro_paragraph: { styleName: 'Top-Level Body' }
+    });
+  });
+
   it('returns the recurring majority shape with sibling confidence and observed header variants', () => {
     const editor = editorFor([
       ...recurringSection('North', ['Item', 'Value', 'Notes']),

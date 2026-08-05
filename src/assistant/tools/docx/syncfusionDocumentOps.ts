@@ -2286,6 +2286,18 @@ function chooseSectionLevel(
   ).sort((a, b) => a - b);
   if (!levels.length) return undefined;
 
+  // A heading named as the anchor is stronger evidence than the containing
+  // document hierarchy. Without this, every subsection also belongs to its
+  // top-level parent's unit and the shallowest repeated level wins below.
+  const anchoredHeading = near
+    ? blocks.find(
+        (block) =>
+          block.isHeading &&
+          (block.anchor === near || near.startsWith(`${block.anchor};`))
+      )
+    : undefined;
+  if (anchoredHeading) return anchoredHeading.level;
+
   const repeated = levels.filter(
     (level) => unitsAtLevel(blocks, level).length >= 2
   );
@@ -11268,6 +11280,8 @@ function composerUnitBlockCount(unit: ComposerUnit): number {
 interface ComposerInsertionBoundary {
   target: FlatBlock;
   position: 'before' | 'after';
+  /** Heading whose sibling family owns appearance, independent of placement. */
+  familyAnchor?: string;
 }
 
 interface ComposerSectionMapEntry {
@@ -11418,9 +11432,13 @@ function boundaryForComposerSection(
   entry: ComposerSectionMapEntry,
   position: 'before' | 'after'
 ): ComposerInsertionBoundary | undefined {
-  return position === 'before'
-    ? { target: entry.heading, position: 'before' }
-    : boundaryAfterComposerSection(blocks, entry);
+  const boundary: ComposerInsertionBoundary | undefined =
+    position === 'before'
+      ? { target: entry.heading, position: 'before' }
+      : boundaryAfterComposerSection(blocks, entry);
+  return boundary
+    ? { ...boundary, familyAnchor: entry.heading.anchor }
+    : undefined;
 }
 
 function composerBodyBlocksInSection(
@@ -11705,7 +11723,8 @@ function compileSectionComposer(
     typeof op.group === 'string'
       ? op.group
       : `__insert_section_${originalIndex + 1}`;
-  const evidence = deriveSectionFamilyEvidence(blocks, resolvedTarget.anchor);
+  const familyAnchor = boundary.familyAnchor ?? resolvedTarget.anchor;
+  const evidence = deriveSectionFamilyEvidence(blocks, familyAnchor);
   const familyBoundary = evidence
     ? sectionBoundaryPattern(blocks, evidence.units).separator
     : undefined;
@@ -11799,7 +11818,7 @@ function compileSectionComposer(
       source: composerTableSource(
         blocks,
         evidence,
-        resolvedTarget.anchor,
+        familyAnchor,
         tableOrdinal,
         byAnchor
       ),
