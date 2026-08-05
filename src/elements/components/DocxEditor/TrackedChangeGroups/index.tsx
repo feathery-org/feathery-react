@@ -38,12 +38,14 @@ const groupKeyOf = (changeSetId: string, group: string) =>
 // Any raw call into the EJ2 instance can throw once the editor is mid-destroy
 // (step navigation tears the document down under a still-mounted rail; EJ2's
 // observer internals then hit `Object.keys(null)`). A dead editor must read as
-// a no-op, never as a crash that unmounts the form step.
+// a no-op, never as a crash that unmounts the form step — but keep the error
+// inspectable at debug level so a recurring failure that ISN'T teardown noise
+// (a real regression) stays visible to developers.
 const quietly = (fn: () => void) => {
   try {
     fn();
-  } catch {
-    // Editor mid-teardown.
+  } catch (error) {
+    console.debug('Feathery: tracked-changes rail editor call failed.', error);
   }
 };
 
