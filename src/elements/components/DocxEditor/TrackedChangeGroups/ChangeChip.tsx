@@ -182,6 +182,7 @@ export default function ChangeChip({
       {isActive && (
         <div css={{ display: 'flex', gap: 6 }}>
           <button
+            type='button'
             aria-label='Accept this edit'
             css={{ ...btn, height: 26 }}
             onClick={(event) => {
@@ -192,6 +193,7 @@ export default function ChangeChip({
             Accept
           </button>
           <button
+            type='button'
             aria-label='Reject this edit'
             css={{ ...rejectBtn, height: 26 }}
             onClick={(event) => {

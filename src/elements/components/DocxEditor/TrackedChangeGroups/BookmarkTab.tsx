@@ -6,6 +6,7 @@ import { INK, INK_3, LINE, PANEL, PANEL_2 } from './styles';
 export default function BookmarkTab({ onExpand }: { onExpand: () => void }) {
   return (
     <button
+      type='button'
       aria-label='Expand suggested changes'
       aria-expanded={false}
       title='Expand suggested changes'

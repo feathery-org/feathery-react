@@ -39,6 +39,7 @@ export default function RailHead({
         </em>
         {onHide && (
           <button
+            type='button'
             aria-label='Hide suggested changes'
             title='Hide suggested changes'
             onClick={onHide}
@@ -60,10 +61,15 @@ export default function RailHead({
         )}
       </div>
       <div css={{ display: 'flex', gap: 6 }}>
-        <button css={{ ...btn, height: 29 }} onClick={() => onResolveAll(true)}>
+        <button
+          type='button'
+          css={{ ...btn, height: 29 }}
+          onClick={() => onResolveAll(true)}
+        >
           Accept all
         </button>
         <button
+          type='button'
           css={{ ...rejectBtn, height: 29 }}
           onClick={() => onResolveAll(false)}
         >

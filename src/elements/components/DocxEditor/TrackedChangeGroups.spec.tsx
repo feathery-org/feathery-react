@@ -528,6 +528,55 @@ describe('TrackedChangeGroups', () => {
     ).toBeNull();
   });
 
+  it('every rail button is type=button so clicks never submit the host form', () => {
+    // The rail renders inside the form runtime's real <form>. An untyped
+    // <button> defaults to type=submit, so clicking it navigates the page and
+    // dumps the user back on the first step. Guard every variant at once:
+    // expanded card + focused chip (RailHead, GroupCard, ChangeChip) and the
+    // collapsed bookmark tab.
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const editor = makeEditor([deletion, makeRevision()]);
+    const onHiddenChange = jest.fn();
+    const { rerender } = render(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden={false}
+        onHiddenChange={onHiddenChange}
+      />
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$5,500')); // focus → Accept/Reject render
+
+    // getAllByRole('button') also matches the chip/card divs with
+    // role='button'; those are inert (divs cannot submit), so only real
+    // <button> elements must carry the attribute.
+    const assertAllTyped = () => {
+      const buttons = screen
+        .getAllByRole('button')
+        .filter((el) => el.tagName === 'BUTTON');
+      expect(buttons.length).toBeGreaterThan(0);
+      buttons.forEach((button) => {
+        expect(button).toHaveAttribute('type', 'button');
+      });
+      return buttons.length;
+    };
+    expect(assertAllTyped()).toBeGreaterThan(5);
+
+    rerender(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden
+        onHiddenChange={onHiddenChange}
+      />
+    );
+    assertAllTyped();
+  });
+
   it('a NEW tracked edit lands in the rail immediately', () => {
     const revisions: any[] = [];
     const editor = makeEditor(revisions);

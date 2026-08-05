@@ -60,6 +60,7 @@ export default function GroupCard({
       }}
     >
       <button
+        type='button'
         aria-expanded={isOpen}
         aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
         onClick={onToggle}
@@ -123,10 +124,15 @@ export default function GroupCard({
         </span>
       </button>
       <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
-        <button css={btn} onClick={() => onResolveChips(group.chips, true)}>
+        <button
+          type='button'
+          css={btn}
+          onClick={() => onResolveChips(group.chips, true)}
+        >
           Accept {group.chips.length}
         </button>
         <button
+          type='button'
           css={rejectBtn}
           onClick={() => onResolveChips(group.chips, false)}
         >
