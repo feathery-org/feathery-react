@@ -15,6 +15,10 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
+import {
+  installRevisionGroupIsolation,
+  rebindRevisionGroups
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -335,9 +339,34 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
+      // Group rebinding deliberately does NOT happen here: this fires from
+      // SyncFusion's `created` callback, before the source document is opened,
+      // so there are no persisted revisions to bind yet. See onDocumentReady.
+      // Isolation is document-independent, so installing it once at create is
+      // both correct and cheapest.
+      try {
+        installRevisionGroupIsolation(editor);
+      } catch {
+        // A grouping failure must not break the editor mount.
+      }
     },
     [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );
+  // Runs after openAsync resolves — and again on every reload (openNonce), which
+  // is the case that matters: the in-memory group wrappers die with the old
+  // document, while the customData tags survive in the saved file. Rebinding
+  // here is what lets a reloaded document regain its atomic accept groups.
+  // Idempotent (already-bound revisions are skipped), so the blank-document
+  // firing of this same callback is a harmless no-op.
+  const onDocumentReady = useCallback(() => {
+    const editor = registeredEditor.current;
+    if (!editor) return;
+    try {
+      rebindRevisionGroups(editor);
+    } catch {
+      // A grouping failure must not break the opened document.
+    }
+  }, []);
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
@@ -410,6 +439,7 @@ export default function DocumentEditorContainer({
       hideDownload={targetAction?.envelope_action === 'save'}
       onSave={saveEnvelope}
       onEditorReady={onEditorReady}
+      onReady={onDocumentReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not
       // persist anything — the envelope stays an editable docx.
       onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}

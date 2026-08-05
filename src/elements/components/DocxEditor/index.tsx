@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
+import TrackedChangeGroups from './TrackedChangeGroups';
 import { useDocxEditor } from './useDocxEditor';
 import { DocxSource } from './types';
 
@@ -58,6 +59,32 @@ const overlay = {
   color: '#3f3f46'
 };
 
+// The review rail is an overlay on the document — no failure inside it may
+// take down the host form. Without this, a teardown race against a destroyed
+// Syncfusion instance (step navigation, remount) escapes to the form's own
+// boundary and ejects the user from their step. Exported for tests.
+export class RailErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn(
+      'Feathery: tracked-changes panel failed and was hidden.',
+      error
+    );
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 // Reusable Syncfusion DOCX editor: custom toolbar + inline editing in one unit
 // that fills its container and manages its own overflow. Syncfusion loads from
 // the CDN at runtime (no bundle bloat) and renders directly in the page (no
@@ -90,6 +117,9 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  // Shared by the panel's drawer handle, its ✕, and clicking an inline
+  // tracked change (which re-shows the panel).
+  const [changesPanelHidden, setChangesPanelHidden] = useState(false);
 
   const { containerRef, editor, loading, error, exportDoc } = useDocxEditor({
     source,
@@ -260,45 +290,59 @@ function DocxEditor({
           readOnly={readOnly}
         />
       )}
-      <div css={{ flex: 1, minHeight: 0, position: 'relative' }}>
-        {/* Syncfusion mounts its editor into this element. */}
-        <div
-          ref={containerRef}
-          css={{
-            width: '100%',
-            height: '100%',
-            // Syncfusion's status-bar page control renders the "Page" label,
-            // the number input, and "of N" on a line but the input box is
-            // taller than the text and sits low. Flex-center the whole control
-            // and normalize the input box (height/line-height/margin) so all
-            // three align on one baseline. Scoped to this editor's DOM.
-            '& .e-de-ctnr-pagenumber': {
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4
-            },
-            '& .e-de-ctnr-pagenumber .e-input-group': {
-              margin: 0,
-              alignSelf: 'center'
-            },
-            '& .e-de-pagenumber-input': {
-              height: 22,
-              minHeight: 22,
-              lineHeight: '22px',
-              padding: '0 4px',
-              margin: 0,
-              boxSizing: 'border-box',
-              textAlign: 'center'
-            },
-            '& .e-de-pagenumber-text': {
-              display: 'inline-flex',
-              alignItems: 'center',
-              lineHeight: '22px'
-            }
-          }}
-        />
-        {loading && !error && <div css={overlay}>Loading document…</div>}
-        {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
+      <div css={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        <div css={{ flex: 1, minWidth: 0, position: 'relative' }}>
+          {/* Syncfusion mounts its editor into this element. */}
+          <div
+            ref={containerRef}
+            css={{
+              width: '100%',
+              height: '100%',
+              // Syncfusion's status-bar page control renders the "Page" label,
+              // the number input, and "of N" on a line but the input box is
+              // taller than the text and sits low. Flex-center the whole
+              // control and normalize the input box (height/line-height/
+              // margin) so all three align on one baseline. Scoped to this
+              // editor's DOM.
+              '& .e-de-ctnr-pagenumber': {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              },
+              '& .e-de-ctnr-pagenumber .e-input-group': {
+                margin: 0,
+                alignSelf: 'center'
+              },
+              '& .e-de-pagenumber-input': {
+                height: 22,
+                minHeight: 22,
+                lineHeight: '22px',
+                padding: '0 4px',
+                margin: 0,
+                boxSizing: 'border-box',
+                textAlign: 'center'
+              },
+              '& .e-de-pagenumber-text': {
+                display: 'inline-flex',
+                alignItems: 'center',
+                lineHeight: '22px'
+              }
+            }}
+          />
+          {loading && !error && <div css={overlay}>Loading document…</div>}
+          {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
+        </div>
+        {/* Grouped review cards for assistant-authored tracked changes.
+            Read-only hosts cannot resolve revisions, so no panel there. */}
+        {editor && !readOnly && (
+          <RailErrorBoundary>
+            <TrackedChangeGroups
+              editor={editor}
+              hidden={changesPanelHidden}
+              onHiddenChange={setChangesPanelHidden}
+            />
+          </RailErrorBoundary>
+        )}
       </div>
     </div>
   );
