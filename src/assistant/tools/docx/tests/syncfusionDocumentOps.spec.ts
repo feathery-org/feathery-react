@@ -5773,9 +5773,14 @@ describe('heading level detection', () => {
     }
   ];
 
-  const styled = (styleName: string, text: string) => ({
+  const styled = (styleName: string, text: string, fontSize?: number) => ({
     paragraphFormat: { styleName },
-    inlines: [{ text }]
+    inlines: [
+      {
+        text,
+        ...(fontSize !== undefined ? { characterFormat: { fontSize } } : {})
+      }
+    ]
   });
 
   const proposalSfdt = () => ({
@@ -5787,12 +5792,15 @@ describe('heading level detection', () => {
             'Normal',
             'Built on trust, integrity, and collaboration, Hilb Group brings national capability to local relationships.'
           ),
-          styled('noTOCheading2', 'Industry Experience'),
+          // The live style table says 20pt, but each actual sibling carries an
+          // 11pt direct override. Classification still comes from the style;
+          // relative depth must come from the effective rendered typography.
+          styled('noTOCheading2', 'Industry Experience', 11),
           styled(
             'Normal',
             'We have placed coverage for human services organisations for over thirty years.'
           ),
-          styled('noTOCheading2', 'A Long-Term Perspective'),
+          styled('noTOCheading2', 'A Long-Term Perspective', 11),
           styled(
             'Normal',
             'Our renewal strategy is built around a three-year view of your exposures.'
@@ -5890,23 +5898,24 @@ describe('heading level detection', () => {
     }
   });
 
-  it('real SDK: the larger custom styles rank above the smaller one', () => {
+  it('real SDK: effective sibling typography establishes arbitrary depth', () => {
     const ed = makeRealDocumentEditor(proposalSfdt());
     try {
       const levelOf = (heading: string) =>
         outlineOf(ed).find((s: any) => s.heading === heading).level;
-      // 20pt Title, 20pt noTOCheading2, 14pt headingNoToc. The names would
-      // order these the other way round.
+      // Effective sizes are 20pt Title, 14pt headingNoToc, and 11pt
+      // noTOCheading2 despite that last style declaring 20pt. Names and style
+      // definitions alone both order these the wrong way round.
       expect(levelOf('Our Approach')).toBeGreaterThan(
         levelOf('About Hilb Group')
       );
-      expect(levelOf('Our Approach')).toBeGreaterThan(
-        levelOf('Industry Experience')
+      expect(levelOf('Industry Experience')).toBeGreaterThan(
+        levelOf('Our Approach')
       );
       expect(outlineOf(ed).map((s: any) => [s.heading, s.level])).toEqual([
         ['About Hilb Group', 0],
-        ['Industry Experience', 1],
-        ['A Long-Term Perspective', 1],
+        ['Industry Experience', 3],
+        ['A Long-Term Perspective', 3],
         ['Our Approach', 2],
         ['Coverages & Limits', 2]
       ]);
