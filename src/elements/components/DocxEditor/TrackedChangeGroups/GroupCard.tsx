@@ -126,11 +126,7 @@ export default function GroupCard({
         </span>
       </button>
       <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
-        <button
-          type='button'
-          css={btn}
-          onClick={() => onResolveGroup(true)}
-        >
+        <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
           Accept {group.chips.length}
         </button>
         <button
