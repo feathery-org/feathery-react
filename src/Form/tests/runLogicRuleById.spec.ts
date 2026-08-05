@@ -1,16 +1,10 @@
 import { runLogicRuleById } from '../logic';
 import internalState from '../../utils/internalState';
-import { setFieldValues } from '../../utils/init';
 
-// Override setFieldValues so the server-side path doesn't mutate real form
-// state, and stub the form-context providers so client-side rules run against a
-// lightweight `feathery` object - we're exercising runLogicRuleById's branch
-// selection, params exposure, return capture, and changed-field diff, not the
-// full form-context machinery.
-jest.mock('../../utils/init', () => {
-  const actual = jest.requireActual('../../utils/init');
-  return { ...actual, setFieldValues: jest.fn() };
-});
+// Stub the form-context providers so rules run against a lightweight
+// `feathery` object - we're exercising runLogicRuleById's resolution, params
+// exposure, return capture, and changed-field diff, not the full form-context
+// machinery.
 jest.mock('../../utils/formContext', () => ({ getFormContext: () => ({}) }));
 jest.mock('../../utils/sensitiveActions', () => ({
   getPrivateActions: () => ({})
@@ -26,7 +20,7 @@ const WITH_DOCUMENT = { documentPresent: true };
 
 const seed = (over: Record<string, any> = {}) => {
   internalState[FORM] = {
-    client: { runServerSideLogicRule: jest.fn() },
+    client: {},
     logicRules: [],
     fields: {},
     extractedSharedCodeInfo: [],
@@ -54,156 +48,37 @@ describe('runLogicRuleById - resolution', () => {
     expect(res.error).toMatch(/was not found/i);
   });
 
-  it('falls back to the only loaded form when no uuid is passed', async () => {
-    const client = {
-      runServerSideLogicRule: jest.fn().mockResolvedValue({ field_data: {} })
-    };
+  it('fails closed on a server_side rule instead of running its absent code', async () => {
     seed({
-      client,
       logicRules: [
-        { id: 's1', name: 'S', trigger_event: 'tool', server_side: true }
+        { id: 's1', name: 'Server Rule', trigger_event: 'tool', server_side: true }
       ]
     });
-    const res = await runLogicRuleById('s1', {});
-    expect(client.runServerSideLogicRule).toHaveBeenCalled();
+    const res = await runLogicRuleById('s1', {}, FORM);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/server-side/i);
+    expect(res.fieldChanges).toEqual([]);
+  });
+
+  it('falls back to the only loaded form when no uuid is passed', async () => {
+    seed({
+      logicRules: [
+        {
+          id: 'c0',
+          name: 'C',
+          trigger_event: 'tool',
+          server_side: false,
+          code: 'return 1;'
+        }
+      ]
+    });
+    const res = await runLogicRuleById('c0', {});
     expect(res).toMatchObject({
       ok: true,
-      rule: { id: 's1', name: 'S' },
-      result: null,
+      rule: { id: 'c0', name: 'C' },
+      result: 1,
       fieldChanges: []
     });
-  });
-});
-
-describe('runLogicRuleById - server-side path', () => {
-  it('forwards input_params, applies field_data, and reports canonical fieldChanges', async () => {
-    const client = {
-      runServerSideLogicRule: jest.fn().mockResolvedValue({
-        field_data: { fieldA: '1', fieldB: '2' }
-      })
-    };
-    seed({
-      client,
-      logicRules: [
-        {
-          id: 's1',
-          name: 'Server Rule',
-          trigger_event: 'tool',
-          server_side: true
-        }
-      ]
-    });
-
-    const res = await runLogicRuleById('s1', { foo: 'bar' }, FORM);
-
-    expect(client.runServerSideLogicRule).toHaveBeenCalledWith('s1', {
-      input_params: { foo: 'bar' }
-    });
-    expect(setFieldValues).toHaveBeenCalledWith(
-      { fieldA: '1', fieldB: '2' },
-      true,
-      true
-    );
-    expect(res.fieldChanges).toEqual([
-      { key: 'fieldA', before: null, after: '1' },
-      { key: 'fieldB', before: null, after: '2' }
-    ]);
-    expect(res.result).toBeNull();
-  });
-
-  it('pairs field_data new values with pre-invoke old values and derives doc updates', async () => {
-    const client = {
-      runServerSideLogicRule: jest.fn().mockResolvedValue({
-        field_data: { premium: '$9,500', internalFlag: { deep: true } }
-      })
-    };
-    seed({
-      client,
-      fields: { premium: { value: '$8,000' } },
-      logicRules: [
-        {
-          id: 's1',
-          name: 'Server Rule',
-          trigger_event: 'tool',
-          server_side: true
-        }
-      ]
-    });
-
-    const res = await runLogicRuleById('s1', {}, FORM, WITH_DOCUMENT);
-
-    // Old->new details: oldValue from the snapshot taken BEFORE invocation,
-    // newValue from the backend's authoritative field_data. A field the form
-    // never held snapshots as null.
-    expect(res.fieldChanges).toEqual([
-      {
-        key: 'premium',
-        before: '$8,000',
-        after: '$9,500',
-        documentHint: {
-          describes: "the rendered value of form field 'premium'"
-        }
-      },
-      {
-        key: 'internalFlag',
-        before: null,
-        after: { deep: true },
-        documentHint: {
-          describes: "the rendered value of form field 'internalFlag'"
-        }
-      }
-    ]);
-    expect(res).not.toHaveProperty('changedFields');
-    expect(res).not.toHaveProperty('changedFieldDetails');
-    expect(res).not.toHaveProperty('derivedUpdates');
-    expect(res).not.toHaveProperty('note');
-  });
-
-  it('does not surface a field_data entry that echoes the pre-rule value', async () => {
-    const client = {
-      runServerSideLogicRule: jest.fn().mockResolvedValue({
-        field_data: { premium: '$8,000', untouched: 'same' }
-      })
-    };
-    seed({
-      client,
-      fields: { premium: { value: '$8,000' }, untouched: { value: 'same' } },
-      logicRules: [
-        {
-          id: 's1',
-          name: 'No-op Server Rule',
-          trigger_event: 'tool',
-          server_side: true
-        }
-      ]
-    });
-
-    const res = await runLogicRuleById('s1', {}, FORM);
-
-    expect(res.fieldChanges).toEqual([]);
-  });
-
-  it('surfaces a backend error and does not report changed fields', async () => {
-    const client = {
-      runServerSideLogicRule: jest
-        .fn()
-        .mockResolvedValue({ error: 'lambda blew up' })
-    };
-    seed({
-      client,
-      logicRules: [
-        {
-          id: 's1',
-          name: 'Server Rule',
-          trigger_event: 'tool',
-          server_side: true
-        }
-      ]
-    });
-    const res = await runLogicRuleById('s1', {}, FORM);
-    expect(res.error).toBe('lambda blew up');
-    expect(res.ok).toBe(false);
-    expect(res.fieldChanges).toEqual([]);
   });
 });
 
