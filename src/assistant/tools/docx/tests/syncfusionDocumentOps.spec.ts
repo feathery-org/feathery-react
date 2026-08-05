@@ -1114,7 +1114,7 @@ describe('applyDocumentEdits', () => {
 });
 
 describe('live occurrence search and scoped replacement', () => {
-  it('real SDK: background reads preserve the user selection and viewport', () => {
+  it('real SDK: every background read class is visually silent', () => {
     const ed = makeRealDocumentEditor({
       sections: [
         {
@@ -1129,15 +1129,15 @@ describe('live occurrence search and scoped replacement', () => {
     });
 
     try {
-      const selected = 'Our firm supports clients throughout the policy lifecycle.';
+      const selected =
+        'Our firm supports clients throughout the policy lifecycle.';
       ed.selection.select('0;1;0', `0;1;${selected.length}`);
-      const before = readSelection(ed as unknown as LiveEditor);
       const documentHelper = (ed as any).documentHelper;
       const viewer = documentHelper.viewerContainer as HTMLElement;
       viewer.scrollTop = 420;
-      const originalScrollToPosition = documentHelper.scrollToPosition.bind(
-        documentHelper
-      );
+      viewer.scrollLeft = 23;
+      const originalScrollToPosition =
+        documentHelper.scrollToPosition.bind(documentHelper);
       let activeRead = '';
       const scrollSuppression: Array<{ read: string; suppressed: boolean }> =
         [];
@@ -1151,23 +1151,41 @@ describe('live occurrence search and scoped replacement', () => {
           return originalScrollToPosition(...args);
         });
 
-      activeRead = 'inventory';
-      getDocumentInventory(ed as unknown as LiveEditor, {
-        scope: 'structure'
-      });
-      activeRead = 'pattern';
-      deriveSectionPattern(ed as unknown as LiveEditor);
-      activeRead = 'index';
-      buildIndexBlocks(ed as unknown as LiveEditor);
-      activeRead = 'occurrences';
-      findDocumentOccurrences(ed as unknown as LiveEditor, {
-        text: 'firm',
-        matchCase: false,
-        maxResults: 20
-      });
+      const expectVisuallySilent = (read: string, operation: () => unknown) => {
+        const selectionBefore = readSelection(ed as unknown as LiveEditor);
+        const scrollTopBefore = viewer.scrollTop;
+        const scrollLeftBefore = viewer.scrollLeft;
+        activeRead = read;
+        operation();
+        expect(readSelection(ed as unknown as LiveEditor)).toEqual(
+          selectionBefore
+        );
+        expect(viewer.scrollTop).toBe(scrollTopBefore);
+        expect(viewer.scrollLeft).toBe(scrollLeftBefore);
+      };
 
-      expect(readSelection(ed as unknown as LiveEditor)).toEqual(before);
-      expect(viewer.scrollTop).toBe(420);
+      expectVisuallySilent('serialize', () => ed.serialize());
+      expectVisuallySilent('inventory', () =>
+        getDocumentInventory(ed as unknown as LiveEditor, {
+          scope: 'structure'
+        })
+      );
+      expectVisuallySilent('pattern', () =>
+        deriveSectionPattern(ed as unknown as LiveEditor)
+      );
+      // This is the editor-reading half of full and delta index sync. Hashing,
+      // diffing and POSTing operate only on this immutable snapshot afterward.
+      expectVisuallySilent('index-sync', () =>
+        buildIndexBlocks(ed as unknown as LiveEditor)
+      );
+      expectVisuallySilent('occurrences', () =>
+        findDocumentOccurrences(ed as unknown as LiveEditor, {
+          text: 'firm',
+          matchCase: false,
+          maxResults: 20
+        })
+      );
+
       expect(scrollSuppression).toEqual(
         scrollSuppression.map(({ read }) => ({ read, suppressed: true }))
       );
