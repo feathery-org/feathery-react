@@ -5,7 +5,7 @@ import {
   findReplaceCounterpart,
   installRevisionGroupIsolation,
   preserveDocumentViewDuring
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+} from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
 

@@ -1,7 +1,7 @@
-import { installRevisionGroupIsolation } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { installRevisionGroupIsolation } from '../../../utils/documentEditorPrimitives';
 import { configureTrackedChangeReview } from './useDocxEditor';
 
-jest.mock('../../../assistant/tools/docx/syncfusionDocumentOps', () => ({
+jest.mock('../../../utils/documentEditorPrimitives', () => ({
   findReplaceCounterpart: jest.fn(),
   installRevisionGroupIsolation: jest.fn(),
   preserveDocumentViewDuring: jest.fn((_editor, run) => run())

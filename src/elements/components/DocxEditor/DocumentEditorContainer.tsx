@@ -18,7 +18,7 @@ import {
 import {
   installRevisionGroupIsolation,
   rebindRevisionGroups
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+} from '../../../utils/documentEditorPrimitives';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container

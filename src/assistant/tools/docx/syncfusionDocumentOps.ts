@@ -84,6 +84,43 @@ import {
   TableBanding,
   tableIsUnstyled
 } from './tableAppearance';
+import {
+  createdRevisions,
+  groupRevisionsAtomic,
+  invalidateDocumentLayout,
+  installRevisionGroupIsolation,
+  parseRevisionGroupTag,
+  preserveDocumentViewDuring,
+  rebindRevisionGroups,
+  resolveRevisionIndividually,
+  revisionGroupTag,
+  snapshotRevisions
+} from '../../../utils/documentEditorPrimitives';
+import type {
+  LiveEditor,
+  LiveRevision
+} from '../../../utils/documentEditorPrimitives';
+
+export {
+  findReplaceCounterpart,
+  installRevisionGroupIsolation,
+  listRevisionGroups,
+  parseRevisionGroupTag,
+  preserveDocumentViewDuring,
+  rebindRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo,
+  resolveRevisionIndividually,
+  resolveRevisionsAsOneUndo
+} from '../../../utils/documentEditorPrimitives';
+export type {
+  LiveEditor,
+  LiveRevision,
+  LiveRevisionCollection,
+  RevisionGroupIdentity,
+  RevisionGroupItem,
+  RevisionGroupTag,
+  RevisionGroupView
+} from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
@@ -843,73 +880,6 @@ export interface FindDocumentOccurrencesBatchResult {
     textFrames: true;
   };
   error?: string;
-}
-
-// Structural subset of the SyncFusion DocumentEditor instance handed to us via
-// `DocxEditor`'s `onEditorReady`. Typed loosely because the real API surface is
-// large and only exercised in a browser; unit tests supply a fake.
-export interface LiveEditor {
-  serialize(): string;
-  /** Public SyncFusion bulk-update switch; absent on lightweight test doubles. */
-  enableLayout?: boolean;
-  enableTrackChanges: boolean;
-  currentUser: string;
-  selection: {
-    select(start: string, end: string): void;
-    text: string;
-    startOffset: string;
-    endOffset: string;
-    characterFormat: any;
-    paragraphFormat: any;
-    isEmpty?: boolean;
-    [k: string]: any;
-  };
-  editor: {
-    insertText(text: string): void;
-    delete(): void;
-    [k: string]: any;
-  };
-  // The collection interface is declared below with the other revision types.
-  // eslint-disable-next-line no-use-before-define
-  revisions?: LiveRevisionCollection;
-  // SyncFusion stamps `revisionSettings.customData` onto every revision it
-  // creates while set — the accept-group tagging channel. Optional: fakes
-  // without it skip tagging.
-  documentEditorSettings?: {
-    revisionSettings?: { customData?: string | null; [k: string]: any };
-    [k: string]: any;
-  };
-  editorHistory?: { undo?(): void; redo?(): void; [k: string]: any };
-  search?: any;
-  [k: string]: any;
-}
-
-// A single SyncFusion tracked-change revision. We only lean on its per-card
-// accept/reject; everything else is opaque.
-export interface LiveRevision {
-  revisionType?: string;
-  revisionID?: string;
-  /** SyncFusion's durable free-form tag; carries the accept-group binding. */
-  customData?: string | null;
-  accept?(): void;
-  reject?(): void;
-  /** Engine-internal single-revision resolve; preferred over accept/reject,
-   *  whose public path also resolves adjacent same-author/type NEIGHBOURS. */
-  handleAcceptReject?(isAccept: boolean, isGroupAcceptOrReject: boolean): void;
-  /** Public SyncFusion navigation: select this revision's range in the document. */
-  select?(): void;
-  [k: string]: any;
-}
-
-// SyncFusion's `documentEditor.revisions` (RevisionCollection). It exposes both
-// an array (`changes`) and an indexed accessor (`get`/`length`); we read either.
-export interface LiveRevisionCollection {
-  length?: number;
-  changes?: LiveRevision[];
-  get?(index: number): LiveRevision;
-  acceptAll?(): void;
-  rejectAll?(): void;
-  [k: string]: any;
 }
 
 // A block flattened out of the SFDT with everything the inventory + apply engine
@@ -3169,48 +3139,6 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
     anchor: parts.join(';'),
     offset: Number.isFinite(value) ? value : 0
   };
-}
-
-// One engine-owned boundary for operations which may ask SyncFusion to inspect
-// or rebuild derived document state without user navigation. The review rail
-// remains the owner of deliberate selection/scroll changes; background reads
-// and post-resolution layout are visually silent.
-export function preserveDocumentViewDuring<T>(
-  editor: LiveEditor,
-  operation: () => T,
-  suppressOperationScroll = true
-): T {
-  const selection = editor.selection;
-  const startOffset = selection?.startOffset;
-  const endOffset = selection?.endOffset;
-  const documentHelper = (editor as any).documentHelper;
-  const viewer = documentHelper?.viewerContainer as HTMLElement | undefined;
-  const scrollTop = viewer?.scrollTop;
-  const scrollLeft = viewer?.scrollLeft;
-  const previousSkipScroll = documentHelper?.skipScrollToPosition;
-  if (documentHelper && suppressOperationScroll)
-    documentHelper.skipScrollToPosition = true;
-  try {
-    return operation();
-  } finally {
-    if (
-      typeof startOffset === 'string' &&
-      typeof endOffset === 'string' &&
-      (selection?.startOffset !== startOffset ||
-        selection?.endOffset !== endOffset)
-    ) {
-      // Search/layout can consume the one-shot suppression flag. Re-arm it
-      // immediately before restoring the exact public range.
-      if (documentHelper) documentHelper.skipScrollToPosition = true;
-      selection.select(startOffset, endOffset);
-    }
-    if (viewer) {
-      if (typeof scrollTop === 'number') viewer.scrollTop = scrollTop;
-      if (typeof scrollLeft === 'number') viewer.scrollLeft = scrollLeft;
-    }
-    if (documentHelper)
-      documentHelper.skipScrollToPosition = previousSkipScroll;
-  }
 }
 
 // SyncFusion treats every public selection as navigation. That is correct for
@@ -8066,38 +7994,12 @@ function callSelection(
 // replacement); rejecting the group rejects every member (keep the original) -
 // the only two internally-consistent outcomes. Neither can ever empty the block.
 
-// Read the editor's current revisions as a plain array (order preserved).
-function snapshotRevisions(editor: LiveEditor): LiveRevision[] {
-  const col = editor.revisions;
-  if (!col) return [];
-  if (Array.isArray(col.changes)) return col.changes.slice();
-  if (typeof col.length === 'number' && typeof col.get === 'function') {
-    const out: LiveRevision[] = [];
-    for (let i = 0; i < col.length; i++) {
-      const rev = col.get(i);
-      if (rev) out.push(rev);
-    }
-    return out;
-  }
-  return [];
-}
-
 function revisionCollectionIsObservable(editor: LiveEditor): boolean {
   const collection = editor.revisions;
   return !!(
     Array.isArray(collection?.changes) ||
     (typeof collection?.length === 'number' &&
       typeof collection?.get === 'function')
-  );
-}
-
-function createdRevisions(
-  editor: LiveEditor,
-  before: LiveRevision[]
-): LiveRevision[] {
-  const beforeSet = new Set(before);
-  return snapshotRevisions(editor).filter(
-    (revision) => !beforeSet.has(revision)
   );
 }
 
@@ -8298,19 +8200,8 @@ function rejectRevisions(revisions: LiveRevision[]): void {
   for (const revision of revisions) {
     // Never the public reject(): its adjacency cascade could reject
     // neighbouring revisions this change set never created.
-    resolveSingleRevision(captureNativeResolvers(revision), false);
+    resolveRevisionIndividually(revision, false);
   }
-}
-
-// Durable accept-group tag, carried in revision customData: unlike the
-// in-memory bindings, it round-trips through SFDT/DOCX.
-const REVISION_GROUP_TAG_VERSION = 1;
-
-export interface RevisionGroupTag {
-  changeSetId: string;
-  group: string;
-  /** Exact inverse for untracked appearance coupled to this review group. */
-  appearanceRestores?: AppearanceRestore[];
 }
 
 /** The accept group an op belongs to; ungrouped ops share the change set id. */
@@ -8318,167 +8209,6 @@ function opGroupId(op: EditOp, changeSetId: string): string {
   return typeof op.group === 'string' && op.group.trim()
     ? op.group.trim()
     : changeSetId;
-}
-
-function revisionGroupTag(
-  changeSetId: string,
-  group: string,
-  appearanceRestores?: AppearanceRestore[]
-): string {
-  return JSON.stringify({
-    v: REVISION_GROUP_TAG_VERSION,
-    source: 'robin',
-    changeSetId,
-    group,
-    ...(appearanceRestores?.length ? { appearanceRestores } : {})
-  });
-}
-
-function parsePersistedBorderWrites(value: unknown): BorderWrite[] | null {
-  if (!Array.isArray(value)) return null;
-  const borders: BorderWrite[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-    const border = item as Record<string, unknown>;
-    if (
-      typeof border.type !== 'string' ||
-      !BORDER_TYPES.has(border.type) ||
-      typeof border.style !== 'string' ||
-      !border.style
-    )
-      return null;
-    if (
-      border.width !== undefined &&
-      (typeof border.width !== 'number' || !Number.isFinite(border.width))
-    )
-      return null;
-    if (border.color !== undefined && typeof border.color !== 'string')
-      return null;
-    borders.push({
-      type: border.type,
-      style: border.style,
-      ...(typeof border.width === 'number' ? { width: border.width } : {}),
-      ...(typeof border.color === 'string' ? { color: border.color } : {})
-    });
-  }
-  return borders;
-}
-
-function parsePersistedAppearanceWrite(value: unknown): AppearanceWrite | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const raw = value as Record<string, unknown>;
-  const write: AppearanceWrite = {};
-  if ('shading' in raw) {
-    if (raw.shading !== null && typeof raw.shading !== 'string') return null;
-    write.shading = raw.shading as string | null;
-  }
-  if ('verticalAlignment' in raw) {
-    if (!['Top', 'Center', 'Bottom'].includes(String(raw.verticalAlignment)))
-      return null;
-    write.verticalAlignment = raw.verticalAlignment as
-      | 'Top'
-      | 'Center'
-      | 'Bottom';
-  }
-  if ('borders' in raw) {
-    const borders = parsePersistedBorderWrites(raw.borders);
-    if (!borders) return null;
-    write.borders = borders;
-  }
-  return write.shading !== undefined ||
-    write.verticalAlignment !== undefined ||
-    write.borders !== undefined
-    ? write
-    : null;
-}
-
-function parsePersistedAppearanceRestores(
-  value: unknown
-): AppearanceRestore[] | undefined {
-  if (!Array.isArray(value) || !value.length) return undefined;
-  const restores: AppearanceRestore[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object' || Array.isArray(item))
-      return undefined;
-    const raw = item as Record<string, unknown>;
-    if (
-      typeof raw.cellAnchor !== 'string' ||
-      !/^\d+;\d+;\d+;\d+;\d+$/.test(raw.cellAnchor)
-    )
-      return undefined;
-    if (raw.rowIsHeader !== undefined && typeof raw.rowIsHeader !== 'boolean')
-      return undefined;
-    const write =
-      raw.write === undefined
-        ? undefined
-        : parsePersistedAppearanceWrite(raw.write);
-    if (raw.write !== undefined && !write) return undefined;
-    const tableBorders =
-      raw.tableBorders === undefined
-        ? undefined
-        : parsePersistedBorderWrites(raw.tableBorders);
-    if (raw.tableBorders !== undefined && !tableBorders?.length)
-      return undefined;
-    if (raw.rowIsHeader === undefined && !write && !tableBorders)
-      return undefined;
-    restores.push({
-      cellAnchor: raw.cellAnchor,
-      ...(typeof raw.rowIsHeader === 'boolean'
-        ? { rowIsHeader: raw.rowIsHeader }
-        : {}),
-      ...(write ? { write } : {}),
-      ...(tableBorders ? { tableBorders } : {})
-    });
-  }
-  return restores;
-}
-
-export function parseRevisionGroupTag(
-  customData: unknown
-): RevisionGroupTag | undefined {
-  if (typeof customData !== 'string' || !customData.trim()) return undefined;
-  try {
-    const parsed = JSON.parse(customData);
-    if (
-      parsed &&
-      parsed.source === 'robin' &&
-      typeof parsed.changeSetId === 'string' &&
-      typeof parsed.group === 'string'
-    ) {
-      const appearanceRestores = parsePersistedAppearanceRestores(
-        parsed.appearanceRestores
-      );
-      return {
-        changeSetId: parsed.changeSetId,
-        group: parsed.group,
-        ...(appearanceRestores ? { appearanceRestores } : {})
-      };
-    }
-  } catch {
-    // Foreign customData (another producer's tag, or plain text) is not ours
-    // to interpret; the revision simply stays outside assistant grouping.
-  }
-  return undefined;
-}
-
-// Resolve ONE revision without the adjacency cascade: public accept/reject
-// resolve the pane's whole same-author/type neighbour card. The internal
-// `handleAcceptReject` is feature-detected (fallback: public call); note it
-// skips `beforeAcceptRejectChanges`.
-function resolveSingleRevision(
-  natives: {
-    accept?: () => void;
-    reject?: () => void;
-    single?: (isAccept: boolean, isGroup: boolean) => void;
-  },
-  isAccept: boolean
-): void {
-  if (natives.single) {
-    natives.single(isAccept, false);
-    return;
-  }
-  const fn = isAccept ? natives.accept : natives.reject;
-  if (fn) fn();
 }
 
 // Every revision created until the next stamp carries this op's group tag.
@@ -8495,364 +8225,6 @@ function stampRevisionGroup(
     changeSetId,
     opGroupId(op, changeSetId)
   );
-}
-
-// SyncFusion coalesces adjacent same-author/same-type revisions into one
-// object, silently folding a second group's content (and losing its tag)
-// into the first — so gate the engine's merge predicates on the group tag.
-// Untagged content normalizes to one empty key: native merge behavior.
-const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
-
-function revisionTagKey(customData: unknown): string {
-  const tag = parseRevisionGroupTag(customData);
-  return tag ? `${tag.changeSetId} ${tag.group}` : '';
-}
-
-export function installRevisionGroupIsolation(editor: LiveEditor): void {
-  const mod: any = (editor as any).editorModule ?? editor.editor;
-  if (!mod || typeof mod.isRevisionMatched !== 'function') return;
-  if (mod[REVISION_ISOLATION_INSTALLED]) return;
-  mod[REVISION_ISOLATION_INSTALLED] = true;
-
-  // The tag new content would carry.
-  const activeKey = () =>
-    revisionTagKey(editor.documentEditorSettings?.revisionSettings?.customData);
-
-  // "May this new tracked content extend `item`?" Unwrap element revisions so
-  // the author/type check and the tag check apply to the same revision.
-  const originalMatched = mod.isRevisionMatched.bind(mod);
-  mod.isRevisionMatched = (item: any, type: any): boolean => {
-    // Type-less calls are OWNERSHIP checks ("is this pending insertion my
-    // own?" → remove outright, no Deletion layered) and must stay native:
-    // tag-gating them leaves content rejecting cannot restore. Only the
-    // typed combine/extend calls are group-scoped.
-    if (type === undefined || type === null) return originalMatched(item, type);
-    const revisions: any[] =
-      item && typeof item.revisionLength === 'number'
-        ? Array.from(
-            { length: item.revisionLength },
-            (_, i) => item.revisions?.[i]
-          )
-        : [item];
-    const key = activeKey();
-    return revisions.some(
-      (rev) =>
-        rev &&
-        originalMatched(rev, type) &&
-        revisionTagKey(rev.customData) === key
-    );
-  };
-
-  // "May these two existing revisions merge?" (e.g. the content separating
-  // them was removed). Only within one group.
-  if (typeof mod.compareTwoRevisions === 'function') {
-    const originalCompare = mod.compareTwoRevisions.bind(mod);
-    mod.compareTwoRevisions = (a: any, b: any): boolean =>
-      originalCompare(a, b) &&
-      revisionTagKey(a?.customData) === revisionTagKey(b?.customData);
-  }
-}
-
-function captureNativeResolvers(rev: LiveRevision) {
-  return {
-    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
-    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined,
-    single:
-      typeof rev.handleAcceptReject === 'function'
-        ? rev.handleAcceptReject.bind(rev)
-        : undefined
-  };
-}
-
-// Bulk revision resolution can leave SyncFusion's rendered widgets pointing at
-// pre-resolution geometry even though its document model is already correct.
-// Rebuild that derived layout once, after the batch/history boundary closes.
-function invalidateDocumentLayout(editor: LiveEditor): void {
-  preserveDocumentViewDuring(
-    editor,
-    () => {
-      try {
-        (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
-      } catch {
-        // A renderer teardown must not turn a completed resolution into a failure.
-      }
-    },
-    // The full layout pass needs Syncfusion's own scroll bookkeeping enabled;
-    // the outer boundary restores the captured viewport after it completes.
-    false
-  );
-}
-
-// Bind a set of revisions authored by ONE logical edit group so per-card
-// accept/reject is all-or-nothing within the group and NEVER wider. The first
-// accept/reject on any member resolves the whole group with that single
-// decision; later clicks on already-resolved members are no-ops. Each native
-// handler is wrapped in try/catch so a stale-range throw on a later member
-// cannot undo the first member's (safe) result. Single-revision groups are
-// bound too: the wrapper is what routes around the pane's adjacency cascade.
-//
-// `onReject` is how a FORMATTING write joins the same decision. SyncFusion
-// authors no revision for a cell fill or border (its RevisionType is
-// Insertion|Deletion|MoveTo|MoveFrom, verified against the real SDK), so the
-// appearance a change set overwrote cannot be a card of its own. Instead the
-// executor hands the restore snapshots for THIS group in here: rejecting the
-// group puts the appearance back FIRST - while the row indices it recorded are
-// still valid, since rejecting a row insertion shifts every row below it - and
-// then rejects the content. That is what makes "reject the card and the table
-// looks exactly as it did" true for a batch that also restripes.
-//
-function groupRevisionsAtomic(
-  editor: LiveEditor,
-  group: LiveRevision[],
-  changeSetId?: string,
-  groupId?: string,
-  onReject?: () => void
-): void {
-  if (!group.length) return;
-  const members = group.map(captureNativeResolvers);
-  const state = { resolved: false };
-  // Members a reviewer resolved one-by-one (robinResolveSelf); a later group
-  // decision must not resolve them a second time.
-  const resolvedAlone = new Set<number>();
-  const resolveAll = (isAccept: boolean) => {
-    if (state.resolved) return;
-    state.resolved = true;
-    if (!isAccept && onReject) {
-      // The single outermost boundary for the appearance restore: this runs
-      // inside SyncFusion's own Changes-pane callback, and a throw here would
-      // escape into the host UI and leave the group half-resolved. The content
-      // rejects below either way.
-      try {
-        onReject();
-      } catch {
-        // Nothing to add: the cards still resolve consistently.
-      }
-    }
-    for (let index = 0; index < members.length; index++) {
-      if (resolvedAlone.has(index)) continue;
-      try {
-        resolveSingleRevision(members[index], isAccept);
-      } catch {
-        // A later member's range may be stale once the first resolved; the
-        // group's outcome is already consistent, so swallow and move on.
-      }
-    }
-    if (members.length > 1) invalidateDocumentLayout(editor);
-  };
-  group.forEach((rev, index) => {
-    if (changeSetId) (rev as any).robinChangeSetId = changeSetId;
-    if (groupId) (rev as any).robinGroupId = groupId;
-    // Rebind guard: marks this revision's accept/reject as already wrapped so
-    // a later rebind pass cannot stack wrappers.
-    (rev as any).robinGroupBound = true;
-    // The per-edit escape hatch: resolve THIS member alone through the native
-    // single-revision path, leaving the rest of the group pending.
-    (rev as any).robinResolveSelf = (isAccept: boolean) => {
-      if (state.resolved || resolvedAlone.has(index)) return;
-      resolvedAlone.add(index);
-      resolveSingleRevision(members[index], isAccept);
-    };
-    // Only a fresh lookup from the editor's live collection may re-arm a
-    // member. Undo can restore the same object while its closure still says
-    // "resolved"; detached repeat calls must remain no-ops.
-    (rev as any).robinReviveSelf = () => {
-      state.resolved = false;
-      resolvedAlone.delete(index);
-    };
-    rev.accept = () => resolveAll(true);
-    rev.reject = () => resolveAll(false);
-  });
-}
-
-/** Resolve ONE revision — not its accept group, no adjacency cascade.
- *  Group-bound revisions use the natives captured at bind time (their public
- *  accept/reject were rewired to whole-group resolution). */
-export function resolveRevisionIndividually(
-  revision: LiveRevision,
-  isAccept: boolean
-): void {
-  const self = (revision as any).robinResolveSelf;
-  if (typeof self === 'function') {
-    self(isAccept);
-    return;
-  }
-  resolveSingleRevision(captureNativeResolvers(revision), isAccept);
-}
-
-interface RevisionMemberIdentity {
-  revisionID?: string;
-  groupKey: string;
-  author: string;
-  original: LiveRevision;
-}
-
-function revisionMemberIdentity(
-  revision: LiveRevision
-): RevisionMemberIdentity {
-  const revisionID = String(revision.revisionID ?? '').trim();
-  return {
-    ...(revisionID ? { revisionID } : {}),
-    groupKey: revisionTagKey(revision.customData),
-    author: String(revision.author ?? ''),
-    original: revision
-  };
-}
-
-function liveRevisionMember(
-  editor: LiveEditor,
-  identity: RevisionMemberIdentity
-): LiveRevision | undefined {
-  return snapshotRevisions(editor).find((revision) => {
-    if (identity.revisionID)
-      return (
-        String(revision.revisionID ?? '') === identity.revisionID &&
-        revisionTagKey(revision.customData) === identity.groupKey &&
-        String(revision.author ?? '') === identity.author
-      );
-    return revision === identity.original;
-  });
-}
-
-/**
- * Resolve several revisions as ONE undoable operation. Resolving them
- * one-by-one records one history entry each, so undo peels the unit apart —
- * e.g. undoing an accepted replace restores only its inserted half, which
- * then reads as a plain insertion. Wrap the batch in the engine's complex
- * history (the same mechanism its native Accept All uses) so a single undo
- * restores the whole unit.
- */
-export function resolveRevisionsAsOneUndo(
-  editor: LiveEditor,
-  revisions: LiveRevision[],
-  isAccept: boolean
-): void {
-  const identities = revisions.map(revisionMemberIdentity);
-  const editorModule: any = (editor as any).editorModule ?? editor.editor;
-  const history: any =
-    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
-  let complex = false;
-  if (
-    revisions.length > 1 &&
-    typeof editorModule?.initComplexHistory === 'function'
-  ) {
-    try {
-      editorModule.initComplexHistory(isAccept ? 'Accept All' : 'Reject All');
-      complex = true;
-    } catch {
-      complex = false;
-    }
-  }
-  try {
-    // SyncFusion's own grouped accept/reject loop always resolves the last
-    // live revision first. Structural insertions share mutable ranges; walking
-    // them forwards can relocate later table rows across earlier headings when
-    // the review group is accepted. Preserve the SDK's reverse-order contract.
-    for (const identity of [...identities].reverse()) {
-      const revision = liveRevisionMember(editor, identity);
-      if (!revision) continue;
-      // Undo may revive the same bridge-bound object. Its per-member closure
-      // still remembers the earlier decision until the current live member is
-      // explicitly re-armed.
-      (revision as any).robinReviveSelf?.();
-      try {
-        resolveRevisionIndividually(revision, isAccept);
-      } catch {
-        // A stale member range must not stop the rest of the unit.
-      }
-    }
-  } finally {
-    if (complex) {
-      try {
-        history?.updateComplexHistory?.();
-      } catch {
-        // History bookkeeping must never break the resolution itself.
-      }
-    }
-  }
-  if (revisions.length > 1) invalidateDocumentLayout(editor);
-}
-
-export interface RevisionGroupIdentity {
-  changeSetId: string;
-  group: string;
-  untagged?: boolean;
-}
-
-/**
- * Resolve review groups from the editor's CURRENT revision collection. Undo
- * can revive a revision as either a new JS object or the same bridge-bound
- * object whose in-memory "resolved" closure is already spent. The persisted
- * customData tag (or author for a human group) is the durable identity, so a
- * click must re-read that collection and re-arm each live revision's
- * single-revision binding rather than trusting a render-time object.
- */
-export function resolveLiveRevisionGroupsAsOneUndo(
-  editor: LiveEditor,
-  groups: RevisionGroupIdentity[],
-  isAccept: boolean
-): LiveRevision[] {
-  const tagged = new Set(
-    groups
-      .filter((group) => !group.untagged)
-      .map((group) => `${group.changeSetId}\u0000${group.group}`)
-  );
-  const authors = new Set(
-    groups.filter((group) => group.untagged).map((group) => group.group)
-  );
-  const matchesGroup = (revision: LiveRevision) => {
-    const tag = parseRevisionGroupTag(revision.customData);
-    return tag
-      ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
-      : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
-  };
-  const initial = snapshotRevisions(editor).filter(matchesGroup);
-  const resolved: LiveRevision[] = [];
-  const editorModule: any = (editor as any).editorModule ?? editor.editor;
-  const history: any =
-    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
-  let complex = false;
-  if (
-    initial.length > 1 &&
-    typeof editorModule?.initComplexHistory === 'function'
-  ) {
-    try {
-      editorModule.initComplexHistory(isAccept ? 'Accept All' : 'Reject All');
-      complex = true;
-    } catch {
-      complex = false;
-    }
-  }
-  try {
-    // Use the CURRENT collection every time, exactly like SyncFusion's native
-    // grouped resolver (`revision[revision.length - 1]`). Accepting a table
-    // revision can replace or merge neighbouring revision objects, so a fixed
-    // snapshot leaves stale members behind and can reflow their rows over
-    // earlier section content.
-    let budget = Math.max(20, initial.length * 4);
-    while (budget-- > 0) {
-      const current = snapshotRevisions(editor).filter(matchesGroup);
-      if (!current.length) break;
-      const revision = current[current.length - 1];
-      (revision as any).robinReviveSelf?.();
-      resolved.push(revision);
-      try {
-        resolveRevisionIndividually(revision, isAccept);
-      } catch {
-        // Try the next live tail; the bounded budget prevents a stale range
-        // from trapping the review rail in a resolution loop.
-      }
-    }
-  } finally {
-    if (complex) {
-      try {
-        history?.updateComplexHistory?.();
-      } catch {
-        // History bookkeeping must never break the resolution itself.
-      }
-    }
-  }
-  if (initial.length) invalidateDocumentLayout(editor);
-  return resolved;
 }
 
 /** Result of binding one change set's created revisions into accept groups. */
@@ -8954,241 +8326,6 @@ function reportRevisionGroups(
     revisionCount: revisionsByGroup.get(id) ?? 0,
     ...(appearanceGroups.has(id) ? { restoresAppearance: true as const } : {})
   }));
-}
-
-/** One tracked revision inside an accept group, shaped for review UI. */
-export interface RevisionGroupItem {
-  revision: LiveRevision;
-  /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | 'Replace' | ''. */
-  revisionType: string;
-  /** Excerpt of the tracked content (Replace: the NEW text); empty for
-   *  pure structure. */
-  text: string;
-  /** Replace only: the deleted (old) text for a `− old / + new` diff. */
-  beforeText?: string;
-  /** Replace only: the insertion half (`revision` holds the deletion) —
-   *  one approval must resolve both. */
-  partner?: LiveRevision;
-  /** Who made the edit (the revision's author string). */
-  author?: string;
-}
-
-/** One accept group with its live member revisions: an assistant-defined
- *  group (tagged), or one author's manual tracked edits (untagged). */
-export interface RevisionGroupView {
-  changeSetId: string;
-  /** The assistant's group id, or the author name for untagged views. */
-  group: string;
-  /** True when this view aggregates one author's manual (untagged) edits. */
-  untagged?: boolean;
-  items: RevisionGroupItem[];
-}
-
-// The range's visible text: structural markers (paragraph marks, row
-// formats) have no `.text` and contribute nothing.
-function revisionRangeText(revision: LiveRevision): string {
-  let range: any[];
-  try {
-    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
-  } catch {
-    return '';
-  }
-  if (!Array.isArray(range)) return '';
-  let out = '';
-  for (const item of range) {
-    if (typeof item?.text === 'string') out += item.text;
-  }
-  return out.trim();
-}
-
-/**
- * The tracked-change groups currently pending in the editor, in revision-
- * collection order, each with its live member revisions. Assistant edits use
- * their persisted accept-group tag; untagged human edits group by author.
- * This is the read model for the grouped review UI; resolving an assistant
- * group is just calling accept()/reject() on any member (the atomic binding
- * does the rest).
- */
-// A tracked replace is a Deletion (old text) immediately followed in the
-// document by an Insertion (new text): the deletion range's last element is
-// linked directly to the insertion range's first. To a reviewer that is ONE
-// edit, so the pair folds into one 'Replace' item.
-function isReplacePair(
-  deletion: LiveRevision,
-  insertion: LiveRevision
-): boolean {
-  try {
-    const delRange =
-      typeof deletion.getRange === 'function' ? deletion.getRange() : [];
-    const insRange =
-      typeof insertion.getRange === 'function' ? insertion.getRange() : [];
-    const last: any = delRange[delRange.length - 1];
-    return !!last && !!insRange[0] && last.nextNode === insRange[0];
-  } catch {
-    return false;
-  }
-}
-
-// Memo key for findReplaceCounterpart: null = computed, no counterpart.
-const REPLACE_COUNTERPART_MEMO = '__robinReplaceCounterpart';
-
-/** The other half of a tracked replace, from either side. Memoized on the
- *  revision objects — the halves are created together, so the linkage is
- *  stable for the revision's lifetime. */
-export function findReplaceCounterpart(
-  revision: LiveRevision
-): LiveRevision | undefined {
-  const memo = (revision as any)[REPLACE_COUNTERPART_MEMO];
-  if (memo !== undefined) return memo ?? undefined;
-  const counterpart = computeReplaceCounterpart(revision);
-  (revision as any)[REPLACE_COUNTERPART_MEMO] = counterpart ?? null;
-  if (counterpart) (counterpart as any)[REPLACE_COUNTERPART_MEMO] = revision;
-  return counterpart;
-}
-
-// Two revisions form one replace when their group identity matches: the same
-// assistant tag, or — for human (untagged) edits — the same author.
-function sameEditUnit(a: LiveRevision, b: LiveRevision): boolean {
-  const tagA = parseRevisionGroupTag(a.customData);
-  const tagB = parseRevisionGroupTag(b.customData);
-  if (tagA && tagB)
-    return tagA.changeSetId === tagB.changeSetId && tagA.group === tagB.group;
-  if (!tagA && !tagB) return String(a.author ?? '') === String(b.author ?? '');
-  return false;
-}
-
-function computeReplaceCounterpart(
-  revision: LiveRevision
-): LiveRevision | undefined {
-  const type = String(revision.revisionType ?? '');
-  if (type !== 'Deletion' && type !== 'Insertion') return undefined;
-  let range: any[];
-  try {
-    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
-  } catch {
-    return undefined;
-  }
-  if (!Array.isArray(range) || !range.length) return undefined;
-  // A deletion's replacement text follows it; an insertion's replaced text
-  // precedes it.
-  const neighbour: any =
-    type === 'Deletion'
-      ? range[range.length - 1]?.nextNode
-      : range[0]?.previousNode;
-  const count = neighbour?.revisionLength ?? 0;
-  for (let i = 0; i < count; i++) {
-    const other = neighbour.getRevision?.(i);
-    if (!other) continue;
-    const otherType = String(other.revisionType ?? '');
-    if (otherType !== (type === 'Deletion' ? 'Insertion' : 'Deletion'))
-      continue;
-    if (!sameEditUnit(revision, other)) continue;
-    const deletion = type === 'Deletion' ? revision : other;
-    const insertion = type === 'Deletion' ? other : revision;
-    if (isReplacePair(deletion, insertion)) return other;
-  }
-  return undefined;
-}
-
-/** Review-rail read model: pending revisions grouped by accept-group tag
- *  (human/untagged edits group by author), replace pairs folded to one item. */
-export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
-  const views = new Map<string, RevisionGroupView>();
-  for (const revision of snapshotRevisions(editor)) {
-    const tag = parseRevisionGroupTag(revision.customData);
-    const author = String(revision.author ?? '').trim() || 'Unknown author';
-    // Assistant edits group by their accept-group tag; human edits group by
-    // who made them.
-    const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
-    let view = views.get(key);
-    if (!view) {
-      view = tag
-        ? { changeSetId: tag.changeSetId, group: tag.group, items: [] }
-        : { changeSetId: '', group: author, untagged: true, items: [] };
-      views.set(key, view);
-    }
-    const item: RevisionGroupItem = {
-      revision,
-      revisionType: String(revision.revisionType ?? ''),
-      text: revisionRangeText(revision),
-      author
-    };
-    const prev = view.items[view.items.length - 1];
-    if (
-      prev &&
-      !prev.partner &&
-      prev.revisionType === 'Deletion' &&
-      item.revisionType === 'Insertion' &&
-      isReplacePair(prev.revision, item.revision)
-    ) {
-      prev.partner = item.revision;
-      prev.revisionType = 'Replace';
-      prev.beforeText = prev.text;
-      prev.text = item.text;
-      continue;
-    }
-    view.items.push(item);
-  }
-  return [...views.values()];
-}
-
-/** Rebuild accept-group bindings from persisted customData tags — the
- *  in-memory wrappers die on save/reload, the tags don't. Idempotent
- *  (bound revisions are skipped). Returns how many revisions were bound. */
-export function rebindRevisionGroups(editor: LiveEditor): number {
-  const partitions = new Map<
-    string,
-    {
-      changeSetId: string;
-      group: string;
-      revisions: LiveRevision[];
-      restoreCandidates: AppearanceRestore[][];
-    }
-  >();
-  for (const rev of snapshotRevisions(editor)) {
-    if ((rev as any).robinGroupBound) continue;
-    const tag = parseRevisionGroupTag(rev.customData);
-    if (!tag) continue;
-    const key = `${tag.changeSetId}\u0000${tag.group}`;
-    const partition = partitions.get(key);
-    if (partition) {
-      partition.revisions.push(rev);
-      if (tag.appearanceRestores)
-        partition.restoreCandidates.push(tag.appearanceRestores);
-    } else
-      partitions.set(key, {
-        changeSetId: tag.changeSetId,
-        group: tag.group,
-        revisions: [rev],
-        restoreCandidates: tag.appearanceRestores
-          ? [tag.appearanceRestores]
-          : []
-      });
-  }
-  let bound = 0;
-  partitions.forEach((partition) => {
-    const payloads = new Map(
-      partition.restoreCandidates.map((restores) => [
-        JSON.stringify(restores),
-        restores
-      ])
-    );
-    // Every revision written by us carries the same inverse. Refuse to guess
-    // if foreign/corrupt metadata supplies conflicting payloads.
-    const restores =
-      payloads.size === 1 ? [...payloads.values()][0] : undefined;
-    groupRevisionsAtomic(
-      editor,
-      partition.revisions,
-      partition.changeSetId,
-      partition.group,
-      restores?.length
-        ? () => replayAppearanceRestores(editor, restores)
-        : undefined
-    );
-    bound += partition.revisions.length;
-  });
-  return bound;
 }
 
 // Ops that change how something LOOKS and never where anything IS. Membership

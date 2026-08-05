@@ -1,4 +1,4 @@
-import type { RevisionGroupIdentity } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import type { RevisionGroupIdentity } from '../../../../utils/documentEditorPrimitives';
 
 /** One pending edit as the rail shows it. */
 export interface ChipView {

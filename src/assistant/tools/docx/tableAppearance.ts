@@ -28,6 +28,14 @@
 //   * a colour is stored verbatim, with no normalisation. The read therefore
 //     upper-cases it so that reading a `#d9e2f3` source and writing it into a
 //     target produces a target that reads back equal to the source.
+import type { AppearanceRestore } from '../../../utils/documentEditorPrimitives';
+
+export type {
+  AppearanceRestore,
+  AppearanceWrite,
+  BorderWrite
+} from '../../../utils/documentEditorPrimitives';
+
 const OPTIMIZED_LINE_STYLES = [
   'Single',
   'None',
@@ -139,37 +147,6 @@ export interface TableBanding {
   period: number;
   /** The repeating fills, from the first banded row. `null` is "no fill". */
   cycle: Array<string | null>;
-}
-
-/** A border to hand SyncFusion's `applyBorders`. */
-export interface BorderWrite {
-  /** SyncFusion BorderType. */
-  type: string;
-  style: string;
-  width?: number;
-  color?: string;
-}
-
-/**
- * The appearance properties ONE write sets. A property left `undefined` is not
- * written at all; `shading: null` clears the fill. Keeping "not written" and
- * "cleared" distinct is what makes a restore put back exactly what a write took
- * away, and no more.
- */
-export interface AppearanceWrite {
-  shading?: string | null;
-  verticalAlignment?: CellVerticalAlignment;
-  /** Applied in order; an empty array means borders were not touched. */
-  borders?: BorderWrite[];
-}
-
-/** How to put one cell (and optionally its row flag) back as it was. */
-export interface AppearanceRestore {
-  cellAnchor: string;
-  write?: AppearanceWrite;
-  rowIsHeader?: boolean;
-  /** Table-level border topology captured before a normalized table write. */
-  tableBorders?: BorderWrite[];
 }
 
 /** The model-facing account of what an appearance op did. */

@@ -11,10 +11,10 @@ import {
 import {
   installRevisionGroupIsolation,
   rebindRevisionGroups
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+} from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 
-jest.mock('../../../assistant/tools/docx/syncfusionDocumentOps', () => ({
+jest.mock('../../../utils/documentEditorPrimitives', () => ({
   installRevisionGroupIsolation: jest.fn(),
   rebindRevisionGroups: jest.fn()
 }));

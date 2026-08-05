@@ -13,11 +13,11 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { RailErrorBoundary } from './index';
+import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import {
-  applyDocumentEdits,
   installRevisionGroupIsolation,
   LiveEditor
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+} from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 DocumentEditor.Inject(

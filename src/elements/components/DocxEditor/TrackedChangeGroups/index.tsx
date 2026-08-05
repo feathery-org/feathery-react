@@ -4,7 +4,7 @@ import {
   resolveLiveRevisionGroupsAsOneUndo,
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
-} from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+} from '../../../../utils/documentEditorPrimitives';
 import { setActiveInlineRevision } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
