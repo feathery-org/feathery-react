@@ -3175,7 +3175,7 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
 // or rebuild derived document state without user navigation. The review rail
 // remains the owner of deliberate selection/scroll changes; background reads
 // and post-resolution layout are visually silent.
-function withPreservedDocumentView<T>(
+export function preserveDocumentViewDuring<T>(
   editor: LiveEditor,
   operation: () => T,
   suppressOperationScroll = true
@@ -3389,7 +3389,7 @@ function findOneDocumentOccurrences(
     return { ok: false, ...base, error: 'search_unavailable' };
 
   const documentHelper = (editor as any).documentHelper;
-  return withPreservedDocumentView(editor, () => {
+  return preserveDocumentViewDuring(editor, () => {
     try {
       // WholeWord cannot be delegated to SyncFusion while a tracked deletion is
       // adjacent to an insertion: replacing `Marlow` with `Torrey` leaves the two
@@ -8449,7 +8449,7 @@ function captureNativeResolvers(rev: LiveRevision) {
 // pre-resolution geometry even though its document model is already correct.
 // Rebuild that derived layout once, after the batch/history boundary closes.
 function invalidateDocumentLayout(editor: LiveEditor): void {
-  withPreservedDocumentView(
+  preserveDocumentViewDuring(
     editor,
     () => {
       try {

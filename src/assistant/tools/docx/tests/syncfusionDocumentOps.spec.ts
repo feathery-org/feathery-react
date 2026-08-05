@@ -25,6 +25,7 @@ import {
   listRevisionGroups,
   installRevisionGroupIsolation,
   parseRevisionGroupTag,
+  preserveDocumentViewDuring,
   rebindRevisionGroups,
   resolveRevisionIndividually,
   resolveLiveRevisionGroupsAsOneUndo,
@@ -1183,6 +1184,17 @@ describe('live occurrence search and scoped replacement', () => {
           text: 'firm',
           matchCase: false,
           maxResults: 20
+        })
+      );
+      expectVisuallySilent('container-resize', () =>
+        preserveDocumentViewDuring(ed as unknown as LiveEditor, () => {
+          // DocumentEditorContainer#resize reaches refreshLayout, whose real
+          // browser behavior is moveToDocumentStart + scroll-to-top. Pin that
+          // SDK behavior deterministically in jsdom while exercising the same
+          // engine boundary the host ResizeObserver now uses.
+          ed.selection.select('0;0;0', '0;0;0');
+          viewer.scrollTop = 0;
+          viewer.scrollLeft = 0;
         })
       );
 
