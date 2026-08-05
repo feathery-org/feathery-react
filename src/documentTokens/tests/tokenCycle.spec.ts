@@ -13,7 +13,7 @@ import {
   encodeTag
 } from '../controls';
 import { instanceKey, TokenSpec, valueKey } from '../plan';
-import { attachTokenCycle } from '../tokenCycle';
+import { attachTokenCycle, saveBlockers, TokenState } from '../tokenCycle';
 
 const control = (spec: TokenSpec, value: string): ContentControlInfo => ({
   title: spec.id,
@@ -1433,5 +1433,49 @@ describe('attachTokenCycle — state and lifecycle', () => {
     cycle.detach();
     expect(editor.listenerCount('selectionChange')).toBe(0);
     expect(editor.listenerCount('documentChange')).toBe(0);
+  });
+});
+
+describe('saveBlockers', () => {
+  const state = (over: Partial<TokenState>): TokenState => ({
+    specs: [],
+    values: new Map(),
+    texts: new Map(),
+    errors: new Map(),
+    invalid: new Map(),
+    focused: null,
+    ...over
+  });
+
+  it('lets a clean document save', () => {
+    expect(saveBlockers(state({}))).toBeNull();
+  });
+
+  it('blocks on a validation failure', () => {
+    const blocked = saveBlockers(
+      state({ invalid: new Map([['qty__0', 'below the minimum of 1']]) })
+    );
+    expect(blocked).toContain('qty__0');
+    expect(blocked).toContain('below the minimum of 1');
+  });
+
+  it('blocks on a formula error, which otherwise saves its 0 fallback', () => {
+    // A token whose formula cannot evaluate renders 0; letting that save
+    // writes $0.00 into a financial document with no warning.
+    const blocked = saveBlockers(
+      state({ errors: new Map([['amount__0', "unknown token 'qtyy'"]]) })
+    );
+    expect(blocked).toContain('amount__0');
+    expect(blocked).toContain("unknown token 'qtyy'");
+  });
+
+  it('reports both kinds together', () => {
+    const blocked = saveBlockers(
+      state({
+        invalid: new Map([['qty__0', 'too low']]),
+        errors: new Map([['amount__0', 'circular reference']])
+      })
+    );
+    expect(blocked).toContain('2 token');
   });
 });

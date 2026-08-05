@@ -126,6 +126,23 @@ export type TokenState = {
   focused: string | null;
 };
 
+/**
+ * The problems that must stop a save, or null when there are none.
+ *
+ * Validation failures and formula errors both mean a number in the document
+ * is wrong — a token whose formula cannot evaluate renders its 0 fallback,
+ * and these documents are financial or legal, so a bad number saved silently
+ * is worse than an unsaved edit.
+ */
+export const saveBlockers = (state: TokenState): string | null => {
+  const problems = [...state.invalid.entries(), ...state.errors.entries()];
+  if (problems.length === 0) return null;
+  const summary = problems
+    .map(([id, reason]) => `${id}: ${reason}`)
+    .join(', ');
+  return `Cannot save — ${problems.length} token(s) invalid. ${summary}`;
+};
+
 export type TokenCycle = {
   /** Apply a value for one token and bring the document back in step. */
   setTokenValue: (id: string, raw: TokenValue) => TokenState;

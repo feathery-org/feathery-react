@@ -15,7 +15,10 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docxEditorRegistry';
-import { attachTokenCycle } from '../../../documentTokens/tokenCycle';
+import {
+  attachTokenCycle,
+  saveBlockers
+} from '../../../documentTokens/tokenCycle';
 import type {
   FieldAccess,
   TokenCycle
@@ -369,15 +372,12 @@ export default function DocumentEditorContainer({
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
       if (!envelope) return;
-      // A token that fails its own validation must not reach the envelope —
-      // these documents are financial or legal, so a bad number is worse
-      // than an unsaved edit.
-      const invalid = tokenCycle.current?.getState().invalid;
-      if (invalid && invalid.size > 0) {
-        const summary = [...invalid.entries()]
-          .map(([id, reason]) => `${id}: ${reason}`)
-          .join(', ');
-        setError(`Cannot save — ${invalid.size} token(s) invalid. ${summary}`);
+      // A token that fails validation — or whose formula cannot evaluate and
+      // is showing its 0 fallback — must not reach the envelope.
+      const state = tokenCycle.current?.getState();
+      const blocked = state ? saveBlockers(state) : null;
+      if (blocked) {
+        setError(blocked);
         return;
       }
       const updated = await client.saveEnvelopeFile(
