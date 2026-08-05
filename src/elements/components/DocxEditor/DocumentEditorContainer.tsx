@@ -19,6 +19,7 @@ import {
   installRevisionGroupIsolation,
   rebindRevisionGroups
 } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -380,8 +381,11 @@ export default function DocumentEditorContainer({
   }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
   useEffect(
     () => () => {
-      if (containerId && registeredEditor.current) {
-        unregisterDocxEditor(containerId, registeredEditor.current, formId);
+      if (containerId) {
+        clearDocxEditorDirty(formId, containerId);
+        if (registeredEditor.current) {
+          unregisterDocxEditor(containerId, registeredEditor.current, formId);
+        }
       }
     },
     [containerId, formId]
@@ -438,6 +442,12 @@ export default function DocumentEditorContainer({
       // on every save), not the user's machine — no Download button.
       hideDownload={targetAction?.envelope_action === 'save'}
       onSave={saveEnvelope}
+      // readOnly editors never dirty, so skip registering them entirely
+      onChange={
+        !readOnly && containerId
+          ? (dirty: boolean) => setDocxEditorDirty(formId, containerId, dirty)
+          : undefined
+      }
       onEditorReady={onEditorReady}
       onReady={onDocumentReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not

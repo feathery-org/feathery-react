@@ -245,6 +245,10 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
+import {
+  discardDocxDirty,
+  hasDirtyDocxEditors
+} from '../elements/components/DocxEditor/docxDirtyRegistry';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -2248,7 +2252,8 @@ function Form({
     textSpanStart,
     textSpanEnd,
     triggerPayload,
-    preOpenedWindows: externalPreOpenedWindows
+    preOpenedWindows: externalPreOpenedWindows,
+    docxDiscardApproved = false
   }: {
     actions: any[];
     element: any;
@@ -2260,6 +2265,7 @@ function Form({
     textSpanEnd?: number | undefined;
     triggerPayload?: Record<string, any>;
     preOpenedWindows?: Map<number, Window | null>;
+    docxDiscardApproved?: boolean;
   }) => {
     const id = element.id ?? '';
     const preOpenedWindows =
@@ -2277,6 +2283,37 @@ function Form({
     }
 
     updateButtonActionState(elementType, element, triggerPayload);
+
+    // Confirm before step navigation would discard unsaved docx editor changes
+    if (
+      !docxDiscardApproved &&
+      actions.some((action: any) =>
+        [ACTION_NEXT, ACTION_BACK].includes(action.type)
+      ) &&
+      hasDirtyDocxEditors(_internalId)
+    ) {
+      const proceed = featheryWindow().confirm(
+        'You have unsaved changes in the document editor. If you leave now, your changes will be lost.'
+      );
+      if (!proceed) {
+        elementClicks[id] = false;
+        clearButtonActionState();
+        closePreOpenedWindows(preOpenedWindows);
+        return;
+      }
+      docxDiscardApproved = true;
+    }
+
+    // Keep the unload guard armed until a full-page navigation actually
+    // commits. In-form step navigation unmounts DocumentEditorContainer, whose
+    // cleanup removes its own dirty entry. This one-shot commit is only needed
+    // before assigning location.href, where beforeunload would otherwise show
+    // a second prompt after the user has already chosen Leave.
+    const commitDocxDiscard = () => {
+      if (!docxDiscardApproved) return;
+      discardDocxDirty(_internalId);
+      docxDiscardApproved = false;
+    };
 
     const metadata = {
       elementType,
@@ -2422,7 +2459,8 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload
+        triggerPayload,
+        docxDiscardApproved
       });
       if (!running) onAsyncEnd();
     };
@@ -2535,6 +2573,7 @@ function Form({
             completed: true
           };
           await client.registerEvent(eventData);
+          commitDocxDiscard();
           featheryWindow().location.href = url;
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
@@ -2804,6 +2843,7 @@ function Form({
                   completed: true
                 };
                 await client.registerEvent(eventData);
+                commitDocxDiscard();
                 featheryWindow().location.href = url;
               } else openTab(url);
             } else if (envAction === 'download' && data.files) {
@@ -2837,6 +2877,7 @@ function Form({
             event: submit ? 'complete' : 'skip',
             completed: true
           });
+          commitDocxDiscard();
           featheryWindow().location.href = url;
         } else openTab(url);
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
@@ -13,6 +13,10 @@ import {
   rebindRevisionGroups
 } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import DocumentEditorContainer from './DocumentEditorContainer';
+import {
+  _clearDocxDirtyRegistry,
+  hasDirtyDocxEditors
+} from './docxDirtyRegistry';
 
 jest.mock('../../../assistant/tools/docx/syncfusionDocumentOps', () => ({
   installRevisionGroupIsolation: jest.fn(),
@@ -33,12 +37,14 @@ jest.mock('./index', () => {
     source,
     openNonce,
     onEditorReady,
+    onChange,
     onReady
   }: {
     source?: { url?: string };
     openNonce?: number;
     onEditorReady?: (editor: any) => void;
     onReady?: () => void;
+    onChange?: (dirty: boolean) => void;
   }) {
     const editor = React.useMemo(
       () => ({
@@ -57,9 +63,20 @@ jest.mock('./index', () => {
       OPEN_STATE.opened = true;
       onReady?.();
     }, [editor, onReady, openNonce, source?.url]);
-    return React.createElement('div', {
-      'data-testid': `editor:${source?.url ?? 'none'}`
-    });
+    return React.createElement(
+      'div',
+      { 'data-testid': `editor:${source?.url ?? 'none'}` },
+      onChange &&
+        React.createElement('button', {
+          'data-testid': `dirty:${source?.url}`,
+          onClick: () => onChange(true)
+        }),
+      onChange &&
+        React.createElement('button', {
+          'data-testid': `clean:${source?.url}`,
+          onClick: () => onChange(false)
+        })
+    );
   };
 });
 
@@ -244,6 +261,64 @@ describe('DocumentEditorContainer registry lifecycle', () => {
       sourceUrl: 'https://example.com/document-container-b.docx'
     });
     formB.unmount();
+  });
+
+  describe('dirty state tracking', () => {
+    beforeEach(() => _clearDocxDirtyRegistry());
+    afterEach(() => _clearDocxDirtyRegistry());
+
+    const url = 'https://example.com/document-container-a.docx';
+
+    it('mirrors editor onChange into the dirty registry', async () => {
+      const { getByTestId } = render(
+        <DocumentEditorContainer
+          containerId='document-container-a'
+          formId='form-1'
+          stepId='step-a'
+        />
+      );
+      await waitFor(() => getByTestId(`editor:${url}`));
+      expect(hasDirtyDocxEditors('form-1')).toBe(false);
+
+      fireEvent.click(getByTestId(`dirty:${url}`));
+      expect(hasDirtyDocxEditors('form-1')).toBe(true);
+
+      fireEvent.click(getByTestId(`clean:${url}`));
+      expect(hasDirtyDocxEditors('form-1')).toBe(false);
+    });
+
+    it('clears dirty state when the editor unmounts', async () => {
+      const view = render(
+        <DocumentEditorContainer
+          containerId='document-container-a'
+          formId='form-1'
+          stepId='step-a'
+        />
+      );
+      await waitFor(() => view.getByTestId(`editor:${url}`));
+
+      fireEvent.click(view.getByTestId(`dirty:${url}`));
+      expect(hasDirtyDocxEditors('form-1')).toBe(true);
+
+      view.unmount();
+      expect(hasDirtyDocxEditors('form-1')).toBe(false);
+    });
+
+    it('never registers dirty state for readOnly (signed) envelopes', async () => {
+      (featheryWindow() as any)[PENDING_DRAFTS_KEY][
+        'document-container-a'
+      ].envelopes[0].signed = true;
+
+      const { getByTestId, queryByTestId } = render(
+        <DocumentEditorContainer
+          containerId='document-container-a'
+          formId='form-1'
+          stepId='step-a'
+        />
+      );
+      await waitFor(() => getByTestId(`editor:${url}`));
+      expect(queryByTestId(`dirty:${url}`)).toBeNull();
+    });
   });
 });
 

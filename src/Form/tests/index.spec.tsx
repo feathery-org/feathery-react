@@ -1,4 +1,4 @@
-import { CheckButtonActionMod } from './testMocks';
+import { BrowserMod, CheckButtonActionMod, GridMod } from './testMocks';
 import {
   render,
   screen,
@@ -9,6 +9,11 @@ import {
 import { JSForm } from '..';
 import FeatheryClient from '../../utils/featheryClient';
 import internalState from '../../utils/internalState';
+import {
+  _clearDocxDirtyRegistry,
+  hasDirtyDocxEditors,
+  setDocxEditorDirty
+} from '../../elements/components/DocxEditor/docxDirtyRegistry';
 
 let originalFetchForm: any;
 
@@ -23,9 +28,61 @@ afterEach(() => {
   // Reset useCheckButtonAction refs
   CheckButtonActionMod._spies.buttonActionStateRef.current = null;
   CheckButtonActionMod._spies.setButtonLoaderRef.current = jest.fn();
+  GridMod._spies.actions = [];
+  GridMod._spies.submit = false;
+  BrowserMod._spies.confirm.mockReset();
+  _clearDocxDirtyRegistry();
 
   // Restore FeatheryClient prototype if a test overrode it
   FeatheryClient.prototype.fetchForm = originalFetchForm;
+});
+
+describe('docx discard navigation boundary', () => {
+  it('keeps the editor dirty when an approved Next action fails before navigation', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    GridMod._spies.actions = [{ type: 'next' }];
+    GridMod._spies.submit = true;
+    setDocxEditorDirty('iid-docx-failure', 'document-container-a', true);
+
+    render(<JSForm formId='f1' _internalId='iid-docx-failure' />);
+    fireEvent.click(await screen.findByTestId('btn'));
+
+    await waitFor(() =>
+      expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1)
+    );
+    expect(hasDirtyDocxEditors('iid-docx-failure')).toBe(true);
+  });
+
+  it('discards immediately before an approved full-page URL navigation', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    GridMod._spies.actions = [
+      { type: 'url', url: 'https://example.com/next', open_tab: false },
+      { type: 'next' }
+    ];
+    setDocxEditorDirty('iid-docx-redirect', 'document-container-a', true);
+
+    render(<JSForm formId='f1' _internalId='iid-docx-redirect' />);
+    fireEvent.click(await screen.findByTestId('btn'));
+
+    await waitFor(() =>
+      expect(hasDirtyDocxEditors('iid-docx-redirect')).toBe(false)
+    );
+    expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops Next navigation when discarding docx changes is declined', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(false);
+    GridMod._spies.actions = [{ type: 'next' }];
+    setDocxEditorDirty('iid-docx-stay', 'document-container-a', true);
+
+    render(<JSForm formId='f1' _internalId='iid-docx-stay' />);
+    fireEvent.click(await screen.findByTestId('btn'));
+
+    await waitFor(() =>
+      expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1)
+    );
+    expect(hasDirtyDocxEditors('iid-docx-stay')).toBe(true);
+  });
 });
 
 describe('ReactForm sharedCodes initialization', () => {

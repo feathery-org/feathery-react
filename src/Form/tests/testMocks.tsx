@@ -158,6 +158,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
 
 // Grid mock: no out of scope captures, only uses props
 jest.mock('../grid', () => {
+  const state = { actions: [] as any[], submit: false };
   const GridMock = ({ form }: any) => {
     return (
       <button
@@ -166,7 +167,7 @@ jest.mock('../grid', () => {
         onClick={() =>
           form.buttonOnClick({
             id: 'b1',
-            properties: { actions: [], submit: false },
+            properties: { actions: state.actions, submit: state.submit },
             repeat: 0
           } as MockClickActionElement)
         }
@@ -175,7 +176,7 @@ jest.mock('../grid', () => {
       </button>
     );
   };
-  return { __esModule: true, default: GridMock };
+  return { __esModule: true, default: GridMock, _spies: state };
 });
 
 jest.mock('../components/DevNavBar', () => () => null);
@@ -210,19 +211,27 @@ jest.mock('../../integrations/flinks', () => ({
   }))
 }));
 
-jest.mock('../../utils/browser', () => ({
-  downloadAllFileUrls: jest.fn(),
-  featheryDoc: () => globalThis.document,
-  featheryWindow: () => ({
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    scrollTo: jest.fn(),
+jest.mock('../../utils/browser', () => {
+  const state = {
+    confirm: jest.fn(),
     location: { href: '', pathname: '/', search: '' }
-  }),
-  isIOS: () => false,
-  openTab: jest.fn(),
-  runningInClient: () => true
-}));
+  };
+  return {
+    downloadAllFileUrls: jest.fn(),
+    featheryDoc: () => globalThis.document,
+    featheryWindow: () => ({
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      scrollTo: jest.fn(),
+      confirm: state.confirm,
+      location: state.location
+    }),
+    isIOS: () => false,
+    openTab: jest.fn(),
+    runningInClient: () => true,
+    _spies: state
+  };
+});
 
 jest.mock('../../elements/styles', () => ({
   DEFAULT_MOBILE_BREAKPOINT: 480,
@@ -443,3 +452,12 @@ jest.mock('../hooks/useCheckButtonAction', () => {
 export const CheckButtonActionMod: any = jest.requireMock(
   '../hooks/useCheckButtonAction'
 );
+
+// Expose the mocked Grid's click action configuration for Form integration
+// tests without replacing the mock per test.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const GridMod: any = jest.requireMock('../grid');
+
+// Expose the browser confirmation mock used by Form integration tests.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const BrowserMod: any = jest.requireMock('../../utils/browser');
