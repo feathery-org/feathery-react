@@ -223,12 +223,21 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   }, [editor, commitActiveRevision, onHiddenChange]);
 
   // Bring the newly active chip into view once it exists (its group may have
-  // been collapsed until this same update expanded it).
+  // been collapsed until this same update expanded it). Scroll ONLY the rail's
+  // own scrollbox: scrollIntoView walks every scrollable ancestor, so it can
+  // yank the whole form viewport when a new revision lands.
   useEffect(() => {
     if (!activeRevision) return;
-    rowRefs.current.get(activeRevision)?.scrollIntoView?.({
-      block: 'nearest'
-    });
+    const row = rowRefs.current.get(activeRevision);
+    if (!row) return;
+    let box: HTMLElement | null = row.parentElement;
+    while (box && box.scrollHeight <= box.clientHeight) box = box.parentElement;
+    if (!box) return;
+    const rowTop = row.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    const rowBottom = rowTop + row.offsetHeight;
+    if (rowTop < box.scrollTop) box.scrollTop = rowTop;
+    else if (rowBottom > box.scrollTop + box.clientHeight)
+      box.scrollTop = rowBottom - box.clientHeight;
   });
 
   // Non-cascading resolve (native accept/reject settles whatever is
