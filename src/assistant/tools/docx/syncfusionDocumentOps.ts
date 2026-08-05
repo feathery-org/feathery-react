@@ -4691,37 +4691,48 @@ function assertSelectionGuard(op: EditOp, range: SelectionRange): void {
     );
 }
 
-// Proof the replacement is readable in the document after the write. A range
-// that spanned paragraphs collapses them, so the text may land on any block of
-// the original span (SyncFusion keeps the deleted paragraph marks as tracked
-// deletions until the revision is accepted) - the span, not one anchor, is what
-// can be asserted. Reversibility itself is proven separately and globally by
-// assertTrackedMutation's reject-projection comparison.
-function verifySelectionWrite(
+// SyncFusion accepts CR, LF, and CRLF as paragraph boundaries but exposes
+// paragraph boundaries through Selection as CR. Normalize that one boundary
+// convention before planning or verifying text spans.
+function normalizeParagraphBreaks(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, '\r');
+}
+
+// One post-write verifier for every block-backed text mutation. A text payload
+// can create blocks (replace_selection, replace_text, insert_text), so verify
+// the complete block span implied by the payload rather than re-reading only
+// the pre-write anchor. Reversibility remains the separate reject-projection
+// invariant in assertTrackedMutation.
+function verifyTextWrite(
   editor: LiveEditor,
-  range: SelectionRange,
-  replacement: string
-): any | undefined {
-  if (!replacement) return undefined;
+  target: {
+    startAnchor: string;
+    endAnchor?: string;
+    expected: string;
+    exact?: boolean;
+  }
+): any {
   const sfdt = serializeSfdt(editor);
+  if (!target.exact && !target.expected) return sfdt;
   const blocks = flattenSfdt(sfdt);
   let startIndex = blocks.findIndex(
-    (block) => block.anchor === range.startAnchor
+    (block) => block.anchor === target.startAnchor
   );
-  let endIndex = blocks.findIndex((block) => block.anchor === range.endAnchor);
+  const endAnchor = target.endAnchor ?? target.startAnchor;
+  let endIndex = blocks.findIndex((block) => block.anchor === endAnchor);
   if (startIndex < 0) {
     startIndex = blocks.findIndex(
       (block) =>
-        compareOffsets(block.anchor, range.startAnchor) >= 0 &&
-        compareOffsets(block.anchor, range.endAnchor) <= 0
+        compareOffsets(block.anchor, target.startAnchor) >= 0 &&
+        compareOffsets(block.anchor, endAnchor) <= 0
     );
   }
   if (endIndex < 0) {
     for (let index = blocks.length - 1; index >= 0; index--) {
       const block = blocks[index];
       if (
-        compareOffsets(block.anchor, range.startAnchor) >= 0 &&
-        compareOffsets(block.anchor, range.endAnchor) <= 0
+        compareOffsets(block.anchor, target.startAnchor) >= 0 &&
+        compareOffsets(block.anchor, endAnchor) <= 0
       ) {
         endIndex = index;
         break;
@@ -4731,62 +4742,36 @@ function verifySelectionWrite(
   if (startIndex < 0)
     throw new OpError(
       'post_write_anchor_not_found',
-      `The edited anchor "${range.startAnchor}" disappeared after the write.`
+      `The edited anchor "${target.startAnchor}" disappeared after the write.`
     );
-  // A paragraph-creating insert turns one selected block range into more live
-  // blocks than that range named before the write. Verify through exactly the
-  // extra paragraph boundaries carried by the payload; otherwise a correct
-  // split is judged only against its first new paragraph and rolled back.
-  const normalizedReplacement = replacement.replace(/\r\n/g, '\r');
-  const createdParagraphMarks = (normalizedReplacement.match(/\r/g) ?? [])
-    .length;
+  const normalizedExpected = normalizeParagraphBreaks(target.expected);
+  const createdParagraphMarks = (normalizedExpected.match(/\r/g) ?? []).length;
   const resultingEndIndex = Math.min(
     blocks.length - 1,
     Math.max(endIndex, startIndex) + createdParagraphMarks
   );
-  const span = blocks
-    .slice(startIndex, resultingEndIndex + 1)
-    .map((block) => block.text)
-    .join(createdParagraphMarks ? '\r' : '\n');
-  if (!span.includes(normalizedReplacement))
+  const span = normalizeParagraphBreaks(
+    blocks
+      .slice(startIndex, resultingEndIndex + 1)
+      .map((block) => block.text)
+      .join('\r')
+  );
+  const matches = target.exact
+    ? span === normalizedExpected
+    : span.includes(normalizedExpected);
+  if (!matches)
     throw new OpError(
       'text_verification_failed',
-      `Text verification failed across "${range.startAnchor}".."${range.endAnchor}".`,
+      target.endAnchor
+        ? `Text verification failed across "${target.startAnchor}".."${endAnchor}".`
+        : `Text verification failed at "${target.startAnchor}".`,
       [
-        `expected to contain: ${JSON.stringify(normalizedReplacement)}`,
+        `${target.exact ? 'expected' : 'expected to contain'}: ${JSON.stringify(
+          normalizedExpected
+        )}`,
         `actual: ${JSON.stringify(span)}`
       ]
     );
-  return sfdt;
-}
-
-function verifyWrittenText(
-  editor: LiveEditor,
-  anchor: string,
-  expected: string
-): any {
-  const sfdt = serializeSfdt(editor);
-  const current = flattenSfdt(sfdt).find((block) => block.anchor === anchor);
-  if (!current)
-    throw new OpError(
-      'post_write_anchor_not_found',
-      `The edited anchor "${anchor}" disappeared after the write.`
-    );
-  // The selection API includes deleted tracked-revision runs in its raw text.
-  // `freshBlock` projects the live SFDT to current text (skipping Deletion
-  // revisions), so this verifies what the document resolves to while preserving
-  // the native insertion/deletion revisions for review.
-  const actual = current.text;
-  if (actual !== expected) {
-    throw new OpError(
-      'text_verification_failed',
-      `Text verification failed at "${anchor}".`,
-      [
-        `expected: ${JSON.stringify(expected)}`,
-        `actual: ${JSON.stringify(actual)}`
-      ]
-    );
-  }
   return sfdt;
 }
 
@@ -4969,6 +4954,34 @@ function insertionText(op: TypedEditOp<'insert_text'>): string {
   if (position === 'before' && text && !/[\r\n]$/.test(text))
     text = `${text}\n`;
   return text;
+}
+
+// Hierarchical offsets are serialized-text coordinates. After an earlier
+// tracked replacement in the same change set, those coordinates still count
+// pending deletion/insertion runs and can point before the visible replacement.
+// For paragraph-boundary inserts, let SyncFusion move within its live selection
+// model; test doubles without those public methods retain the offset fallback.
+function selectInsertionPoint(
+  editor: LiveEditor,
+  op: TypedEditOp<'insert_text'>,
+  block: FlatBlock
+): void {
+  const position =
+    typeof op.position === 'string' ? op.position.toLowerCase() : '';
+  const method =
+    position === 'after' || position === 'end'
+      ? 'moveToParagraphEnd'
+      : position === 'before' || position === 'start'
+      ? 'moveToParagraphStart'
+      : '';
+  const move = method ? (editor.selection as any)?.[method] : undefined;
+  if (typeof move === 'function') {
+    selectRange(editor, block.anchor, 0, 0);
+    move.call(editor.selection);
+    return;
+  }
+  const offset = insertionPoint(op, block);
+  selectRange(editor, block.anchor, offset, offset);
 }
 
 // ---------------------------------------------------------------------------
@@ -6038,11 +6051,11 @@ export const ANCHORED_OP_HANDLERS: {
         selectBlock(editor, block);
         replaceSelectedText(editor, String(replacement));
         return {
-          postWriteSfdt: verifyWrittenText(
-            editor,
-            block.anchor,
-            String(replacement)
-          )
+          postWriteSfdt: verifyTextWrite(editor, {
+            startAnchor: block.anchor,
+            expected: String(replacement),
+            exact: true
+          })
         };
       }
       throw new OpError(
@@ -6078,10 +6091,22 @@ export const ANCHORED_OP_HANDLERS: {
       // their legacy selected-range replacement primitive. Production search
       // is required and always takes the guarded delete/read/insert path.
       editor.editor.insertText(String(replacement ?? ''));
-      return { postWriteSfdt: verifyWrittenText(editor, block.anchor, next) };
+      return {
+        postWriteSfdt: verifyTextWrite(editor, {
+          startAnchor: block.anchor,
+          expected: next,
+          exact: true
+        })
+      };
     }
     replaceSelectedText(editor, String(replacement ?? ''));
-    return { postWriteSfdt: verifyWrittenText(editor, block.anchor, next) };
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: next,
+        exact: true
+      })
+    };
   },
   replace_selection: ({ editor, op, block, byAnchor }) => {
     const replacement = op.replace ?? (op as any).text ?? (op as any).newText;
@@ -6100,7 +6125,11 @@ export const ANCHORED_OP_HANDLERS: {
     // atomically - see replaceSelectedText on why this must not be split.
     replaceSelectedText(editor, String(replacement));
     return {
-      postWriteSfdt: verifySelectionWrite(editor, range, String(replacement))
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: range.startAnchor,
+        endAnchor: range.endAnchor,
+        expected: String(replacement)
+      })
     };
   },
   delete_text: ({ editor, op, block, liveText }) => {
@@ -6109,8 +6138,16 @@ export const ANCHORED_OP_HANDLERS: {
     const idx = liveText.indexOf(find);
     if (idx < 0)
       throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+    const next = block.text.slice(0, idx) + block.text.slice(idx + find.length);
     selectRange(editor, block.anchor, idx, idx + find.length);
     editor.editor.delete();
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: next,
+        exact: true
+      })
+    };
   },
   delete_paragraph: ({ editor, op, block, byAnchor }) => {
     if (block.kind === 'table_cell')
@@ -6141,8 +6178,18 @@ export const ANCHORED_OP_HANDLERS: {
   },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
-    selectRange(editor, block.anchor, offset, offset);
-    editor.editor.insertText(insertionText(op));
+    const inserted = insertionText(op);
+    const next =
+      block.text.slice(0, offset) + inserted + block.text.slice(offset);
+    selectInsertionPoint(editor, op, block);
+    editor.editor.insertText(inserted);
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: next,
+        exact: true
+      })
+    };
   },
   insert_section: ({ op }) => {
     // Valid section requests are expanded at applyDocumentEdits' common
@@ -6166,7 +6213,11 @@ export const ANCHORED_OP_HANDLERS: {
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
     return {
-      postWriteSfdt: verifyWrittenText(editor, block.anchor, replacement)
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: replacement,
+        exact: true
+      })
     };
   },
   set_cell_formula: ({ editor, op, block, byAnchor }) =>
@@ -6174,8 +6225,16 @@ export const ANCHORED_OP_HANDLERS: {
   set_column_formula: ({ editor, op, block, byAnchor }) =>
     runColumnFormulaWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
+    const replacement = changeCase(liveText, String(op.caseType ?? ''));
     selectBlock(editor, block);
-    editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
+    editor.editor.insertText(replacement);
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: replacement,
+        exact: true
+      })
+    };
   },
   apply_style: ({ editor, op, block, byAnchor }) => {
     const styleName = fmtField(op, 'styleName');
@@ -9467,6 +9526,84 @@ function mayShiftAnchors(op: EditOp): boolean {
   return !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op);
 }
 
+// Preflight is read-only, but one text op may intentionally make the `expect`
+// of a later op true. Model only transformations that preserve this anchor's
+// topology; paragraph/table creators keep their existing deferred-anchor path.
+// Write-time guards still re-check the real editor after every prior op.
+function simulateStableTextOp(
+  op: EditOp,
+  block: FlatBlock
+): string | undefined {
+  switch (op.op) {
+    case 'replace_text': {
+      const replacement = op.replace ?? op.text ?? op.newText;
+      if (replacement == null || /[\r\n]/.test(String(replacement)))
+        return undefined;
+      const find = op.find != null ? String(op.find) : '';
+      if (!find) return String(replacement);
+      const index = block.text.indexOf(find);
+      return index < 0
+        ? undefined
+        : block.text.slice(0, index) +
+            String(replacement) +
+            block.text.slice(index + find.length);
+    }
+    case 'delete_text': {
+      const find = String(op.find ?? '');
+      const index = find ? block.text.indexOf(find) : -1;
+      return index < 0
+        ? undefined
+        : block.text.slice(0, index) + block.text.slice(index + find.length);
+    }
+    case 'set_cell_text': {
+      const replacement = String(op.text ?? '');
+      return /[\r\n]/.test(replacement) ? undefined : replacement;
+    }
+    case 'change_case':
+      return changeCase(block.text, String(op.caseType ?? ''));
+    case 'insert_text': {
+      const typed = op as TypedEditOp<'insert_text'>;
+      const inserted = insertionText(typed);
+      if (/[\r\n]/.test(inserted)) return undefined;
+      const offset = insertionPoint(typed, block);
+      return block.text.slice(0, offset) + inserted + block.text.slice(offset);
+    }
+    case 'replace_selection': {
+      const replacement = String(op.replace ?? op.text ?? op.newText ?? '');
+      if (/[\r\n]/.test(replacement)) return undefined;
+      const start = offsetParts(offsetString(op.startOffset));
+      const end = offsetParts(offsetString(op.endOffset));
+      if (
+        start.anchor !== block.anchor ||
+        end.anchor !== block.anchor ||
+        start.offset < 0 ||
+        end.offset > block.length ||
+        start.offset >= end.offset
+      )
+        return undefined;
+      return (
+        block.text.slice(0, start.offset) +
+        replacement +
+        block.text.slice(end.offset)
+      );
+    }
+    default:
+      return undefined;
+  }
+}
+
+function withSimulatedText(
+  blocks: FlatBlock[],
+  simulatedTextByAnchor: Map<string, string>
+): FlatBlock[] {
+  return blocks.map((block) => {
+    const text = simulatedTextByAnchor.get(block.anchor);
+    return text === undefined || text === block.text
+      ? block
+      : { ...block, text, length: text.length };
+  });
+}
+
 type RelocationAttempt =
   | { target: FlatBlock; relocated: { from: string; to: string } }
   | { details: string[] };
@@ -12543,6 +12680,9 @@ function applyDocumentEditsMeasured(
   const hasStructuralEdits = edits.some(
     (op) => op?.op && !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op)
   );
+  const simulatedTextByAnchor = new Map(
+    blocks.map((block) => [block.anchor, block.text] as const)
+  );
   edits.forEach((rawOp, index) => {
     // Already refused by a batch-level check; do not re-diagnose it.
     if (results[index]) return;
@@ -12605,6 +12745,11 @@ function applyDocumentEditsMeasured(
       return;
     }
     const indexedTarget = byAnchor.get(op.anchor);
+    const simulatedBlocks = withSimulatedText(blocks, simulatedTextByAnchor);
+    const simulatedByAnchor = new Map(
+      simulatedBlocks.map((block) => [block.anchor, block] as const)
+    );
+    const simulatedIndexedTarget = simulatedByAnchor.get(op.anchor);
     // A formatting op can intentionally point at the future anchor created by
     // an earlier insert. Its expect value identifies that future paragraph and
     // prevents today's occupant of the same hierarchical index being captured
@@ -12616,8 +12761,8 @@ function applyDocumentEditsMeasured(
     const formatExpectMismatch =
       FORMAT_OPS.has(name) &&
       op.expect != null &&
-      indexedTarget != null &&
-      !expectTextMatches(op.expect, indexedTarget.text);
+      simulatedIndexedTarget != null &&
+      !expectTextMatches(op.expect, simulatedIndexedTarget.text);
     let target: FlatBlock | LiveStoryTarget | undefined =
       formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
@@ -12641,8 +12786,8 @@ function applyDocumentEditsMeasured(
       // Preserve resolveSelectionRange's specific refusal instead of guessing.
       const startDisagrees =
         suppliedStart && anchorFromOffset(suppliedStart) !== String(op.anchor);
-      const runs = selectionTextRuns(blocks);
-      const declaredText = declaredSelectionText(op, byAnchor, runs);
+      const runs = selectionTextRuns(simulatedBlocks);
+      const declaredText = declaredSelectionText(op, simulatedByAnchor, runs);
       const hasPinnedLength =
         typeof op.expectLength === 'number' && op.expectLength > 0;
       const declaredStartsWithExpect =
@@ -12659,9 +12804,10 @@ function applyDocumentEditsMeasured(
         // assertSelectionGuard's measured refusal instead of expanding it.
         !(hasPinnedLength && declaredStartsWithExpect)
       ) {
-        const attempt = attemptSelectionRelocation(blocks, op);
+        const attempt = attemptSelectionRelocation(simulatedBlocks, op);
         if ('range' in attempt) {
-          target = attempt.range.target;
+          target =
+            byAnchor.get(attempt.range.target.anchor) ?? attempt.range.target;
           relocated = attempt.relocated;
           op = {
             ...op,
@@ -12722,9 +12868,9 @@ function applyDocumentEditsMeasured(
     // content already exists exactly once, though, this is ordinary anchor
     // drift and we can bind the plan to that current block now.
     if (!target && formatExpectMismatch && hasStructuralEdits) {
-      const attempt = attemptAnchorRelocation(blocks, op);
+      const attempt = attemptAnchorRelocation(simulatedBlocks, op);
       if ('target' in attempt) {
-        target = attempt.target;
+        target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
         relocated = attempt.relocated;
         op = retargetOpToBlock(op, target);
       }
@@ -12735,9 +12881,9 @@ function applyDocumentEditsMeasured(
       !deferredNewParagraph &&
       (!FORMAT_OPS.has(name) || !hasStructuralEdits)
     ) {
-      const attempt = attemptAnchorRelocation(blocks, op);
+      const attempt = attemptAnchorRelocation(simulatedBlocks, op);
       if ('target' in attempt) {
-        target = attempt.target;
+        target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
         relocated = attempt.relocated;
         op = retargetOpToBlock(op, target);
       } else {
@@ -12756,18 +12902,33 @@ function applyDocumentEditsMeasured(
         return;
       }
     }
+    let simulatedTargetText =
+      target && !isLiveStoryTarget(target)
+        ? simulatedTextByAnchor.get(target.anchor) ?? target.text
+        : undefined;
     if (
       target &&
       !isLiveStoryTarget(target) &&
       // See applyAnchoredOp: replace_selection's `expect` describes the selected
       // range, not the start block, so it is checked by assertSelectionGuard.
       name !== 'replace_selection' &&
-      expectGuardRefuses(op.expect, target.text)
+      expectGuardRefuses(op.expect, simulatedTargetText ?? target.text)
     ) {
       const staleTarget = target;
-      const attempt = attemptAnchorRelocation(blocks, op, staleTarget);
+      const simulatedStaleTarget = {
+        ...staleTarget,
+        text: simulatedTargetText ?? staleTarget.text,
+        length: (simulatedTargetText ?? staleTarget.text).length
+      };
+      const attempt = attemptAnchorRelocation(
+        simulatedBlocks,
+        op,
+        simulatedStaleTarget
+      );
       if ('target' in attempt) {
-        target = attempt.target;
+        target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
+        simulatedTargetText =
+          simulatedTextByAnchor.get(target.anchor) ?? target.text;
         relocated = attempt.relocated;
         op = retargetOpToBlock(op, target);
       } else {
@@ -12777,7 +12938,7 @@ function applyDocumentEditsMeasured(
           anchor: op.anchor,
           error: 'expect_mismatch',
           details: [
-            ...staleAnchorDetails(op.expect, staleTarget.text),
+            ...staleAnchorDetails(op.expect, simulatedStaleTarget.text),
             ...attempt.details
           ]
         };
@@ -12789,7 +12950,7 @@ function applyDocumentEditsMeasured(
       !isLiveStoryTarget(target) &&
       (name === 'replace_text' || name === 'delete_text') &&
       op.find != null &&
-      !target.text.includes(String(op.find))
+      !(simulatedTargetText ?? target.text).includes(String(op.find))
     ) {
       results[index] = {
         ok: false,
@@ -12869,6 +13030,12 @@ function applyDocumentEditsMeasured(
           ? { targetBefore: readEffectiveSourceFormat(editor, target) }
           : {})
       });
+      if (target && !isLiveStoryTarget(target)) {
+        const simulatedTarget = simulatedByAnchor.get(target.anchor) ?? target;
+        const nextText = simulateStableTextOp(op, simulatedTarget);
+        if (nextText !== undefined)
+          simulatedTextByAnchor.set(target.anchor, nextText);
+      }
     } catch (err) {
       fail(index, op, err);
     }
@@ -13071,6 +13238,10 @@ function applyDocumentEditsMeasured(
                   insertInheritance
                 );
                 plan.insertInheritance = insertInheritance;
+                // The verifier snapshot was captured before the inherited
+                // section-boundary padding was materialized. Do not refresh
+                // from that now-stale topology.
+                opExtras = undefined;
               }
             }
             // A skipped no-op wrote nothing, so it cannot have shifted anything.
