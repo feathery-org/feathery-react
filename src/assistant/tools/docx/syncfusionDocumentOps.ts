@@ -1304,11 +1304,12 @@ function looksLikeHeadingText(text: string): boolean {
 }
 
 interface StyleUsage {
-  fontSize: number;
+  styleFontSize: number;
   declaredLevel?: number;
   paragraphs: number;
   characters: number;
   headingShaped: number;
+  effectiveFontSizes: Map<number, { paragraphs: number; characters: number }>;
 }
 
 // Level per paragraph style for one document, keyed by lower-cased style name.
@@ -1320,7 +1321,7 @@ interface StyleUsage {
 // is, which is where all 71 of the document's "H1" field labels live.
 function documentStyleLevels(
   sfdt: any,
-  paragraphs: { styleName: string; text: string }[]
+  paragraphs: { styleName: string; text: string; fontSize?: number }[]
 ): Map<string, number> {
   const table = readStyleTable(sfdt);
   const documentFontSize = pick(
@@ -1348,10 +1349,11 @@ function documentStyleLevels(
     let use = usage.get(key);
     if (!use) {
       use = {
-        fontSize: resolveFontSize(styleName),
+        styleFontSize: resolveFontSize(styleName),
         paragraphs: 0,
         characters: 0,
-        headingShaped: 0
+        headingShaped: 0,
+        effectiveFontSizes: new Map()
       };
       const declaredLevel = styleName
         ? declaredStyleLevel(table, styleName)
@@ -1364,9 +1366,42 @@ function documentStyleLevels(
     // restricted to paragraphs that have text.
     if (!paragraph.text.trim()) continue;
     use.paragraphs++;
-    use.characters += paragraph.text.trim().length;
+    const characters = paragraph.text.trim().length;
+    use.characters += characters;
     if (looksLikeHeadingText(paragraph.text)) use.headingShaped++;
+    const effectiveFontSize = paragraph.fontSize ?? use.styleFontSize;
+    const observed = use.effectiveFontSizes.get(effectiveFontSize) ?? {
+      paragraphs: 0,
+      characters: 0
+    };
+    observed.paragraphs++;
+    observed.characters += characters;
+    use.effectiveFontSizes.set(effectiveFontSize, observed);
   }
+
+  // A direct run/paragraph size overrides the style table in Word. Rank a
+  // style by the size most of its real paragraphs render at, falling back to
+  // the declared style size. One exceptional override must not split siblings;
+  // ties choose the larger size, the conservative (shallower) interpretation.
+  const effectiveFontSize = (use: StyleUsage): number => {
+    let selected = use.styleFontSize;
+    let selectedParagraphs = 0;
+    let selectedCharacters = 0;
+    for (const [fontSize, observed] of use.effectiveFontSizes) {
+      if (
+        observed.paragraphs > selectedParagraphs ||
+        (observed.paragraphs === selectedParagraphs &&
+          (observed.characters > selectedCharacters ||
+            (observed.characters === selectedCharacters &&
+              fontSize > selected)))
+      ) {
+        selected = fontSize;
+        selectedParagraphs = observed.paragraphs;
+        selectedCharacters = observed.characters;
+      }
+    }
+    return selected;
+  };
 
   // Body text size: the size most of the document's text - measured in
   // characters, not paragraphs, since headings are short by nature - is set in,
@@ -1376,9 +1411,10 @@ function documentStyleLevels(
   const charactersBySize = new Map<number, number>();
   for (const use of usage.values()) {
     if (use.declaredLevel !== undefined) continue;
+    const fontSize = effectiveFontSize(use);
     charactersBySize.set(
-      use.fontSize,
-      (charactersBySize.get(use.fontSize) ?? 0) + use.characters
+      fontSize,
+      (charactersBySize.get(fontSize) ?? 0) + use.characters
     );
   }
   let bodyFontSize = defaultFontSize;
@@ -1397,16 +1433,20 @@ function documentStyleLevels(
   const inferred: { key: string; fontSize: number }[] = [];
   const headingFontSizes = new Set<number>();
   for (const [key, use] of usage) {
+    const renderedFontSize = effectiveFontSize(use);
     if (use.declaredLevel !== undefined) {
       levels.set(key, use.declaredLevel);
-      headingFontSizes.add(use.fontSize);
+      headingFontSizes.add(renderedFontSize);
       continue;
     }
     if (use.paragraphs === 0) continue;
-    if (use.fontSize < bodyFontSize * HEADING_SIZE_RATIO) continue;
+    // Classification and relative depth use different evidence. A custom
+    // heading style remains a heading when its own typography is distinctive,
+    // but direct overrides decide where that heading renders in the ladder.
+    if (use.styleFontSize < bodyFontSize * HEADING_SIZE_RATIO) continue;
     if (use.headingShaped * 2 < use.paragraphs) continue;
-    inferred.push({ key, fontSize: use.fontSize });
-    headingFontSizes.add(use.fontSize);
+    inferred.push({ key, fontSize: renderedFontSize });
+    headingFontSizes.add(renderedFontSize);
   }
 
   // Rank by size: the document's largest heading is level 1, each smaller
@@ -1435,6 +1475,7 @@ export function flattenSfdt(
     block?: FlatBlock;
     styleName: string;
     text: string;
+    fontSize?: number;
     declaredLevel?: number;
   }[] = [];
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
@@ -1463,7 +1504,10 @@ export function flattenSfdt(
               });
               paragraphs.push({
                 styleName: format?.styleName ?? '',
-                text
+                text,
+                ...(format?.fontSize !== undefined
+                  ? { fontSize: format.fontSize }
+                  : {})
               });
             });
           });
@@ -1491,6 +1535,9 @@ export function flattenSfdt(
           block: flat,
           styleName: format?.styleName ?? '',
           text,
+          ...(format?.fontSize !== undefined
+            ? { fontSize: format.fontSize }
+            : {}),
           declaredLevel: normalizeOutlineLevel(
             pick(pick(block, 'paragraphFormat', 'pf'), 'outlineLevel', 'ol')
           )
@@ -11234,20 +11281,29 @@ function missingSectionPrefix(
   desired: SectionBoundaryElement[],
   existing: SectionBoundaryElement[]
 ): SectionBoundaryElement[] {
-  return JSON.stringify(desired.slice(0, existing.length)) ===
-    JSON.stringify(existing)
-    ? desired.slice(existing.length)
-    : desired;
+  let shared = 0;
+  while (
+    shared < desired.length &&
+    shared < existing.length &&
+    desired[shared] === existing[shared]
+  )
+    shared++;
+  return desired.slice(shared);
 }
 
 function missingSectionSuffix(
   desired: SectionBoundaryElement[],
   existing: SectionBoundaryElement[]
 ): SectionBoundaryElement[] {
-  return JSON.stringify(desired.slice(desired.length - existing.length)) ===
-    JSON.stringify(existing)
-    ? desired.slice(0, desired.length - existing.length)
-    : desired;
+  let shared = 0;
+  while (
+    shared < desired.length &&
+    shared < existing.length &&
+    desired[desired.length - 1 - shared] ===
+      existing[existing.length - 1 - shared]
+  )
+    shared++;
+  return desired.slice(0, desired.length - shared);
 }
 
 function adjacentSectionSeparators(
@@ -11397,45 +11453,37 @@ function boundaryAfterComposerSection(
   blocks: FlatBlock[],
   entry: ComposerSectionMapEntry
 ): ComposerInsertionBoundary | undefined {
-  const nextHeading = blocks[entry.end];
-  if (nextHeading?.isHeading && nextHeading.text.replace(/\f/g, '').trim())
-    return { target: nextHeading, position: 'before' };
-
   const section = Number(entry.heading.anchor.split(';')[0]);
   const represented = blocks
     .slice(entry.start, entry.end)
     .filter((block) => Number(block.anchor.split(';')[0]) === section);
-  const finalBlock = represented.reduce<
-    { number: number; block: FlatBlock } | undefined
-  >((latest, block) => {
-    const number = bodyBlockNumber(block);
-    if (number === undefined || (latest && latest.number > number))
-      return latest;
-    return { number, block };
-  }, undefined);
-  if (!finalBlock) return undefined;
-
-  const bodyTarget = represented.find(
-    (block) =>
-      block.anchor.split(';').length === 2 &&
-      bodyBlockNumber(block) === finalBlock.number
+  const finalContentBlock = represented.reduce<number | undefined>(
+    (latest, block) => {
+      if (boundaryElement(block)) return latest;
+      const number = bodyBlockNumber(block);
+      return number === undefined || (latest !== undefined && latest > number)
+        ? latest
+        : number;
+    },
+    undefined
   );
-  if (bodyTarget) return { target: bodyTarget, position: 'after' };
-
-  // A section ending in a table needs a following body paragraph as its public
-  // insertion surface. Word commonly keeps an empty one there; use it by
-  // topology, never by trying to match its empty content.
-  const followingBody = blocks.find((block) => {
-    const parts = block.anchor.split(';');
-    return (
-      parts.length === 2 &&
-      Number(parts[0]) === section &&
-      Number(parts[1]) > finalBlock.number
+  if (finalContentBlock !== undefined) {
+    const paragraph = represented.find(
+      (block) =>
+        block.anchor.split(';').length === 2 &&
+        bodyBlockNumber(block) === finalContentBlock &&
+        !boundaryElement(block)
     );
-  });
-  return followingBody
-    ? { target: followingBody, position: 'before' }
-    : undefined;
+    if (paragraph) return { target: paragraph, position: 'after' };
+  }
+
+  // A table has no public top-level anchor. When it is the last content block,
+  // compose before the next real heading; never promote an empty paragraph or
+  // page-break decoration into a content identity merely because it is nearby.
+  const nextHeading = blocks[entry.end];
+  if (nextHeading?.isHeading && nextHeading.text.replace(/\f/g, '').trim())
+    return { target: nextHeading, position: 'before' };
+  return undefined;
 }
 
 function boundaryForComposerSection(
@@ -11472,7 +11520,10 @@ function composerBoundaryBesideBlock(
       target,
       block: Number(target.anchor.split(';')[1])
     }))
-    .filter((candidate) => Number.isInteger(candidate.block));
+    .filter(
+      (candidate) =>
+        Number.isInteger(candidate.block) && !boundaryElement(candidate.target)
+    );
   const following = indexed
     .filter((candidate) => candidate.block > block)
     .sort((left, right) => left.block - right.block)[0]?.target;
@@ -11638,7 +11689,10 @@ function resolveComposerInsertionBoundary(
       target,
       block: Number(target.anchor.split(';')[1])
     }))
-    .filter((candidate) => Number.isInteger(candidate.block));
+    .filter(
+      (candidate) =>
+        Number.isInteger(candidate.block) && !boundaryElement(candidate.target)
+    );
   if (requestedPosition === 'before') {
     const following = indexed
       .filter((candidate) => candidate.block >= block)
@@ -11748,14 +11802,11 @@ function compileSectionComposer(
       : [];
   const beforeExisting = adjacentSectionSeparators(blocks, resolvedTarget, -1);
   const afterExisting = adjacentSectionSeparators(blocks, resolvedTarget, 1);
-  const leadingBoundary =
-    position === 'before'
-      ? missingSectionPrefix(desiredBoundary, beforeExisting)
-      : desiredBoundary;
-  let trailingBoundary =
-    boundary.position === 'after'
-      ? missingSectionSuffix(desiredBoundary, afterExisting)
-      : desiredBoundary;
+  // Separators are decorations around the insertion point, never mutation
+  // anchors. Mirror only the missing part of the sibling convention on each
+  // side; an existing page boundary may be longer than that convention.
+  const leadingBoundary = missingSectionSuffix(desiredBoundary, beforeExisting);
+  let trailingBoundary = missingSectionPrefix(desiredBoundary, afterExisting);
   if (
     needsSeedAnchor &&
     trailingBoundary[trailingBoundary.length - 1] === 'empty_paragraph'

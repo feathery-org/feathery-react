@@ -82,9 +82,13 @@ const table = (
   ]
 });
 
-const paragraph = (text: string, styleName?: string) => ({
+const paragraph = (
+  text: string,
+  styleName?: string,
+  characterFormat?: Record<string, unknown>
+) => ({
   ...(styleName ? { paragraphFormat: { styleName } } : {}),
-  inlines: [{ text }]
+  inlines: [{ text, ...(characterFormat ? { characterFormat } : {}) }]
 });
 
 const sibling = (name: string) => [
@@ -150,22 +154,35 @@ const fixture = () => ({
   ]
 });
 
-const nestedFixture = () => ({
+const threeLevelFixture = () => ({
   sections: [
     {
       blocks: [
-        paragraph('About', 'Heading 1'),
-        paragraph('About overview', 'Section Body'),
-        paragraph('A Long-Term Perspective', 'Heading 2'),
-        paragraph('Long-term perspective body', 'Subsection Body'),
-        paragraph('Services', 'Heading 1'),
-        paragraph('Services overview', 'Section Body'),
-        paragraph('Advice', 'Heading 2'),
-        paragraph('Advice body', 'Subsection Body'),
-        paragraph('Planning', 'Heading 2'),
-        paragraph('Planning body', 'Subsection Body'),
-        paragraph('Contact', 'Heading 1'),
-        paragraph('Contact overview', 'Section Body')
+        paragraph('About Hilb Group', 'Title'),
+        paragraph('About overview', 'Normal', { fontSize: 10 }),
+        paragraph('Our Approach', 'headingNoToc'),
+        paragraph('Approach overview', 'Normal', { fontSize: 10 }),
+        paragraph('How We Support Clients', 'headingNoToc'),
+        paragraph('How we support clients overview', 'Normal', {
+          fontSize: 10
+        }),
+        paragraph('National Capabilities, Local Service', 'noTOCheading2', {
+          fontSize: 11
+        }),
+        paragraph('National capabilities body', 'Normal', { fontSize: 10 }),
+        paragraph(''),
+        paragraph('Industry Experience', 'noTOCheading2', { fontSize: 11 }),
+        paragraph('Industry experience body', 'Normal', { fontSize: 10 }),
+        paragraph(''),
+        paragraph('A Long-Term Perspective', 'noTOCheading2', {
+          fontSize: 11
+        }),
+        paragraph('Long-term perspective body', 'Normal', { fontSize: 10 }),
+        paragraph(''),
+        paragraph('\f'),
+        paragraph(''),
+        paragraph('Your Client Services Team', 'Title'),
+        paragraph('Client services overview', 'Normal', { fontSize: 10 })
       ]
     }
   ],
@@ -174,39 +191,46 @@ const nestedFixture = () => ({
       type: 'Paragraph',
       name: 'Normal',
       next: 'Normal',
-      characterFormat: { fontSize: 11 }
+      characterFormat: { fontSize: 10 }
     },
     {
       type: 'Paragraph',
-      name: 'Section Body',
+      name: 'Body Text',
       basedOn: 'Normal',
-      next: 'Section Body',
-      characterFormat: { fontSize: 11 },
-      paragraphFormat: { afterSpacing: 10 }
-    },
-    {
-      type: 'Paragraph',
-      name: 'Subsection Body',
-      basedOn: 'Normal',
-      next: 'Subsection Body',
-      characterFormat: { fontSize: 10 },
-      paragraphFormat: { afterSpacing: 4 }
+      next: 'Body Text',
+      characterFormat: { fontSize: 10 }
     },
     {
       type: 'Paragraph',
       name: 'Heading 1',
       basedOn: 'Normal',
-      next: 'Section Body',
-      characterFormat: { bold: true, fontSize: 20, fontColor: '#17365D' },
-      paragraphFormat: { outlineLevel: 'Level1', beforeSpacing: 14 }
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 16 },
+      paragraphFormat: { outlineLevel: 'Level1' }
     },
     {
       type: 'Paragraph',
-      name: 'Heading 2',
-      basedOn: 'Normal',
-      next: 'Subsection Body',
-      characterFormat: { bold: true, fontSize: 13, fontColor: '#000000' },
-      paragraphFormat: { outlineLevel: 'Level2', beforeSpacing: 6 }
+      name: 'Title',
+      basedOn: 'Heading 1',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 20, fontColor: '#001B49' },
+      paragraphFormat: { beforeSpacing: 14 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'headingNoToc',
+      basedOn: 'Body Text',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 14, fontColor: '#A9B533' },
+      paragraphFormat: { beforeSpacing: 10 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'noTOCheading2',
+      basedOn: 'Body Text',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 20, fontColor: '#000000' },
+      paragraphFormat: { beforeSpacing: 6 }
     }
   ]
 });
@@ -310,58 +334,143 @@ function tableFactsByHeader(editor: DocumentEditor, header: string) {
 }
 
 describe('insert_section deterministic composer', () => {
-  it('inherits title and paragraph roles from the named subsection anchor family', () => {
-    const editor = makeEditor(nestedFixture());
-    try {
-      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
-        changeSetId: 'named-subsection-family',
-        edits: [
-          {
-            op: 'insert_section',
-            anchor: 'after:A Long-Term Perspective',
-            sectionSpec: {
-              title: 'Our Commitments to the Client',
-              blocks: [
-                {
-                  role: 'paragraph',
-                  text: 'We commit to clear advice and durable partnership.'
-                }
-              ]
+  it.each([
+    ['About Hilb Group', 'Title', 0, 20],
+    ['Our Approach', 'headingNoToc', 2, 14],
+    ['A Long-Term Perspective', 'noTOCheading2', 3, 11]
+  ])(
+    'inherits the exact style for a sibling inserted after level %s',
+    (anchorName, expectedStyle, expectedLevel, expectedSize) => {
+      const editor = makeEditor(threeLevelFixture());
+      try {
+        const titleText = `Inserted after ${anchorName}`;
+        const bodyText = `Body inserted after ${anchorName}.`;
+        const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+          changeSetId: `three-level-${expectedLevel}`,
+          edits: [
+            {
+              op: 'insert_section',
+              anchor: `after:${anchorName}`,
+              sectionSpec: {
+                title: titleText,
+                blocks: [{ role: 'paragraph', text: bodyText }]
+              }
             }
-          }
-        ]
-      });
+          ]
+        });
 
-      expect(result.results).toEqual([
-        expect.objectContaining({ ok: true, op: 'insert_section' })
-      ]);
-      const flattened = flattenSfdt(JSON.parse(editor.serialize()));
-      const title = flattened.find(
-        (block) => block.text === 'Our Commitments to the Client'
-      );
-      const body = flattened.find(
-        (block) =>
-          block.text === 'We commit to clear advice and durable partnership.'
-      );
-      if (!title || !body) throw new Error('inserted subsection was not found');
-
-      expect(title.level).toBe(2);
-      editor.selection.select(
-        `${title.anchor};0`,
-        `${title.anchor};${title.text.length}`
-      );
-      expect(editor.selection.paragraphFormat.styleName).toBe('Heading 2');
-      editor.selection.select(
-        `${body.anchor};0`,
-        `${body.anchor};${body.text.length}`
-      );
-      expect(editor.selection.paragraphFormat.styleName).toBe(
-        'Subsection Body'
-      );
-    } finally {
-      destroyEditor(editor);
+        expect(result.results[0]).toMatchObject({
+          ok: true,
+          op: 'insert_section'
+        });
+        const flattened = flattenSfdt(JSON.parse(editor.serialize()));
+        const inserted = flattened.find(
+          (block) => block.text === titleText
+        );
+        const insertedBody = flattened.find(
+          (block) => block.text === bodyText
+        );
+        if (!inserted || !insertedBody)
+          throw new Error('inserted sibling was not found');
+        expect(inserted.level).toBe(expectedLevel);
+        editor.selection.select(
+          `${inserted.anchor};0`,
+          `${inserted.anchor};${inserted.text.length}`
+        );
+        expect(editor.selection.paragraphFormat.styleName).toBe(expectedStyle);
+        expect(editor.selection.characterFormat.fontSize).toBe(expectedSize);
+        editor.selection.select(
+          `${insertedBody.anchor};0`,
+          `${insertedBody.anchor};${insertedBody.text.length}`
+        );
+        expect(editor.selection.paragraphFormat.styleName).toBe('Normal');
+        expect(editor.selection.characterFormat.fontSize).toBe(10);
+      } finally {
+        destroyEditor(editor);
+      }
     }
-  });
+  );
+
+  it.each([
+    ['after:A Long-Term Perspective', undefined],
+    ['after:the a long term perspective section', undefined],
+    ['exact subsection anchor', 'after']
+  ])(
+    'keeps the level-three sibling adjacent across boundary phrasing %s',
+    (requestedAnchor, explicitPosition) => {
+      const editor = makeEditor(threeLevelFixture());
+      try {
+        const before = flattenSfdt(JSON.parse(editor.serialize()));
+        const exactAnchor = before.find(
+          (block) => block.text === 'A Long-Term Perspective'
+        )?.anchor;
+        if (!exactAnchor) throw new Error('fixture lost the exact subsection');
+        const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+          changeSetId: 'named-subsection-family',
+          edits: [
+            {
+              op: 'insert_section',
+              anchor:
+                requestedAnchor === 'exact subsection anchor'
+                  ? exactAnchor
+                  : requestedAnchor,
+              ...(explicitPosition ? { position: explicitPosition } : {}),
+              sectionSpec: {
+                title: 'Our Commitments to the Client',
+                blocks: [
+                  {
+                    role: 'paragraph',
+                    text: 'We commit to clear advice and durable partnership.'
+                  }
+                ]
+              }
+            }
+          ]
+        });
+
+        expect(result.results).toEqual([
+          expect.objectContaining({ ok: true, op: 'insert_section' })
+        ]);
+        const flattened = flattenSfdt(JSON.parse(editor.serialize()));
+        const title = flattened.find(
+          (block) => block.text === 'Our Commitments to the Client'
+        );
+        const body = flattened.find(
+          (block) =>
+            block.text === 'We commit to clear advice and durable partnership.'
+        );
+        if (!title || !body)
+          throw new Error('inserted subsection was not found');
+
+        expect(title.level).toBe(3);
+        editor.selection.select(
+          `${title.anchor};0`,
+          `${title.anchor};${title.text.length}`
+        );
+        expect(editor.selection.paragraphFormat.styleName).toBe(
+          'noTOCheading2'
+        );
+        expect(editor.selection.characterFormat.fontSize).toBe(11);
+        editor.selection.select(
+          `${body.anchor};0`,
+          `${body.anchor};${body.text.length}`
+        );
+        expect(editor.selection.paragraphFormat.styleName).toBe('Normal');
+
+        const texts = flattened.map((block) => block.text);
+        const anchorBody = texts.indexOf('Long-term perspective body');
+        const insertedTitle = texts.indexOf('Our Commitments to the Client');
+        const insertedBody = texts.indexOf(
+          'We commit to clear advice and durable partnership.'
+        );
+        const nextPage = texts.indexOf('Your Client Services Team');
+        expect(texts.slice(anchorBody + 1, insertedTitle)).toEqual(['']);
+        expect(texts.slice(insertedBody + 1, nextPage)).toEqual(['', '\f', '']);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
 
   it('assembles five semantic blocks including two populated tables as one sibling-shaped group', () => {
     const editor = makeEditor();
