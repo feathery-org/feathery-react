@@ -8021,14 +8021,54 @@ export function resolveRevisionIndividually(
   resolveSingleRevision(captureNativeResolvers(revision), isAccept);
 }
 
-/** Resolve several revisions as ONE undo step via the engine's complex
- *  history (native Accept All's mechanism) — per-revision entries would let
- *  undo peel the unit apart (e.g. a replace reviving only its insert half). */
+interface RevisionMemberIdentity {
+  revisionID?: string;
+  groupKey: string;
+  author: string;
+  original: LiveRevision;
+}
+
+function revisionMemberIdentity(
+  revision: LiveRevision
+): RevisionMemberIdentity {
+  const revisionID = String(revision.revisionID ?? '').trim();
+  return {
+    ...(revisionID ? { revisionID } : {}),
+    groupKey: revisionTagKey(revision.customData),
+    author: String(revision.author ?? ''),
+    original: revision
+  };
+}
+
+function liveRevisionMember(
+  editor: LiveEditor,
+  identity: RevisionMemberIdentity
+): LiveRevision | undefined {
+  return snapshotRevisions(editor).find((revision) => {
+    if (identity.revisionID)
+      return (
+        String(revision.revisionID ?? '') === identity.revisionID &&
+        revisionTagKey(revision.customData) === identity.groupKey &&
+        String(revision.author ?? '') === identity.author
+      );
+    return revision === identity.original;
+  });
+}
+
+/**
+ * Resolve several revisions as ONE undoable operation. Resolving them
+ * one-by-one records one history entry each, so undo peels the unit apart —
+ * e.g. undoing an accepted replace restores only its inserted half, which
+ * then reads as a plain insertion. Wrap the batch in the engine's complex
+ * history (the same mechanism its native Accept All uses) so a single undo
+ * restores the whole unit.
+ */
 export function resolveRevisionsAsOneUndo(
   editor: LiveEditor,
   revisions: LiveRevision[],
   isAccept: boolean
 ): void {
+  const identities = revisions.map(revisionMemberIdentity);
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
     (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
@@ -8049,7 +8089,13 @@ export function resolveRevisionsAsOneUndo(
     // live revision first. Structural insertions share mutable ranges; walking
     // them forwards can relocate later table rows across earlier headings when
     // the review group is accepted. Preserve the SDK's reverse-order contract.
-    for (const revision of [...revisions].reverse()) {
+    for (const identity of [...identities].reverse()) {
+      const revision = liveRevisionMember(editor, identity);
+      if (!revision) continue;
+      // Undo may revive the same bridge-bound object. Its per-member closure
+      // still remembers the earlier decision until the current live member is
+      // explicitly re-armed.
+      (revision as any).robinReviveSelf?.();
       try {
         resolveRevisionIndividually(revision, isAccept);
       } catch {
