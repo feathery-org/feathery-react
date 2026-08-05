@@ -103,7 +103,7 @@ import {
 import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
-import { prepareAssistantRequest } from './messageHistory';
+import { createRoundSelectionRequestPreparer } from './messageHistory';
 import { coalesceAssistantMessages } from './messageRendering';
 
 const FAB_SIZE = 56;
@@ -509,6 +509,7 @@ const AssistantChat = ({
     const sessionId = threadId ?? uuidv4();
     let resolvedThreadId = threadId;
     let titleGenerated = !!initialTitle;
+    const prepareRoundRequest = createRoundSelectionRequestPreparer();
 
     // Title the thread from its first user message, whether typed or a voice transcript
     const triggerTitle = (userText?: string) => {
@@ -549,7 +550,7 @@ const AssistantChat = ({
         ...buildChatBody(),
         thread_id: resolvedThreadId || sessionId
       }),
-      prepareSendMessagesRequest: prepareAssistantRequest,
+      prepareSendMessagesRequest: prepareRoundRequest,
       fetch: async (url: any, init?: any) => {
         let res: Response;
         if (voiceActiveRef.current) {

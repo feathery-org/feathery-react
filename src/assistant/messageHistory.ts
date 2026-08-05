@@ -163,6 +163,42 @@ type PrepareRequestOptions = {
   messageId: string | undefined;
 };
 
+/**
+ * Pin the selection to the user message which started a tool round. The AI SDK
+ * rebuilds transport `body()` for every automatic tool continuation; without
+ * this boundary a later request can replace the user's intent with whatever
+ * temporary range the editor exposes while a read is running.
+ */
+export function createRoundSelectionRequestPreparer(): (
+  options: PrepareRequestOptions
+) => { body: Record<string, unknown> } {
+  let userMessageId: string | undefined;
+  let selectionSnapshot: unknown;
+  let hasSnapshot = false;
+
+  return (options) => {
+    const currentUser = [...options.messages]
+      .reverse()
+      .find((message) => message.role === 'user');
+    if (currentUser && currentUser.id !== userMessageId) {
+      userMessageId = currentUser.id;
+      const selection = options.body?.selection;
+      selectionSnapshot =
+        selection && typeof selection === 'object' && !Array.isArray(selection)
+          ? { ...(selection as Record<string, unknown>) }
+          : selection;
+      hasSnapshot = true;
+    }
+
+    return prepareAssistantRequest({
+      ...options,
+      body: hasSnapshot
+        ? { ...options.body, selection: selectionSnapshot }
+        : options.body
+    });
+  };
+}
+
 export function prepareAssistantRequest({
   id,
   messages,
