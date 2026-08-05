@@ -65,9 +65,11 @@ const syntheticError = (error: string, message: string) => ({
  * An error output ends the turn visibly and tells the model something it can act
  * on, which is strictly better than silence in every case.
  */
+export const UNHANDLED_TOOL_ERROR = 'unhandled_tool';
+
 export const unhandledToolOutput = (toolName: string) =>
   syntheticError(
-    'unhandled_tool',
+    UNHANDLED_TOOL_ERROR,
     `This client has no handler for the tool "${toolName}", so it cannot be executed here. ` +
       'Do not retry it; use a different tool, or tell the user what you could not do.'
   );

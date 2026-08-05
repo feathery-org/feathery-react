@@ -1593,6 +1593,7 @@ const AssistantChat = ({
                 const lastPart = message.parts[message.parts.length - 1];
                 const turnFinished =
                   !isLastMsg ||
+                  status === 'error' ||
                   (status === 'ready' && lastPart?.type === 'text');
                 // Voice: reveal parts top-to-bottom, paced by how much audio has played
                 const paceByAudio =
