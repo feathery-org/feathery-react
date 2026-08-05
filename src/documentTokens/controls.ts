@@ -145,9 +145,51 @@ export const isDetached = (control: any): boolean => {
   return placement.table.childWidgets.indexOf(placement.row) === -1;
 };
 
-const controlCollection = (editor: EditorLike): any[] => {
+export const controlCollection = (editor: EditorLike): any[] => {
   const collection = (editor as any)?.documentHelper?.contentControlCollection;
   return Array.isArray(collection) ? collection : [];
+};
+
+// ── Table rows ───────────────────────────────────────────────────────────────
+// The row-building calls rows.ts makes, kept here with every other Syncfusion
+// call so a version bump has one place to break. All private surface; the
+// behaviours relied on are measured in tests/rowMechanics.spec.ts.
+
+/** Put the selection in a paragraph, so a row edit lands where intended. */
+export const selectParagraph = (
+  editor: EditorLike,
+  paragraph: any
+): boolean => {
+  const select = (editor as any)?.selection?.selectParagraphInternal;
+  if (!paragraph || typeof select !== 'function') return false;
+  select.call((editor as any).selection, paragraph, true);
+  return true;
+};
+
+/**
+ * Insert one row below the selection, copying the selected row's shape.
+ * The copy does NOT clone content controls — a grown row arrives blank.
+ */
+export const insertRowBelow = (editor: EditorLike): void => {
+  (editor as any).editor?.insertRow?.(false, 1);
+};
+
+/**
+ * Delete the row the selection sits in. Its controls stay in
+ * `contentControlCollection`, so row counts must come from the widgets.
+ */
+export const deleteSelectedRow = (editor: EditorLike): void => {
+  (editor as any).editor?.deleteRow?.();
+};
+
+/**
+ * Create an untagged text content control at the selection.
+ *
+ * The STRING form creates; the object form no-ops — measured. The selected
+ * text is DISCARDED and Syncfusion's placeholder inserted in its place.
+ */
+export const insertUntaggedControl = (editor: EditorLike): void => {
+  (editor as any).editor?.insertContentControl?.('Text');
 };
 
 /**

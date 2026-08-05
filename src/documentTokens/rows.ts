@@ -18,19 +18,19 @@
  */
 
 import {
+  controlCollection,
   decodeTag,
+  deleteSelectedRow,
   EditorLike,
   encodeTag,
+  insertRowBelow,
+  insertUntaggedControl,
   isDetached,
   readTokens,
+  selectParagraph,
   writeValues
 } from './controls';
 import { instanceKey, TokenSpec, valueKey } from './plan';
-
-const controlsOf = (editor: EditorLike): any[] => {
-  const collection = (editor as any)?.documentHelper?.contentControlCollection;
-  return Array.isArray(collection) ? collection : [];
-};
 
 const specOf = (control: any): TokenSpec | null =>
   decodeTag(control?.contentControlProperties?.tag ?? '');
@@ -71,7 +71,7 @@ export type RepeatGroup = {
 export const repeatGroups = (editor: EditorLike): RepeatGroup[] => {
   const byTable = new Map<any, RepeatGroup>();
 
-  for (const control of controlsOf(editor)) {
+  for (const control of controlCollection(editor)) {
     const spec = specOf(control);
     if (!spec || spec.index === undefined || spec.index === null) continue;
     if (isDetached(control)) continue;
@@ -122,10 +122,7 @@ const selectCell = (
   const paragraph =
     table.childWidgets?.[rowIndex]?.childWidgets?.[cellIndex]
       ?.childWidgets?.[0];
-  const select = (editor as any)?.selection?.selectParagraphInternal;
-  if (!paragraph || typeof select !== 'function') return false;
-  select.call((editor as any).selection, paragraph, true);
-  return true;
+  return selectParagraph(editor, paragraph);
 };
 
 /**
@@ -192,7 +189,7 @@ export const growGroup = (
       onProblem(`cannot reach row ${anchorRow} to copy it; stopped at ${next}`);
       break;
     }
-    (editor as any).editor?.insertRow?.(false, 1);
+    insertRowBelow(editor);
     const newRow = anchorRow + 1;
 
     for (const { spec, cellIndex } of template) {
@@ -215,8 +212,8 @@ export const growGroup = (
       // Scoping to that row by identity is what keeps a foreign untagged
       // control elsewhere in the document from being retagged as ours.
       const targetRow = group.table.childWidgets?.[newRow];
-      (editor as any).editor?.insertContentControl?.('Text');
-      const built = controlsOf(editor).find(
+      insertUntaggedControl(editor);
+      const built = controlCollection(editor).find(
         (candidate) =>
           !candidate?.contentControlProperties?.tag &&
           rowOf(candidate) === targetRow
@@ -287,7 +284,7 @@ export const shrinkGroup = (
     if (!cells || rowIndex === undefined) continue;
     if (!selectCell(editor, group.table, rowIndex, cells[0].cellIndex))
       continue;
-    (editor as any).editor?.deleteRow?.();
+    deleteSelectedRow(editor);
     dropped.push(index);
   }
 
@@ -371,7 +368,7 @@ export const renumberGroup = (
   inOrder.forEach(([oldIndex], position) => {
     if (oldIndex === position) return;
     for (const { spec } of group.cells.get(oldIndex) ?? []) {
-      const control = controlsOf(editor).find((candidate) => {
+      const control = controlCollection(editor).find((candidate) => {
         const found = specOf(candidate);
         return found !== null && instanceKey(found) === instanceKey(spec);
       });
