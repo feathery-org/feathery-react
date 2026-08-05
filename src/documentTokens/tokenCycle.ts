@@ -276,10 +276,11 @@ export const attachTokenCycle = (
         for (const [id, value] of texts) seen.set(id, value);
         return String(evaluate(spec.display, seen));
       } catch {
-        // A display that cannot be evaluated must not blank the token.
-        return (
-          texts.get(key) ?? renderValue(numbers.get(key) ?? 0, spec?.format)
-        );
+        // A display that cannot be evaluated must not blank the token — but a
+        // text token with no value shows nothing, never the numeric default,
+        // or clearing one leaves a literal "0" behind.
+        if (isText(spec)) return texts.get(key) ?? '';
+        return renderValue(numbers.get(key) ?? 0, spec?.format);
       }
     }
 

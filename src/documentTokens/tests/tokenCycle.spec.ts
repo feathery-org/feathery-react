@@ -315,6 +315,40 @@ describe('attachTokenCycle — the new tag syntax', () => {
     expect(editor.valueOf('note')).toBe('NORTHSTAR');
   });
 
+  it('shows nothing, not 0, when a displayed text value is cleared', () => {
+    // `{{ description | upper }}` emptied. The display cannot evaluate over a
+    // name with no value, and the fallback used the numeric path — so clearing
+    // a text token left a literal "0" sitting in the document.
+    const editor = fakeEditor([
+      control(
+        {
+          id: 'description',
+          source: 'description',
+          format: { kind: 'text' },
+          display: 'UPPER(description)'
+        },
+        'COUCH'
+      )
+    ]);
+    const fields = store({ description: 'couch' });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('description', '');
+
+    expect(editor.valueOf('description')).toBe('');
+  });
+
+  it('shows nothing when a plain text value is cleared', () => {
+    const editor = fakeEditor([
+      control({ id: 'note', source: 'note', format: { kind: 'text' } }, 'hi')
+    ]);
+    const cycle = attachTokenCycle(editor, { fields: store({ note: 'hi' }) });
+
+    cycle.setTokenValue('note', '');
+
+    expect(editor.valueOf('note')).toBe('');
+  });
+
   it('resolves a formula reading a field with no token of its own', () => {
     // `{{ ROUND(cost * tax_pct / 100, 2) }}` where tax_pct appears nowhere in
     // the document — the old plan reported "unknown token tax_pct".
