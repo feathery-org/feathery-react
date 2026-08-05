@@ -7422,7 +7422,9 @@ function applyCopiedTableAppearance(
         const resolvedBefore = uniformAllBorder
           ? resolvedCellAppearanceAt(target, row, column)
           : before;
-        const desiredCell = uniformAllBorder ? withoutBorders(desired) : desired;
+        const desiredCell = uniformAllBorder
+          ? withoutBorders(desired)
+          : desired;
         const beforeCell = uniformAllBorder
           ? withoutBorders(resolvedBefore)
           : resolvedBefore;
@@ -7876,6 +7878,36 @@ function revisionGroupTag(
   });
 }
 
+function parsePersistedBorderWrites(value: unknown): BorderWrite[] | null {
+  if (!Array.isArray(value)) return null;
+  const borders: BorderWrite[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const border = item as Record<string, unknown>;
+    if (
+      typeof border.type !== 'string' ||
+      !BORDER_TYPES.has(border.type) ||
+      typeof border.style !== 'string' ||
+      !border.style
+    )
+      return null;
+    if (
+      border.width !== undefined &&
+      (typeof border.width !== 'number' || !Number.isFinite(border.width))
+    )
+      return null;
+    if (border.color !== undefined && typeof border.color !== 'string')
+      return null;
+    borders.push({
+      type: border.type,
+      style: border.style,
+      ...(typeof border.width === 'number' ? { width: border.width } : {}),
+      ...(typeof border.color === 'string' ? { color: border.color } : {})
+    });
+  }
+  return borders;
+}
+
 function parsePersistedAppearanceWrite(value: unknown): AppearanceWrite | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Record<string, unknown>;
@@ -7893,33 +7925,8 @@ function parsePersistedAppearanceWrite(value: unknown): AppearanceWrite | null {
       | 'Bottom';
   }
   if ('borders' in raw) {
-    if (!Array.isArray(raw.borders)) return null;
-    const borders: BorderWrite[] = [];
-    for (const value of raw.borders) {
-      if (!value || typeof value !== 'object' || Array.isArray(value))
-        return null;
-      const border = value as Record<string, unknown>;
-      if (
-        typeof border.type !== 'string' ||
-        !BORDER_TYPES.has(border.type) ||
-        typeof border.style !== 'string' ||
-        !border.style
-      )
-        return null;
-      if (
-        border.width !== undefined &&
-        (typeof border.width !== 'number' || !Number.isFinite(border.width))
-      )
-        return null;
-      if (border.color !== undefined && typeof border.color !== 'string')
-        return null;
-      borders.push({
-        type: border.type,
-        style: border.style,
-        ...(typeof border.width === 'number' ? { width: border.width } : {}),
-        ...(typeof border.color === 'string' ? { color: border.color } : {})
-      });
-    }
+    const borders = parsePersistedBorderWrites(raw.borders);
+    if (!borders) return null;
     write.borders = borders;
   }
   return write.shading !== undefined ||
@@ -7950,13 +7957,21 @@ function parsePersistedAppearanceRestores(
         ? undefined
         : parsePersistedAppearanceWrite(raw.write);
     if (raw.write !== undefined && !write) return undefined;
-    if (raw.rowIsHeader === undefined && !write) return undefined;
+    const tableBorders =
+      raw.tableBorders === undefined
+        ? undefined
+        : parsePersistedBorderWrites(raw.tableBorders);
+    if (raw.tableBorders !== undefined && !tableBorders?.length)
+      return undefined;
+    if (raw.rowIsHeader === undefined && !write && !tableBorders)
+      return undefined;
     restores.push({
       cellAnchor: raw.cellAnchor,
       ...(typeof raw.rowIsHeader === 'boolean'
         ? { rowIsHeader: raw.rowIsHeader }
         : {}),
-      ...(write ? { write } : {})
+      ...(write ? { write } : {}),
+      ...(tableBorders ? { tableBorders } : {})
     });
   }
   return restores;
