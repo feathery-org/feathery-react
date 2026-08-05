@@ -741,6 +741,8 @@ export function useDocxEditor({
     const el = containerRef.current?.parentElement;
     if (!el || !editor) return;
     let frame = 0;
+    let lastW = 0;
+    let lastH = 0;
     const observer = new ResizeObserver(() => {
       if (frame) return;
       frame = featheryWindow().requestAnimationFrame(() => {
@@ -748,9 +750,16 @@ export function useDocxEditor({
         // Resizing to 0 while hidden makes Syncfusion compute a degenerate
         // layout it does not recover from when the box returns.
         const { width, height } = el.getBoundingClientRect();
-        if (width > 0 && height > 0) {
-          resizeEditor(true);
-        }
+        if (width <= 0 || height <= 0) return;
+        // Streaming chat/panel renders tick the observer without changing the
+        // editor's box; Syncfusion's resize homes the cursor and scrolls to
+        // the document top, so a same-size refresh is pure damage. Only pay
+        // the relayout when the geometry truly changed.
+        if (Math.abs(width - lastW) < 1 && Math.abs(height - lastH) < 1)
+          return;
+        lastW = width;
+        lastH = height;
+        resizeEditor(true);
       });
     });
     observer.observe(el);
