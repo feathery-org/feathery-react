@@ -226,21 +226,63 @@ export const getFormContext = (formUuid: string) => {
       }),
     generateDocuments: ({
       documentIds,
+      signerEmail,
+      envelopeAction,
+      toolbarActions,
+      repeatable,
       download,
       merge,
-      mergedFileName
+      mergedFileName,
+      zipName,
+      saveDocumentFieldKey
     }: {
       documentIds: string[];
+      signerEmail?: string;
+      envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
+      // Only for envelopeAction 'open_in_editor': which buttons the editor
+      // toolbar offers.
+      toolbarActions?: ('sign' | 'download' | 'save')[];
+      repeatable?: boolean;
       download?: boolean;
       merge?: boolean;
       mergedFileName?: string;
-    }) =>
-      formState.client.generateDocuments({
+      zipName?: string;
+      saveDocumentFieldKey?: string;
+    }) => {
+      const usesRichOptions =
+        !!signerEmail ||
+        !!envelopeAction ||
+        !!toolbarActions?.length ||
+        !!repeatable;
+      // A signer email, the editor, and the sign/save envelope actions all need
+      // the same endpoint + editor flow the Generate Documents action uses, so
+      // route through the <Form />-registered flow when any are requested.
+      // Otherwise keep the simple, backward-compatible client path (template
+      // fill / merge / download).
+      if (formState.generateEnvelopeFlow && usesRichOptions) {
+        return formState.generateEnvelopeFlow(
+          {
+            type: 'open_fuser_envelopes',
+            documents: documentIds,
+            envelope_action: envelopeAction,
+            editor_toolbar_actions: toolbarActions,
+            repeatable,
+            merge_docs: merge,
+            merged_file_name: mergedFileName,
+            envelope_zip_name: zipName,
+            save_document_field_key: saveDocumentFieldKey,
+            run_async: true
+          },
+          signerEmail
+        );
+      }
+      return formState.client.generateDocuments({
         documentIds,
         download,
         merge,
         mergedFileName
-      }),
+      });
+    },
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>

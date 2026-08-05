@@ -10,14 +10,18 @@ import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
-import { getSignUrl } from '../../../utils/document';
+import {
+  containerToolbarOutcomes,
+  editorContainerId,
+  getSignUrl
+} from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
 
 // The container carries no document. Its document is owned by the Generate
-// Documents button that targets it: find the action whose view_draft_container
+// Documents button that targets it: find the action whose editor_mode
 // matches this container and use its first document. Scans loaded form schemas
 // (container ids are unique, so no need to know the form key).
 function resolveTargetAction(
@@ -36,7 +40,7 @@ function resolveTargetAction(
         for (const action of button?.properties?.actions ?? []) {
           if (
             action?.type === ACTION_GENERATE_ENVELOPES &&
-            action?.view_draft_container === containerId
+            editorContainerId(action ?? {}) === containerId
           ) {
             return action;
           }
@@ -251,20 +255,18 @@ export default function DocumentEditorContainer({
   const activeDocumentId = envelope?.document ?? documentId;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
-  // `view_draft_read_only` (default: editable).
+  // `editor_read_only` (default: editable).
   const actionReadOnly =
-    typeof targetAction?.view_draft_read_only === 'boolean'
-      ? targetAction.view_draft_read_only
+    typeof targetAction?.editor_read_only === 'boolean'
+      ? targetAction.editor_read_only
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
-  const terminalAction = targetAction
-    ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
-      ? 'sign'
-      : targetAction.envelope_action === 'download'
-      ? 'download'
-      : undefined
-    : undefined;
+  // The outcomes this container offers, read from `editor_toolbar_actions` —
+  // the same key the overlay editor uses. See containerToolbarOutcomes.
+  const { terminalAction, savesToField } = containerToolbarOutcomes(
+    targetAction ?? {}
+  );
 
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
@@ -283,8 +285,8 @@ export default function DocumentEditorContainer({
         );
       }
       if (
-        targetAction?.envelope_action === 'save' &&
-        targetAction.save_document_field_key &&
+        savesToField &&
+        targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
         const newValues = {
@@ -295,7 +297,7 @@ export default function DocumentEditorContainer({
       }
       return updated;
     },
-    [client, envelope, targetAction]
+    [client, envelope, targetAction, savesToField]
   );
 
   // Only the sign action is handled here — the download action downloads the
@@ -407,7 +409,7 @@ export default function DocumentEditorContainer({
       terminalActionDisabled={!envelope.file}
       // Save-to-field flow: the document's destination is a form field (set
       // on every save), not the user's machine — no Download button.
-      hideDownload={targetAction?.envelope_action === 'save'}
+      hideDownload={savesToField}
       onSave={saveEnvelope}
       onEditorReady={onEditorReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not
