@@ -15,10 +15,7 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
-import {
-  installRevisionGroupIsolation,
-  rebindRevisionGroups
-} from '../../../utils/documentEditorPrimitives';
+import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -342,19 +339,8 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
-      // Group rebinding deliberately does NOT happen here: this fires from
-      // SyncFusion's `created` callback, before the source document is opened,
-      // so there are no persisted revisions to bind yet. See onDocumentReady.
-      // Isolation is document-independent, so installing it once at create is
-      // both correct and cheapest.
-      try {
-        if (!reviewChanges) return;
-        installRevisionGroupIsolation(editor);
-      } catch {
-        // A grouping failure must not break the editor mount.
-      }
     },
-    [activeDocumentId, containerId, envelope?.id, formId, reviewChanges, stepId]
+    [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );
   // Runs after openAsync resolves — and again on every reload (openNonce), which
   // is the case that matters: the in-memory group wrappers die with the old

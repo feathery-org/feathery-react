@@ -8,14 +8,10 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
-import {
-  installRevisionGroupIsolation,
-  rebindRevisionGroups
-} from '../../../utils/documentEditorPrimitives';
+import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
-  installRevisionGroupIsolation: jest.fn(),
   rebindRevisionGroups: jest.fn()
 }));
 
@@ -283,10 +279,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       />
     );
 
-    // Isolation is document-independent, so it belongs at create time.
-    await waitFor(() => {
-      expect(installRevisionGroupIsolation).toHaveBeenCalled();
-    });
     await waitFor(() => {
       expect(seenRevisionCounts.length).toBeGreaterThan(0);
     });
@@ -385,7 +377,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       'editor:https://example.com/document-container-a.docx'
     );
     expect(assistantOffEditor).toHaveAttribute('data-review-changes', 'false');
-    expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
     expect(rebindRevisionGroups).not.toHaveBeenCalled();
     assistantOff.unmount();
 
@@ -406,7 +397,6 @@ describe('DocumentEditorContainer revision group binding', () => {
       'editor:https://example.com/document-container-a.docx'
     );
     expect(readOnlyEditor).toHaveAttribute('data-review-changes', 'false');
-    expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
     expect(rebindRevisionGroups).not.toHaveBeenCalled();
     readOnly.unmount();
   });
