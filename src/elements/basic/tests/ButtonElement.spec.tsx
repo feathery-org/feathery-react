@@ -17,7 +17,10 @@ beforeAll(() => {
   });
 });
 
-const renderButton = async (styles: Record<string, any>) => {
+const renderButton = async (
+  styles: Record<string, any>,
+  mobileStyles: Record<string, any> = {}
+) => {
   const ButtonElement = (await import('../ButtonElement')).default;
   const element = {
     id: 'button-1',
@@ -30,7 +33,7 @@ const renderButton = async (styles: Record<string, any>) => {
       border_left_color: '2954AFFF',
       ...styles
     },
-    mobile_styles: {}
+    mobile_styles: mobileStyles
   };
   const responsiveStyles = new ResponsiveStyles(element, [], true);
   render(
@@ -38,6 +41,8 @@ const renderButton = async (styles: Record<string, any>) => {
   );
   return responsiveStyles;
 };
+
+const MOBILE_KEY = '@media (max-width: 478px)';
 
 describe('ButtonElement', () => {
   it('maps the center flex direction to an image-only row layout', async () => {
@@ -49,6 +54,18 @@ describe('ButtonElement', () => {
   it('passes standard flex directions through and keeps the label visible', async () => {
     const responsiveStyles = await renderButton({ flex_direction: 'column' });
     expect(responsiveStyles.getTarget('button').flexDirection).toBe('column');
-    expect(responsiveStyles.getTarget('buttonLabel').display).toBeUndefined();
+    expect(responsiveStyles.getTarget('buttonLabel').display).toBe(
+      'inline-block'
+    );
+  });
+
+  it('restores the label when a mobile override reverts center to row', async () => {
+    const responsiveStyles = await renderButton(
+      { flex_direction: 'center' },
+      { flex_direction: 'row' }
+    );
+    const label = responsiveStyles.getTarget('buttonLabel');
+    expect(label.display).toBe('none');
+    expect(label[MOBILE_KEY].display).toBe('inline-block');
   });
 });

@@ -26,9 +26,11 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply('button', 'flex_direction', (a: any) => ({
     flexDirection: a === 'center' ? 'row' : a
   }));
-  responsiveStyles.apply('buttonLabel', 'flex_direction', (a: any) =>
-    a === 'center' ? { display: 'none' } : {}
-  );
+  // Always emit display so a mobile override can undo the desktop value
+  // (inline-block matches the label's base style in useTextEdit)
+  responsiveStyles.apply('buttonLabel', 'flex_direction', (a: any) => ({
+    display: a === 'center' ? 'none' : 'inline-block'
+  }));
   responsiveStyles.applyContentAlign('button');
   responsiveStyles.apply('button', 'entry_transition', (a: any) => {
     if (a === 'fade_in') {
