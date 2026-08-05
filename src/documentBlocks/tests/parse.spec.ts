@@ -46,7 +46,9 @@ describe('parseSfdt', () => {
     const parsed = parseSfdt(JSON.stringify(doc));
     const last = parsed.sections[0][parsed.sections[0].length - 1];
     expect(last.id).toBeNull();
-    expect(last.runs).toEqual([{ kind: 'text', text: 'typed below everything' }]);
+    expect(last.runs).toEqual([
+      { kind: 'text', text: 'typed below everything' }
+    ]);
   });
 
   it('treats adjacent token markers as an empty token value', () => {
@@ -54,5 +56,23 @@ describe('parseSfdt', () => {
     const intro = parsed.sections[0][1];
     const token = intro.runs!.find((r) => r.kind === 'token') as any;
     expect(token.text).toBe('');
+  });
+
+  it('merges consecutive text runs across table cell paragraph boundaries', () => {
+    const doc = JSON.parse(generateSfdt(SAMPLE_DOCUMENT, VALUES));
+    const table = doc.sections[1].blocks.find((b: any) => b.rows);
+    const firstParaText = table.rows[0].cells[0].blocks[0].inlines
+      .map((i: any) => i.text || '')
+      .join('');
+    // Add a second paragraph to the first cell of the first row
+    table.rows[0].cells[0].blocks.push({
+      paragraphFormat: { styleName: 'Normal' },
+      characterFormat: {},
+      inlines: [{ characterFormat: {}, text: 'second' }]
+    });
+    const parsed = parseSfdt(JSON.stringify(doc));
+    const cell = parsed.sections[1].find((b) => b.kind === 'table')!.cells![0][0];
+    // Should be a single merged text run, not three separate runs
+    expect(cell).toEqual([{ kind: 'text', text: firstParaText + '\nsecond' }]);
   });
 });

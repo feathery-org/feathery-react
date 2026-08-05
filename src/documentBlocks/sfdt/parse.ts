@@ -30,6 +30,18 @@ export type ParsedBlock = {
 
 export type ParsedDoc = { sections: ParsedBlock[][] };
 
+/** Merge or push a run, collapsing consecutive text runs into a single text run. */
+const mergeRun = (runs: ParsedInlineRun[], run: ParsedInlineRun) => {
+  if (run.kind === 'text') {
+    const last = runs[runs.length - 1];
+    if (last && last.kind === 'text') {
+      runs[runs.length - 1] = { kind: 'text', text: last.text + run.text };
+      return;
+    }
+  }
+  runs.push(run);
+};
+
 /** Fold one paragraph's inlines into runs; reports any block anchor found. */
 const runsOf = (
   inlines: any[]
@@ -60,7 +72,11 @@ const runsOf = (
         if (isBookmarkStart(inline)) {
           openToken = { key: tokenKey, text: '' };
         } else if (isBookmarkEnd(inline) && openToken?.key === tokenKey) {
-          runs.push({ kind: 'token', key: openToken.key, text: openToken.text });
+          runs.push({
+            kind: 'token',
+            key: openToken.key,
+            text: openToken.text
+          });
           openToken = null;
         }
         continue;
@@ -99,8 +115,8 @@ const parseTable = (block: any): ParsedBlock => {
       (cell.blocks ?? []).forEach((para: any, i: number) => {
         const { runs, anchor: found } = runsOf(para.inlines);
         if (found && !anchor) anchor = found;
-        if (i > 0) cellRuns.push({ kind: 'text', text: '\n' });
-        cellRuns.push(...runs);
+        if (i > 0) mergeRun(cellRuns, { kind: 'text', text: '\n' });
+        runs.forEach((run) => mergeRun(cellRuns, run));
       });
       return cellRuns;
     })
