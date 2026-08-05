@@ -119,7 +119,6 @@ const formFieldAccess: FieldAccess = {
     if (Object.keys(next).length > 0) setFieldValues(next);
   }
 };
->>>>>>> origin/feat/docx-linked-tokens
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
