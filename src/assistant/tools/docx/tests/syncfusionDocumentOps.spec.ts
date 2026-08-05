@@ -11,6 +11,7 @@ import {
 import {
   flattenSfdt,
   buildInventoryFromBlocks,
+  buildIndexBlocks,
   buildIndexBlocksFromBlocks,
   deriveSectionPattern,
   anchorFromOffset,
@@ -1113,6 +1114,69 @@ describe('applyDocumentEdits', () => {
 });
 
 describe('live occurrence search and scoped replacement', () => {
+  it('real SDK: background reads preserve the user selection and viewport', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            para('Proposal', 'Heading 1'),
+            para('Our firm supports clients throughout the policy lifecycle.'),
+            para('Coverage', 'Heading 2'),
+            para('Our firm negotiates coverage and advocates during claims.')
+          ]
+        }
+      ]
+    });
+
+    try {
+      const selected = 'Our firm supports clients throughout the policy lifecycle.';
+      ed.selection.select('0;1;0', `0;1;${selected.length}`);
+      const before = readSelection(ed as unknown as LiveEditor);
+      const documentHelper = (ed as any).documentHelper;
+      const viewer = documentHelper.viewerContainer as HTMLElement;
+      viewer.scrollTop = 420;
+      const originalScrollToPosition = documentHelper.scrollToPosition.bind(
+        documentHelper
+      );
+      let activeRead = '';
+      const scrollSuppression: Array<{ read: string; suppressed: boolean }> =
+        [];
+      jest
+        .spyOn(documentHelper, 'scrollToPosition')
+        .mockImplementation((...args: any[]) => {
+          scrollSuppression.push({
+            read: activeRead,
+            suppressed: documentHelper.skipScrollToPosition
+          });
+          return originalScrollToPosition(...args);
+        });
+
+      activeRead = 'inventory';
+      getDocumentInventory(ed as unknown as LiveEditor, {
+        scope: 'structure'
+      });
+      activeRead = 'pattern';
+      deriveSectionPattern(ed as unknown as LiveEditor);
+      activeRead = 'index';
+      buildIndexBlocks(ed as unknown as LiveEditor);
+      activeRead = 'occurrences';
+      findDocumentOccurrences(ed as unknown as LiveEditor, {
+        text: 'firm',
+        matchCase: false,
+        maxResults: 20
+      });
+
+      expect(readSelection(ed as unknown as LiveEditor)).toEqual(before);
+      expect(viewer.scrollTop).toBe(420);
+      expect(scrollSuppression).toEqual(
+        scrollSuppression.map(({ read }) => ({ read, suppressed: true }))
+      );
+      expect(documentHelper.skipScrollToPosition).toBe(false);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: includes public header/footer stories rather than silently omitting them', () => {
     const ed = makeRealDocumentEditor({
       sections: [
