@@ -67,6 +67,8 @@ export const getFormContext = (formUuid: string) => {
       });
     },
     setProgress: (val: any) => formState.setUserProgress(val),
+    openDataMapping: ({ hubs }: { hubs: any[] }) =>
+      formState.setDataMappingState?.({ show: true, hubs }),
     updateUserId,
     updateTheme,
     goToStep: (stepKey: any) => {
@@ -215,14 +217,16 @@ export const getFormContext = (formUuid: string) => {
       operation,
       entryId,
       data,
-      where
+      where,
+      verificationStatus
     }: HubActionOptions) =>
       formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
         data,
-        where
+        where,
+        verificationStatus
       }),
     generateDocuments: ({
       documentIds,

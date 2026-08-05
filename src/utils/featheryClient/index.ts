@@ -31,7 +31,10 @@ import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
+  apiFetch,
   dataHubAction as apiDataHubAction,
+  uploadUnverifiedHubRows as apiUploadUnverifiedHubRows,
+  getUnverifiedHubRows as apiGetUnverifiedHubRows,
   extractAIDocument,
   ExtractionActionOptions,
   forwardInboxEmail,
@@ -1180,8 +1183,58 @@ export default class FeatheryClient extends IntegrationClient {
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 
+  // Delegates to client-utils so the browser and the server-side lambdas
+  // share one request shape.
   async dataHubAction(options: HubActionOptions) {
     const { sdkKey } = initInfo();
     return apiDataHubAction(sdkKey, options, this.formKey);
+  }
+
+  // Import-batch operations (data mapping modal). When a transition field is
+  // configured on the button action, the current user's key is the batch
+  // value - stamped into that field server-side - so a user's pending import
+  // survives reloads without a dedicated backend column.
+  async uploadUnverifiedHubRows(options: {
+    hubId: string;
+    rows: Record<string, any>[];
+    transitionFieldId?: string;
+  }) {
+    const { sdkKey, userId } = initInfo();
+    return apiUploadUnverifiedHubRows(
+      sdkKey,
+      { ...options, transitionValue: userId },
+      this.formKey
+    );
+  }
+
+  async getUnverifiedHubRows(options: {
+    hubId: string;
+    transitionFieldId?: string;
+  }) {
+    const { sdkKey, userId } = initInfo();
+    return apiGetUnverifiedHubRows(
+      sdkKey,
+      { ...options, transitionValue: userId },
+      this.formKey
+    );
+  }
+
+  async getHubSchemas(hubIds: string[]) {
+    const { sdkKey, userId } = initInfo();
+    const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
+    if (this.formKey) params.set('form_key', this.formKey);
+    if (userId) params.set('fuser_key', userId);
+    const url = `${API_URL}hub/schema/?${params.toString()}`;
+    const res = await apiFetch(
+      sdkKey,
+      url,
+      { headers: { 'Content-Type': 'application/json' }, method: 'GET' },
+      false
+    );
+    if (res) {
+      if (res.ok) return await res.json();
+      throw Error(parseAPIError(await res.json()));
+    }
+    return { hubs: [] };
   }
 }
