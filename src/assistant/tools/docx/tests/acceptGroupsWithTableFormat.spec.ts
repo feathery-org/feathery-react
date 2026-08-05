@@ -205,24 +205,63 @@ describe('one change set that edits content AND restripes a table', () => {
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       expect(revisions(ed).length).toBeGreaterThan(1);
 
-      ed.selection.select('0;3;0', '0;3;3');
-      const selectionBefore = readSelection(ed as unknown as LiveEditor);
+      const layout = (ed as any).documentHelper.layout;
+      const layoutSpy = jest.spyOn(layout, 'layoutWholeDocument');
+      resolveLiveRevisionGroupsAsOneUndo(
+        ed as unknown as LiveEditor,
+        listRevisionGroups(ed as unknown as LiveEditor),
+        true
+      );
+
+      expect(revisions(ed)).toHaveLength(0);
+      expect(layoutSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('keeps post-resolution relayout visually silent', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_row', anchor: '0;1;2;0;0' },
+          {
+            op: 'set_cell_text',
+            anchor: '0;1;1;0;0',
+            text: 'A1 rewritten'
+          }
+        ],
+        'silent-relayout-after-accept'
+      );
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(revisions(ed).length).toBeGreaterThan(1);
+
       const documentHelper = (ed as any).documentHelper;
       const viewer = documentHelper.viewerContainer as HTMLElement;
-      viewer.scrollTop = 275;
-      viewer.scrollLeft = 19;
+      let selectionBefore: ReturnType<typeof readSelection> | undefined;
+      const history = (ed as any).editorHistoryModule;
+      const originalUpdateHistory = history.updateComplexHistory.bind(history);
+      jest.spyOn(history, 'updateComplexHistory').mockImplementation(() => {
+        originalUpdateHistory();
+        // Revision resolution is the explicit user action. Put the user's
+        // still-active range back at the post-resolution boundary, then prove
+        // the background relayout itself cannot disturb it or the viewport.
+        ed.selection.select('0;3;0', '0;3;3');
+        selectionBefore = readSelection(ed as unknown as LiveEditor);
+        viewer.scrollTop = 275;
+        viewer.scrollLeft = 19;
+      });
       const layout = (ed as any).documentHelper.layout;
-      const originalLayout = layout.layoutWholeDocument.bind(layout);
       const layoutSpy = jest
         .spyOn(layout, 'layoutWholeDocument')
         .mockImplementation(() => {
-          const value = originalLayout();
           // Pin the live regression even when jsdom's zero-sized page geometry
           // does not naturally reproduce the browser's top jump.
           viewer.scrollTop = 0;
           viewer.scrollLeft = 0;
           ed.selection.select('0;0;0', '0;0;0');
-          return value;
         });
       resolveLiveRevisionGroupsAsOneUndo(
         ed as unknown as LiveEditor,
@@ -232,6 +271,7 @@ describe('one change set that edits content AND restripes a table', () => {
 
       expect(revisions(ed)).toHaveLength(0);
       expect(layoutSpy).toHaveBeenCalledTimes(1);
+      expect(selectionBefore).toBeDefined();
       expect(readSelection(ed as unknown as LiveEditor)).toEqual(
         selectionBefore
       );

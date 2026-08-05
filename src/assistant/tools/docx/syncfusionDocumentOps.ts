@@ -3118,7 +3118,8 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
 // and post-resolution layout are visually silent.
 function withPreservedDocumentView<T>(
   editor: LiveEditor,
-  operation: () => T
+  operation: () => T,
+  suppressOperationScroll = true
 ): T {
   const selection = editor.selection;
   const startOffset = selection?.startOffset;
@@ -3128,7 +3129,8 @@ function withPreservedDocumentView<T>(
   const scrollTop = viewer?.scrollTop;
   const scrollLeft = viewer?.scrollLeft;
   const previousSkipScroll = documentHelper?.skipScrollToPosition;
-  if (documentHelper) documentHelper.skipScrollToPosition = true;
+  if (documentHelper && suppressOperationScroll)
+    documentHelper.skipScrollToPosition = true;
   try {
     return operation();
   } finally {
@@ -8377,13 +8379,19 @@ function captureNativeResolvers(rev: LiveRevision) {
 // pre-resolution geometry even though its document model is already correct.
 // Rebuild that derived layout once, after the batch/history boundary closes.
 function invalidateDocumentLayout(editor: LiveEditor): void {
-  withPreservedDocumentView(editor, () => {
-    try {
-      (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
-    } catch {
-      // A renderer teardown must not turn a completed resolution into a failure.
-    }
-  });
+  withPreservedDocumentView(
+    editor,
+    () => {
+      try {
+        (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
+      } catch {
+        // A renderer teardown must not turn a completed resolution into a failure.
+      }
+    },
+    // The full layout pass needs Syncfusion's own scroll bookkeeping enabled;
+    // the outer boundary restores the captured viewport after it completes.
+    false
+  );
 }
 
 // Bind a set of revisions authored by ONE logical edit group so per-card
