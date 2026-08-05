@@ -85,6 +85,23 @@ const PARAM_TYPE_LANGUAGE =
   /^(string|string\[\]\[\]|sectionSpec|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
 
 describe('capability entries expose only the live handler contract', () => {
+  it('pins structured table and section parameter declarations exactly', () => {
+    const paramsFor = (op: string) =>
+      DOCUMENT_EDITOR_CAPABILITIES.find((entry) => entry.op === op)?.params;
+
+    expect(paramsFor('insert_table')).toEqual({
+      rows: 'int>0?',
+      columns: 'int>0?',
+      initialCells: 'string[][]?',
+      position: 'enum[before,after]?'
+    });
+    expect(paramsFor('insert_section_break')).toEqual({
+      sectionBreakType: 'enum[NewPage,Continuous,EvenPage,OddPage]?'
+    });
+    for (const undeclaredType of ['string[]?', 'string[][][]?', 'object?'])
+      expect(undeclaredType).not.toMatch(PARAM_TYPE_LANGUAGE);
+  });
+
   it.each(
     DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
   )('%s retains only op, params, and requiresAnchor', (_op, entry) => {
