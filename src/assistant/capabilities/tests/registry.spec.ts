@@ -82,7 +82,7 @@ describe('capabilities registry <-> dispatch parity', () => {
 });
 
 const PARAM_TYPE_LANGUAGE =
-  /^(string|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
+  /^(string|string\[\]\[\]|sectionSpec|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
 
 describe('capability entries expose only the live handler contract', () => {
   it.each(
