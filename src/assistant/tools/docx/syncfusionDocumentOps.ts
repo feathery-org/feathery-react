@@ -2749,6 +2749,45 @@ function sectionBoundaryPattern(
   };
 }
 
+function subsectionBoundaryPattern(
+  units: SectionUnit[]
+): SectionPatternValue<SectionBoundaryElement[]> {
+  const separators = units.flatMap((unit) => {
+    let seenSubsection = false;
+    const observed: SectionBoundaryElement[][] = [];
+    unit.blocks.forEach((block, index) => {
+      if (
+        index === 0 ||
+        !block.isHeading ||
+        block.level <= unit.blocks[0].level ||
+        !block.text.replace(/\f/g, '').trim()
+      )
+        return;
+      if (seenSubsection) {
+        const separator: SectionBoundaryElement[] = [];
+        for (let prior = index - 1; prior >= 0; prior--) {
+          const element = boundaryElement(unit.blocks[prior]);
+          if (!element) break;
+          separator.unshift(element);
+        }
+        observed.push(separator);
+      }
+      seenSubsection = true;
+    });
+    return observed;
+  });
+  const selected = modal(separators);
+  return selected
+    ? {
+        value: selected.value,
+        confidence: patternConfidence(selected.count, separators.length)
+      }
+    : {
+        value: [],
+        confidence: patternConfidence(0, 0)
+      };
+}
+
 function tablePatterns(sfdt: any, units: SectionUnit[]): SectionPatternTable[] {
   const observations = units.map((unit) =>
     tableAnchorsForUnit(unit).map((anchor) => tableObservation(sfdt, anchor))
@@ -4484,6 +4523,12 @@ interface ReservedOpFields {
   __sectionSegmentIndex?: number;
   /** Exact final body anchor planned from the complete composed topology. */
   __sectionFinalAnchor?: string;
+  /**
+   * Exact live boundary before one composer-owned structural write. Unlike a
+   * content match, this remains deterministic when the section itself repeats
+   * the boundary heading or the boundary is an ordinary blank paragraph.
+   */
+  __sectionBoundaryAnchor?: string;
   /** Composer-owned perimeter handling suppresses the generic insert heuristic. */
   __suppressSectionBoundary?: boolean;
   /** A malformed composer request is routed through the ordinary group refusal. */
@@ -8831,6 +8876,34 @@ function resolveChangeSetBlock(
   );
 }
 
+function resolveSectionBoundary(
+  blocks: FlatBlock[],
+  anchor: string,
+  baseline: FlatBlock | LiveStoryTarget | undefined
+): FlatBlock {
+  const target = blocks.find((block) => block.anchor === anchor);
+  if (!target)
+    throw new OpError(
+      'section_boundary_topology_mismatch',
+      `The section insertion boundary planned at "${anchor}" no longer exists.`,
+      [`planned boundary: ${anchor}`]
+    );
+  if (
+    baseline &&
+    !isLiveStoryTarget(baseline) &&
+    (target.kind !== baseline.kind || target.text !== baseline.text)
+  )
+    throw new OpError(
+      'section_boundary_topology_mismatch',
+      `The section insertion boundary planned at "${anchor}" no longer names the captured block.`,
+      [
+        `captured kind/text: ${baseline.kind} ${JSON.stringify(baseline.text)}`,
+        `live kind/text: ${target.kind} ${JSON.stringify(target.text)}`
+      ]
+    );
+  return target;
+}
+
 function restoreCapturedFormat(
   editor: LiveEditor,
   target: FlatBlock,
@@ -10372,16 +10445,23 @@ function composerRoleCandidates(
   level?: number
 ): FlatBlock[] {
   if (role === 'section_heading')
-    return units.flatMap((unit) => (unit.blocks[0] ? [unit.blocks[0]] : []));
+    return units
+      .flatMap((unit) => (unit.blocks[0] ? [unit.blocks[0]] : []))
+      .filter((block) => block.text.trim());
   if (role === 'subsection_heading' && level !== undefined) {
     const exact = units.flatMap((unit) =>
       unit.blocks
         .slice(1)
-        .filter((block) => block.isHeading && block.level === level)
+        .filter(
+          (block) =>
+            block.isHeading && block.level === level && !!block.text.trim()
+        )
     );
     if (exact.length) return exact;
   }
-  return units.flatMap((unit) => roleBlocksForUnit(unit).get(role) ?? []);
+  return units
+    .flatMap((unit) => roleBlocksForUnit(unit).get(role) ?? [])
+    .filter((block) => block.text.trim());
 }
 
 /** Pick a real donor carrying the modal format advertised for this role. */
@@ -10477,6 +10557,133 @@ function composerSeparatorText(
   return position === 'before' ? `${payload}\n` : `\n${payload}`;
 }
 
+function composerUnitBlockCount(unit: ComposerUnit): number {
+  if (unit.kind === 'text') return unit.items.length;
+  if (unit.kind === 'separator') return unit.elements.length;
+  return 1;
+}
+
+interface ComposerInsertionBoundary {
+  target: FlatBlock;
+  position: 'before' | 'after';
+}
+
+function composerBodyBlocksInSection(
+  blocks: FlatBlock[],
+  section: number
+): FlatBlock[] {
+  return blocks.filter((block) => {
+    const parts = block.anchor.split(';');
+    return parts.length === 2 && Number(parts[0]) === section;
+  });
+}
+
+function composerBoundaryBesideBlock(
+  bodyBlocks: FlatBlock[],
+  block: number,
+  position: 'before' | 'after'
+): ComposerInsertionBoundary | undefined {
+  const indexed = bodyBlocks
+    .map((target) => ({
+      target,
+      block: Number(target.anchor.split(';')[1])
+    }))
+    .filter((candidate) => Number.isInteger(candidate.block));
+  const following = indexed
+    .filter((candidate) => candidate.block > block)
+    .sort((left, right) => left.block - right.block)[0]?.target;
+  const preceding = indexed
+    .filter((candidate) => candidate.block < block)
+    .sort((left, right) => right.block - left.block)[0]?.target;
+  if (position === 'after') {
+    if (following)
+      return {
+        target: following,
+        position: 'before'
+      };
+    if (preceding)
+      return {
+        target: preceding,
+        position: 'after'
+      };
+  } else {
+    if (preceding)
+      return {
+        target: preceding,
+        position: 'after'
+      };
+    if (following)
+      return {
+        target: following,
+        position: 'before'
+      };
+  }
+  return undefined;
+}
+
+function resolveComposerInsertionBoundary(
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  anchor: string,
+  requestedPosition: 'before' | 'after'
+): ComposerInsertionBoundary | undefined {
+  const exact = byAnchor.get(anchor);
+  if (exact && exact.kind !== 'table_cell')
+    return {
+      target: exact,
+      position: requestedPosition
+    };
+
+  const parts = anchor.split(';');
+  const section = Number(parts[0]);
+  const block = Number(parts[1]);
+  if (!Number.isInteger(section) || !Number.isInteger(block)) return undefined;
+  const bodyBlocks = composerBodyBlocksInSection(blocks, section);
+  if (!bodyBlocks.length) return undefined;
+
+  // A table has no public body-block anchor, while every cell names its
+  // containing top-level block. Treat either a cell or that otherwise-missing
+  // top-level address as the same structural boundary and manufacture a body
+  // insertion point immediately beside it.
+  const containsTable = blocks.some((candidate) => {
+    const candidateParts = candidate.anchor.split(';');
+    return (
+      candidate.kind === 'table_cell' &&
+      Number(candidateParts[0]) === section &&
+      Number(candidateParts[1]) === block
+    );
+  });
+  if (exact?.kind === 'table_cell' || containsTable)
+    return composerBoundaryBesideBlock(bodyBlocks, block, requestedPosition);
+
+  const indexed = bodyBlocks
+    .map((target) => ({
+      target,
+      block: Number(target.anchor.split(';')[1])
+    }))
+    .filter((candidate) => Number.isInteger(candidate.block));
+  if (requestedPosition === 'before') {
+    const following = indexed
+      .filter((candidate) => candidate.block >= block)
+      .sort((left, right) => left.block - right.block)[0]?.target;
+    if (following)
+      return {
+        target: following,
+        position: 'before'
+      };
+  } else {
+    const preceding = indexed
+      .filter((candidate) => candidate.block <= block)
+      .sort((left, right) => right.block - left.block)[0]?.target;
+    if (preceding)
+      return {
+        target: preceding,
+        position: 'after'
+      };
+  }
+  return composerBoundaryBesideBlock(bodyBlocks, block, requestedPosition);
+}
+
 function compileSectionComposer(
   op: EditOp,
   originalIndex: number,
@@ -10484,21 +10691,6 @@ function compileSectionComposer(
   byAnchor: Map<string, FlatBlock>
 ): { children: CompiledSectionEdit[]; contentBlocks: number; tables: number } {
   const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
-  const target = anchor ? byAnchor.get(anchor) : undefined;
-  if (!target)
-    sectionSpecError(
-      'section_anchor_not_found',
-      'anchor',
-      `could not resolve ${JSON.stringify(anchor || op.anchor)}.`
-    );
-  if (target.kind === 'table_cell')
-    sectionSpecError(
-      'section_anchor_requires_body_block',
-      'anchor',
-      'must name a body paragraph or heading, not a table cell.'
-    );
-
-  const spec = validatedSectionSpec(op.sectionSpec);
   const positionValue = String(op.position ?? 'before').toLowerCase();
   if (positionValue !== 'before' && positionValue !== 'after')
     sectionSpecError(
@@ -10506,7 +10698,28 @@ function compileSectionComposer(
       'position',
       `must be "before" or "after", not ${JSON.stringify(op.position)}.`
     );
-  const position = positionValue as 'before' | 'after';
+  const requestedPosition = positionValue as 'before' | 'after';
+  const boundary = anchor
+    ? resolveComposerInsertionBoundary(
+        blocks,
+        byAnchor,
+        anchor,
+        requestedPosition
+      )
+    : undefined;
+  if (!boundary)
+    sectionSpecError(
+      'section_anchor_not_found',
+      'anchor',
+      `could not resolve a structural body boundary near ${JSON.stringify(
+        anchor || op.anchor
+      )}.`,
+      [
+        'Choose one existing section heading as the preceding boundary or one existing heading as the following boundary.'
+      ]
+    );
+  const { target, position } = boundary;
+  const spec = validatedSectionSpec(op.sectionSpec);
   const group =
     typeof op.group === 'string'
       ? op.group
@@ -10532,6 +10745,16 @@ function compileSectionComposer(
     position === 'after'
       ? missingSectionSuffix(desiredBoundary, afterExisting)
       : desiredBoundary;
+  const observedSubsectionBoundary = evidence
+    ? subsectionBoundaryPattern(evidence.units)
+    : undefined;
+  const desiredSubsectionBoundary =
+    evidence &&
+    evidence.units.length >= 2 &&
+    observedSubsectionBoundary &&
+    observedSubsectionBoundary.confidence.level !== 'low'
+      ? observedSubsectionBoundary.value
+      : [];
 
   const contentUnits: ComposerUnit[] = [];
   let textItems: ComposerTextItem[] = [];
@@ -10554,6 +10777,14 @@ function compileSectionComposer(
   spec.blocks.forEach((block, blockIndex) => {
     const label = `block ${blockIndex + 1} (${block.role})`;
     if (block.role === 'heading') {
+      if (seenSubsection && desiredSubsectionBoundary.length) {
+        flushText();
+        contentUnits.push({
+          kind: 'separator',
+          elements: desiredSubsectionBoundary,
+          label: 'inherited sibling-family subsection boundary'
+        });
+      }
       seenSubsection = true;
       textItems.push({
         text: block.text,
@@ -10656,7 +10887,14 @@ function compileSectionComposer(
     position === 'before' ? finalUnits : [...finalUnits].reverse();
   const structural: CompiledSectionEdit[] = [];
   const formatting: CompiledSectionEdit[] = [];
+  let insertedBeforeBoundary = 0;
   structuralOrder.forEach((unit, unitIndex) => {
+    const sectionBoundaryAnchor =
+      position === 'before' &&
+      anchorParts.length === 2 &&
+      Number.isInteger(targetBlockIndex)
+        ? `${anchorParts[0]};${targetBlockIndex + insertedBeforeBoundary}`
+        : target.anchor;
     if (unit.kind === 'table') {
       const cells = [
         [...unit.table.table.columnHeaders],
@@ -10668,14 +10906,16 @@ function compileSectionComposer(
           op: 'insert_table',
           group,
           anchor: target.anchor,
-          ...(op.expect !== undefined ? { expect: op.expect } : {}),
           position,
+          __sectionBoundaryAnchor: sectionBoundaryAnchor,
           rows: cells.length,
           columns: unit.table.table.columnHeaders.length,
           initialCells: cells,
           ...(unit.source ? { inheritFormatFrom: unit.source.anchor } : {})
         }
       });
+      if (position === 'before')
+        insertedBeforeBoundary += composerUnitBlockCount(unit);
       return;
     }
     const creatorId = `section-${originalIndex + 1}-unit-${unitIndex + 1}`;
@@ -10686,8 +10926,8 @@ function compileSectionComposer(
         op: 'insert_text',
         group,
         anchor: target.anchor,
-        ...(op.expect !== undefined ? { expect: op.expect } : {}),
         position,
+        __sectionBoundaryAnchor: sectionBoundaryAnchor,
         text: isSeparator
           ? composerSeparatorText(unit.elements, position)
           : unit.items.map((item) => item.text).join('\n'),
@@ -10695,6 +10935,8 @@ function compileSectionComposer(
         __suppressSectionBoundary: true
       }
     });
+    if (position === 'before')
+      insertedBeforeBoundary += composerUnitBlockCount(unit);
     if (isSeparator) return;
     unit.items.forEach((item, segmentIndex) => {
       if (!item.source) return;
@@ -11540,12 +11782,22 @@ function applyDocumentEditsMeasured(
               }
               storyWrite = applyLiveStoryTextOp(editor, op, plan.target);
             } else {
-              const target = resolveChangeSetBlock(
-                blocks,
-                op.anchor,
-                plan.target,
-                anchorsMayHaveShifted
-              );
+              const sectionBoundaryAnchor =
+                typeof op.__sectionBoundaryAnchor === 'string'
+                  ? op.__sectionBoundaryAnchor.trim()
+                  : '';
+              const target = sectionBoundaryAnchor
+                ? resolveSectionBoundary(
+                    blocks,
+                    sectionBoundaryAnchor,
+                    plan.target
+                  )
+                : resolveChangeSetBlock(
+                    blocks,
+                    op.anchor,
+                    plan.target,
+                    anchorsMayHaveShifted
+                  );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
               if (target.anchor !== op.anchor)

@@ -150,7 +150,7 @@ const fixture = () => ({
   ]
 });
 
-function makeEditor(): DocumentEditor {
+function makeEditor(sfdt = fixture()): DocumentEditor {
   const host = document.createElement('div');
   host.style.width = '900px';
   host.style.height = '700px';
@@ -164,7 +164,7 @@ function makeEditor(): DocumentEditor {
     enableEditorHistory: true
   });
   editor.appendTo(host);
-  editor.open(JSON.stringify(fixture()));
+  editor.open(JSON.stringify(sfdt));
   return editor;
 }
 
@@ -210,6 +210,22 @@ const sectionSpec = {
           ['Inspection', '$75'],
           ['Total fees', '$200']
         ]
+      }
+    }
+  ]
+};
+
+const repeatedBoundarySpec = {
+  ...sectionSpec,
+  blocks: [
+    ...sectionSpec.blocks,
+    { role: 'heading' as const, level: 2, text: 'Premium Summary' },
+    {
+      role: 'table' as const,
+      table: {
+        columnHeaders: ['Type', 'Amount'],
+        columnRoles: ['premium_type', 'premium_amount'],
+        rows: [['Total premium', '$1,200']]
       }
     }
   ]
@@ -439,6 +455,270 @@ describe('insert_section deterministic composer', () => {
       expect(texts.slice(title, following)).toEqual(
         expect.arrayContaining(['Coverage', '$500,000', 'Fee', '$200'])
       );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('keeps the captured boundary deterministic when the new section repeats its text', () => {
+    const editor = makeEditor();
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'repeated-boundary-heading',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: targetAnchor(editor),
+            position: 'before',
+            sectionSpec: repeatedBoundarySpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      const flattened = flattenSfdt(JSON.parse(editor.serialize()));
+      const premiumHeadings = flattened.filter(
+        (block) => block.text === 'Premium Summary'
+      );
+      expect(premiumHeadings).toHaveLength(2);
+      expect(tableFactsByHeader(editor, 'Type').rows[1].cells).toEqual([
+        expect.objectContaining({ text: 'Total premium' }),
+        expect.objectContaining({ text: '$1,200' })
+      ]);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('uses a blank body boundary by topology instead of ambiguous text matching', () => {
+    const editor = makeEditor();
+    try {
+      const flattened = flattenSfdt(JSON.parse(editor.serialize()));
+      const premiumIndex = flattened.findIndex(
+        (block) => block.text === 'Premium Summary'
+      );
+      const blank = [...flattened.slice(0, premiumIndex)]
+        .reverse()
+        .find((block) => block.kind !== 'table_cell' && !block.text);
+      if (!blank) throw new Error('fixture lost blank insertion boundary');
+
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'blank-section-boundary',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: blank.anchor,
+            expect: 'stale placeholder text',
+            position: 'before',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      const texts = flattenSfdt(JSON.parse(editor.serialize())).map(
+        (block) => block.text
+      );
+      expect(texts.indexOf('New Policy Section')).toBeLessThan(
+        texts.indexOf('Premium Summary')
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('manufactures a body insertion boundary beside a table-cell anchor', () => {
+    const editor = makeEditor();
+    try {
+      const cellAnchor = flattenSfdt(JSON.parse(editor.serialize())).find(
+        (block) => block.text === 'Policy C-fee-4-2'
+      )?.anchor;
+      if (!cellAnchor) throw new Error('fixture lost the final sibling table');
+
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'table-interior-section-boundary',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: cellAnchor,
+            expect: 'Policy C-fee-4-2',
+            position: 'after',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({
+          ok: true,
+          op: 'insert_section',
+          anchor: cellAnchor
+        })
+      ]);
+      const texts = flattenSfdt(JSON.parse(editor.serialize())).map(
+        (block) => block.text
+      );
+      expect(texts.indexOf('Policy C-fee-4-2')).toBeLessThan(
+        texts.indexOf('New Policy Section')
+      );
+      expect(texts.indexOf('New Policy Section')).toBeLessThan(
+        texts.indexOf('Premium Summary')
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('inherits recurring blank padding between sibling subsections', () => {
+    const sfdt = fixture();
+    const blocks = sfdt.sections[0].blocks;
+    for (let index = blocks.length - 1; index > 0; index--) {
+      if (
+        blocks[index]?.inlines?.[0]?.text === 'Fee Schedule' &&
+        blocks[index - 1]?.rows
+      )
+        blocks.splice(index, 0, paragraph(''));
+    }
+    const editor = makeEditor(sfdt);
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'subsection-padding',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: targetAnchor(editor),
+            position: 'before',
+            sectionSpec
+          }
+        ]
+      });
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+
+      const flattened = flattenSfdt(JSON.parse(editor.serialize()));
+      const title = flattened.findIndex(
+        (block) => block.text === 'New Policy Section'
+      );
+      const premium = flattened.findIndex(
+        (block) => block.text === 'Premium Summary'
+      );
+      const inserted = flattened.slice(title, premium);
+      const coverageTableEnd = inserted
+        .map((block) => block.text)
+        .lastIndexOf('$250,000');
+      const feeHeading = inserted.findIndex(
+        (block) => block.text === 'Fee Schedule'
+      );
+      expect(
+        inserted
+          .slice(coverageTableEnd + 1, feeHeading)
+          .some(
+            (block) => block.anchor.split(';').length === 2 && block.text === ''
+          )
+      ).toBe(true);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('skips empty sibling headings when choosing appearance donors', () => {
+    const sfdt = fixture();
+    sfdt.sections[0].blocks[2] = paragraph('', 'Heading 2');
+    const editor = makeEditor(sfdt);
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'non-empty-appearance-donor',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: targetAnchor(editor),
+            position: 'before',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      expect(result.warnings).not.toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('inherit_source_empty')
+        ])
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('restores the exact document when a late table in the section fails', () => {
+    const editor = makeEditor();
+    try {
+      const before = editor.serialize();
+      let insertedTables = 0;
+      const failing = new Proxy(editor as any, {
+        get(target, property, receiver) {
+          if (property === 'editor') {
+            const liveEditor = Reflect.get(target, property, receiver);
+            return new Proxy(liveEditor, {
+              get(inner, method, innerReceiver) {
+                const value = Reflect.get(inner, method, innerReceiver);
+                if (method === 'insertTable')
+                  return (...args: any[]) => {
+                    insertedTables++;
+                    if (insertedTables === 6)
+                      throw new Error('injected sixth-table failure');
+                    return value.apply(inner, args);
+                  };
+                return typeof value === 'function' ? value.bind(inner) : value;
+              }
+            });
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        }
+      });
+      const blocks = Array.from({ length: 6 }, (_, index) => [
+        {
+          role: 'heading' as const,
+          level: 2,
+          text: `Detail ${index + 1}`
+        },
+        {
+          role: 'table' as const,
+          table: {
+            columnHeaders: ['Item', 'Value'],
+            rows: [[`Fact ${index + 1}`, `Value ${index + 1}`]]
+          }
+        }
+      ]).flat();
+
+      const result = applyDocumentEdits(failing as LiveEditor, {
+        changeSetId: 'late-section-failure',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: targetAnchor(editor),
+            position: 'before',
+            sectionSpec: { title: 'New Policy Section', blocks }
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'insert_section',
+        message: expect.stringContaining('block 12 (table)'),
+        details: expect.arrayContaining(['injected sixth-table failure'])
+      });
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toBe(before);
     } finally {
       destroyEditor(editor);
     }
