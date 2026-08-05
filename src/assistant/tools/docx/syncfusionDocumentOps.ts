@@ -7685,6 +7685,8 @@ const REVISION_GROUP_TAG_VERSION = 1;
 export interface RevisionGroupTag {
   changeSetId: string;
   group: string;
+  /** Exact inverse for untracked appearance coupled to this review group. */
+  appearanceRestores?: AppearanceRestore[];
 }
 
 /** The accept group an op belongs to; ungrouped ops share the change set id. */
@@ -7694,13 +7696,104 @@ function opGroupId(op: EditOp, changeSetId: string): string {
     : changeSetId;
 }
 
-function revisionGroupTag(changeSetId: string, group: string): string {
+function revisionGroupTag(
+  changeSetId: string,
+  group: string,
+  appearanceRestores?: AppearanceRestore[]
+): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
     source: 'robin',
     changeSetId,
-    group
+    group,
+    ...(appearanceRestores?.length ? { appearanceRestores } : {})
   });
+}
+
+function parsePersistedAppearanceWrite(value: unknown): AppearanceWrite | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  const write: AppearanceWrite = {};
+  if ('shading' in raw) {
+    if (raw.shading !== null && typeof raw.shading !== 'string') return null;
+    write.shading = raw.shading as string | null;
+  }
+  if ('verticalAlignment' in raw) {
+    if (!['Top', 'Center', 'Bottom'].includes(String(raw.verticalAlignment)))
+      return null;
+    write.verticalAlignment = raw.verticalAlignment as
+      | 'Top'
+      | 'Center'
+      | 'Bottom';
+  }
+  if ('borders' in raw) {
+    if (!Array.isArray(raw.borders)) return null;
+    const borders: BorderWrite[] = [];
+    for (const value of raw.borders) {
+      if (!value || typeof value !== 'object' || Array.isArray(value))
+        return null;
+      const border = value as Record<string, unknown>;
+      if (
+        typeof border.type !== 'string' ||
+        !BORDER_TYPES.has(border.type) ||
+        typeof border.style !== 'string' ||
+        !border.style
+      )
+        return null;
+      if (
+        border.width !== undefined &&
+        (typeof border.width !== 'number' || !Number.isFinite(border.width))
+      )
+        return null;
+      if (border.color !== undefined && typeof border.color !== 'string')
+        return null;
+      borders.push({
+        type: border.type,
+        style: border.style,
+        ...(typeof border.width === 'number' ? { width: border.width } : {}),
+        ...(typeof border.color === 'string' ? { color: border.color } : {})
+      });
+    }
+    write.borders = borders;
+  }
+  return write.shading !== undefined ||
+    write.verticalAlignment !== undefined ||
+    write.borders !== undefined
+    ? write
+    : null;
+}
+
+function parsePersistedAppearanceRestores(
+  value: unknown
+): AppearanceRestore[] | undefined {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  const restores: AppearanceRestore[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item))
+      return undefined;
+    const raw = item as Record<string, unknown>;
+    if (
+      typeof raw.cellAnchor !== 'string' ||
+      !/^\d+;\d+;\d+;\d+;\d+$/.test(raw.cellAnchor)
+    )
+      return undefined;
+    if (raw.rowIsHeader !== undefined && typeof raw.rowIsHeader !== 'boolean')
+      return undefined;
+    const write =
+      raw.write === undefined
+        ? undefined
+        : parsePersistedAppearanceWrite(raw.write);
+    if (raw.write !== undefined && !write) return undefined;
+    if (raw.rowIsHeader === undefined && !write) return undefined;
+    restores.push({
+      cellAnchor: raw.cellAnchor,
+      ...(typeof raw.rowIsHeader === 'boolean'
+        ? { rowIsHeader: raw.rowIsHeader }
+        : {}),
+      ...(write ? { write } : {})
+    });
+  }
+  return restores;
 }
 
 export function parseRevisionGroupTag(
@@ -7714,8 +7807,16 @@ export function parseRevisionGroupTag(
       parsed.source === 'robin' &&
       typeof parsed.changeSetId === 'string' &&
       typeof parsed.group === 'string'
-    )
-      return { changeSetId: parsed.changeSetId, group: parsed.group };
+    ) {
+      const appearanceRestores = parsePersistedAppearanceRestores(
+        parsed.appearanceRestores
+      );
+      return {
+        changeSetId: parsed.changeSetId,
+        group: parsed.group,
+        ...(appearanceRestores ? { appearanceRestores } : {})
+      };
+    }
   } catch {
     // Foreign customData (another producer's tag, or plain text) is not ours
     // to interpret; the revision simply stays outside assistant grouping.
@@ -7844,11 +7945,6 @@ function captureNativeResolvers(rev: LiveRevision) {
 // then rejects the content. That is what makes "reject the card and the table
 // looks exactly as it did" true for a batch that also restripes.
 //
-// Known limitation: `onReject` is an in-memory closure over snapshots taken
-// during the write, so unlike the `customData` group tag it does NOT survive a
-// save/reload. `rebindRevisionGroups` rebuilds the accept groups from the tags
-// but cannot rebuild the appearance restore, so a card rebound after a reload
-// rejects its content only. See `rebindRevisionGroups`.
 function groupRevisionsAtomic(
   group: LiveRevision[],
   changeSetId?: string,
@@ -8098,6 +8194,17 @@ function groupNewRevisions(
   }
   partitions.forEach((partition, group) => {
     const restores = restoresByGroup?.get(group);
+    if (restores?.length) {
+      // The live closures below disappear on reload; the same customData that
+      // carries group identity therefore carries the exact appearance inverse.
+      // SyncFusion removes the revision metadata when the group resolves and
+      // revives it with the revision on undo.
+      for (const revision of partition) {
+        const tag = parseRevisionGroupTag(revision.customData);
+        if (tag?.changeSetId === changeSetId && tag.group === group)
+          revision.customData = revisionGroupTag(changeSetId, group, restores);
+      }
+    }
     const onReject =
       restores && restores.length
         ? () => replayAppearanceRestores(editor, restores)
@@ -8325,7 +8432,12 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
 export function rebindRevisionGroups(editor: LiveEditor): number {
   const partitions = new Map<
     string,
-    { changeSetId: string; group: string; revisions: LiveRevision[] }
+    {
+      changeSetId: string;
+      group: string;
+      revisions: LiveRevision[];
+      restoreCandidates: AppearanceRestore[][];
+    }
   >();
   for (const rev of snapshotRevisions(editor)) {
     if ((rev as any).robinGroupBound) continue;
@@ -8333,20 +8445,39 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     if (!tag) continue;
     const key = `${tag.changeSetId}\u0000${tag.group}`;
     const partition = partitions.get(key);
-    if (partition) partition.revisions.push(rev);
-    else
+    if (partition) {
+      partition.revisions.push(rev);
+      if (tag.appearanceRestores)
+        partition.restoreCandidates.push(tag.appearanceRestores);
+    } else
       partitions.set(key, {
         changeSetId: tag.changeSetId,
         group: tag.group,
-        revisions: [rev]
+        revisions: [rev],
+        restoreCandidates: tag.appearanceRestores
+          ? [tag.appearanceRestores]
+          : []
       });
   }
   let bound = 0;
   partitions.forEach((partition) => {
+    const payloads = new Map(
+      partition.restoreCandidates.map((restores) => [
+        JSON.stringify(restores),
+        restores
+      ])
+    );
+    // Every revision written by us carries the same inverse. Refuse to guess
+    // if foreign/corrupt metadata supplies conflicting payloads.
+    const restores =
+      payloads.size === 1 ? [...payloads.values()][0] : undefined;
     groupRevisionsAtomic(
       partition.revisions,
       partition.changeSetId,
-      partition.group
+      partition.group,
+      restores?.length
+        ? () => replayAppearanceRestores(editor, restores)
+        : undefined
     );
     bound += partition.revisions.length;
   });

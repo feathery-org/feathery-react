@@ -156,6 +156,13 @@ const facts = (ed: DocumentEditor, tableAnchor: string): TableFacts => {
   return (read as { table: TableFacts }).table;
 };
 
+const appearanceSnapshot = (ed: DocumentEditor, tableAnchor: string) =>
+  facts(ed, tableAnchor).rows.map((entry) => ({
+    isHeader: entry.isHeader ?? false,
+    appearance: entry.appearance,
+    cells: entry.cells.map((cell) => cell.appearance)
+  }));
+
 /** Every row's shared fill, as the model sees it. `null` is "no fill". */
 const fills = (ed: DocumentEditor, tableAnchor: string) =>
   facts(ed, tableAnchor).rows.map((entry) => entry.appearance?.shading ?? null);
@@ -444,34 +451,84 @@ describe('the grouped card survives a save and reload', () => {
     }
   });
 
-  // The stated limit of the integration, pinned so it cannot become a silent
-  // one. The group ID persists because SyncFusion stores it; the appearance
-  // restore does NOT, because it is an in-memory closure over snapshots taken
-  // during the write and there is nowhere in the SFDT that carries it. So a card
-  // rebound after a reload rejects its CONTENT only, and the table keeps the
-  // appearance the change set gave it.
-  //
-  // If this ever needs to change, the fix is to persist the snapshots the way
-  // the group id is persisted - not to weaken this assertion.
-  it('does NOT restore appearance after a reload - a known, stated limit', () => {
-    const ed = makeEditor(twoTables());
+  it('restores exact appearance and content after reload + reject', () => {
+    const sfdt: any = twoTables();
+    const [source, target] = sfdt.sections[0].blocks.slice(1, 3);
+    source.rows.forEach((rowEntry: any, rowIndex: number) => {
+      rowEntry.cells.forEach((cellEntry: any) => {
+        cellEntry.cellFormat.verticalAlignment =
+          rowIndex % 2 ? 'Center' : 'Top';
+        cellEntry.cellFormat.borders = {
+          top: {
+            lineStyle: 'Single',
+            lineWidth: 0.75,
+            color: '#1F4E78'
+          },
+          left: {
+            lineStyle: 'Single',
+            lineWidth: 0.75,
+            color: '#1F4E78'
+          },
+          right: {
+            lineStyle: 'Single',
+            lineWidth: 0.75,
+            color: '#1F4E78'
+          },
+          bottom: {
+            lineStyle: 'Single',
+            lineWidth: 0.75,
+            color: '#1F4E78'
+          }
+        };
+      });
+    });
+    target.rows.forEach((rowEntry: any, rowIndex: number) => {
+      rowEntry.rowFormat.isHeader = rowIndex === 1;
+      rowEntry.cells.forEach((cellEntry: any) => {
+        cellEntry.cellFormat.verticalAlignment = 'Bottom';
+        cellEntry.cellFormat.borders = {
+          left: {
+            lineStyle: 'Dash',
+            lineWidth: 0.5,
+            color: '#C00000'
+          }
+        };
+      });
+    });
+    const ed = makeEditor(sfdt);
     let reloaded: DocumentEditor | undefined;
     try {
-      const originalFills = fills(ed, '0;1');
-      apply(ed, [{ op: 'insert_row', anchor: '0;1;2;0;0' }], 'reloaded-card');
-      const fillsAfterWrite = fills(ed, '0;1');
-      expect(fillsAfterWrite).not.toEqual(originalFills);
+      const originalAppearance = appearanceSnapshot(ed, '0;2');
+      const originalRowCount = facts(ed, '0;2').rowCount;
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_row', anchor: '0;2;2;0;0' },
+          {
+            op: 'copy_table_format',
+            anchor: '0;2;0;0;0',
+            sourceTable: '0;1'
+          }
+        ],
+        'reloaded-card'
+      );
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(appearanceSnapshot(ed, '0;2')).not.toEqual(originalAppearance);
+      expect(
+        revisions(ed).every(
+          (revision) =>
+            parseRevisionGroupTag(revision.customData)?.appearanceRestores
+              ?.length
+        )
+      ).toBe(true);
 
       reloaded = reopen(ed);
       rebindRevisionGroups(reloaded as unknown as LiveEditor);
-      const rowsBeforeReject = facts(reloaded, '0;1').rowCount;
       revisions(reloaded)[0].reject();
 
-      // The content half still rejects: the inserted row is gone.
-      expect(facts(reloaded, '0;1').rowCount).toBe(rowsBeforeReject - 1);
-      // The appearance half does not come back, and this test says so rather
-      // than the product finding out.
-      expect(fills(reloaded, '0;1')).not.toEqual(originalFills);
+      expect(facts(reloaded, '0;2').rowCount).toBe(originalRowCount);
+      expect(appearanceSnapshot(reloaded, '0;2')).toEqual(originalAppearance);
+      expect(revisions(reloaded)).toHaveLength(0);
     } finally {
       destroyEditor(ed);
       if (reloaded) destroyEditor(reloaded);
