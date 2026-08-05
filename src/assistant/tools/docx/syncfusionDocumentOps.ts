@@ -3287,8 +3287,16 @@ function findOneDocumentOccurrences(
   if (!search?.findAll || !search?.searchResults?.getTextSearchResultsOffset)
     return { ok: false, ...base, error: 'search_unavailable' };
 
+  // Syncfusion Search temporarily selects its result while resolving public
+  // offsets. Its one-shot skip flag is consumed by that selection, so arm it
+  // once for the search and again before restoring the user's range. This is
+  // the engine-side read boundary; the review rail keeps sole ownership of
+  // deliberate chip navigation and scrolling.
   const previousStart = editor.selection?.startOffset;
   const previousEnd = editor.selection?.endOffset;
+  const documentHelper = (editor as any).documentHelper;
+  const previousSkipScroll = documentHelper?.skipScrollToPosition;
+  if (documentHelper) documentHelper.skipScrollToPosition = true;
   try {
     // WholeWord cannot be delegated to SyncFusion while a tracked deletion is
     // adjacent to an insertion: replacing `Marlow` with `Torrey` leaves the two
@@ -3304,6 +3312,7 @@ function findOneDocumentOccurrences(
     const offsets = (search as any).textSearchResults?.innerList
       ? search.searchResults.getTextSearchResultsOffset() ?? []
       : [];
+    const searchResults = (search as any).textSearchResults?.innerList ?? [];
     const sfdt = serializeSfdt(editor);
     const byAnchor = new Map(
       flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
@@ -3311,7 +3320,7 @@ function findOneDocumentOccurrences(
     const occurrences: DocumentOccurrence[] = [];
     const rawCandidateOrdinals = new Map<string, number>();
     let count = 0;
-    for (const result of offsets) {
+    for (const [resultIndex, result] of offsets.entries()) {
       const startOffset = String(result?.startOffset ?? '');
       const endOffset = String(result?.endOffset ?? '');
       const start = offsetParts(startOffset);
@@ -3328,6 +3337,7 @@ function findOneDocumentOccurrences(
         ? currentTextFrameText(sfdt, start.anchor)
         : undefined;
       const currentText = block?.text ?? frameText;
+      let matchText = text;
       if (currentText !== undefined) {
         const currentOffsets = currentQueryOffsets(
           currentText,
@@ -3340,11 +3350,32 @@ function findOneDocumentOccurrences(
           (wholeWord && !isWholeWordAt(currentText, currentOffset, text.length))
         )
           continue;
+        matchText = currentText.slice(
+          currentOffset,
+          currentOffset + text.length
+        );
+      } else {
+        // Story/page text is absent from flattened SFDT. Read the search
+        // result's already-resolved positions directly; its public `.text`
+        // getter resolves logical indexes through Selection and moves the UI.
+        const searchResult = searchResults[resultIndex];
+        const getTextInternal = documentHelper?.selection?.getTextInternal;
+        if (
+          searchResult?.start &&
+          searchResult?.end &&
+          typeof getTextInternal === 'function'
+        )
+          matchText = String(
+            getTextInternal.call(
+              documentHelper.selection,
+              searchResult.start,
+              searchResult.end,
+              false
+            ) ?? text
+          );
       }
       count++;
       if (occurrences.length >= maxResults) continue;
-      editor.selection.select(startOffset, endOffset);
-      const matchText = String(editor.selection.text ?? '');
       occurrences.push({
         anchor: start.anchor,
         kind: kindFromLiveAnchor(start.anchor, block),
@@ -3367,8 +3398,17 @@ function findOneDocumentOccurrences(
   } catch {
     return { ok: false, ...base, error: 'search_failed' };
   } finally {
-    if (typeof previousStart === 'string' && typeof previousEnd === 'string')
+    if (
+      typeof previousStart === 'string' &&
+      typeof previousEnd === 'string' &&
+      (editor.selection?.startOffset !== previousStart ||
+        editor.selection?.endOffset !== previousEnd)
+    ) {
+      if (documentHelper) documentHelper.skipScrollToPosition = true;
       editor.selection.select(previousStart, previousEnd);
+    }
+    if (documentHelper)
+      documentHelper.skipScrollToPosition = previousSkipScroll;
   }
 }
 
