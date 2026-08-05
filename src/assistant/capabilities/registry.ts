@@ -44,6 +44,24 @@ export interface CapabilityEntry {
   requiresAnchor: boolean;
 }
 
+export interface SectionComposerTableSpec {
+  columnHeaders: string[];
+  rows: string[][];
+  /** Optional semantic labels for the already-ordered columns. */
+  columnRoles?: string[];
+}
+
+export type SectionComposerBlock =
+  | { role: 'heading'; text: string; level?: number }
+  | { role: 'paragraph'; text: string }
+  | { role: 'table'; table: SectionComposerTableSpec };
+
+/** Content and semantic roles only; document-local appearance is engine-owned. */
+export interface SectionComposerSpec {
+  title: string;
+  blocks: SectionComposerBlock[];
+}
+
 // Entries are ordered exactly like ai-services' DOCUMENT_EDIT_OPS so a
 // name-by-name comparison of the two lists reads as a clean diff.
 //
@@ -111,6 +129,18 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       text: 'string',
       position: 'enum[before,after,start,end]?',
       offset: 'int>=0?'
+    },
+    requiresAnchor: true
+  },
+  {
+    // handler: applyDocumentEdits section-composer expansion. The engine turns
+    // this semantic spec into one atomic group of the guarded primitives below;
+    // Robin owns content/role/structure judgment; the engine owns document-
+    // local styles, table appearance, perimeter padding and integrity.
+    op: 'insert_section',
+    params: {
+      position: 'enum[before,after]?',
+      sectionSpec: 'sectionSpec'
     },
     requiresAnchor: true
   },
@@ -547,6 +577,8 @@ type EnumMembers<S extends string> = S extends `${infer Head},${infer Rest}`
 /** One non-optional param-language type to its TypeScript type. */
 type ParamBase<S extends string> = S extends 'string'
   ? string
+  : S extends 'sectionSpec'
+  ? SectionComposerSpec
   : S extends 'string[][]'
   ? string[][]
   : S extends 'number' | 'int>0' | 'int>=0'

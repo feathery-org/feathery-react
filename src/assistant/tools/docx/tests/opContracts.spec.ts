@@ -246,25 +246,22 @@ const bandedTablesFixture = () => ({
             { rowFormat: {}, cells: [shadedCell('1'), shadedCell('A St')] },
             {
               rowFormat: {},
-              cells: [
-                shadedCell('2', '#D9E2F3'),
-                shadedCell('B St', '#D9E2F3')
-              ]
+              cells: [shadedCell('2', '#D9E2F3'), shadedCell('B St', '#D9E2F3')]
             },
             { rowFormat: {}, cells: [shadedCell('3'), shadedCell('C St')] },
             {
               rowFormat: {},
-              cells: [
-                shadedCell('4', '#D9E2F3'),
-                shadedCell('D St', '#D9E2F3')
-              ]
+              cells: [shadedCell('4', '#D9E2F3'), shadedCell('D St', '#D9E2F3')]
             }
           ]
         },
         {
           tableFormat: { preferredWidth: 300 },
           rows: [
-            { rowFormat: {}, cells: [shadedCell('Loc #'), shadedCell('Address')] },
+            {
+              rowFormat: {},
+              cells: [shadedCell('Loc #'), shadedCell('Address')]
+            },
             { rowFormat: {}, cells: [shadedCell('5'), shadedCell('E St')] },
             { rowFormat: {}, cells: [shadedCell('6'), shadedCell('F St')] },
             { rowFormat: {}, cells: [shadedCell('7'), shadedCell('G St')] },
@@ -687,6 +684,45 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(cells.length).toBe(6);
       expect(cells.map((cell) => cell.text)).toEqual(
         expect.arrayContaining(['Coverage', 'Limit', 'Premium'])
+      );
+    }
+  },
+  insert_section: {
+    fixture: proseFixture,
+    edits: [
+      {
+        op: 'insert_section',
+        anchor: '0;3',
+        sectionSpec: {
+          title: 'Policy Details',
+          blocks: [
+            { role: 'heading', text: 'Named insured' },
+            { role: 'paragraph', text: 'Example Company' },
+            {
+              role: 'table',
+              table: {
+                columnHeaders: ['Coverage', 'Limit'],
+                rows: [['Property', '$500,000']]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    verify: (ed, result) => {
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      expect(blockTexts(ed)).toEqual(
+        expect.arrayContaining([
+          'Policy Details',
+          'Named insured',
+          'Example Company',
+          'Coverage',
+          'Limit',
+          'Property',
+          '$500,000'
+        ])
       );
     }
   },
@@ -1397,14 +1433,14 @@ describe('op contracts: every advertised op works over its real route', () => {
   it('every registered content-creating op crosses a tracked mutation contract', () => {
     const contentCreatingOps = new Set([
       'insert_text',
+      'insert_section',
       'insert_table',
       'insert_row'
     ]);
     const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
       .filter((op) => contentCreatingOps.has(op))
       .filter(
-        (op) =>
-          !TRACKED_TEXT_OPS.has(op) && !TRACKED_STRUCTURAL_OPS.has(op)
+        (op) => !TRACKED_TEXT_OPS.has(op) && !TRACKED_STRUCTURAL_OPS.has(op)
       );
 
     expect(uncovered).toEqual([]);

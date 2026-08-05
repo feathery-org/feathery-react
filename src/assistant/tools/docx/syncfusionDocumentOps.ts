@@ -26,7 +26,9 @@ import {
   AnchoredDocumentOp,
   AnchorlessDocumentOp,
   DOCUMENT_EDITOR_CAPABILITIES,
-  OpParams
+  OpParams,
+  SectionComposerBlock,
+  SectionComposerSpec
 } from '../../capabilities/registry';
 import {
   CellNumberFormat,
@@ -2813,6 +2815,47 @@ function tablePatterns(sfdt: any, units: SectionUnit[]): SectionPatternTable[] {
   return patterns;
 }
 
+interface SectionFamilyEvidence {
+  level: number;
+  availableUnits: SectionUnit[];
+  sampledUnits: SectionUnit[];
+  units: SectionUnit[];
+  sequences: SectionPatternSequenceElement[][];
+}
+
+/**
+ * The single family-selection seam shared by the read tool and the composer.
+ * Planning from a different sample than the one advertised by
+ * deriveSectionPattern is the section equivalent of copying table perimeter
+ * evidence from one grid and verifying another.
+ */
+function deriveSectionFamilyEvidence(
+  blocks: FlatBlock[],
+  near?: string
+): SectionFamilyEvidence | undefined {
+  const level = chooseSectionLevel(blocks, near);
+  if (level === undefined) return undefined;
+  const availableUnits = unitsAtLevel(blocks, level);
+  const sampledUnits = sampleSectionUnits(availableUnits, near);
+  const sampledSequences = sampledUnits.map(sequenceForUnit);
+  const sampledTruncatedSequences = sampledSequences.map((sequence) =>
+    sequence.slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
+  );
+  const family = selectSectionFamily(
+    blocks,
+    sampledUnits,
+    sampledTruncatedSequences,
+    near
+  );
+  return {
+    level,
+    availableUnits,
+    sampledUnits,
+    units: family.units,
+    sequences: family.sequences
+  };
+}
+
 /**
  * Derive the document's own recurring section schema from sibling sections.
  * `near` only selects the relevant sibling family/sample; inference still works
@@ -2829,8 +2872,8 @@ export function deriveSectionPattern(
     typeof options?.near === 'string' && options.near.trim()
       ? options.near.trim().slice(0, 100)
       : undefined;
-  const level = chooseSectionLevel(blocks, near);
-  if (level === undefined) {
+  const evidence = deriveSectionFamilyEvidence(blocks, near);
+  if (!evidence) {
     return {
       ok: true,
       pattern: { sequence: [], tables: [], roles: {} },
@@ -2844,20 +2887,7 @@ export function deriveSectionPattern(
     };
   }
 
-  const availableUnits = unitsAtLevel(blocks, level);
-  const sampledUnits = sampleSectionUnits(availableUnits, near);
-  const sampledSequences = sampledUnits.map(sequenceForUnit);
-  const sampledTruncatedSequences = sampledSequences.map((sequence) =>
-    sequence.slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
-  );
-  const family = selectSectionFamily(
-    blocks,
-    sampledUnits,
-    sampledTruncatedSequences,
-    near
-  );
-  const units = family.units;
-  const sequences = family.sequences;
+  const { level, availableUnits, sampledUnits, units, sequences } = evidence;
   const sequenceTruncated = units.some(
     (unit) => sequenceForUnit(unit).length > SECTION_PATTERN_SEQUENCE_LIMIT
   );
@@ -4448,6 +4478,20 @@ interface ReservedOpFields {
     characterFormat?: FormatBag;
     paragraphFormat?: FormatBag;
   };
+  /** Engine-internal identity linking a composed paragraph to its creator. */
+  __sectionCreatorId?: string;
+  /** Engine-internal non-empty segment ordinal within that creator. */
+  __sectionSegmentIndex?: number;
+  /** Exact final body anchor planned from the complete composed topology. */
+  __sectionFinalAnchor?: string;
+  /** Composer-owned perimeter handling suppresses the generic insert heuristic. */
+  __suppressSectionBoundary?: boolean;
+  /** A malformed composer request is routed through the ordinary group refusal. */
+  __sectionRefusal?: {
+    code: string;
+    message: string;
+    details?: string[];
+  };
 }
 
 /**
@@ -5716,6 +5760,22 @@ export const ANCHORED_OP_HANDLERS: {
     const offset = insertionPoint(op, block);
     selectRange(editor, block.anchor, offset, offset);
     editor.editor.insertText(insertionText(op));
+  },
+  insert_section: ({ op }) => {
+    // Valid section requests are expanded at applyDocumentEdits' common
+    // boundary. Keeping this refusal backstop in the typed handler registry
+    // makes malformed requests use the same group failure/rollback path and
+    // prevents an accidental bypass from becoming a partial write.
+    const refusal = op.__sectionRefusal;
+    if (refusal)
+      throw new OpError(refusal.code, refusal.message, refusal.details);
+    throw new OpError(
+      'section_composer_not_expanded',
+      'insert_section did not reach the engine section composer; nothing was written.',
+      [
+        'Re-send this operation through applyDocumentEdits. The low-level document operations remain available for non-section edits.'
+      ]
+    );
   },
   set_cell_text: ({ editor, op, block }) => {
     // Overwrite the (cell) block's content.
@@ -7377,6 +7437,10 @@ export const TRACKED_TEXT_OPS = new Set([
   'delete_text',
   'delete_paragraph',
   'insert_text',
+  // The composer expands to tracked insert_text/insert_table writes before
+  // dispatch; membership keeps the registry-exhaustive content-op invariant
+  // honest at the public operation boundary.
+  'insert_section',
   'insert_table',
   'set_cell_text',
   'set_cell_formula',
@@ -9112,7 +9176,13 @@ function planTableInsertInheritance(
   const rows = positiveCount(op.rows);
   const columns = positiveCount(op.columns);
   const targetRows = Array.from({ length: rows }, (_, index) => index);
-  const banding = documentTableBanding(sfdt, targetTableAnchor);
+  // An explicit source is the composer's same-family/same-ordinal table. Its
+  // own proven stripe outranks an unrelated document-wide table; fall back to
+  // the existing document sample only when that sibling is too short to prove
+  // a cycle by itself.
+  const banding =
+    (explicitSource ? detectTableBanding(sourceTable.appearance) : null) ??
+    documentTableBanding(sfdt, targetTableAnchor);
   return [
     {
       anchor: targetTableAnchor,
@@ -9386,7 +9456,9 @@ function planInsertInheritance(
   let text = insertionText(op as TypedEditOp<'insert_text'>);
   if (!text) return undefined;
   const offset = insertionPoint(op as TypedEditOp<'insert_text'>, target);
-  const boundary = planSectionBoundaryInheritance(target, blocks, text, offset);
+  const boundary = op.__suppressSectionBoundary
+    ? undefined
+    : planSectionBoundaryInheritance(target, blocks, text, offset);
   if (boundary) text = boundary.text;
   const segments = text.split(/\r\n|\r|\n/);
   const createsParagraphs = segments.length > 1;
@@ -10103,6 +10175,766 @@ function detectUnannouncedChain(
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic section composer
+// ---------------------------------------------------------------------------
+//
+// Robin supplies semantic content and structure; this compiler supplies the
+// mechanics the model cannot make reliable by emitting a longer primitive-op
+// recipe. Every compiled write still crosses the existing CAS, tracked-write,
+// inheritance, appearance, verification and group-rollback boundaries below.
+
+interface ComposerTextItem {
+  text: string;
+  label: string;
+  source?: FlatBlock;
+  finalAnchor?: string;
+}
+
+type ComposerUnit =
+  | { kind: 'text'; items: ComposerTextItem[]; label: string }
+  | {
+      kind: 'separator';
+      elements: SectionBoundaryElement[];
+      label: string;
+    }
+  | {
+      kind: 'table';
+      table: SectionComposerBlock & { role: 'table' };
+      blockIndex: number;
+      ordinal: number;
+      source?: FlatBlock;
+      label: string;
+    };
+
+interface CompiledSectionEdit {
+  edit: EditOp;
+  label: string;
+}
+
+interface SectionExpansionEntry {
+  originalIndex: number;
+  original: EditOp;
+  start: number;
+  count: number;
+  labels: string[];
+  section: boolean;
+  contentBlocks: number;
+  tables: number;
+}
+
+interface SectionExpansion {
+  edits: EditOp[];
+  entries: SectionExpansionEntry[];
+  expandedToOriginal: number[];
+  changed: boolean;
+}
+
+function sectionSpecError(
+  code: string,
+  label: string,
+  message: string,
+  details?: string[]
+): never {
+  throw new OpError(
+    code,
+    `insert_section ${label}: ${message} Nothing was written.`,
+    details
+  );
+}
+
+function sectionText(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim())
+    sectionSpecError('invalid_section_text', label, 'needs non-empty text.');
+  if (/\r|\n/.test(value))
+    sectionSpecError(
+      'invalid_section_text',
+      label,
+      'must describe one paragraph. Split multi-paragraph content into separate semantic blocks.'
+    );
+  return value;
+}
+
+function validatedSectionSpec(value: unknown): SectionComposerSpec {
+  if (!value || typeof value !== 'object')
+    sectionSpecError(
+      'invalid_section_spec',
+      'sectionSpec',
+      'must be an object with `title` and `blocks`.'
+    );
+  const candidate = value as SectionComposerSpec;
+  const title = sectionText(candidate.title, 'title');
+  if (!Array.isArray(candidate.blocks))
+    sectionSpecError(
+      'invalid_section_spec',
+      'sectionSpec.blocks',
+      'must be an ordered array of heading, paragraph, or table blocks.'
+    );
+  const blocks = candidate.blocks.map((block, index) => {
+    const label = `block ${index + 1}`;
+    if (!block || typeof block !== 'object')
+      sectionSpecError(
+        'invalid_section_block',
+        label,
+        'must be a heading, paragraph, or table block.'
+      );
+    if (block.role === 'heading')
+      return {
+        role: 'heading' as const,
+        text: sectionText(block.text, `${label} (heading)`),
+        ...(Number.isInteger(block.level) && Number(block.level) > 0
+          ? { level: Number(block.level) }
+          : {})
+      };
+    if (block.role === 'paragraph')
+      return {
+        role: 'paragraph' as const,
+        text: sectionText(block.text, `${label} (paragraph)`)
+      };
+    if (block.role !== 'table')
+      sectionSpecError(
+        'invalid_section_role',
+        label,
+        `has unknown role ${JSON.stringify(
+          (block as any).role
+        )}; use heading, paragraph, or table.`
+      );
+    const table = block.table;
+    const tableLabel = `${label} (table)`;
+    if (!table || typeof table !== 'object')
+      sectionSpecError(
+        'invalid_section_table',
+        tableLabel,
+        'needs a `table` object.'
+      );
+    if (
+      !Array.isArray(table.columnHeaders) ||
+      !table.columnHeaders.length ||
+      table.columnHeaders.some((cell) => typeof cell !== 'string')
+    )
+      sectionSpecError(
+        'invalid_section_table_headers',
+        tableLabel,
+        'needs at least one string in `columnHeaders`.'
+      );
+    if (
+      !Array.isArray(table.rows) ||
+      table.rows.some(
+        (row) =>
+          !Array.isArray(row) ||
+          row.length !== table.columnHeaders.length ||
+          row.some((cell) => typeof cell !== 'string')
+      )
+    )
+      sectionSpecError(
+        'invalid_section_table_rows',
+        tableLabel,
+        `needs every data row to contain exactly ${table.columnHeaders.length} string cells.`,
+        [
+          `columnHeaders: ${table.columnHeaders.length}`,
+          `row widths: ${
+            Array.isArray(table.rows)
+              ? table.rows
+                  .map((row) =>
+                    Array.isArray(row) ? row.length : 'not an array'
+                  )
+                  .join(', ')
+              : 'rows is not an array'
+          }`
+        ]
+      );
+    if (
+      table.columnRoles !== undefined &&
+      (!Array.isArray(table.columnRoles) ||
+        table.columnRoles.length !== table.columnHeaders.length ||
+        table.columnRoles.some((role) => typeof role !== 'string'))
+    )
+      sectionSpecError(
+        'invalid_section_column_roles',
+        tableLabel,
+        '`columnRoles`, when supplied, must contain one string per column.'
+      );
+    return {
+      role: 'table' as const,
+      table: {
+        columnHeaders: [...table.columnHeaders],
+        rows: table.rows.map((row) => [...row]),
+        ...(table.columnRoles ? { columnRoles: [...table.columnRoles] } : {})
+      }
+    };
+  });
+  return { title, blocks };
+}
+
+function composerRoleCandidates(
+  units: SectionUnit[],
+  role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+  level?: number
+): FlatBlock[] {
+  if (role === 'section_heading')
+    return units.flatMap((unit) => (unit.blocks[0] ? [unit.blocks[0]] : []));
+  if (role === 'subsection_heading' && level !== undefined) {
+    const exact = units.flatMap((unit) =>
+      unit.blocks
+        .slice(1)
+        .filter((block) => block.isHeading && block.level === level)
+    );
+    if (exact.length) return exact;
+  }
+  return units.flatMap((unit) => roleBlocksForUnit(unit).get(role) ?? []);
+}
+
+/** Pick a real donor carrying the modal format advertised for this role. */
+function composerRoleSource(
+  evidence: SectionFamilyEvidence | undefined,
+  role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+  level?: number
+): FlatBlock | undefined {
+  const candidates = evidence
+    ? composerRoleCandidates(evidence.units, role, level)
+    : [];
+  const selected = modal(candidates.map(roleFormat));
+  if (!selected) return undefined;
+  const key = JSON.stringify(selected.value);
+  return candidates.find((block) => JSON.stringify(roleFormat(block)) === key);
+}
+
+function composerTableSource(
+  blocks: FlatBlock[],
+  evidence: SectionFamilyEvidence | undefined,
+  near: string,
+  ordinal: number,
+  byAnchor: Map<string, FlatBlock>
+): FlatBlock | undefined {
+  if (!evidence?.units.length) return undefined;
+  const nearest = nearestUnitIndex(blocks, evidence.units, near) ?? 0;
+  const ranked = evidence.units
+    .map((unit, index) => ({ unit, index }))
+    .sort(
+      (left, right) =>
+        Math.abs(left.index - nearest) - Math.abs(right.index - nearest) ||
+        left.index - right.index
+    );
+  for (const { unit } of ranked) {
+    const tableAnchor = tableAnchorsForUnit(unit)[ordinal];
+    const firstCell = tableAnchor
+      ? byAnchor.get(`${tableAnchor};0;0;0`)
+      : undefined;
+    if (firstCell) return firstCell;
+  }
+  return undefined;
+}
+
+function missingSectionPrefix(
+  desired: SectionBoundaryElement[],
+  existing: SectionBoundaryElement[]
+): SectionBoundaryElement[] {
+  return JSON.stringify(desired.slice(0, existing.length)) ===
+    JSON.stringify(existing)
+    ? desired.slice(existing.length)
+    : desired;
+}
+
+function missingSectionSuffix(
+  desired: SectionBoundaryElement[],
+  existing: SectionBoundaryElement[]
+): SectionBoundaryElement[] {
+  return JSON.stringify(desired.slice(desired.length - existing.length)) ===
+    JSON.stringify(existing)
+    ? desired.slice(0, desired.length - existing.length)
+    : desired;
+}
+
+function adjacentSectionSeparators(
+  blocks: FlatBlock[],
+  target: FlatBlock,
+  direction: -1 | 1
+): SectionBoundaryElement[] {
+  const start = blocks.findIndex((block) => block.anchor === target.anchor);
+  const separators: SectionBoundaryElement[] = [];
+  if (start < 0) return separators;
+  for (
+    let index = start + direction;
+    index >= 0 && index < blocks.length;
+    index += direction
+  ) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    if (direction < 0) separators.unshift(element);
+    else separators.push(element);
+  }
+  return separators;
+}
+
+/** Text which inserts exactly these paragraph-level separators at a boundary. */
+function composerSeparatorText(
+  elements: SectionBoundaryElement[],
+  position: 'before' | 'after'
+): string {
+  const payload = elements
+    .map((element) => (element === 'page_break' ? '\f' : ''))
+    .join('\n');
+  return position === 'before' ? `${payload}\n` : `\n${payload}`;
+}
+
+function compileSectionComposer(
+  op: EditOp,
+  originalIndex: number,
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>
+): { children: CompiledSectionEdit[]; contentBlocks: number; tables: number } {
+  const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
+  const target = anchor ? byAnchor.get(anchor) : undefined;
+  if (!target)
+    sectionSpecError(
+      'section_anchor_not_found',
+      'anchor',
+      `could not resolve ${JSON.stringify(anchor || op.anchor)}.`
+    );
+  if (target.kind === 'table_cell')
+    sectionSpecError(
+      'section_anchor_requires_body_block',
+      'anchor',
+      'must name a body paragraph or heading, not a table cell.'
+    );
+
+  const spec = validatedSectionSpec(op.sectionSpec);
+  const positionValue = String(op.position ?? 'before').toLowerCase();
+  if (positionValue !== 'before' && positionValue !== 'after')
+    sectionSpecError(
+      'invalid_section_position',
+      'position',
+      `must be "before" or "after", not ${JSON.stringify(op.position)}.`
+    );
+  const position = positionValue as 'before' | 'after';
+  const group =
+    typeof op.group === 'string'
+      ? op.group
+      : `__insert_section_${originalIndex + 1}`;
+  const evidence = deriveSectionFamilyEvidence(blocks, target.anchor);
+  const familyBoundary = evidence
+    ? sectionBoundaryPattern(blocks, evidence.units).separator
+    : undefined;
+  const desiredBoundary =
+    evidence &&
+    evidence.units.length >= 2 &&
+    familyBoundary &&
+    familyBoundary.confidence.level !== 'low'
+      ? familyBoundary.value
+      : [];
+  const beforeExisting = adjacentSectionSeparators(blocks, target, -1);
+  const afterExisting = adjacentSectionSeparators(blocks, target, 1);
+  const leadingBoundary =
+    position === 'before'
+      ? missingSectionPrefix(desiredBoundary, beforeExisting)
+      : desiredBoundary;
+  const trailingBoundary =
+    position === 'after'
+      ? missingSectionSuffix(desiredBoundary, afterExisting)
+      : desiredBoundary;
+
+  const contentUnits: ComposerUnit[] = [];
+  let textItems: ComposerTextItem[] = [];
+  let seenSubsection = false;
+  let tableOrdinal = 0;
+  const flushText = () => {
+    if (!textItems.length) return;
+    contentUnits.push({
+      kind: 'text',
+      items: textItems,
+      label: textItems.map((item) => item.label).join(' + ')
+    });
+    textItems = [];
+  };
+  textItems.push({
+    text: spec.title,
+    label: 'title',
+    source: composerRoleSource(evidence, 'section_heading')
+  });
+  spec.blocks.forEach((block, blockIndex) => {
+    const label = `block ${blockIndex + 1} (${block.role})`;
+    if (block.role === 'heading') {
+      seenSubsection = true;
+      textItems.push({
+        text: block.text,
+        label,
+        source: composerRoleSource(evidence, 'subsection_heading', block.level)
+      });
+      return;
+    }
+    if (block.role === 'paragraph') {
+      textItems.push({
+        text: block.text,
+        label,
+        source: composerRoleSource(
+          evidence,
+          seenSubsection ? 'subsection_paragraph' : 'intro_paragraph'
+        )
+      });
+      return;
+    }
+    flushText();
+    contentUnits.push({
+      kind: 'table',
+      table: block,
+      blockIndex,
+      ordinal: tableOrdinal,
+      source: composerTableSource(
+        blocks,
+        evidence,
+        target.anchor,
+        tableOrdinal,
+        byAnchor
+      ),
+      label
+    });
+    tableOrdinal++;
+  });
+  flushText();
+
+  // Word coalesces adjacent top-level tables into one grid. A paragraph is a
+  // storage-topology separator, not a visual style or document-specific shape.
+  const separatedContent: ComposerUnit[] = [];
+  for (const unit of contentUnits) {
+    if (
+      unit.kind === 'table' &&
+      separatedContent[separatedContent.length - 1]?.kind === 'table'
+    )
+      separatedContent.push({
+        kind: 'separator',
+        elements: ['empty_paragraph'],
+        label: 'required separator between adjacent tables'
+      });
+    separatedContent.push(unit);
+  }
+
+  const finalUnits: ComposerUnit[] = [
+    ...(leadingBoundary.length
+      ? [
+          {
+            kind: 'separator' as const,
+            elements: leadingBoundary,
+            label: 'leading sibling-family boundary'
+          }
+        ]
+      : []),
+    ...separatedContent,
+    ...(trailingBoundary.length
+      ? [
+          {
+            kind: 'separator' as const,
+            elements: trailingBoundary,
+            label: 'trailing sibling-family boundary'
+          }
+        ]
+      : [])
+  ];
+  // Plan paragraph destinations from the COMPLETE final topology. Inserting
+  // several units `after` one stable anchor necessarily pushes earlier units
+  // forward, so a creator-time anchor is stale by the end. These final anchors
+  // are the same perimeter/topology evidence phase 3 verifies after every
+  // structural write has landed.
+  const anchorParts = target.anchor.split(';');
+  const targetBlockIndex = Number(anchorParts[1]);
+  let finalBlockOffset = position === 'after' ? 1 : 0;
+  if (anchorParts.length === 2 && Number.isInteger(targetBlockIndex))
+    finalUnits.forEach((unit) => {
+      if (unit.kind === 'text') {
+        unit.items.forEach((item, index) => {
+          item.finalAnchor = `${anchorParts[0]};${
+            targetBlockIndex + finalBlockOffset + index
+          }`;
+        });
+        finalBlockOffset += unit.items.length;
+      } else if (unit.kind === 'separator') {
+        finalBlockOffset += unit.elements.length;
+      } else {
+        finalBlockOffset++;
+      }
+    });
+  const structuralOrder =
+    position === 'before' ? finalUnits : [...finalUnits].reverse();
+  const structural: CompiledSectionEdit[] = [];
+  const formatting: CompiledSectionEdit[] = [];
+  structuralOrder.forEach((unit, unitIndex) => {
+    if (unit.kind === 'table') {
+      const cells = [
+        [...unit.table.table.columnHeaders],
+        ...unit.table.table.rows.map((row) => [...row])
+      ];
+      structural.push({
+        label: unit.label,
+        edit: {
+          op: 'insert_table',
+          group,
+          anchor: target.anchor,
+          ...(op.expect !== undefined ? { expect: op.expect } : {}),
+          position,
+          rows: cells.length,
+          columns: unit.table.table.columnHeaders.length,
+          initialCells: cells,
+          ...(unit.source ? { inheritFormatFrom: unit.source.anchor } : {})
+        }
+      });
+      return;
+    }
+    const creatorId = `section-${originalIndex + 1}-unit-${unitIndex + 1}`;
+    const isSeparator = unit.kind === 'separator';
+    structural.push({
+      label: unit.label,
+      edit: {
+        op: 'insert_text',
+        group,
+        anchor: target.anchor,
+        ...(op.expect !== undefined ? { expect: op.expect } : {}),
+        position,
+        text: isSeparator
+          ? composerSeparatorText(unit.elements, position)
+          : unit.items.map((item) => item.text).join('\n'),
+        __sectionCreatorId: creatorId,
+        __suppressSectionBoundary: true
+      }
+    });
+    if (isSeparator) return;
+    unit.items.forEach((item, segmentIndex) => {
+      if (!item.source) return;
+      formatting.push({
+        label: item.label,
+        edit: {
+          op: 'apply_style',
+          group,
+          anchor: target.anchor,
+          expect: item.text,
+          inheritFormatFrom: item.source.anchor,
+          __sectionCreatorId: creatorId,
+          __sectionSegmentIndex: segmentIndex,
+          ...(item.finalAnchor
+            ? { __sectionFinalAnchor: item.finalAnchor }
+            : {})
+        }
+      });
+    });
+  });
+  return {
+    children: [...structural, ...formatting],
+    contentBlocks: spec.blocks.length + 1,
+    tables: tableOrdinal
+  };
+}
+
+function expandSectionComposerEdits(
+  editor: LiveEditor,
+  input: { edits: EditOp[]; changeSetId?: string; plan?: string }
+): SectionExpansion {
+  const requested = Array.isArray(input?.edits) ? input.edits : [];
+  const changed = requested.some((op) => op?.op === 'insert_section');
+  if (!changed)
+    return {
+      edits: requested,
+      entries: requested.map((original, originalIndex) => ({
+        originalIndex,
+        original,
+        start: originalIndex,
+        count: 1,
+        labels: [original.op],
+        section: false,
+        contentBlocks: 0,
+        tables: 0
+      })),
+      expandedToOriginal: requested.map((_op, index) => index),
+      changed: false
+    };
+
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
+  const edits: EditOp[] = [];
+  const entries: SectionExpansionEntry[] = [];
+  const expandedToOriginal: number[] = [];
+  requested.forEach((original, originalIndex) => {
+    const start = edits.length;
+    if (original?.op !== 'insert_section') {
+      edits.push(original);
+      expandedToOriginal.push(originalIndex);
+      entries.push({
+        originalIndex,
+        original,
+        start,
+        count: 1,
+        labels: [original?.op ?? 'edit'],
+        section: false,
+        contentBlocks: 0,
+        tables: 0
+      });
+      return;
+    }
+    // The high-level op crosses the registry-exhaustive common guard even
+    // though its compiled children perform the actual mutations below.
+    observeMutationGuardBoundary(original, 'block_expect');
+    let compiled:
+      | {
+          children: CompiledSectionEdit[];
+          contentBlocks: number;
+          tables: number;
+        }
+      | undefined;
+    try {
+      compiled = compileSectionComposer(
+        original,
+        originalIndex,
+        blocks,
+        byAnchor
+      );
+    } catch (error) {
+      const refusal = isOpError(error)
+        ? {
+            code: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {})
+          }
+        : {
+            code: 'section_compile_failed',
+            message:
+              'insert_section could not compile the supplied semantic section; nothing was written.',
+            details: [describeUnexpectedError(error)]
+          };
+      compiled = {
+        children: [
+          {
+            edit: { ...original, __sectionRefusal: refusal },
+            label: 'sectionSpec'
+          }
+        ],
+        contentBlocks: 0,
+        tables: 0
+      };
+    }
+    for (const child of compiled.children) {
+      edits.push(child.edit);
+      expandedToOriginal.push(originalIndex);
+    }
+    entries.push({
+      originalIndex,
+      original,
+      start,
+      count: compiled.children.length,
+      labels: compiled.children.map((child) => child.label),
+      section: true,
+      contentBlocks: compiled.contentBlocks,
+      tables: compiled.tables
+    });
+  });
+  return { edits, entries, expandedToOriginal, changed: true };
+}
+
+function combinedComposerAppearance(
+  results: EditResult[]
+): AppearanceWriteReport | undefined {
+  const reports = results
+    .map((result) => result.appearance)
+    .filter((report): report is AppearanceWriteReport => !!report);
+  if (!reports.length) return undefined;
+  return reports.reduce<AppearanceWriteReport>(
+    (combined, report) => ({
+      cellsWritten: combined.cellsWritten + report.cellsWritten,
+      rowsWritten: combined.rowsWritten + report.rowsWritten,
+      cellsUnchanged: combined.cellsUnchanged + report.cellsUnchanged,
+      ...((combined.rowsSkippedMixed ?? 0) + (report.rowsSkippedMixed ?? 0) > 0
+        ? {
+            rowsSkippedMixed:
+              (combined.rowsSkippedMixed ?? 0) + (report.rowsSkippedMixed ?? 0)
+          }
+        : {}),
+      ...(report.banding
+        ? { banding: report.banding }
+        : combined.banding
+        ? { banding: combined.banding }
+        : {}),
+      ...(report.sourceStyleName
+        ? { sourceStyleName: report.sourceStyleName }
+        : combined.sourceStyleName
+        ? { sourceStyleName: combined.sourceStyleName }
+        : {})
+    }),
+    { cellsWritten: 0, rowsWritten: 0, cellsUnchanged: 0 }
+  );
+}
+
+function collapseSectionComposerResult(
+  result: ApplyEditsResult,
+  expansion: SectionExpansion
+): ApplyEditsResult {
+  if (!expansion.changed) return result;
+  const results = expansion.entries.map((entry) => {
+    const children = result.results.slice(
+      entry.start,
+      entry.start + entry.count
+    );
+    if (!entry.section) return children[0];
+    const failedIndex = children.findIndex(
+      (child) => !child.ok && child.error !== 'change_set_failed'
+    );
+    const fallbackFailure = children.findIndex((child) => !child.ok);
+    const failureAt = failedIndex >= 0 ? failedIndex : fallbackFailure;
+    if (failureAt >= 0) {
+      const child = children[failureAt];
+      const label = entry.labels[failureAt] ?? 'sectionSpec';
+      return {
+        ok: false,
+        op: 'insert_section',
+        ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
+        error: child.error ?? 'section_assembly_failed',
+        message: `insert_section failed at ${label}: ${
+          child.message ?? 'the engine refused this block'
+        }`,
+        details: [
+          `failing section component: ${label}`,
+          ...(child.details ?? [])
+        ],
+        ...(child.retry ? { retry: child.retry } : {})
+      } as EditResult;
+    }
+    const appearance = combinedComposerAppearance(children);
+    return {
+      ok: true,
+      op: 'insert_section',
+      ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
+      ...(appearance ? { appearance } : {})
+    } as EditResult;
+  });
+  const changeSet = result.changeSet
+    ? {
+        ...result.changeSet,
+        groups: result.changeSet.groups.map((group) => ({
+          ...group,
+          opIndices: Array.from(
+            new Set(
+              group.opIndices.map(
+                (index) => expansion.expandedToOriginal[index] ?? index
+              )
+            )
+          )
+        })),
+        announcement: `${
+          result.changeSet.announcement
+        } The engine also assembled ${expansion.entries
+          .filter((entry) => entry.section)
+          .map(
+            (entry) =>
+              `${entry.contentBlocks} semantic blocks and ${
+                entry.tables
+              } tables at ${entry.original.anchor ?? '(missing anchor)'}`
+          )
+          .join('; ')}.`
+      }
+    : undefined;
+  return {
+    ...result,
+    results,
+    ...(changeSet ? { changeSet } : {})
+  };
+}
+
 // Applies a logical change set in deterministic phases. We preflight only the
 // relevant anchors, re-resolve them after structural writes, and verify only
 // each affected source/target pair; a large document never needs a full result
@@ -10112,9 +10944,15 @@ export function applyDocumentEdits(
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
-  return withSerializationTiming(editor, serializationTiming, () =>
-    applyDocumentEditsMeasured(editor, input, serializationTiming)
-  );
+  return withSerializationTiming(editor, serializationTiming, () => {
+    const expansion = expandSectionComposerEdits(editor, input);
+    const result = applyDocumentEditsMeasured(
+      editor,
+      { ...input, edits: expansion.edits },
+      serializationTiming
+    );
+    return collapseSectionComposerResult(result, expansion);
+  });
 }
 
 function applyDocumentEditsMeasured(
@@ -10950,18 +11788,51 @@ function applyDocumentEditsMeasured(
           let target: FlatBlock;
           let createdTarget: FlatBlock | undefined;
           if (!baselineTarget && op.expect != null) {
+            if (op.__sectionFinalAnchor) {
+              const planned = byAnchor.get(op.__sectionFinalAnchor);
+              if (!planned || !expectTextMatches(op.expect, planned.text))
+                throw new OpError(
+                  'section_paragraph_topology_mismatch',
+                  `The composed paragraph planned at "${op.__sectionFinalAnchor}" did not resolve after assembly.`,
+                  [
+                    `expected: ${JSON.stringify(op.expect)}`,
+                    `actual: ${JSON.stringify(planned?.text)}`
+                  ]
+                );
+              createdTarget = planned;
+            }
             for (let prior = plans.length - 1; prior >= 0; prior--) {
+              if (createdTarget) break;
               const creator = plans[prior];
               if (
                 creator.index >= index ||
                 creator.op.op !== 'insert_text' ||
                 creator.op.anchor !== op.anchor ||
-                opGroupId(creator.op, changeSetId) !== groupId
+                opGroupId(creator.op, changeSetId) !== groupId ||
+                (op.__sectionCreatorId !== undefined &&
+                  creator.op.__sectionCreatorId !== op.__sectionCreatorId)
               )
                 continue;
-              const inheritedTarget = creator.insertInheritance?.find(
-                (candidate) => candidate.expectedText === String(op.expect)
+              const createdParagraphs = (
+                creator.insertInheritance ?? []
+              ).filter(
+                (candidate) =>
+                  !candidate.sectionBoundary &&
+                  !candidate.tableAppearance &&
+                  candidate.expectedText !== undefined
               );
+              const inheritedTarget =
+                op.__sectionSegmentIndex !== undefined
+                  ? createdParagraphs[op.__sectionSegmentIndex]
+                  : createdParagraphs.find(
+                      (candidate) =>
+                        candidate.expectedText === String(op.expect)
+                    );
+              if (
+                inheritedTarget?.expectedText !== undefined &&
+                !expectTextMatches(op.expect, inheritedTarget.expectedText)
+              )
+                continue;
               if (!inheritedTarget) continue;
               const live = byAnchor.get(inheritedTarget.anchor);
               if (live && expectTextMatches(op.expect, live.text)) {
