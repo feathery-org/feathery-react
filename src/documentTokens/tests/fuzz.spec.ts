@@ -14,6 +14,8 @@
 
 import { documentShape, shapeViolations } from '../controls';
 import { TokenSpec } from '../plan';
+import { renderValue } from '../format';
+import { instanceKey, valueKey } from '../plan';
 import { attachTokenCycle, FieldAccess, TokenValue } from '../tokenCycle';
 import {
   makeTokenEditor,
@@ -172,6 +174,36 @@ describe('token gestures never damage the document', () => {
           throw new Error(
             `seed ${seed} step ${step} (${gesture.what}) broke the document:\n` +
               `  ${structural.join('\n  ')}\n` +
+              `  gestures: ${performed.join(' -> ')}`
+          );
+        }
+
+        // Structure being intact says nothing about the numbers being right, and
+        // a token quietly showing another row's value is the failure readers
+        // actually notice. A DERIVED token is the unambiguous case: nobody types
+        // into one, so after a reconcile its text must equal what it computes to.
+        const state = cycle.reconcile();
+        const shown = documentShape(editor as any).text;
+        const wrong = state.specs
+          .filter((spec) => spec.formula)
+          .map((spec) => {
+            const showing = shown.get(instanceKey(spec));
+            const expected = renderValue(
+              state.values.get(valueKey(spec)) ?? 0,
+              spec.format
+            );
+            return showing !== undefined && showing !== expected
+              ? `${instanceKey(spec)} shows ${JSON.stringify(
+                  showing
+                )}, computes ${JSON.stringify(expected)}`
+              : null;
+          })
+          .filter(Boolean);
+
+        if (wrong.length > 0) {
+          throw new Error(
+            `seed ${seed} step ${step} (${gesture.what}) left a derived token ` +
+              `disagreeing with its own value:\n  ${wrong.join('\n  ')}\n` +
               `  gestures: ${performed.join(' -> ')}`
           );
         }

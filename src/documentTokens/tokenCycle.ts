@@ -417,8 +417,17 @@ export const attachTokenCycle = (
     // its exemption, so "Click here or tap to insert text" can never stand. A
     // genuinely empty value still waits for blur, which is what keeps a number
     // cleared on the way to typing a new one from being overwritten.
+    // A COMPUTED token is never exempt. The exemption exists so a value is not
+    // rewritten under someone mid-word, but nobody types into a derived token —
+    // its contents are locked — so skipping it just leaves whatever the caret
+    // happened to do to it standing, including empty.
+    const editingComputed = editingId
+      ? isComputed(plan.specs.get(editingId))
+      : false;
     const skipId =
-      editingId && !showsPlaceholderFor(editingId) ? editingId : undefined;
+      editingId && !editingComputed && !showsPlaceholderFor(editingId)
+        ? editingId
+        : undefined;
 
     // Only tokens the document actually carries. The plan also holds seeded
     // input nodes for fields a formula reads but that have no control anywhere
