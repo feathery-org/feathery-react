@@ -72,34 +72,36 @@ commits. SHAs below are from the current rebased `hilb-fresh` history.
 
 | Commit     | Decision  | Reason                                                                                                                                                |
 | ---------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ac90a1d2` | rewritten | Its per-anchor post-write guards now delegate to the shared block-span verifier. Table appearance and grounded numeric writes remain intact.          |
-| `32397351` | keep      | Structural formatting inheritance is independent of expectation ordering and is proven by the oracle's measurements inside both halves.               |
-| `71203dcd` | rewritten | Verified snapshots are invalidated after topology changes; its queued public `enableLayout` toggle was removed because it deferred Control-Home.      |
-| `1306793c` | rewritten | Per-group relocation remains; preflight relocation now reads simulated post-prior-op text while the write plan retains the real baseline block.       |
-| `54f9bca1` | keep      | Stable attached-section boundaries are structural composition, not the split verifier.                                                                |
-| `68bfba67` | keep      | Live-order structural revision resolution is required for lossless accept/reject and does not alter text expectations.                                |
-| `1b9d0036` | keep      | Atomic section composition uses the deferred topology path; topology-stable text simulation deliberately does not impersonate it.                     |
-| `038147d6` | keep      | Section insertion entry-point resolution is orthogonal and remains covered by its composer tests.                                                     |
-| `34586856` | keep      | Transactional appearance rollback remains the formatting safety boundary; it is not a second text verifier.                                           |
-| `e20ffd9f` | keep      | Composed-table border normalization verifies appearance, not text payloads.                                                                           |
-| `6dd91d6d` | keep      | Background reads must preserve the user's live editor selection.                                                                                      |
-| `7d4023b6` | keep      | Visually silent background serialization prevents selection/layout reads from moving the UI.                                                          |
-| `0e376990` | keep      | Pins the request-time selection across tool continuations and uniquely relocates it by content; reverting would restore the mutable-selection race.   |
-| `2acda52c` | keep      | Restores the editor viewport around revision relayout; independent of text preflight.                                                                 |
-| `734ddbc2` | keep      | Anchored sibling-family choice affects inherited section appearance only.                                                                             |
-| `e9b6bb39` | rewritten | Replaced the CR-only, selection-only range verifier with the shared newline-normalized payload-span verifier and a live-selection oracle.             |
-| `0191255c` | keep      | Resolves section siblings at document edges; its deferred topology logic remains separate from stable text simulation.                                |
-| `53d2c471` | keep      | Keeps container relayout visually silent and composes with the editor viewport preservation path.                                                     |
-| `36b25f65` | keep      | Selection-split formatting inheritance is correct; the oracle proves both created halves retain the source font after the split lands.                |
-| `956bfb33` | rewritten | Replaces the stacked text guards with ordered text simulation and one newline-normalized payload-span verifier shared by every text source.           |
-| `5215714c` | keep      | Scopes chat auto-scroll to the message container; the live tracer confirms it does not move the document viewport.                                    |
-| `7a418c39` | rewritten | Keeps deferred formatting anchored to the real preflight block while text expectations alone use the simulated state.                                 |
-| `2dd1d711` | rewritten | The ancestor-walking rail scroll fix could still choose the editor viewport when the rail fit; the rail now references only its explicit scrollbox.   |
-| `93127f5b` | keep      | Gives the tracked-change rail one explicit scroll owner and proves chip reveal cannot select the document viewer as a fallback.                       |
-| `54e96ec6` | revert    | Its two-frame, pixel-threshold compensation masked navigation after it happened instead of preventing the rail and SyncFusion sources.                |
-| `95f742e1` | keep      | Removes that deferred compensation completely so viewport correctness comes from deterministic scroll ownership and the edit transaction.             |
-| `f337009b` | keep      | Ignores ResizeObserver notifications whose measured editor geometry did not change, avoiding needless relayout during chat streaming.                 |
-| `72942510` | rewritten | Removed its 1.5-second monkey-patch. Control-Home is now suppressed only for the synchronous document-edit transaction that triggers it.              |
-| `d3c79b51` | keep      | Host geometry changes use the narrower native editor resize API; no timer or broad container refresh remains.                                         |
-| `eadef169` | keep      | Makes every engine-owned selection non-navigating and blocks layout Control-Home only while the atomic edit call is on the stack, with exact cleanup. |
-| `415ab772` | keep      | Removes the bulk-layout property toggle whose deferred `refreshLayout()` unconditionally moved selection and viewport to the document start.          |
+| `efbb918a` | rewritten | Its per-anchor post-write guards now delegate to the shared block-span verifier. Table appearance and grounded numeric writes remain intact.          |
+| `b0cbaa68` | keep      | Structural formatting inheritance is independent of expectation ordering and is proven by the oracle's measurements inside both halves.               |
+| `3c694f07` | rewritten | Verified snapshots are invalidated after topology changes; its queued public layout toggle is now a muted, non-navigating batch.                      |
+| `dc813495` | rewritten | Per-group relocation remains; preflight relocation now reads simulated post-prior-op text while the write plan retains the real baseline block.       |
+| `964f4886` | keep      | Stable attached-section boundaries are structural composition, not the split verifier.                                                                |
+| `6d6d385f` | keep      | Live-order structural revision resolution is required for lossless accept/reject and does not alter text expectations.                                |
+| `aaeeaac0` | keep      | Atomic section composition uses the deferred topology path; topology-stable text simulation deliberately does not impersonate it.                     |
+| `b99dfec2` | keep      | Section insertion entry-point resolution is orthogonal and remains covered by its composer tests.                                                     |
+| `ec200bc4` | keep      | Transactional appearance rollback remains the formatting safety boundary; it is not a second text verifier.                                           |
+| `53b15a28` | keep      | Composed-table border normalization verifies appearance, not text payloads.                                                                           |
+| `ce906cea` | keep      | Background reads must preserve the user's live editor selection.                                                                                      |
+| `9237617c` | keep      | Visually silent background serialization prevents selection/layout reads from moving the UI.                                                          |
+| `b0f73c12` | keep      | Pins the request-time selection across tool continuations and uniquely relocates it by content; reverting would restore the mutable-selection race.   |
+| `7c644375` | keep      | Restores the editor viewport around revision relayout; independent of text preflight.                                                                 |
+| `af66a2a8` | keep      | Anchored sibling-family choice affects inherited section appearance only.                                                                             |
+| `acc56ae6` | rewritten | Replaced the CR-only, selection-only range verifier with the shared newline-normalized payload-span verifier and a live-selection oracle.             |
+| `086250c3` | keep      | Resolves section siblings at document edges; its deferred topology logic remains separate from stable text simulation.                                |
+| `b7417583` | keep      | Keeps container relayout visually silent and composes with the editor viewport preservation path.                                                     |
+| `81b3c25c` | keep      | Selection-split formatting inheritance is correct; the oracle proves both created halves retain the source font after the split lands.                |
+| `41fa7679` | rewritten | Replaces the stacked text guards with ordered text simulation and one newline-normalized payload-span verifier shared by every text source.           |
+| `c713f293` | keep      | Scopes chat auto-scroll to the message container; the live tracer confirms it does not move the document viewport.                                    |
+| `97855758` | rewritten | Keeps deferred formatting anchored to the real preflight block while text expectations alone use the simulated state.                                 |
+| `4148cbb4` | rewritten | The ancestor-walking rail scroll fix could still choose the editor viewport when the rail fit; the rail now references only its explicit scrollbox.   |
+| `e4680a2b` | keep      | Gives the tracked-change rail one explicit scroll owner and proves chip reveal cannot select the document viewer as a fallback.                       |
+| `29e09b36` | revert    | Its two-frame, pixel-threshold compensation masked navigation after it happened instead of preventing the rail and SyncFusion sources.                |
+| `3cdb6c55` | keep      | Removes that deferred compensation completely so viewport correctness comes from deterministic scroll ownership and the edit transaction.             |
+| `310173ea` | keep      | Ignores ResizeObserver notifications whose measured editor geometry did not change, avoiding needless relayout during chat streaming.                 |
+| `d6d69984` | rewritten | Removed its 1.5-second monkey-patch. Control-Home is now suppressed only for the synchronous document-edit transaction that triggers it.              |
+| `8c512f2b` | keep      | Host geometry changes use the narrower native editor resize API; no timer or broad container refresh remains.                                         |
+| `5f1d6903` | keep      | Makes every engine-owned selection non-navigating and blocks layout Control-Home only while the atomic edit call is on the stack, with exact cleanup. |
+| `22d83dee` | rewritten | Identified and removed the queued bulk-layout property change whose deferred `refreshLayout()` moved the viewport to the document start.              |
+| `db020a64` | keep      | Gates assistant review wiring to writable assistant hosts; non-assistant and read-only editors remain outside the split/review path.                  |
+| `2a920fb2` | keep      | Restores one efficient layout batch via muted `setProperties`, then explicitly repaginates without queuing SyncFusion's Control-Home refresh.         |
