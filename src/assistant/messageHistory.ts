@@ -177,11 +177,17 @@ export function createRoundSelectionRequestPreparer(): (
   let hasSnapshot = false;
 
   return (options) => {
-    const currentUser = [...options.messages]
-      .reverse()
-      .find((message) => message.role === 'user');
-    if (currentUser && currentUser.id !== userMessageId) {
-      userMessageId = currentUser.id;
+    let currentUserId: string | undefined;
+    // Keep this as a plain loop: array combinators over the AI SDK's recursive
+    // UIMessage union exceed rollup-plugin-typescript2's instantiation depth.
+    for (let index = options.messages.length - 1; index >= 0; index--) {
+      const message = options.messages[index];
+      if (message.role !== 'user') continue;
+      currentUserId = message.id;
+      break;
+    }
+    if (currentUserId && currentUserId !== userMessageId) {
+      userMessageId = currentUserId;
       const selection = options.body?.selection;
       selectionSnapshot =
         selection && typeof selection === 'object' && !Array.isArray(selection)
