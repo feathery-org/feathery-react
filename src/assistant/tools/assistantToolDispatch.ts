@@ -187,7 +187,7 @@ export async function dispatchAssistantTool(
         );
     return { handled: true, output };
   }
-  if (toolName === 'applyDocumentEdits') {
+  if (toolName === 'applyDocumentEdits' || toolName === 'applyDocumentBlocks') {
     const handler = ctx.docxBridge?.applyDocumentEdits;
     const output = handler
       ? await withToolTimeout(

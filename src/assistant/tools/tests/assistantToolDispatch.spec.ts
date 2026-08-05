@@ -44,6 +44,27 @@ describe('document tool dispatch', () => {
     expect(findDocumentOccurrences).toHaveBeenCalledWith({ text: 'Robin' });
   });
 
+  it.each(['applyDocumentEdits', 'applyDocumentBlocks'])(
+    'routes %s through the common verified document mutation bridge',
+    async (toolName) => {
+      const applyDocumentEdits = jest.fn().mockResolvedValue({
+        results: [{ ok: true }],
+        changeSet: { status: 'applied' }
+      });
+      const input = { edits: [{ op: 'insert_text', anchor: '0;7', text: 'x' }] };
+
+      const result = await dispatchAssistantTool(toolName, input, {
+        docxBridge: { applyDocumentEdits }
+      });
+
+      expect(result).toEqual({
+        handled: true,
+        output: { results: [{ ok: true }], changeSet: { status: 'applied' } }
+      });
+      expect(applyDocumentEdits).toHaveBeenCalledWith(input);
+    }
+  );
+
   it.each([
     'get_document_inventory',
     'find_document_occurrences',
