@@ -4686,16 +4686,27 @@ function verifySelectionWrite(
       'post_write_anchor_not_found',
       `The edited anchor "${range.startAnchor}" disappeared after the write.`
     );
+  // A paragraph-creating insert turns one selected block range into more live
+  // blocks than that range named before the write. Verify through exactly the
+  // extra paragraph boundaries carried by the payload; otherwise a correct
+  // split is judged only against its first new paragraph and rolled back.
+  const normalizedReplacement = replacement.replace(/\r\n/g, '\r');
+  const createdParagraphMarks = (normalizedReplacement.match(/\r/g) ?? [])
+    .length;
+  const resultingEndIndex = Math.min(
+    blocks.length - 1,
+    Math.max(endIndex, startIndex) + createdParagraphMarks
+  );
   const span = blocks
-    .slice(startIndex, Math.max(endIndex, startIndex) + 1)
+    .slice(startIndex, resultingEndIndex + 1)
     .map((block) => block.text)
-    .join('\n');
-  if (!span.includes(replacement))
+    .join(createdParagraphMarks ? '\r' : '\n');
+  if (!span.includes(normalizedReplacement))
     throw new OpError(
       'text_verification_failed',
       `Text verification failed across "${range.startAnchor}".."${range.endAnchor}".`,
       [
-        `expected to contain: ${JSON.stringify(replacement)}`,
+        `expected to contain: ${JSON.stringify(normalizedReplacement)}`,
         `actual: ${JSON.stringify(span)}`
       ]
     );

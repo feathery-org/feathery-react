@@ -609,6 +609,67 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
     }
   });
 
+  it.each([
+    [
+      'without the selected paragraph mark',
+      ['We guide clients before renewal.', 'We stay through claims.'],
+      false
+    ],
+    [
+      'with the selected paragraph mark',
+      ['We guide clients before renewal.', 'We stay through claims.'],
+      true
+    ],
+    [
+      'into three paragraphs',
+      [
+        'We plan before renewal.',
+        'We negotiate in the market.',
+        'We stay through claims.'
+      ],
+      true
+    ]
+  ])(
+    'real SDK: splits one selected paragraph %s and survives verification',
+    (_label, parts, includeParagraphMark) => {
+      const ed = makeRealDocumentEditor(onePargraphDoc());
+      try {
+        ed.enableTrackChanges = true;
+        const before = ed.serialize();
+        const expectedSelection = `${COMMITMENT}${
+          includeParagraphMark ? '\r' : ''
+        }`;
+        const replacement = parts.join('\r');
+        const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+          changeSetId: `paragraph-split-${parts.length}-${
+            includeParagraphMark ? 'with-mark' : 'without-mark'
+          }`,
+          edits: [
+            {
+              op: 'replace_selection',
+              anchor: '0;1',
+              startOffset: '0;1;0',
+              endOffset: `0;1;${expectedSelection.length}`,
+              replace: replacement,
+              expect: expectedSelection
+            } as any
+          ]
+        });
+
+        expect(result.results[0]).toMatchObject({ ok: true });
+        expect(result.changeSet).toMatchObject({ status: 'applied' });
+        expect(blockTexts(ed).slice(1, 1 + parts.length)).toEqual(parts);
+        expect(blockTexts(ed)).not.toContain(COMMITMENT);
+        expect(realRevisions(ed).length).toBeGreaterThan(0);
+
+        rejectEveryRealRevision(ed);
+        expect(ed.serialize()).toBe(before);
+      } finally {
+        destroyRealDocumentEditor(ed);
+      }
+    }
+  );
+
   it('real SDK: a multi-run selection (bold + plain + italic in one paragraph)', () => {
     const ed = makeRealDocumentEditor(multiRunDoc());
     try {
