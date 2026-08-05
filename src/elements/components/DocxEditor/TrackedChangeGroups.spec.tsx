@@ -528,33 +528,49 @@ describe('TrackedChangeGroups', () => {
     ).toBeNull();
   });
 
-  it('refreshes on content changes after a trailing debounce', () => {
+  it('a NEW tracked edit lands in the rail immediately', () => {
+    const revisions: any[] = [];
+    const editor = makeEditor(revisions);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+    expect(container).toBeEmptyDOMElement();
+
+    // The revision count changed, so no debounce: the card appears in the
+    // same frame as the inline wash and the selection-driven expansion.
+    revisions.push(makeRevision());
+    act(() => {
+      editor.emit('contentChange');
+    });
+    expect(screen.getByText('Update premium')).toBeInTheDocument();
+  });
+
+  it('text growth inside an existing edit refreshes on a trailing debounce', () => {
     jest.useFakeTimers();
     try {
-      const revisions: any[] = [];
-      const editor = makeEditor(revisions);
-      const { container } = render(<TrackedChangeGroups editor={editor} />);
-      expect(container).toBeEmptyDOMElement();
+      const revision = makeRevision();
+      const editor = makeEditor([revision]);
+      render(<TrackedChangeGroups editor={editor} />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      );
+      expect(screen.getByText('$6,000')).toBeInTheDocument();
 
-      // The assistant applies a tagged edit after mount; contentChange fires
-      // once per keystroke, so the rail waits for the trailing pause instead
-      // of rebuilding on every event.
-      revisions.push(makeRevision());
+      // Same revision, longer text — one contentChange per keystroke; the
+      // rail waits for the trailing pause instead of rebuilding per event.
+      revision.getRange = () => [{ text: '$6,000 yearly' }];
       act(() => {
         editor.emit('contentChange');
       });
-      expect(container).toBeEmptyDOMElement();
       act(() => {
         editor.emit('contentChange');
       });
       act(() => {
         jest.advanceTimersByTime(149);
       });
-      expect(container).toBeEmptyDOMElement();
+      expect(screen.getByText('$6,000')).toBeInTheDocument();
       act(() => {
         jest.advanceTimersByTime(1);
       });
-      expect(screen.getByText('Update premium')).toBeInTheDocument();
+      expect(screen.getByText('$6,000 yearly')).toBeInTheDocument();
     } finally {
       jest.useRealTimers();
     }

@@ -82,6 +82,18 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     [editor]
   );
 
+  // Live revision count, for the new-edit fast path below.
+  const lastRevisionCountRef = useRef(0);
+  const revisionCount = useCallback(() => {
+    try {
+      const changes = editor?.revisions?.changes;
+      if (Array.isArray(changes)) return changes.length;
+      return editor?.revisions?.length ?? 0;
+    } catch {
+      return 0;
+    }
+  }, [editor]);
+
   const refresh = useCallback(() => {
     let views: ReturnType<typeof listRevisionGroups> = [];
     try {
@@ -89,6 +101,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     } catch {
       views = [];
     }
+    lastRevisionCountRef.current = revisionCount();
     setGroups(
       views.map((view) => ({
         key: groupKeyOf(view.changeSetId, view.group),
@@ -105,27 +118,31 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         }))
       }))
     );
-  }, [editor]);
+  }, [editor, revisionCount]);
 
-  // contentChange (edits, resolutions, undo — one per keystroke) refreshes
-  // on a trailing debounce; documentChange (a DIFFERENT document opened in
-  // place) rebuilds immediately so stale cards never linger.
+  // contentChange fires once per keystroke. A change to the REVISION COUNT
+  // (an edit arriving or resolving) lands in the rail immediately — the
+  // inline wash and the selectionChange expansion already happened this
+  // frame, and a card popping in a beat later reads as lag. Only text growth
+  // inside an existing revision rides the trailing debounce. documentChange
+  // (a DIFFERENT document opened in place) also rebuilds immediately.
   useEffect(() => {
     if (!editor) return;
     refresh();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const debouncedRefresh = () => {
+    const onContentChange = () => {
       clearTimeout(timer);
-      timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
+      if (revisionCount() !== lastRevisionCountRef.current) refresh();
+      else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
     };
-    editor.addEventListener?.('contentChange', debouncedRefresh);
+    editor.addEventListener?.('contentChange', onContentChange);
     editor.addEventListener?.('documentChange', refresh);
     return () => {
       clearTimeout(timer);
-      editor.removeEventListener?.('contentChange', debouncedRefresh);
+      editor.removeEventListener?.('contentChange', onContentChange);
       editor.removeEventListener?.('documentChange', refresh);
     };
-  }, [editor, refresh]);
+  }, [editor, refresh, revisionCount]);
 
   // Inline click → rail navigation via the native cursor→revision mapping.
   // Programmatic chip focus sets ignoreSelectionRef so its selectionChange
