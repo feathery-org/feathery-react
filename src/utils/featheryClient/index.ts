@@ -1138,12 +1138,14 @@ export default class FeatheryClient extends IntegrationClient {
     documentIds,
     download = false,
     merge = false,
+    repeatable = false,
     zipName,
     mergedFileName
   }: {
     documentIds: string[];
     download?: boolean;
     merge?: boolean;
+    repeatable?: boolean;
     zipName?: string;
     mergedFileName?: string;
   }) {
@@ -1155,6 +1157,7 @@ export default class FeatheryClient extends IntegrationClient {
       userId,
       envelopeAction: 'fill',
       mergeDocuments: merge,
+      repeatable,
       mergedFileName
     });
     if (payload.status === 'error') throw Error(payload.message);
