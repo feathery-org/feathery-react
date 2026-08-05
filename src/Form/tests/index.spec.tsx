@@ -31,6 +31,10 @@ afterEach(() => {
   GridMod._spies.actions = [];
   GridMod._spies.submit = false;
   BrowserMod._spies.confirm.mockReset();
+  BrowserMod._spies.history.state = null;
+  BrowserMod._spies.history.go.mockReset();
+  BrowserMod._spies.history.pushState.mockClear();
+  BrowserMod._spies.history.replaceState.mockClear();
   _clearDocxDirtyRegistry();
 
   // Restore FeatheryClient prototype if a test overrode it

@@ -212,9 +212,20 @@ jest.mock('../../integrations/flinks', () => ({
 }));
 
 jest.mock('../../utils/browser', () => {
+  const history: any = {
+    state: null,
+    go: jest.fn()
+  };
+  history.pushState = jest.fn((nextState: any) => {
+    history.state = nextState;
+  });
+  history.replaceState = jest.fn((nextState: any) => {
+    history.state = nextState;
+  });
   const state = {
     confirm: jest.fn(),
-    location: { href: '', pathname: '/', search: '' }
+    history,
+    location: { href: 'https://example.com/', pathname: '/', search: '' }
   };
   return {
     downloadAllFileUrls: jest.fn(),
@@ -224,6 +235,7 @@ jest.mock('../../utils/browser', () => {
       removeEventListener: jest.fn(),
       scrollTo: jest.fn(),
       confirm: state.confirm,
+      history: state.history,
       location: state.location
     }),
     isIOS: () => false,

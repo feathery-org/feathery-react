@@ -250,6 +250,9 @@ import {
   hasDirtyDocxEditors
 } from '../elements/components/DocxEditor/docxDirtyRegistry';
 
+const UNSAVED_DOCX_MESSAGE =
+  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
+
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
 
@@ -2292,9 +2295,7 @@ function Form({
       ) &&
       hasDirtyDocxEditors(_internalId)
     ) {
-      const proceed = featheryWindow().confirm(
-        'You have unsaved changes in the document editor. If you leave now, your changes will be lost.'
-      );
+      const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
       if (!proceed) {
         elementClicks[id] = false;
         clearButtonActionState();
@@ -3337,6 +3338,12 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
+  const confirmDocxPopNavigation = useCallback(
+    () =>
+      !hasDirtyDocxEditors(_internalId) ||
+      featheryWindow().confirm(UNSAVED_DOCX_MESSAGE),
+    [_internalId]
+  );
 
   useEffect(() => {
     initState.remountCallbacks[_internalId] = () =>
@@ -3350,7 +3357,10 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider>
+        <RouterProvider
+          navigationId={_internalId}
+          confirmPopNavigation={confirmDocxPopNavigation}
+        >
           <Form
             {...props}
             formId={formId}
