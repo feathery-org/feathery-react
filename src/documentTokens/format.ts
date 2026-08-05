@@ -10,6 +10,7 @@
  * the server and reformatted here must agree, so keep the two in step.
  */
 
+import { roundHalfAwayFromZero } from './grammar';
 import { TokenFormat } from './plan';
 
 const DEFAULT_DECIMALS: Record<string, number> = {
@@ -17,13 +18,6 @@ const DEFAULT_DECIMALS: Record<string, number> = {
   percent: 2,
   number: 0,
   text: 0
-};
-
-/** Half away from zero, matching Python's Decimal(ROUND_HALF_UP). */
-const roundHalfAwayFromZero = (value: number, digits: number): number => {
-  const factor = 10 ** digits;
-  const sign = value < 0 ? -1 : 1;
-  return (sign * Math.round(Math.abs(value) * factor)) / factor;
 };
 
 const group = (value: number, decimals: number): string =>

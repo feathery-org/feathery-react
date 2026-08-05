@@ -21,38 +21,20 @@
  * and writes only what the document does not already show — so calling it more
  * often than strictly necessary is free and can never lose an edit.
  *
- * TODO(docx-tokens): known gaps, kept here so they are not rediscovered the
- * hard way. Detail in docs/superpowers/2026-08-04-docx-linked-tokens-handoff.md.
- *
- * 1. The fuzz harness (tests/fuzz.spec.ts) drives a real editor, but through its
- *    API rather than real mouse and key events, and asserts structure only. Add
- *    value invariants (a settled token's text must be what its owner holds),
- *    more gesture kinds, and more seeds.
- * 2. Redo after undoing a token edit is lost: adopting the restored values
- *    writes to the document, and any write clears Syncfusion's redo stack.
- * 3. Content controls have been seen DUPLICATED after clicking a double-click
- *    selection. Not reproduced: 125 random API-level gestures never broke the
- *    structure, so it probably needs real mouse events. Aiming one at a token
- *    needs on-screen coordinates, which went away with tokenRects.ts — restore
- *    a test-only version to chase it.
- * 4. Editing happens in the document, so any gesture can damage the structure
- *    the whole feature depends on. Making token text read-only and editing
- *    through UI instead would remove that class of bug rather than defend
- *    against each instance.
- * 5. The dev TokenPanel keys rows by `spec.id`, so repeated tokens collide in
- *    its readout — a panel display bug, not an engine one.
+ * Known gaps (real key-event coverage, redo after an adopted undo, the
+ * unreproduced control duplication) are catalogued with their analysis in
+ * docs/superpowers/2026-08-04-docx-linked-tokens-handoff.md.
  */
 
 import {
-  documentShape,
   EditorLike,
   readTokens,
   selectTokenValue,
-  shapeViolations,
   showsPlaceholder,
   tokenAtCaret,
   writeValues
 } from './controls';
+import { FieldAccess, TokenCycle, TokenState, TokenValue } from './cycleTypes';
 import { evaluate } from './grammar';
 import { parseValue, renderValue } from './format';
 import {
@@ -75,6 +57,7 @@ import {
   validationErrors,
   valueKey
 } from './plan';
+import { structureWatchdog } from './structureWatchdog';
 
 /**
  * SyncFusion's placeholder for an emptied content control. Undo can leave a
@@ -82,97 +65,16 @@ import {
  */
 const PLACEHOLDER = 'Click here or tap to insert text';
 
-/** A token's value as the form engine holds it. */
-export type TokenValue = number | string;
-
-/**
- * How the cycle reaches the form's field values.
- *
- * Injected rather than imported, so this module stays free of SDK internals
- * and testable without a form. The host supplies the same read and write paths
- * the rendered inputs use, which is what makes a token and its field
- * indistinguishable to the rest of the form.
- */
-export type FieldAccess = {
-  /** The field value behind a token, or undefined when it has none. */
-  read: (spec: TokenSpec) => TokenValue | undefined;
-  /** Write field values, batched so one update covers every token that moved. */
-  write: (updates: Array<{ spec: TokenSpec; value: TokenValue }>) => void;
-  /**
-   * How many rows a repeated field holds, so the document can match it.
-   * Absent means the host cannot say, and rows are left as the document has them.
-   */
-  rowCount?: (source: string) => number | undefined;
-  /**
-   * Drop row `index` from these fields, shifting later rows down.
-   *
-   * A splice, not a blank: deleting the middle of three line items has to leave
-   * two, or the row comes straight back on the next sync.
-   */
-  removeRow?: (sources: string[], index: number) => void;
-};
-
-export type TokenState = {
-  specs: TokenSpec[];
-  /** Numeric values by value key — inputs and computed alike. */
-  values: Map<string, number>;
-  /** Text values by value key. */
-  texts: Map<string, string>;
-  /** Formula and cycle failures by value key. */
-  errors: Map<string, string>;
-  /** Validation failures by value key. */
-  invalid: Map<string, string>;
-  /** The token the caret is inside, or null in ordinary prose. */
-  focused: string | null;
-};
-
-/**
- * The problems that must stop a save, or null when there are none.
- *
- * Validation failures and formula errors both mean a number in the document
- * is wrong — a token whose formula cannot evaluate renders its 0 fallback,
- * and these documents are financial or legal, so a bad number saved silently
- * is worse than an unsaved edit.
- */
-export const saveBlockers = (state: TokenState): string | null => {
-  const problems = [...state.invalid.entries(), ...state.errors.entries()];
-  if (problems.length === 0) return null;
-  const summary = problems.map(([id, reason]) => `${id}: ${reason}`).join(', ');
-  return `Cannot save — ${problems.length} token(s) invalid. ${summary}`;
-};
-
-/**
- * A cheap change signature over every field the plan reads.
- *
- * The container reconciles on render; comparing this string is what lets it
- * skip the O(document) control walk when no relevant field has moved.
- */
-export const tokenFieldSignature = (
-  specs: TokenSpec[],
-  read: (key: string) => unknown
-): string => {
-  const keys = new Set<string>();
-  for (const spec of specs) {
-    if (spec.source) keys.add(spec.source);
-    for (const name of spec.reads ?? []) keys.add(name);
-  }
-  return [...keys]
-    .sort()
-    .map((key) => `${key}=${JSON.stringify(read(key)) ?? ''}`)
-    .join('|');
-};
-
-export type TokenCycle = {
-  /** Apply a value for one token and bring the document back in step. */
-  setTokenValue: (id: string, raw: TokenValue) => TokenState;
-  /** Re-read the document and rebuild the graph, after a structural change. */
-  refresh: () => TokenState;
-  /** Bring the document in step with the current values. */
-  reconcile: () => TokenState;
-  getState: () => TokenState;
-  subscribe: (listener: (state: TokenState) => void) => () => void;
-  detach: () => void;
-};
+// The cycle's host-facing types and pure helpers live in cycleTypes.ts;
+// re-exported here so a host imports everything from one module.
+export {
+  saveBlockers,
+  tokenFieldSignature,
+  type FieldAccess,
+  type TokenCycle,
+  type TokenState,
+  type TokenValue
+} from './cycleTypes';
 
 type CycleEditor = EditorLike & {
   addEventListener?: (event: string, handler: (args?: any) => void) => void;
@@ -436,7 +338,7 @@ export const attachTokenCycle = (
         console.warn('[feathery] could not sync document rows', err);
       } finally {
         applying = false;
-        lastGood = documentShape(editor);
+        watchdog.baseline();
       }
       if (moved) {
         plan = buildPlan(liveTokens(editor).map(({ spec }) => spec));
@@ -508,7 +410,7 @@ export const attachTokenCycle = (
         applying = false;
         // Our writes are legitimate by construction, so the watchdog's baseline
         // moves with them rather than treating them as damage.
-        lastGood = documentShape(editor);
+        watchdog.baseline();
       }
     }
 
@@ -678,81 +580,12 @@ export const attachTokenCycle = (
     }
   };
 
-  /**
-   * The last document state whose token structure was intact, so a damaging
-   * edit can be told from an ordinary one and rolled back. Structure only —
-   * values move constantly and are none of this concern.
-   */
-  let lastGood: ReturnType<typeof documentShape> | null = null;
-  let repairing = false;
-
-  /**
-   * Revert any edit that damages the token structure.
-   *
-   * Checking our own writes was never enough: the damage a reader hits comes
-   * from editing AROUND a token — typing at its edge, deleting across it,
-   * pasting over it — where Syncfusion will merge two controls, drop a
-   * control's markers, or duplicate it. None of that goes through `writeValues`,
-   * so nothing was watching.
-   *
-   * Rather than enumerate the dangerous gestures, this watches the outcome: if
-   * the set of controls is not what it was, the edit is undone. That covers keys
-   * nobody thought of, and paste, cut and drag alike, and it fails safe — the
-   * reader loses one keystroke instead of the document losing a token, which
-   * cannot be rebuilt (`insertContentControl` is a no-op).
-   *
-   * Values are deliberately not defended: changing a token's text is exactly
-   * what the reader is here to do, and the blur commit decides what it means.
-   */
-  const guardStructure = (): void => {
-    if (repairing) return;
-    const now = documentShape(editor);
-    if (!lastGood) {
-      lastGood = now;
-      return;
-    }
-
-    // Only the address multiset matters: the same tokens, the same number of
-    // times each.
-    const structureOnly = (shape: typeof now) => ({
-      addresses: shape.addresses,
-      text: new Map<string, string>()
-    });
-    const damage = shapeViolations(
-      structureOnly(lastGood),
-      structureOnly(now),
-      new Set()
-    );
-    if (damage.length === 0) {
-      lastGood = now;
-      return;
-    }
-
-    repairing = true;
-    try {
-      (editor as any).editorHistory?.undo?.();
-      const repaired = documentShape(editor);
-      const left = shapeViolations(
-        structureOnly(lastGood),
-        structureOnly(repaired),
-        new Set()
-      );
-      if (left.length === 0) {
-        reportRepair(damage);
-      } else {
-        // The undo did not put it back. Stop fighting rather than undoing the
-        // reader's earlier work too, and accept the document as it now stands.
-        lastGood = repaired;
-        reportViolations([
-          ...damage,
-          'and the undo did not restore it',
-          ...left
-        ]);
-      }
-    } finally {
-      repairing = false;
-    }
-  };
+  // Reverts any edit that damages the token structure — see
+  // structureWatchdog.ts for why the outcome is watched, not the gestures.
+  const watchdog = structureWatchdog(editor, {
+    repaired: reportRepair,
+    violated: reportViolations
+  });
 
   /**
    * An undo or redo has changed the document, so move the fields to match.
@@ -808,7 +641,7 @@ export const attachTokenCycle = (
         refresh();
         return;
       }
-      guardStructure();
+      watchdog.check();
       return;
     }
     if (adoptTimer !== null) return;
@@ -826,7 +659,7 @@ export const attachTokenCycle = (
     editingId = null;
     // The watchdog baseline and row snapshot describe the OLD document;
     // comparing the new one against them would read the swap as damage.
-    lastGood = null;
+    watchdog.reset();
     lastRows = [];
     refresh();
   };

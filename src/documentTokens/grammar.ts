@@ -271,8 +271,13 @@ export const wildcardPrefixes = (node: Node): Set<string> =>
 /**
  * Half away from zero, matching Python's Decimal(ROUND_HALF_UP). Math.round
  * alone rounds -2.5 to -2, which would silently disagree with the server.
+ * Exported for format.ts — ONE rounding rule, or a formatted display could
+ * disagree with the formula that produced it.
  */
-const roundHalfAwayFromZero = (value: number, digits: number): number => {
+export const roundHalfAwayFromZero = (
+  value: number,
+  digits: number
+): number => {
   const factor = 10 ** digits;
   const sign = value < 0 ? -1 : 1;
   return (sign * Math.round(Math.abs(value) * factor)) / factor;

@@ -154,8 +154,10 @@ const restoreBanding = (table: any, rowIndex: number): void => {
  *
  * The last existing row is the template: whichever tokens it carries, in
  * whichever columns, the next row gets the same with the following repeat index.
- * `textFor` renders each one, so a grown row arrives showing its value instead
- * of a placeholder.
+ * `initialTextFor` clears each control's placeholder — it runs against the
+ * caller's PRE-growth plan, so it cannot know a fresh row's real value. The
+ * value lands in the caller's follow-up reconcile, which every caller must
+ * run; skipping it would leave a grown row blank, not merely stale.
  *
  * Creating the control and filling it are separate steps because
  * `insertContentControl` DISCARDS the selected text and drops in Syncfusion's
@@ -166,7 +168,7 @@ export const growGroup = (
   editor: EditorLike,
   group: RepeatGroup,
   target: number,
-  textFor: (spec: TokenSpec) => string,
+  initialTextFor: (spec: TokenSpec) => string,
   onProblem: ProblemReporter = () => undefined
 ): TokenSpec[] => {
   const indexes = [...group.rows.keys()].sort((a, b) => a - b);
@@ -255,7 +257,7 @@ export const growGroup = (
   if (added.length > 0) {
     writeValues(
       editor,
-      added.map((spec) => ({ id: valueKey(spec), text: textFor(spec) }))
+      added.map((spec) => ({ id: valueKey(spec), text: initialTextFor(spec) }))
     );
   }
 
