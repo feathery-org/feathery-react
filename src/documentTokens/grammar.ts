@@ -18,8 +18,36 @@
  *   args    := (expr | WILDCARD) (',' (expr | WILDCARD))*
  */
 
+/**
+ * Functions that change how a value LOOKS, not what it is. A token displayed
+ * through these stays editable: the field holds what was typed and this only
+ * decides the rendering. Text in, text out.
+ *
+ * The Python twin is grammar.py's DISPLAY_FUNCTIONS — keep them identical.
+ */
+export const DISPLAY_FUNCTIONS = new Set(['UPPER', 'LOWER', 'TITLE', 'TRIM']);
+
+const DISPLAY: Record<string, (text: string) => string> = {
+  UPPER: (text) => text.toUpperCase(),
+  LOWER: (text) => text.toLowerCase(),
+  // Word-initial capitals, matching Python's str.title().
+  TITLE: (text) =>
+    text.replace(
+      /[A-Za-z]+/g,
+      (w) => w[0].toUpperCase() + w.slice(1).toLowerCase()
+    ),
+  TRIM: (text) => text.trim()
+};
+
 // Only these may be called. Anything else is rejected at parse time.
-export const FUNCTIONS = new Set(['SUM', 'ROUND', 'MIN', 'MAX', 'ABS']);
+export const FUNCTIONS = new Set([
+  'SUM',
+  'ROUND',
+  'MIN',
+  'MAX',
+  'ABS',
+  ...DISPLAY_FUNCTIONS
+]);
 
 export class FormulaError extends Error {
   constructor(message: string) {
@@ -262,6 +290,33 @@ const flatten = (node: Node, values: TokenValues): number[] => {
     .flatMap(([, value]) => (Array.isArray(value) ? value : [value]));
 };
 
+/**
+ * A display function's argument, as text.
+ *
+ * Strings live only inside display functions, so the arithmetic evaluator stays
+ * purely numeric and a text value can never be coerced into a number.
+ */
+const evaluateText = (node: Node, values: TokenValues): string => {
+  if (node.kind === 'ref') {
+    const value = values.get(node.id);
+    if (value === undefined) {
+      throw new FormulaError(`unknown token ${JSON.stringify(node.id)}`);
+    }
+    if (Array.isArray(value)) {
+      throw new FormulaError(`${node.id} is a repeated field`);
+    }
+    return String(value);
+  }
+  if (node.kind === 'call' && DISPLAY_FUNCTIONS.has(node.name)) {
+    if (node.args.length !== 1) {
+      throw new FormulaError(`${node.name} takes exactly 1 argument`);
+    }
+    return DISPLAY[node.name](evaluateText(node.args[0], values));
+  }
+  if (node.kind === 'num') return String(node.value);
+  throw new FormulaError('a display function takes a field or another display');
+};
+
 const evaluateNode = (node: Node, values: TokenValues): number => {
   switch (node.kind) {
     case 'num':
@@ -299,6 +354,11 @@ const evaluateNode = (node: Node, values: TokenValues): number => {
     }
 
     case 'call': {
+      if (DISPLAY_FUNCTIONS.has(node.name)) {
+        // Text, deliberately returned through the numeric signature: only a
+        // display token reaches here, and its result is rendered, never summed.
+        return evaluateText(node, values) as unknown as number;
+      }
       const args = node.args.flatMap((arg) => flatten(arg, values));
 
       if (node.name === 'SUM') return args.reduce((a, b) => a + b, 0);
