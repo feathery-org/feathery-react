@@ -35,6 +35,18 @@ const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
 
+// Any raw call into the EJ2 instance can throw once the editor is mid-destroy
+// (step navigation tears the document down under a still-mounted rail; EJ2's
+// observer internals then hit `Object.keys(null)`). A dead editor must read as
+// a no-op, never as a crash that unmounts the form step.
+const quietly = (fn: () => void) => {
+  try {
+    fn();
+  } catch {
+    // Editor mid-teardown.
+  }
+};
+
 // 'update-premium-2026' -> 'Update premium 2026'. The id is the assistant's
 // own kebab/snake label; render it as a title rather than as code.
 const humanizeGroupId = (id: string) => {
@@ -135,12 +147,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       if (revisionCount() !== lastRevisionCountRef.current) refresh();
       else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
     };
-    editor.addEventListener?.('contentChange', onContentChange);
-    editor.addEventListener?.('documentChange', refresh);
+    quietly(() => editor.addEventListener?.('contentChange', onContentChange));
+    quietly(() => editor.addEventListener?.('documentChange', refresh));
     return () => {
       clearTimeout(timer);
-      editor.removeEventListener?.('contentChange', onContentChange);
-      editor.removeEventListener?.('documentChange', refresh);
+      quietly(() =>
+        editor.removeEventListener?.('contentChange', onContentChange)
+      );
+      quietly(() => editor.removeEventListener?.('documentChange', refresh));
     };
   }, [editor, refresh, revisionCount]);
 
@@ -182,9 +196,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       // The cursor is not on an assistant edit: nothing is active.
       commitActiveRevision(null);
     };
-    editor.addEventListener?.('selectionChange', onSelectionChange);
+    quietly(() =>
+      editor.addEventListener?.('selectionChange', onSelectionChange)
+    );
     return () => {
-      editor.removeEventListener?.('selectionChange', onSelectionChange);
+      quietly(() =>
+        editor.removeEventListener?.('selectionChange', onSelectionChange)
+      );
       activeRevisionRef.current = null;
       setActiveInlineRevision(editor, null);
     };
@@ -223,7 +241,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       remaining = 0;
     }
     if (remaining) refocusPanel();
-    else editor?.focusIn?.();
+    else quietly(() => editor?.focusIn?.());
   };
 
   const focusChip = (chip: ChipView) => {
@@ -275,8 +293,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         event.preventDefault();
         event.stopPropagation();
         const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-        if (key === 'y' || event.shiftKey) history?.redo?.();
-        else history?.undo?.();
+        if (key === 'y' || event.shiftKey) quietly(() => history?.redo?.());
+        else quietly(() => history?.undo?.());
       }
       return;
     }

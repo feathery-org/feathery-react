@@ -59,6 +59,32 @@ const overlay = {
   color: '#3f3f46'
 };
 
+// The review rail is an overlay on the document — no failure inside it may
+// take down the host form. Without this, a teardown race against a destroyed
+// Syncfusion instance (step navigation, remount) escapes to the form's own
+// boundary and ejects the user from their step. Exported for tests.
+export class RailErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn(
+      'Feathery: tracked-changes panel failed and was hidden.',
+      error
+    );
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 // Reusable Syncfusion DOCX editor: custom toolbar + inline editing in one unit
 // that fills its container and manages its own overflow. Syncfusion loads from
 // the CDN at runtime (no bundle bloat) and renders directly in the page (no
@@ -309,11 +335,13 @@ function DocxEditor({
         {/* Grouped review cards for assistant-authored tracked changes.
             Read-only hosts cannot resolve revisions, so no panel there. */}
         {editor && !readOnly && (
-          <TrackedChangeGroups
-            editor={editor}
-            hidden={changesPanelHidden}
-            onHiddenChange={setChangesPanelHidden}
-          />
+          <RailErrorBoundary>
+            <TrackedChangeGroups
+              editor={editor}
+              hidden={changesPanelHidden}
+              onHiddenChange={setChangesPanelHidden}
+            />
+          </RailErrorBoundary>
         )}
       </div>
     </div>

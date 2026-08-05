@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import TrackedChangeGroups from './TrackedChangeGroups';
+import { RailErrorBoundary } from './index';
 
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
@@ -23,6 +24,26 @@ function makeEditor(revisions: any[]): any {
       listeners[event] = (listeners[event] ?? []).filter((h) => h !== handler);
     },
     emit: (event: string) => (listeners[event] ?? []).forEach((h) => h())
+  };
+}
+
+// The editor mid-destroy: EJ2's observer internals hit Object.keys(null),
+// which is exactly the error class step navigation surfaces. Every touchpoint
+// throws — the rail must read this as "no editor", never crash.
+function makeDestroyedEditor(): any {
+  const die = () => {
+    throw new TypeError('Cannot convert undefined or null to object');
+  };
+  return {
+    isDestroyed: true,
+    get revisions() {
+      return die();
+    },
+    selection: { getCurrentRevision: die },
+    addEventListener: die,
+    removeEventListener: die,
+    focusIn: die,
+    editorHistory: { undo: die, redo: die }
   };
 }
 
@@ -636,5 +657,81 @@ describe('TrackedChangeGroups', () => {
     revisions.splice(0, revisions.length);
     act(() => editor.emit('documentChange'));
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+  });
+
+  // Step navigation destroys the Syncfusion instance under a still-mounted
+  // rail: every raw EJ2 call then throws. The rail must treat a dead editor
+  // as "no editor" across its whole lifecycle — mount, swap, and unmount —
+  // instead of crashing out of the form step.
+  it('survives an already-destroyed editor across mount and unmount', () => {
+    const editor = makeDestroyedEditor();
+    const view = render(<div />);
+    expect(() => {
+      view.rerender(<TrackedChangeGroups editor={editor} />);
+    }).not.toThrow();
+    expect(view.container).toBeEmptyDOMElement();
+    expect(() => view.unmount()).not.toThrow();
+  });
+
+  it('survives the live editor being swapped for a destroyed one', () => {
+    const editor = makeEditor([makeRevision()]);
+    const { rerender, unmount } = render(
+      <TrackedChangeGroups editor={editor} />
+    );
+    expect(screen.getByText('Update premium')).toBeInTheDocument();
+
+    // The back-navigation race: the old instance is destroyed and the rail
+    // re-renders against it before its own unmount lands.
+    expect(() => {
+      rerender(<TrackedChangeGroups editor={makeDestroyedEditor()} />);
+    }).not.toThrow();
+    expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+    expect(() => unmount()).not.toThrow();
+  });
+});
+
+describe('RailErrorBoundary', () => {
+  // The rail is an overlay on the review experience; any failure inside it —
+  // including ones the touchpoint guards can't reach, like a future render
+  // bug — must hide the panel, not eject the user from their form step.
+  it('contains a crashing rail: hides it, warns, and nothing escapes', () => {
+    const Bomb = () => {
+      throw new TypeError('Cannot convert undefined or null to object');
+    };
+    // React logs boundary-caught errors via console.error; silence that noise
+    // but keep our own console.warn observable.
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      let container: HTMLElement | undefined;
+      expect(() => {
+        ({ container } = render(
+          <RailErrorBoundary>
+            <Bomb />
+          </RailErrorBoundary>
+        ));
+      }).not.toThrow();
+      expect(container).toBeEmptyDOMElement();
+      expect(consoleWarn).toHaveBeenCalledWith(
+        'Feathery: tracked-changes panel failed and was hidden.',
+        expect.any(TypeError)
+      );
+    } finally {
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
+  it('renders its child untouched when nothing fails', () => {
+    render(
+      <RailErrorBoundary>
+        <div data-testid='rail-child' />
+      </RailErrorBoundary>
+    );
+    expect(screen.getByTestId('rail-child')).toBeInTheDocument();
   });
 });
