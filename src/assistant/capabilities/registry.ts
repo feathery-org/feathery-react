@@ -136,7 +136,10 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // handler: applyDocumentEdits section-composer expansion. The engine turns
     // this semantic spec into one atomic group of the guarded primitives below;
     // Robin owns content/role/structure judgment; the engine owns document-
-    // local styles, table appearance, perimeter padding and integrity.
+    // local styles, table appearance, perimeter padding and integrity. Its
+    // reserved anchor may be a live heading anchor or a section-map locator
+    // (`before:<heading>` / `after:<heading>`); blank layout paragraphs are
+    // structural gaps, never content identities.
     op: 'insert_section',
     params: {
       position: 'enum[before,after]?',
