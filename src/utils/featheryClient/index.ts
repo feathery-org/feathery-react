@@ -1082,6 +1082,39 @@ export default class FeatheryClient extends IntegrationClient {
     } else throw Error(parseAPIError(res));
   }
 
+  async createTask({
+    targetFormKey,
+    templateId,
+    collaboratorGroup,
+    email
+  }: {
+    targetFormKey?: string;
+    templateId: string;
+    collaboratorGroup?: string;
+    email?: string;
+  }) {
+    if (!collaboratorGroup && !email) {
+      throw new Error('createTask requires either collaboratorGroup or email');
+    }
+    if (collaboratorGroup && email) {
+      throw new Error(
+        'createTask accepts collaboratorGroup or email, not both'
+      );
+    }
+
+    const { userId, sdkKey } = initInfo();
+    const res = await apiInviteFormCollaborator(
+      sdkKey,
+      targetFormKey ?? this.formKey,
+      templateId,
+      [(collaboratorGroup ?? email) as string],
+      userId
+    );
+
+    if (res && res.ok) return res.payload;
+    throw Error(parseAPIError(res));
+  }
+
   async rewindCollaboration(templateId: string, rewindEmailKey: string) {
     const { userId } = initInfo();
     const data: Record<string, any> = {

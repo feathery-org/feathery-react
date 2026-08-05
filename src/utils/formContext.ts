@@ -210,6 +210,12 @@ export const getFormContext = (formUuid: string) => {
       formState.client.createLoanProCustomerWithAuthorizedEmail(bodyParams),
     setCollaboratorAsCompleted: (templateId: string) =>
       formState.client.setCollaboratorAsCompleted(templateId),
+    createTask: (params: {
+      targetFormKey?: string;
+      templateId: string;
+      collaboratorGroup?: string;
+      email?: string;
+    }) => formState.client.createTask(params),
     dataHubAction: ({
       hubId,
       operation,
