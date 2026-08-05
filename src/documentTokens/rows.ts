@@ -80,7 +80,12 @@ export const repeatGroups = (editor: EditorLike): RepeatGroup[] => {
 
     const group =
       byTable.get(table) ??
-      ({ table, rows: new Map(), cells: new Map(), sources: [] } as RepeatGroup);
+      ({
+        table,
+        rows: new Map(),
+        cells: new Map(),
+        sources: []
+      } as RepeatGroup);
     group.rows.set(spec.index, rowIndex);
     const carried = group.cells.get(spec.index) ?? [];
     carried.push({ spec, cellIndex });
@@ -104,11 +109,36 @@ const selectCell = (
   cellIndex: number
 ): boolean => {
   const paragraph =
-    table.childWidgets?.[rowIndex]?.childWidgets?.[cellIndex]?.childWidgets?.[0];
+    table.childWidgets?.[rowIndex]?.childWidgets?.[cellIndex]
+      ?.childWidgets?.[0];
   const select = (editor as any)?.selection?.selectParagraphInternal;
   if (!paragraph || typeof select !== 'function') return false;
   select.call((editor as any).selection, paragraph, true);
   return true;
+};
+
+/**
+ * Give an inserted row the shading of the row two above it.
+ *
+ * Banding in these templates is explicit per-cell shading (`F2F2F2` alternating
+ * with none), not a table style the renderer re-evaluates — measured on a filled
+ * document. `insertRow` copies the ADJACENT row, so a new row arrives the same
+ * colour as its neighbour and the stripe breaks. The same-parity row is the one
+ * two above.
+ */
+const restoreBanding = (table: any, rowIndex: number): void => {
+  const source = table.childWidgets?.[rowIndex - 2];
+  const target = table.childWidgets?.[rowIndex];
+  if (!source?.childWidgets || !target?.childWidgets) return;
+
+  target.childWidgets.forEach((cell: any, index: number) => {
+    const from = source.childWidgets[index]?.cellFormat?.shading;
+    const to = cell?.cellFormat?.shading;
+    if (!from || !to) return;
+    to.backgroundColor = from.backgroundColor;
+    to.foregroundColor = from.foregroundColor;
+    to.textureStyle = from.textureStyle;
+  });
 };
 
 /**
@@ -168,6 +198,7 @@ export const growGroup = (
       added.push(fresh);
     }
 
+    restoreBanding(group.table, newRow);
     anchorRow = newRow;
   }
 
@@ -205,7 +236,8 @@ export const shrinkGroup = (
     const cells = group.cells.get(index);
     const rowIndex = group.rows.get(index);
     if (!cells || rowIndex === undefined) continue;
-    if (!selectCell(editor, group.table, rowIndex, cells[0].cellIndex)) continue;
+    if (!selectCell(editor, group.table, rowIndex, cells[0].cellIndex))
+      continue;
     (editor as any).editor?.deleteRow?.();
     dropped.push(index);
   }
@@ -237,9 +269,15 @@ export const deletedRows = (
   for (const was of before) {
     const key = was.sources.join(' ');
     const now = after.find((group) => group.sources.join(' ') === key);
-    const remaining = new Set(now?.indexes ?? []);
+    // A group gone ENTIRELY means the read found nothing, not that the reader
+    // deleted every row: `contentChange` can fire while a document is still
+    // loading, and inferring deletions there would splice the whole field away.
+    // Only a group still present can report a missing row.
+    if (!now) continue;
+    const remaining = new Set(now.indexes);
     const missing = was.indexes.filter((index) => !remaining.has(index));
-    if (missing.length > 0) result.push({ sources: was.sources, indexes: missing });
+    if (missing.length > 0)
+      result.push({ sources: was.sources, indexes: missing });
   }
 
   return result;

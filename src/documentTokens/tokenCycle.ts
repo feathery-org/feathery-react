@@ -371,6 +371,12 @@ export const attachTokenCycle = (
       let moved = false;
       try {
         moved = syncRows();
+      } catch (err) {
+        // Rows are a convenience; the document is not. Driving tables through
+        // private editor surface can fail in ways no test reaches, and none of
+        // them is worth taking the form down for.
+        // eslint-disable-next-line no-console
+        console.warn('[feathery] could not sync document rows', err);
       } finally {
         applying = false;
         lastGood = documentShape(editor);
@@ -409,11 +415,20 @@ export const attachTokenCycle = (
       applying = true;
       try {
         // Do not open a second action inside the one held around the edit.
-        writeValues(editor, updates, {
+        const { missed } = writeValues(editor, updates, {
           skipId,
           group: !editStepOpen,
           onViolation: reportViolations
         });
+        // A token the write could not reach shows stale text — or, for one just
+        // built, a placeholder — and nothing else says so. Every silent failure
+        // in this feature has looked exactly like a token that "unlinked".
+        if (missed.length > 0) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[feathery] could not write ${missed.length} docx token(s): ${missed.join(', ')}`
+          );
+        }
       } finally {
         applying = false;
         // Our writes are legitimate by construction, so the watchdog's baseline
@@ -675,6 +690,9 @@ export const attachTokenCycle = (
    */
   const adoptRowDeletions = (): boolean => {
     if (typeof fields.removeRow !== 'function') return false;
+    // Nothing to compare against yet: the first read establishes the baseline
+    // rather than reading an empty document as "every row was deleted".
+    if (lastRows.length === 0) return false;
     const gone = deletedRows(lastRows, rowSnapshot(editor));
     if (gone.length === 0) return false;
 

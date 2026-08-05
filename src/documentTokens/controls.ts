@@ -215,7 +215,14 @@ const selectValue = (
   // replace, so the insert lands inside the control as measured.
   const selected = editor.selection.text;
   if (selected === undefined) return true; // host cannot report; trust it
-  if (selected === '') return currentText === '';
+  // An empty selection is correct when there is nothing to replace: the value
+  // is genuinely empty, or the control is showing Syncfusion's placeholder,
+  // which is not content. A freshly built control always shows one, and
+  // refusing it left a grown row reading "Click here or tap to insert text"
+  // forever — the token looked unlinked because nothing could ever write to it.
+  if (selected === '') {
+    return currentText === '' || showsPlaceholder(editor, instance);
+  }
   return true;
 };
 

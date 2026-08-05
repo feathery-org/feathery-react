@@ -339,6 +339,23 @@ describe('a row deleted in the editor', () => {
     destroy();
   });
 
+  it('does not read an empty document as every row deleted', () => {
+    // `contentChange` can fire while a document is still loading. Treating a
+    // group that has vanished as a full deletion spliced the whole field away.
+    const before = [{ sources: ['qty'], indexes: [0, 1, 2] }];
+
+    expect(deletedRows(before, [])).toEqual([]);
+  });
+
+  it('still reports a deletion when the group survives', () => {
+    const before = [{ sources: ['qty'], indexes: [0, 1, 2] }];
+    const after = [{ sources: ['qty'], indexes: [0, 2] }];
+
+    expect(deletedRows(before, after)).toEqual([
+      { sources: ['qty'], indexes: [1] }
+    ]);
+  });
+
   it('reports nothing when no row was deleted', () => {
     const { editor, destroy } = open(3);
     const before = rowSnapshot(editor as any);
@@ -428,7 +445,10 @@ describe('the cycle keeps rows in step with the field', () => {
     const state = cycle.reconcile();
 
     // eslint-disable-next-line no-console
-    console.log('DBG specs:', state.specs.map((s) => [s.id, s.index, s.formula, s.source]));
+    console.log(
+      'DBG specs:',
+      state.specs.map((s) => [s.id, s.index, s.formula, s.source])
+    );
     // eslint-disable-next-line no-console
     console.log('DBG qty field:', fields.values.qty);
     expect(state.values.get('subtotal')).toBe(60);
@@ -448,6 +468,67 @@ describe('the cycle keeps rows in step with the field', () => {
     const found = addresses(editor);
     expect(found).toContain('qty__2');
     expect(found).toContain('amount__2');
+    destroy();
+  });
+
+  it('settles: reconciling repeatedly does not keep adding rows', () => {
+    // The container reconciles on EVERY render, so a grow that the next pass
+    // cannot see would add a row per render until the browser dies.
+    const { editor, destroy } = open(2);
+    const fields = store({ qty: [1, 2] });
+    const cycle = attachTokenCycle(editor as any, { fields });
+
+    fields.values.qty = [1, 2, 3];
+    cycle.reconcile();
+    const afterFirst = tableRows(editor);
+
+    cycle.reconcile();
+    cycle.reconcile();
+    cycle.reconcile();
+
+    expect(tableRows(editor)).toBe(afterFirst);
+    destroy();
+  });
+
+  it('SHOWS the new values in the grown row, not a placeholder', () => {
+    // The row and its controls can exist while every cell still reads
+    // "Click here or tap to insert text": built, tagged, and never written to.
+    const { editor, destroy } = open(2);
+    const fields = store({ qty: [1, 2] });
+    const cycle = attachTokenCycle(editor as any, { fields });
+
+    fields.values.qty = [1, 2, 7];
+    cycle.reconcile();
+
+    const shown = readTokens(editor as any)
+      .filter(({ spec }) => spec.index === 2)
+      .map(({ value }) => value)
+      .sort();
+    expect(shown).toEqual(['$70.00', '7']);
+    destroy();
+  });
+
+  it('gives a grown row the shading of the same-parity row, not its neighbour', () => {
+    // Banding is explicit per-cell shading; insertRow copies the adjacent row,
+    // which would make two neighbours the same colour.
+    const { editor, destroy } = open(2);
+    const table = (editor as any).documentHelper.pages[0].bodyWidgets[0]
+      .childWidgets[0];
+    const fillOf = (row: number) =>
+      table.childWidgets[row]?.childWidgets?.[0]?.cellFormat?.shading
+        ?.backgroundColor;
+    table.childWidgets[1].childWidgets.forEach((c: any) => {
+      c.cellFormat.shading.backgroundColor = '#F2F2F2';
+    });
+    table.childWidgets[2].childWidgets.forEach((c: any) => {
+      c.cellFormat.shading.backgroundColor = '#FFFFFF';
+    });
+
+    growGroup(editor as any, repeatGroups(editor as any)[0], 3, render);
+
+    // Row 3 is new; row 1 is its same-parity source, row 2 its neighbour.
+    expect(fillOf(3)).toBe(fillOf(1));
+    expect(fillOf(3)).not.toBe(fillOf(2));
     destroy();
   });
 
