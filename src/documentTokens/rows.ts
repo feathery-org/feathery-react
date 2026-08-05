@@ -21,22 +21,11 @@ import {
   decodeTag,
   EditorLike,
   encodeTag,
+  isDetached,
   readTokens,
   writeValues
 } from './controls';
 import { instanceKey, TokenSpec, valueKey } from './plan';
-
-/** The widget chain from a control to its table. Minified classes, stable props. */
-type Placement = { table: any; rowIndex: number; cellIndex: number };
-
-const placementOf = (control: any): Placement | null => {
-  const paragraph = control?.line?.paragraph;
-  const cell = paragraph?.associatedCell ?? paragraph?.containerWidget;
-  const row = cell?.ownerRow ?? cell?.containerWidget;
-  const table = row?.ownerTable ?? row?.containerWidget;
-  if (!table?.childWidgets || typeof row?.rowIndex !== 'number') return null;
-  return { table, rowIndex: row.rowIndex, cellIndex: cell.cellIndex ?? 0 };
-};
 
 const controlsOf = (editor: EditorLike): any[] => {
   const collection = (editor as any)?.documentHelper?.contentControlCollection;
@@ -45,12 +34,6 @@ const controlsOf = (editor: EditorLike): any[] => {
 
 const specOf = (control: any): TokenSpec | null =>
   decodeTag(control?.contentControlProperties?.tag ?? '');
-
-/** A control still sitting in a row the table actually has. */
-const isLive = (placement: Placement | null): boolean =>
-  placement !== null &&
-  placement.rowIndex < (placement.table.childWidgets?.length ?? 0) &&
-  placement.table.childWidgets[placement.rowIndex] !== undefined;
 
 /** A run of table rows standing for one repeated group. */
 export type RepeatGroup = {
@@ -74,9 +57,20 @@ export const repeatGroups = (editor: EditorLike): RepeatGroup[] => {
   for (const control of controlsOf(editor)) {
     const spec = specOf(control);
     if (!spec || spec.index === undefined || spec.index === null) continue;
-    const placement = placementOf(control);
-    if (!isLive(placement)) continue;
-    const { table, rowIndex, cellIndex } = placement as Placement;
+    if (isDetached(control)) continue;
+    const paragraph = control?.line?.paragraph;
+    const cell = paragraph?.associatedCell ?? paragraph?.containerWidget;
+    const row = cell?.ownerRow ?? cell?.containerWidget;
+    const table = row?.ownerTable ?? row?.containerWidget;
+    if (!Array.isArray(table?.childWidgets)) continue;
+    // BOTH positions by identity. A stored rowIndex/cellIndex goes stale after a
+    // structural edit, and a stale column collapses every token in the row onto
+    // one cell — the second control is then created inside the first and bails.
+    const rowIndex = table.childWidgets.indexOf(row);
+    const cellIndex = Array.isArray(row?.childWidgets)
+      ? row.childWidgets.indexOf(cell)
+      : -1;
+    if (rowIndex === -1 || cellIndex === -1) continue;
 
     const group =
       byTable.get(table) ??
@@ -284,37 +278,13 @@ export const deletedRows = (
   return result;
 };
 
-/** Addresses of controls whose row is gone — the stale collection entries. */
-export const staleControls = (editor: EditorLike): string[] => {
-  const stale: string[] = [];
-  for (const control of controlsOf(editor)) {
-    const spec = specOf(control);
-    if (!spec) continue;
-    const placement = placementOf(control);
-    // No placement means the token is not in a table at all — a scalar like
-    // `subtotal`. Only a control whose row is genuinely gone counts as stale.
-    if (placement === null || isLive(placement)) continue;
-    stale.push(instanceKey(spec));
-  }
-  return stale;
-};
-
 /**
- * The tokens the document really has, ignoring controls whose row was deleted.
+ * The tokens the document really has.
  *
- * Falls back to the plain read when nothing is stale, and when the widget chain
- * is unavailable — a token outside a table has no placement, and must not be
- * mistaken for a deleted one.
+ * `readTokens` already drops any control whose row was deleted, by identity, so
+ * this is a name kept for the callers that read better with it.
  */
-export const liveTokens = (
-  editor: EditorLike
-): Array<{ spec: TokenSpec; value: string }> => {
-  const dead = new Set(staleControls(editor));
-  if (dead.size === 0) return readTokens(editor);
-  return readTokens(editor).filter(
-    (entry) => !dead.has(instanceKey(entry.spec))
-  );
-};
+export const liveTokens = readTokens;
 
 /**
  * Renumber a group's rows to 0..n-1 in document order.
@@ -362,28 +332,4 @@ export const renumberGroup = (
   });
 
   return moved;
-};
-
-/**
- * Drop controls whose row was deleted out of Syncfusion's own collection.
- *
- * `deleteRow` leaves them behind (measured), and filtering them out by address
- * is not enough: renumbering a survivor can give it the same address as a dead
- * entry, and then both disappear. Removing them is the only way the collection
- * stays a truthful list of what the document holds.
- */
-export const pruneDeleted = (editor: EditorLike): string[] => {
-  const collection = (editor as any)?.documentHelper?.contentControlCollection;
-  if (!Array.isArray(collection)) return [];
-
-  const dropped: string[] = [];
-  for (let at = collection.length - 1; at >= 0; at -= 1) {
-    const spec = specOf(collection[at]);
-    if (!spec) continue;
-    const placement = placementOf(collection[at]);
-    if (placement === null || isLive(placement)) continue;
-    dropped.push(instanceKey(spec));
-    collection.splice(at, 1);
-  }
-  return dropped;
 };

@@ -57,7 +57,6 @@ import { evaluate } from './grammar';
 import { parseValue, renderValue } from './format';
 import {
   deletedRows,
-  pruneDeleted,
   renumberGroup,
   groupLength,
   growGroup,
@@ -727,12 +726,7 @@ export const attachTokenCycle = (
       }
     }
 
-    // Drop the dead controls FIRST. `deleteRow` leaves them in the collection,
-    // and renumbering a survivor onto a dead entry's address would make both
-    // unreadable — the survivor would look deleted too.
-    pruneDeleted(editor);
-
-    // Then close the gap. Deleting the middle of {0,1,2} leaves controls tagged
+    // Close the gap the deletion left. Deleting the middle of {0,1,2} leaves controls tagged
     // 0 and 2 over a field now holding two values, so the survivor reads
     // nothing — and the adopt that follows would take its own text back INTO
     // the field, undoing the splice. Renumbering restores index == array

@@ -111,10 +111,96 @@ export const decodeTag = (tag: string): TokenSpec | null => {
  * of the document, never a requirement of the editor: failing to read them
  * must not take the editor down with it.
  */
+
+/**
+ * Where a control sits: its table, and the row widget holding it.
+ *
+ * A token outside a table has no placement, which is not the same as a deleted
+ * one — see `isDetached`.
+ */
+type Placement = { table: any; row: any };
+
+export const placementOf = (control: any): Placement | null => {
+  const paragraph = control?.line?.paragraph;
+  const cell = paragraph?.associatedCell ?? paragraph?.containerWidget;
+  const row = cell?.ownerRow ?? cell?.containerWidget;
+  const table = row?.ownerTable ?? row?.containerWidget;
+  if (!Array.isArray(table?.childWidgets) || !row) return null;
+  return { table, row };
+};
+
+/**
+ * Whether a control's row has been deleted from its table.
+ *
+ * By IDENTITY, not by stored row index: `deleteRow` leaves the control in
+ * `contentControlCollection` (measured) AND the index it remembers goes stale,
+ * so the only truthful test is whether the table still contains that row widget.
+ * Renumbering a survivor can give it the same ADDRESS as a deleted control, so
+ * anything that tells them apart by address loses both.
+ */
+export const isDetached = (control: any): boolean => {
+  const placement = placementOf(control);
+  // No placement at all means the token is not in a table — a scalar total, say.
+  if (placement === null) return false;
+  return placement.table.childWidgets.indexOf(placement.row) === -1;
+};
+
+const controlCollection = (editor: EditorLike): any[] => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  return Array.isArray(collection) ? collection : [];
+};
+
+/**
+ * A control's own text, read from the control rather than by address.
+ *
+ * Returns undefined when the host cannot report it, so the caller can fall back
+ * rather than mistake "cannot read" for "empty".
+ */
+const textOf = (editor: EditorLike, control: any): string | undefined => {
+  const read = (editor as any)?.editor?.getResultContentControlText;
+  if (typeof read !== 'function') return undefined;
+  try {
+    const text = read.call((editor as any).editor, control);
+    return typeof text === 'string' ? text : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const readTokens = (
   editor: EditorLike
-): Array<{ spec: TokenSpec; value: string }> =>
-  typeof editor?.exportContentControlData !== 'function'
+): Array<{ spec: TokenSpec; value: string }> => {
+  // Walk the live controls when we can: it keeps each control's identity, which
+  // is the only way to drop one whose row was deleted without also dropping a
+  // renumbered survivor that now shares its address.
+  const collection = controlCollection(editor);
+  if (collection.length > 0) {
+    // Values by position among OUR controls, for a host that cannot read a
+    // control's text directly. The exported data lists them in the same order.
+    const exported =
+      typeof editor?.exportContentControlData === 'function'
+        ? editor.exportContentControlData().filter(isOurs)
+        : [];
+
+    const tokens: Array<{ spec: TokenSpec; value: string }> = [];
+    let ordinal = 0;
+    for (const control of collection) {
+      const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+      if (spec === null) continue;
+      const nth = ordinal;
+      ordinal += 1;
+      if (isDetached(control)) continue;
+      tokens.push({
+        spec,
+        value: textOf(editor, control) ?? exported[nth]?.value ?? ''
+      });
+    }
+    return tokens;
+  }
+
+  // No collection to walk (an older SyncFusion, or an instance still starting):
+  // fall back to the exported data, which carries no identity.
+  return typeof editor?.exportContentControlData !== 'function'
     ? []
     : editor
         .exportContentControlData()
@@ -124,6 +210,7 @@ export const readTokens = (
           (entry): entry is { spec: TokenSpec; value: string } =>
             entry.spec !== null
         );
+};
 
 /** The token the caret sits in, or null when the caret is in ordinary prose. */
 export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
