@@ -1,0 +1,276 @@
+{
+  "_comment": "Shared contract between the Python and JavaScript token evaluators. A duplicate lives at feathery-backend/apps/document/utils/tokens/grammar_cases.json — the two MUST stay identical; each test suite reads its own repo's copy.",
+  "cases": [
+    {
+      "why": "multiplication, the base line-item case",
+      "formula": "qty * unit_cost",
+      "values": { "qty": 10, "unit_cost": 150 },
+      "expect": 1500
+    },
+    {
+      "why": "precedence: multiply binds tighter than add",
+      "formula": "a + b * c",
+      "values": { "a": 2, "b": 3, "c": 4 },
+      "expect": 14
+    },
+    {
+      "why": "parens override precedence",
+      "formula": "(a + b) * c",
+      "values": { "a": 2, "b": 3, "c": 4 },
+      "expect": 20
+    },
+    {
+      "why": "unary minus",
+      "formula": "-a + 10",
+      "values": { "a": 4 },
+      "expect": 6
+    },
+    {
+      "why": "unary minus binds tighter than multiply",
+      "formula": "-a * 3",
+      "values": { "a": 4 },
+      "expect": -12
+    },
+    {
+      "why": "subtraction is left associative",
+      "formula": "10 - 3 - 2",
+      "values": {},
+      "expect": 5
+    },
+    {
+      "why": "division",
+      "formula": "total / count",
+      "values": { "total": 90, "count": 4 },
+      "expect": 22.5
+    },
+    {
+      "why": "decimal literals",
+      "formula": "rate * 1.5",
+      "values": { "rate": 2 },
+      "expect": 3
+    },
+    {
+      "why": "SUM over an explicit list",
+      "formula": "SUM(a, b, c)",
+      "values": { "a": 1, "b": 2, "c": 3 },
+      "expect": 6
+    },
+    {
+      "why": "SUM with no arguments is zero, not an error",
+      "formula": "SUM()",
+      "values": {},
+      "expect": 0
+    },
+    {
+      "why": "wildcard expands to every matching id",
+      "formula": "SUM(item_total_*)",
+      "values": { "item_total_1": 100, "item_total_2": 250, "other_1": 999 },
+      "expect": 350
+    },
+    {
+      "why": "wildcard matching nothing sums to zero",
+      "formula": "SUM(item_total_*)",
+      "values": { "other_1": 5 },
+      "expect": 0
+    },
+    {
+      "why": "wildcard prefix must not match a longer unrelated prefix",
+      "formula": "SUM(tax_*)",
+      "values": { "tax_1": 10, "tax_2": 5, "taxable_1": 1000 },
+      "expect": 15
+    },
+    {
+      "why": "wildcard mixed with explicit args",
+      "formula": "SUM(item_total_*, adjustment)",
+      "values": { "item_total_1": 100, "adjustment": 7 },
+      "expect": 107
+    },
+    {
+      "why": "ROUND to 2 places",
+      "formula": "ROUND(a, 2)",
+      "values": { "a": 3.14159 },
+      "expect": 3.14
+    },
+    {
+      "why": "ROUND defaults to 0 places",
+      "formula": "ROUND(a)",
+      "values": { "a": 3.7 },
+      "expect": 4
+    },
+    {
+      "why": "ROUND is half away from zero, NOT bankers rounding (Python round(2.5) is 2)",
+      "formula": "ROUND(a)",
+      "values": { "a": 2.5 },
+      "expect": 3
+    },
+    {
+      "why": "ROUND half away from zero, negative",
+      "formula": "ROUND(a)",
+      "values": { "a": -2.5 },
+      "expect": -3
+    },
+    {
+      "why": "the money case: tax on a subtotal",
+      "formula": "ROUND(subtotal * tax_percent / 100, 2)",
+      "values": { "subtotal": 2300, "tax_percent": 8.25 },
+      "expect": 189.75
+    },
+    {
+      "why": "MIN",
+      "formula": "MIN(a, b, c)",
+      "values": { "a": 5, "b": 2, "c": 9 },
+      "expect": 2
+    },
+    {
+      "why": "MAX",
+      "formula": "MAX(a, b)",
+      "values": { "a": 5, "b": 2 },
+      "expect": 5
+    },
+    {
+      "why": "MAX over a wildcard",
+      "formula": "MAX(item_total_*)",
+      "values": { "item_total_1": 3, "item_total_2": 11 },
+      "expect": 11
+    },
+    {
+      "why": "ABS",
+      "formula": "ABS(a)",
+      "values": { "a": -12.5 },
+      "expect": 12.5
+    },
+    {
+      "why": "nested calls",
+      "formula": "ROUND(MAX(a, b) / 3, 1)",
+      "values": { "a": 10, "b": 4 },
+      "expect": 3.3
+    },
+    {
+      "why": "whitespace is insignificant",
+      "formula": "  a   *    b  ",
+      "values": { "a": 2, "b": 3 },
+      "expect": 6
+    },
+    {
+      "why": "a bare number is a valid formula",
+      "formula": "42",
+      "values": {},
+      "expect": 42
+    },
+
+    {
+      "why": "unknown identifier is an error, never a silent zero",
+      "formula": "a + nope",
+      "values": { "a": 1 },
+      "error": "unknown"
+    },
+    {
+      "why": "division by zero is an error, not Infinity",
+      "formula": "a / 0",
+      "values": { "a": 1 },
+      "error": "division by zero"
+    },
+    {
+      "why": "unknown function is rejected",
+      "formula": "NOPE(1)",
+      "values": {},
+      "error": "unknown function"
+    },
+    {
+      "why": "arbitrary python is not evaluable — the point of not using eval",
+      "formula": "__import__('os').system('id')",
+      "values": {},
+      "error": "syntax"
+    },
+    {
+      "why": "javascript injection is not evaluable either",
+      "formula": "constructor.constructor('return 1')()",
+      "values": {},
+      "error": "syntax"
+    },
+    {
+      "why": "unbalanced parens",
+      "formula": "(a + b",
+      "values": { "a": 1, "b": 2 },
+      "error": "syntax"
+    },
+    {
+      "why": "trailing operator",
+      "formula": "a +",
+      "values": { "a": 1 },
+      "error": "syntax"
+    },
+    {
+      "why": "empty formula",
+      "formula": "",
+      "values": {},
+      "error": "syntax"
+    },
+    {
+      "why": "a wildcard outside a function call has no scalar meaning",
+      "formula": "item_total_* + 1",
+      "values": { "item_total_1": 5 },
+      "error": "wildcard"
+    },
+    {
+      "why": "ROUND needs at least one argument",
+      "formula": "ROUND()",
+      "values": {},
+      "error": "argument"
+    },
+    {
+      "why": "MIN of nothing has no answer",
+      "formula": "MIN()",
+      "values": {},
+      "error": "argument"
+    },
+    {
+      "why": "ABS takes exactly one argument",
+      "formula": "ABS(1, 2)",
+      "values": {},
+      "error": "argument"
+    },
+    {
+      "why": "UPPER shows the text uppercased",
+      "formula": "UPPER(name)",
+      "values": { "name": "acme corp" },
+      "expectText": "ACME CORP"
+    },
+    {
+      "why": "LOWER shows the text lowercased",
+      "formula": "LOWER(name)",
+      "values": { "name": "ACME Corp" },
+      "expectText": "acme corp"
+    },
+    {
+      "why": "TITLE capitalises accented words identically on both sides",
+      "formula": "TITLE(name)",
+      "values": { "name": "émile dupont" },
+      "expectText": "Émile Dupont"
+    },
+    {
+      "why": "TITLE treats an apostrophe as a word break, matching str.title()",
+      "formula": "TITLE(name)",
+      "values": { "name": "don't stop" },
+      "expectText": "Don'T Stop"
+    },
+    {
+      "why": "TRIM strips surrounding whitespace only",
+      "formula": "TRIM(name)",
+      "values": { "name": "  padded  " },
+      "expectText": "padded"
+    },
+    {
+      "why": "display functions nest",
+      "formula": "UPPER(TRIM(name))",
+      "values": { "name": "  acme  " },
+      "expectText": "ACME"
+    },
+    {
+      "why": "a numeric value displays as its plain digits",
+      "formula": "UPPER(qty)",
+      "values": { "qty": 42 },
+      "expectText": "42"
+    }
+  ]
+}

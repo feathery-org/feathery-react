@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
-import { featheryWindow, openTab } from '../../../utils/browser';
+import { featheryDoc, featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { getSignUrl } from '../../../utils/document';
@@ -19,6 +19,107 @@ import {
   installRevisionGroupIsolation,
   rebindRevisionGroups
 } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  attachTokenCycle,
+  saveBlockers,
+  tokenFieldSignature
+} from '../../../documentTokens/tokenCycle';
+import type {
+  FieldAccess,
+  TokenCycle
+} from '../../../documentTokens/tokenCycle';
+import TokenPanel, {
+  tokenPanelEnabled
+} from '../../../documentTokens/TokenPanel';
+
+// Syncfusion's public test converter. Used ONLY in a local build: document
+// content is uploaded to a third party, which is fine for synthetic fixtures
+// and never for customer envelopes. Production goes through the Feathery
+// backend proxy, which fronts the self-hosted Word Processor.
+const SYNCFUSION_TEST_SERVICE_URL =
+  'https://document.syncfusion.com/web-services/docx-editor/api/documenteditor/';
+
+const isLocalBuild = process.env.BACKEND_ENV === 'local';
+
+/**
+ * The form input the user is typing in, or null when focus is anywhere else.
+ *
+ * Anything inside the editor is excluded: Syncfusion takes keystrokes through
+ * a hidden input of its own, so the document's own caret would otherwise look
+ * like a form field being edited and block the writes entirely.
+ */
+const focusedFormInput = (
+  editorElement?: Element | null
+): HTMLElement | null => {
+  const active = featheryDoc()?.activeElement as HTMLElement | null;
+  if (!active) return null;
+  const tag = active.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !active.isContentEditable) {
+    return null;
+  }
+  if (editorElement?.contains(active)) return null;
+  return active;
+};
+
+/**
+ * Token access to the form's field values.
+ *
+ * The single owner of a field-backed token's value is the form engine, so this
+ * reads straight from `fieldValues` and writes through `setFieldValues` — the
+ * same path a rendered input uses, which submits the value and rerenders every
+ * form. A repeated field is one key holding an array indexed by row; the same
+ * key holds a bare scalar before any repeat exists, so a scalar is treated as
+ * row 0 and a token stays bound either way.
+ */
+const formFieldAccess: FieldAccess = {
+  read: (spec) => {
+    if (!spec.source) return undefined;
+    const value = fieldValues[spec.source];
+    const row = spec.index ?? 0;
+    if (Array.isArray(value)) return value[row];
+    return row === 0 ? (value as any) : undefined;
+  },
+  write: (updates) => {
+    const next: Record<string, any> = {};
+    for (const { spec, value } of updates) {
+      if (!spec.source) continue;
+      if (spec.index === undefined || spec.index === null) {
+        next[spec.source] = value;
+        continue;
+      }
+      // Start from the existing rows so writing one never clobbers another.
+      const existing = next[spec.source] ?? fieldValues[spec.source];
+      const rows = Array.isArray(existing)
+        ? [...existing]
+        : existing === undefined || existing === null
+        ? []
+        : [existing];
+      rows[spec.index] = value;
+      next[spec.source] = rows;
+    }
+    if (Object.keys(next).length > 0) setFieldValues(next);
+  },
+  rowCount: (source) => {
+    const value = fieldValues[source];
+    if (Array.isArray(value)) return value.length;
+    // A repeated field holds a bare scalar before any repeat exists, which is
+    // one row; nothing at all is no rows.
+    return value === undefined || value === null ? 0 : 1;
+  },
+  removeRow: (sources, index) => {
+    const next: Record<string, any> = {};
+    for (const source of sources) {
+      const value = fieldValues[source];
+      if (!Array.isArray(value)) continue;
+      if (index < 0 || index >= value.length) continue;
+      // A splice, not a blank: the rows below move up, which is what the
+      // document just did when the row was deleted.
+      next[source] = [...value.slice(0, index), ...value.slice(index + 1)];
+    }
+    if (Object.keys(next).length > 0) setFieldValues(next);
+  }
+};
+>>>>>>> origin/feat/docx-linked-tokens
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose view_draft_container
@@ -168,16 +269,20 @@ export default function DocumentEditorContainer({
   // Word Processor). window.featherySyncfusion may override for local smoke
   // tests; licenseKey is optional (server license lives on the Word Processor).
   const syncfusion = (featheryWindow() as any).featherySyncfusion ?? {};
-  const serviceUrl = syncfusion.serviceUrl || `${API_URL}document/editor/`;
+  const serviceUrl =
+    syncfusion.serviceUrl ||
+    (isLocalBuild ? SYNCFUSION_TEST_SERVICE_URL : `${API_URL}document/editor/`);
   // Read initState directly instead of initInfo() — initInfo() throws when the
   // SDK isn't initialized, but in editMode (designer preview, tests) this
   // component renders a placeholder and never needs the key.
   const { sdkKey } = initState;
   const serviceHeaders = useMemo(() => {
     if (syncfusion.headers) return syncfusion.headers;
+    // Never send a Feathery token to Syncfusion's public test service.
+    if (isLocalBuild && !syncfusion.serviceUrl) return [];
     if (sdkKey) return [{ Authorization: `Token ${sdkKey}` }];
     return [];
-  }, [sdkKey, syncfusion.headers]);
+  }, [sdkKey, syncfusion.headers, syncfusion.serviceUrl]);
 
   const loadEnvelope = useCallback(async () => {
     if (!documentId) return;
@@ -273,6 +378,14 @@ export default function DocumentEditorContainer({
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
       if (!envelope) return;
+      // A token that fails validation — or whose formula cannot evaluate and
+      // is showing its 0 fallback — must not reach the envelope.
+      const state = tokenCycle.current?.getState();
+      const blocked = state ? saveBlockers(state) : null;
+      if (blocked) {
+        setError(blocked);
+        return;
+      }
       const updated = await client.saveEnvelopeFile(
         envelope.id,
         blob,
@@ -329,6 +442,9 @@ export default function DocumentEditorContainer({
   // retain the editor object as well so cleanup can only remove this exact
   // registration, never another mounted container's editor.
   const registeredEditor = useRef<any>(undefined);
+  const tokenCycle = useRef<TokenCycle | undefined>(undefined);
+  // Dev-only token inspector; nothing renders unless the flag is set.
+  const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -348,6 +464,16 @@ export default function DocumentEditorContainer({
         installRevisionGroupIsolation(editor);
       } catch {
         // A grouping failure must not break the editor mount.
+      }
+      // Linked tokens keep themselves up to date from here on. Inert for a
+      // document that declares none; the cycle re-reads on documentChange,
+      // because the editor is ready before its .docx has loaded.
+      tokenCycle.current?.detach();
+      tokenCycle.current = attachTokenCycle(editor, {
+        fields: formFieldAccess
+      });
+      if (tokenPanelEnabled(featheryWindow())) {
+        setTokenPanelCycle(tokenCycle.current);
       }
     },
     [activeDocumentId, containerId, envelope?.id, formId, stepId]
@@ -380,6 +506,8 @@ export default function DocumentEditorContainer({
   }, [activeDocumentId, containerId, envelope?.id, formId, stepId]);
   useEffect(
     () => () => {
+      tokenCycle.current?.detach();
+      tokenCycle.current = undefined;
       if (containerId && registeredEditor.current) {
         unregisterDocxEditor(containerId, registeredEditor.current, formId);
       }
@@ -387,7 +515,50 @@ export default function DocumentEditorContainer({
     [containerId, formId]
   );
 
-  const box = (child: React.ReactNode) => <div css={wrap}>{child}</div>;
+  // The form rerenders every consumer when a field changes, so this component
+  // re-renders too — reconciling on render is what carries a field edit into
+  // the document. Most renders touch nothing the plan reads, and reconcile
+  // walks the whole control collection, so a signature over just the fields
+  // the plan reads decides whether this render owes a pass.
+  //
+  // Except while a form input has focus. Writing into the document steals
+  // focus, so a field edited character by character — a number cleared before
+  // the new one is typed — loses the caret on the first keystroke. Reconcile
+  // is idempotent, so waiting for that input's blur costs nothing but the
+  // document lagging one field behind, which is where the caret already is.
+  // Not a timer: a debounce would rewrite mid-word again, just later.
+  const lastReconciled = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const cycle = tokenCycle.current;
+    if (!cycle) return undefined;
+    const signature = tokenFieldSignature(
+      cycle.getState().specs,
+      (key) => fieldValues[key]
+    );
+    if (signature === lastReconciled.current) return undefined;
+    const editing = focusedFormInput(registeredEditor.current?.element);
+    if (!editing) {
+      lastReconciled.current = signature;
+      cycle.reconcile();
+      return undefined;
+    }
+    const onBlur = () => {
+      lastReconciled.current = tokenFieldSignature(
+        cycle.getState().specs,
+        (key) => fieldValues[key]
+      );
+      cycle.reconcile();
+    };
+    editing.addEventListener('blur', onBlur, { once: true });
+    return () => editing.removeEventListener('blur', onBlur);
+  });
+
+  const box = (child: React.ReactNode) => (
+    <div css={wrap}>
+      {child}
+      {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
+    </div>
+  );
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!activeDocumentId && !envelope) {

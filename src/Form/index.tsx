@@ -605,6 +605,9 @@ function Form({
     newNavs && setBackNavMap({ ...backNavMap, ...newNavs });
 
   const formRef = useRef<any>(null);
+  // Set when updateFieldValues deliberately skipped a rerender, cleared when
+  // the focus leaving a field pays it off.
+  const rerenderOwed = useRef(false);
 
   const { clearLoaders, stepLoader, buttonLoaders, setLoaders } = useLoader({
     initialLoader,
@@ -975,11 +978,32 @@ function Form({
     // rerender if specified, but hideIf rerenders can be debounced
     if (rerender || empty) setRender((render) => ({ ...render }));
     else if (hideIfDependenciesChanged) debouncedRerender();
+    // A text field skips the rerender on each keystroke, which is what keeps
+    // typing cheap — but it leaves everything deriving from that value stale
+    // until something else happens to render. Note the render is owed and
+    // settle it when the field is left; see onFormFocusOut.
+    else rerenderOwed.current = true;
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt
     if (autoValidate && triggerErrors) debouncedValidate(setInlineErrors);
 
     return true;
+  };
+
+  /**
+   * Pay off a rerender a field's own change deliberately skipped.
+   *
+   * Typing into a text field updates `fieldValues` without rendering, so
+   * anything derived from it — a hideIf, a calculation, a document showing the
+   * value — stays stale for as long as the caret is in that field. Leaving the
+   * field is the moment the value is finished, and one render per field exit
+   * costs nothing next to one per keystroke.
+   */
+  const onFormFocusOut = (event: React.FocusEvent) => {
+    formProps.onBlur?.(event);
+    if (!rerenderOwed.current) return;
+    rerenderOwed.current = false;
+    setRender((render) => ({ ...render }));
   };
 
   // For audio AI only right now
@@ -3196,6 +3220,9 @@ function Form({
         autoComplete={formSettings.autocomplete}
         className={`feathery ${className || ''}`}
         ref={formRef}
+        // React's synthetic blur delegates from the root, so one handler here
+        // catches every field rather than each one plumbing its own.
+        onBlur={onFormFocusOut}
         css={{
           ...globalCSS.getTarget('form'),
           ...stepCSS,
