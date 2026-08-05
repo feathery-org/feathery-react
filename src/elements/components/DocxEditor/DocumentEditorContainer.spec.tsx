@@ -33,12 +33,14 @@ jest.mock('./index', () => {
     source,
     openNonce,
     onEditorReady,
-    onReady
+    onReady,
+    reviewChanges
   }: {
     source?: { url?: string };
     openNonce?: number;
     onEditorReady?: (editor: any) => void;
     onReady?: () => void;
+    reviewChanges?: boolean;
   }) {
     const editor = React.useMemo(
       () => ({
@@ -58,7 +60,8 @@ jest.mock('./index', () => {
       onReady?.();
     }, [editor, onReady, openNonce, source?.url]);
     return React.createElement('div', {
-      'data-testid': `editor:${source?.url ?? 'none'}`
+      'data-testid': `editor:${source?.url ?? 'none'}`,
+      'data-review-changes': String(!!reviewChanges)
     });
   };
 });
@@ -276,6 +279,7 @@ describe('DocumentEditorContainer revision group binding', () => {
         containerId='document-container-a'
         formId='form-1'
         stepId='step-1'
+        assistantEnabled
       />
     );
 
@@ -303,6 +307,7 @@ describe('DocumentEditorContainer revision group binding', () => {
         containerId='document-container-a'
         formId='form-1'
         stepId='step-1'
+        assistantEnabled
       />
     );
     await waitFor(() => {
@@ -356,6 +361,7 @@ describe('DocumentEditorContainer revision group binding', () => {
         containerId='document-container-a'
         formId='form-1'
         stepId='step-1'
+        assistantEnabled
       />
     );
 
@@ -365,5 +371,43 @@ describe('DocumentEditorContainer revision group binding', () => {
       });
     });
     view.unmount();
+  });
+
+  it('leaves assistant-off and read-only hosts outside review behavior', async () => {
+    const assistantOff = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-1'
+        stepId='step-1'
+      />
+    );
+    const assistantOffEditor = await assistantOff.findByTestId(
+      'editor:https://example.com/document-container-a.docx'
+    );
+    expect(assistantOffEditor).toHaveAttribute('data-review-changes', 'false');
+    expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
+    expect(rebindRevisionGroups).not.toHaveBeenCalled();
+    assistantOff.unmount();
+
+    jest.clearAllMocks();
+    OPEN_STATE.opened = false;
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.view_draft_read_only = true;
+    const readOnly = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-1'
+        stepId='step-1'
+        assistantEnabled
+      />
+    );
+    const readOnlyEditor = await readOnly.findByTestId(
+      'editor:https://example.com/document-container-a.docx'
+    );
+    expect(readOnlyEditor).toHaveAttribute('data-review-changes', 'false');
+    expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
+    expect(rebindRevisionGroups).not.toHaveBeenCalled();
+    readOnly.unmount();
   });
 });

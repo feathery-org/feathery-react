@@ -58,6 +58,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       breakpoint,
       formId,
       stepId,
+      assistantEnabled,
       ...props
     },
     ref
@@ -135,6 +136,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           formId={formId}
           stepId={stepId}
           editMode={editMode}
+          assistantEnabled={assistantEnabled}
         />
       );
     }

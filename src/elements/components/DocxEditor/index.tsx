@@ -21,6 +21,8 @@ export interface DocxEditorProps {
   /** Extra headers for serviceUrl requests (e.g. Feathery Authorization). */
   headers?: Record<string, string>[];
   readOnly?: boolean;
+  /** Enables the assistant tracked-change review rail and its editor hooks. */
+  reviewChanges?: boolean;
   /** Controlled reveal. When explicitly false the editor is unmounted. */
   visible?: boolean;
   /** Hide the local Download button (shown by default). */
@@ -97,6 +99,7 @@ function DocxEditor({
   serviceUrl,
   headers,
   readOnly,
+  reviewChanges = false,
   visible = true,
   hideDownload,
   onExportPdf,
@@ -127,6 +130,7 @@ function DocxEditor({
     serviceUrl,
     headers,
     readOnly,
+    reviewChanges,
     openNonce,
     onReady,
     onEditorReady,
@@ -334,7 +338,7 @@ function DocxEditor({
         </div>
         {/* Grouped review cards for assistant-authored tracked changes.
             Read-only hosts cannot resolve revisions, so no panel there. */}
-        {editor && !readOnly && (
+        {editor && reviewChanges && (
           <RailErrorBoundary>
             <TrackedChangeGroups
               editor={editor}

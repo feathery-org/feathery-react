@@ -438,6 +438,17 @@ export function installRevisionHighlightRendering(ed: any) {
   };
 }
 
+// Keep every shared-surface review customization behind the same predicate as
+// the rail. Gated-off editors retain Syncfusion's native rendering, Changes
+// pane, and revision merge behavior.
+export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
+  if (!enabled) return;
+  ed.showRevisions = false;
+  if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
+  installRevisionGroupIsolation(ed);
+  installRevisionHighlightRendering(ed);
+}
+
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
   const res = await fetch(source.url);
@@ -471,6 +482,8 @@ interface Props {
   /** Extra headers for Syncfusion serviceUrl requests (e.g. Feathery auth). */
   headers?: Record<string, string>[];
   readOnly?: boolean;
+  /** Must match the condition that mounts TrackedChangeGroups. */
+  reviewChanges?: boolean;
   /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
   openNonce?: number;
   onReady?: () => void;
@@ -499,6 +512,7 @@ export function useDocxEditor({
   serviceUrl,
   headers,
   readOnly,
+  reviewChanges = false,
   openNonce = 0,
   onReady,
   onEditorReady,
@@ -535,10 +549,9 @@ export function useDocxEditor({
   // built with SYNCFUSION_LICENSE_KEY.
   const resolvedLicenseKey = licenseKey || BUILT_IN_SYNCFUSION_LICENSE_KEY;
 
-  // Load the CDN assets and instantiate the editor. Recreated only if license
-  // or serviceUrl changes — NOT on readOnly toggles (those update in place).
-  // Recreating mid-fetch/open destroys Syncfusion while it still holds null
-  // internal state and surfaces as "Cannot convert undefined or null to object".
+  // Load the CDN assets and instantiate the editor. Ordinary readOnly updates
+  // happen in place; changing the review gate recreates the instance so an
+  // editor that becomes gated-off cannot retain instance-scoped patches.
   useEffect(() => {
     let cancelled = false;
     let instance: any = null;
@@ -599,13 +612,7 @@ export function useDocxEditor({
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
-          // TrackedChangeGroups is the review surface: mark the native
-          // Changes pane user-closed (its ✕'s own switch) so its auto-open
-          // never fires and covers the panel.
-          ed.showRevisions = false;
-          if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
-          installRevisionGroupIsolation(ed);
-          installRevisionHighlightRendering(ed);
+          configureTrackedChangeReview(ed, reviewChanges);
         } catch {
           // Review-pane/grouping setup must never block the editor mount.
         }
@@ -636,7 +643,7 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [resolvedLicenseKey, serviceUrl, headersKey]);
+  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewChanges]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {

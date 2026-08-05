@@ -118,12 +118,14 @@ export default function DocumentEditorContainer({
   containerId,
   formId,
   stepId,
-  editMode
+  editMode,
+  assistantEnabled
 }: {
   containerId?: string;
   formId?: string;
   stepId?: string;
   editMode?: boolean;
+  assistantEnabled?: boolean;
 }) {
   // saveEnvelopeFile/getCurrentEnvelope only use initInfo(), not the form key,
   // so a lightweight client instance is sufficient here.
@@ -262,6 +264,7 @@ export default function DocumentEditorContainer({
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
+  const reviewChanges = !!assistantEnabled && !readOnly;
   const terminalAction = targetAction
     ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
       ? 'sign'
@@ -345,12 +348,13 @@ export default function DocumentEditorContainer({
       // Isolation is document-independent, so installing it once at create is
       // both correct and cheapest.
       try {
+        if (!reviewChanges) return;
         installRevisionGroupIsolation(editor);
       } catch {
         // A grouping failure must not break the editor mount.
       }
     },
-    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+    [activeDocumentId, containerId, envelope?.id, formId, reviewChanges, stepId]
   );
   // Runs after openAsync resolves — and again on every reload (openNonce), which
   // is the case that matters: the in-memory group wrappers die with the old
@@ -360,13 +364,13 @@ export default function DocumentEditorContainer({
   // firing of this same callback is a harmless no-op.
   const onDocumentReady = useCallback(() => {
     const editor = registeredEditor.current;
-    if (!editor) return;
+    if (!editor || !reviewChanges) return;
     try {
       rebindRevisionGroups(editor);
     } catch {
       // A grouping failure must not break the opened document.
     }
-  }, []);
+  }, [reviewChanges]);
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
@@ -429,6 +433,7 @@ export default function DocumentEditorContainer({
       headers={serviceHeaders}
       licenseKey={syncfusion.licenseKey}
       readOnly={readOnly}
+      reviewChanges={reviewChanges}
       openNonce={reloadKey}
       fileName='document'
       terminalAction={terminalAction}
