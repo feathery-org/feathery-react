@@ -105,6 +105,29 @@ it('real SyncFusion: applies the exact live full-paragraph split payload selecte
       endOffset: '2;11;273'
     });
 
+    // Mirror the live SyncFusion path: its selection-driven relayout invokes
+    // Control-Home while the engine is applying/verifying its internal ranges.
+    // A document operation must neither permit that navigation nor leave its
+    // temporary method wrappers installed after the transaction.
+    const liveSelection = editor.selection as any;
+    const documentHelper = (editor as any).documentHelper;
+    const viewer = documentHelper.viewerContainer as HTMLElement;
+    viewer.scrollTop = 420;
+    let unsuppressedSelections = 0;
+    let homeCalls = 0;
+    const originalSelect = liveSelection.select;
+    const relayoutHome = () => {
+      homeCalls += 1;
+      viewer.scrollTop = 0;
+    };
+    const selectionWithRelayout = function (this: unknown, ...args: unknown[]) {
+      if (!documentHelper.skipScrollToPosition) unsuppressedSelections += 1;
+      liveSelection.handleControlHomeKey();
+      return originalSelect.apply(this, args);
+    };
+    liveSelection.select = selectionWithRelayout;
+    liveSelection.handleControlHomeKey = relayoutHome;
+
     const dependentOps =
       process.env.PARAGRAPH_SPLIT_ORACLE_STRATEGY === 'dependent-ops';
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
@@ -140,6 +163,12 @@ it('real SyncFusion: applies the exact live full-paragraph split payload selecte
             } as any
           ]
     });
+
+    expect(unsuppressedSelections).toBe(0);
+    expect(homeCalls).toBe(0);
+    expect(viewer.scrollTop).toBe(420);
+    expect(liveSelection.select).toBe(selectionWithRelayout);
+    expect(liveSelection.handleControlHomeKey).toBe(relayoutHome);
 
     expect(result.results).toEqual(
       expect.arrayContaining([

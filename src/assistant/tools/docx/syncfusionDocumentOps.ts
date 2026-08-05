@@ -3213,6 +3213,58 @@ export function preserveDocumentViewDuring<T>(
   }
 }
 
+// SyncFusion treats every public selection as navigation. That is correct for
+// a person clicking in the editor, but not for the engine's transient CAS,
+// formatting, and post-write verification ranges. Worse, when layout is
+// resumed after a batch, SyncFusion's refresh path calls Control-Home and
+// scrolls the document to page one. Keep those two internal behaviours scoped
+// to this synchronous transaction: user selection methods are restored before
+// control returns to the host, and the exact viewport is retained as a final
+// safety boundary.
+function withSilentEditSelections<T>(
+  editor: LiveEditor,
+  operation: () => T
+): T {
+  const selection = editor.selection as any;
+  const documentHelper = (editor as any).documentHelper;
+  const viewer = documentHelper?.viewerContainer as HTMLElement | undefined;
+  if (!selection || typeof selection.select !== 'function') return operation();
+
+  const originalSelect = selection.select;
+  const originalHome = selection.handleControlHomeKey;
+  const priorSkipScroll = documentHelper?.skipScrollToPosition;
+  const scrollTop = viewer?.scrollTop;
+  const scrollLeft = viewer?.scrollLeft;
+  const silentSelect = function (this: unknown, ...args: unknown[]) {
+    const beforeSelect = documentHelper?.skipScrollToPosition;
+    if (documentHelper) documentHelper.skipScrollToPosition = true;
+    try {
+      return originalSelect.apply(this, args);
+    } finally {
+      if (documentHelper) documentHelper.skipScrollToPosition = beforeSelect;
+    }
+  };
+  const ignoreLayoutHome = () => undefined;
+
+  selection.select = silentSelect;
+  if (typeof originalHome === 'function')
+    selection.handleControlHomeKey = ignoreLayoutHome;
+  try {
+    return operation();
+  } finally {
+    if (selection.select === silentSelect) selection.select = originalSelect;
+    if (selection.handleControlHomeKey === ignoreLayoutHome)
+      selection.handleControlHomeKey = originalHome;
+    if (documentHelper) documentHelper.skipScrollToPosition = priorSkipScroll;
+    if (viewer) {
+      if (typeof scrollTop === 'number' && viewer.scrollTop !== scrollTop)
+        viewer.scrollTop = scrollTop;
+      if (typeof scrollLeft === 'number' && viewer.scrollLeft !== scrollLeft)
+        viewer.scrollLeft = scrollLeft;
+    }
+  }
+}
+
 function kindFromLiveAnchor(anchor: string, block?: FlatBlock): string {
   if (block) return block.kind;
   const story = liveStoryMarker(anchor);
@@ -12469,15 +12521,17 @@ export function applyDocumentEdits(
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
-  return withSerializationTiming(editor, serializationTiming, () => {
-    const expansion = expandSectionComposerEdits(editor, input);
-    const result = applyDocumentEditsMeasured(
-      editor,
-      { ...input, edits: expansion.edits },
-      serializationTiming
-    );
-    return collapseSectionComposerResult(result, expansion);
-  });
+  return withSilentEditSelections(editor, () =>
+    withSerializationTiming(editor, serializationTiming, () => {
+      const expansion = expandSectionComposerEdits(editor, input);
+      const result = applyDocumentEditsMeasured(
+        editor,
+        { ...input, edits: expansion.edits },
+        serializationTiming
+      );
+      return collapseSectionComposerResult(result, expansion);
+    })
+  );
 }
 
 function applyDocumentEditsMeasured(
