@@ -424,7 +424,7 @@ describe('insert_section deterministic composer', () => {
     }
   });
 
-  it('supports the same complete assembly immediately after an anchor', () => {
+  it('resolves after a heading at the named section boundary, not below the heading', () => {
     const editor = makeEditor();
     try {
       const anchor = targetAnchor(editor);
@@ -450,9 +450,9 @@ describe('insert_section deterministic composer', () => {
       const premium = texts.indexOf('Premium Summary');
       const title = texts.indexOf('New Policy Section');
       const following = texts.indexOf('Existing premium content');
-      expect(texts.slice(premium + 1, title)).toEqual(['', '']);
-      expect(texts.slice(following - 2, following)).toEqual(['', '']);
-      expect(texts.slice(title, following)).toEqual(
+      expect(premium).toBeLessThan(following);
+      expect(following).toBeLessThan(title);
+      expect(texts.slice(title)).toEqual(
         expect.arrayContaining(['Coverage', '$500,000', 'Fee', '$200'])
       );
     } finally {
@@ -492,6 +492,108 @@ describe('insert_section deterministic composer', () => {
     }
   });
 
+  it('resolves before:<name> from the heading section map', () => {
+    const editor = makeEditor();
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'named-section-before',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: 'before:premium summary',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      const texts = flattenSfdt(JSON.parse(editor.serialize())).map(
+        (block) => block.text
+      );
+      expect(texts.indexOf('Policy C-fee-4-2')).toBeLessThan(
+        texts.indexOf('New Policy Section')
+      );
+      expect(texts.indexOf('New Policy Section')).toBeLessThan(
+        texts.indexOf('Premium Summary')
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('resolves after:<name> after the section last content', () => {
+    const editor = makeEditor();
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'named-section-after',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: 'after:Policy A section',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      const texts = flattenSfdt(JSON.parse(editor.serialize())).map(
+        (block) => block.text
+      );
+      expect(texts.indexOf('Policy A-fee-4-2')).toBeLessThan(
+        texts.indexOf('New Policy Section')
+      );
+      expect(texts.indexOf('New Policy Section')).toBeLessThan(
+        texts.indexOf('Policy B')
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('returns one concrete candidate question for an ambiguous section name', () => {
+    const sfdt = fixture();
+    sfdt.sections[0].blocks.push(
+      paragraph('Premium Summary', 'Heading 1'),
+      paragraph('Second premium content', 'Body Text')
+    );
+    const editor = makeEditor(sfdt);
+    try {
+      const before = editor.serialize();
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'ambiguous-named-section',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: 'before:Premium Summary',
+            sectionSpec
+          }
+        ]
+      });
+
+      expect(result.results).toEqual([
+        expect.objectContaining({
+          ok: false,
+          op: 'insert_section',
+          error: 'section_target_ambiguous',
+          message: expect.stringContaining('Ask one question'),
+          details: expect.arrayContaining([
+            expect.stringMatching(/"Premium Summary" at 0;\d+/),
+            expect.stringMatching(/"Premium Summary" at 0;\d+/)
+          ])
+        })
+      ]);
+      expect(result.results[0].message).not.toContain('click');
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   it('uses a blank body boundary by topology instead of ambiguous text matching', () => {
     const editor = makeEditor();
     try {
@@ -520,6 +622,10 @@ describe('insert_section deterministic composer', () => {
       expect(result.results).toEqual([
         expect.objectContaining({ ok: true, op: 'insert_section' })
       ]);
+      expect(result.changeSet).toMatchObject({
+        status: 'applied',
+        groups: [expect.objectContaining({ opIndices: [0] })]
+      });
       const texts = flattenSfdt(JSON.parse(editor.serialize())).map(
         (block) => block.text
       );

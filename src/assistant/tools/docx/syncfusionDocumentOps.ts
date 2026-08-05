@@ -10568,6 +10568,158 @@ interface ComposerInsertionBoundary {
   position: 'before' | 'after';
 }
 
+interface ComposerSectionMapEntry {
+  heading: FlatBlock;
+  start: number;
+  end: number;
+}
+
+interface NamedComposerSectionTarget {
+  name: string;
+  position: 'before' | 'after';
+}
+
+function composerSectionName(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/^the\s+/, '')
+    .replace(/\s+section$/, '')
+    .trim();
+}
+
+function namedComposerSectionTarget(
+  anchor: string
+): NamedComposerSectionTarget | undefined {
+  const match = anchor.match(/^\s*(before|after)\s*:\s*(.+?)\s*$/i);
+  if (!match?.[2]) return undefined;
+  return {
+    position: match[1].toLowerCase() as 'before' | 'after',
+    name: match[2]
+  };
+}
+
+/**
+ * Section-authoring map, derived exclusively from real heading blocks. Empty
+ * styled headings are layout placeholders and never become sections or split
+ * one section from its content.
+ */
+function composerSectionMap(blocks: FlatBlock[]): ComposerSectionMapEntry[] {
+  const headings = blocks
+    .map((heading, start) => ({ heading, start }))
+    .filter(
+      ({ heading }) =>
+        heading.isHeading && !!heading.text.replace(/\f/g, '').trim()
+    );
+  return headings.map(({ heading, start }, headingIndex) => {
+    const next = headings
+      .slice(headingIndex + 1)
+      .find((candidate) => candidate.heading.level <= heading.level);
+    return {
+      heading,
+      start,
+      end: next?.start ?? blocks.length
+    };
+  });
+}
+
+function composerSectionCandidate(
+  entry: ComposerSectionMapEntry,
+  entries: ComposerSectionMapEntry[]
+): string {
+  const parent = [...entries]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.start < entry.start &&
+        candidate.end > entry.start &&
+        candidate.heading.level < entry.heading.level
+    );
+  return `${JSON.stringify(entry.heading.text)} at ${entry.heading.anchor}${
+    parent ? ` under ${JSON.stringify(parent.heading.text)}` : ''
+  }`;
+}
+
+function matchingComposerSections(
+  entries: ComposerSectionMapEntry[],
+  requestedName: string
+): ComposerSectionMapEntry[] {
+  const requested = composerSectionName(requestedName);
+  if (!requested) return [];
+  const exact = entries.filter(
+    (entry) => composerSectionName(entry.heading.text) === requested
+  );
+  if (exact.length) return exact;
+  return entries.filter((entry) => {
+    const candidate = composerSectionName(entry.heading.text);
+    return candidate.includes(requested) || requested.includes(candidate);
+  });
+}
+
+function bodyBlockNumber(block: FlatBlock): number | undefined {
+  const parts = block.anchor.split(';');
+  const number = Number(parts[1]);
+  return Number.isInteger(number) ? number : undefined;
+}
+
+function boundaryAfterComposerSection(
+  blocks: FlatBlock[],
+  entry: ComposerSectionMapEntry
+): ComposerInsertionBoundary | undefined {
+  const nextHeading = blocks[entry.end];
+  if (nextHeading?.isHeading && nextHeading.text.replace(/\f/g, '').trim())
+    return { target: nextHeading, position: 'before' };
+
+  const section = Number(entry.heading.anchor.split(';')[0]);
+  const represented = blocks
+    .slice(entry.start, entry.end)
+    .filter((block) => Number(block.anchor.split(';')[0]) === section);
+  const finalBlock = represented.reduce<
+    { number: number; block: FlatBlock } | undefined
+  >((latest, block) => {
+    const number = bodyBlockNumber(block);
+    if (number === undefined || (latest && latest.number > number))
+      return latest;
+    return { number, block };
+  }, undefined);
+  if (!finalBlock) return undefined;
+
+  const bodyTarget = represented.find(
+    (block) =>
+      block.anchor.split(';').length === 2 &&
+      bodyBlockNumber(block) === finalBlock.number
+  );
+  if (bodyTarget) return { target: bodyTarget, position: 'after' };
+
+  // A section ending in a table needs a following body paragraph as its public
+  // insertion surface. Word commonly keeps an empty one there; use it by
+  // topology, never by trying to match its empty content.
+  const followingBody = blocks.find((block) => {
+    const parts = block.anchor.split(';');
+    return (
+      parts.length === 2 &&
+      Number(parts[0]) === section &&
+      Number(parts[1]) > finalBlock.number
+    );
+  });
+  return followingBody
+    ? { target: followingBody, position: 'before' }
+    : undefined;
+}
+
+function boundaryForComposerSection(
+  blocks: FlatBlock[],
+  entry: ComposerSectionMapEntry,
+  position: 'before' | 'after'
+): ComposerInsertionBoundary | undefined {
+  return position === 'before'
+    ? { target: entry.heading, position: 'before' }
+    : boundaryAfterComposerSection(blocks, entry);
+}
+
 function composerBodyBlocksInSection(
   blocks: FlatBlock[],
   section: number
@@ -10625,14 +10777,107 @@ function resolveComposerInsertionBoundary(
   blocks: FlatBlock[],
   byAnchor: Map<string, FlatBlock>,
   anchor: string,
-  requestedPosition: 'before' | 'after'
+  requestedPosition: 'before' | 'after',
+  positionWasExplicit: boolean
 ): ComposerInsertionBoundary | undefined {
+  const sectionMap = composerSectionMap(blocks);
+  const named = namedComposerSectionTarget(anchor);
+  if (named) {
+    if (positionWasExplicit && requestedPosition !== named.position)
+      sectionSpecError(
+        'section_target_position_conflict',
+        'entry point',
+        `${JSON.stringify(anchor)} says ${
+          named.position
+        }, while position says ${requestedPosition}.`,
+        [
+          `section-map target: ${named.position}:${named.name}`,
+          `explicit position: ${requestedPosition}`
+        ]
+      );
+    const matches = matchingComposerSections(sectionMap, named.name);
+    if (matches.length > 1)
+      sectionSpecError(
+        'section_target_ambiguous',
+        'entry point',
+        `${JSON.stringify(named.name)} matched ${
+          matches.length
+        } section headings. Ask one question choosing between the concrete candidates below; no manual placement is needed.`,
+        matches.map((entry) => composerSectionCandidate(entry, sectionMap))
+      );
+    if (!matches.length)
+      sectionSpecError(
+        'section_target_not_found',
+        'entry point',
+        `the section map did not contain a heading matching ${JSON.stringify(
+          named.name
+        )}.`,
+        [
+          `tried: ${named.position} the named section heading and its structural boundary`,
+          `available section headings: ${
+            sectionMap
+              .map((entry) => composerSectionCandidate(entry, sectionMap))
+              .join('; ') || '(none)'
+          }`
+        ]
+      );
+    const resolved = boundaryForComposerSection(
+      blocks,
+      matches[0],
+      named.position
+    );
+    if (!resolved)
+      sectionSpecError(
+        'section_boundary_unavailable',
+        'entry point',
+        `resolved ${named.position}:${named.name} in the section map, but its structural edge had no body insertion surface.`,
+        [
+          `matched section: ${composerSectionCandidate(
+            matches[0],
+            sectionMap
+          )}`,
+          'tried: the section heading, the block after its last content, and a following empty body paragraph'
+        ]
+      );
+    return resolved;
+  }
+
   const exact = byAnchor.get(anchor);
-  if (exact && exact.kind !== 'table_cell')
+  const exactSection = exact?.isHeading
+    ? sectionMap.find((entry) => entry.heading.anchor === exact.anchor)
+    : undefined;
+  if (exactSection) {
+    const resolved = boundaryForComposerSection(
+      blocks,
+      exactSection,
+      requestedPosition
+    );
+    if (resolved) return resolved;
+  }
+  if (exact && exact.kind !== 'table_cell') {
+    if (!exact.text.replace(/\f/g, '').trim()) {
+      const exactIndex = blocks.findIndex(
+        (candidate) => candidate.anchor === exact.anchor
+      );
+      const followingSection = sectionMap.find(
+        (entry) => entry.start > exactIndex
+      );
+      if (followingSection)
+        return { target: followingSection.heading, position: 'before' };
+      const preceding = [...blocks.slice(0, exactIndex)]
+        .reverse()
+        .find(
+          (candidate) =>
+            candidate.kind !== 'table_cell' &&
+            !!candidate.text.replace(/\f/g, '').trim()
+        );
+      if (preceding) return { target: preceding, position: 'after' };
+    }
     return {
       target: exact,
       position: requestedPosition
     };
+  }
 
   const parts = anchor.split(';');
   const section = Number(parts[0]);
@@ -10704,7 +10949,8 @@ function compileSectionComposer(
         blocks,
         byAnchor,
         anchor,
-        requestedPosition
+        requestedPosition,
+        op.position !== undefined
       )
     : undefined;
   if (!boundary)
@@ -10715,16 +10961,48 @@ function compileSectionComposer(
         anchor || op.anchor
       )}.`,
       [
-        'Choose one existing section heading as the preceding boundary or one existing heading as the following boundary.'
+        `tried: an exact body anchor, a table boundary, and the document section map (${
+          composerSectionMap(blocks).length
+        } named headings)`
       ]
     );
-  const { target, position } = boundary;
+  const resolvedTarget = boundary.target;
+  let position = boundary.position;
+  const resolvedParts = resolvedTarget.anchor.split(';');
+  const resolvedBlockIndex = Number(resolvedParts[1]);
+  const needsSeedAnchor =
+    position === 'after' &&
+    resolvedParts.length === 2 &&
+    Number.isInteger(resolvedBlockIndex) &&
+    !blocks.some((block) => {
+      const parts = block.anchor.split(';');
+      return (
+        parts[0] === resolvedParts[0] &&
+        Number(parts[1]) === resolvedBlockIndex + 1
+      );
+    });
+  // At the end of a story there is no public body block on the far side of
+  // the structural boundary. Split the final paragraph once to create that
+  // body insertion surface, then compose before it in the same revision group.
+  // The paragraph starts empty; no placeholder/content identity participates.
+  const target: FlatBlock = needsSeedAnchor
+    ? {
+        ...resolvedTarget,
+        anchor: `${resolvedParts[0]};${resolvedBlockIndex + 1}`,
+        kind: 'paragraph',
+        text: '',
+        length: 0,
+        isHeading: false,
+        level: -1
+      }
+    : resolvedTarget;
+  if (needsSeedAnchor) position = 'before';
   const spec = validatedSectionSpec(op.sectionSpec);
   const group =
     typeof op.group === 'string'
       ? op.group
       : `__insert_section_${originalIndex + 1}`;
-  const evidence = deriveSectionFamilyEvidence(blocks, target.anchor);
+  const evidence = deriveSectionFamilyEvidence(blocks, resolvedTarget.anchor);
   const familyBoundary = evidence
     ? sectionBoundaryPattern(blocks, evidence.units).separator
     : undefined;
@@ -10735,16 +11013,21 @@ function compileSectionComposer(
     familyBoundary.confidence.level !== 'low'
       ? familyBoundary.value
       : [];
-  const beforeExisting = adjacentSectionSeparators(blocks, target, -1);
-  const afterExisting = adjacentSectionSeparators(blocks, target, 1);
+  const beforeExisting = adjacentSectionSeparators(blocks, resolvedTarget, -1);
+  const afterExisting = adjacentSectionSeparators(blocks, resolvedTarget, 1);
   const leadingBoundary =
     position === 'before'
       ? missingSectionPrefix(desiredBoundary, beforeExisting)
       : desiredBoundary;
-  const trailingBoundary =
-    position === 'after'
+  let trailingBoundary =
+    boundary.position === 'after'
       ? missingSectionSuffix(desiredBoundary, afterExisting)
       : desiredBoundary;
+  if (
+    needsSeedAnchor &&
+    trailingBoundary[trailingBoundary.length - 1] === 'empty_paragraph'
+  )
+    trailingBoundary = trailingBoundary.slice(0, -1);
   const observedSubsectionBoundary = evidence
     ? subsectionBoundaryPattern(evidence.units)
     : undefined;
@@ -10813,7 +11096,7 @@ function compileSectionComposer(
       source: composerTableSource(
         blocks,
         evidence,
-        target.anchor,
+        resolvedTarget.anchor,
         tableOrdinal,
         byAnchor
       ),
@@ -10885,7 +11168,21 @@ function compileSectionComposer(
     });
   const structuralOrder =
     position === 'before' ? finalUnits : [...finalUnits].reverse();
-  const structural: CompiledSectionEdit[] = [];
+  const structural: CompiledSectionEdit[] = needsSeedAnchor
+    ? [
+        {
+          label: 'created structural seed anchor',
+          edit: {
+            op: 'insert_text',
+            group,
+            anchor: resolvedTarget.anchor,
+            position: 'after',
+            text: '\n',
+            __suppressSectionBoundary: true
+          }
+        }
+      ]
+    : [];
   const formatting: CompiledSectionEdit[] = [];
   let insertedBeforeBoundary = 0;
   structuralOrder.forEach((unit, unitIndex) => {
@@ -10905,7 +11202,7 @@ function compileSectionComposer(
         edit: {
           op: 'insert_table',
           group,
-          anchor: target.anchor,
+          anchor: resolvedTarget.anchor,
           position,
           __sectionBoundaryAnchor: sectionBoundaryAnchor,
           rows: cells.length,
@@ -10925,7 +11222,7 @@ function compileSectionComposer(
       edit: {
         op: 'insert_text',
         group,
-        anchor: target.anchor,
+        anchor: resolvedTarget.anchor,
         position,
         __sectionBoundaryAnchor: sectionBoundaryAnchor,
         text: isSeparator
@@ -10945,7 +11242,7 @@ function compileSectionComposer(
         edit: {
           op: 'apply_style',
           group,
-          anchor: target.anchor,
+          anchor: resolvedTarget.anchor,
           expect: item.text,
           inheritFormatFrom: item.source.anchor,
           __sectionCreatorId: creatorId,
@@ -11043,7 +11340,18 @@ function expandSectionComposerEdits(
       compiled = {
         children: [
           {
-            edit: { ...original, __sectionRefusal: refusal },
+            edit: {
+              ...original,
+              // A semantic target such as `before:Premium Summary` is not a
+              // live block anchor. Route compile-time refusals through one
+              // harmless real body anchor so the typed handler can surface
+              // the precise section-map diagnosis before generic anchor
+              // preflight has a chance to replace it with anchor_not_found.
+              anchor:
+                blocks.find((block) => block.kind !== 'table_cell')?.anchor ??
+                original.anchor,
+              __sectionRefusal: refusal
+            },
             label: 'sectionSpec'
           }
         ],
@@ -11790,7 +12098,10 @@ function applyDocumentEditsMeasured(
                 ? resolveSectionBoundary(
                     blocks,
                     sectionBoundaryAnchor,
-                    plan.target
+                    // Composer boundaries are captured topology, including a
+                    // freshly seeded empty paragraph. Their address, not the
+                    // content on either side, is the identity contract.
+                    undefined
                   )
                 : resolveChangeSetBlock(
                     blocks,
