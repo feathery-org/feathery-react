@@ -709,24 +709,15 @@ export function useDocxEditor({
         container.resize?.();
         return;
       }
-      // DocumentEditorContainer#resize delegates to Syncfusion's full
-      // refreshLayout, which moves the selection to the document start before
-      // rebuilding. Keep Ayesha's host-resize owner, but run that existing
-      // mechanism through the engine's one visual-silence boundary so a review
-      // rail refresh cannot become navigation.
-      // Syncfusion's resize -> refreshLayout homes the cursor
-      // (moveToDocumentStart -> scroll-to-top) on a DEFERRED timer that
-      // outlives any synchronous restore, so a programmatic resize could
-      // yank the viewport seconds later. During our resize window the home
-      // routine has no user value: stub it for the deferred phase outright.
-      const sel: any = editor.selection;
-      const origHome = sel?.handleControlHomeKey;
-      const stubbed = typeof origHome === 'function';
-      if (stubbed) sel.handleControlHomeKey = () => {};
+      // DocumentEditorContainer#resize enters refreshLayout, which homes the
+      // cursor before rebuilding. The editor's own resize API performs the
+      // required geometry refresh without that navigation side effect; keep
+      // Ayesha's host-resize owner but use the narrower native operation.
       preserveDocumentViewDuring(editor, () => {
         // Syncfusion latches this in its window handler; it gates re-measure.
         editor.isContainerResize = false;
-        container.resize?.();
+        if (typeof editor.resize === 'function') editor.resize();
+        else container.resize?.();
         // resize() relays out but never refits the zoom, and the built-in
         // status bar only redraws its label when told to.
         if (refitZoom && editor.viewer?.zoomType === 'FitPageWidth') {
@@ -734,13 +725,6 @@ export function useDocxEditor({
           container.statusBar?.updateZoomContent?.();
         }
       });
-      if (stubbed) {
-        const win = featheryWindow();
-        win.setTimeout(() => {
-          if (sel.handleControlHomeKey !== origHome)
-            sel.handleControlHomeKey = origHome;
-        }, 1500);
-      }
     },
     [editor]
   );
@@ -771,8 +755,7 @@ export function useDocxEditor({
         // editor's box; Syncfusion's resize homes the cursor and scrolls to
         // the document top, so a same-size refresh is pure damage. Only pay
         // the relayout when the geometry truly changed.
-        if (Math.abs(width - lastW) < 1 && Math.abs(height - lastH) < 1)
-          return;
+        if (Math.abs(width - lastW) < 1 && Math.abs(height - lastH) < 1) return;
         lastW = width;
         lastH = height;
         resizeEditor(true);
