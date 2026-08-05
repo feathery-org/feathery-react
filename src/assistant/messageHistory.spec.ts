@@ -186,7 +186,7 @@ describe('assistant outbound message history', () => {
     expect(JSON.stringify(digest).length).toBeLessThan(1_000);
   });
 
-  it('closes dangling historical tool calls as interrupted before sending', () => {
+  it('leaves dangling calls untouched for service-boundary repair', () => {
     const streaming = pendingTool(
       'streaming',
       'readAttachment',
@@ -201,45 +201,9 @@ describe('assistant outbound message history', () => {
     const messages = [user('turn-1'), streaming, available, user('turn-2')];
     const snapshot = JSON.stringify(messages);
 
-    const prepared = prepareAssistantRequest({
-      id: 'chat-id',
-      messages,
-      body: undefined,
-      trigger: 'submit-message',
-      messageId: undefined
-    }).body.messages as UIMessage[];
-
-    expect(JSON.stringify(messages)).toBe(snapshot);
-    expect(prepared).not.toBe(messages);
-    expect(prepared[1].parts[0]).toEqual({
-      ...(streaming.parts[0] as any),
-      state: 'output-error',
-      errorText: 'Tool call interrupted.'
-    });
-    expect(prepared[2].parts[0]).toEqual({
-      ...(available.parts[0] as any),
-      state: 'output-error',
-      errorText: 'Tool call interrupted.'
-    });
-  });
-
-  it('leaves active-turn streaming tool parts untouched', () => {
-    const streaming = pendingTool(
-      'streaming',
-      'readAttachment',
-      'input-streaming',
-      true
-    );
-    const available = pendingTool(
-      'available',
-      'getDocumentInventory',
-      'input-available'
-    );
-    const messages = [user('turn'), streaming, available];
-    const snapshot = JSON.stringify(messages);
-
     const prepared = prepareAssistantMessagesForRequest(messages);
 
+    expect(JSON.stringify(messages)).toBe(snapshot);
     expect(prepared).toBe(messages);
     expect(JSON.stringify(prepared)).toBe(snapshot);
   });
