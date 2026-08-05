@@ -679,6 +679,50 @@ describe('TrackedChangeGroups', () => {
     ).toBeNull();
   });
 
+  it('never uses an editor ancestor as the rail chip scrollbox', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    const { container } = render(
+      <div data-testid='editor-viewport'>
+        <TrackedChangeGroups editor={editor} />
+      </div>
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    const viewport = screen.getByTestId('editor-viewport');
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    const row = screen.getByText('$6,000').closest('[role="button"]');
+    expect(row).not.toBeNull();
+
+    Object.defineProperties(viewport, {
+      clientHeight: { configurable: true, value: 1000 },
+      scrollHeight: { configurable: true, value: 20000 },
+      scrollTop: { configurable: true, writable: true, value: 8742 }
+    });
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 600 },
+      scrollTop: { configurable: true, writable: true, value: 0 }
+    });
+    jest
+      .spyOn(row as HTMLElement, 'getBoundingClientRect')
+      .mockReturnValue({ top: 1200, bottom: 1280 } as DOMRect);
+    jest.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 700
+    } as DOMRect);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    expect(scrollBox.scrollTop).toBe(0);
+    expect(viewport.scrollTop).toBe(8742);
+    expect(container).toContainElement(row as HTMLElement);
+  });
+
   it('every rail button is type=button so clicks never submit the host form', () => {
     // The rail renders inside the form runtime's real <form>. An untyped
     // <button> defaults to type=submit, so clicking it navigates the page and

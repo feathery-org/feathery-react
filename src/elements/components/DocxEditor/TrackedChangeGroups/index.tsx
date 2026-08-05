@@ -85,6 +85,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const ignoreSelectionRef = useRef(false);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
 
   // Syncfusion steals focus into its editable div on every selection change;
   // panel actions must take it back or the next J/K press moves the DOCUMENT
@@ -229,11 +230,12 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   useEffect(() => {
     if (!activeRevision) return;
     const row = rowRefs.current.get(activeRevision);
-    if (!row) return;
-    let box: HTMLElement | null = row.parentElement;
-    while (box && box.scrollHeight <= box.clientHeight) box = box.parentElement;
-    if (!box) return;
-    const rowTop = row.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    const box = scrollBoxRef.current;
+    if (!row || !box || box.scrollHeight <= box.clientHeight) return;
+    const rowTop =
+      row.getBoundingClientRect().top -
+      box.getBoundingClientRect().top +
+      box.scrollTop;
     const rowBottom = rowTop + row.offsetHeight;
     if (rowTop < box.scrollTop) box.scrollTop = rowTop;
     else if (rowBottom > box.scrollTop + box.clientHeight)
@@ -420,6 +422,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
             onResolveAll={(isAccept) => resolveGroups(groups, isAccept)}
           />
           <div
+            ref={scrollBoxRef}
             css={{
               overflowY: 'auto',
               padding: '12px 12px 40px',
