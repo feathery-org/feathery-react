@@ -35,6 +35,7 @@ import {
   getDocumentInventory,
   listRevisionGroups,
   parseRevisionGroupTag,
+  readSelection,
   rebindRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo,
   rejectProjectionStream,
@@ -204,8 +205,25 @@ describe('one change set that edits content AND restripes a table', () => {
       expect(result.results.every((entry) => entry.ok)).toBe(true);
       expect(revisions(ed).length).toBeGreaterThan(1);
 
+      ed.selection.select('0;3;0', '0;3;3');
+      const selectionBefore = readSelection(ed as unknown as LiveEditor);
+      const documentHelper = (ed as any).documentHelper;
+      const viewer = documentHelper.viewerContainer as HTMLElement;
+      viewer.scrollTop = 275;
+      viewer.scrollLeft = 19;
       const layout = (ed as any).documentHelper.layout;
-      const layoutSpy = jest.spyOn(layout, 'layoutWholeDocument');
+      const originalLayout = layout.layoutWholeDocument.bind(layout);
+      const layoutSpy = jest
+        .spyOn(layout, 'layoutWholeDocument')
+        .mockImplementation(() => {
+          const value = originalLayout();
+          // Pin the live regression even when jsdom's zero-sized page geometry
+          // does not naturally reproduce the browser's top jump.
+          viewer.scrollTop = 0;
+          viewer.scrollLeft = 0;
+          ed.selection.select('0;0;0', '0;0;0');
+          return value;
+        });
       resolveLiveRevisionGroupsAsOneUndo(
         ed as unknown as LiveEditor,
         listRevisionGroups(ed as unknown as LiveEditor),
@@ -214,6 +232,12 @@ describe('one change set that edits content AND restripes a table', () => {
 
       expect(revisions(ed)).toHaveLength(0);
       expect(layoutSpy).toHaveBeenCalledTimes(1);
+      expect(readSelection(ed as unknown as LiveEditor)).toEqual(
+        selectionBefore
+      );
+      expect(viewer.scrollTop).toBe(275);
+      expect(viewer.scrollLeft).toBe(19);
+      expect(documentHelper.skipScrollToPosition).toBe(false);
     } finally {
       destroyEditor(ed);
     }

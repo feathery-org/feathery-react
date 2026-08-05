@@ -3112,6 +3112,46 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
   };
 }
 
+// One engine-owned boundary for operations which may ask SyncFusion to inspect
+// or rebuild derived document state without user navigation. The review rail
+// remains the owner of deliberate selection/scroll changes; background reads
+// and post-resolution layout are visually silent.
+function withPreservedDocumentView<T>(
+  editor: LiveEditor,
+  operation: () => T
+): T {
+  const selection = editor.selection;
+  const startOffset = selection?.startOffset;
+  const endOffset = selection?.endOffset;
+  const documentHelper = (editor as any).documentHelper;
+  const viewer = documentHelper?.viewerContainer as HTMLElement | undefined;
+  const scrollTop = viewer?.scrollTop;
+  const scrollLeft = viewer?.scrollLeft;
+  const previousSkipScroll = documentHelper?.skipScrollToPosition;
+  if (documentHelper) documentHelper.skipScrollToPosition = true;
+  try {
+    return operation();
+  } finally {
+    if (
+      typeof startOffset === 'string' &&
+      typeof endOffset === 'string' &&
+      (selection?.startOffset !== startOffset ||
+        selection?.endOffset !== endOffset)
+    ) {
+      // Search/layout can consume the one-shot suppression flag. Re-arm it
+      // immediately before restoring the exact public range.
+      if (documentHelper) documentHelper.skipScrollToPosition = true;
+      selection.select(startOffset, endOffset);
+    }
+    if (viewer) {
+      if (typeof scrollTop === 'number') viewer.scrollTop = scrollTop;
+      if (typeof scrollLeft === 'number') viewer.scrollLeft = scrollLeft;
+    }
+    if (documentHelper)
+      documentHelper.skipScrollToPosition = previousSkipScroll;
+  }
+}
+
 function kindFromLiveAnchor(anchor: string, block?: FlatBlock): string {
   if (block) return block.kind;
   const story = liveStoryMarker(anchor);
@@ -3287,129 +3327,111 @@ function findOneDocumentOccurrences(
   if (!search?.findAll || !search?.searchResults?.getTextSearchResultsOffset)
     return { ok: false, ...base, error: 'search_unavailable' };
 
-  // Syncfusion Search temporarily selects its result while resolving public
-  // offsets. Its one-shot skip flag is consumed by that selection, so arm it
-  // once for the search and again before restoring the user's range. This is
-  // the engine-side read boundary; the review rail keeps sole ownership of
-  // deliberate chip navigation and scrolling.
-  const previousStart = editor.selection?.startOffset;
-  const previousEnd = editor.selection?.endOffset;
   const documentHelper = (editor as any).documentHelper;
-  const previousSkipScroll = documentHelper?.skipScrollToPosition;
-  if (documentHelper) documentHelper.skipScrollToPosition = true;
-  try {
-    // WholeWord cannot be delegated to SyncFusion while a tracked deletion is
-    // adjacent to an insertion: replacing `Marlow` with `Torrey` leaves the two
-    // runs neighbours, so its raw stream sees the single token `MarlowTorrey`
-    // and neither word looks whole.
-    // Always obtain public, selection-ready candidate ranges without the word
-    // constraint, then evaluate word boundaries against current SFDT text.
-    search.findAll(text, findOption(matchCase, false));
-    // A zero-match findAll never populates the internal result list, and on a
-    // fresh editor getTextSearchResultsOffset() then crashes on the undefined
-    // list. An unpopulated list is an honest zero-occurrence result, not a
-    // search failure.
-    const offsets = (search as any).textSearchResults?.innerList
-      ? search.searchResults.getTextSearchResultsOffset() ?? []
-      : [];
-    const searchResults = (search as any).textSearchResults?.innerList ?? [];
-    const sfdt = serializeSfdt(editor);
-    const byAnchor = new Map(
-      flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
-    );
-    const occurrences: DocumentOccurrence[] = [];
-    const rawCandidateOrdinals = new Map<string, number>();
-    let count = 0;
-    for (const [resultIndex, result] of offsets.entries()) {
-      const startOffset = String(result?.startOffset ?? '');
-      const endOffset = String(result?.endOffset ?? '');
-      const start = offsetParts(startOffset);
-      const end = offsetParts(endOffset);
-      if (!start.anchor || start.anchor !== end.anchor) continue;
-      const block = byAnchor.get(start.anchor);
-      const rawOrdinal = rawCandidateOrdinals.get(start.anchor) ?? 0;
-      rawCandidateOrdinals.set(start.anchor, rawOrdinal + 1);
-      // `findAll` can expose a tracked deletion. For body/table stories we have
-      // the serialized current-text projection, so reject a result that exists
-      // only in deleted revision text. Header/footer/text-frame offsets remain
-      // public and selectable even when SFDT lacks a stable story/page anchor.
-      const frameText = !block
-        ? currentTextFrameText(sfdt, start.anchor)
-        : undefined;
-      const currentText = block?.text ?? frameText;
-      let matchText = text;
-      if (currentText !== undefined) {
-        const currentOffsets = currentQueryOffsets(
-          currentText,
-          text,
-          matchCase
-        );
-        const currentOffset = currentOffsets[rawOrdinal];
-        if (
-          currentOffset === undefined ||
-          (wholeWord && !isWholeWordAt(currentText, currentOffset, text.length))
-        )
-          continue;
-        matchText = currentText.slice(
-          currentOffset,
-          currentOffset + text.length
-        );
-      } else {
-        // Story/page text is absent from flattened SFDT. Read the search
-        // result's already-resolved positions directly; its public `.text`
-        // getter resolves logical indexes through Selection and moves the UI.
-        const searchResult = searchResults[resultIndex];
-        const getTextInternal = documentHelper?.selection?.getTextInternal;
-        if (
-          searchResult?.start &&
-          searchResult?.end &&
-          typeof getTextInternal === 'function'
-        )
-          matchText = String(
-            getTextInternal.call(
-              documentHelper.selection,
-              searchResult.start,
-              searchResult.end,
-              false
-            ) ?? text
+  return withPreservedDocumentView(editor, () => {
+    try {
+      // WholeWord cannot be delegated to SyncFusion while a tracked deletion is
+      // adjacent to an insertion: replacing `Marlow` with `Torrey` leaves the two
+      // runs neighbours, so its raw stream sees the single token `MarlowTorrey`
+      // and neither word looks whole.
+      // Always obtain public, selection-ready candidate ranges without the word
+      // constraint, then evaluate word boundaries against current SFDT text.
+      search.findAll(text, findOption(matchCase, false));
+      // A zero-match findAll never populates the internal result list, and on a
+      // fresh editor getTextSearchResultsOffset() then crashes on the undefined
+      // list. An unpopulated list is an honest zero-occurrence result, not a
+      // search failure.
+      const offsets = (search as any).textSearchResults?.innerList
+        ? search.searchResults.getTextSearchResultsOffset() ?? []
+        : [];
+      const searchResults = (search as any).textSearchResults?.innerList ?? [];
+      const sfdt = serializeSfdt(editor);
+      const byAnchor = new Map(
+        flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
+      );
+      const occurrences: DocumentOccurrence[] = [];
+      const rawCandidateOrdinals = new Map<string, number>();
+      let count = 0;
+      for (const [resultIndex, result] of offsets.entries()) {
+        const startOffset = String(result?.startOffset ?? '');
+        const endOffset = String(result?.endOffset ?? '');
+        const start = offsetParts(startOffset);
+        const end = offsetParts(endOffset);
+        if (!start.anchor || start.anchor !== end.anchor) continue;
+        const block = byAnchor.get(start.anchor);
+        const rawOrdinal = rawCandidateOrdinals.get(start.anchor) ?? 0;
+        rawCandidateOrdinals.set(start.anchor, rawOrdinal + 1);
+        // `findAll` can expose a tracked deletion. For body/table stories we have
+        // the serialized current-text projection, so reject a result that exists
+        // only in deleted revision text. Header/footer/text-frame offsets remain
+        // public and selectable even when SFDT lacks a stable story/page anchor.
+        const frameText = !block
+          ? currentTextFrameText(sfdt, start.anchor)
+          : undefined;
+        const currentText = block?.text ?? frameText;
+        let matchText = text;
+        if (currentText !== undefined) {
+          const currentOffsets = currentQueryOffsets(
+            currentText,
+            text,
+            matchCase
           );
+          const currentOffset = currentOffsets[rawOrdinal];
+          if (
+            currentOffset === undefined ||
+            (wholeWord &&
+              !isWholeWordAt(currentText, currentOffset, text.length))
+          )
+            continue;
+          matchText = currentText.slice(
+            currentOffset,
+            currentOffset + text.length
+          );
+        } else {
+          // Story/page text is absent from flattened SFDT. Read the search
+          // result's already-resolved positions directly; its public `.text`
+          // getter resolves logical indexes through Selection and moves the UI.
+          const searchResult = searchResults[resultIndex];
+          const getTextInternal = documentHelper?.selection?.getTextInternal;
+          if (
+            searchResult?.start &&
+            searchResult?.end &&
+            typeof getTextInternal === 'function'
+          )
+            matchText = String(
+              getTextInternal.call(
+                documentHelper.selection,
+                searchResult.start,
+                searchResult.end,
+                false
+              ) ?? text
+            );
+        }
+        count++;
+        if (occurrences.length >= maxResults) continue;
+        occurrences.push({
+          anchor: start.anchor,
+          kind: kindFromLiveAnchor(start.anchor, block),
+          // Header/footer/note public offsets are selection-ready, but SFDT does
+          // not expose their runtime page index. Return the exact matched span as
+          // context in those stories rather than fabricate a non-selectable anchor.
+          blockText: block?.text ?? matchText,
+          matchText,
+          start: start.offset,
+          end: end.offset
+        });
       }
-      count++;
-      if (occurrences.length >= maxResults) continue;
-      occurrences.push({
-        anchor: start.anchor,
-        kind: kindFromLiveAnchor(start.anchor, block),
-        // Header/footer/note public offsets are selection-ready, but SFDT does
-        // not expose their runtime page index. Return the exact matched span as
-        // context in those stories rather than fabricate a non-selectable anchor.
-        blockText: block?.text ?? matchText,
-        matchText,
-        start: start.offset,
-        end: end.offset
-      });
+      return {
+        ok: true,
+        ...base,
+        count,
+        truncated: count > occurrences.length,
+        occurrences
+      };
+    } catch {
+      return { ok: false, ...base, error: 'search_failed' };
     }
-    return {
-      ok: true,
-      ...base,
-      count,
-      truncated: count > occurrences.length,
-      occurrences
-    };
-  } catch {
-    return { ok: false, ...base, error: 'search_failed' };
-  } finally {
-    if (
-      typeof previousStart === 'string' &&
-      typeof previousEnd === 'string' &&
-      (editor.selection?.startOffset !== previousStart ||
-        editor.selection?.endOffset !== previousEnd)
-    ) {
-      if (documentHelper) documentHelper.skipScrollToPosition = true;
-      editor.selection.select(previousStart, previousEnd);
-    }
-    if (documentHelper)
-      documentHelper.skipScrollToPosition = previousSkipScroll;
-  }
+  });
 }
 
 // A bounded, live-editor-only occurrence API. `queries` batches candidate
@@ -8152,11 +8174,13 @@ function captureNativeResolvers(rev: LiveRevision) {
 // pre-resolution geometry even though its document model is already correct.
 // Rebuild that derived layout once, after the batch/history boundary closes.
 function invalidateDocumentLayout(editor: LiveEditor): void {
-  try {
-    (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
-  } catch {
-    // A renderer teardown must not turn a completed resolution into a failure.
-  }
+  withPreservedDocumentView(editor, () => {
+    try {
+      (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
+    } catch {
+      // A renderer teardown must not turn a completed resolution into a failure.
+    }
+  });
 }
 
 // Bind a set of revisions authored by ONE logical edit group so per-card
