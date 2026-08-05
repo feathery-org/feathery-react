@@ -119,6 +119,15 @@ export type AssistantMode =
 const MODE_STORAGE_KEY = 'feathery.assistant.mode';
 const DEFAULT_MODE: AssistantMode = 'current';
 
+// Keep render-only message inference shallow. Letting the JSX map below carry
+// the AI SDK's full UIMessage union sends the UMD/rollup build compilers past
+// their type-instantiation depth (TS2589), while Jest's compiler is unaffected.
+type RenderMessage = {
+  id: string;
+  role: string;
+  parts: any[];
+};
+
 const isAssistantMode = (v: unknown): v is AssistantMode =>
   v === 'current' ||
   v === 'sidebar-left' ||
@@ -717,8 +726,8 @@ const AssistantChat = ({
     : attachments;
   const showAttachmentBar = stagedAttachments.length > 0 || !!attachmentError;
 
-  const messages = useMemo(
-    () => coalesceAssistantMessages(rawMessages),
+  const messages = useMemo<RenderMessage[]>(
+    () => coalesceAssistantMessages(rawMessages) as RenderMessage[],
     [rawMessages]
   );
 
