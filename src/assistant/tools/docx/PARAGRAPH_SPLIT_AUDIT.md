@@ -91,3 +91,4 @@ commits. SHAs below are from the current rebased `hilb-fresh` history.
 | `5215714c` | keep      | Scopes chat auto-scroll to the message container; the live tracer confirms it does not move the document viewport.                                  |
 | `7a418c39` | rewritten | Keeps deferred formatting anchored to the real preflight block while text expectations alone use the simulated state.                               |
 | `2dd1d711` | rewritten | The ancestor-walking rail scroll fix could still choose the editor viewport when the rail fit; the rail now references only its explicit scrollbox. |
+| `54e96ec6` | revert    | Removed the two-frame, pixel-threshold viewport compensation; exact tracer evidence identified the rail's ancestor walk, fixed at its source.       |
