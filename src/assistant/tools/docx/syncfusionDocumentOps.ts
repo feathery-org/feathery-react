@@ -13110,12 +13110,7 @@ function applyDocumentEditsMeasured(
     }
   }
   const preflightFailed = !!batchRefusal || preflightFailures.length > 0;
-  // SyncFusion's public bulk-update switch suppresses pagination/layout paint
-  // until the phase loops finish. Preserve an outer caller's already-disabled
-  // state; only this function's own true -> false transition is restored.
-  const suspendLayout = !batchRefusal && editor.enableLayout === true;
   try {
-    if (suspendLayout) editor.enableLayout = false;
     editor.enableTrackChanges = true;
     editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
     if (batchRefusal) {
@@ -13620,7 +13615,6 @@ function applyDocumentEditsMeasured(
     editor.enableTrackChanges = priorTrackChanges;
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
-    if (suspendLayout) editor.enableLayout = true;
   }
 
   refuseReusedUserStatedFigures(results);
