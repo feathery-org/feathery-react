@@ -109,6 +109,42 @@ describe('recalc', () => {
   });
 });
 
+describe('wildcard dependencies', () => {
+  it('evaluates a wildcard consumer after every token it sums', () => {
+    // The consumer is declared FIRST, so document order alone would evaluate
+    // it before the fees exist and silently produce 0.
+    const specs: TokenSpec[] = [
+      { id: 'total', formula: 'SUM(fee_*)' },
+      { id: 'fee_shipping', formula: '2 + 3' },
+      { id: 'fee_handling', formula: '1 + 1' }
+    ];
+    const plan = buildPlan(specs);
+    const values = new Map<string, number>();
+    recalc(plan, values);
+
+    expect(values.get('total')).toBe(7);
+  });
+
+  it('re-evaluates the wildcard consumer when a summed token changes', () => {
+    const specs: TokenSpec[] = [
+      { id: 'total', formula: 'SUM(fee_*)' },
+      { id: 'fee_shipping', source: 'fee_shipping' },
+      { id: 'fee_handling', source: 'fee_handling' }
+    ];
+    const plan = buildPlan(specs);
+    const values = new Map<string, number>([
+      ['fee_shipping', 5],
+      ['fee_handling', 2]
+    ]);
+    recalc(plan, values);
+    expect(values.get('total')).toBe(7);
+
+    values.set('fee_shipping', 8);
+    const { changed } = recalc(plan, values, 'fee_shipping');
+    expect(changed.get('total')).toBe(10);
+  });
+});
+
 describe('affected', () => {
   it('returns descendants in evaluation order', () => {
     const plan = buildPlan(invoice());

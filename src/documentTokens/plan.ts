@@ -10,7 +10,14 @@
  * removed, or wildcard membership shifting. Value edits never rebuild it.
  */
 
-import { dependencies, evaluate, FormulaError, Node, parse } from './grammar';
+import {
+  dependencies,
+  evaluate,
+  FormulaError,
+  Node,
+  parse,
+  wildcardPrefixes
+} from './grammar';
 
 export type TokenFormat = {
   kind: 'currency' | 'number' | 'percent' | 'text';
@@ -94,6 +101,14 @@ const edgesFor = (
       index === undefined || index === null ? name : `${name}__${index}`;
     if (rows.has(own)) deps.add(own);
     else rows.forEach((key) => deps.add(key));
+  }
+  // A wildcard sums every token whose bare name starts with its prefix, so it
+  // depends on all of them — without these edges the consumer can be ordered
+  // before the tokens it sums and silently evaluate to 0.
+  for (const prefix of wildcardPrefixes(ast)) {
+    for (const [name, rows] of rowsById) {
+      if (name.startsWith(prefix)) rows.forEach((key) => deps.add(key));
+    }
   }
   return deps;
 };
