@@ -35,6 +35,16 @@ const controlsOf = (editor: EditorLike): any[] => {
 const specOf = (control: any): TokenSpec | null =>
   decodeTag(control?.contentControlProperties?.tag ?? '');
 
+/**
+ * How a structural step reports something it could not do.
+ *
+ * Every failure path here used to be a bare `continue`, which is how a row that
+ * built only half its controls looked identical to one that built all of them.
+ * A partially built row is not visibly wrong — the tokens that ARE there work —
+ * so nothing surfaced it until someone dumped the control collection by hand.
+ */
+export type ProblemReporter = (message: string) => void;
+
 /** A run of table rows standing for one repeated group. */
 export type RepeatGroup = {
   table: any;
@@ -152,12 +162,19 @@ export const growGroup = (
   editor: EditorLike,
   group: RepeatGroup,
   target: number,
-  textFor: (spec: TokenSpec) => string
+  textFor: (spec: TokenSpec) => string,
+  onProblem: ProblemReporter = () => undefined
 ): TokenSpec[] => {
   const indexes = [...group.rows.keys()].sort((a, b) => a - b);
   const lastIndex = indexes[indexes.length - 1];
   const template = group.cells.get(lastIndex);
-  if (lastIndex === undefined || !template || template.length === 0) return [];
+  if (lastIndex === undefined || !template || template.length === 0) {
+    onProblem(
+      `cannot grow to ${target} rows: no template row to copy` +
+        ` (${group.sources.join(', ') || 'no fields'})`
+    );
+    return [];
+  }
 
   const added: TokenSpec[] = [];
   let anchorRow = group.rows.get(lastIndex) as number;
@@ -165,6 +182,7 @@ export const growGroup = (
   for (let next = lastIndex + 1; next < target; next += 1) {
     // insertRow works off the selection, so sit in the row being copied.
     if (!selectCell(editor, group.table, anchorRow, template[0].cellIndex)) {
+      onProblem(`cannot reach row ${anchorRow} to copy it; stopped at ${next}`);
       break;
     }
     (editor as any).editor?.insertRow?.(false, 1);
@@ -174,17 +192,32 @@ export const growGroup = (
       const fresh: TokenSpec = { ...spec, index: next };
       delete (fresh as any).instance;
 
-      if (!selectCell(editor, group.table, newRow, cellIndex)) continue;
+      if (!selectCell(editor, group.table, newRow, cellIndex)) {
+        onProblem(
+          `cannot reach row ${newRow} column ${cellIndex} for ${fresh.id}`
+        );
+        continue;
+      }
 
       // The collection is kept in DOCUMENT order, so the new control is NOT
       // the last entry — taking the last one retags whichever token follows the
       // table, destroying it. Find the control that was not there before.
+      //
+      // Deliberately NOT "the first untagged control": a foreign content control
+      // in the document is untagged too, and retagging one would make someone
+      // else's control ours.
       const existing = new Set(controlsOf(editor));
       (editor as any).editor?.insertContentControl?.('Text');
       const built = controlsOf(editor).find(
         (candidate) => !existing.has(candidate)
       );
-      if (!built?.contentControlProperties) continue;
+      if (!built?.contentControlProperties) {
+        onProblem(
+          `the editor created no control for ${fresh.id}` +
+            ` at row ${next} column ${cellIndex}`
+        );
+        continue;
+      }
       built.contentControlProperties.tag = encodeTag(fresh);
       built.contentControlProperties.title = fresh.id;
       built.contentControlProperties.lockContents = Boolean(fresh.formula);
@@ -193,6 +226,16 @@ export const growGroup = (
     }
 
     restoreBanding(group.table, newRow);
+    // A row is all of its tokens or none of them. Half a row still renders,
+    // which is exactly why this has to be said out loud.
+    const builtHere = added.filter((spec) => spec.index === next).length;
+    if (builtHere !== template.length) {
+      onProblem(
+        `row ${next} built ${builtHere} of ${template.length} tokens —` +
+          ' the rest show a placeholder and stay unlinked'
+      );
+    }
+
     anchorRow = newRow;
   }
 
@@ -221,7 +264,8 @@ export const growGroup = (
 export const shrinkGroup = (
   editor: EditorLike,
   group: RepeatGroup,
-  target: number
+  target: number,
+  onProblem: ProblemReporter = () => undefined
 ): number[] => {
   const descending = [...group.rows.keys()].sort((a, b) => b - a);
   const dropped: number[] = [];
@@ -235,6 +279,12 @@ export const shrinkGroup = (
       continue;
     (editor as any).editor?.deleteRow?.();
     dropped.push(index);
+  }
+
+  if (group.rows.size - dropped.length > target) {
+    onProblem(
+      `wanted ${target} rows but ${group.rows.size - dropped.length} remain`
+    );
   }
 
   return dropped;

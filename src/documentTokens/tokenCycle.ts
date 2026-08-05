@@ -534,12 +534,22 @@ export const attachTokenCycle = (
       if (target === current || target < 1) continue;
 
       const { texts, numbers } = derive();
+      // A row that half builds still renders, so the only way anyone learns
+      // about it is if it says so.
+      const report = (message: string) => {
+        // eslint-disable-next-line no-console
+        console.warn(`[feathery] document rows: ${message}`);
+      };
       const changed =
         target > current
-          ? growGroup(editor, group, target, (spec) =>
-              expectedText(valueKey(spec), texts, numbers)
+          ? growGroup(
+              editor,
+              group,
+              target,
+              (spec) => expectedText(valueKey(spec), texts, numbers),
+              report
             ).length > 0
-          : shrinkGroup(editor, group, target).length > 0;
+          : shrinkGroup(editor, group, target, report).length > 0;
       structural = structural || changed;
     }
 
