@@ -4,7 +4,8 @@ const DOCUMENT_TOOL_NAMES = new Set([
   'getDocumentInventory',
   'getSectionPattern',
   'findDocumentOccurrences',
-  'applyDocumentEdits'
+  'applyDocumentEdits',
+  'applyDocumentBlocks'
 ]);
 const RETAINED_DOCUMENT_RESULTS = 2;
 const DIGEST_MARKER = '[digested client-side: full result in earlier turn]';

@@ -149,6 +149,7 @@ describe('every streamed tool call produces exactly one output', () => {
       'getDocumentInventory',
       'getSectionPattern',
       'applyDocumentEdits',
+      'applyDocumentBlocks',
       'queryOutput',
       'someToolInventedNextQuarter',
       ''
