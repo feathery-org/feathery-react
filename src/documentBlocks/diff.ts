@@ -34,7 +34,8 @@ const specIndex = (data: DocumentData): Map<string, TokenSpec> => {
         ? block.rows.flatMap((r) => r.flatMap((c) => c.content))
         : block.content ?? [];
       for (const inline of inlines) {
-        if (inline.kind === 'token') index.set(valueKey(inline.spec), inline.spec);
+        if (inline.kind === 'token')
+          index.set(valueKey(inline.spec), inline.spec);
       }
     }
   }
@@ -60,8 +61,18 @@ const collectTokenEdits = (
   for (const run of runs) {
     if (run.kind !== 'token') continue;
     const last = rendered.get(run.key) ?? '';
-    if (run.text !== last && !tokenEdits.has(run.key)) {
-      tokenEdits.set(run.key, run.text);
+    if (run.text === last) continue;
+    // Same key edited in two places: the last occurrence in traversal order
+    // wins. Any earlier occurrence would be overwritten by the next render
+    // pass anyway, so only the final value (and one event per key) matters.
+    const alreadyEdited = tokenEdits.has(run.key);
+    tokenEdits.set(run.key, run.text);
+    if (alreadyEdited) {
+      const i = events.findIndex(
+        (e) => e.type === 'tokenEdited' && e.key === run.key
+      );
+      if (i !== -1) events[i] = { type: 'tokenEdited', key: run.key, text: run.text };
+    } else {
       events.push({ type: 'tokenEdited', key: run.key, text: run.text });
     }
   }
@@ -82,7 +93,8 @@ export const absorbDocEdits = (
 ): AbsorbResult => {
   const specs = specIndex(prev);
   const prevById = new Map<string, Block>();
-  for (const s of prev.sections) for (const b of s.blocks) prevById.set(b.id, b);
+  for (const s of prev.sections)
+    for (const b of s.blocks) prevById.set(b.id, b);
 
   const events: SyncEvent[] = [];
   const tokenEdits = new Map<string, string>();
@@ -94,10 +106,22 @@ export const absorbDocEdits = (
 
     if (pb.kind === 'table') {
       for (const row of pb.cells ?? []) {
-        for (const cell of row) collectTokenEdits(cell, renderedValues, tokenEdits, events);
+        for (const cell of row)
+          collectTokenEdits(cell, renderedValues, tokenEdits, events);
       }
-      const rows: Cell[][] = (pb.cells ?? []).map((row) =>
-        row.map((cellRuns) => ({ content: inlinesFromRuns(cellRuns, specs) }))
+      // Rows beyond the existing table's row count are ones a user typed
+      // directly into the doc — only rows the data already knew about get
+      // global token lookup; new rows stay text-only (rule 6). Adopted
+      // (id: null) tables have no existing row count, so every row keeps
+      // the global lookup.
+      const existingRowCount = existing?.rows?.length ?? Infinity;
+      const rows: Cell[][] = (pb.cells ?? []).map((row, rowIndex) =>
+        row.map((cellRuns) => ({
+          content: inlinesFromRuns(
+            cellRuns,
+            rowIndex < existingRowCount ? specs : new Map()
+          )
+        }))
       );
       if (existing) {
         seen.add(existing.id);
