@@ -43,11 +43,9 @@ const groupKeyOf = (changeSetId: string, group: string) =>
 const debugSwallowed = (error: unknown) =>
   console.debug('Feathery: tracked-changes rail editor call failed.', error);
 
-// Any raw call into the EJ2 instance can throw once the editor is mid-destroy
-// (step navigation tears the document down under a still-mounted rail; EJ2's
-// observer internals then hit `Object.keys(null)`). A dead editor must read as
-// a no-op, never as a crash that unmounts the form step.
-const quietly = (fn: () => void) => {
+// One boundary at each UI/EJ2 event entry. Known destroyed instances are
+// filtered before subscription; unexpected event-time faults stay contained.
+const handleEditorEvent = (fn: () => void) => {
   try {
     fn();
   } catch (error) {
@@ -153,21 +151,26 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // (a DIFFERENT document opened in place) also rebuilds immediately.
   useEffect(() => {
     if (!editor) return;
+    if (editor.isDestroyed) {
+      setGroups([]);
+      return;
+    }
     refresh();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const onContentChange = () => {
-      clearTimeout(timer);
-      if (revisionCount() !== lastRevisionCountRef.current) refresh();
-      else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
-    };
-    quietly(() => editor.addEventListener?.('contentChange', onContentChange));
-    quietly(() => editor.addEventListener?.('documentChange', refresh));
+    const onContentChange = () =>
+      handleEditorEvent(() => {
+        clearTimeout(timer);
+        if (revisionCount() !== lastRevisionCountRef.current) refresh();
+        else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
+      });
+    const onDocumentChange = () => handleEditorEvent(refresh);
+    editor.addEventListener?.('contentChange', onContentChange);
+    editor.addEventListener?.('documentChange', onDocumentChange);
     return () => {
       clearTimeout(timer);
-      quietly(() =>
-        editor.removeEventListener?.('contentChange', onContentChange)
-      );
-      quietly(() => editor.removeEventListener?.('documentChange', refresh));
+      if (editor.isDestroyed) return;
+      editor.removeEventListener?.('contentChange', onContentChange);
+      editor.removeEventListener?.('documentChange', onDocumentChange);
     };
   }, [editor, refresh, revisionCount]);
 
@@ -175,49 +178,51 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // Programmatic chip focus sets ignoreSelectionRef so its selectionChange
   // echo cannot re-land on a neighbouring edit.
   useEffect(() => {
-    if (!editor) return;
-    const onSelectionChange = () => {
-      if (ignoreSelectionRef.current) return;
-      let revisions: any[] = [];
-      try {
-        const current = editor.selection?.getCurrentRevision?.();
-        revisions = Array.isArray(current) ? current : current ? [current] : [];
-      } catch (error) {
-        debugSwallowed(error);
-        revisions = [];
-      }
-      if (revisions.length) {
+    if (!editor || editor.isDestroyed) return;
+    const onSelectionChange = () =>
+      handleEditorEvent(() => {
+        if (ignoreSelectionRef.current) return;
+        let revisions: any[] = [];
         try {
-          for (const view of listRevisionGroups(editor)) {
-            for (const item of view.items) {
-              // Either half of a replace counts as clicking that one edit.
-              if (!itemRevisions(item).some((rev) => revisions.includes(rev)))
-                continue;
-              const key = groupKeyOf(view.changeSetId, view.group);
-              setExpanded((prev) =>
-                prev[key] ? prev : { ...prev, [key]: true }
-              );
-              commitActiveRevision(item.revision);
-              // An inline click is an explicit ask for the review panel.
-              onHiddenChange?.(false);
-              return;
-            }
-          }
+          const current = editor.selection?.getCurrentRevision?.();
+          revisions = Array.isArray(current)
+            ? current
+            : current
+            ? [current]
+            : [];
         } catch (error) {
-          // A torn-down selection mid-teardown must not take the panel down.
           debugSwallowed(error);
+          revisions = [];
         }
-      }
-      // The cursor is not on an assistant edit: nothing is active.
-      commitActiveRevision(null);
-    };
-    quietly(() =>
-      editor.addEventListener?.('selectionChange', onSelectionChange)
-    );
+        if (revisions.length) {
+          try {
+            for (const view of listRevisionGroups(editor)) {
+              for (const item of view.items) {
+                // Either half of a replace counts as clicking that one edit.
+                if (!itemRevisions(item).some((rev) => revisions.includes(rev)))
+                  continue;
+                const key = groupKeyOf(view.changeSetId, view.group);
+                setExpanded((prev) =>
+                  prev[key] ? prev : { ...prev, [key]: true }
+                );
+                commitActiveRevision(item.revision);
+                // An inline click is an explicit ask for the review panel.
+                onHiddenChange?.(false);
+                return;
+              }
+            }
+          } catch (error) {
+            // A torn-down selection mid-teardown must not take the panel down.
+            debugSwallowed(error);
+          }
+        }
+        // The cursor is not on an assistant edit: nothing is active.
+        commitActiveRevision(null);
+      });
+    editor.addEventListener?.('selectionChange', onSelectionChange);
     return () => {
-      quietly(() =>
-        editor.removeEventListener?.('selectionChange', onSelectionChange)
-      );
+      if (!editor.isDestroyed)
+        editor.removeEventListener?.('selectionChange', onSelectionChange);
       activeRevisionRef.current = null;
       setActiveInlineRevision(editor, null);
     };
@@ -268,7 +273,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       remaining = 0;
     }
     if (remaining) refocusPanel();
-    else quietly(() => editor?.focusIn?.());
+    else editor?.focusIn?.();
   };
 
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
@@ -338,8 +343,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         event.preventDefault();
         event.stopPropagation();
         const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-        if (key === 'y' || event.shiftKey) quietly(() => history?.redo?.());
-        else quietly(() => history?.undo?.());
+        if (key === 'y' || event.shiftKey) history?.redo?.();
+        else history?.undo?.();
       }
       return;
     }
@@ -399,7 +404,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           ref={panelRef}
           aria-label='Assistant tracked changes'
           tabIndex={0}
-          onKeyDown={onPanelKeyDown}
+          onKeyDown={(event) => handleEditorEvent(() => onPanelKeyDown(event))}
           css={{
             width: 340,
             flex: '0 0 auto',
@@ -419,7 +424,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           <RailHead
             pendingCount={allChips.length}
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
-            onResolveAll={(isAccept) => resolveGroups(groups, isAccept)}
+            onResolveAll={(isAccept) =>
+              handleEditorEvent(() => resolveGroups(groups, isAccept))
+            }
           />
           <div
             ref={scrollBoxRef}
@@ -449,9 +456,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                   if (el) rowRefs.current.set(chip.revision, el);
                   else rowRefs.current.delete(chip.revision);
                 }}
-                onFocusChip={focusChip}
-                onResolveGroup={(isAccept) => resolveGroups([mem], isAccept)}
-                onResolveChips={resolveChips}
+                onFocusChip={(chip) => handleEditorEvent(() => focusChip(chip))}
+                onResolveGroup={(isAccept) =>
+                  handleEditorEvent(() => resolveGroups([mem], isAccept))
+                }
+                onResolveChips={(chips, isAccept) =>
+                  handleEditorEvent(() => resolveChips(chips, isAccept))
+                }
               />
             ))}
           </div>
