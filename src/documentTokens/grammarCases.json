@@ -229,6 +229,48 @@
       "formula": "ABS(1, 2)",
       "values": {},
       "error": "argument"
+    },
+    {
+      "why": "UPPER shows the text uppercased",
+      "formula": "UPPER(name)",
+      "values": { "name": "acme corp" },
+      "expectText": "ACME CORP"
+    },
+    {
+      "why": "LOWER shows the text lowercased",
+      "formula": "LOWER(name)",
+      "values": { "name": "ACME Corp" },
+      "expectText": "acme corp"
+    },
+    {
+      "why": "TITLE capitalises accented words identically on both sides",
+      "formula": "TITLE(name)",
+      "values": { "name": "émile dupont" },
+      "expectText": "Émile Dupont"
+    },
+    {
+      "why": "TITLE treats an apostrophe as a word break, matching str.title()",
+      "formula": "TITLE(name)",
+      "values": { "name": "don't stop" },
+      "expectText": "Don'T Stop"
+    },
+    {
+      "why": "TRIM strips surrounding whitespace only",
+      "formula": "TRIM(name)",
+      "values": { "name": "  padded  " },
+      "expectText": "padded"
+    },
+    {
+      "why": "display functions nest",
+      "formula": "UPPER(TRIM(name))",
+      "values": { "name": "  acme  " },
+      "expectText": "ACME"
+    },
+    {
+      "why": "a numeric value displays as its plain digits",
+      "formula": "UPPER(qty)",
+      "values": { "qty": 42 },
+      "expectText": "42"
     }
   ]
 }

@@ -20,8 +20,9 @@ import grammarCases from '../grammarCases.json';
 type Case = {
   why: string;
   formula: string;
-  values: Record<string, number>;
+  values: Record<string, number | string>;
   expect?: number;
+  expectText?: string;
   error?: string;
 };
 
@@ -40,11 +41,15 @@ describe('token grammar — shared contract', () => {
       expect(String((thrown as Error).message).toLowerCase()).toContain(
         testCase.error.toLowerCase()
       );
-    } else {
-      expect(evaluate(testCase.formula, testCase.values)).toBeCloseTo(
-        testCase.expect as number,
-        9
+    } else if (testCase.expectText !== undefined) {
+      // Display functions return text through the numeric signature.
+      expect(evaluate(testCase.formula, testCase.values as any)).toBe(
+        testCase.expectText
       );
+    } else {
+      expect(
+        evaluate(testCase.formula, testCase.values as Record<string, number>)
+      ).toBeCloseTo(testCase.expect as number, 9);
     }
   });
 
@@ -52,6 +57,7 @@ describe('token grammar — shared contract', () => {
     // Guards against a truncated or unparsed fixture silently passing.
     expect(CASES.length).toBeGreaterThan(30);
     expect(CASES.some((c) => c.error !== undefined)).toBe(true);
+    expect(CASES.some((c) => c.expectText !== undefined)).toBe(true);
   });
 });
 

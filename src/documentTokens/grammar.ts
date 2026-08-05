@@ -30,10 +30,12 @@ export const DISPLAY_FUNCTIONS = new Set(['UPPER', 'LOWER', 'TITLE', 'TRIM']);
 const DISPLAY: Record<string, (text: string) => string> = {
   UPPER: (text) => text.toUpperCase(),
   LOWER: (text) => text.toLowerCase(),
-  // Word-initial capitals, matching Python's str.title().
+  // Word-initial capitals, matching Python's str.title(): a word is a run of
+  // LETTERS in the Unicode sense, or an accented name capitalises differently
+  // on the two sides — pinned by the fixture's display cases.
   TITLE: (text) =>
     text.replace(
-      /[A-Za-z]+/g,
+      /\p{L}+/gu,
       (w) => w[0].toUpperCase() + w.slice(1).toLowerCase()
     ),
   TRIM: (text) => text.trim()
