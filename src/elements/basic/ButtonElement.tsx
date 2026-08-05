@@ -22,7 +22,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyBackgroundColorGradient('button');
   responsiveStyles.applyCorners('button');
   responsiveStyles.applyBoxShadow('button');
-  responsiveStyles.applyFlexDirection('button');
+  // 'center' is an image-only mode, not a valid CSS flex direction
+  responsiveStyles.apply('button', 'flex_direction', (a: any) => ({
+    flexDirection: a === 'center' ? 'row' : a
+  }));
+  responsiveStyles.apply('buttonLabel', 'flex_direction', (a: any) =>
+    a === 'center' ? { display: 'none' } : {}
+  );
   responsiveStyles.applyContentAlign('button');
   responsiveStyles.apply('button', 'entry_transition', (a: any) => {
     if (a === 'fade_in') {
