@@ -509,6 +509,40 @@ describe('attachTokenCycle — undo propagates to the field', () => {
     expect(fields.values.fee).toBe(150);
   });
 
+  it('a token whose field no longer exists keeps its document text', () => {
+    // A field renamed or deleted after the document was generated is live
+    // drift, not a template error: the owner adopts the document's value.
+    const editor = feeEditor();
+    const fields = store({});
+    const cycle = attachTokenCycle(editor, { fields });
+
+    expect(editor.valueOf('fee')).toBe('$150.00');
+    expect(editor.valueOf('double')).toBe('$300.00');
+    expect(cycle.getState().errors.size).toBe(0);
+  });
+
+  it('two rapid edits to the same input settle on the last', () => {
+    const editor = feeEditor();
+    const fields = store({ fee: 150 });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    cycle.setTokenValue('fee', 175);
+    cycle.setTokenValue('fee', 200);
+
+    expect(fields.values.fee).toBe(200);
+    expect(editor.valueOf('double')).toBe('$400.00');
+  });
+
+  it('an empty field value surfaces as an error, not a silent zero', () => {
+    const editor = feeEditor();
+    const fields = store({ fee: '' });
+    const cycle = attachTokenCycle(editor, { fields });
+
+    // With no numeric fee, `double` cannot evaluate. The error is what the
+    // save guard reads; the alternative is $0.00 passing for a real number.
+    expect(cycle.getState().errors.has('double')).toBe(true);
+  });
+
   it('a replay adoption scheduled before detach never runs after it', async () => {
     const editor = feeEditor();
     const fields = store({ fee: 150 });
@@ -1088,6 +1122,9 @@ describe('attachTokenCycle — state and lifecycle', () => {
 
     expect(args.event.preventDefault).toHaveBeenCalled();
     expect(args.isHandled).toBe(true);
+    // Refused means untouched — swallowing the key but mangling the value
+    // would still pass a preventDefault-only assertion.
+    expect(editor.valueOf('qty__0')).toBe('10');
   });
 
   it('lets a value be cleared', () => {
@@ -1251,7 +1288,10 @@ describe('attachTokenCycle — state and lifecycle', () => {
     expect(() => attachTokenCycle(bare)).not.toThrow();
     const cycle = attachTokenCycle(bare);
     expect(cycle.getState().specs).toEqual([]);
-    expect(() => cycle.setTokenValue('qty__0', 5)).not.toThrow();
+    // Inert means no state invented, not merely no crash.
+    const after = cycle.setTokenValue('qty__0', 5);
+    expect(after.values.size).toBe(0);
+    expect(after.errors.size).toBe(0);
     expect(() => cycle.detach()).not.toThrow();
   });
 
