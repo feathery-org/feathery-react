@@ -388,6 +388,14 @@ const facts = (ed: DocumentEditor, tableAnchor: string): TableFacts => {
 const fills = (ed: DocumentEditor, tableAnchor: string) =>
   facts(ed, tableAnchor).rows.map((entry) => entry.appearance?.shading ?? null);
 
+/** Exact public appearance facts, excluding cell content. */
+const appearanceSnapshot = (ed: DocumentEditor, tableAnchor: string) =>
+  facts(ed, tableAnchor).rows.map((entry) => ({
+    isHeader: entry.isHeader ?? false,
+    appearance: entry.appearance,
+    cells: entry.cells.map((cell) => cell.appearance)
+  }));
+
 const structure = (ed: DocumentEditor): DocumentStructure => {
   const read = getDocumentInventory(ed as unknown as LiveEditor, {
     scope: 'structure'
@@ -1477,6 +1485,136 @@ describe('inserting and deleting rows keeps the banding correct', () => {
 });
 
 describe('appearance writes stay reversible', () => {
+  it('restores the exact baseline when a late table cell write throws', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      const before = appearanceSnapshot(ed, '0;2');
+      const select = ed.selection.select.bind(ed.selection);
+      let injected = false;
+      jest.spyOn(ed.selection, 'select').mockImplementation((start, end) => {
+        if (!injected && String(start).startsWith('0;2;4;0;0')) {
+          injected = true;
+          throw new Error('injected late cell write failure');
+        }
+        select(start, end);
+      });
+
+      const result = apply(
+        ed,
+        [
+          {
+            op: 'copy_table_format',
+            anchor: '0;2;0;0;0',
+            sourceTable: '0;1'
+          }
+        ],
+        'late-cell-write-failure'
+      );
+
+      expect(injected).toBe(true);
+      expect(result.results[0]).toMatchObject({ ok: false });
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('restores the exact baseline when post-write verification fails', () => {
+    const ed = makeEditor(twoTables());
+    try {
+      const before = appearanceSnapshot(ed, '0;2');
+      const staleSnapshot = ed.serialize();
+      const serialize = ed.serialize.bind(ed);
+      let calls = 0;
+      jest.spyOn(ed, 'serialize').mockImplementation(() => {
+        calls++;
+        return calls === 3 ? staleSnapshot : serialize();
+      });
+
+      const result = apply(
+        ed,
+        [
+          {
+            op: 'copy_table_format',
+            anchor: '0;2;0;0;0',
+            sourceTable: '0;1'
+          }
+        ],
+        'appearance-verification-failure'
+      );
+
+      expect(calls).toBeGreaterThanOrEqual(3);
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'inherited_appearance_mismatch'
+      });
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('restores table appearance when later paragraph verification fails', () => {
+    const ed = makeEditor(inheritedTableFixture());
+    const paragraphFormat: any = ed.selection.paragraphFormat;
+    let owner: any = paragraphFormat;
+    while (
+      owner &&
+      !Object.prototype.hasOwnProperty.call(owner, 'textAlignment')
+    )
+      owner = Object.getPrototypeOf(owner);
+    const descriptor = owner
+      ? Object.getOwnPropertyDescriptor(owner, 'textAlignment')
+      : undefined;
+    if (!descriptor?.set)
+      throw new Error('paragraphFormat.textAlignment setter unavailable');
+    const originalOwnDescriptor = Object.getOwnPropertyDescriptor(
+      paragraphFormat,
+      'textAlignment'
+    );
+    let verificationArmed = false;
+    let injected = false;
+    Object.defineProperty(paragraphFormat, 'textAlignment', {
+      configurable: true,
+      get: () => {
+        const value = descriptor.get?.call(paragraphFormat);
+        if (verificationArmed) {
+          injected = true;
+          return value === 'Right' ? 'Left' : 'Right';
+        }
+        return value;
+      },
+      set: (value) => {
+        descriptor.set?.call(paragraphFormat, value);
+        if (value === 'Right') verificationArmed = true;
+      }
+    });
+    try {
+      const before = appearanceSnapshot(ed, '0;0');
+      const result = apply(
+        ed,
+        [{ op: 'insert_row', anchor: '0;0;2;0;0' }],
+        'paragraph-verification-failure'
+      );
+
+      expect(injected).toBe(true);
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'inherited_format_mismatch'
+      });
+      expect(appearanceSnapshot(ed, '0;0')).toEqual(before);
+    } finally {
+      if (originalOwnDescriptor)
+        Object.defineProperty(
+          paragraphFormat,
+          'textAlignment',
+          originalOwnDescriptor
+        );
+      else delete paragraphFormat.textAlignment;
+      destroyEditor(ed);
+    }
+  });
+
   it('rejecting the change set restores the appearance AND the content', () => {
     const ed = makeEditor(twoTables());
     try {
