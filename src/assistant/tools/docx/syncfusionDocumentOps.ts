@@ -6950,7 +6950,15 @@ function applyResolvedInheritedFormat(
   const styleName = options.styleName ?? sourceStyleName;
   if (typeof styleName === 'string' && styleName.trim()) {
     selectParagraph(editor, target);
-    callEditor(editor, 'applyStyle', styleName);
+    const currentStyleName = comparableFormatValue(
+      editor.selection?.paragraphFormat?.styleName
+    );
+    // Applying the already-resolved Normal style is not a no-op in Syncfusion:
+    // it writes an explicit styleName onto the paragraph mark. On a split that
+    // excludes the source mark, that residue survives rejection. Follow the
+    // same write-only-on-difference rule as the direct properties below.
+    if (currentStyleName !== styleName)
+      callEditor(editor, 'applyStyle', styleName);
   }
 
   // Character properties must be applied to text only; paragraph properties
@@ -10406,6 +10414,52 @@ function planInsertInheritance(
   return planned.length ? planned : undefined;
 }
 
+// Replacing a whole paragraph with text containing paragraph marks is also a
+// paragraph-creation operation. Syncfusion's selected-range insert correctly
+// owns the tracked structure, but it gives every inserted run/mark the document
+// default instead of the selected paragraph's resolved formatting. Reuse the
+// same pre-write format snapshot and guarded post-write apply path as
+// insert_text; do not introduce a second formatting owner for selection ops.
+function planSelectionSplitInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  target: FlatBlock
+): PlannedInsertInheritance[] | undefined {
+  if (op.op !== 'replace_selection') return undefined;
+  const replacement = op.replace ?? op.text ?? op.newText;
+  if (replacement == null) return undefined;
+  const segments = String(replacement).split(/\r\n|\r|\n/);
+  if (segments.length < 2) return undefined;
+
+  const start = offsetParts(
+    offsetString(op.startOffset) || `${target.anchor};0`
+  );
+  const end = offsetParts(
+    offsetString(op.endOffset) || `${target.anchor};${target.length}`
+  );
+  // Formatting whole result paragraphs is safe only when the selected source
+  // was itself one whole paragraph. A partial/multi-paragraph rewrite may keep
+  // unselected text in its edge paragraphs, whose own run format must win.
+  if (
+    start.anchor !== target.anchor ||
+    end.anchor !== target.anchor ||
+    start.offset !== 0 ||
+    end.offset < target.length
+  )
+    return undefined;
+
+  const anchorParts = target.anchor.split(';');
+  const blockIndexBase = Number(anchorParts.pop());
+  if (!Number.isInteger(blockIndexBase)) return undefined;
+  const inherited = readEffectiveSourceFormat(editor, target);
+  return segments.map((segment, index) => ({
+    anchor: [...anchorParts, blockIndexBase + index].join(';'),
+    expectedText: segment.replace(/\t/g, ''),
+    source: target,
+    inherited
+  }));
+}
+
 // Format the paragraphs a just-applied insert created, from the plan computed
 // before the write. Read-back verification (verifyInheritedFormat / the style
 // check on the fallback) is the success criterion; a mismatch fails the op and
@@ -12968,6 +13022,15 @@ function applyDocumentEditsMeasured(
               // their pre-insert positions. An explicit inheritFormatFrom on
               // the op replaces the computed reference (its source and format
               // snapshot were captured at preflight).
+              if (op.op === 'replace_selection' && !insertInheritance) {
+                insertInheritance = planSelectionSplitInheritance(
+                  editor,
+                  writtenOp,
+                  target
+                );
+                if (insertInheritance)
+                  plan.insertInheritance = insertInheritance;
+              }
               if (op.op === 'insert_text' && !insertInheritance) {
                 const explicitSource = plan.source
                   ? resolveChangeSetBlock(

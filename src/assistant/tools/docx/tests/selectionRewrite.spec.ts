@@ -141,6 +141,103 @@ function onePargraphDoc() {
   };
 }
 
+function formattedParagraphDoc() {
+  return {
+    sections: [
+      {
+        blocks: [
+          para('Our commitments to the client', 'Heading 2'),
+          {
+            paragraphFormat: {
+              styleName: 'Normal',
+              textAlignment: 'Justify',
+              leftIndent: 8,
+              rightIndent: 3,
+              firstLineIndent: 4,
+              beforeSpacing: 2,
+              afterSpacing: 7,
+              lineSpacing: 1.15,
+              lineSpacingType: 'Multiple',
+              keepWithNext: true,
+              keepLinesTogether: true,
+              widowControl: true
+            },
+            inlines: [
+              {
+                text: COMMITMENT,
+                characterFormat: {
+                  fontFamily: 'Arial',
+                  fontSize: 10,
+                  fontColor: '#4D525A',
+                  italic: true,
+                  underline: 'Single'
+                }
+              }
+            ]
+          },
+          para('Tail.')
+        ]
+      }
+    ]
+  };
+}
+
+const SPLIT_CHARACTER_FORMAT = [
+  'fontFamily',
+  'fontSize',
+  'fontColor',
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'baselineAlignment',
+  'highlightColor',
+  'bidi',
+  'allCaps'
+] as const;
+
+const SPLIT_PARAGRAPH_FORMAT = [
+  'styleName',
+  'textAlignment',
+  'leftIndent',
+  'rightIndent',
+  'firstLineIndent',
+  'beforeSpacing',
+  'afterSpacing',
+  'spaceBeforeAuto',
+  'spaceAfterAuto',
+  'lineSpacing',
+  'lineSpacingType',
+  'keepWithNext',
+  'keepLinesTogether',
+  'widowControl',
+  'contextualSpacing',
+  'bidi'
+] as const;
+
+function resolvedParagraphFormat(
+  editor: DocumentEditor,
+  anchor: string,
+  length: number
+) {
+  editor.selection.select(`${anchor};0`, `${anchor};${length}`);
+  const characterFormat = Object.fromEntries(
+    SPLIT_CHARACTER_FORMAT.map((prop) => [
+      prop,
+      (editor.selection.characterFormat as any)[prop]
+    ])
+  );
+  editor.selection.select(`${anchor};0`, `${anchor};${length + 1}`);
+  const paragraphFormat = Object.fromEntries(
+    SPLIT_PARAGRAPH_FORMAT.map((prop) => [
+      prop,
+      (editor.selection.paragraphFormat as any)[prop]?.name ??
+        (editor.selection.paragraphFormat as any)[prop]
+    ])
+  );
+  return { characterFormat, paragraphFormat };
+}
+
 // The shape "make this into one statement" actually implies: several sentences
 // living in several paragraphs, to be collapsed into one.
 const SENT_1 = 'We act as an advocate at every stage of the policy lifecycle.';
@@ -632,10 +729,15 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
   ])(
     'real SDK: splits one selected paragraph %s and survives verification',
     (_label, parts, includeParagraphMark) => {
-      const ed = makeRealDocumentEditor(onePargraphDoc());
+      const ed = makeRealDocumentEditor(formattedParagraphDoc());
       try {
         ed.enableTrackChanges = true;
         const before = ed.serialize();
+        const sourceFormat = resolvedParagraphFormat(
+          ed,
+          '0;1',
+          COMMITMENT.length
+        );
         const expectedSelection = `${COMMITMENT}${
           includeParagraphMark ? '\r' : ''
         }`;
@@ -661,6 +763,15 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
         expect(blockTexts(ed).slice(1, 1 + parts.length)).toEqual(parts);
         expect(blockTexts(ed)).not.toContain(COMMITMENT);
         expect(realRevisions(ed).length).toBeGreaterThan(0);
+        parts.forEach((part, index) => {
+          const inherited = resolvedParagraphFormat(
+            ed,
+            `0;${index + 1}`,
+            part.length
+          );
+          expect(inherited).toEqual(sourceFormat);
+          expect(inherited.characterFormat.fontSize).toBe(10);
+        });
 
         rejectEveryRealRevision(ed);
         expect(ed.serialize()).toBe(before);
