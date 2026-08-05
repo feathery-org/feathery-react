@@ -1121,8 +1121,9 @@ export default class FeatheryClient extends IntegrationClient {
       collaboratorId
     );
 
-    if (res && !res.ok) throw Error(parseAPIError(JSON.parse(res.error)));
-    return res?.payload;
+    if (res && res.ok) {
+      return res.payload;
+    } else throw Error(parseAPIError(res));
   }
 
   async setCollaboratorAsCompleted(templateId: string) {
