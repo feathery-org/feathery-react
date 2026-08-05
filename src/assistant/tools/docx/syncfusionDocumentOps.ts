@@ -6143,11 +6143,17 @@ export const ANCHORLESS_OP_HANDLERS: {
     editor.enableTrackChanges = op.enabled !== false;
   },
   accept_all_revisions: ({ editor }) => {
-    if (editor.revisions?.acceptAll) editor.revisions.acceptAll();
+    if (editor.revisions?.acceptAll) {
+      editor.revisions.acceptAll();
+      invalidateDocumentLayout(editor);
+    }
     else throw new OpError('unsupported_op', 'No revisions to accept.');
   },
   reject_all_revisions: ({ editor }) => {
-    if (editor.revisions?.rejectAll) editor.revisions.rejectAll();
+    if (editor.revisions?.rejectAll) {
+      editor.revisions.rejectAll();
+      invalidateDocumentLayout(editor);
+    }
     else throw new OpError('unsupported_op', 'No revisions to reject.');
   },
   go_to_body: ({ editor }) => {
@@ -7927,6 +7933,17 @@ function captureNativeResolvers(rev: LiveRevision) {
   };
 }
 
+// Bulk revision resolution can leave SyncFusion's rendered widgets pointing at
+// pre-resolution geometry even though its document model is already correct.
+// Rebuild that derived layout once, after the batch/history boundary closes.
+function invalidateDocumentLayout(editor: LiveEditor): void {
+  try {
+    (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
+  } catch {
+    // A renderer teardown must not turn a completed resolution into a failure.
+  }
+}
+
 // Bind a set of revisions authored by ONE logical edit group so per-card
 // accept/reject is all-or-nothing within the group and NEVER wider. The first
 // accept/reject on any member resolves the whole group with that single
@@ -7946,6 +7963,7 @@ function captureNativeResolvers(rev: LiveRevision) {
 // looks exactly as it did" true for a batch that also restripes.
 //
 function groupRevisionsAtomic(
+  editor: LiveEditor,
   group: LiveRevision[],
   changeSetId?: string,
   groupId?: string,
@@ -7980,6 +7998,7 @@ function groupRevisionsAtomic(
         // group's outcome is already consistent, so swallow and move on.
       }
     }
+    if (members.length > 1) invalidateDocumentLayout(editor);
   };
   group.forEach((rev, index) => {
     if (changeSetId) (rev as any).robinChangeSetId = changeSetId;
@@ -8111,6 +8130,7 @@ export function resolveRevisionsAsOneUndo(
       }
     }
   }
+  if (revisions.length > 1) invalidateDocumentLayout(editor);
 }
 
 export interface RevisionGroupIdentity {
@@ -8192,6 +8212,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       }
     }
   }
+  if (initial.length) invalidateDocumentLayout(editor);
   return resolved;
 }
 
@@ -8256,7 +8277,7 @@ function groupNewRevisions(
         ? () => replayAppearanceRestores(editor, restores)
         : undefined;
     if (onReject) appearanceGroups.add(group);
-    groupRevisionsAtomic(partition, changeSetId, group, onReject);
+    groupRevisionsAtomic(editor, partition, changeSetId, group, onReject);
     revisionsByGroup.set(group, partition.length);
   });
   return { revisionCount: created.length, revisionsByGroup, appearanceGroups };
@@ -8518,6 +8539,7 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     const restores =
       payloads.size === 1 ? [...payloads.values()][0] : undefined;
     groupRevisionsAtomic(
+      editor,
       partition.revisions,
       partition.changeSetId,
       partition.group,
