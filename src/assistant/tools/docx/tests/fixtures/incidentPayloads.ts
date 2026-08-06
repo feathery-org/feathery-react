@@ -48,7 +48,10 @@ const recordedOp = (
   ...overrides
 });
 
-// Source: ai-full.log:9878.
+// Incident A (2026-08-03 live session): the assistant inserted an "empty"
+// placeholder table after the Premium Summary section, and the insert left a
+// spurious deletion revision over the following "Billing Options" heading.
+// Payload recorded verbatim from that session's applyDocumentEdits call.
 export const incidentAChangeSet = {
   changeSetId: 'insert-placeholder-table-after-premium-summary-20260803',
   plan: 'Insert a 3 by 4 table after the Premium Summary section using blank placeholders so it appears empty.',
@@ -69,7 +72,10 @@ export const incidentAChangeSet = {
   ]
 };
 
-// Source: ai-full.log:10609.
+// Incident C (2026-08-03 live session): while adding a Cyber Liability row to
+// the Premium Summary table, the assistant fabricated dollar amounts for the
+// Professional Liability row's currency-symbol-only cells instead of asking
+// for the real figures. Payload recorded verbatim from that session.
 export const incidentCChangeSet = {
   changeSetId: 'premium-summary-add-cyber-row-20260803a',
   plan: 'The annual premium depends on the row values, so I’m filling the missing Professional Liability amounts and adding the Cyber Liability row before recomputing the total.',
@@ -123,7 +129,11 @@ const duplicateTableCells = (tableAnchor: string) => {
   );
 };
 
-// Sources: ai-full.log:10733, :10754, :10775, and :10796 respectively.
+// Incident D (2026-08-03 live session): four consecutive attempts to add a
+// duplicate of the Cyber Insurance coverages table below the original. Each
+// attempt failed differently - an unaddressable "empty" insert, a spacer
+// paragraph consumed by the insert, a stale in-cell anchor, and cell writes
+// aimed at the wrong table index. Payloads recorded verbatim, in order.
 export const incidentDChangeSets = {
   a: {
     changeSetId: 'cyber-coverage-insert-duplicate-table-20260803a',
