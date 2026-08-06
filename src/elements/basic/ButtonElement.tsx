@@ -27,9 +27,11 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     flexDirection: a === 'center' ? 'row' : a
   }));
   // Always emit display so a mobile override can undo the desktop value
-  // (inline-block matches the label's base style in useTextEdit)
+  // (inline-block matches the label's base style in useTextEdit). Only hide
+  // the label when there's still an image to show.
   responsiveStyles.apply('buttonLabel', 'flex_direction', (a: any) => ({
-    display: a === 'center' ? 'none' : 'inline-block'
+    display:
+      a === 'center' && element.properties.image ? 'none' : 'inline-block'
   }));
   responsiveStyles.applyContentAlign('button');
   responsiveStyles.apply('button', 'entry_transition', (a: any) => {
@@ -203,6 +205,16 @@ function ButtonElement({
         }
   );
 
+  // An image-only button hides its text, so fall back to that text for the
+  // accessible name when no explicit aria label is set
+  const imageOnly =
+    !!element.properties.image &&
+    (element.styles.flex_direction === 'center' ||
+      element.mobile_styles?.flex_direction === 'center');
+  const ariaLabel =
+    element.properties.aria_label ||
+    (imageOnly ? element.properties.text : undefined);
+
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
 
@@ -258,7 +270,7 @@ function ButtonElement({
       // Use aria-disabled instead of disabled since disabled elements cannot display html errors
       aria-disabled={buttonDisabled}
       onClick={handleClick}
-      aria-label={element.properties.aria_label}
+      aria-label={ariaLabel}
       {...elementProps}
     >
       {customBorder}
@@ -276,7 +288,16 @@ function ButtonElement({
               }}
             />
           )}
-          {element.properties.text && (
+          {/* Icon embeds have no plain text, so properties.text alone can't
+              gate the label: an icon-only label must still render, and in
+              edit mode the label must stay mounted even when emptied —
+              otherwise the contenteditable disappears and text can never be
+              typed again. */}
+          {(element.properties.text ||
+            editMode ||
+            (element.properties.text_formatted ?? []).some(
+              (op: any) => typeof op.insert === 'object'
+            )) && (
             <TextNodes
               element={element}
               responsiveStyles={responsiveStyles}
@@ -296,7 +317,7 @@ function ButtonElement({
         <ErrorInput
           id={`error_${element.id}`}
           name={`error_${element.id}`}
-          aria-label={element.properties.aria_label}
+          aria-label={ariaLabel}
         />
       )}
     </button>
