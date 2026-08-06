@@ -178,6 +178,120 @@ export const TableIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
+// Table-editing icons (TableGroup). Same stroke style as TableIcon. The
+// row/column insert icons draw the plus on the ABOVE/LEFT side — rotate 180°
+// at the call site for below/right.
+export const InsertRowIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='3' y='13' width='18' height='7' rx='1.5' />
+      <line x1='12' y1='13' x2='12' y2='20' />
+      <line x1='12' y1='3' x2='12' y2='9' />
+      <line x1='9' y1='6' x2='15' y2='6' />
+    </g>
+  </Svg>
+);
+
+export const InsertColumnIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='13' y='3' width='7' height='18' rx='1.5' />
+      <line x1='13' y1='12' x2='20' y2='12' />
+      <line x1='3' y1='12' x2='9' y2='12' />
+      <line x1='6' y1='9' x2='6' y2='15' />
+    </g>
+  </Svg>
+);
+
+export const DeleteRowIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='3' y='9' width='12' height='6' rx='1' />
+      <line x1='17.5' y1='10' x2='21.5' y2='14' />
+      <line x1='21.5' y1='10' x2='17.5' y2='14' />
+    </g>
+  </Svg>
+);
+
+export const DeleteColumnIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='9' y='3' width='6' height='12' rx='1' />
+      <line x1='10' y1='17.5' x2='14' y2='21.5' />
+      <line x1='14' y1='17.5' x2='10' y2='21.5' />
+    </g>
+  </Svg>
+);
+
+export const DeleteTableIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='3' y='4' width='18' height='16' rx='1.5' />
+      <line x1='3' y1='9' x2='21' y2='9' />
+      <line x1='9.5' y1='12' x2='14.5' y2='17' />
+      <line x1='14.5' y1='12' x2='9.5' y2='17' />
+    </g>
+  </Svg>
+);
+
+export const MergeCellsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    >
+      <rect x='3' y='4' width='18' height='16' rx='1.5' />
+      <line x1='12' y1='4' x2='12' y2='7' />
+      <line x1='12' y1='17' x2='12' y2='20' />
+      <path d='M6 12h3.5' />
+      <path d='M8 10.5 9.5 12 8 13.5' />
+      <path d='M18 12h-3.5' />
+      <path d='M16 10.5 14.5 12 16 13.5' />
+    </g>
+  </Svg>
+);
+
+export const BordersIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round'>
+      <rect x='4' y='5' width='16' height='14' rx='1.5' />
+      <line x1='12' y1='5' x2='12' y2='19' />
+      <line x1='4' y1='12' x2='20' y2='12' />
+    </g>
+  </Svg>
+);
+
+export const ShadingIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      d='M12 3.8C9.6 6.7 6.5 10.7 6.5 13.5a5.5 5.5 0 0 0 11 0c0-2.8-3.1-6.8-5.5-9.7Z'
+    />
+  </Svg>
+);
+
+export const TableShadingIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <g
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    >
+      <rect x='3' y='4' width='18' height='16' rx='1.5' />
+      <path d='M12 8.6c-1.7 2-3.5 4.4-3.5 6.1a3.5 3.5 0 0 0 7 0c0-1.7-1.8-4.1-3.5-6.1Z' />
+    </g>
+  </Svg>
+);
+
 export const BulletListIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path

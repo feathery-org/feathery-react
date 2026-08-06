@@ -13,6 +13,7 @@ import {
   InsertGroup,
   ListsGroup,
   StyleGroup,
+  TableGroup,
   ZoomGroup
 } from './groups';
 import { useEditorFormatState } from './useEditorFormatState';
@@ -135,20 +136,49 @@ export default function DocxToolbar({
         onPickImage={() => fileInputRef.current?.click()}
       />
     ),
+    // Conditional group: null while the cursor is outside a table, and null
+    // groups drop out of both rendered rows (see renderGroupRow).
+    table: format.isInTable ? (
+      <TableGroup
+        editor={editor}
+        readOnly={readOnly}
+        trackChangesOn={format.trackChangesOn}
+        cellShading={format.cellShading}
+        setCellShading={format.setCellShading}
+        tableShading={format.tableShading}
+        setTableShading={format.setTableShading}
+      />
+    ) : null,
     lists: <ListsGroup editor={editor} readOnly={readOnly} />
   };
 
   // Shared by the visible row and the hidden measurement row so their
   // structures (spans, dividers, gaps) can never drift apart. Collapse is
   // tail-first, so the visible subset is always a prefix of GROUP_KEYS and
-  // the index-based leading dividers line up in both rows.
+  // the index-based leading dividers line up in both rows. Conditional groups
+  // (table) render null out of context — drop them from BOTH rows so no stray
+  // divider is left behind and the overflow hook measures their detached
+  // measurement span at zero width.
   const renderGroupRow = (keys: readonly GroupKey[], measure: boolean) =>
-    keys.map((k, i) => (
-      <span key={k} css={groupSpan} ref={measure ? setMeasureEl(k) : undefined}>
-        {i > 0 && <Divider />}
-        {groupNodes[k]}
-      </span>
-    ));
+    keys
+      .filter((k) => groupNodes[k] !== null)
+      .map((k, i) => (
+        <span
+          key={k}
+          css={groupSpan}
+          ref={measure ? setMeasureEl(k) : undefined}
+        >
+          {i > 0 && <Divider />}
+          {groupNodes[k]}
+        </span>
+      ));
+
+  // Overflowed groups that actually render something — a null conditional
+  // group in the tail must not produce an empty "More" panel row (or an empty
+  // panel outright).
+  const hiddenKeys = GROUP_KEYS.slice(visibleCount).filter(
+    (k) => groupNodes[k] !== null
+  );
 
   return (
     <div
@@ -233,7 +263,7 @@ export default function DocxToolbar({
           }}
         >
           {renderGroupRow(GROUP_KEYS.slice(0, visibleCount), false)}
-          {visibleCount < GROUP_KEYS.length && (
+          {hiddenKeys.length > 0 && (
             <span css={groupSpan}>
               {visibleCount > 0 && <Divider />}
               {/* Remount when membership changes mid-resize: the panel's
@@ -265,7 +295,7 @@ export default function DocxToolbar({
                       overflowY: 'auto'
                     }}
                   >
-                    {GROUP_KEYS.slice(visibleCount).map((k) => (
+                    {hiddenKeys.map((k) => (
                       <div
                         key={k}
                         css={{

@@ -10,6 +10,26 @@ export const toInputHex = (color: string): string => {
   return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#000000';
 };
 
+// Cell/table backgrounds go through the same alpha-hex normalization, but
+// their "unset" state ('empty', undefined) must surface as white — no shading
+// — not black.
+export const toBackgroundHex = (color: string | undefined): string => {
+  if (!color) return '#ffffff';
+  const hex = /^#[0-9a-fA-F]{8}$/.test(color) ? color.slice(0, 7) : color;
+  return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#ffffff';
+};
+
+// Selection contexts that put the cursor/selection inside a table — tables
+// live in the body, headers and footers alike.
+const IN_TABLE_CONTEXTS = new Set([
+  'TableText',
+  'TableImage',
+  'HeaderTableText',
+  'HeaderTableImage',
+  'FooterTableText',
+  'FooterTableImage'
+]);
+
 // Formatting state mirrored from the live Syncfusion DocumentEditor: tracks
 // the editor's selectionChange / zoomFactorChange events so the toolbar's
 // active states follow the cursor.
@@ -23,6 +43,10 @@ export function useEditorFormatState(editor: any) {
   const [styleName, setStyleName] = useState('Normal');
   const [alignment, setAlignment] = useState('Left');
   const [fontColor, setFontColor] = useState('#000000');
+  const [isInTable, setIsInTable] = useState(false);
+  const [trackChangesOn, setTrackChangesOn] = useState(false);
+  const [cellShading, setCellShading] = useState('#ffffff');
+  const [tableShading, setTableShading] = useState('#ffffff');
 
   useEffect(() => {
     const syncSelection = () => {
@@ -36,6 +60,19 @@ export function useEditorFormatState(editor: any) {
       if (cf.fontColor) setFontColor(toInputHex(cf.fontColor));
       setStyleName(pf.styleName || 'Normal');
       setAlignment(pf.textAlignment || 'Left');
+      const inTable = IN_TABLE_CONTEXTS.has(editor.selection.contextType);
+      setIsInTable(inTable);
+      // Plain property, no change event of its own — selectionChange fires
+      // often enough (every cursor move) to keep the gating fresh.
+      setTrackChangesOn(!!editor.enableTrackChanges);
+      if (inTable) {
+        setCellShading(
+          toBackgroundHex(editor.selection.cellFormat?.background)
+        );
+        setTableShading(
+          toBackgroundHex(editor.selection.tableFormat?.background)
+        );
+      }
     };
     const syncZoom = () => setZoom(Math.round(editor.zoomFactor * 100));
 
@@ -78,6 +115,12 @@ export function useEditorFormatState(editor: any) {
     styleName,
     alignment,
     fontColor,
-    setFontColor
+    setFontColor,
+    isInTable,
+    trackChangesOn,
+    cellShading,
+    setCellShading,
+    tableShading,
+    setTableShading
   };
 }
