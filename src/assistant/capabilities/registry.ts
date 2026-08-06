@@ -17,7 +17,7 @@
 //
 /**
  * Param types use a small fixed language (m5 C3: no arbitrary schema
- * language): `string`, `string[][]`, `number`, `int>0`, `int>=0`, `boolean`,
+ * language): `string`, `string[][]`, `int>=0[]`, `number`, `int>0`, `int>=0`, `boolean`,
  * `enum[a,b,...]` - each optionally suffixed `?` when the param may be
  * omitted. Cross-op fields (`anchor`, `expect`, `start`, `end`,
  * `inheritFormatFrom`, `changeSetId`, `group`) are reserved keys with one
@@ -227,6 +227,36 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // have to count.
     op: 'swap_sections',
     params: { otherAnchor: 'string' },
+    requiresAnchor: true
+  },
+  {
+    // handler: ANCHORED_OP_HANDLERS.split_table
+    //
+    // One table becomes two, and no cell is retyped. The same relocation
+    // primitive as copy_section, applied to the whole table: the engine captures
+    // the table, narrows the captured payload to the header band plus the
+    // extracted rows, pastes that at the target, and deletes the extracted rows
+    // from the original. So the new table's formatting and its HEADER ROW are the
+    // source's own, by construction rather than by inheritance, and there is no
+    // content field for the model to fill.
+    //
+    // No title, ever: a title is content, so it is a separate composed heading
+    // through the section composer - which also makes "add a title later" an
+    // ordinary follow-up rather than a redo of the split.
+    //
+    // `rows` is the selective shape the captain asked for - "all of a specific
+    // items", which can sit in ANY rows - and the indices are transcribed from a
+    // table_facts read (`TableRowFact.row`). `splitAtRow` is the positional
+    // shape, and it exists so that shape needs no enumeration: naming a boundary
+    // costs one number where listing rows 5..39 would be counting.
+    // Exactly one of the two.
+    op: 'split_table',
+    params: {
+      rows: 'int>=0[]?',
+      splitAtRow: 'int>=0?',
+      targetAnchor: 'string',
+      position: 'enum[before,after]?'
+    },
     requiresAnchor: true
   },
   {
@@ -678,6 +708,8 @@ type ParamBase<S extends string> = S extends 'string'
   ? SectionComposerSpec
   : S extends 'string[][]'
   ? string[][]
+  : S extends 'int>=0[]'
+  ? number[]
   : S extends 'number' | 'int>0' | 'int>=0'
   ? number
   : S extends 'boolean'

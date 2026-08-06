@@ -6586,7 +6586,15 @@ function shiftedRange(
   sfdt: any,
   range: BlockRange,
   paste: PasteEffect,
-  sourceIndex: number
+  sourceIndex: number,
+  // How to read the range back at its new address. A section range and a table
+  // range are addressed differently - a table anchor is not among the flattened
+  // blocks at all, its CELLS are - so the resolver that produced the range is
+  // the only thing that can find it again.
+  resolve: (blocks: FlatBlock[], anchor: string) => BlockRange = (
+    blocks,
+    anchor
+  ) => resolveSectionRange(blocks, anchor, 'relocated anchor')
 ): BlockRange {
   const movedIndex =
     paste.at <= sourceIndex ? sourceIndex + paste.blocks : sourceIndex;
@@ -6613,9 +6621,7 @@ function shiftedRange(
   const address = sequence[movedIndex];
   const blocks = flattenSfdt(sfdt);
   const anchor = address ? `${address.section};${address.block}` : '';
-  const moved = anchor
-    ? resolveSectionRange(blocks, anchor, 'relocated anchor')
-    : undefined;
+  const moved = anchor ? resolve(blocks, anchor) : undefined;
   const before = rangeIdentity(range.blocks);
   const after = moved ? rangeIdentity(moved.blocks) : '';
   if (!moved || before !== after)
@@ -6658,10 +6664,35 @@ function relocateBlockRange(
   preSfdt: any,
   source: BlockRange,
   target: PasteTarget,
-  { removeSource }: { removeSource: boolean } = { removeSource: true }
+  {
+    removeSource,
+    transformPayload
+  }: {
+    removeSource: boolean;
+    /**
+     * Relocate only PART of the captured range, by returning a narrowed payload.
+     *
+     * `split_table` is the caller: it needs a copy holding the header band and
+     * the extracted rows only. Narrowing the payload BEFORE the paste rather
+     * than deleting rows from the pasted copy afterwards is not a preference -
+     * SyncFusion's `deleteRow` on a row that is itself an unaccepted insertion
+     * writes rowSpan back into a DIFFERENT table, which left the source's
+     * untouched rows reading rowSpan 0 and -1 with no revision to reject. Isolated
+     * to that exact case: two ordinary tables are fine, and deleting a row from
+     * either of them is fine, tracked or not.
+     *
+     * This reads and writes no content. It drops entries from a row array in the
+     * same SFDT the engine parses everywhere else.
+     */
+    transformPayload?: (payload: string) => string;
+  } = { removeSource: true }
 ): { paste: PasteEffect; pastedSfdt: any } {
   editor.selection.select(source.startAnchor, source.endAnchor);
-  const payload = (editor.selection as any)?.sfdt;
+  const captured = (editor.selection as any)?.sfdt;
+  const payload =
+    typeof captured === 'string' && captured && transformPayload
+      ? transformPayload(captured)
+      : captured;
   if (typeof payload !== 'string' || !payload)
     throw new OpError(
       'relocation_payload_unavailable',
@@ -6781,6 +6812,374 @@ function resolveRelocationTarget(
     anchor: `${caretBlock.anchor};0`,
     address: topLevelAddress(caretBlock.anchor)
   };
+}
+
+// ---------------------------------------------------------------------------
+// split_table - one table becomes two, and the engine writes no content
+//
+// The captain: "we need split to work too. Also smart split we can be like split
+// this table into two table one with all of a specific items from the first
+// table. And the items could be in any rows in the main table."
+//
+// Two shapes, and the second is the one that matters: the extracted rows are NOT
+// contiguous. `splitAtRow` expresses the positional shape and `rows` the
+// selective one; both normalize to one row set on the way in, so there is one
+// code path rather than two.
+//
+// The mechanism is `copy_section`'s: capture the WHOLE TABLE, narrow the captured
+// payload to the header band plus the extracted rows, paste that at the target,
+// and delete the extracted rows from the source. Capturing the whole table is
+// what makes the row indices trivially correspond - payload row i is source row i
+// - and narrowing before the paste rather than pruning the pasted copy afterwards
+// is forced by a SyncFusion defect: `deleteRow` on a row that is itself an
+// unaccepted insertion writes rowSpan back into a DIFFERENT table, which left the
+// source's untouched rows reading rowSpan 0 and -1 with nothing to reject.
+//
+// That choice is what keeps the model out of the content:
+//
+//   * the new table's appearance is IDENTITY, not inheritance - it is the source
+//     table's own serialized content pasted back, so it renders the same by
+//     construction. Measured through the RESOLVED read (`cellFormat.background`
+//     per row), not merely the stated SFDT.
+//   * the HEADER BAND lands in both tables for free, because the copy is the
+//     whole table. Nothing reproduces or re-authors a header.
+//   * the alternative - build a table and fill it - would have to author every
+//     cell it moved, which is exactly what produced a duplicated section and
+//     placeholder tokens in a client proposal before move_section existed.
+//
+// SPLIT IS THEREFORE NOT A CONTENT-CREATING OP, and it deliberately does not
+// consult `creationAppearance`. That resolver answers "what should content with
+// NO source look like" - a composed section, an inserted table, a new row. A
+// split's new table HAS a source: the table it came out of. Routing it through
+// the resolver would replace an exact copy with an inferred one, and put a
+// second owner on the same pixels. `copy_section` sits outside
+// CONTENT_CREATING_OPS for the identical reason. Do not "fix" this by adding it.
+//
+// Row indices are read from a table_facts read (`TableRowFact.row`), never
+// counted - and `splitAtRow` exists so the positional shape needs no enumeration
+// of a long tail either.
+//
+// NO TITLE, and no option for one. The captain: "ok i am fine with defaulting to
+// no title when split." A title is CONTENT, so putting one on this op - even
+// routed internally through the composed-heading path - would give it a
+// model-authored text field and lose the schema-level guarantee that it cannot
+// retype or fabricate anything. A title is therefore a separate composed heading
+// through the section composer, which also means "add a title later" is the SAME
+// operation as adding one now, rather than a second path that could disagree
+// about style. Proven as two ordinary turns in splitTable.spec.ts.
+// ---------------------------------------------------------------------------
+
+/**
+ * The whole-table range: the table's own cells, and the selection spanning them.
+ *
+ * Sliced by INDEX rather than filtered by table anchor, so a nested table's
+ * cells - which carry deeper anchors and belong to no top-level table - stay
+ * inside the extent instead of silently dropping out of it and breaking the
+ * identity check that re-resolution depends on.
+ */
+function resolveTableRange(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): BlockRange {
+  const first = blocks.findIndex(
+    (block) => tableAnchorForBlock(block) === tableAnchor
+  );
+  if (first < 0) throw relocationAnchorMissing(tableAnchor, 'anchor');
+  let last = first;
+  for (let index = first; index < blocks.length; index++)
+    if (tableAnchorForBlock(blocks[index]) === tableAnchor) last = index;
+  const covered = blocks.slice(first, last + 1);
+  const next = blocks[last + 1];
+  return {
+    anchor: tableAnchor,
+    blocks: covered,
+    startAnchor: `${blocks[first].anchor};0`,
+    endAnchor: markInclusiveRangeEnd(next, blocks[last]),
+    endsDocument: !next
+  };
+}
+
+/**
+ * Every vertically merged cell's span, as { row, span }.
+ *
+ * The key set must match the inventory's own cell-format read: `tcpr` is the
+ * OPTIMIZED key and the live editor always serializes optimized SFDT, so
+ * omitting it made every merge span invisible in production once already while
+ * long-key fixtures kept the spec green.
+ */
+function verticalSpans(tableBlock: any): Array<{ row: number; span: number }> {
+  const out: Array<{ row: number; span: number }> = [];
+  const rows = getRows(tableBlock);
+  if (!rows) return out;
+  rows.forEach((row: any, index: number) => {
+    const cells = pick(row, 'cells', 'c');
+    if (!Array.isArray(cells)) return;
+    for (const cell of cells) {
+      const format = pick(cell, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const span = Number(pick(format, 'rowSpan', 'rwsp') ?? 1);
+      if (Number.isFinite(span) && span > 1) out.push({ row: index, span });
+    }
+  });
+  return out;
+}
+
+/** The rows a split takes, the rows it leaves, and the band it never touches. */
+interface SplitRowPlan {
+  /** Ascending, deduped, every one a data row. Goes to the NEW table. */
+  extract: number[];
+  /** Ascending. Stays in the SOURCE table. */
+  keep: number[];
+  headerRows: number;
+  rowCount: number;
+}
+
+function splitRefusal(
+  code: string,
+  message: string,
+  details: string[]
+): OpError {
+  return new OpError(code, `${message} Nothing was written.`, details);
+}
+
+/**
+ * Normalize `rows` / `splitAtRow` into one row set, refusing everything the
+ * document itself says cannot be a split.
+ *
+ * Every refusal here is derived from the table - its header band, its real row
+ * count, its merges - rather than enumerated from cases, which is why a
+ * two-row header band or a headerless table needs no special branch.
+ */
+function resolveSplitRows(
+  op: EditOp,
+  tableAnchor: string,
+  source: TableAppearance,
+  headerRows: number,
+  tableBlock: any
+): SplitRowPlan {
+  const rowCount = source.rows.length;
+  const data: number[] = [];
+  for (let row = headerRows; row < rowCount; row++) data.push(row);
+  const where = `table ${tableAnchor}: ${rowCount} rows, header band ${headerRows}`;
+  if (!data.length)
+    throw splitRefusal(
+      'split_table_header_only',
+      `The table at ${JSON.stringify(
+        tableAnchor
+      )} has no data rows - every row it has is part of its header band - so there is nothing to split out of it.`,
+      [where, 'Re-read the table with a table_facts read.']
+    );
+
+  const asked = Array.isArray(op.rows) ? op.rows : undefined;
+  const at = typeof op.splitAtRow === 'number' ? op.splitAtRow : undefined;
+  if (asked && at !== undefined)
+    throw splitRefusal(
+      'split_table_rows_ambiguous',
+      'split_table takes either `rows` (the row indices to extract) or `splitAtRow` (extract that row and every row below it), not both - and these two do not agree on one answer.',
+      [
+        where,
+        `rows: ${asked.join(', ')}`,
+        `splitAtRow: ${at}`,
+        'Send `rows` for a set of specific rows, or `splitAtRow` for a positional split.'
+      ]
+    );
+  if (!asked && at === undefined)
+    throw splitRefusal(
+      'split_table_no_rows',
+      'split_table needs to know which rows to extract: send `rows` with the row indices from a table_facts read, or `splitAtRow` to extract that row and every row below it.',
+      [where]
+    );
+
+  const requested = asked ?? data.filter((row) => row >= (at as number));
+  const outOfRange = (asked ?? [at as number]).filter(
+    (row) => !Number.isInteger(row) || row < 0 || row >= rowCount
+  );
+  if (outOfRange.length)
+    throw splitRefusal(
+      'split_table_row_out_of_range',
+      `The table at ${JSON.stringify(tableAnchor)} has ${rowCount} rows (0..${
+        rowCount - 1
+      }), so ${outOfRange.join(', ')} ${
+        outOfRange.length > 1 ? 'do' : 'does'
+      } not address a row in it.`,
+      [
+        where,
+        'The document may have changed since it was read. Re-read it with a table_facts read and use its row numbers.'
+      ]
+    );
+
+  const inHeader = (asked ?? [at as number]).filter((row) => row < headerRows);
+  if (inHeader.length)
+    throw splitRefusal(
+      'split_table_header_row',
+      `Row${inHeader.length > 1 ? 's' : ''} ${inHeader.join(
+        ', '
+      )} of the table at ${JSON.stringify(tableAnchor)} ${
+        inHeader.length > 1 ? 'are' : 'is'
+      } part of its header band, and a split REPRODUCES the header band in both tables rather than moving it - so a header row is not something to extract.`,
+      [
+        where,
+        "Name only data rows. Both tables come out with this table's header already on them."
+      ]
+    );
+
+  const extract = Array.from(new Set(requested)).sort(
+    (left, right) => left - right
+  );
+  if (!extract.length)
+    throw splitRefusal(
+      'split_table_no_rows',
+      at !== undefined
+        ? `Splitting the table at ${JSON.stringify(
+            tableAnchor
+          )} at row ${at} would move no rows: there are no data rows at or below it.`
+        : `No rows were named to extract from the table at ${JSON.stringify(
+            tableAnchor
+          )}.`,
+      [where, `data rows: ${data.join(', ')}`]
+    );
+
+  const keep = data.filter((row) => !extract.includes(row));
+  if (!keep.length)
+    throw splitRefusal(
+      'split_table_takes_every_row',
+      `Extracting rows ${extract.join(
+        ', '
+      )} takes EVERY data row of the table at ${JSON.stringify(
+        tableAnchor
+      )}, so the original would be left holding nothing but its header. That is a move, not a split.`,
+      [
+        where,
+        'Leave at least one data row behind, or move the whole thing: move_section relocates the section that contains this table, with its formatting, as one tracked change.'
+      ]
+    );
+
+  // A vertical merge spanning the boundary cannot be split without tearing the
+  // merged cell in half. Derived from the table's own spans, so a merge anywhere
+  // in it is covered rather than only the shapes anybody thought to try.
+  const torn = verticalSpans(tableBlock).find(({ row, span }) => {
+    const covered: number[] = [];
+    for (let index = row; index < Math.min(row + span, rowCount); index++)
+      covered.push(index);
+    const taken = covered.filter((index) => extract.includes(index)).length;
+    return taken > 0 && taken < covered.length;
+  });
+  if (torn)
+    throw splitRefusal(
+      'split_table_merged_row_span',
+      `A cell in the table at ${JSON.stringify(
+        tableAnchor
+      )} is vertically merged across rows ${torn.row}..${
+        torn.row + torn.span - 1
+      }, and this split would put some of those rows in each table - which would tear the merged cell in half.`,
+      [
+        where,
+        `merged span: rows ${torn.row}..${torn.row + torn.span - 1}`,
+        'Extract all of those rows together, or none of them.'
+      ]
+    );
+
+  return { extract, keep, headerRows, rowCount };
+}
+
+/** Delete one row of one table, tracked, through the selection. */
+function deleteTableRow(
+  editor: LiveEditor,
+  tableAnchor: string,
+  row: number
+): void {
+  const caret = `${tableAnchor};${row};0;0;0`;
+  editor.selection.select(caret, caret);
+  callEditor(editor, 'deleteRow');
+}
+
+/**
+ * The captured payload with only `keep`'s rows left in its table.
+ *
+ * Row indices survive this unchanged relative to the SOURCE, because the payload
+ * is the WHOLE table - payload row i is source row i. That correspondence is the
+ * reason a split copies the whole table and narrows the copy, rather than trying
+ * to select the extracted rows in the first place: a non-contiguous selection
+ * does not exist, and the header band is not adjacent to the rows being taken.
+ *
+ * Reads and writes no content: it keeps a subset of a row array, under the very
+ * key it found the array on, so an optimized payload (`r`) and a long-key one
+ * (`rows`) both come back in their own shape. Everything else in the payload -
+ * styles, lists, the image table, the table's own format - is untouched and stays
+ * opaque.
+ */
+function prunePayloadRows(payload: string, keep: number[]): string {
+  const parsed = JSON.parse(payload);
+  const sections = pick(parsed, 'sections', 'sec');
+  if (!Array.isArray(sections)) return payload;
+  let pruned = false;
+  for (const section of sections)
+    for (const block of getBlocks(section)) {
+      const key = ['rows', 'r', 'rw'].find((candidate) =>
+        Array.isArray(block?.[candidate])
+      );
+      if (!key) continue;
+      const rows = block[key];
+      block[key] = keep
+        .map((index) => rows[index])
+        .filter((row) => row !== undefined);
+      pruned = true;
+    }
+  // A payload with no table in it means the capture did not return the table
+  // this op resolved, and pasting it would put the wrong thing at the target.
+  if (!pruned)
+    throw new OpError(
+      'split_table_payload_not_a_table',
+      'SyncFusion returned no table for the range this split captured, so there is nothing to divide. Nothing was written.'
+    );
+  return JSON.stringify(parsed);
+}
+
+/** The cell blocks of a range that belong to one of `rows`. */
+function rangeRowBlocks(range: BlockRange, rows: number[]): FlatBlock[] {
+  const wanted = new Set(rows);
+  return range.blocks.filter((block) => {
+    const parts = block.anchor.split(';');
+    return parts.length === 5 && wanted.has(Number(parts[2]));
+  });
+}
+
+/**
+ * The table the paste produced, found in the run the paste actually added.
+ *
+ * Measured, never guessed: the copy occupies exactly
+ * `[paste.at, paste.at + paste.blocks)` of the whole-document sequence, and
+ * which SIDE of the source it lands on depends on the target. Its row texts are
+ * then checked against the source's, so deleting rows out of the wrong table is
+ * impossible rather than unlikely - the same discipline `shiftedRange` applies
+ * to the source.
+ */
+function assertPastedTableMatches(
+  pastedSfdt: any,
+  paste: PasteEffect,
+  source: BlockRange,
+  expectedBlocks: FlatBlock[]
+): string {
+  const sequence = topLevelSequence(pastedSfdt);
+  const blocks = flattenSfdt(pastedSfdt);
+  const expected = rangeIdentity(expectedBlocks);
+  for (let index = paste.at; index < paste.at + paste.blocks; index++) {
+    const address = sequence[index];
+    if (!address) continue;
+    const anchor = `${address.section};${address.block}`;
+    if (!collectTableAppearance(tableBlockAt(pastedSfdt, anchor))) continue;
+    const copy = resolveTableRange(blocks, anchor);
+    if (rangeIdentity(copy.blocks) === expected) return anchor;
+  }
+  throw new OpError(
+    'split_table_copy_lost',
+    `The copy of the table at ${JSON.stringify(
+      source.anchor
+    )} is not readable at the position it was pasted into, so the engine refused to delete rows from whatever is there instead. Nothing of this change set was kept.`,
+    [
+      `paste of ${paste.blocks} block(s) at sequence index ${paste.at}`,
+      `expected rows reading ${JSON.stringify(expected.slice(0, 200))}`
+    ]
+  );
 }
 
 // Exported for the registry parity spec: the spec re-asserts at runtime what
@@ -7063,6 +7462,98 @@ export const ANCHORED_OP_HANDLERS: {
       shiftedRange(first.pastedSfdt, later, first.paste, laterIndex),
       pasteAtRangeStart(earlier)
     );
+  },
+  split_table: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const tableAnchor = tableAnchorForBlock(block);
+    if (!tableAnchor)
+      throw new OpError(
+        'split_table_requires_cell_anchor',
+        `split_table splits the table an anchor sits in, and ${JSON.stringify(
+          block.anchor
+        )} is not a table cell. Nothing was written.`,
+        [
+          `anchor: ${block.anchor}`,
+          'Use any cell anchor from the table ("section;block;row;cell;paragraph"), copied from a table_facts read.'
+        ]
+      );
+    // One raw read for the whole op: the revision table, the block sequence and
+    // the merge spans are all things flattening drops.
+    const sfdt = serializeSfdt(editor);
+    const tableBlock = tableBlockAt(sfdt, tableAnchor);
+    const appearance = collectTableAppearance(tableBlock);
+    if (!appearance)
+      throw new OpError(
+        'table_not_found',
+        `No table answers to the anchor "${tableAnchor}". Re-read the structure and use a current anchor.`
+      );
+    const source = resolveTableRange(blocks, tableAnchor);
+    // Header-ness through its ONE owner, reading what the page shows rather than
+    // any single encoding of it - the refusal below depends on getting a
+    // style-only header right, and this document has one.
+    const headerRows = effectiveHeaderRows({
+      blocks,
+      sfdt,
+      tableAnchor,
+      source: appearance,
+      rendered: renderedRowFormatReader(editor, byAnchor)
+    });
+    const plan = resolveSplitRows(
+      op,
+      tableAnchor,
+      appearance,
+      headerRows,
+      tableBlock
+    );
+    // A split DELETES rows from the source, so both source-side refusals apply
+    // exactly as they do to a move: rejecting this card would fold away a third
+    // party's pending edit, and SyncFusion cannot accept a delete of the last
+    // row of a document-tail table.
+    assertRangeHasNoForeignEdits(sfdt, source);
+    assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
+    const target = resolveRelocationTarget(blocks, op, source);
+    const sourceIndex = sequenceIndexOf(
+      topLevelSequence(sfdt),
+      topLevelAddress(source.blocks[0].anchor)
+    );
+    // The new table is the header band plus the extracted rows, in the source's
+    // own order - so "they should have same column names" is satisfied by the
+    // header rows travelling with the copy, not by anything authoring them.
+    const header: number[] = [];
+    for (let row = 0; row < plan.headerRows; row++) header.push(row);
+    const copied = [...header, ...plan.extract];
+    const { paste, pastedSfdt } = relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      target,
+      {
+        removeSource: false,
+        transformPayload: (payload) => prunePayloadRows(payload, copied)
+      }
+    );
+    // Nothing is written to the copy, so its address is not needed - but it is
+    // still read back and checked, because `ok: true` from a paste only means the
+    // paste did not throw. If the new table is not there reading what it should,
+    // this fails and the group rolls back.
+    assertPastedTableMatches(
+      pastedSfdt,
+      paste,
+      source,
+      rangeRowBlocks(source, copied)
+    );
+    const moved = shiftedRange(
+      pastedSfdt,
+      source,
+      paste,
+      sourceIndex,
+      resolveTableRange
+    );
+    // The copy needs no deletion at all - it arrived holding exactly its rows.
+    // The source's extracted rows go DESCENDING; a tracked delete shifts nothing,
+    // so the order is not load-bearing, but it keeps the invariant visible.
+    for (const row of [...plan.extract].reverse())
+      deleteTableRow(editor, moved.anchor, row);
   },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
@@ -10830,6 +11321,144 @@ function familyEvidenceReport(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Header-ness: one owner, because the document expresses it three ways
+//
+// This derivation began inside the creation resolver's `row` query, which is
+// where the first caller who needed it happened to be. It does not belong to
+// creation: "how many leading rows of THIS EXISTING table are its header band"
+// is a question about the document, and other callers need the same answer for
+// reasons that have nothing to do with creating content - `split_table` refuses
+// to EXTRACT a header row, because a split reproduces the header band in both
+// tables rather than moving it.
+//
+// Lifting it here rather than reading header-ness a second way is the whole
+// point: header-ness has already caused two defects on this project by being
+// read through one encoding, and a second reader would be a third.
+// ---------------------------------------------------------------------------
+
+/** Every table anchor except `exclude`, nearest to `from` first. Pure. */
+function tableAnchorsNearest(
+  blocks: FlatBlock[],
+  from: string,
+  exclude?: string
+): string[] {
+  const at = blocks.findIndex(
+    (block) => block.anchor === from || from.startsWith(`${block.anchor};`)
+  );
+  const seen = new Set<string>();
+  const found: Array<{ anchor: string; distance: number }> = [];
+  blocks.forEach((block, index) => {
+    const anchor = tableAnchorForBlock(block);
+    if (!anchor || anchor === exclude || seen.has(anchor)) return;
+    seen.add(anchor);
+    found.push({ anchor, distance: at < 0 ? index : Math.abs(index - at) });
+  });
+  return found
+    .sort((left, right) => left.distance - right.distance)
+    .map((entry) => entry.anchor);
+}
+
+/**
+ * The nearest row elsewhere in the document that is a data row by STRUCTURE:
+ * the last row of a table that has more than one.
+ *
+ * Deliberately not "the first row below inferHeaderRows". That would derive the
+ * baseline with the very inference the baseline exists to check, so a document
+ * whose headers are undeclared everywhere - which is this one - hands back
+ * another undeclared header and every comparison against it says "no
+ * difference". Headers lead a table; the last row of a multi-row table is below
+ * any of them, whatever encoding declared them.
+ */
+function provenDocumentDataRow(
+  blocks: FlatBlock[],
+  sfdt: any,
+  exclude: string
+): { anchor: string; appearance: TableAppearance; row: number } | undefined {
+  for (const anchor of tableAnchorsNearest(blocks, exclude, exclude)) {
+    const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
+    if (!appearance || appearance.rows.length < 2) continue;
+    const row = appearance.rows.length - 1;
+    if (row < inferHeaderRows(appearance)) continue;
+    return { anchor, appearance, row };
+  }
+  return undefined;
+}
+
+/** A row's rendered character format, resolved through the table style. */
+type RenderedRowFormat = (
+  tableAnchor: string,
+  row: number
+) => FormatBag | undefined;
+
+/**
+ * The rendered read that makes a style-only header visible at all: it resolves
+ * through the table style exactly as the page does, which is the only encoding
+ * of header-ness that states nothing on the row or its cells.
+ */
+function renderedRowFormatReader(
+  editor: LiveEditor,
+  byAnchor: Map<string, FlatBlock>
+): RenderedRowFormat {
+  return (tableAnchor, row) => {
+    const cell = byAnchor.get(`${tableAnchor};${row};0;0`);
+    return cell
+      ? readEffectiveSourceFormat(editor, cell).characterFormat
+      : undefined;
+  };
+}
+
+/**
+ * How many leading rows of a table are its header band, AS THE PAGE SHOWS IT.
+ *
+ * HEADER-NESS HAS AT LEAST THREE EXPRESSIONS, and reading only some of them has
+ * now caused two separate defects on this project:
+ *   1. Word's `isHeader` FLAG - the only one that is a declaration, and so the
+ *      only one that may be COPIED onto a row being created;
+ *   2. a distinct cell FILL, which `inferHeaderRows` infers by contrast with
+ *      the rows below it;
+ *   3. the TABLE STYLE's first-row conditional formatting, which states nothing
+ *      on the row or its cells at all - the SFDT is empty and the page is navy
+ *      and bold.
+ *
+ * (3) is invisible to the other two, and a table stripped to its header row
+ * cannot even use (2), because contrast needs a second row. So the engine read
+ * "no header rows", concluded the header WAS a data row, and dressed a newly
+ * added row as a second header.
+ *
+ * The document answers what its own encoding does not: compare the row AS
+ * RENDERED against a data row proven elsewhere in the document. A false positive
+ * is the safe direction for a creation caller - it widens to that proven data
+ * row, which is the right look either way - and for a refusal caller it declines
+ * an extraction rather than tearing a header out of a table.
+ *
+ * `rendered` is injected rather than taken from an editor so this stays usable
+ * from the editor-free resolver; without it only what the SFDT states outright
+ * is read, which is not always enough.
+ */
+function effectiveHeaderRows(options: {
+  blocks: FlatBlock[];
+  sfdt: any;
+  tableAnchor: string;
+  source: TableAppearance;
+  rendered?: RenderedRowFormat;
+}): number {
+  const stated = inferHeaderRows(options.source);
+  if (stated > 0 || !options.rendered || !options.source.rows.length)
+    return stated;
+  const proven = provenDocumentDataRow(
+    options.blocks,
+    options.sfdt,
+    options.tableAnchor
+  );
+  if (!proven) return stated;
+  const own = options.rendered(options.tableAnchor, 0);
+  const baseline = options.rendered(proven.anchor, proven.row);
+  return own && baseline && JSON.stringify(own) !== JSON.stringify(baseline)
+    ? 1
+    : stated;
+}
+
 /**
  * Build the resolver for one document snapshot. Every creation path in a change
  * set shares one of these, so they cannot disagree about what the document
@@ -10844,26 +11473,9 @@ function creationAppearance(
     tableAnchor ? byAnchor.get(`${tableAnchor};0;0;0`) : undefined;
   const appearanceOf = (anchor: string) =>
     collectTableAppearance(tableBlockAt(sfdt, anchor)) ?? undefined;
-  const blockIndexOf = (anchor: string) =>
-    blocks.findIndex(
-      (block) =>
-        block.anchor === anchor || anchor.startsWith(`${block.anchor};`)
-    );
 
-  const tableAnchorsByDistance = (from: string, exclude?: string) => {
-    const at = blockIndexOf(from);
-    const seen = new Set<string>();
-    const found: Array<{ anchor: string; distance: number }> = [];
-    blocks.forEach((block, index) => {
-      const anchor = tableAnchorForBlock(block);
-      if (!anchor || anchor === exclude || seen.has(anchor)) return;
-      seen.add(anchor);
-      found.push({ anchor, distance: at < 0 ? index : Math.abs(index - at) });
-    });
-    return found
-      .sort((left, right) => left.distance - right.distance)
-      .map((entry) => entry.anchor);
-  };
+  const tableAnchorsByDistance = (from: string, exclude?: string) =>
+    tableAnchorsNearest(blocks, from, exclude);
 
   /**
    * A stripe proven by another table in the same sibling family. Consulted only
@@ -10885,28 +11497,6 @@ function creationAppearance(
         const banding = appearance ? detectTableBanding(appearance) : null;
         if (banding) return banding;
       }
-    return undefined;
-  };
-
-  /**
-   * The nearest row elsewhere in the document that is a data row by STRUCTURE:
-   * the last row of a table that has more than one.
-   *
-   * Deliberately not "the first row below inferHeaderRows". That would derive
-   * the baseline with the very inference the baseline exists to check, so a
-   * document whose headers are undeclared everywhere - which is this one -
-   * hands back another undeclared header and every comparison against it says
-   * "no difference". Headers lead a table; the last row of a multi-row table
-   * is below any of them, whatever encoding declared them.
-   */
-  const firstDocumentDataRow = (exclude: string) => {
-    for (const anchor of tableAnchorsByDistance(exclude, exclude)) {
-      const appearance = appearanceOf(anchor);
-      if (!appearance || appearance.rows.length < 2) continue;
-      const row = appearance.rows.length - 1;
-      if (row < inferHeaderRows(appearance)) continue;
-      return { anchor, appearance, row };
-    }
     return undefined;
   };
 
@@ -11036,36 +11626,21 @@ function creationAppearance(
     row(options) {
       const searched: string[] = [];
       const { source, targetRow } = options;
-      // DERIVED: which rows are the header band.
-      //
-      // HEADER-NESS HAS AT LEAST THREE EXPRESSIONS, and reading only some of
-      // them has now caused two separate defects on this project:
-      //   1. Word's `isHeader` FLAG - the only one that is a declaration, and
-      //      so the only one that may be COPIED onto a row being created;
-      //   2. a distinct cell FILL, which `inferHeaderRows` infers by contrast
-      //      with the rows below it;
-      //   3. the TABLE STYLE's first-row conditional formatting, which states
-      //      nothing on the row or its cells at all - the SFDT is empty and
-      //      the page is navy and bold.
-      // (3) is invisible to the other two, and a table stripped to its header
-      // row cannot even use (2), because contrast needs a second row. So the
-      // engine read "no header rows", concluded the header WAS a data row, and
-      // dressed a newly added row as a second header.
-      //
-      // The document answers what its own encoding does not: compare the row
-      // AS RENDERED against a data row proven elsewhere in the document. A
-      // false positive here is safe - it widens to that proven data row, which
-      // is the right look either way - while a false negative is the defect.
-      let headerRows = inferHeaderRows(source);
-      const documentRow = firstDocumentDataRow(options.tableAnchor);
-      if (headerRows === 0 && options.rendered && source.rows.length) {
-        const own = options.rendered(options.tableAnchor, 0);
-        const proven = documentRow
-          ? options.rendered(documentRow.anchor, documentRow.row)
-          : undefined;
-        if (own && proven && JSON.stringify(own) !== JSON.stringify(proven))
-          headerRows = 1;
-      }
+      // DERIVED: which rows are the header band. Read through the one owner of
+      // that question - see effectiveHeaderRows for why reading it a second way
+      // here would be the third encoding-specific reader this file has had.
+      const headerRows = effectiveHeaderRows({
+        blocks,
+        sfdt,
+        tableAnchor: options.tableAnchor,
+        source,
+        ...(options.rendered ? { rendered: options.rendered } : {})
+      });
+      const documentRow = provenDocumentDataRow(
+        blocks,
+        sfdt,
+        options.tableAnchor
+      );
       const lastRow = source.rows.length - 1;
       const displaced = Math.min(targetRow, lastRow);
       const inBand = headerBandContains(source, targetRow, headerRows);
@@ -11244,14 +11819,7 @@ function planRowInsertInheritance(
   );
   const byAnchor = byAnchorOf(blocks);
   const resolver = creationAppearance(blocks, sfdt, byAnchor);
-  // The rendered read is what makes a style-only header visible at all: it
-  // resolves through the table style, exactly as the page does.
-  const rendered = (anchor: string, row: number) => {
-    const cell = byAnchor.get(`${anchor};${row};0;0`);
-    return cell
-      ? readEffectiveSourceFormat(editor, cell).characterFormat
-      : undefined;
-  };
+  const rendered = renderedRowFormatReader(editor, byAnchor);
   const resolutions = targetRows.map((targetRow) =>
     resolver.row({ tableAnchor, source, targetRow, rendered })
   );
@@ -12190,6 +12758,41 @@ function detectInconsistentAggregateRanges(
     };
   }
   return null;
+}
+
+/**
+ * Two splits in one change set, refused with the shape that works instead.
+ *
+ * A split PASTES, so every anchor after it in the same batch is stale. The
+ * executor's anchor relocation can usually re-find a moved block by content, but
+ * a schedule's header row reads the same in every table in the family - the
+ * captain's own document has "Coverage | Limit" on all of them - so it finds
+ * several candidates and correctly refuses a non-deterministic write. That
+ * refusal then rolls the whole group back, and the model sees
+ * `anchor_relocation_ambiguous` about a table it never touched.
+ *
+ * Refusing up front is not a limitation being papered over: one split per change
+ * set is the shape that SHOULD be asked for, because it gives each table its own
+ * reviewable card. "Split all the Coverages and Limits tables" is several splits,
+ * and a reviewer wants to accept the Property one and reconsider the Liability
+ * one - which a single card covering both cannot offer.
+ */
+function detectBatchedSplits(edits: EditOp[]): BatchRefusal | null {
+  const indices = edits.reduce<number[]>(
+    (found, op, index) =>
+      op?.op === 'split_table' ? [...found, index] : found,
+    []
+  );
+  if (indices.length < 2) return null;
+  return {
+    code: 'split_table_one_per_change_set',
+    message: `This change set asks for ${indices.length} table splits at once. Send one split_table per change set: a split inserts a table, so every later anchor in the same batch has moved, and in a document whose tables share their column names those anchors cannot be re-found unambiguously. Nothing was written.`,
+    details: [
+      `split_table at edit ${indices.join(', ')}`,
+      'Split one table, then re-read the document and split the next. Each split is then its own reviewable card, which is what lets a reviewer accept one table and reconsider another.'
+    ],
+    indices
+  };
 }
 
 function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
@@ -14445,6 +15048,7 @@ function applyDocumentEditsMeasured(
   const batchRefusal =
     detectSentinelContent(edits) ??
     detectInconsistentAggregateRanges(edits) ??
+    detectBatchedSplits(edits) ??
     detectEmptyInsertedTables(edits) ??
     detectMultilineAuthoredCells(edits) ??
     detectUnsourcedAuthoredFigures(edits) ??
