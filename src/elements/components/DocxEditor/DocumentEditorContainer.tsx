@@ -475,6 +475,11 @@ export default function DocumentEditorContainer({
   const blockStore = storeRef.current;
   const blockSync = useRef<BlockSync | undefined>(undefined);
   const editorSurfaceRef = useRef<EditorSurface | undefined>(undefined);
+  // Refs alone would attach the sync loop silently: setting a ref inside
+  // onEditorReady does not itself trigger a render, so the Debug panel (which
+  // needs the live BlockSync/EditorSurface pair to render at all) would never
+  // appear. This state's only job is forcing that one re-render.
+  const [debugPanelSync, setDebugPanelSync] = useState<BlockSync>();
   const [activeTab, setActiveTab] = useState<'document' | 'components'>(
     'document'
   );
@@ -525,6 +530,7 @@ export default function DocumentEditorContainer({
           blockStore,
           formFieldAccess
         );
+        setDebugPanelSync(blockSync.current);
         return;
       }
 
@@ -695,11 +701,11 @@ export default function DocumentEditorContainer({
           )}
         </div>
         {debugPanelEnabled(featheryWindow()) &&
-          blockSync.current &&
+          debugPanelSync &&
           editorSurfaceRef.current && (
             <DebugPanel
               store={blockStore}
-              sync={blockSync.current}
+              sync={debugPanelSync}
               editor={editorSurfaceRef.current}
             />
           )}
