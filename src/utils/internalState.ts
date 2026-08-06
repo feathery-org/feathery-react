@@ -52,6 +52,9 @@ type DocusignDocument =
       envelopeId?: string;
       fillData?: Record<string, any>;
       signerMap?: Record<string, number>;
+      // Selects which repeating/array field value fills this instance
+      // (0-based), so the same template can be sent once per repetition
+      repeatIndex?: number;
     };
 type DocusignLibraryDocuments = {
   library: 'quik';
