@@ -13,8 +13,7 @@ import {
   InsertGroup,
   ListsGroup,
   StyleGroup,
-  TableGroup,
-  ZoomGroup
+  TableGroup
 } from './groups';
 import { useEditorFormatState } from './useEditorFormatState';
 import { MORE_KEY, useToolbarOverflow } from './useToolbarOverflow';
@@ -51,7 +50,7 @@ export interface DocxToolbarProps extends ToolbarActionsProps {
 
 // Flat toolbar driving the Syncfusion documentEditor API directly (the built-in
 // toolbar is disabled on the container). Active states track the editor's
-// selectionChange / zoomFactorChange events (useEditorFormatState). When the
+// selectionChange events (useEditorFormatState). When the
 // toolbar is too narrow, tool groups collapse tail-first into a "More"
 // dropdown and return inline as space allows — fit is measured against a
 // hidden copy of the full row (useToolbarOverflow).
@@ -98,14 +97,6 @@ export default function DocxToolbar({
 
   const groupNodes: Record<GroupKey, ReactNode> = {
     history: <HistoryGroup editor={editor} readOnly={readOnly} />,
-    zoom: (
-      <ZoomGroup
-        editor={editor}
-        zoom={format.zoom}
-        applyZoom={format.applyZoom}
-        refreshZoom={format.refreshZoom}
-      />
-    ),
     style: (
       <StyleGroup
         editor={editor}

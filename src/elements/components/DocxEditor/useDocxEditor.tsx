@@ -738,6 +738,11 @@ export function useDocxEditor({
           installRevisionGroupIsolation(ed);
           installRevisionHighlightRendering(ed);
           installTableRowResizeFix(ed);
+          // Status bar (bottom right): hide the Web-layout toggle — it flips
+          // the document into continuous view, which breaks the paginated
+          // editing/print flows this editor is built around.
+          const webButton = instance.statusBar?.webButton;
+          if (webButton?.style) webButton.style.display = 'none';
         } catch {
           // Review-pane/grouping/engine patches must never block the mount.
         }

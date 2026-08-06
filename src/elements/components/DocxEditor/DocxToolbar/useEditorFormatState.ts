@@ -31,10 +31,9 @@ const IN_TABLE_CONTEXTS = new Set([
 ]);
 
 // Formatting state mirrored from the live Syncfusion DocumentEditor: tracks
-// the editor's selectionChange / zoomFactorChange events so the toolbar's
-// active states follow the cursor.
+// the editor's selectionChange events so the toolbar's active states follow
+// the cursor.
 export function useEditorFormatState(editor: any) {
-  const [zoom, setZoom] = useState(100);
   const [bold, setBold] = useState(false);
   const [italic, setItalic] = useState(false);
   const [strike, setStrike] = useState(false);
@@ -70,12 +69,8 @@ export function useEditorFormatState(editor: any) {
         );
       }
     };
-    const syncZoom = () => setZoom(Math.round(editor.zoomFactor * 100));
-
     editor.addEventListener('selectionChange', syncSelection);
-    editor.addEventListener('zoomFactorChange', syncZoom);
     syncSelection();
-    syncZoom();
     return () => {
       // On step navigation React destroys the deleted subtree parent-first,
       // so useDocxEditor has already destroy()ed the editor by the time this
@@ -84,24 +79,13 @@ export function useEditorFormatState(editor: any) {
       if (editor.isDestroyed) return;
       try {
         editor.removeEventListener('selectionChange', syncSelection);
-        editor.removeEventListener('zoomFactorChange', syncZoom);
       } catch {
         /* editor already torn down */
       }
     };
   }, [editor]);
 
-  const applyZoom = (pct: number) => {
-    editor.zoomFactor = Math.min(500, Math.max(50, pct)) / 100;
-  };
-  // Re-read the zoom from the editor for operations that don't fire
-  // zoomFactorChange (e.g. fitPage).
-  const refreshZoom = () => setZoom(Math.round(editor.zoomFactor * 100));
-
   return {
-    zoom,
-    applyZoom,
-    refreshZoom,
     bold,
     italic,
     strike,

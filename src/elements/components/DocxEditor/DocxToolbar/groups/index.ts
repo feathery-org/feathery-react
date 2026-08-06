@@ -7,7 +7,6 @@
 // them at zero width.
 export const GROUP_KEYS = [
   'history',
-  'zoom',
   'style',
   'font',
   'format',
@@ -19,7 +18,6 @@ export const GROUP_KEYS = [
 export type GroupKey = typeof GROUP_KEYS[number];
 
 export { default as HistoryGroup } from './HistoryGroup';
-export { default as ZoomGroup } from './ZoomGroup';
 export { default as StyleGroup } from './StyleGroup';
 export { default as FontGroup } from './FontGroup';
 export { default as FormatGroup } from './FormatGroup';
