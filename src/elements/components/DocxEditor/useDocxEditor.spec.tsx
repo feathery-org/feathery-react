@@ -123,7 +123,7 @@ describe('useDocxEditor across a review-gate flip', () => {
       static Inject = jest.fn();
       documentEditor: FakeEditor;
       private created: (() => void) | undefined;
-      constructor(_options: unknown) {
+      constructor() {
         this.documentEditor = makeEditor();
         editors.push(this.documentEditor);
       }
