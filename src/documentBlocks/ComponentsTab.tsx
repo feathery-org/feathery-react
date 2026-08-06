@@ -46,7 +46,14 @@ export default function ComponentsTab({ store }: { store: BlockStore }) {
     editor.addEventListener('contentChange', onContentChange);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      editor.removeEventListener?.('contentChange', onContentChange);
+      try {
+        editor.removeEventListener?.('contentChange', onContentChange);
+      } catch {
+        // Hook cleanups run in declaration order, so useDocxEditor has already
+        // destroyed the Syncfusion instance by the time this runs on unmount —
+        // its removeEventListener throws on nulled internals. Nothing to do:
+        // the listener died with the editor.
+      }
     };
   }, [editor, store]);
 

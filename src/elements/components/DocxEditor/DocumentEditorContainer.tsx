@@ -534,8 +534,16 @@ export default function DocumentEditorContainer({
           open: (sfdt) => editor.open(sfdt),
           serialize: () => editor.serialize(),
           addEventListener: (name, fn) => editor.addEventListener(name, fn),
-          removeEventListener: (name, fn) =>
-            editor.removeEventListener?.(name, fn),
+          removeEventListener: (name, fn) => {
+            // detach() can run after the Syncfusion instance was destroyed
+            // (unmount, HMR) — its removeEventListener then throws on nulled
+            // internals. The listener died with the editor; ignore.
+            try {
+              editor.removeEventListener?.(name, fn);
+            } catch {
+              /* editor already torn down */
+            }
+          },
           scrollContainer: () => editor.documentHelper?.viewerContainer
         };
         editorSurfaceRef.current = editorSurface;
