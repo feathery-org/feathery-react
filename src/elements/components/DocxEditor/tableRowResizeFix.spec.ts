@@ -254,6 +254,38 @@ describe('installTableRowResizeFix', () => {
     expect(rowFormat().height).toBeLessThanOrEqual(1);
   });
 
+  it('patched: the drag base is captured once per gesture, not re-read per move', () => {
+    ed = makeRealDocumentEditor(tableSfdt(3));
+    installTableRowResizeFix(ed);
+    const tableResize = beginRowDrag(ed, 0, { x: 0, y: 100 });
+    const readBase = jest.spyOn(tableResize, 'getRowFormatHeight');
+
+    tableResize.handleResizing({ x: 0, y: 110 });
+    tableResize.handleResizing({ x: 0, y: 120 });
+    tableResize.handleResizing({ x: 0, y: 130 });
+
+    // Re-reading rendered geometry mid-drag is what made the drag jitter —
+    // only the first move may derive the base from the widgets.
+    expect(readBase).toHaveBeenCalledTimes(1);
+  });
+
+  it('patched: a new mousedown re-derives the base from the current height', () => {
+    ed = makeRealDocumentEditor(tableSfdt(3));
+    installTableRowResizeFix(ed);
+    const row = getFirstTable(ed).childWidgets[0];
+    row.rowFormat.heightType = 'Exactly';
+    row.rowFormat.height = 30; // 40px
+
+    let tableResize = beginRowDrag(ed, 0, { x: 0, y: 100 });
+    tableResize.handleResizing({ x: 0, y: 130 }); // 40 + 30 = 70px
+    tableResize.updateResizingHistory({ x: 0, y: 130 }); // mouseup
+
+    tableResize = beginRowDrag(ed, 0, { x: 0, y: 200 });
+    tableResize.handleResizing({ x: 0, y: 210 }); // 70 + 10 = 80px == 60pt
+
+    expect(row.rowFormat.height).toBeCloseTo(60, 5);
+  });
+
   it('patched: the column-resize path is untouched', () => {
     ed = makeRealDocumentEditor(tableSfdt(3));
     installTableRowResizeFix(ed);

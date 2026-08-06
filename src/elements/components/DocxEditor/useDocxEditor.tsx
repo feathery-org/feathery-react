@@ -449,6 +449,8 @@ export function installRevisionHighlightRendering(ed: any) {
 // needs nothing: the resize history already snapshots rowFormat.height
 // before/after the drag and only awaited the mutation itself.
 const ROW_RESIZE_PATCH = '__featheryTableRowResizeFix';
+// One drag gesture's state: base height at mousedown + accumulated travel.
+const ROW_DRAG_GESTURE = '__featheryRowDragGesture';
 // Word's minimum row height: 2.7pt == 3.6px.
 const MIN_ROW_HEIGHT_PX = 3.6;
 const PX_PER_PT = 96 / 72;
@@ -462,6 +464,8 @@ export function installTableRowResizeFix(ed: any) {
     typeof tableResize.resizeTableRow !== 'function' ||
     typeof tableResize.updateRowHeight !== 'function' ||
     typeof tableResize.getRowFormatHeight !== 'function' ||
+    typeof tableResize.handleResize !== 'function' ||
+    typeof tableResize.updateResizingHistory !== 'function' ||
     // Upstream wired the row branch up (or reshaped the module): leave the
     // native implementation alone. EJ2_VERSION is pinned, so this probe only
     // decides behavior across deliberate version bumps.
@@ -474,16 +478,48 @@ export function installTableRowResizeFix(ed: any) {
   // dragValue is in unzoomed document pixels throughout: the viewer divides
   // pointer offsets by zoomFactor before they reach TableResizer, and the
   // column branch consumes the same delta with no further conversion.
+  //
+  // A drag is a stream of increments (the engine advances startingPoint after
+  // each applied move). Re-deriving "current height" from RENDERED widget
+  // geometry on every move feeds layout rounding (cell margins, page reflow)
+  // back into the next increment and the row jitters around the mouse — so
+  // the base height is captured ONCE per gesture and every move resizes to
+  // base + total mouse travel. The gesture resets at mousedown/mouseup.
   tableResize.updateRowHeight = function (row: any, dragValue: number) {
     const rowFormat = row.rowFormat;
-    const currentPx =
-      rowFormat.heightType === 'Exactly'
-        ? rowFormat.height * PX_PER_PT
-        : // Rendered height (max cell widget height) — already pixels.
-          this.getRowFormatHeight(row);
-    const newPx = Math.max(currentPx + dragValue, MIN_ROW_HEIGHT_PX);
+    let gesture = this[ROW_DRAG_GESTURE];
+    if (!gesture) {
+      gesture = this[ROW_DRAG_GESTURE] = {
+        basePx:
+          rowFormat.heightType === 'Exactly'
+            ? rowFormat.height * PX_PER_PT
+            : // Rendered height (max cell widget height) — already pixels.
+              this.getRowFormatHeight(row),
+        travelPx: 0
+      };
+    }
+    gesture.travelPx += dragValue;
+    const newPx = Math.max(
+      gesture.basePx + gesture.travelPx,
+      MIN_ROW_HEIGHT_PX
+    );
     if (rowFormat.heightType === 'Auto') rowFormat.heightType = 'AtLeast';
     rowFormat.height = newPx / PX_PER_PT;
+  };
+
+  const originalHandleResize = tableResize.handleResize.bind(tableResize);
+  tableResize.handleResize = function (point: any) {
+    // Mousedown starts a fresh gesture.
+    this[ROW_DRAG_GESTURE] = null;
+    return originalHandleResize(point);
+  };
+
+  const originalUpdateResizingHistory =
+    tableResize.updateResizingHistory.bind(tableResize);
+  tableResize.updateResizingHistory = function (point: any) {
+    // Mouseup ends the gesture.
+    this[ROW_DRAG_GESTURE] = null;
+    return originalUpdateResizingHistory(point);
   };
 
   // The original (never-invoked) implementation, minus its Exactly-row
