@@ -277,21 +277,6 @@ export const ShadingIcon = (p: SVGProps<SVGSVGElement>) => (
   </Svg>
 );
 
-export const TableShadingIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Svg {...p}>
-    <g
-      fill='none'
-      stroke='currentColor'
-      strokeWidth='2'
-      strokeLinecap='round'
-      strokeLinejoin='round'
-    >
-      <rect x='3' y='4' width='18' height='16' rx='1.5' />
-      <path d='M12 8.6c-1.7 2-3.5 4.4-3.5 6.1a3.5 3.5 0 0 0 7 0c0-1.7-1.8-4.1-3.5-6.1Z' />
-    </g>
-  </Svg>
-);
-
 export const BulletListIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path

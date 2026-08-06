@@ -46,7 +46,6 @@ export function useEditorFormatState(editor: any) {
   const [isInTable, setIsInTable] = useState(false);
   const [trackChangesOn, setTrackChangesOn] = useState(false);
   const [cellShading, setCellShading] = useState('#ffffff');
-  const [tableShading, setTableShading] = useState('#ffffff');
 
   useEffect(() => {
     const syncSelection = () => {
@@ -68,9 +67,6 @@ export function useEditorFormatState(editor: any) {
       if (inTable) {
         setCellShading(
           toBackgroundHex(editor.selection.cellFormat?.background)
-        );
-        setTableShading(
-          toBackgroundHex(editor.selection.tableFormat?.background)
         );
       }
     };
@@ -119,8 +115,6 @@ export function useEditorFormatState(editor: any) {
     isInTable,
     trackChangesOn,
     cellShading,
-    setCellShading,
-    tableShading,
-    setTableShading
+    setCellShading
   };
 }

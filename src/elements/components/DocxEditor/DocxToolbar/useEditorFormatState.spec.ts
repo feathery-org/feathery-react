@@ -110,21 +110,17 @@ describe('useEditorFormatState — table context', () => {
     expect(result.current.trackChangesOn).toBe(false);
   });
 
-  it('snapshots cell and table shading while in a table, unset reads as white', () => {
+  it('snapshots cell shading while in a table, unset reads as white', () => {
     const editor = makeEditor();
     const { result } = renderHook(() => useEditorFormatState(editor));
 
     editor.selection.contextType = 'TableText';
     editor.selection.cellFormat.background = '#FFEE00';
-    editor.selection.tableFormat.background = '#00FF00FF';
     act(() => editor.emit('selectionChange'));
     expect(result.current.cellShading).toBe('#FFEE00');
-    expect(result.current.tableShading).toBe('#00FF00');
 
     editor.selection.cellFormat.background = 'empty';
-    editor.selection.tableFormat.background = undefined;
     act(() => editor.emit('selectionChange'));
     expect(result.current.cellShading).toBe('#ffffff');
-    expect(result.current.tableShading).toBe('#ffffff');
   });
 });

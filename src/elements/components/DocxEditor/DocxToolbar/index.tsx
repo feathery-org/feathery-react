@@ -145,8 +145,6 @@ export default function DocxToolbar({
         trackChangesOn={format.trackChangesOn}
         cellShading={format.cellShading}
         setCellShading={format.setCellShading}
-        tableShading={format.tableShading}
-        setTableShading={format.setTableShading}
       />
     ) : null,
     lists: <ListsGroup editor={editor} readOnly={readOnly} />

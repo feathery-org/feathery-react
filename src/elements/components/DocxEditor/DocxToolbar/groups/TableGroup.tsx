@@ -6,8 +6,7 @@ import {
   InsertColumnIcon,
   InsertRowIcon,
   MergeCellsIcon,
-  ShadingIcon,
-  TableShadingIcon
+  ShadingIcon
 } from '../../icons';
 import { iconBtn, menuItem } from '../styles';
 
@@ -37,17 +36,13 @@ export default function TableGroup({
   readOnly,
   trackChangesOn,
   cellShading,
-  setCellShading,
-  tableShading,
-  setTableShading
+  setCellShading
 }: {
   editor: any;
   readOnly?: boolean;
   trackChangesOn: boolean;
   cellShading: string;
   setCellShading: (hex: string) => void;
-  tableShading: string;
-  setTableShading: (hex: string) => void;
 }) {
   const gated = !!readOnly || trackChangesOn;
   const gatedTitle = (label: string) =>
@@ -247,15 +242,6 @@ export default function TableGroup({
           editor.selection.cellFormat.background = hex;
         },
         ShadingIcon
-      )}
-      {shadingPicker(
-        'Table shading',
-        tableShading,
-        (hex) => {
-          setTableShading(hex);
-          editor.selection.tableFormat.background = hex;
-        },
-        TableShadingIcon
       )}
       <button
         type='button'

@@ -26,8 +26,6 @@ function renderGroup(overrides: Partial<any> = {}) {
     trackChangesOn: false,
     cellShading: '#ffffff',
     setCellShading: jest.fn(),
-    tableShading: '#ffffff',
-    setTableShading: jest.fn(),
     ...overrides
   };
   const view = render(<TableGroup {...props} />);
@@ -100,13 +98,7 @@ describe('TableGroup', () => {
     expect(props.setCellShading).toHaveBeenCalledWith('#ff0000');
     expect(editor.selection.cellFormat.background).toBe('#ff0000');
     expect(editor.selection.tableFormat.background).toBeUndefined();
-
-    const tableInput = screen
-      .getByTitle('Table shading')
-      .querySelector('input') as HTMLInputElement;
-    fireEvent.change(tableInput, { target: { value: '#00ff00' } });
-    expect(props.setTableShading).toHaveBeenCalledWith('#00ff00');
-    expect(editor.selection.tableFormat.background).toBe('#00ff00');
+    expect(screen.queryByTitle('Table shading')).not.toBeInTheDocument();
   });
 
   it('gates untracked structural ops while track changes is on', () => {
@@ -157,9 +149,6 @@ describe('TableGroup', () => {
     }
     expect(
       screen.getByTitle('Cell shading').querySelector('input')
-    ).toBeDisabled();
-    expect(
-      screen.getByTitle('Table shading').querySelector('input')
     ).toBeDisabled();
   });
 });
