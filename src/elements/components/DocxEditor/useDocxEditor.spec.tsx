@@ -167,9 +167,15 @@ describe('useDocxEditor across a review-gate flip', () => {
 
   // Rendered, not renderHook: the editor host element has to be attached to the
   // hook's ref before its create effect runs, exactly as in the real component.
-  const Harness = ({ reviewChanges }: { reviewChanges: boolean }) => {
+  const Harness = ({
+    reviewChanges,
+    url = 'https://example.test/pre-save.docx'
+  }: {
+    reviewChanges: boolean;
+    url?: string;
+  }) => {
     const api = useDocxEditor({
-      source: { url: 'https://example.test/pre-save.docx' },
+      source: { url },
       serviceUrl: 'https://example.test/service/',
       reviewChanges,
       licenseKey: 'test-key'
@@ -200,5 +206,29 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(editors[0].serialize).toHaveBeenCalled();
     expect(editors[1].open).toHaveBeenCalledWith(CARRIED);
     expect(editors[1].openAsync).not.toHaveBeenCalled();
+  });
+
+  it('lets a regenerate win over the carried document', async () => {
+    const view = render(<Harness reviewChanges />);
+    await settle();
+    expect(fetchCalls).toBe(1);
+
+    // A gate flip and a NEW source in the same commit: the stash belongs to the
+    // document that was open, so the new one must be fetched, not overwritten.
+    view.rerender(
+      <Harness
+        reviewChanges={false}
+        url='https://example.test/regenerated.docx'
+      />
+    );
+    await settle();
+
+    expect(editors).toHaveLength(2);
+    // The new document is fetched and opened; the stash is not used. (How many
+    // times a url change re-opens is the pre-existing open-effect behaviour and
+    // not what this asserts.)
+    expect(fetchCalls).toBeGreaterThan(1);
+    expect(editors[1].openAsync).toHaveBeenCalled();
+    expect(editors[1].open).not.toHaveBeenCalledWith(CARRIED);
   });
 });

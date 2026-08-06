@@ -597,6 +597,11 @@ export function useDocxEditor({
   // always wins over it.
   const carriedRef = useRef<{ sfdt: string; key: string } | null>(null);
   const unsavedRef = useRef(false);
+  // The key of the document currently OPEN in the instance - not the key the
+  // props describe. They differ for exactly one render when a gate flip and a
+  // regenerate land together, and stamping the stash with the incoming key there
+  // would restore the outgoing document into the new one.
+  const openedKeyRef = useRef('');
 
   // Load the CDN assets and instantiate the editor. Ordinary readOnly updates
   // happen in place; changing the review gate recreates the instance so an
@@ -692,6 +697,7 @@ export function useDocxEditor({
               // A blank document is the fallback, as it was before the carry.
             }
           }
+          openedKeyRef.current = openKeyRef.current;
           ignoreContentChangeRef.current = false;
           setLoading(false);
           onReady?.();
@@ -710,7 +716,7 @@ export function useDocxEditor({
         try {
           carriedRef.current = {
             sfdt: live.serialize(),
-            key: openKeyRef.current
+            key: openedKeyRef.current
           };
         } catch {
           // An unreadable instance leaves the source open as the fallback.
@@ -760,6 +766,7 @@ export function useDocxEditor({
       // instead of re-fetching bytes that predate it.
       try {
         editor.open(carried.sfdt);
+        openedKeyRef.current = openKey;
         ignoreContentChangeRef.current = false;
         setLoading(false);
         onReady?.();
@@ -801,6 +808,9 @@ export function useDocxEditor({
           liveEditor.open(blob);
         }
         if (cancelled) return;
+        openedKeyRef.current = openKey;
+        // A freshly opened document has nothing unsaved in it yet.
+        unsavedRef.current = false;
         ignoreContentChangeRef.current = false;
         setLoading(false);
         onReady?.();
