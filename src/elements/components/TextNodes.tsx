@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
+import TablerIcon from './TablerIcon';
 import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 
@@ -174,6 +175,38 @@ function TextNodes({
                   onClick = () => textSpanOnClick(attrs.start, attrs.end);
                   cursor = 'pointer';
                 }
+              }
+
+              // Inline icon embed: an op whose insert is `{ icon: name }`
+              // rather than a string. Rendered as an atomic inline node that
+              // carries the same rich font styles as surrounding text, so its
+              // color (currentColor) and size (1em) follow the run. In edit
+              // mode it stays a single, non-editable unit that round-trips via
+              // its data-index / data-feathery-icon attributes.
+              const insertIcon =
+                op.insert && typeof op.insert === 'object'
+                  ? (op.insert as any).icon
+                  : null;
+              if (insertIcon) {
+                return (
+                  <span
+                    key={i}
+                    data-index={i}
+                    data-feathery-icon={insertIcon}
+                    contentEditable={false}
+                    suppressContentEditableWarning
+                    onClick={onClick}
+                    css={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      verticalAlign: '-0.125em',
+                      cursor,
+                      ...responsiveStyles.getRichFontStyles(attrs)
+                    }}
+                  >
+                    <TablerIcon name={insertIcon} size='1em' />
+                  </span>
+                );
               }
 
               const text = editMode
