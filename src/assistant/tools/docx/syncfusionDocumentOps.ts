@@ -63,15 +63,12 @@ import {
 import {
   AppearanceFacts,
   appearanceEquals,
-  AppearanceRestore,
-  AppearanceWrite,
   AppearanceWriteOutcome,
   AppearanceWriteReport,
   bandedShadingForRow,
   BORDER_SIDES,
   BorderFacts,
   BorderSide,
-  BorderWrite,
   cellAppearanceAt,
   collectTableAppearance,
   copiedCellAppearance,
@@ -82,11 +79,6 @@ import {
   sourceRowForTarget,
   TableAppearance,
   TableBanding,
-  CellPropertyFacts,
-  TableLayoutFacts,
-  TablePropertyRestore,
-  RowPropertyFacts,
-  TablePropertyFacts,
   tableLayoutEquals,
   tableLayoutForTarget,
   tableIsUnstyled,
@@ -108,30 +100,20 @@ import {
   writeTableProperties
 } from '../../../utils/documentEditorPrimitives';
 import type {
-  LiveEditor,
-  LiveRevision
-} from '../../../utils/documentEditorPrimitives';
-
-export {
-  findReplaceCounterpart,
-  installRevisionGroupIsolation,
-  listRevisionGroups,
-  parseRevisionGroupTag,
-  preserveDocumentViewDuring,
-  rebindRevisionGroups,
-  resolveLiveRevisionGroupsAsOneUndo,
-  resolveRevisionIndividually,
-  resolveRevisionsAsOneUndo
-} from '../../../utils/documentEditorPrimitives';
-export type {
+  AppearanceRestore,
+  AppearanceWrite,
+  BorderWrite,
+  CellPropertyFacts,
   LiveEditor,
   LiveRevision,
-  LiveRevisionCollection,
-  RevisionGroupIdentity,
-  RevisionGroupItem,
-  RevisionGroupTag,
-  RevisionGroupView
+  RowPropertyFacts,
+  TableLayoutFacts,
+  TablePropertyFacts,
+  TablePropertyRestore
 } from '../../../utils/documentEditorPrimitives';
+
+// The engine's public editor handle type; every spec drives ops through it.
+export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;

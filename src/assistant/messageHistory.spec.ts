@@ -2,9 +2,11 @@ import type { UIMessage } from 'ai';
 
 import {
   createRoundSelectionRequestPreparer,
-  prepareAssistantMessagesForRequest,
-  prepareAssistantRequest
+  __testing
 } from './messageHistory';
+
+const { prepareAssistantMessagesForRequest, prepareAssistantRequest } =
+  __testing;
 
 const heavy = (label: string) => `${label}:${'x'.repeat(88_000)}`;
 

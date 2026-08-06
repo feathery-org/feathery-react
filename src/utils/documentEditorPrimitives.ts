@@ -45,7 +45,7 @@ export interface LiveRevision {
   [key: string]: any;
 }
 
-export interface LiveRevisionCollection {
+interface LiveRevisionCollection {
   length?: number;
   changes?: LiveRevision[];
   get?(index: number): LiveRevision;
@@ -67,8 +67,8 @@ export interface AppearanceWrite {
   borders?: BorderWrite[];
 }
 
-export type TableWidthType = 'Auto' | 'Percent' | 'Point';
-export type TableAlignment = 'Left' | 'Center' | 'Right';
+type TableWidthType = 'Auto' | 'Percent' | 'Point';
+type TableAlignment = 'Left' | 'Center' | 'Right';
 
 /** Table-level geometry shared by automatic composition and copy_table_format. */
 export interface TableLayoutFacts {
@@ -222,7 +222,7 @@ const PERSISTED_BORDER_TYPES = new Set([
   'NoBorder'
 ]);
 
-export interface RevisionGroupTag {
+interface RevisionGroupTag {
   changeSetId: string;
   group: string;
   appearanceRestores?: AppearanceRestore[];
@@ -815,7 +815,7 @@ export interface RevisionGroupItem {
   author?: string;
 }
 
-export interface RevisionGroupView {
+interface RevisionGroupView {
   changeSetId: string;
   group: string;
   untagged?: boolean;

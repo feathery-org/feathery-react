@@ -84,7 +84,7 @@ const digestDocumentOutput = (value: unknown): UnknownRecord => {
  * tool-call repair belongs to the service transport boundary; this client
  * leaves every pending part byte-for-byte intact.
  */
-export function prepareAssistantMessagesForRequest(
+function prepareAssistantMessagesForRequest(
   messages: UIMessage[]
 ): UIMessage[] {
   // Plain loop: a reduce over the UIMessage union sends the build compiler's
@@ -180,7 +180,7 @@ export function createRoundSelectionRequestPreparer(): (
   };
 }
 
-export function prepareAssistantRequest({
+function prepareAssistantRequest({
   id,
   messages,
   body,
@@ -197,3 +197,10 @@ export function prepareAssistantRequest({
     }
   };
 }
+
+// Test seam: the only production entry point is
+// createRoundSelectionRequestPreparer.
+export const __testing = {
+  prepareAssistantMessagesForRequest,
+  prepareAssistantRequest
+};

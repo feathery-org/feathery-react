@@ -33,19 +33,6 @@ import type {
   TableLayoutFacts
 } from '../../../utils/documentEditorPrimitives';
 
-export type {
-  AppearanceRestore,
-  AppearanceWrite,
-  BorderWrite,
-  CellPropertyFacts,
-  RowPropertyFacts,
-  TableAlignment,
-  TableLayoutFacts,
-  TablePropertyFacts,
-  TablePropertyRestore,
-  TableWidthType
-} from '../../../utils/documentEditorPrimitives';
-
 const OPTIMIZED_LINE_STYLES = [
   'Single',
   'None',
@@ -87,7 +74,7 @@ const VERTICAL_ALIGNMENTS = ['Top', 'Center', 'Bottom'] as const;
 const WIDTH_TYPES = ['Auto', 'Percent', 'Point'] as const;
 const TABLE_ALIGNMENTS = ['Left', 'Center', 'Right'] as const;
 
-export type CellVerticalAlignment = typeof VERTICAL_ALIGNMENTS[number];
+type CellVerticalAlignment = typeof VERTICAL_ALIGNMENTS[number];
 
 /** The four sides `copy_table_format` and `set_cell_format` address. */
 export const BORDER_SIDES = ['top', 'left', 'right', 'bottom'] as const;
@@ -102,7 +89,7 @@ export interface BorderFacts {
   color?: string;
 }
 
-export interface BorderFactsBySide {
+interface BorderFactsBySide {
   /** Present INSTEAD of the four sides when all four are identical. */
   all?: BorderFacts;
   top?: BorderFacts;
@@ -126,7 +113,7 @@ export interface AppearanceFacts {
 }
 
 /** One row's appearance, plus the row-level flag Word calls "header row". */
-export interface RowAppearanceFacts {
+interface RowAppearanceFacts {
   isHeader?: true;
   /** The appearance every present cell of the row SHARES, when they agree. */
   appearance?: AppearanceFacts;
@@ -153,7 +140,7 @@ export interface TableAppearance {
 }
 
 /** `undefined` marks a row whose cells disagree: it can match no cycle entry. */
-export type RowShading = string | null | undefined;
+type RowShading = string | null | undefined;
 
 export interface TableBanding {
   /** Rows above the stripe, left untouched by a restripe. */
@@ -455,7 +442,7 @@ function readAppearanceFrom(
   return Object.keys(facts).length ? facts : undefined;
 }
 
-export function readCellAppearance(cell: any): AppearanceFacts | undefined {
+function readCellAppearance(cell: any): AppearanceFacts | undefined {
   return readAppearanceFrom(sfdtCellFormat(cell), true);
 }
 
@@ -571,7 +558,7 @@ export function resolvedCellAppearanceAt(
 // ---------------------------------------------------------------------------
 
 /** Longest cycle a stripe may have. Beyond this it is not a stripe. */
-export const MAX_BAND_PERIOD = 4;
+const MAX_BAND_PERIOD = 4;
 
 /**
  * How much of the body a candidate cycle must explain to be accepted. A
@@ -579,7 +566,7 @@ export const MAX_BAND_PERIOD = 4;
  * routinely only ~60% self-consistent by the time anyone asks to repair it -
  * demanding more would refuse exactly the tables this exists to fix.
  */
-export const BAND_FIT_THRESHOLD = 0.6;
+const BAND_FIT_THRESHOLD = 0.6;
 
 /** Each row reduced to the one fill its cells share (see RowShading). */
 export function rowShadings(appearance: TableAppearance): RowShading[] {

@@ -20,17 +20,19 @@ import {
   applyDocumentEdits,
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
-  LiveEditor,
+  LiveEditor
+} from '../syncfusionDocumentOps';
+import {
   findReplaceCounterpart,
-  listRevisionGroups,
   installRevisionGroupIsolation,
+  listRevisionGroups,
   parseRevisionGroupTag,
   preserveDocumentViewDuring,
   rebindRevisionGroups,
-  resolveRevisionIndividually,
   resolveLiveRevisionGroupsAsOneUndo,
+  resolveRevisionIndividually,
   resolveRevisionsAsOneUndo
-} from '../syncfusionDocumentOps';
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,

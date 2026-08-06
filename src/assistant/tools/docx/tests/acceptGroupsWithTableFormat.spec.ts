@@ -33,15 +33,17 @@ import {
 import {
   applyDocumentEdits,
   getDocumentInventory,
-  listRevisionGroups,
-  parseRevisionGroupTag,
   readSelection,
-  rebindRevisionGroups,
-  resolveLiveRevisionGroupsAsOneUndo,
   rejectProjectionStream,
   LiveEditor,
   TableFacts
 } from '../syncfusionDocumentOps';
+import {
+  listRevisionGroups,
+  parseRevisionGroupTag,
+  rebindRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,

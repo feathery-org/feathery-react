@@ -46,7 +46,7 @@ export interface CellNumberFormat {
   minusAfterPrefix: boolean;
 }
 
-export interface ParsedNumericCell {
+interface ParsedNumericCell {
   value: NumericValue;
   format: CellNumberFormat;
   /**
@@ -270,7 +270,7 @@ export function parseNumericCell(rawText: string): ParsedNumericCell | null {
  * - a quantity: numeric AND carrying a unit, decimal places, or observed
  *   thousands grouping - `$36,803`, `984.00`, `12.5%`, `1,284,350`.
  */
-export interface NumericTextClass {
+interface NumericTextClass {
   numeric: boolean;
   quantity: boolean;
   /** Present when numeric: the unit token ('' for a bare number). */
@@ -422,7 +422,7 @@ export interface SkippedCell {
   reason: 'blank' | 'non_numeric' | 'missing_cell';
 }
 
-export interface ColumnComputationFailure {
+interface ColumnComputationFailure {
   ok: false;
   error:
     | 'no_numeric_cells'
@@ -573,7 +573,7 @@ export function resolveRenderFormat(
   };
 }
 
-export interface CollectedNumericCells {
+interface CollectedNumericCells {
   ok: true;
   /** Cells whose values may enter arithmetic, in row order. */
   parsed: ParsedColumnCell[];
