@@ -733,9 +733,7 @@ export default function DocumentEditorContainer({
                 is exactly when storeRef.current was initialized above. */}
             <ComponentsTab store={blockStore!} />
           </div>
-          {Boolean(blocksConfig.panel) && (
-            <BlockPanel store={blockStore!} />
-          )}
+          {Boolean(blocksConfig.panel) && <BlockPanel store={blockStore!} />}
         </div>
         {showDebug && debugPanelSync && editorSurfaceRef.current && (
           <DebugPanel

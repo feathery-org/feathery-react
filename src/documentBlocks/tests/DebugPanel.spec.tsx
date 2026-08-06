@@ -37,9 +37,45 @@ describe('DebugPanel', () => {
     const sync = attachBlockSync(editor, store, null);
     render(<DebugPanel store={store} sync={sync} editor={editor} />);
 
-    expect(screen.getByTestId('docx-debug-data').textContent).toContain(
-      'blk_scope_p'
-    );
+    expect(
+      (screen.getByTestId('docx-debug-data') as HTMLTextAreaElement).value
+    ).toContain('blk_scope_p');
+  });
+
+  it('applies edited data JSON back into the store', () => {
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const editor = makeEditor();
+    const sync = attachBlockSync(editor, store, null);
+    render(<DebugPanel store={store} sync={sync} editor={editor} />);
+
+    const edited = JSON.parse(JSON.stringify(SAMPLE_DOCUMENT));
+    edited.sections[0].blocks[0].content[0].text = 'Edited via debug panel';
+    fireEvent.change(screen.getByTestId('docx-debug-data'), {
+      target: { value: JSON.stringify(edited) }
+    });
+    // Two Apply buttons exist (Data first, SFDT second) — take the Data one.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0]);
+
+    expect(
+      (store.getData().sections[0].blocks[0].content?.[0] as any).text
+    ).toBe('Edited via debug panel');
+  });
+
+  it('rejects malformed data JSON with an inline error, store untouched', () => {
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const editor = makeEditor();
+    const sync = attachBlockSync(editor, store, null);
+    render(<DebugPanel store={store} sync={sync} editor={editor} />);
+
+    fireEvent.change(screen.getByTestId('docx-debug-data'), {
+      target: { value: '{not json' }
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Apply' })[0]);
+
+    expect(store.getData()).toBe(SAMPLE_DOCUMENT);
+    expect(
+      screen.getByTestId('docx-debug-data-error').textContent
+    ).toBeTruthy();
   });
 
   it("Pull puts serialize()'s return value into the SFDT textarea", () => {

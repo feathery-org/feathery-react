@@ -13,20 +13,16 @@ import { BlockStore } from './store';
 import { BlockSync, EditorSurface, SyncLogEntry } from './blockSync';
 
 const styles = {
+  // Docked as a bottom drawer inside the container's flex column — a static
+  // flex child, never an overlay, so it can't cover the tab strip or editor.
   panel: {
-    position: 'absolute' as const,
-    top: 8,
-    left: 8,
-    bottom: 8,
-    width: 340,
+    flex: '0 0 auto',
+    maxHeight: '45%',
     overflowY: 'auto' as const,
     background: '#ffffff',
-    border: '1px solid #d4d4d8',
-    borderRadius: 8,
-    boxShadow: '0 4px 16px rgba(0,0,0,.08)',
+    borderTop: '1px solid #d4d4d8',
     padding: 12,
-    font: '12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace',
-    zIndex: 20
+    font: '12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace'
   },
   section: { marginBottom: 8 },
   sectionHeading: {
@@ -38,17 +34,6 @@ const styles = {
     padding: '4px 0'
   },
   muted: { color: '#71717a', fontWeight: 400 },
-  pre: {
-    margin: 0,
-    maxHeight: 240,
-    overflow: 'auto' as const,
-    background: '#fafafa',
-    border: '1px solid #e4e4e7',
-    borderRadius: 4,
-    padding: 8,
-    whiteSpace: 'pre-wrap' as const,
-    wordBreak: 'break-all' as const
-  },
   textarea: {
     width: '100%',
     height: 160,
@@ -109,16 +94,67 @@ export default function DebugPanel({
   const [log, setLog] = useState<SyncLogEntry[]>(() => sync.getLog());
   const [sfdt, setSfdt] = useState('');
   const [applyError, setApplyError] = useState<string | null>(null);
+  // The Data JSON is editable: the draft tracks the store until the user
+  // types, then holds their edit until Apply or Reset.
+  const [dataDraft, setDataDraft] = useState(() =>
+    JSON.stringify(store.getData(), null, 2)
+  );
+  const [dataDirty, setDataDirty] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
 
   useEffect(() => store.subscribe(setData), [store]);
   useEffect(() => sync.subscribeLog(setLog), [sync]);
+  useEffect(() => {
+    if (!dataDirty) setDataDraft(JSON.stringify(data, null, 2));
+  }, [data, dataDirty]);
+
+  const applyData = () => {
+    try {
+      const parsed = JSON.parse(dataDraft);
+      if (!Array.isArray(parsed?.sections)) {
+        throw new Error('DocumentData needs a "sections" array');
+      }
+      store.apply(() => parsed, 'panel');
+      setDataDirty(false);
+      setDataError(null);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   return (
     <div style={styles.panel} data-testid='docx-debug-panel'>
       <CollapsibleSection title='Data'>
-        <pre style={styles.pre} data-testid='docx-debug-data'>
-          {JSON.stringify(data, null, 2)}
-        </pre>
+        <textarea
+          style={{ ...styles.textarea, height: 220 }}
+          data-testid='docx-debug-data'
+          value={dataDraft}
+          onChange={(e) => {
+            setDataDraft(e.target.value);
+            setDataDirty(true);
+          }}
+        />
+        <div style={styles.buttonRow}>
+          <button style={styles.button} onClick={applyData}>
+            Apply
+          </button>
+          <button
+            style={styles.button}
+            onClick={() => {
+              setDataDraft(JSON.stringify(store.getData(), null, 2));
+              setDataDirty(false);
+              setDataError(null);
+            }}
+          >
+            Reset
+          </button>
+          {dataDirty && <span style={styles.muted}>edited</span>}
+        </div>
+        {dataError && (
+          <div style={styles.error} data-testid='docx-debug-data-error'>
+            {dataError}
+          </div>
+        )}
       </CollapsibleSection>
 
       <CollapsibleSection title='SFDT'>
