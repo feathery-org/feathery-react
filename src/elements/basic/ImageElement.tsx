@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fieldValues } from '../../utils/init';
 import { getRenderData } from '../../utils/image';
+import TablerIcon from '../components/TablerIcon';
 
 export const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
@@ -77,6 +78,10 @@ function ImageElement({
       : '';
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
+  // Icon source mode: render a Tabler glyph instead of an <img>. The glyph
+  // inherits `color` (currentColor) from this element, so it follows the
+  // theme's / element's font color.
+  const iconSource = element.properties.icon_source;
 
   return (
     <div
@@ -91,7 +96,27 @@ function ImageElement({
       }}
     >
       {children}
-      {displayPDF ? (
+      {iconSource ? (
+        <span
+          role='img'
+          aria-label={element.properties.aria_label}
+          css={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'currentColor',
+            width: '100%',
+            height: '100%',
+            maxWidth: '100%',
+            maxHeight: '100%',
+            ...styles.getTarget('image'),
+            ...styles.getTarget('dimension')
+          }}
+          {...elementProps}
+        >
+          <TablerIcon name={iconSource} size='100%' />
+        </span>
+      ) : displayPDF ? (
         <embed
           type='application/pdf'
           width='100%'
