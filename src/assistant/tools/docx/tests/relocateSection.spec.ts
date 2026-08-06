@@ -715,6 +715,62 @@ describe('swap_sections: one primitive, twice, bottom-up', () => {
     }
   });
 
+  // The case the shift arithmetic can actually get wrong: the two ranges are
+  // DIFFERENT sizes, so the second relocation's source has moved by a count that
+  // is not its own. Every other swap here happens to exchange equal-sized units,
+  // which would hide an off-by-N.
+  it('swaps ranges of unequal size, table and all', () => {
+    const editor = makeEditor(proposalFixture());
+    try {
+      const before = editor.serialize();
+      const factsBefore = tableFacts(editor);
+      // 0;0 About Hilb Group is 2 blocks; 0;2 Your Client Services Team is 3
+      // (heading, body, table).
+      const result = apply(
+        editor,
+        [{ op: 'swap_sections', anchor: '0;0', otherAnchor: '0;2' }],
+        'swap-unequal'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(result.changeSet?.groups).toHaveLength(1);
+
+      editor.revisions.rejectAll();
+      expect(editor.serialize()).toBe(before);
+
+      const acceptEditor = makeEditor(proposalFixture());
+      try {
+        expect(
+          apply(
+            acceptEditor,
+            [{ op: 'swap_sections', anchor: '0;0', otherAnchor: '0;2' }],
+            'swap-unequal-accept'
+          ).results[0].ok
+        ).toBe(true);
+        acceptEditor.revisions.acceptAll();
+        expect(headings(acceptEditor)).toEqual([
+          'Your Client Services Team',
+          'About Hilb Group',
+          'Next Steps'
+        ]);
+        // No trailing empty paragraph: neither range runs to the end of the
+        // document, so neither used the `length + 1` end anchor.
+        expect(bodyTexts(acceptEditor)).toEqual([
+          'Your Client Services Team',
+          'Your dedicated team is listed below.',
+          'About Hilb Group',
+          'Hilb Group is a national broker.',
+          'Next Steps',
+          'Confirm the coverage by Friday.'
+        ]);
+        expect(tableFacts(acceptEditor)).toEqual(factsBefore);
+      } finally {
+        destroyEditor(acceptEditor);
+      }
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   // The op is symmetric by construction - the handler orders the two ranges
   // itself rather than trusting the caller to send the earlier one first, which
   // is what the bottom-up invariant needs and what the model cannot know.
