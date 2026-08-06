@@ -98,6 +98,7 @@ function ImageElement({
       {children}
       {iconSource ? (
         <span
+          role='img'
           aria-label={element.properties.aria_label}
           css={{
             display: 'flex',

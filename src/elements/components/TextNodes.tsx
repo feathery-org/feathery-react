@@ -209,6 +209,11 @@ function TextNodes({
                 );
               }
 
+              // Defensive: only string inserts reach the text path. A non-icon
+              // object insert would otherwise crash (replaceTextVariables on an
+              // object, or an object as a React child).
+              if (typeof op.insert !== 'string') return null;
+
               const text = editMode
                 ? (op.insert as string)
                 : replaceTextVariables(op.insert as string, element.repeat);
