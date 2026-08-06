@@ -43,10 +43,11 @@ import {
   EditOp,
   LiveEditor
 } from '../syncfusionDocumentOps';
+import { collectTableAppearance, inferHeaderRows } from '../tableAppearance';
 import {
-  collectTableAppearance,
-  inferHeaderRows
-} from '../tableAppearance';
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -1138,6 +1139,93 @@ describe('relocation refusals: each names what to do instead', () => {
           .filter((block) => block.kind !== 'table_cell')
           .map((block) => block.text)
       );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
+// The rail card's own Accept/Reject buttons do NOT call revisions.rejectAll():
+// they call resolveLiveRevisionGroupsAsOneUndo over the card's group, which is a
+// different path with a different failure mode (it is what Anthony's 3729780254
+// was about). Live, the browser tab died the first time that button was clicked
+// on a relocation, and the retry then completed cleanly - so the death was the
+// machine, not the code. This settles it deterministically instead: the path the
+// button uses, over a relocation change set, restoring byte for byte.
+//
+// SCOPE OF THESE CASES, deliberately: the relocated section and its destination
+// carry the SAME paragraph style. When they differ, that group path leaves the
+// destination paragraph wearing the moved section's style after a reject - and
+// that is NOT a relocation defect. It reproduces with `insert_section` alone
+// (insert a section before a Normal paragraph, reject the card, and the
+// paragraph comes back as Heading 1), it does not reproduce through
+// `revisions.rejectAll()`, and nothing in the relocation work touches either
+// that path or insert_section. Rejecting an inserted paragraph MARK merges two
+// paragraphs and the survivor takes the REMOVED paragraph's format, which
+// SyncFusion does not track as a revision at all. It belongs with the
+// appearance-restore mechanism in `documentEditorPrimitives`, one fix for every
+// op, and asserting it here would only pin a bug in the wrong layer.
+describe('the rail card resolves a relocation as one unit', () => {
+  const railGroups = (editor: DocumentEditor) =>
+    listRevisionGroups(editor as unknown as LiveEditor);
+
+  it.each([
+    ['a move', { op: 'move_section', anchor: '0;6', targetAnchor: '0;0' }],
+    ['a swap', { op: 'swap_sections', anchor: '0;2', otherAnchor: '0;4' }],
+    ['a copy', { op: 'copy_section', anchor: '0;6', targetAnchor: '0;0' }]
+  ] as Array<[string, EditOp]>)(
+    'rejecting the card restores the document exactly after %s',
+    (_name, edit) => {
+      const editor = makeEditor(nestedFixture());
+      try {
+        const before = editor.serialize();
+        const result = apply(editor, [edit], 'rail-group-reject');
+        expect(result.results[0]).toMatchObject({ ok: true });
+
+        // Exactly one card, which is what the group tag buys.
+        const groups = railGroups(editor);
+        expect(groups).toHaveLength(1);
+
+        const rejected = resolveLiveRevisionGroupsAsOneUndo(
+          editor as unknown as LiveEditor,
+          groups,
+          false
+        );
+        expect(rejected.length).toBeGreaterThan(0);
+        expect(editor.revisions.length).toBe(0);
+        expect(railGroups(editor)).toHaveLength(0);
+        expect(editor.serialize()).toBe(before);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
+
+  it('accepting the card completes a move and empties the rail', () => {
+    const editor = makeEditor(nestedFixture());
+    try {
+      const result = apply(
+        editor,
+        [{ op: 'move_section', anchor: '0;4', targetAnchor: '0;2' }],
+        'rail-group-accept'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      const groups = railGroups(editor);
+      expect(groups).toHaveLength(1);
+
+      resolveLiveRevisionGroupsAsOneUndo(
+        editor as unknown as LiveEditor,
+        groups,
+        true
+      );
+      expect(editor.revisions.length).toBe(0);
+      expect(railGroups(editor)).toHaveLength(0);
+      expect(headings(editor)).toEqual([
+        'How We Support Clients',
+        'Industry Experience',
+        'National Capabilities, Local Service',
+        'Next Steps'
+      ]);
     } finally {
       destroyEditor(editor);
     }
