@@ -5,21 +5,23 @@ import { FieldAccess, TokenValue } from '../../documentTokens/cycleTypes';
 
 type FakeEditor = EditorSurface & {
   fireContentChange: () => void;
+  fireDocumentChange: () => void;
 };
 
 const makeEditor = (): FakeEditor => {
-  let listener: (() => void) | null = null;
+  const listeners = new Map<string, () => void>();
   return {
     open: jest.fn(),
     serialize: jest.fn(),
-    addEventListener: jest.fn((_name, fn) => {
-      listener = fn;
+    addEventListener: jest.fn((name, fn) => {
+      listeners.set(name, fn);
     }),
-    removeEventListener: jest.fn((_name, fn) => {
-      if (listener === fn) listener = null;
+    removeEventListener: jest.fn((name, fn) => {
+      if (listeners.get(name) === fn) listeners.delete(name);
     }),
     scrollContainer: () => ({ scrollTop: 0 }),
-    fireContentChange: () => listener?.()
+    fireContentChange: () => listeners.get('contentChange')?.(),
+    fireDocumentChange: () => listeners.get('documentChange')?.()
   };
 };
 
@@ -215,6 +217,64 @@ describe('attachBlockSync', () => {
     expect(store.getData()).toBe(before); // no store.apply ran
     expect(editor.open).not.toHaveBeenCalled(); // no spurious reopen
     expect(sync.getLog()).toHaveLength(1); // only the initial 'open' entry
+  });
+
+  it('reasserts the generated document when documentChange reveals a foreign document', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    const sync = attachBlockSync(editor, store, fields);
+    (editor.open as jest.Mock).mockClear();
+
+    // Something else (envelope source load, a regenerate, ...) opened a
+    // document with no block anchors of ours.
+    (editor.serialize as jest.Mock).mockReturnValue(
+      '{"sections":[{"sectionFormat":{},"blocks":[]}]}'
+    );
+
+    editor.fireDocumentChange();
+    jest.advanceTimersByTime(100);
+
+    expect(editor.open).toHaveBeenCalledTimes(1);
+    expect(lastOpenedRaw(editor)).toContain('"fblk_');
+    expect(
+      sync
+        .getLog()
+        .some(
+          (e) => e.kind === 'open' && e.detail === 'reassert after foreign document'
+        )
+    ).toBe(true);
+  });
+
+  it('does not reopen when documentChange fires for the document blockSync itself just opened', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    attachBlockSync(editor, store, fields);
+    (editor.serialize as jest.Mock).mockReturnValue(lastOpenedRaw(editor));
+    (editor.open as jest.Mock).mockClear();
+
+    editor.fireDocumentChange();
+    jest.advanceTimersByTime(100);
+
+    expect(editor.open).not.toHaveBeenCalled();
+  });
+
+  it('detach stops reacting to documentChange too', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    const sync = attachBlockSync(editor, store, fields);
+    sync.detach();
+    (editor.open as jest.Mock).mockClear();
+
+    (editor.serialize as jest.Mock).mockReturnValue(
+      '{"sections":[{"sectionFormat":{},"blocks":[]}]}'
+    );
+    editor.fireDocumentChange();
+    jest.advanceTimersByTime(100);
+
+    expect(editor.open).not.toHaveBeenCalled();
   });
 
   it('detach stops reactions to both the store and the editor', () => {

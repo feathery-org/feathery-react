@@ -15,7 +15,13 @@
  *    if a token's rendered value now differs from what the document shows,
  *    regenerate and reopen once — this is what moves a computed total after
  *    its input was edited in the document.
- * 4. detach removes the listener and unsubscribes.
+ * 4. documentChange (debounced ~100ms, applying-guarded): ownership check.
+ *    Whatever loaded — openAsync's envelope source, a regenerate, anything —
+ *    if the now-open document isn't ours (no fblk_ block anchors and not the
+ *    exact SFDT we last opened), reassert the generated document. Catches
+ *    every foreign load regardless of when it happens, unlike a one-shot
+ *    "refresh after ready" that can race it.
+ * 5. detach removes both listeners and unsubscribes.
  */
 import { BlockStore, UpdateOrigin } from './store';
 import { collectSpecs, resolveTokens, routeTokenEdit } from './tokens';
@@ -33,11 +39,13 @@ export type SyncLogEntry = {
   detail: string;
 };
 
+type EditorEventName = 'contentChange' | 'documentChange';
+
 export type EditorSurface = {
   open: (sfdt: string) => void;
   serialize: () => string;
-  addEventListener: (name: 'contentChange', fn: () => void) => void;
-  removeEventListener?: (name: 'contentChange', fn: () => void) => void;
+  addEventListener: (name: EditorEventName, fn: () => void) => void;
+  removeEventListener?: (name: EditorEventName, fn: () => void) => void;
   /** Scroll container, for restore after reopen. Optional. */
   scrollContainer?: () => { scrollTop: number } | null;
 };
@@ -215,12 +223,34 @@ export const attachBlockSync = (
     timer = setTimeout(absorbEditorContent, debounceMs);
   };
 
+  // Ownership-by-observation: whatever loaded a document (openAsync, a
+  // regenerate, anything else the host does), if what's now open isn't ours,
+  // reassert. This doesn't care WHEN the foreign load happened, so it isn't
+  // racing openAsync's timing the way a one-shot "refresh after ready" would.
+  let documentChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  const checkOwnership = () => {
+    documentChangeTimer = null;
+    if (applying) return;
+    const serialized = editor.serialize();
+    if (serialized === lastOpenedSfdt || serialized.includes('"fblk_'))
+      return;
+    reopenPreservingScroll('open', 'reassert after foreign document');
+  };
+  const onDocumentChange = () => {
+    if (applying) return;
+    if (documentChangeTimer !== null) clearTimeout(documentChangeTimer);
+    // Light debounce: the editor can fire documentChange mid-open, before
+    // serialize() reflects the final loaded content.
+    documentChangeTimer = setTimeout(checkOwnership, 100);
+  };
+
   const unsubscribe = store.subscribe((_data, origin: UpdateOrigin) => {
     if (origin === 'document') return;
     reopenPreservingScroll(REOPEN_LOG_KIND[origin], `store change (${origin})`);
   });
 
   editor.addEventListener('contentChange', onContentChange);
+  editor.addEventListener('documentChange', onDocumentChange);
 
   openCurrentData();
   appendLog('open', 'initial attach');
@@ -228,7 +258,9 @@ export const attachBlockSync = (
   return {
     detach: () => {
       if (timer !== null) clearTimeout(timer);
+      if (documentChangeTimer !== null) clearTimeout(documentChangeTimer);
       editor.removeEventListener?.('contentChange', onContentChange);
+      editor.removeEventListener?.('documentChange', onDocumentChange);
       unsubscribe();
     },
     getLog: () => log.slice(),

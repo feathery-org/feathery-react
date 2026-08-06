@@ -10,18 +10,18 @@ type FakeEditor = EditorSurface & {
 };
 
 const makeEditor = (): FakeEditor => {
-  let listener: (() => void) | null = null;
+  const listeners = new Map<string, () => void>();
   return {
     open: jest.fn(),
     serialize: jest.fn(),
-    addEventListener: jest.fn((_name, fn) => {
-      listener = fn;
+    addEventListener: jest.fn((name, fn) => {
+      listeners.set(name, fn);
     }),
-    removeEventListener: jest.fn((_name, fn) => {
-      if (listener === fn) listener = null;
+    removeEventListener: jest.fn((name, fn) => {
+      if (listeners.get(name) === fn) listeners.delete(name);
     }),
     scrollContainer: () => ({ scrollTop: 0 }),
-    fireContentChange: () => listener?.()
+    fireContentChange: () => listeners.get('contentChange')?.()
   };
 };
 
