@@ -1,0 +1,187 @@
+/**
+ * Wires a live editor surface to a BlockStore: renders store data into SFDT
+ * and opens it on relevant store changes, and folds the editor's own edits
+ * (content + token values) back into the store.
+ *
+ * The loop, exactly:
+ * 1. Attach: resolve tokens, generate SFDT, open it (applying-guarded).
+ * 2. Store change with origin panel/history/theme: same as (1), scroll
+ *    preserved. Origin 'document' never reopens — that change came from the
+ *    document itself.
+ * 3. contentChange (debounced): serialize, parse, absorb against the last
+ *    rendered token values. Route token edits (field writes go straight
+ *    through FieldAccess; in-memory ones batch into one store.apply). Apply
+ *    any absorbed block changes as a second store.apply. Re-resolve tokens;
+ *    if a token's rendered value now differs from what the document shows,
+ *    regenerate and reopen once — this is what moves a computed total after
+ *    its input was edited in the document.
+ * 4. detach removes the listener and unsubscribes.
+ */
+import { BlockStore, UpdateOrigin } from './store';
+import { resolveTokens, routeTokenEdit } from './tokens';
+import { generateSfdt } from './sfdt/generate';
+import { parseSfdt, ParsedDoc, ParsedInlineRun } from './sfdt/parse';
+import { absorbDocEdits, SyncEvent } from './diff';
+import { DocumentData } from './types';
+import { FieldAccess } from '../documentTokens/cycleTypes';
+
+export type SyncLogEntry = {
+  at: number;
+  kind: 'open' | 'absorb' | 'tokenWrite' | 'recalcReopen' | 'themeApplied';
+  detail: string;
+};
+
+export type EditorSurface = {
+  open: (sfdt: string) => void;
+  serialize: () => string;
+  addEventListener: (name: 'contentChange', fn: () => void) => void;
+  removeEventListener?: (name: 'contentChange', fn: () => void) => void;
+  /** Scroll container, for restore after reopen. Optional. */
+  scrollContainer?: () => { scrollTop: number } | null;
+};
+
+export type BlockSync = {
+  detach: () => void;
+  getLog: () => SyncLogEntry[];
+  subscribeLog: (fn: (log: SyncLogEntry[]) => void) => () => void;
+  /** Force a regenerate+open (debug panel's Apply-data button). */
+  refresh: () => void;
+};
+
+/** Store-change origins that reopen the editor; 'document' is handled separately. */
+const REOPEN_LOG_KIND: Record<'panel' | 'history' | 'theme', SyncLogEntry['kind']> = {
+  panel: 'open',
+  history: 'open',
+  theme: 'themeApplied'
+};
+
+/** Every token run currently shown in the document, by value key. */
+const shownTokenTexts = (parsed: ParsedDoc): Map<string, string> => {
+  const shown = new Map<string, string>();
+  const visit = (runs?: ParsedInlineRun[]) => {
+    for (const run of runs ?? []) if (run.kind === 'token') shown.set(run.key, run.text);
+  };
+  for (const section of parsed.sections) {
+    for (const block of section) {
+      visit(block.runs);
+      for (const row of block.cells ?? []) for (const cellRuns of row) visit(cellRuns);
+    }
+  }
+  return shown;
+};
+
+const summarizeEvents = (events: SyncEvent[]): string => {
+  const counts = { blockChanged: 0, blockDeleted: 0, blockAdopted: 0 };
+  for (const event of events) {
+    if (event.type === 'blockChanged') counts.blockChanged += 1;
+    else if (event.type === 'blockDeleted') counts.blockDeleted += 1;
+    else if (event.type === 'blockAdopted') counts.blockAdopted += 1;
+  }
+  return `${counts.blockChanged} changed, ${counts.blockAdopted} adopted, ${counts.blockDeleted} deleted`;
+};
+
+export const attachBlockSync = (
+  editor: EditorSurface,
+  store: BlockStore,
+  fields: FieldAccess | null,
+  debounceMs = 400
+): BlockSync => {
+  let applying = false;
+  let lastRendered = new Map<string, string>();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const log: SyncLogEntry[] = [];
+  const logListeners = new Set<(entries: SyncLogEntry[]) => void>();
+
+  const appendLog = (kind: SyncLogEntry['kind'], detail: string) => {
+    log.push({ at: Date.now(), kind, detail });
+    logListeners.forEach((fn) => fn(log.slice()));
+  };
+
+  /** Render the store's current data and open it, guarding the resulting contentChange. */
+  const openCurrentData = () => {
+    const data = store.getData();
+    const { rendered } = resolveTokens(data, fields);
+    lastRendered = rendered;
+    const sfdt = generateSfdt(data, rendered);
+    applying = true;
+    try {
+      editor.open(sfdt);
+    } finally {
+      applying = false;
+    }
+  };
+
+  const reopenPreservingScroll = (kind: SyncLogEntry['kind'], detail: string) => {
+    const before = editor.scrollContainer?.() ?? null;
+    openCurrentData();
+    const after = before ? editor.scrollContainer?.() ?? null : null;
+    if (before && after) after.scrollTop = before.scrollTop;
+    appendLog(kind, detail);
+  };
+
+  const absorbEditorContent = () => {
+    timer = null;
+    const prevData = store.getData();
+    const parsed = parseSfdt(editor.serialize());
+    const result = absorbDocEdits(prevData, parsed, lastRendered);
+
+    const mutations: Array<(d: DocumentData) => DocumentData> = [];
+    for (const [key, text] of result.tokenEdits) {
+      const mutation = routeTokenEdit(prevData, fields, key, text);
+      if (mutation) mutations.push(mutation);
+      appendLog('tokenWrite', `${key} -> ${text}`);
+    }
+
+    const blockEvents = result.events.filter((event) => event.type !== 'tokenEdited');
+    if (blockEvents.length > 0) {
+      store.apply(() => result.data, 'document');
+      appendLog('absorb', summarizeEvents(blockEvents));
+    }
+    if (mutations.length > 0) {
+      store.apply(
+        (d) => mutations.reduce((acc, mutate) => mutate(acc), d),
+        'document'
+      );
+    }
+
+    // A token's rendered value may have moved (e.g. a computed total after
+    // its input changed) without the document itself reflecting it yet.
+    const shown = shownTokenTexts(parsed);
+    const { rendered: freshRendered } = resolveTokens(store.getData(), fields);
+    const moved = [...shown].find(([key, text]) => freshRendered.get(key) !== text);
+    if (moved) {
+      const [key, text] = moved;
+      reopenPreservingScroll('recalcReopen', `${key}: ${text} -> ${freshRendered.get(key)}`);
+    }
+  };
+
+  const onContentChange = () => {
+    if (applying) return;
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(absorbEditorContent, debounceMs);
+  };
+
+  const unsubscribe = store.subscribe((_data, origin: UpdateOrigin) => {
+    if (origin === 'document') return;
+    reopenPreservingScroll(REOPEN_LOG_KIND[origin], `store change (${origin})`);
+  });
+
+  editor.addEventListener('contentChange', onContentChange);
+
+  openCurrentData();
+  appendLog('open', 'initial attach');
+
+  return {
+    detach: () => {
+      if (timer !== null) clearTimeout(timer);
+      editor.removeEventListener?.('contentChange', onContentChange);
+      unsubscribe();
+    },
+    getLog: () => log.slice(),
+    subscribeLog: (fn) => {
+      logListeners.add(fn);
+      return () => logListeners.delete(fn);
+    },
+    refresh: () => reopenPreservingScroll('open', 'manual refresh')
+  };
+};
