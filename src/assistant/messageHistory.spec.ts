@@ -5,8 +5,7 @@ import {
   __testing
 } from './messageHistory';
 
-const { prepareAssistantMessagesForRequest, prepareAssistantRequest } =
-  __testing;
+const { prepareAssistantRequest } = __testing;
 
 const heavy = (label: string) => `${label}:${'x'.repeat(88_000)}`;
 
@@ -44,8 +43,6 @@ const tool = (
   ]
 });
 
-const outputOf = (message: UIMessage): any => (message.parts[0] as any).output;
-
 const pendingTool = (
   id: string,
   name: string,
@@ -65,127 +62,114 @@ const pendingTool = (
   ]
 });
 
+const sentMessages = (
+  prepare: (options: any) => { body: Record<string, unknown> },
+  messages: UIMessage[],
+  messageId: string
+): UIMessage[] =>
+  prepare({
+    id: 'chat-id',
+    messages,
+    body: { thread_id: 'thread-id' },
+    trigger: 'submit-message',
+    messageId
+  }).body.messages as UIMessage[];
+
 describe('assistant outbound message history', () => {
-  it('digests old document results while retaining summaries under 1KB', () => {
-    const inventory = tool('inventory', 'getDocumentInventory', {
-      inventory: [{ anchor: '0;0', text: heavy('inventory') }]
-    });
-    const occurrences = tool(
-      'occurrences',
-      'findDocumentOccurrences',
-      { ok: true, occurrences: [{ blockText: heavy('occurrences') }] },
-      true
-    );
-    const edits = tool('edits', 'applyDocumentEdits', {
-      results: [{ ok: false, details: [heavy('edits')] }],
-      changeSet: {
-        status: 'failed',
-        announcement: 'Update premium totals',
-        groups: [
-          { id: 'premium', revisionCount: 3, restoresAppearance: true },
-          { id: 'totals', revisionCount: 2 }
-        ]
-      }
-    });
-    const messages = [
-      user('turn-1'),
-      inventory,
-      user('turn-2'),
-      occurrences,
-      user('turn-3'),
-      edits
+  it('sends every completed document-tool result byte-identically as the conversation grows', () => {
+    const prepare = createRoundSelectionRequestPreparer();
+    // Mirrors the live shape that broke the prompt cache: heavy document-tool
+    // outputs settling into history behind several later turns.
+    const results = [
+      tool('inventory', 'getDocumentInventory', {
+        inventory: [{ anchor: '0;0', text: heavy('inventory') }]
+      }),
+      tool(
+        'occurrences',
+        'findDocumentOccurrences',
+        { ok: true, occurrences: [{ blockText: heavy('occurrences') }] },
+        true
+      ),
+      tool('edits', 'applyDocumentEdits', {
+        results: [{ ok: true, echo: heavy('edits') }],
+        changeSet: {
+          status: 'applied',
+          announcement: 'Updated the document',
+          groups: [{ id: 'edits', revisionCount: 3, restoresAppearance: true }]
+        }
+      }),
+      tool('pattern', 'getSectionPattern', {
+        ok: true,
+        sections: [{ text: heavy('pattern') }]
+      }),
+      tool('blocks', 'applyDocumentBlocks', {
+        results: [{ ok: true, echo: heavy('blocks') }]
+      })
     ];
 
-    const prepared = prepareAssistantMessagesForRequest(messages);
-    const digest = outputOf(prepared[1]);
+    const history: UIMessage[] = [];
+    const sends: UIMessage[][] = [];
+    for (let turn = 0; turn < results.length; turn++) {
+      history.push(user(`turn-${turn + 1}`));
+      sends.push(sentMessages(prepare, [...history], `turn-${turn + 1}`));
+      // Two tool steps per turn: the multi-step loop re-sends history on each.
+      history.push(results[turn]);
+      sends.push(sentMessages(prepare, [...history], `step-${turn + 1}`));
+    }
 
-    expect(digest).toEqual({
-      _digest: '[digested client-side: full result in earlier turn]'
-    });
-    expect(JSON.stringify(digest).length).toBeLessThan(1_000);
-    expect(outputOf(prepared[3])).toBe(outputOf(occurrences));
-    expect(outputOf(prepared[5])).toBe(outputOf(edits));
+    // The outbound prefix is append-only: everything a previous request sent
+    // comes back byte-for-byte in the next one, so the provider cache holds.
+    for (let i = 1; i < sends.length; i++) {
+      const previous = sends[i - 1];
+      const current = sends[i];
+      expect(current.length).toBeGreaterThanOrEqual(previous.length);
+      for (let index = 0; index < previous.length; index++) {
+        expect(JSON.stringify(current[index])).toBe(
+          JSON.stringify(previous[index])
+        );
+      }
+    }
+
+    // And each settled result is still the full one it was when it completed.
+    const last = sends[sends.length - 1];
+    for (const result of results) {
+      const sent = last.find((message) => message.id === result.id);
+      expect(JSON.stringify(sent)).toBe(JSON.stringify(result));
+      expect(JSON.stringify(sent)).toContain('x'.repeat(88_000));
+    }
   });
 
-  it('never mutates state or current-turn tool outputs needed for continuation', () => {
+  it('sends history by reference so nothing can rewrite a settled result', () => {
     const old = tool('old', 'getDocumentInventory', {
       inventory: [heavy('old')]
     });
-    const recentA = tool('recent-a', 'findDocumentOccurrences', {
-      ok: true,
-      occurrences: [heavy('recent-a')]
-    });
-    const recentB = tool('recent-b', 'getDocumentInventory', {
-      inventory: [heavy('recent-b')]
-    });
     const current = tool('current', 'applyDocumentEdits', {
       results: [{ ok: true, echo: heavy('current') }],
-      changeSet: {
-        status: 'applied',
-        announcement: 'Updated the current document',
-        groups: [{ id: 'current', revisionCount: 1 }]
-      }
+      changeSet: { status: 'applied', announcement: 'Updated' }
     });
     const messages = [
       user('turn-1'),
       old,
       user('turn-2'),
-      recentA,
+      tool('mid', 'findDocumentOccurrences', {
+        ok: true,
+        occurrences: [heavy('mid')]
+      }),
       user('turn-3'),
-      recentB,
-      user('turn-4'),
       current
     ];
     const snapshot = JSON.stringify(messages);
 
-    const prepared = prepareAssistantMessagesForRequest(messages);
+    const prepared = prepareAssistantRequest({
+      id: 'chat-id',
+      messages,
+      body: undefined,
+      trigger: 'submit-message',
+      messageId: undefined
+    }).body.messages;
 
+    expect(prepared).toBe(messages);
     expect(JSON.stringify(messages)).toBe(snapshot);
-    expect(prepared).not.toBe(messages);
-    expect(prepared[7]).toBe(current);
-    expect((prepared[7].parts[0] as any).toolCallId).toBe('current');
-    expect(outputOf(prepared[7])).toBe(outputOf(current));
-    expect(outputOf(prepared[5])).toBe(outputOf(recentB));
-    expect(outputOf(prepared[3])._digest).toContain('digested client-side');
-    expect(outputOf(prepared[1])._digest).toContain('digested client-side');
-  });
-
-  it('keeps status, announcement, and a bounded groups summary', () => {
-    const old = tool('old', 'applyDocumentEdits', {
-      results: [
-        { ok: true, echo: heavy('first') },
-        { ok: true, echo: heavy('second') }
-      ],
-      changeSet: {
-        status: 'applied',
-        announcement: 'Recomputed premium and totals',
-        groups: [
-          { id: 'premium', revisionCount: 4, restoresAppearance: true },
-          { id: 'totals', revisionCount: 2 }
-        ]
-      }
-    });
-    const messages = [
-      user('turn-1'),
-      old,
-      user('turn-2'),
-      tool('new-1', 'getDocumentInventory', { inventory: [heavy('new-1')] }),
-      user('turn-3'),
-      tool('new-2', 'findDocumentOccurrences', {
-        ok: true,
-        occurrences: [heavy('new-2')]
-      })
-    ];
-
-    const digest = outputOf(prepareAssistantMessagesForRequest(messages)[1]);
-
-    expect(digest).toMatchObject({
-      ok: true,
-      status: 'applied',
-      announcement: 'Recomputed premium and totals',
-      groups: { count: 2, revisionCount: 6, restoresAppearance: 1 }
-    });
-    expect(JSON.stringify(digest).length).toBeLessThan(1_000);
   });
 
   it('leaves dangling calls untouched for service-boundary repair', () => {
@@ -203,22 +187,13 @@ describe('assistant outbound message history', () => {
     const messages = [user('turn-1'), streaming, available, user('turn-2')];
     const snapshot = JSON.stringify(messages);
 
-    const prepared = prepareAssistantMessagesForRequest(messages);
-
-    expect(JSON.stringify(messages)).toBe(snapshot);
-    expect(prepared).toBe(messages);
-    expect(JSON.stringify(prepared)).toBe(snapshot);
-  });
-
-  it('leaves normal histories byte-identical', () => {
-    const unrelated = tool('other', 'setFieldValue', {
-      ok: true,
-      echo: heavy('field')
-    });
-    const messages = [user('turn-1'), unrelated, user('turn-2')];
-    const snapshot = JSON.stringify(messages);
-
-    const prepared = prepareAssistantMessagesForRequest(messages);
+    const prepared = prepareAssistantRequest({
+      id: 'chat-id',
+      messages,
+      body: undefined,
+      trigger: 'submit-message',
+      messageId: undefined
+    }).body.messages as UIMessage[];
 
     expect(prepared).toBe(messages);
     expect(JSON.stringify(prepared)).toBe(snapshot);
@@ -307,44 +282,5 @@ describe('assistant outbound message history', () => {
       anchor: '0;6',
       text: '. Our firm'
     });
-  });
-
-  it('reduces cumulative request bytes in a simulated three-roundtrip edit conversation', () => {
-    const turns: UIMessage[][] = [];
-    const messages: UIMessage[] = [];
-    const tools = [
-      tool('inventory', 'getDocumentInventory', {
-        inventory: [{ text: heavy('inventory') }]
-      }),
-      tool('occurrences', 'findDocumentOccurrences', {
-        ok: true,
-        occurrences: [{ blockText: heavy('occurrences') }]
-      }),
-      tool('edits', 'applyDocumentEdits', {
-        results: [{ ok: true, echo: heavy('edits') }],
-        changeSet: {
-          status: 'applied',
-          announcement: 'Updated the document',
-          groups: [{ id: 'edits', revisionCount: 1 }]
-        }
-      })
-    ];
-    for (let i = 0; i < tools.length; i++) {
-      messages.push(user(`turn-${i + 1}`), tools[i]);
-      turns.push([...messages]);
-    }
-    const bytes = (value: unknown) =>
-      Buffer.byteLength(JSON.stringify({ messages: value }), 'utf8');
-    const before = turns.map(bytes);
-    const after = turns.map((turn) =>
-      bytes(prepareAssistantMessagesForRequest(turn))
-    );
-
-    expect(after[0]).toBe(before[0]);
-    expect(after[1]).toBe(before[1]);
-    expect(after[2]).toBeLessThan(before[2] - 80_000);
-    expect(after.reduce((sum, value) => sum + value, 0)).toBeLessThan(
-      before.reduce((sum, value) => sum + value, 0)
-    );
   });
 });
