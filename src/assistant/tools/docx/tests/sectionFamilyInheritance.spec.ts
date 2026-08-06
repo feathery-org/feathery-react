@@ -593,7 +593,17 @@ describe('a composed section inherits from the family it joins', () => {
       // from a successful copy.
       expect(inherited).toMatchObject({
         level: composed.block.level,
-        withoutDonor: ['block 1 (table)']
+        withoutDonor: [
+          {
+            what: 'block 1 (table)',
+            reason: expect.stringContaining('no table'),
+            // It widened all the way to the document before giving up, and
+            // says so - the gap is the document's, not the search's.
+            searched: expect.arrayContaining([
+              expect.stringContaining('every table in the document')
+            ])
+          }
+        ]
       });
       expect(inherited?.siblings).toBeGreaterThan(1);
       expect(inherited?.donors).toEqual([

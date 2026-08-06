@@ -697,6 +697,15 @@ export interface ColumnFormatRender {
  * is auditable in the change set instead of being indistinguishable from a
  * computed write.
  */
+/** The record a creation path leaves when the document could not answer. */
+export interface CreationGap {
+  /** The component that could not inherit. */
+  what: string;
+  reason: string;
+  /** Everywhere the resolver looked, in order. */
+  searched: string[];
+}
+
 export interface LiteralNumberWrite {
   text: string;
   /** What the cell held before, when it held a number. */
@@ -733,11 +742,12 @@ export interface ComposedSectionInheritance {
   /** The donor each composed unit copied, in spec order. */
   donors: Array<{ unit: string; from: string }>;
   /**
-   * Composed units the family could not supply a donor for. These are written
-   * with the editor's defaults, NOT with the document's look, and that is the
-   * single fact this report exists to make visible.
+   * Composed units the DOCUMENT could not supply a donor for, with everywhere
+   * the resolver looked. These are written with the editor's defaults, NOT
+   * with the document's look, and that is the single fact this report exists
+   * to make visible.
    */
-  withoutDonor?: string[];
+  withoutDonor?: CreationGap[];
 }
 
 export interface EditResult {
@@ -784,6 +794,10 @@ export interface EditResult {
   // of the field - any block the family could not dress, which therefore wears
   // the editor's defaults rather than the document's look.
   inherited?: ComposedSectionInheritance;
+  // Present on a successful creation the DOCUMENT could not dress: the
+  // component, why, and everywhere the resolver looked. Its absence is the
+  // engine's statement that everything it created inherited from the document.
+  withoutDonor?: CreationGap[];
 }
 
 export interface ApplyEditsResult {
@@ -9647,6 +9661,13 @@ interface PlannedTableAppearanceInheritance {
 
 interface PlannedInsertInheritance {
   anchor: string;
+  /**
+   * Set INSTEAD of a donor when the document could not answer what this
+   * component should look like. It carries no formatting, so the write happens
+   * with the editor's defaults - and says so, in the op's result, rather than
+   * letting a default read as a successful inheritance.
+   */
+  unresolved?: CreationGap;
   expectedText?: string;
   source?: FlatBlock;
   inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
@@ -10399,59 +10420,6 @@ function findComputedReference(
   return undefined;
 }
 
-function tableAnchorsInSection(sfdt: any, sectionIndex: number): string[] {
-  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const section = sections[sectionIndex];
-  if (!section) return [];
-  return getBlocks(section).flatMap((block, blockIndex) =>
-    getRows(block) ? [`${sectionIndex};${blockIndex}`] : []
-  );
-}
-
-/**
- * The table a new table structurally follows. A cell anchor names its
- * containing table directly. For a body insertion, an adjacent table is the
- * true sibling; when a spacer/heading sits between them, the nearest table in
- * the same SFDT section is the deterministic fallback requested by the
- * inheritance contract. Ties prefer the preceding table.
- */
-function sourceTableForInsert(
-  sfdt: any,
-  op: EditOp,
-  explicitSource?: FlatBlock
-): { anchor: string; appearance: TableAppearance } | undefined {
-  if (explicitSource?.kind === 'table_cell') {
-    const anchor = tableAnchorFromCellAnchor(explicitSource.anchor);
-    const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
-    if (appearance) return { anchor, appearance };
-  }
-  const requested = String(op.anchor ?? '').split(';');
-  const section = Number(requested[0]);
-  const block = Number(requested[1]);
-  if (!Number.isInteger(section) || !Number.isInteger(block)) return undefined;
-  if (requested.length >= 5) {
-    const anchor = `${section};${block}`;
-    const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
-    if (appearance) return { anchor, appearance };
-  }
-  const anchors = tableAnchorsInSection(sfdt, section);
-  const adjacent = anchors.filter((anchor) => {
-    const candidate = Number(anchor.split(';')[1]);
-    return Math.abs(candidate - block) === 1;
-  });
-  const candidates = adjacent.length ? adjacent : anchors;
-  candidates.sort((left, right) => {
-    const leftBlock = Number(left.split(';')[1]);
-    const rightBlock = Number(right.split(';')[1]);
-    const distance = Math.abs(leftBlock - block) - Math.abs(rightBlock - block);
-    return distance || leftBlock - rightBlock;
-  });
-  const anchor = candidates[0];
-  if (!anchor) return undefined;
-  const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
-  return appearance ? { anchor, appearance } : undefined;
-}
-
 function planTableCellFormats(
   editor: LiveEditor,
   blocks: FlatBlock[],
@@ -10496,71 +10464,6 @@ function planTableCellFormats(
     }
   }
   return planned;
-}
-
-/**
- * A row insert's typography comes from the row at its new position (the row it
- * displaces), or the last existing row when appended. Unlike whole-table copy,
- * it must not cycle: on a two-row table whose visual header lacks `isHeader`,
- * cycling an appended target wraps to row zero and turns body text white.
- */
-function sourceRowsForInsertedRows(
-  source: TableAppearance,
-  targetRows: number[],
-  headerRows: number
-): Array<number | undefined> {
-  const lastRow = source.rows.length - 1;
-  return targetRows.map((targetRow) => {
-    const displaced = Math.min(targetRow, lastRow);
-    if (headerBandContains(source, targetRow, headerRows)) return displaced;
-    // A DATA row never copies a header, so a table whose only row is its
-    // header offers no donor at all rather than the header by default. That
-    // default is exactly what produced a navy, white-on-bold "data" row in a
-    // table someone had just emptied; the caller looks outward instead.
-    return displaced >= headerRows ? displaced : undefined;
-  });
-}
-
-/**
- * The nearest table in the document with a real data row, for when the table
- * being edited has none of its own.
- *
- * A document that styles its tables states the data-row look many times over;
- * the table in front of us simply happens not to be showing it right now. The
- * search is by document distance, so the closest example wins, and it is the
- * same outward widening the section composer uses for a table donor.
- */
-function documentDataRowDonor(
-  sfdt: any,
-  targetTableAnchor: string
-): { anchor: string; appearance: TableAppearance; row: number } | undefined {
-  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const targetBlock = Number(targetTableAnchor.split(';')[1]);
-  const candidates: Array<{
-    anchor: string;
-    appearance: TableAppearance;
-    row: number;
-    distance: number;
-  }> = [];
-  sections.forEach((section, sectionIndex) => {
-    getBlocks(section).forEach((block, blockIndex) => {
-      const anchor = `${sectionIndex};${blockIndex}`;
-      if (anchor === targetTableAnchor || !getRows(block)) return;
-      const appearance = collectTableAppearance(block);
-      if (!appearance) return;
-      const headerRows = inferHeaderRows(appearance);
-      if (appearance.rows.length <= headerRows) return;
-      candidates.push({
-        anchor,
-        appearance,
-        row: headerRows,
-        distance: Number.isInteger(targetBlock)
-          ? Math.abs(blockIndex - targetBlock)
-          : blockIndex
-      });
-    });
-  });
-  return candidates.sort((left, right) => left.distance - right.distance)[0];
 }
 
 /**
@@ -10669,6 +10572,340 @@ function documentInsertBanding(
   return { headerRows: selected.headerRows, period: 2, cycle: [first, other] };
 }
 
+// ---------------------------------------------------------------------------
+// Creation appearance
+//
+// The ONE answer to "what should this newly created content look like, given
+// this document?". Every path that brings content into existence asks this -
+// the section composer, insert_table, insert_row, and the insert_text +
+// apply_style + insert_table sequence a model hand-rolls when it prefers
+// primitives. Before this existed each answered separately, so each could be
+// wrong in its own way, and on 2026-08-06 each of them was: a subsection
+// dressed as a top-level section, a composed table wearing Word's defaults
+// inside a styled document, and a new row coming back as a second header.
+//
+// Two rules run through everything below, and they are easy to conflate:
+//
+//   * a FLAG is a document fact and is COPIED. `isHeader` is the example: a
+//     document may shade a row to look like a header without ever setting
+//     Word's flag, so inferring the flag from appearance invents a property
+//     the document never had. Copy it from a row that has it, or answer no.
+//   * a BAND, a BANDING CYCLE and a HEADING LEVEL are DERIVED. They are
+//     questions about shape - which rows are the header band, what stripe do
+//     the data rows cycle through, how deep does this unit sit - and the
+//     document answers them by exhibiting them, not by declaring them.
+//
+// Read that distinction before changing anything here. It has been broken once
+// already by deriving `isHeader` from the header band, which looked equivalent
+// and quietly flagged unflagged headers on every copy.
+// ---------------------------------------------------------------------------
+
+/** How far the search had to widen before the document could answer. */
+type CreationScope = 'family' | 'document';
+
+/** What answered, so a caller (and a reader of the result) can see it. */
+interface CreationEvidence {
+  /** The block whose sibling family answered, when a family did. */
+  familyAnchor?: string;
+  /** That family's outline level and how many siblings it was derived from. */
+  level?: number;
+  siblings: number;
+  scope: CreationScope;
+}
+
+/**
+ * Resolved carries a donor; unresolved carries WHY and where it looked.
+ *
+ * There is deliberately no third state and no default value. A caller cannot
+ * accidentally treat "I found nothing" as "I inherited correctly", because the
+ * two are different shapes and the compiler makes it say which it has - that
+ * confusion is the defect this whole module exists to remove.
+ */
+type Resolution<T> =
+  | { resolved: true; value: T; from: string; evidence: CreationEvidence }
+  | { resolved: false; reason: string; searched: string[] };
+
+/** The look a row brought into existence must end up with. */
+interface CreatedRowAppearance {
+  /** COPIED from the donor row's flag. No donor means not a header. */
+  isHeader: boolean;
+  /** The table the cell appearance and typography come from. */
+  donorTable: string;
+  donorAppearance: TableAppearance;
+  /** Which row of that table. */
+  donorRow: number;
+}
+
+interface CreatedTableAppearance {
+  anchor: string;
+  appearance: TableAppearance;
+  /** DERIVED: the stripe the new table's data rows should cycle through. */
+  banding: TableBanding | null;
+}
+
+interface CreationAppearanceResolver {
+  /**
+   * The sibling family a unit joining at `at` belongs to, and the donor for
+   * one of its roles. `level` selects a subsection depth when the role is a
+   * subsection heading.
+   */
+  role(
+    family: SectionFamilyEvidence | undefined,
+    role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+    options: { at: string; level?: number }
+  ): Resolution<FlatBlock>;
+  /** The table a new table copies, searched family-first then document-wide. */
+  table(options: {
+    at: string;
+    ordinal?: number;
+    family?: SectionFamilyEvidence;
+    anchorNamesMember?: boolean;
+    exclude?: string;
+    explicit?: FlatBlock;
+  }): Resolution<CreatedTableAppearance>;
+  /** What a row created at `targetRow` of `tableAnchor` must look like. */
+  row(options: {
+    tableAnchor: string;
+    source: TableAppearance;
+    targetRow: number;
+  }): Resolution<CreatedRowAppearance>;
+}
+
+const unresolved = (reason: string, searched: string[]): Resolution<never> => ({
+  resolved: false,
+  reason,
+  searched
+});
+
+function familyEvidenceReport(
+  family: SectionFamilyEvidence | undefined,
+  familyAnchor: string | undefined,
+  scope: CreationScope
+): CreationEvidence {
+  return {
+    ...(familyAnchor ? { familyAnchor } : {}),
+    ...(family ? { level: family.level } : {}),
+    siblings: family?.units.length ?? 0,
+    scope
+  };
+}
+
+/**
+ * Build the resolver for one document snapshot. Every creation path in a change
+ * set shares one of these, so they cannot disagree about what the document
+ * looks like partway through.
+ */
+function creationAppearance(
+  blocks: FlatBlock[],
+  sfdt: any,
+  byAnchor: Map<string, FlatBlock>
+): CreationAppearanceResolver {
+  const firstCellOf = (tableAnchor: string | undefined) =>
+    tableAnchor ? byAnchor.get(`${tableAnchor};0;0;0`) : undefined;
+  const appearanceOf = (anchor: string) =>
+    collectTableAppearance(tableBlockAt(sfdt, anchor)) ?? undefined;
+  const blockIndexOf = (anchor: string) =>
+    blocks.findIndex(
+      (block) =>
+        block.anchor === anchor || anchor.startsWith(`${block.anchor};`)
+    );
+
+  const tableAnchorsByDistance = (from: string, exclude?: string) => {
+    const at = blockIndexOf(from);
+    const seen = new Set<string>();
+    const found: Array<{ anchor: string; distance: number }> = [];
+    blocks.forEach((block, index) => {
+      const anchor = tableAnchorForBlock(block);
+      if (!anchor || anchor === exclude || seen.has(anchor)) return;
+      seen.add(anchor);
+      found.push({ anchor, distance: at < 0 ? index : Math.abs(index - at) });
+    });
+    return found
+      .sort((left, right) => left.distance - right.distance)
+      .map((entry) => entry.anchor);
+  };
+
+  return {
+    role(family, role, options) {
+      const searched: string[] = [];
+      searched.push(`sibling family (${family?.units.length ?? 0} sections)`);
+      const donor = composerRoleSource(family, role, options.level);
+      if (donor)
+        return {
+          resolved: true,
+          value: donor,
+          from: donor.anchor,
+          evidence: familyEvidenceReport(family, options.at, 'family')
+        };
+      // Widen to the document: a family of one that has never carried this
+      // role yet still sits in a document that shows it elsewhere.
+      searched.push('every heading in the document at that level');
+      const level = options.level ?? family?.level;
+      const wider = blocks.filter(
+        (block) =>
+          block.isHeading &&
+          !!block.text.replace(/\f/g, '').trim() &&
+          (level === undefined || block.level === level)
+      );
+      const chosen = modal(wider.map(roleFormat));
+      const key = chosen ? JSON.stringify(chosen.value) : undefined;
+      const widened = key
+        ? wider.find((block) => JSON.stringify(roleFormat(block)) === key)
+        : undefined;
+      if (widened)
+        return {
+          resolved: true,
+          value: widened,
+          from: widened.anchor,
+          evidence: familyEvidenceReport(family, options.at, 'document')
+        };
+      return unresolved('the document contains no comparable block', searched);
+    },
+
+    table(options) {
+      const searched: string[] = [];
+      const ordinal = options.ordinal ?? 0;
+      const answer = (
+        anchor: string,
+        scope: CreationScope
+      ): Resolution<CreatedTableAppearance> => {
+        const appearance = appearanceOf(anchor);
+        if (!appearance)
+          return unresolved('the donor table could not be read', searched);
+        // DERIVED, never copied: the donor's own proven stripe outranks an
+        // unrelated table, a uniform body is replicated as-is, and only a body
+        // that proves nothing defers to the document's sample.
+        const banding =
+          detectTableBanding(appearance) ??
+          (uniformDataRowShading(appearance) !== undefined
+            ? null
+            : documentTableBanding(sfdt, options.exclude ?? anchor));
+        return {
+          resolved: true,
+          value: { anchor, appearance, banding },
+          from: anchor,
+          evidence: familyEvidenceReport(options.family, options.at, scope)
+        };
+      };
+
+      if (options.explicit?.kind === 'table_cell') {
+        searched.push('the donor the caller named');
+        const anchor = tableAnchorFromCellAnchor(options.explicit.anchor);
+        if (anchor) return answer(anchor, 'family');
+      }
+      // A table AT the anchor is the strongest local statement there is.
+      searched.push('the table at the anchor');
+      const at = options.at.split(';');
+      if (at.length >= 5) {
+        const anchor = `${at[0]};${at[1]}`;
+        if (appearanceOf(anchor)) return answer(anchor, 'family');
+      }
+      const units = options.family?.units ?? [];
+      if (units.length) {
+        searched.push(`the sibling family's tables (${units.length} sections)`);
+        const nearest =
+          nearestUnitIndex(
+            blocks,
+            units,
+            options.at,
+            options.anchorNamesMember
+          ) ?? 0;
+        const ranked = units
+          .map((unit, index) => ({ unit, index }))
+          .sort(
+            (left, right) =>
+              Math.abs(left.index - nearest) -
+                Math.abs(right.index - nearest) || left.index - right.index
+          );
+        for (const { unit } of ranked) {
+          const anchor = tableAnchorsForUnit(unit)[ordinal];
+          if (anchor && anchor !== options.exclude && firstCellOf(anchor))
+            return answer(anchor, 'family');
+        }
+        for (const { unit } of ranked)
+          for (const anchor of tableAnchorsForUnit(unit))
+            if (anchor !== options.exclude && firstCellOf(anchor))
+              return answer(anchor, 'family');
+      }
+      searched.push('every table in the document, nearest first');
+      const nearestTable = tableAnchorsByDistance(
+        options.at,
+        options.exclude
+      )[0];
+      if (nearestTable) return answer(nearestTable, 'document');
+      return unresolved('the document contains no table to copy', searched);
+    },
+
+    row(options) {
+      const searched: string[] = [];
+      const { source, targetRow } = options;
+      // DERIVED: which rows are the header band.
+      const headerRows = inferHeaderRows(source);
+      const lastRow = source.rows.length - 1;
+      const displaced = Math.min(targetRow, lastRow);
+      const inBand = headerBandContains(source, targetRow, headerRows);
+      searched.push(`the table's own rows (header band ${headerRows})`);
+      const own = inBand
+        ? displaced
+        : displaced >= headerRows
+        ? displaced
+        : undefined;
+      if (own !== undefined && source.rows[own])
+        return {
+          resolved: true,
+          // COPIED: the flag, from the row this one takes its look from.
+          value: {
+            isHeader: copiedRowIsHeader(source, own),
+            donorTable: options.tableAnchor,
+            donorAppearance: source,
+            donorRow: own
+          },
+          from: `${options.tableAnchor};${own}`,
+          evidence: { siblings: 0, scope: 'family' }
+        };
+      // No data row of its own: the table was emptied down to its header. The
+      // document still shows what a data row looks like.
+      searched.push(
+        'every table in the document with a data row, nearest first'
+      );
+      for (const anchor of tableAnchorsByDistance(
+        options.tableAnchor,
+        options.tableAnchor
+      )) {
+        const appearance = appearanceOf(anchor);
+        if (!appearance) continue;
+        const donorHeaderRows = inferHeaderRows(appearance);
+        if (appearance.rows.length <= donorHeaderRows) continue;
+        return {
+          resolved: true,
+          value: {
+            isHeader: copiedRowIsHeader(appearance, donorHeaderRows),
+            donorTable: anchor,
+            donorAppearance: appearance,
+            donorRow: donorHeaderRows
+          },
+          from: `${anchor};${donorHeaderRows}`,
+          evidence: { siblings: 0, scope: 'document' }
+        };
+      }
+      return unresolved('the document contains no data row to copy', searched);
+    }
+  };
+}
+
+/** One block map per plan, so the resolver and the planner see one document. */
+function byAnchorOf(blocks: FlatBlock[]): Map<string, FlatBlock> {
+  return new Map(blocks.map((block) => [block.anchor, block] as const));
+}
+
+/** The record a creation path leaves when the document could not answer. */
+function creationGap(
+  what: string,
+  outcome: { reason: string; searched: string[] }
+): CreationGap {
+  return { what, reason: outcome.reason, searched: outcome.searched };
+}
+
 function planTableInsertInheritance(
   editor: LiveEditor,
   op: EditOp,
@@ -10678,20 +10915,23 @@ function planTableInsertInheritance(
 ): PlannedInsertInheritance[] | undefined {
   const targetTableAnchor = resultingInsertedTableAnchor(op);
   if (!targetTableAnchor) return undefined;
-  const sourceTable = sourceTableForInsert(sfdt, op, explicitSource);
-  if (!sourceTable) return undefined;
+  const resolved = creationAppearance(blocks, sfdt, byAnchorOf(blocks)).table({
+    at: String(op.anchor ?? ''),
+    exclude: targetTableAnchor,
+    ...(explicitSource ? { explicit: explicitSource } : {})
+  });
+  // Unresolved means the document contains no table at all, so there is
+  // nothing this one could have been made to look like. Reported, not
+  // defaulted: see PlannedInsertInheritance.unresolved.
+  if (!resolved.resolved)
+    return [
+      { anchor: targetTableAnchor, unresolved: creationGap('table', resolved) }
+    ];
+  const sourceTable = resolved.value;
   const rows = positiveCount(op.rows);
   const columns = positiveCount(op.columns);
   const targetRows = Array.from({ length: rows }, (_, index) => index);
-  // The sibling reference is the authority on the new table's look: its own
-  // proven stripe outranks an unrelated document-wide table, and a uniform
-  // body (every data row one fill) is replicated as-is. Only a sibling whose
-  // body proves nothing either way defers to the document sample.
-  const banding =
-    detectTableBanding(sourceTable.appearance) ??
-    (uniformDataRowShading(sourceTable.appearance) !== undefined
-      ? null
-      : documentTableBanding(sfdt, targetTableAnchor));
+  const banding = sourceTable.banding;
   return [
     {
       anchor: targetTableAnchor,
@@ -10734,16 +10974,26 @@ function planRowInsertInheritance(
     { length: count },
     (_, index) => firstRow + index
   );
-  const headerRows = inferHeaderRows(source);
-  const sourceRows = sourceRowsForInsertedRows(source, targetRows, headerRows);
+  const resolver = creationAppearance(blocks, sfdt, byAnchorOf(blocks));
+  const resolutions = targetRows.map((targetRow) =>
+    resolver.row({ tableAnchor, source, targetRow })
+  );
+  const gap = resolutions.find((entry) => !entry.resolved);
+  if (gap && !gap.resolved)
+    return [{ anchor: tableAnchor, unresolved: creationGap('row', gap) }];
+  const resolved = resolutions.flatMap((entry) =>
+    entry.resolved ? [entry.value] : []
+  );
   const columns = Math.max(...source.rows.map((entry) => entry.cells.length));
-  // Rows this table can dress itself, and rows it cannot (it has no data row).
-  const inTable = targetRows.filter((_row, index) => sourceRows[index] != null);
+  // Rows this table dresses itself, and rows it needed the document for.
+  const inTable = targetRows.filter(
+    (_row, index) => resolved[index].donorTable === tableAnchor
+  );
   const orphaned = targetRows.filter(
-    (_row, index) => sourceRows[index] == null
+    (_row, index) => resolved[index].donorTable !== tableAnchor
   );
   const donor = orphaned.length
-    ? documentDataRowDonor(sfdt, tableAnchor)
+    ? resolved.find((entry) => entry.donorTable !== tableAnchor)
     : undefined;
   const formats = [
     ...(inTable.length
@@ -10756,8 +11006,10 @@ function planRowInsertInheritance(
           inTable,
           columns,
           {
-            sourceRows: sourceRows.filter((row): row is number => row != null),
-            headerRows
+            sourceRows: resolved
+              .filter((entry) => entry.donorTable === tableAnchor)
+              .map((entry) => entry.donorRow),
+            headerRows: inferHeaderRows(source)
           }
         )
       : []),
@@ -10765,12 +11017,12 @@ function planRowInsertInheritance(
       ? planTableCellFormats(
           editor,
           blocks,
-          donor.anchor,
-          donor.appearance,
+          donor.donorTable,
+          donor.donorAppearance,
           tableAnchor,
           orphaned,
           columns,
-          { sourceRows: orphaned.map(() => donor.row) }
+          { sourceRows: orphaned.map(() => donor.donorRow) }
         )
       : [])
   ];
@@ -10784,16 +11036,11 @@ function planRowInsertInheritance(
     detectTableBanding(source, { strict: true }) ??
     shortInsertBanding(source) ??
     documentInsertBanding(sfdt, tableAnchor, source);
-  const shadings = rowShadings(source);
-  const donorShadings = donor ? rowShadings(donor.appearance) : [];
   const fallbackShadings = banding
     ? undefined
     : targetRows.flatMap((targetRow, index) => {
-        const sourceRow = sourceRows[index];
-        const shading =
-          sourceRow == null
-            ? donorShadings[donor?.row ?? -1]
-            : shadings[sourceRow];
+        const entry = resolved[index];
+        const shading = rowShadings(entry.donorAppearance)[entry.donorRow];
         return shading === undefined ? [] : [{ row: targetRow, shading }];
       });
   // Header-ness travels with the row the insert takes its appearance from -
@@ -10801,9 +11048,10 @@ function planRowInsertInheritance(
   // never two rules about what a header row is. Anchoring the insert on the
   // header therefore adds a DATA row below it, which is the only structurally
   // sound reading of "add one more row here".
+  // COPIED from the donor row's flag by the resolver, never inferred here.
   const rowHeaders = targetRows.map((targetRow, index) => ({
     row: targetRow,
-    isHeader: copiedRowIsHeader(source, sourceRows[index])
+    isHeader: resolved[index].isHeader
   }));
   return [
     {
@@ -11177,6 +11425,9 @@ function applyInsertInheritance(
   const transaction = runAppearanceTransaction(editor, (record) => {
     for (const paragraph of planned) {
       if (paragraph.sectionBoundary) continue;
+      // Carries no donor by construction; it exists to be REPORTED, and the
+      // write it describes happens with the editor's defaults.
+      if (paragraph.unresolved) continue;
       if (paragraph.tableAppearance) {
         const appearance = paragraph.tableAppearance;
         // A new table has no appearance of its own, so reproduce the whole
@@ -12485,73 +12736,6 @@ function composerRoleSource(
   return candidates.find((block) => JSON.stringify(roleFormat(block)) === key);
 }
 
-/**
- * The table a composed table copies: the nearest real table, searched OUTWARD
- * from the family it is joining.
- *
- * Order, and why each step exists rather than stopping:
- *   1. the family's own units, nearest first, at the SAME ordinal - a family
- *      whose sections carry two tables says the second one looks like the
- *      second one, so position within the section is the best evidence;
- *   2. the same units at ANY ordinal - ordinal is a preference, not a
- *      requirement, and a family member with one table still shows the house
- *      style;
- *   3. the nearest table anywhere in the document.
- *
- * Step 3 is the one that stops "no donor" from being a routine outcome.
- * Falling straight through to the editor's defaults dressed a composed table
- * in Word's own look inside a styled document and reported success - and the
- * document's furthest table is still the document's look, while the default
- * is nobody's. Only a document with NO table at all now yields no donor, and
- * then there is genuinely nothing to imitate.
- */
-function composerTableSource(
-  blocks: FlatBlock[],
-  evidence: SectionFamilyEvidence | undefined,
-  near: string,
-  ordinal: number,
-  byAnchor: Map<string, FlatBlock>,
-  anchorNamesMember = false
-): FlatBlock | undefined {
-  const firstCellOf = (tableAnchor: string | undefined) =>
-    tableAnchor ? byAnchor.get(`${tableAnchor};0;0;0`) : undefined;
-  const units = evidence?.units ?? [];
-  if (units.length) {
-    const nearest =
-      nearestUnitIndex(blocks, units, near, anchorNamesMember) ?? 0;
-    const ranked = units
-      .map((unit, index) => ({ unit, index }))
-      .sort(
-        (left, right) =>
-          Math.abs(left.index - nearest) - Math.abs(right.index - nearest) ||
-          left.index - right.index
-      );
-    for (const { unit } of ranked) {
-      const firstCell = firstCellOf(tableAnchorsForUnit(unit)[ordinal]);
-      if (firstCell) return firstCell;
-    }
-    for (const { unit } of ranked)
-      for (const tableAnchor of tableAnchorsForUnit(unit)) {
-        const firstCell = firstCellOf(tableAnchor);
-        if (firstCell) return firstCell;
-      }
-  }
-  const from = blocks.findIndex(
-    (block) => block.anchor === near || near.startsWith(`${block.anchor};`)
-  );
-  const tables = blocks
-    .map((block, index) => ({ anchor: tableAnchorForBlock(block), index }))
-    .filter(
-      (entry): entry is { anchor: string; index: number } => !!entry.anchor
-    );
-  const closest = tables.sort(
-    (left, right) =>
-      Math.abs(left.index - from) - Math.abs(right.index - from) ||
-      left.index - right.index
-  )[0];
-  return firstCellOf(closest?.anchor);
-}
-
 function missingSectionPrefix(
   desired: SectionBoundaryElement[],
   existing: SectionBoundaryElement[]
@@ -13064,11 +13248,44 @@ function resolveComposerInsertionBoundary(
   return composerBoundaryBesideBlock(bodyBlocks, block, requestedPosition);
 }
 
+/** The composer's table donor: the resolver's answer, as a first-cell block. */
+function composerTableDonor(
+  resolver: CreationAppearanceResolver,
+  evidence: SectionFamilyEvidence | undefined,
+  familyAnchor: string,
+  ordinal: number,
+  anchorNamesMember: boolean,
+  byAnchor: Map<string, FlatBlock>,
+  label: string,
+  gaps: CreationGap[]
+): FlatBlock | undefined {
+  const outcome = resolver.table({
+    at: familyAnchor,
+    ordinal,
+    anchorNamesMember,
+    ...(evidence ? { family: evidence } : {})
+  });
+  if (!outcome.resolved) {
+    gaps.push(creationGap(label, outcome));
+    return undefined;
+  }
+  const firstCell = byAnchor.get(`${outcome.value.anchor};0;0;0`);
+  if (firstCell) return firstCell;
+  gaps.push(
+    creationGap(label, {
+      reason: 'the donor table exposed no addressable first cell',
+      searched: [outcome.value.anchor]
+    })
+  );
+  return undefined;
+}
+
 function compileSectionComposer(
   op: EditOp,
   originalIndex: number,
   blocks: FlatBlock[],
-  byAnchor: Map<string, FlatBlock>
+  byAnchor: Map<string, FlatBlock>,
+  sfdt: any
 ): {
   children: CompiledSectionEdit[];
   contentBlocks: number;
@@ -13208,10 +13425,25 @@ function compileSectionComposer(
     });
     textItems = [];
   };
+  const resolver = creationAppearance(blocks, sfdt, byAnchor);
+  const gaps: CreationGap[] = [];
+  const donorFor = (
+    role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+    label: string,
+    level?: number
+  ): FlatBlock | undefined => {
+    const outcome = resolver.role(evidence, role, {
+      at: familyAnchor,
+      ...(level !== undefined ? { level } : {})
+    });
+    if (outcome.resolved) return outcome.value;
+    gaps.push(creationGap(label, outcome));
+    return undefined;
+  };
   textItems.push({
     text: spec.title,
     label: 'title',
-    source: composerRoleSource(evidence, 'section_heading')
+    source: donorFor('section_heading', 'title')
   });
   spec.blocks.forEach((block, blockIndex) => {
     const label = `block ${blockIndex + 1} (${block.role})`;
@@ -13228,7 +13460,7 @@ function compileSectionComposer(
       textItems.push({
         text: block.text,
         label,
-        source: composerRoleSource(evidence, 'subsection_heading', block.level)
+        source: donorFor('subsection_heading', label, block.level)
       });
       return;
     }
@@ -13236,9 +13468,9 @@ function compileSectionComposer(
       textItems.push({
         text: block.text,
         label,
-        source: composerRoleSource(
-          evidence,
-          seenSubsection ? 'subsection_paragraph' : 'intro_paragraph'
+        source: donorFor(
+          seenSubsection ? 'subsection_paragraph' : 'intro_paragraph',
+          label
         )
       });
       return;
@@ -13249,13 +13481,15 @@ function compileSectionComposer(
       table: block,
       blockIndex,
       ordinal: tableOrdinal,
-      source: composerTableSource(
-        blocks,
+      source: composerTableDonor(
+        resolver,
         evidence,
         familyAnchor,
         tableOrdinal,
+        familyAnchorNamesMember,
         byAnchor,
-        familyAnchorNamesMember
+        label,
+        gaps
       ),
       label
     });
@@ -13418,18 +13652,15 @@ function compileSectionComposer(
     });
   });
   const donors: ComposedSectionInheritance['donors'] = [];
-  const withoutDonor: string[] = [];
   for (const unit of finalUnits) {
     if (unit.kind === 'text')
-      unit.items.forEach((item) =>
-        item.source
-          ? donors.push({ unit: item.label, from: item.source.anchor })
-          : withoutDonor.push(item.label)
+      unit.items.forEach(
+        (item) =>
+          item.source &&
+          donors.push({ unit: item.label, from: item.source.anchor })
       );
-    else if (unit.kind === 'table')
-      unit.source
-        ? donors.push({ unit: unit.label, from: unit.source.anchor })
-        : withoutDonor.push(unit.label);
+    else if (unit.kind === 'table' && unit.source)
+      donors.push({ unit: unit.label, from: unit.source.anchor });
   }
   return {
     children: [...structural, ...formatting],
@@ -13440,7 +13671,7 @@ function compileSectionComposer(
       ...(evidence ? { level: evidence.level } : {}),
       siblings: evidence?.units.length ?? 0,
       donors,
-      ...(withoutDonor.length ? { withoutDonor } : {})
+      ...(gaps.length ? { withoutDonor: gaps } : {})
     }
   };
 }
@@ -13507,7 +13738,8 @@ function expandSectionComposerEdits(
         original,
         originalIndex,
         blocks,
-        byAnchor
+        byAnchor,
+        sfdt
       );
     } catch (error) {
       const refusal = isOpError(error)
@@ -14671,6 +14903,17 @@ function applyDocumentEditsMeasured(
             ),
             ...(inheritanceAppearance
               ? { appearance: inheritanceAppearance.report }
+              : {}),
+            // A creation the document could not dress says so on its own
+            // result. Never omitted: a silent default is indistinguishable
+            // from a successful inheritance, which is the confusion this
+            // whole resolver exists to remove.
+            ...(insertInheritance?.some((entry) => entry.unresolved)
+              ? {
+                  withoutDonor: insertInheritance.flatMap((entry) =>
+                    entry.unresolved ? [entry.unresolved] : []
+                  )
+                }
               : {})
           };
         } catch (err) {
