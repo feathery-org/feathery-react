@@ -25,6 +25,13 @@ jest.mock('../../../assistant/tools/docx/syncfusionDocumentOps', () => ({
 // reflects that by exposing the document's revisions only once it has opened, so
 // a rebind at create time observes an empty document and is detectably wrong.
 const OPEN_STATE = { opened: false };
+// Blocks-mode reopen finding: every SFDT string blockSync's editor.open()
+// was called with, across the mock editor's lifetime.
+const BLOCKS_OPEN_CALLS: string[] = [];
+// Stand-in for the envelope's source .docx content that useDocxEditor's real
+// openAsync opens directly on the editor once the source has loaded — the
+// clobber this reopen test guards against.
+const ENVELOPE_SOURCE_SFDT = '<envelope-source-sfdt>';
 
 jest.mock('./index', () => {
   const React = jest.requireActual('react');
@@ -47,7 +54,13 @@ jest.mock('./index', () => {
         // until the source document has actually been opened.
         get revisions() {
           return OPEN_STATE.opened ? [{ id: 'rev-1' }] : [];
-        }
+        },
+        // blockSync's EditorSurface contract — enough for attachBlockSync's
+        // initial attach + refresh() to run for real against this mock.
+        open: (sfdt: string) => BLOCKS_OPEN_CALLS.push(sfdt),
+        serialize: () => '',
+        addEventListener: () => {},
+        removeEventListener: () => {}
       }),
       [source?.url]
     );
@@ -55,6 +68,10 @@ jest.mock('./index', () => {
     React.useEffect(() => {
       if (!source?.url) return;
       OPEN_STATE.opened = true;
+      // Mirrors the real bug: useDocxEditor's openAsync opens the envelope's
+      // source .docx directly on the editor, before `onReady` fires and
+      // ahead of anything blockSync itself triggered.
+      editor.open(ENVELOPE_SOURCE_SFDT);
       onReady?.();
     }, [editor, onReady, openNonce, source?.url]);
     return React.createElement('div', {
@@ -364,6 +381,59 @@ describe('DocumentEditorContainer revision group binding', () => {
         sourceUrl: 'https://example.com/document-container-a.docx'
       });
     });
+    view.unmount();
+  });
+});
+
+describe('DocumentEditorContainer blocks-mode reopen', () => {
+  // Live-verification finding: onEditorReady attaches blockSync, which opens
+  // the generated blocks SFDT immediately — but the container then loads the
+  // envelope's source .docx asynchronously, which clobbers that document.
+  // onDocumentReady must reassert the generated document afterward.
+  beforeEach(() => {
+    _clearDocxEditors();
+    jest.clearAllMocks();
+    OPEN_STATE.opened = false;
+    BLOCKS_OPEN_CALLS.length = 0;
+    initState.formSchemas = {
+      'form-key': schemaFor(['document-container-a'])
+    };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY] = {
+      'document-container-a': draftFor('document-container-a')
+    };
+    (featheryWindow() as any).featheryDocxBlocks = { enabled: true };
+  });
+
+  afterEach(() => {
+    _clearDocxEditors();
+    delete (featheryWindow() as any).featheryDocxBlocks;
+  });
+
+  it('reopens the generated document after the envelope source finishes loading', async () => {
+    const view = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-1'
+        stepId='step-1'
+      />
+    );
+
+    await waitFor(() => {
+      expect(getDocxEditor('form-1')).toMatchObject({
+        sourceUrl: 'https://example.com/document-container-a.docx'
+      });
+    });
+
+    // The mock's onReady effect simulates openAsync opening the envelope's
+    // source .docx directly on the editor, then fires onReady — exactly the
+    // finding's clobber. Without the fix, onDocumentReady never re-opens the
+    // generated document afterward, so the envelope content is what's left
+    // open. Sanity-check the clobber actually happened first.
+    expect(BLOCKS_OPEN_CALLS).toContain(ENVELOPE_SOURCE_SFDT);
+    expect(BLOCKS_OPEN_CALLS[BLOCKS_OPEN_CALLS.length - 1]).not.toBe(
+      ENVELOPE_SOURCE_SFDT
+    );
+
     view.unmount();
   });
 });

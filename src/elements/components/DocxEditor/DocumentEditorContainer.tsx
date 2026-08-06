@@ -569,7 +569,13 @@ export default function DocumentEditorContainer({
     } catch {
       // A grouping failure must not break the opened document.
     }
-  }, []);
+    // openAsync (the source .docx load) fires this callback and clobbers
+    // whatever blockSync had open — it never goes through blockSync's own
+    // open(), so nothing here re-fires onDocumentReady. Reassert the
+    // generated document on top. refresh() calls editor.open() directly
+    // (see blockSync.ts), not openAsync, so this is loop-safe.
+    if (blocksEnabled) blockSync.current?.refresh();
+  }, [blocksEnabled]);
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
