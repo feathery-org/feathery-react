@@ -18,7 +18,10 @@ import { BlockStore, setTheme } from './store';
 const CONTENT_CHANGE_DEBOUNCE_MS = 600;
 
 export default function ComponentsTab({ store }: { store: BlockStore }) {
-  const { containerRef, editor } = useDocxEditor({ builtinToolbar: true });
+  const { containerRef, editor } = useDocxEditor({
+    builtinToolbar: true,
+    unoptimizedSfdt: true
+  });
   const openedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

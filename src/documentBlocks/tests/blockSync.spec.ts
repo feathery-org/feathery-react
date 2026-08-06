@@ -1,6 +1,7 @@
 import { attachBlockSync, EditorSurface } from '../blockSync';
 import { createBlockStore } from '../store';
 import { SAMPLE_DOCUMENT } from '../sampleDocument';
+import { DocumentData } from '../types';
 import { FieldAccess, TokenValue } from '../../documentTokens/cycleTypes';
 
 type FakeEditor = EditorSurface & {
@@ -267,6 +268,13 @@ describe('attachBlockSync', () => {
     const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
     const sync = attachBlockSync(editor, store, fields);
     sync.detach();
+
+    // Teeth: assert detach actually told the editor to remove this exact
+    // handler, not just that the end-to-end effect happens to look right.
+    expect(editor.removeEventListener).toHaveBeenCalledWith(
+      'documentChange',
+      expect.any(Function)
+    );
     (editor.open as jest.Mock).mockClear();
 
     (editor.serialize as jest.Mock).mockReturnValue(
@@ -285,16 +293,142 @@ describe('attachBlockSync', () => {
     const sync = attachBlockSync(editor, store, fields);
     const opened = lastOpenedSfdt(editor);
     sync.detach();
+
+    // Teeth: assert detach actually told the editor to remove this exact
+    // handler. Without this, the assertions below would pass even if detach
+    // did nothing, because the content mutated below still round-trips to
+    // the same block text absorbDocEdits would produce — the risk the old
+    // (misleading) comment glossed over.
+    expect(editor.removeEventListener).toHaveBeenCalledWith(
+      'contentChange',
+      expect.any(Function)
+    );
     (editor.open as jest.Mock).mockClear();
 
     store.apply((d) => ({ ...d }), 'panel');
     expect(editor.open).not.toHaveBeenCalled();
 
+    const before = store.getData();
+    // A real edit (not the unchanged content the old test used), so a
+    // listener left attached by a broken detach would visibly absorb it.
+    opened.sections[0].blocks[3].inlines[1].text = 'edited after detach';
     (editor.serialize as jest.Mock).mockReturnValue(JSON.stringify(opened));
     editor.fireContentChange();
-    // detach also removed the contentChange listener, but the fake editor
-    // tracks the last-registered listener directly; firing confirms no-op.
     jest.advanceTimersByTime(400);
+
     expect(editor.open).not.toHaveBeenCalled();
+    expect(store.getData()).toBe(before); // no absorb ran
+  });
+
+  it('logs an error and does not throw when the editor content fails to parse', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    const sync = attachBlockSync(editor, store, fields);
+
+    (editor.serialize as jest.Mock).mockReturnValue('not valid json{{{');
+
+    expect(() => {
+      editor.fireContentChange();
+      jest.advanceTimersByTime(400);
+    }).not.toThrow();
+
+    const errorEntry = sync.getLog().find((e) => e.kind === 'error');
+    expect(errorEntry).toBeDefined();
+    expect(errorEntry?.detail).toMatch(/json/i);
+  });
+
+  it('caps the sync log at 200 entries, dropping the oldest and keeping the newest', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    const sync = attachBlockSync(editor, store, fields);
+
+    for (let i = 0; i < 205; i++) {
+      sync.refresh();
+    }
+
+    const log = sync.getLog();
+    expect(log).toHaveLength(200);
+    expect(log[log.length - 1].detail).toBe('manual refresh');
+  });
+
+  it('merges an absorbed block change and an in-memory token edit into one store.apply (one undo entry)', () => {
+    const doc: DocumentData = {
+      theme: SAMPLE_DOCUMENT.theme,
+      values: { note: 'original note' },
+      sections: [
+        {
+          id: 'sec_merge',
+          blocks: [
+            {
+              id: 'blk_plain',
+              type: 'paragraph',
+              content: [{ kind: 'text', text: 'plain text' }]
+            },
+            {
+              id: 'blk_note',
+              type: 'paragraph',
+              content: [
+                { kind: 'token', spec: { id: 'note', format: { kind: 'text' } } }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const editor = makeEditor();
+    const store = createBlockStore(doc);
+    const sync = attachBlockSync(editor, store, null);
+
+    const opened = lastOpenedSfdt(editor);
+    const blocks = opened.sections[0].blocks;
+    // blk_plain: [bookmarkStart, textRun, bookmarkEnd]
+    blocks[0].inlines[1].text = 'edited plain text';
+    // blk_note: [bookmarkStart, tokenBookmarkStart, textRun, tokenBookmarkEnd, bookmarkEnd]
+    blocks[1].inlines[2].text = 'edited note';
+    (editor.serialize as jest.Mock).mockReturnValue(JSON.stringify(opened));
+    (editor.open as jest.Mock).mockClear();
+
+    editor.fireContentChange();
+    jest.advanceTimersByTime(400);
+
+    const after = store.getData();
+    expect(
+      after.sections[0].blocks.find((b) => b.id === 'blk_plain')?.content
+    ).toEqual([{ kind: 'text', text: 'edited plain text' }]);
+    expect(after.values?.note).toBe('edited note');
+
+    // One store.apply == one undo step reverts BOTH edits together.
+    expect(store.canUndo()).toBe(true);
+    store.undo();
+    const restored = store.getData();
+    expect(
+      restored.sections[0].blocks.find((b) => b.id === 'blk_plain')?.content
+    ).toEqual([{ kind: 'text', text: 'plain text' }]);
+    expect(restored.values?.note).toBe('original note');
+    expect(store.canUndo()).toBe(false);
+    void sync;
+  });
+
+  it('skips the foreign-document reassert when the store data has no block anchors at all', () => {
+    const emptyDoc: DocumentData = { theme: SAMPLE_DOCUMENT.theme, sections: [] };
+    const editor = makeEditor();
+    const store = createBlockStore(emptyDoc);
+    const sync = attachBlockSync(editor, store, null);
+    (editor.open as jest.Mock).mockClear();
+
+    // A genuinely foreign document loaded (no anchors) — but our own store
+    // data is also anchor-less (intentionally emptied), so there is nothing
+    // to reassert.
+    (editor.serialize as jest.Mock).mockReturnValue(
+      '{"sections":[{"sectionFormat":{},"blocks":[{"paragraphFormat":{},"characterFormat":{},"inlines":[{"characterFormat":{},"text":"foreign"}]}]}]}'
+    );
+
+    editor.fireDocumentChange();
+    jest.advanceTimersByTime(100);
+
+    expect(editor.open).not.toHaveBeenCalled();
+    void sync;
   });
 });

@@ -113,8 +113,14 @@ New pure modules (jest-tested, no editor instance needed):
   (blocks, anchors, theme formatting, page breaks between sections).
 - `src/documentBlocks/sfdt/parse.ts` — SFDT JSON → blocks/cells/token values
   (walks sections → blocks → table rows → cells → inlines, splitting at
-  anchor boundaries; the recursive walk covers headersFooters and nested
-  tables so nothing is silently skipped).
+  anchor boundaries). A nested table inside a cell has no shape in
+  `DocumentData`, so its text is flattened into the cell's runs
+  (order-preserving, `\n`-separated like paragraphs) rather than modeled —
+  lossy on structure, not on content. `headersFooters` is intentionally not
+  parsed at all: `generate.ts` always emits `{}` for it, and a foreign
+  document's headers/footers are handled by the ownership reassert
+  (`blockSync.ts` re-opens the generated document over whatever loaded), not
+  by reading them back here.
 - Round-trip self-check: `generate(data)` → `parse` → deep-equals `data`.
 
 ## Components tab

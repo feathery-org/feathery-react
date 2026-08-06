@@ -203,20 +203,20 @@ export const extractTheme = (sfdt: string): Theme => {
           const headerCell = block.rows[0]?.cells?.[0];
           const bodyCell = block.rows[1]?.cells?.[0];
           theme.table = {
-            tableFormat: block.tableFormat ?? {},
+            tableFormat: pruneEmpty(block.tableFormat ?? {}),
             headerRow: {
               characterFormat: firstRunFormat(headerCell?.blocks?.[0]),
               paragraphFormat: stripStyleName(
                 headerCell?.blocks?.[0]?.paragraphFormat
               ),
-              cellFormat: headerCell?.cellFormat ?? {}
+              cellFormat: pruneEmpty(headerCell?.cellFormat ?? {})
             },
             body: {
               characterFormat: firstRunFormat(bodyCell?.blocks?.[0]),
               paragraphFormat: stripStyleName(
                 bodyCell?.blocks?.[0]?.paragraphFormat
               ),
-              cellFormat: bodyCell?.cellFormat ?? {}
+              cellFormat: pruneEmpty(bodyCell?.cellFormat ?? {})
             }
           };
         }

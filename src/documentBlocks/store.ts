@@ -7,6 +7,10 @@ import { Block, BlockType, Cell, DocumentData, Inline, Theme } from './types';
 
 export type UpdateOrigin = 'panel' | 'document' | 'history' | 'theme';
 
+/** Past history is capped, not unbounded — a long editing session must not
+ *  grow this array forever. Oldest entries drop first; undo simply runs out. */
+const MAX_HISTORY = 100;
+
 export type BlockStore = {
   getData: () => DocumentData;
   /** Every mutation goes through apply; one call = one undo step. */
@@ -37,6 +41,7 @@ export const createBlockStore = (initial: DocumentData): BlockStore => {
       const next = mutate(data);
       if (next === data) return; // no-op mutations do not pollute history
       past.push(data);
+      if (past.length > MAX_HISTORY) past.shift();
       future.length = 0;
       data = next;
       notify(origin);

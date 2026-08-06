@@ -1,4 +1,9 @@
-import { collectSpecs, resolveTokens, routeTokenEdit } from '../tokens';
+import {
+  blockSaveBlockers,
+  collectSpecs,
+  resolveTokens,
+  routeTokenEdit
+} from '../tokens';
 import { SAMPLE_DOCUMENT } from '../sampleDocument';
 import { DocumentData } from '../types';
 import { FieldAccess, TokenValue } from '../../documentTokens/cycleTypes';
@@ -132,6 +137,21 @@ describe('resolveTokens', () => {
     };
     const { rendered } = resolveTokens(memoryDoc, null);
     expect(rendered.get('note')).toBe('hand-typed');
+  });
+});
+
+describe('blockSaveBlockers', () => {
+  it('returns null when every token resolves cleanly', () => {
+    const fields = stubFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    expect(blockSaveBlockers(SAMPLE_DOCUMENT, fields)).toBeNull();
+  });
+
+  it('returns a message listing the failing token(s) when resolution errors', () => {
+    // No retainer supplied → 'total' formula fails to resolve.
+    const fields = stubFields({ customer_name: 'Acme Corp' });
+    const message = blockSaveBlockers(SAMPLE_DOCUMENT, fields);
+    expect(message).not.toBeNull();
+    expect(message).toContain('total');
   });
 });
 

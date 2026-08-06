@@ -198,4 +198,21 @@ describe('createBlockStore', () => {
     store.apply(updateBlockContent('nope', []), 'panel');
     expect(store.canUndo()).toBe(false);
   });
+
+  it('caps history at 100 past entries, dropping the oldest, so canUndo keeps working', () => {
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    for (let i = 0; i < 105; i++) {
+      store.apply(
+        updateBlockContent('blk_title', [{ kind: 'text', text: `Edit ${i}` }]),
+        'panel'
+      );
+    }
+    expect(store.canUndo()).toBe(true);
+    let undoCount = 0;
+    while (store.canUndo()) {
+      store.undo();
+      undoCount++;
+    }
+    expect(undoCount).toBe(100);
+  });
 });

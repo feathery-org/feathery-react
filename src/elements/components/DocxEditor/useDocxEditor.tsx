@@ -475,6 +475,10 @@ interface Props {
   /** Use Syncfusion's built-in toolbar + properties pane instead of the
    *  custom DocxToolbar (e.g. the Components tab needs its formatting UI). */
   builtinToolbar?: boolean;
+  /** Disable Syncfusion's SFDT optimization (which drops empty/default runs)
+   *  so round-tripping preserves block anchors exactly. Only the dynamic-blocks
+   *  surfaces (blocks-enabled container, Components tab) need this. */
+  unoptimizedSfdt?: boolean;
   onReady?: () => void;
   /** Hands the live DocumentEditor instance to the host (e.g. the AI assistant
    *  drives the document directly through this — no iframe boundary). */
@@ -503,6 +507,7 @@ export function useDocxEditor({
   readOnly,
   openNonce = 0,
   builtinToolbar,
+  unoptimizedSfdt,
   onReady,
   onEditorReady,
   onDirty,
@@ -569,7 +574,9 @@ export function useDocxEditor({
         instance = new ej.documenteditor.DocumentEditorContainer({
           enableToolbar: !!builtinToolbar,
           showPropertiesPane: !!builtinToolbar,
-          documentEditorSettings: { optimizeSfdt: false },
+          ...(unoptimizedSfdt
+            ? { documentEditorSettings: { optimizeSfdt: false } }
+            : {}),
           serviceUrl: serviceUrl || '',
           headers: headers || [],
           height: '100%'
@@ -640,7 +647,13 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [resolvedLicenseKey, serviceUrl, headersKey, builtinToolbar]);
+  }, [
+    resolvedLicenseKey,
+    serviceUrl,
+    headersKey,
+    builtinToolbar,
+    unoptimizedSfdt
+  ]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {

@@ -98,6 +98,24 @@ export const resolveTokens = (
 };
 
 /**
+ * The problems that must stop a save of a blocks document, or null when there
+ * are none. Mirrors documentTokens/cycleTypes.ts's saveBlockers for the token
+ * cycle path — a blocks document has no TokenCycle/TokenState of its own, so
+ * this resolves tokens straight from the data instead.
+ */
+export const blockSaveBlockers = (
+  data: DocumentData,
+  fields: FieldAccess | null
+): string | null => {
+  const { errors } = resolveTokens(data, fields);
+  if (errors.size === 0) return null;
+  const summary = [...errors.entries()]
+    .map(([id, reason]) => `${id}: ${reason}`)
+    .join(', ');
+  return `Cannot save — ${errors.size} token(s) invalid. ${summary}`;
+};
+
+/**
  * Route one edited token value to its owner: field-backed → FieldAccess.write;
  * in-memory input → a data mutation (for store.apply). Computed tokens are not
  * writable — returns null and the caller regenerates to restore the value.

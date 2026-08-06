@@ -23,21 +23,32 @@
  *    "refresh after ready" that can race it.
  * 5. detach removes both listeners and unsubscribes.
  */
+import { BLOCK_ANCHOR_PREFIX } from './anchors';
 import { BlockStore, UpdateOrigin } from './store';
 import { collectSpecs, resolveTokens, routeTokenEdit } from './tokens';
 import { generateSfdt } from './sfdt/generate';
 import { parseSfdt, ParsedDoc, ParsedInlineRun } from './sfdt/parse';
 import { absorbDocEdits, SyncEvent } from './diff';
-import { DocumentData } from './types';
+import { blockIds, DocumentData } from './types';
 import { FieldAccess } from '../documentTokens/cycleTypes';
 import { valueKey } from '../documentTokens/plan';
 import { parseValue } from '../documentTokens/format';
 
 export type SyncLogEntry = {
   at: number;
-  kind: 'open' | 'absorb' | 'tokenWrite' | 'recalcReopen' | 'themeApplied';
+  kind:
+    | 'open'
+    | 'absorb'
+    | 'tokenWrite'
+    | 'recalcReopen'
+    | 'themeApplied'
+    | 'error';
   detail: string;
 };
+
+/** The sync log is diagnostic (debug panel), not durable — cap it so a long
+ *  editing session can't grow it forever. Oldest entries drop first. */
+const MAX_LOG_ENTRIES = 200;
 
 type EditorEventName = 'contentChange' | 'documentChange';
 
@@ -136,6 +147,7 @@ export const attachBlockSync = (
 
   const appendLog = (kind: SyncLogEntry['kind'], detail: string) => {
     log.push({ at: Date.now(), kind, detail });
+    if (log.length > MAX_LOG_ENTRIES) log.shift();
     logListeners.forEach((fn) => fn(log.slice()));
   };
 
@@ -167,53 +179,69 @@ export const attachBlockSync = (
 
   const absorbEditorContent = () => {
     timer = null;
-    const serialized = editor.serialize();
-    // A real editor can fire contentChange asynchronously after open()
-    // already returned, past the point where `applying` still guards it.
-    // Cheap short-circuit: if nothing changed since we last opened, skip
-    // the parse+resolve pass entirely.
-    if (serialized === lastOpenedSfdt) return;
+    try {
+      const serialized = editor.serialize();
+      // A real editor can fire contentChange asynchronously after open()
+      // already returned, past the point where `applying` still guards it.
+      // Cheap short-circuit: if nothing changed since we last opened, skip
+      // the parse+resolve pass entirely.
+      if (serialized === lastOpenedSfdt) return;
 
-    const prevData = store.getData();
-    const parsed = parseSfdt(serialized);
-    const result = absorbDocEdits(prevData, parsed, lastRendered);
+      const prevData = store.getData();
+      const parsed = parseSfdt(serialized);
+      const result = absorbDocEdits(prevData, parsed, lastRendered);
 
-    const specs = collectSpecs(prevData);
-    const mutations: Array<(d: DocumentData) => DocumentData> = [];
-    for (const [key, text] of result.tokenEdits) {
-      if (isRejectedTokenEdit(specs, fields, key, text)) continue;
-      const mutation = routeTokenEdit(prevData, fields, key, text);
-      if (mutation) mutations.push(mutation);
-      appendLog('tokenWrite', `${key} -> ${text}`);
-    }
+      const specs = collectSpecs(prevData);
+      const mutations: Array<(d: DocumentData) => DocumentData> = [];
+      for (const [key, text] of result.tokenEdits) {
+        if (isRejectedTokenEdit(specs, fields, key, text)) continue;
+        const mutation = routeTokenEdit(prevData, fields, key, text);
+        if (mutation) mutations.push(mutation);
+        appendLog('tokenWrite', `${key} -> ${text}`);
+      }
 
-    const blockEvents = result.events.filter(
-      (event) => event.type !== 'tokenEdited'
-    );
-    if (blockEvents.length > 0) {
-      store.apply(() => result.data, 'document');
-      appendLog('absorb', summarizeEvents(blockEvents));
-    }
-    if (mutations.length > 0) {
-      store.apply(
-        (d) => mutations.reduce((acc, mutate) => mutate(acc), d),
-        'document'
+      const blockEvents = result.events.filter(
+        (event) => event.type !== 'tokenEdited'
       );
-    }
+      // One store.apply, not two — a block-content change and a value-token
+      // edit absorbed from the same contentChange are one user action, so
+      // they collapse into one undo step instead of forcing two undos to
+      // get back to where the user started.
+      if (blockEvents.length > 0 || mutations.length > 0) {
+        store.apply(
+          (d) => {
+            const withBlocks = blockEvents.length > 0 ? result.data : d;
+            return mutations.reduce((acc, mutate) => mutate(acc), withBlocks);
+          },
+          'document'
+        );
+        if (blockEvents.length > 0) {
+          appendLog('absorb', summarizeEvents(blockEvents));
+        }
+      }
 
-    // A token's rendered value may have moved (e.g. a computed total after
-    // its input changed) without the document itself reflecting it yet.
-    const shown = shownTokenTexts(parsed);
-    const { rendered: freshRendered } = resolveTokens(store.getData(), fields);
-    const moved = [...shown].find(
-      ([key, text]) => freshRendered.get(key) !== text
-    );
-    if (moved) {
-      const [key, text] = moved;
-      reopenPreservingScroll(
-        'recalcReopen',
-        `${key}: ${text} -> ${freshRendered.get(key)}`
+      // A token's rendered value may have moved (e.g. a computed total after
+      // its input changed) without the document itself reflecting it yet.
+      const shown = shownTokenTexts(parsed);
+      const { rendered: freshRendered } = resolveTokens(
+        store.getData(),
+        fields
       );
+      const moved = [...shown].find(
+        ([key, text]) => freshRendered.get(key) !== text
+      );
+      if (moved) {
+        const [key, text] = moved;
+        reopenPreservingScroll(
+          'recalcReopen',
+          `${key}: ${text} -> ${freshRendered.get(key)}`
+        );
+      }
+    } catch (err) {
+      // A parse/JSON error here runs inside a setTimeout — uncaught, it is
+      // an unlogged silent loss of whatever the user just typed. Surface it
+      // in the sync log instead of throwing out of the timer callback.
+      appendLog('error', (err as Error)?.message || String(err));
     }
   };
 
@@ -231,8 +259,15 @@ export const attachBlockSync = (
   const checkOwnership = () => {
     documentChangeTimer = null;
     if (applying) return;
+    // An intentionally emptied document has no anchors of its own to lose —
+    // there is nothing to reassert.
+    if (blockIds(store.getData()).length === 0) return;
     const serialized = editor.serialize();
-    if (serialized === lastOpenedSfdt || serialized.includes('"fblk_')) return;
+    if (
+      serialized === lastOpenedSfdt ||
+      serialized.includes(`"${BLOCK_ANCHOR_PREFIX}`)
+    )
+      return;
     reopenPreservingScroll('open', 'reassert after foreign document');
   };
   const onDocumentChange = () => {

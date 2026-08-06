@@ -76,4 +76,71 @@ describe('parseSfdt', () => {
     // Should be a single merged text run, not three separate runs
     expect(cell).toEqual([{ kind: 'text', text: firstParaText + '\nsecond' }]);
   });
+
+  it('flattens a nested table inside a cell into text, order-preserving, instead of dropping it', () => {
+    const doc = JSON.parse(generateSfdt(SAMPLE_DOCUMENT, VALUES));
+    const outerTable = doc.sections[1].blocks.find((b: any) => b.rows);
+    const outerCell = outerTable.rows[0].cells[0];
+    // A nested table with two rows of two cells each, replacing the plain
+    // paragraph block that would normally live in this cell.
+    outerCell.blocks = [
+      {
+        rows: [
+          {
+            cells: [
+              {
+                blocks: [
+                  {
+                    paragraphFormat: { styleName: 'Normal' },
+                    characterFormat: {},
+                    inlines: [{ characterFormat: {}, text: 'nested-a1' }]
+                  }
+                ]
+              },
+              {
+                blocks: [
+                  {
+                    paragraphFormat: { styleName: 'Normal' },
+                    characterFormat: {},
+                    inlines: [{ characterFormat: {}, text: 'nested-b1' }]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            cells: [
+              {
+                blocks: [
+                  {
+                    paragraphFormat: { styleName: 'Normal' },
+                    characterFormat: {},
+                    inlines: [{ characterFormat: {}, text: 'nested-a2' }]
+                  }
+                ]
+              },
+              {
+                blocks: [
+                  {
+                    paragraphFormat: { styleName: 'Normal' },
+                    characterFormat: {},
+                    inlines: [{ characterFormat: {}, text: 'nested-b2' }]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ];
+
+    const parsed = parseSfdt(JSON.stringify(doc));
+    const cell = parsed.sections[1].find((b) => b.kind === 'table')!
+      .cells![0][0];
+    // Order-preserving, '\n'-separated text — no phantom shrink to [] and no
+    // silently dropped content.
+    expect(cell).toEqual([
+      { kind: 'text', text: 'nested-a1\nnested-b1\nnested-a2\nnested-b2' }
+    ]);
+  });
 });

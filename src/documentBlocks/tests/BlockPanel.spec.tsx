@@ -16,7 +16,36 @@ describe('BlockPanel', () => {
     expect(screen.getAllByTestId('docx-block-card')).toHaveLength(blockCount);
   });
 
-  it('typing in a paragraph textarea applies updateBlockContent', () => {
+  it('typing in a paragraph textarea debounces: no apply per keystroke, exactly one on blur', () => {
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const applySpy = jest.spyOn(store, 'apply');
+    render(<BlockPanel store={store} />);
+
+    const textarea = screen.getByDisplayValue(
+      'The parties agree to the services below.'
+    );
+    fireEvent.change(textarea, { target: { value: 'Updated s' } });
+    fireEvent.change(textarea, { target: { value: 'Updated sc' } });
+    fireEvent.change(textarea, { target: { value: 'Updated scope text.' } });
+
+    // Typing alone must not reach the store — one apply per keystroke would
+    // make undo useless while typing.
+    expect(applySpy).not.toHaveBeenCalled();
+
+    fireEvent.blur(textarea);
+
+    expect(applySpy).toHaveBeenCalledTimes(1);
+    const block = store
+      .getData()
+      .sections.flatMap((s) => s.blocks)
+      .find((b) => b.id === 'blk_scope_p')!;
+    expect(block.content).toEqual([
+      { kind: 'text', text: 'Updated scope text.' }
+    ]);
+  });
+
+  it('typing in a paragraph textarea commits after the idle debounce even without blur', () => {
+    jest.useFakeTimers();
     const store = createBlockStore(SAMPLE_DOCUMENT);
     render(<BlockPanel store={store} />);
 
@@ -25,6 +54,8 @@ describe('BlockPanel', () => {
     );
     fireEvent.change(textarea, { target: { value: 'Updated scope text.' } });
 
+    jest.advanceTimersByTime(500);
+
     const block = store
       .getData()
       .sections.flatMap((s) => s.blocks)
@@ -32,6 +63,7 @@ describe('BlockPanel', () => {
     expect(block.content).toEqual([
       { kind: 'text', text: 'Updated scope text.' }
     ]);
+    jest.useRealTimers();
   });
 
   it('clicking delete removes the block; undo restores it', () => {

@@ -21,6 +21,9 @@ export interface DocxEditorProps {
   /** Extra headers for serviceUrl requests (e.g. Feathery Authorization). */
   headers?: Record<string, string>[];
   readOnly?: boolean;
+  /** Disable Syncfusion's SFDT optimization so round-tripping preserves block
+   *  anchors exactly (dynamic-blocks documents only). */
+  unoptimizedSfdt?: boolean;
   /** Controlled reveal. When explicitly false the editor is unmounted. */
   visible?: boolean;
   /** Hide the local Download button (shown by default). */
@@ -97,6 +100,7 @@ function DocxEditor({
   serviceUrl,
   headers,
   readOnly,
+  unoptimizedSfdt,
   visible = true,
   hideDownload,
   onExportPdf,
@@ -127,6 +131,7 @@ function DocxEditor({
     serviceUrl,
     headers,
     readOnly,
+    unoptimizedSfdt,
     openNonce,
     onReady,
     onEditorReady,

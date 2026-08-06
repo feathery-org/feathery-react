@@ -7,7 +7,7 @@
  *
  *     window.featheryDocxBlocks = { panel: true };
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { BlockStore } from './store';
 import {
@@ -226,6 +226,104 @@ const TokenChip = ({
   );
 };
 
+// Content edits (paragraph text, table cell text) commit on blur or after
+// this much idle time, whichever comes first — one apply/undo entry per
+// pause in typing, not per keystroke. Insert/delete/formula edits stay
+// immediate; they are discrete actions, not prose.
+const CONTENT_EDIT_DEBOUNCE_MS = 500;
+
+/**
+ * Local-state buffer for a text field whose real commit (`onCommit`) is
+ * debounced. Keeps the input responsive to every keystroke while only
+ * calling `onCommit` on blur or after the idle delay — never both for the
+ * same edit (blur cancels the pending timer first).
+ */
+const useDebouncedText = (value: string, onCommit: (value: string) => void) => {
+  const [local, setLocal] = useState(value);
+  const dirtyRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitRef = useRef(onCommit);
+  commitRef.current = onCommit;
+
+  // Only resync from the external value while the user isn't mid-edit —
+  // otherwise a store update elsewhere (undo, sync) would clobber what they
+  // just typed before their own debounce/blur commits it.
+  useEffect(() => {
+    if (!dirtyRef.current) setLocal(value);
+  }, [value]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    []
+  );
+
+  const onChange = (next: string) => {
+    dirtyRef.current = true;
+    setLocal(next);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      dirtyRef.current = false;
+      commitRef.current(next);
+    }, CONTENT_EDIT_DEBOUNCE_MS);
+  };
+
+  const onBlur = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (dirtyRef.current) {
+      dirtyRef.current = false;
+      commitRef.current(local);
+    }
+  };
+
+  return { value: local, onChange, onBlur };
+};
+
+const DebouncedTextarea = ({
+  value,
+  onCommit,
+  style
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  style?: React.CSSProperties;
+}) => {
+  const field = useDebouncedText(value, onCommit);
+  return (
+    <textarea
+      style={style}
+      value={field.value}
+      onChange={(e) => field.onChange(e.target.value)}
+      onBlur={field.onBlur}
+    />
+  );
+};
+
+const DebouncedCellInput = ({
+  value,
+  onCommit,
+  style
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  style?: React.CSSProperties;
+}) => {
+  const field = useDebouncedText(value, onCommit);
+  return (
+    <input
+      style={style}
+      value={field.value}
+      onChange={(e) => field.onChange(e.target.value)}
+      onBlur={field.onBlur}
+    />
+  );
+};
+
 const ParagraphBlock = ({
   block,
   onEdit,
@@ -240,13 +338,13 @@ const ParagraphBlock = ({
     <>
       {content.map((inline, i) =>
         inline.kind === 'text' ? (
-          <textarea
+          <DebouncedTextarea
             key={i}
             style={styles.textarea}
             value={inline.text}
-            onChange={(e) => {
+            onCommit={(text) => {
               const next = [...content];
-              next[i] = { kind: 'text', text: e.target.value };
+              next[i] = { kind: 'text', text };
               onEdit(next);
             }}
           />
@@ -277,15 +375,13 @@ const TableBlock = ({
             return (
               <td key={ci}>
                 {onlyText ? (
-                  <input
+                  <DebouncedCellInput
                     style={styles.cellInput}
                     value={
                       (cell.content[0] as { kind: 'text'; text: string }).text
                     }
-                    onChange={(e) =>
-                      onEditCell(ri, ci, [
-                        { kind: 'text', text: e.target.value }
-                      ])
+                    onCommit={(text) =>
+                      onEditCell(ri, ci, [{ kind: 'text', text }])
                     }
                   />
                 ) : (

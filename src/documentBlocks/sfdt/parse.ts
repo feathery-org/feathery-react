@@ -7,6 +7,15 @@
  *
  * Tolerant by construction: unknown inline kinds (images, fields, comments)
  * are skipped, not thrown on, so a user's manual insertions cannot break sync.
+ *
+ * Two deliberate scope decisions:
+ * - A nested table inside a cell is flattened to plain text (see
+ *   flattenNestedTableText below) rather than modeled — DocumentData has no
+ *   nested-table shape, so the grid is lost on round trip but the text is not.
+ * - headersFooters is not parsed at all. generate.ts always emits `{}` for it,
+ *   and a foreign document's headers/footers are handled by the ownership
+ *   reassert (blockSync.ts re-opens the generated document over whatever the
+ *   editor loaded), not by reading them back here.
  */
 import {
   blockIdFromBookmark,
@@ -107,15 +116,48 @@ const parseParagraph = (block: any): ParsedBlock => {
   };
 };
 
+/**
+ * A nested table has no place in DocumentData (blocks are flat — one level of
+ * table at most) — so instead of dropping it on the floor, its text survives
+ * the round trip as plain text: every cell's text, in reading order,
+ * '\n'-separated like paragraphs. Regenerating the document then re-emits
+ * that flattened text as ordinary paragraph runs — a lossy but honest trade,
+ * the grid is gone, the words are not.
+ */
+const flattenNestedTableText = (table: any): string => {
+  const parts: string[] = [];
+  (table.rows ?? []).forEach((row: any) => {
+    (row.cells ?? []).forEach((cell: any) => {
+      (cell.blocks ?? []).forEach((para: any) => {
+        const text = para.rows
+          ? flattenNestedTableText(para)
+          : runsOf(para.inlines)
+              .runs.map((r) => r.text)
+              .join('');
+        if (text) parts.push(text);
+      });
+    });
+  });
+  return parts.join('\n');
+};
+
 const parseTable = (block: any): ParsedBlock => {
   let anchor: string | null = null;
   const cells: ParsedInlineRun[][][] = (block.rows ?? []).map((row: any) =>
     (row.cells ?? []).map((cell: any) => {
       const cellRuns: ParsedInlineRun[] = [];
       (cell.blocks ?? []).forEach((para: any, i: number) => {
+        if (i > 0) mergeRun(cellRuns, { kind: 'text', text: '\n' });
+        if (para.rows) {
+          // A nested table in this cell — flatten its text rather than
+          // reading .inlines (which it has none of) and silently dropping it.
+          const nestedText = flattenNestedTableText(para);
+          if (nestedText)
+            mergeRun(cellRuns, { kind: 'text', text: nestedText });
+          return;
+        }
         const { runs, anchor: found } = runsOf(para.inlines);
         if (found && !anchor) anchor = found;
-        if (i > 0) mergeRun(cellRuns, { kind: 'text', text: '\n' });
         runs.forEach((run) => mergeRun(cellRuns, run));
       });
       return cellRuns;

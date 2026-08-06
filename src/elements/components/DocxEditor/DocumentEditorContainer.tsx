@@ -37,6 +37,7 @@ import {
   EditorSurface
 } from '../../../documentBlocks/blockSync';
 import { BlockStore, createBlockStore } from '../../../documentBlocks/store';
+import { blockSaveBlockers } from '../../../documentBlocks/tokens';
 import { SAMPLE_DOCUMENT } from '../../../documentBlocks/sampleDocument';
 import BlockPanel, {
   blockPanelEnabled
@@ -388,13 +389,45 @@ export default function DocumentEditorContainer({
       : undefined
     : undefined;
 
+  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
+  // point. The schema container id is stable for this editor across renders;
+  // retain the editor object as well so cleanup can only remove this exact
+  // registration, never another mounted container's editor.
+  const registeredEditor = useRef<any>(undefined);
+  const tokenCycle = useRef<TokenCycle | undefined>(undefined);
+  // Dev-only token inspector; nothing renders unless the flag is set.
+  const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
+
+  // Dynamic blocks (theming/generation) is an opt-in feature, entirely
+  // separate from the token cycle above: a document with dynamic blocks owns
+  // its own tokens through the block sync loop, so the two must never attach
+  // to the same editor at once.
+  const blocksEnabled = Boolean(
+    (featheryWindow() as any)?.featheryDocxBlocks?.enabled
+  );
+  const storeRef = useRef<BlockStore | null>(null);
+  if (blocksEnabled && !storeRef.current) {
+    const initialData =
+      (featheryWindow() as any)?.featheryDocxBlocks?.data ?? SAMPLE_DOCUMENT;
+    storeRef.current = createBlockStore(initialData);
+  }
+  const blockStore = storeRef.current;
+
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
       if (!envelope) return;
       // A token that fails validation — or whose formula cannot evaluate and
-      // is showing its 0 fallback — must not reach the envelope.
+      // is showing its 0 fallback — must not reach the envelope. Blocks
+      // documents have no TokenCycle of their own, so they're checked via
+      // the block store's data instead of tokenCycle's state.
       const state = tokenCycle.current?.getState();
-      const blocked = state ? saveBlockers(state) : null;
+      const blocked = blocksEnabled
+        ? blockStore
+          ? blockSaveBlockers(blockStore.getData(), formFieldAccess)
+          : null
+        : state
+        ? saveBlockers(state)
+        : null;
       if (blocked) {
         setError(blocked);
         return;
@@ -425,7 +458,7 @@ export default function DocumentEditorContainer({
       }
       return updated;
     },
-    [client, envelope, targetAction]
+    [client, envelope, targetAction, blocksEnabled, blockStore]
   );
 
   // Only the sign action is handled here — the download action downloads the
@@ -450,29 +483,6 @@ export default function DocumentEditorContainer({
     else openTab(url);
   }, [client, envelope, targetAction, terminalAction]);
 
-  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
-  // point. The schema container id is stable for this editor across renders;
-  // retain the editor object as well so cleanup can only remove this exact
-  // registration, never another mounted container's editor.
-  const registeredEditor = useRef<any>(undefined);
-  const tokenCycle = useRef<TokenCycle | undefined>(undefined);
-  // Dev-only token inspector; nothing renders unless the flag is set.
-  const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
-
-  // Dynamic blocks (theming/generation) is an opt-in feature, entirely
-  // separate from the token cycle above: a document with dynamic blocks owns
-  // its own tokens through the block sync loop, so the two must never attach
-  // to the same editor at once.
-  const blocksEnabled = Boolean(
-    (featheryWindow() as any)?.featheryDocxBlocks?.enabled
-  );
-  const storeRef = useRef<BlockStore | null>(null);
-  if (!storeRef.current) {
-    const initialData =
-      (featheryWindow() as any)?.featheryDocxBlocks?.data ?? SAMPLE_DOCUMENT;
-    storeRef.current = createBlockStore(initialData);
-  }
-  const blockStore = storeRef.current;
   const blockSync = useRef<BlockSync | undefined>(undefined);
   const editorSurfaceRef = useRef<EditorSurface | undefined>(undefined);
   // Refs alone would attach the sync loop silently: setting a ref inside
@@ -485,7 +495,7 @@ export default function DocumentEditorContainer({
   );
 
   useEffect(() => {
-    if (!blocksEnabled) return undefined;
+    if (!blocksEnabled || !blockStore) return undefined;
     return blockStore.subscribe((data) => {
       (featheryWindow() as any)?.featheryDocxBlocks?.onDataChange?.(data);
     });
@@ -494,6 +504,14 @@ export default function DocumentEditorContainer({
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
+      // Detach both sync mechanisms before branching on the flag — a session
+      // that flips blocksEnabled between mounts (or a fast remount) must never
+      // let a stale tokenCycle linger into a blocks session: it still feeds
+      // saveEnvelope's blockers via tokenCycle.current.getState().
+      tokenCycle.current?.detach();
+      tokenCycle.current = undefined;
+      blockSync.current?.detach();
+      blockSync.current = undefined;
       registeredEditor.current = editor;
       registerDocxEditor(containerId, editor, {
         formId,
@@ -512,10 +530,7 @@ export default function DocumentEditorContainer({
         // A grouping failure must not break the editor mount.
       }
 
-      if (blocksEnabled) {
-        // The block sync loop owns tokens in a blocks document — attaching
-        // the token cycle too would give tokens two writers that fight.
-        blockSync.current?.detach();
+      if (blocksEnabled && blockStore) {
         const editorSurface: EditorSurface = {
           open: (sfdt) => editor.open(sfdt),
           serialize: () => editor.serialize(),
@@ -537,7 +552,6 @@ export default function DocumentEditorContainer({
       // Linked tokens keep themselves up to date from here on. Inert for a
       // document that declares none; the cycle re-reads on documentChange,
       // because the editor is ready before its .docx has loaded.
-      tokenCycle.current?.detach();
       tokenCycle.current = attachTokenCycle(editor, {
         fields: formFieldAccess
       });
@@ -700,17 +714,19 @@ export default function DocumentEditorContainer({
               display: activeTab === 'components' ? 'block' : 'none'
             }}
           >
-            <ComponentsTab store={blockStore} />
+            {/* Non-null: this branch only renders while blocksEnabled, which
+                is exactly when storeRef.current was initialized above. */}
+            <ComponentsTab store={blockStore!} />
           </div>
           {blockPanelEnabled(featheryWindow()) && (
-            <BlockPanel store={blockStore} />
+            <BlockPanel store={blockStore!} />
           )}
         </div>
         {debugPanelEnabled(featheryWindow()) &&
           debugPanelSync &&
           editorSurfaceRef.current && (
             <DebugPanel
-              store={blockStore}
+              store={blockStore!}
               sync={debugPanelSync}
               editor={editorSurfaceRef.current}
             />
@@ -760,6 +776,7 @@ export default function DocumentEditorContainer({
       headers={serviceHeaders}
       licenseKey={syncfusion.licenseKey}
       readOnly={readOnly}
+      unoptimizedSfdt={blocksEnabled}
       openNonce={reloadKey}
       fileName='document'
       terminalAction={terminalAction}
