@@ -570,6 +570,17 @@ export function useDocxEditor({
   // built with SYNCFUSION_LICENSE_KEY.
   const resolvedLicenseKey = licenseKey || BUILT_IN_SYNCFUSION_LICENSE_KEY;
 
+  // Changing the review gate must recreate the instance (so an editor that
+  // becomes gated-off cannot retain instance-scoped patches) - but never while
+  // a create/open is in flight: destroying Syncfusion mid-open leaves it with
+  // null internal state and surfaces as "Cannot convert undefined or null to
+  // object". Hold a gate flip until the load settles (`loading` covers both
+  // the create and the open; an open failure also settles it via fail()).
+  const [reviewGate, setReviewGate] = useState(reviewChanges);
+  useEffect(() => {
+    if (reviewChanges !== reviewGate && !loading) setReviewGate(reviewChanges);
+  }, [reviewChanges, reviewGate, loading]);
+
   // Load the CDN assets and instantiate the editor. Ordinary readOnly updates
   // happen in place; changing the review gate recreates the instance so an
   // editor that becomes gated-off cannot retain instance-scoped patches.
@@ -643,7 +654,7 @@ export function useDocxEditor({
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
-          configureTrackedChangeReview(ed, reviewChanges);
+          configureTrackedChangeReview(ed, reviewGate);
         } catch {
           // Review-pane/grouping setup must never block the editor mount.
         }
@@ -674,7 +685,9 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewChanges]);
+    // `reviewGate` (not `reviewChanges`) so a gate flip waits out any
+    // in-flight load before recreating - see its declaration above.
+  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewGate]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
