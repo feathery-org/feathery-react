@@ -1061,7 +1061,7 @@ describe('AssistantChat wiring (the regression guard)', () => {
     );
   });
 
-  it('compacts only the outbound history and leaves the current tool result exact', () => {
+  it('sends settled and current document tool results exactly as they stand', () => {
     render(
       <AssistantChat
         instanceId='form-1'
@@ -1133,9 +1133,9 @@ describe('AssistantChat wiring (the regression guard)', () => {
     const part = (message: { parts: unknown[] }, index = 0) =>
       message.parts[index] as { output?: any; toolCallId?: string };
     expect(part(messages[1]).output).toBe(oldOutput);
-    expect(part(request.messages[1]).output._digest).toContain(
-      'digested client-side'
-    );
+    // Settled results are never rewritten on the way out: reducing history has
+    // one owner, the service, so the provider prompt-cache prefix stays stable.
+    expect(part(request.messages[1]).output).toBe(oldOutput);
     expect(part(request.messages[3]).output).toBe(recentOutput);
     expect(part(request.messages[5]).toolCallId).toBe('call-current');
     expect(part(request.messages[5]).output).toBe(currentOutput);
