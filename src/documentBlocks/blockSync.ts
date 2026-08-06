@@ -18,12 +18,14 @@
  * 4. detach removes the listener and unsubscribes.
  */
 import { BlockStore, UpdateOrigin } from './store';
-import { resolveTokens, routeTokenEdit } from './tokens';
+import { collectSpecs, resolveTokens, routeTokenEdit } from './tokens';
 import { generateSfdt } from './sfdt/generate';
 import { parseSfdt, ParsedDoc, ParsedInlineRun } from './sfdt/parse';
 import { absorbDocEdits, SyncEvent } from './diff';
 import { DocumentData } from './types';
 import { FieldAccess } from '../documentTokens/cycleTypes';
+import { valueKey } from '../documentTokens/plan';
+import { parseValue } from '../documentTokens/format';
 
 export type SyncLogEntry = {
   at: number;
@@ -49,7 +51,10 @@ export type BlockSync = {
 };
 
 /** Store-change origins that reopen the editor; 'document' is handled separately. */
-const REOPEN_LOG_KIND: Record<'panel' | 'history' | 'theme', SyncLogEntry['kind']> = {
+const REOPEN_LOG_KIND: Record<
+  'panel' | 'history' | 'theme',
+  SyncLogEntry['kind']
+> = {
   panel: 'open',
   history: 'open',
   theme: 'themeApplied'
@@ -59,15 +64,35 @@ const REOPEN_LOG_KIND: Record<'panel' | 'history' | 'theme', SyncLogEntry['kind'
 const shownTokenTexts = (parsed: ParsedDoc): Map<string, string> => {
   const shown = new Map<string, string>();
   const visit = (runs?: ParsedInlineRun[]) => {
-    for (const run of runs ?? []) if (run.kind === 'token') shown.set(run.key, run.text);
+    for (const run of runs ?? [])
+      if (run.kind === 'token') shown.set(run.key, run.text);
   };
   for (const section of parsed.sections) {
     for (const block of section) {
       visit(block.runs);
-      for (const row of block.cells ?? []) for (const cellRuns of row) visit(cellRuns);
+      for (const row of block.cells ?? [])
+        for (const cellRuns of row) visit(cellRuns);
     }
   }
   return shown;
+};
+
+/**
+ * True when routeTokenEdit will write nothing for this key: no spec, a
+ * computed spec (not writable), or text that fails to parse for a numeric
+ * spec. routeTokenEdit itself returns null both for these rejections and for
+ * a successful field-backed write, so the caller has to know which before
+ * logging 'tokenWrite'.
+ */
+const isRejectedTokenEdit = (
+  specs: ReturnType<typeof collectSpecs>,
+  key: string,
+  text: string
+): boolean => {
+  const spec = specs.find((s) => valueKey(s) === key);
+  if (!spec || spec.formula) return true;
+  const isTextFormat = (spec.format?.kind ?? 'text') === 'text';
+  return !isTextFormat && parseValue(text) === null;
 };
 
 const summarizeEvents = (events: SyncEvent[]): string => {
@@ -88,6 +113,12 @@ export const attachBlockSync = (
 ): BlockSync => {
   let applying = false;
   let lastRendered = new Map<string, string>();
+  // ponytail: exact-string short-circuit, not a request token — covers the
+  // "editor fires contentChange after open() already returned" case that
+  // the `applying` boolean (sync-only) misses. Upgrade to a request-id
+  // scheme if editors start firing contentChange with content that legitimately
+  // matches-by-coincidence but should still be absorbed (not expected here).
+  let lastOpenedSfdt = '';
   let timer: ReturnType<typeof setTimeout> | null = null;
   const log: SyncLogEntry[] = [];
   const logListeners = new Set<(entries: SyncLogEntry[]) => void>();
@@ -103,6 +134,7 @@ export const attachBlockSync = (
     const { rendered } = resolveTokens(data, fields);
     lastRendered = rendered;
     const sfdt = generateSfdt(data, rendered);
+    lastOpenedSfdt = sfdt;
     applying = true;
     try {
       editor.open(sfdt);
@@ -111,7 +143,10 @@ export const attachBlockSync = (
     }
   };
 
-  const reopenPreservingScroll = (kind: SyncLogEntry['kind'], detail: string) => {
+  const reopenPreservingScroll = (
+    kind: SyncLogEntry['kind'],
+    detail: string
+  ) => {
     const before = editor.scrollContainer?.() ?? null;
     openCurrentData();
     const after = before ? editor.scrollContainer?.() ?? null : null;
@@ -121,18 +156,29 @@ export const attachBlockSync = (
 
   const absorbEditorContent = () => {
     timer = null;
+    const serialized = editor.serialize();
+    // A real editor can fire contentChange asynchronously after open()
+    // already returned, past the point where `applying` still guards it.
+    // Cheap short-circuit: if nothing changed since we last opened, skip
+    // the parse+resolve pass entirely.
+    if (serialized === lastOpenedSfdt) return;
+
     const prevData = store.getData();
-    const parsed = parseSfdt(editor.serialize());
+    const parsed = parseSfdt(serialized);
     const result = absorbDocEdits(prevData, parsed, lastRendered);
 
+    const specs = collectSpecs(prevData);
     const mutations: Array<(d: DocumentData) => DocumentData> = [];
     for (const [key, text] of result.tokenEdits) {
+      if (isRejectedTokenEdit(specs, key, text)) continue;
       const mutation = routeTokenEdit(prevData, fields, key, text);
       if (mutation) mutations.push(mutation);
       appendLog('tokenWrite', `${key} -> ${text}`);
     }
 
-    const blockEvents = result.events.filter((event) => event.type !== 'tokenEdited');
+    const blockEvents = result.events.filter(
+      (event) => event.type !== 'tokenEdited'
+    );
     if (blockEvents.length > 0) {
       store.apply(() => result.data, 'document');
       appendLog('absorb', summarizeEvents(blockEvents));
@@ -148,10 +194,15 @@ export const attachBlockSync = (
     // its input changed) without the document itself reflecting it yet.
     const shown = shownTokenTexts(parsed);
     const { rendered: freshRendered } = resolveTokens(store.getData(), fields);
-    const moved = [...shown].find(([key, text]) => freshRendered.get(key) !== text);
+    const moved = [...shown].find(
+      ([key, text]) => freshRendered.get(key) !== text
+    );
     if (moved) {
       const [key, text] = moved;
-      reopenPreservingScroll('recalcReopen', `${key}: ${text} -> ${freshRendered.get(key)}`);
+      reopenPreservingScroll(
+        'recalcReopen',
+        `${key}: ${text} -> ${freshRendered.get(key)}`
+      );
     }
   };
 

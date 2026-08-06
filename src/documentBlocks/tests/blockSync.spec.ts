@@ -28,15 +28,19 @@ const makeFields = (initial: Record<string, TokenValue>): FieldAccess => {
   return {
     read: (spec) => values[spec.source ?? spec.id],
     write: jest.fn((updates) => {
-      for (const { spec, value } of updates) values[spec.source ?? spec.id] = value;
+      for (const { spec, value } of updates)
+        values[spec.source ?? spec.id] = value;
     })
   };
 };
 
-const lastOpenedSfdt = (editor: FakeEditor) => {
+const lastOpenedRaw = (editor: FakeEditor): string => {
   const calls = (editor.open as jest.Mock).mock.calls;
-  return JSON.parse(calls[calls.length - 1][0]);
+  return calls[calls.length - 1][0];
 };
+
+const lastOpenedSfdt = (editor: FakeEditor) =>
+  JSON.parse(lastOpenedRaw(editor));
 
 describe('attachBlockSync', () => {
   beforeEach(() => {
@@ -83,7 +87,8 @@ describe('attachBlockSync', () => {
 
     const opened = lastOpenedSfdt(editor);
     // blk_scope_p is section 0, block index 3: [bookmarkStart, textRun, bookmarkEnd]
-    opened.sections[0].blocks[3].inlines[1].text = 'The parties agree to the revised services below.';
+    opened.sections[0].blocks[3].inlines[1].text =
+      'The parties agree to the revised services below.';
     (editor.serialize as jest.Mock).mockReturnValue(JSON.stringify(opened));
     (editor.open as jest.Mock).mockClear();
 
@@ -127,6 +132,56 @@ describe('attachBlockSync', () => {
     expect(JSON.stringify(reopened)).toContain('$2,160.00');
     expect(sync.getLog().some((e) => e.kind === 'recalcReopen')).toBe(true);
     expect(sync.getLog().some((e) => e.kind === 'tokenWrite')).toBe(true);
+  });
+
+  it('rejects an edit to a computed token: no tokenWrite log, and recalcReopen restores it', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    const sync = attachBlockSync(editor, store, fields);
+
+    const opened = lastOpenedSfdt(editor);
+    // sec_pricing, blk_pricing_tbl (index 1), total row (index 2), Amount col
+    // (index 1): [bookmarkStart, textRun, bookmarkEnd]. 'total' is computed
+    // (formula), so it is never a writable token.
+    opened.sections[1].blocks[1].rows[2].cells[1].blocks[0].inlines[1].text =
+      '$999.00';
+    (editor.serialize as jest.Mock).mockReturnValue(JSON.stringify(opened));
+    (editor.open as jest.Mock).mockClear();
+
+    editor.fireContentChange();
+    jest.advanceTimersByTime(400);
+
+    expect(fields.write).not.toHaveBeenCalled();
+    expect(sync.getLog().some((e) => e.kind === 'tokenWrite')).toBe(false);
+
+    // The bogus value is not persisted; recalc restores the real total and
+    // reopens once.
+    expect(editor.open).toHaveBeenCalledTimes(1);
+    const reopened = lastOpenedSfdt(editor);
+    expect(JSON.stringify(reopened)).toContain('$1,620.00');
+    expect(sync.getLog().some((e) => e.kind === 'recalcReopen')).toBe(true);
+  });
+
+  it('ignores an async contentChange whose content still matches the last opened sfdt', () => {
+    const editor = makeEditor();
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    const fields = makeFields({ customer_name: 'Acme Corp', retainer: 1500 });
+    const sync = attachBlockSync(editor, store, fields);
+    const before = store.getData();
+
+    // Simulate a host editor that fires contentChange asynchronously, after
+    // open() already returned and `applying` is back to false, with content
+    // unchanged from what was just opened.
+    (editor.serialize as jest.Mock).mockReturnValue(lastOpenedRaw(editor));
+    (editor.open as jest.Mock).mockClear();
+
+    editor.fireContentChange();
+    jest.advanceTimersByTime(400);
+
+    expect(store.getData()).toBe(before); // no store.apply ran
+    expect(editor.open).not.toHaveBeenCalled(); // no spurious reopen
+    expect(sync.getLog()).toHaveLength(1); // only the initial 'open' entry
   });
 
   it('detach stops reactions to both the store and the editor', () => {
