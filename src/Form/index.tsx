@@ -218,7 +218,7 @@ import {
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import { isNum } from '../utils/primitives';
-import { getSignUrl } from '../utils/document';
+import { getSignUrl, getSubmissionSignUrl } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
@@ -233,7 +233,10 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
-import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
+import {
+  ENVELOPE_LABELS,
+  useEnvelopeGenerationToast
+} from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
 import type {
@@ -2811,18 +2814,40 @@ function Form({
           if (!action.view_draft_container) {
             const envAction = action.envelope_action;
             if (!envAction || envAction === 'sign') {
-              // Sign files
-              const url = getSignUrl(action.redirect);
-              if (action.redirect) {
-                const eventData: Record<string, any> = {
-                  step_key: activeStep.key,
-                  next_step_key: '',
-                  event: submit ? 'complete' : 'skip',
-                  completed: true
-                };
-                await client.registerEvent(eventData);
-                featheryWindow().location.href = url;
-              } else openTab(url);
+              // One entry comes back per signable envelope, carrying an id
+              // only when the filler signs it first. One signer link covers
+              // the rest of the batch they can sign.
+              const responseSigners = data.signers ?? [];
+              const matchedSigner = responseSigners.find(
+                (s: any) => s.signer_id
+              );
+
+              if (!matchedSigner) {
+                // Nothing in the batch for the filler to sign themselves.
+                if (responseSigners.some((s: any) => s.invited)) {
+                  updateEnvelopeGeneration(envelopeId, {
+                    labels: {
+                      ...ENVELOPE_LABELS,
+                      complete: 'Sent for Signature'
+                    }
+                  });
+                }
+              } else {
+                const url = getSignUrl(
+                  matchedSigner.signer_id,
+                  action.redirect
+                );
+                if (action.redirect) {
+                  const eventData: Record<string, any> = {
+                    step_key: activeStep.key,
+                    next_step_key: '',
+                    event: submit ? 'complete' : 'skip',
+                    completed: true
+                  };
+                  await client.registerEvent(eventData);
+                  featheryWindow().location.href = url;
+                } else openTab(url);
+              }
             } else if (envAction === 'download' && data.files) {
               // Download files directly
               await downloadAllFileUrls(
@@ -2846,7 +2871,7 @@ function Form({
         // Enter the existing envelope sign flow for this submission's
         // documents WITHOUT regenerating (which would overwrite editor edits).
         // Same redirect/openTab behavior as the generate 'sign' branch above.
-        const url = getSignUrl(action.redirect);
+        const url = getSubmissionSignUrl(action.redirect);
         if (action.redirect) {
           await client.registerEvent({
             step_key: activeStep.key,

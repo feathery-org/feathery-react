@@ -449,26 +449,56 @@ export default class IntegrationClient {
 
   async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
-    // Editor flow: the backend converts a docx envelope to PDF at generation
-    // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold the signer back here — the
-    // editor's Sign action forwards it at finalize time (finalizeEnvelope),
-    // when that conversion is meant to happen.
-    const signer = action.view_draft_container
-      ? undefined
-      : fieldValues[action.envelope_signer_field_key];
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
     const runAsync = action.run_async ?? true;
+    // Editor flow: the backend converts a docx envelope to PDF at generation
+    // whenever a signer is present, which would make the draft uneditable in
+    // the targeted document-editor container. Hold every signer back here -
+    // the editor's Sign action forwards them at finalize time
+    // (finalizeEnvelope), when that conversion is meant to happen.
+    const isDraftView = !!action.view_draft_container;
+    // One list: the configured per-role signers, plus the shared signer field
+    // for any document without a role.
+    const fillerEmail = isDraftView
+      ? ''
+      : fieldValues[action.envelope_signer_field_key]?.toString() ?? '';
+    const envelopeSigners = isDraftView ? [] : action.envelope_signers ?? [];
+    const roleDocumentIds = new Set(
+      envelopeSigners.map((entry: any) => entry.document_id)
+    );
+    // Whichever entries are the filler's own are flagged, so the backend
+    // opens those inline instead of emailing a link, and hands back only
+    // their signing token.
+    const isFiller = (email: string) =>
+      !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase();
+    const signers = [
+      ...envelopeSigners.map((entry: any) => {
+        const email = fieldValues[entry.field_key]?.toString() ?? '';
+        return {
+          document_id: entry.document_id,
+          role_id: entry.role_id,
+          email,
+          filler: isFiller(email)
+        };
+      }),
+      ...(action.documents ?? [])
+        .filter((documentId: string) => !roleDocumentIds.has(documentId))
+        .map((documentId: string) => ({
+          document_id: documentId,
+          email: fillerEmail,
+          filler: true
+        }))
+    ].filter((entry: any) => entry.email);
 
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
       documentIds: action.documents ?? [],
       userId,
-      signerEmail: signer?.toString() ?? '',
+      signers,
       repeatable: action.repeatable ?? false,
       runAsync,
       envelopeAction,
@@ -506,7 +536,11 @@ export default class IntegrationClient {
   // Finalize an edited docx envelope for signing: the backend converts it to
   // PDF and injects signature fields (the same pipeline generation runs when
   // a signer is known up front). One-way — the envelope stops being editable.
-  finalizeEnvelope(envelopeId: string, signerEmail = '') {
+  // Signers are supplied here rather than at generation: they're what makes
+  // the backend convert the docx, so holding them back is what kept the draft
+  // editable. Same list shape generation sends, where an omitted role_id means
+  // the one email covers every role.
+  finalizeEnvelope(envelopeId: string, signers: Record<string, any>[] = []) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
     const options = {
@@ -514,7 +548,7 @@ export default class IntegrationClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fuser_key: userId ?? '',
-        signer_email: signerEmail
+        signers
       }),
       keepalive: false
     };
