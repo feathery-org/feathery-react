@@ -572,6 +572,81 @@ describe('a composed section inherits from the family it joins', () => {
     }
   });
 
+  it('takes the stripe from the family when its nearest table is too short to show one', () => {
+    // The shape that fooled us. The donor - the family member the composed
+    // unit sits next to - has a header and ONE data row, so it cannot prove a
+    // cycle. Read as a "uniform body" that counted as the family's statement
+    // that its tables are unbanded, and the composed table came out flat. The
+    // stripe is provable only on ANOTHER member of the same family. A fixture
+    // whose donor is itself well banded passes either way and proves nothing.
+    const shortSubsection = (name: string) => [
+      paragraph(name, 'subsectionBanner'),
+      prose(name),
+      grid(['Item', 'Value'], [[`${name} only row`, '1']])
+    ];
+    const bandedSubsection = (name: string) => [
+      paragraph(name, 'subsectionBanner'),
+      prose(name),
+      grid(
+        ['Item', 'Value'],
+        [
+          [`${name} one`, '1'],
+          [`${name} two`, '2'],
+          [`${name} three`, '3'],
+          [`${name} four`, '4']
+        ]
+      )
+    ];
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            paragraph('Alpha Motor', 'Title'),
+            prose('Alpha'),
+            ...bandedSubsection('Drivers'),
+            ...shortSubsection('Interests'),
+            paragraph('Beta Motor', 'Title'),
+            prose('Beta')
+          ]
+        }
+      ],
+      styles: STYLES
+    });
+    try {
+      const [banded, short] = tableShadings(editor);
+      // The donor cannot state a cycle; a sibling in the same family can.
+      expect(short.rows).toHaveLength(2);
+      expect(banded.rows.length).toBeGreaterThan(2);
+      const familyStripe = banded.rows.slice(1).map((row) => row.shading);
+      expect(new Set(familyStripe).size).toBeGreaterThan(1);
+
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'short-donor-family-stripe',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: anchorOf(editor, 'Beta Motor'),
+            expect: 'Beta Motor',
+            position: 'before',
+            sectionSpec: tableSpec('Discount')
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      const composed = formatOf(editor, 'Discount');
+      const composedRows = composedTableRows(editor, composed.block.anchor);
+      // Header from the family, then the family's own stripe - NOT the flat
+      // body of the short table it happened to sit next to.
+      expect(composedRows[0].shading).toEqual(banded.rows[0].shading);
+      expect(composedRows.slice(1).map((row) => row.shading)).toEqual(
+        familyStripe.slice(0, composedRows.length - 1)
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   it('reports the family it inherited from and every block it could not dress', () => {
     const editor = makeEditor(fixture({ withTables: false }));
     try {

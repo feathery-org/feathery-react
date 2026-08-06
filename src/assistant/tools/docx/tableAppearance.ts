@@ -686,9 +686,16 @@ export function rowShadings(appearance: TableAppearance): RowShading[] {
 
 /**
  * The one fill every data row of a table shares, or undefined when the table
- * has no data rows or their fills differ. A uniform body is a statement of the
- * sibling's own look - a new table copying that sibling replicates it instead
- * of importing an unrelated table's stripe.
+ * cannot state that. A uniform body is a statement of the sibling's own look -
+ * a new table copying that sibling replicates it instead of importing an
+ * unrelated table's stripe.
+ *
+ * A single data row still counts here, deliberately: next to a sibling that
+ * shows one white row and nothing else, a new table should be white, not
+ * striped from some unrelated table across the document. What a lone row
+ * CANNOT do is outrank the sibling FAMILY - see the banding derivation in the
+ * creation resolver, which consults the family's other tables before it falls
+ * back to this.
  */
 export function uniformDataRowShading(
   appearance: TableAppearance

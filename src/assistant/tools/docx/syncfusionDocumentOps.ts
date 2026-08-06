@@ -10767,6 +10767,29 @@ function creationAppearance(
   };
 
   /**
+   * A stripe proven by another table in the same sibling family. Consulted only
+   * when the donor itself is too short to prove one, and only ever the FAMILY's
+   * evidence - never a table outside it.
+   */
+  const familyBandingFor = (
+    family: SectionFamilyEvidence | undefined,
+    donorAnchor: string
+  ): TableBanding | null | undefined => {
+    if (!family) return undefined;
+    const donor = appearanceOf(donorAnchor);
+    if (donor && donor.rows.length - inferHeaderRows(donor) >= 2)
+      return undefined;
+    for (const unit of family.units)
+      for (const anchor of tableAnchorsForUnit(unit)) {
+        if (anchor === donorAnchor) continue;
+        const appearance = appearanceOf(anchor);
+        const banding = appearance ? detectTableBanding(appearance) : null;
+        if (banding) return banding;
+      }
+    return undefined;
+  };
+
+  /**
    * The nearest row elsewhere in the document that is a data row by STRUCTURE:
    * the last row of a table that has more than one.
    *
@@ -10835,11 +10858,23 @@ function creationAppearance(
         const appearance = appearanceOf(anchor);
         if (!appearance)
           return unresolved('the donor table could not be read', searched);
-        // DERIVED, never copied: the donor's own proven stripe outranks an
-        // unrelated table, a uniform body is replicated as-is, and only a body
-        // that proves nothing defers to the document's sample.
+        // DERIVED, never copied. In order: the donor's own proven stripe; then
+        // the FAMILY's, when the donor is too short to have one; then a uniform
+        // body taken as the sibling's statement; then the document's sample.
+        //
+        // The family step is the one that was missing. A donor with a single
+        // data row is trivially "uniform" with itself, which read as a positive
+        // statement that this family's tables are unbanded - so a two-row
+        // sibling silently outvoted a nineteen-row table in the SAME family
+        // that exhibits the stripe unambiguously, and every table composed from
+        // it came out with the header fill and no banding. One row is absence
+        // of evidence, not evidence of absence. It still outranks an unrelated
+        // table elsewhere in the document, which is why that fallback stays
+        // below it: a lone white row beside you is better evidence about YOUR
+        // look than a striped table you have nothing to do with.
         const banding =
           detectTableBanding(appearance) ??
+          familyBandingFor(options.family, anchor) ??
           (uniformDataRowShading(appearance) !== undefined
             ? null
             : documentTableBanding(sfdt, options.exclude ?? anchor));
@@ -11043,9 +11078,15 @@ function planTableInsertInheritance(
 ): PlannedInsertInheritance[] | undefined {
   const targetTableAnchor = resultingInsertedTableAnchor(op);
   if (!targetTableAnchor) return undefined;
+  // The family at the insertion point, derived here rather than handed down,
+  // so a table inserted by the composer and one inserted by a model driving
+  // the primitive reach the same answer - including the family's stripe when
+  // the nearest table is too short to show one.
+  const family = deriveSectionFamilyEvidence(blocks, String(op.anchor ?? ''));
   const resolved = creationAppearance(blocks, sfdt, byAnchorOf(blocks)).table({
     at: String(op.anchor ?? ''),
     exclude: targetTableAnchor,
+    ...(family ? { family } : {}),
     ...(explicitSource ? { explicit: explicitSource } : {})
   });
   // Unresolved means the document contains no table at all, so there is
