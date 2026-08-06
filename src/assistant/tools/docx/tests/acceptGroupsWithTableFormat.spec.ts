@@ -278,7 +278,9 @@ describe('one change set that edits content AND restripes a table', () => {
         'relayout-after-accept'
       );
       expect(result.results.every((entry) => entry.ok)).toBe(true);
-      expect(revisions(ed).length).toBeGreaterThan(1);
+      expect(
+        (listRevisionGroups(ed as unknown as LiveEditor)[0] as any).items.length
+      ).toBeGreaterThan(1);
 
       const layout = (ed as any).documentHelper.layout;
       const layoutSpy = jest.spyOn(layout, 'layoutWholeDocument');
@@ -311,7 +313,9 @@ describe('one change set that edits content AND restripes a table', () => {
         'silent-relayout-after-accept'
       );
       expect(result.results.every((entry) => entry.ok)).toBe(true);
-      expect(revisions(ed).length).toBeGreaterThan(1);
+      expect(
+        (listRevisionGroups(ed as unknown as LiveEditor)[0] as any).items.length
+      ).toBeGreaterThan(1);
 
       const documentHelper = (ed as any).documentHelper;
       const viewer = documentHelper.viewerContainer as HTMLElement;
@@ -765,6 +769,12 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
         [
           { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
           {
+            op: 'set_cell_text',
+            group: 'sched',
+            anchor: '0;2;2;1;0',
+            text: 'Z St'
+          },
+          {
             op: 'copy_table_format',
             group: 'sched',
             anchor: '0;2;0;0;0',
@@ -774,6 +784,11 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
         'rail-rejected-card'
       );
       expect(result.results.every((entry) => entry.ok)).toBe(true);
+      // Two revision-bearing ops, on purpose: with one, the card's only member
+      // is also its last, and "member by member" is never actually walked.
+      expect(
+        (listRevisionGroups(ed as unknown as LiveEditor)[0] as any).items.length
+      ).toBeGreaterThan(1);
       expect(appearanceSnapshot(ed, '0;2')).not.toEqual(beforeAppearance);
 
       const live = ed as unknown as LiveEditor;
@@ -983,6 +998,227 @@ describe('a rejected card leaves no paragraph wearing the wrong style', () => {
         'Heading 1',
         'Normal'
       ]);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+});
+
+// A change set's appearance snapshots form ONE stack, and the rail hands the
+// user the cards in document order rather than in write order. Two cards that
+// wrote the same cell therefore get rejected oldest-first, which is the wrong
+// order for an undo stack: the older card's snapshot goes back first and the
+// newer card's snapshot - which is a picture of the OLDER card's write - lands
+// on top of it, leaving an assistant fill in a document the user rejected
+// entirely. The stack is owned by the change set for exactly this reason.
+describe('two cards that wrote one cell', () => {
+  const bothGroups = (ed: DocumentEditor) => [
+    { op: 'set_cell_text', group: 'first', anchor: '0;2;1;1;0', text: 'One' },
+    {
+      op: 'set_cell_format',
+      group: 'first',
+      anchor: '0;2;2;0;0',
+      shading: '#FF0000'
+    },
+    { op: 'set_cell_text', group: 'second', anchor: '0;2;2;1;0', text: 'Two' },
+    {
+      op: 'set_cell_format',
+      group: 'second',
+      anchor: '0;2;2;0;0',
+      shading: '#00FF00'
+    }
+  ];
+
+  const rejectInOrder = (ed: DocumentEditor, order: string[]) => {
+    const live = ed as unknown as LiveEditor;
+    for (const group of order) {
+      const view = listRevisionGroups(live).find(
+        (entry) => entry.group === group
+      );
+      expect(view).toBeDefined();
+      resolveLiveRevisionGroupsAsOneUndo(live, [view as any], false);
+    }
+  };
+
+  it.each([
+    ['document order', ['first', 'second']],
+    ['newest first', ['second', 'first']]
+  ])('leaves no fill behind when both are rejected, %s', (_label, order) => {
+    const ed = makeEditor(statedLayoutFixture());
+    try {
+      const before = appearanceSnapshot(ed, '0;2');
+      const result = apply(ed, bothGroups(ed), `two-cards-${order.join('-')}`);
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(appearanceSnapshot(ed, '0;2')).not.toEqual(before);
+
+      rejectInOrder(ed, order as string[]);
+
+      expect(revisions(ed)).toHaveLength(0);
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('keeps the accepted card’s fill when the older card is rejected', () => {
+    const ed = makeEditor(statedLayoutFixture());
+    try {
+      const before = appearanceSnapshot(ed, '0;2');
+      apply(ed, bothGroups(ed), 'two-cards-mixed');
+      const applied = appearanceSnapshot(ed, '0;2');
+      const live = ed as unknown as LiveEditor;
+      const view = (group: string) =>
+        listRevisionGroups(live).find((entry) => entry.group === group) as any;
+
+      resolveLiveRevisionGroupsAsOneUndo(live, [view('second')], true);
+      resolveLiveRevisionGroupsAsOneUndo(live, [view('first')], false);
+
+      expect(revisions(ed)).toHaveLength(0);
+      // The kept card wrote the cell last, so its fill is what stands - the
+      // rejected card must not put the pre-change-set value back over it.
+      const fillOf = (snapshot: any) => snapshot[2].cells[0]?.shading ?? null;
+      expect(fillOf(appearanceSnapshot(ed, '0;2'))).toBe(fillOf(applied));
+      expect(fillOf(appearanceSnapshot(ed, '0;2'))).not.toBe(fillOf(before));
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+});
+
+// The rail resolves a card member by member, so by the time the appearance
+// inverse runs, the members already resolved have MOVED the rows and blocks its
+// snapshots name. A card holding one revision-bearing op never shows this - its
+// only member is also its last - so the fixture here gives the card two, and
+// gives the table rows that differ from one another, because a restore written
+// one row off is invisible in a table whose rows all look alike.
+const distinctRowsFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        { inlines: [{ text: 'Location Schedule' }] },
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            row(['Loc #', 'Address'], '#1F3864', true),
+            row(['1', 'A St'], '#D9E2F3'),
+            row(['2', 'B St'], '#F2F2F2'),
+            row(['3', 'C St'], '#FFF2CC'),
+            row(['4', 'D St'], '#E2EFDA')
+          ]
+        },
+        { inlines: [{ text: 'End' }] }
+      ]
+    }
+  ]
+});
+
+describe('a card whose row moved before its snapshot replayed', () => {
+  it('puts the fill back on the row it came from, not the row now at that index', () => {
+    const ed = makeEditor(distinctRowsFixture());
+    try {
+      const before = appearanceSnapshot(ed, '0;1');
+      const beforeRows = facts(ed, '0;1').rowCount;
+      // Every row differs, so a restore written one row off is visible.
+      expect(new Set(fills(ed, '0;1')).size).toBe(beforeRows);
+
+      // Two pending cards. The first inserts a row; the second repaints a row
+      // BELOW it, so its snapshot is anchored at an index that only holds while
+      // the first card is still pending.
+      const inserted = apply(
+        ed,
+        [{ op: 'insert_row', group: 'ins', anchor: '0;1;1;0;0' }],
+        'inserted-row'
+      );
+      expect(inserted.results.every((entry) => entry.ok)).toBe(true);
+      const painted = apply(
+        ed,
+        [
+          {
+            op: 'set_row_format',
+            group: 'paint',
+            anchor: '0;1;3;0;0',
+            shading: '#FF00FF'
+          },
+          { op: 'set_cell_text', group: 'paint', anchor: '0;1;4;1;0', text: 'Z' }
+        ],
+        'painted-row'
+      );
+      expect(painted.results.every((entry) => entry.ok)).toBe(true);
+
+      const live = ed as unknown as LiveEditor;
+      const reject = (group: string) =>
+        resolveLiveRevisionGroupsAsOneUndo(
+          live,
+          listRevisionGroups(live).filter((view) => view.group === group),
+          false
+        );
+      // The inserted row goes first, which is the order the rail lists them.
+      reject('ins');
+      reject('paint');
+
+      expect(revisions(ed)).toHaveLength(0);
+      expect(facts(ed, '0;1').rowCount).toBe(beforeRows);
+      expect(appearanceSnapshot(ed, '0;1')).toEqual(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+});
+
+// Per-chip resolution is a real button in the rail, and a card is not always
+// resolved one way: accept one chip, reject the rest. That is only safe if a
+// chip is a whole PARAGRAPH's worth of change. SyncFusion authors a paragraph's
+// text and its paragraph MARK as separate revisions, so a chip per revision
+// lets the user keep a paragraph's words while rejecting the boundary that made
+// it a paragraph - the accepted text welds onto the next heading, and the card
+// is gone from the rail, so nothing is left to undo it with.
+describe('resolving one chip of a card and rejecting the rest', () => {
+  const chips = (ed: DocumentEditor) =>
+    (listRevisionGroups(ed as unknown as LiveEditor)[0] as any).items;
+
+  const chipRevisions = (item: any) => [
+    ...item.revisions,
+    ...(item.partnerRevisions ?? [])
+  ];
+
+  it('never fuses two paragraphs, because a chip owns its paragraph mark', () => {
+    const ed = makeEditor(styledFixture());
+    try {
+      const styledBefore = paragraphStyles(ed);
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [{ op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }],
+        changeSetId: 'partial-resolution'
+      });
+      expect(result.results[0].ok).toBe(true);
+
+      const live = ed as unknown as LiveEditor;
+      const items = [...chips(ed)];
+      expect(items.length).toBeGreaterThan(1);
+      // A paragraph mark is no longer a chip of its own: every chip that
+      // carries text carries its own mark alongside it.
+      expect(
+        items.some((item: any) => item.text.length && item.revisions.length > 1)
+      ).toBe(true);
+
+      resolveRevisionsAsOneUndo(live, chipRevisions(items[0]), true);
+      for (const item of items.slice(1))
+        resolveRevisionsAsOneUndo(live, chipRevisions(item), false);
+
+      const after: any = JSON.parse(ed.serialize());
+      const blocks = (after.sec ?? after.sections)[0].b as any[];
+      const textOf = (block: any) =>
+        (block.i ?? []).map((run: any) => run.tlp ?? '').join('');
+      // Every paragraph of the original document still stands on its own; the
+      // accepted chip's text is not welded onto the heading after it.
+      for (const original of ['How We Support Clients', 'Next Steps'])
+        expect(blocks.map(textOf)).toContain(original);
+      // ...and each keeps the style it had, which a fused paragraph cannot.
+      for (const block of blocks) {
+        const index = styledBefore.indexOf(block.pf?.stn);
+        if (textOf(block) === 'How We Support Clients')
+          expect(block.pf?.stn).toBe('Heading 1');
+        expect(index).toBeGreaterThan(-1);
+      }
     } finally {
       destroyEditor(ed);
     }

@@ -72,13 +72,20 @@ const humanizeGroupId = (id: string) => {
   return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : id;
 };
 
-// A replace chip is one edit backed by two revisions; every resolve path
-// must settle both with the one decision.
-const chipRevisions = (chip: ChipView) =>
-  chip.partner ? [chip.revision, chip.partner] : [chip.revision];
+// A chip is one EDIT, and an edit is a paragraph's worth of change backed by
+// however many revisions SyncFusion authored for it - its runs, its paragraph
+// mark, and for a replace both halves. Every resolve path must settle all of
+// them with the one decision, or the chip's own paragraph boundary can be
+// resolved the opposite way from its text.
+const chipRevisions = (chip: ChipView) => [
+  ...(chip.revisions ?? [chip.revision]),
+  ...(chip.partnerRevisions ?? (chip.partner ? [chip.partner] : []))
+];
 
-const itemRevisions = (item: RevisionGroupItem) =>
-  item.partner ? [item.revision, item.partner] : [item.revision];
+const itemRevisions = (item: RevisionGroupItem) => [
+  ...item.revisions,
+  ...(item.partnerRevisions ?? [])
+];
 
 function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // Only live (pending) revisions render; a resolved edit disappears from
@@ -134,7 +141,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         untagged: view.untagged,
         chips: view.items.map((item) => ({
           revision: item.revision,
+          revisions: item.revisions,
           partner: item.partner,
+          partnerRevisions: item.partnerRevisions,
           revisionType: item.revisionType,
           text: item.text,
           beforeText: item.beforeText,

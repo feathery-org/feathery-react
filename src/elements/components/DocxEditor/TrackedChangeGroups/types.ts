@@ -2,8 +2,12 @@ import type { RevisionGroupIdentity } from '../../../../utils/documentEditorPrim
 
 /** One pending edit as the rail shows it. */
 export interface ChipView {
+  /** The chip's first revision - what focus, scroll and the active ring use. */
   revision: any;
+  /** Everything the chip resolves; see `RevisionGroupItem.revisions`. */
+  revisions?: any[];
   partner?: any;
+  partnerRevisions?: any[];
   revisionType: string;
   text: string;
   beforeText?: string;

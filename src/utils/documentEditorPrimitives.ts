@@ -136,6 +136,19 @@ export interface TablePropertyRestore {
 
 export interface AppearanceRestore {
   cellAnchor: string;
+  /**
+   * Where this snapshot sits in its change set's write order.
+   *
+   * Appearance is not tracked, so a restore is an entry on an undo stack, and
+   * an undo stack only composes in reverse. Two groups that write the same cell
+   * each snapshot what THEY overwrote, so the earlier group's snapshot is only
+   * the right value once the later group's has been put back - reject them in
+   * the order the rail lists them and the later restore writes the earlier
+   * group's fill back into the document. The sequence is what lets a reject
+   * hand its snapshot down instead of racing a sibling; absent (an older tag),
+   * the group replays on its own as it always did.
+   */
+  seq?: number;
   write?: AppearanceWrite;
   rowIsHeader?: boolean;
   tableBorders?: BorderWrite[];
@@ -523,8 +536,14 @@ function parsePersistedAppearanceRestores(
       !tableProperties
     )
       return undefined;
+    if (
+      raw.seq !== undefined &&
+      (typeof raw.seq !== 'number' || !Number.isFinite(raw.seq))
+    )
+      return undefined;
     restores.push({
       cellAnchor: raw.cellAnchor,
+      ...(typeof raw.seq === 'number' ? { seq: raw.seq } : {}),
       ...(typeof raw.rowIsHeader === 'boolean'
         ? { rowIsHeader: raw.rowIsHeader }
         : {}),
@@ -675,99 +694,231 @@ export const invalidateDocumentLayout = (editor: LiveEditor): void => {
   );
 };
 
+/**
+ * A restore plus the cell it belongs to, held as a widget rather than an index.
+ *
+ * `cellAnchor` names a POSITION, and by the time an inverse replays, the very
+ * change it is undoing has usually moved it: rejecting an inserted row
+ * renumbers every row below it, rejecting an inserted section renumbers every
+ * block after it. Resolving the anchor to the cell's first paragraph while it
+ * is still valid, then asking the SDK where that widget sits at replay time, is
+ * the same identity-over-position rule `replayParagraphStyles` already follows.
+ * A widget the document no longer holds restores nothing - the cell went away
+ * with the change the restore was part of, so there is nothing to put back.
+ */
+export interface AppearanceTarget {
+  restore: AppearanceRestore;
+  /** The first paragraph of the cell the restore names, captured live. */
+  paragraph?: unknown;
+}
+
+const APPEARANCE_LEDGER = '__robinAppearanceLedger';
+
+type LedgerEntry = {
+  seq: number;
+  /** The cell and kind of write this snapshot undoes. */
+  key: string;
+  groupKey: string;
+  restore: AppearanceRestore;
+  target?: AppearanceTarget;
+  pending: boolean;
+};
+
+/**
+ * What a restore undoes, so two snapshots of the same thing can be recognised
+ * as entries on one stack. Different kinds on one cell do not interact.
+ */
+const restoreKey = (restore: AppearanceRestore): string => {
+  const kinds = [
+    restore.write ? 'write' : '',
+    restore.rowIsHeader !== undefined ? 'rowIsHeader' : '',
+    restore.tableBorders ? 'tableBorders' : '',
+    restore.rowBorders ? 'rowBorders' : '',
+    restore.tableLayout ? 'tableLayout' : '',
+    restore.tableProperties ? 'tableProperties' : ''
+  ].filter(Boolean);
+  return `${restore.cellAnchor}\u0000${kinds.join(',')}`;
+};
+
+/**
+ * Every still-unplayed appearance snapshot of one change set, in write order.
+ *
+ * The change set - not the group - owns this, because the stack it forms spans
+ * groups: the rail partitions a change set into cards, but the writes those
+ * cards made went into the document one after another, and only the newest
+ * snapshot of a given cell is the one that puts back a real value. Keeping the
+ * ledger on the editor means a reload rebuilds it from the same tags the cards
+ * are rebuilt from.
+ */
+const appearanceLedger = (
+  editor: LiveEditor,
+  changeSetId: string
+): LedgerEntry[] => {
+  const store: Map<string, LedgerEntry[]> =
+    (editor as any)[APPEARANCE_LEDGER] ??
+    ((editor as any)[APPEARANCE_LEDGER] = new Map());
+  const existing = store.get(changeSetId);
+  if (existing) return existing;
+  const created: LedgerEntry[] = [];
+  store.set(changeSetId, created);
+  return created;
+};
+
 export function groupRevisionsAtomic(
   editor: LiveEditor,
   group: LiveRevision[],
   changeSetId?: string,
   groupId?: string,
-  onReject?: () => void,
-  onRejected?: () => void
+  appearanceRestores?: AppearanceRestore[],
+  paragraphStyles?: ParagraphStyleRestore[]
 ): void {
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
   const state = { resolved: false, restored: false, settled: false };
   const resolvedAlone = new Set<number>();
   const acceptedAlone = new Set<number>();
+  // This binding's identity. A group is finished when the document holds none
+  // of its revisions - the only reading that survives SyncFusion dropping a
+  // member as a side effect of resolving its neighbour, which a count of
+  // resolve calls does not.
+  const token = {};
+  const groupKey = `${changeSetId ?? ''}\u0000${groupId ?? ''}`;
+  const ledger = changeSetId
+    ? appearanceLedger(editor, changeSetId)
+    : undefined;
+  if (ledger && appearanceRestores?.length) {
+    // Re-binding the same card (a reload, an undo) replaces its entries rather
+    // than stacking a second copy of the same snapshots.
+    for (let index = ledger.length - 1; index >= 0; index--)
+      if (ledger[index].groupKey === groupKey) ledger.splice(index, 1);
+    appearanceRestores.forEach((restore, index) =>
+      ledger.push({
+        seq: restore.seq ?? index,
+        key: restoreKey(restore),
+        groupKey,
+        restore,
+        pending: true
+      })
+    );
+  }
   /**
-   * The appearance inverse, run at most once per group and always BEFORE the
-   * content resolves, while the row and cell indices it names are still valid.
-   *
-   * It belongs to the WHOLE group - SyncFusion authors no revision for a fill or
-   * a border, so the snapshots ride on the group's card and nowhere else - so it
-   * runs only when the whole group is being rejected. A group with one member
-   * accepted has kept part of the change; repainting the table then would undo
-   * appearance the surviving member still needs.
+   * Bind every snapshot to its live cell, here at binding time - straight after
+   * the change set wrote it, or straight after a reload rebuilt the card from
+   * its tag. That is the only moment the anchors are certainly still valid:
+   * waiting until this card starts resolving is too late, because a SIBLING
+   * card rejected first has already moved the rows underneath it.
    */
-  const restoreAppearance = () => {
-    if (state.restored || !onReject) return;
+  const bindAppearanceTargets = () => {
+    if (!ledger || state.restored) return;
     state.restored = true;
+    const mine = ledger.filter(
+      (entry) => entry.groupKey === groupKey && entry.pending && !entry.target
+    );
+    if (!mine.length) return;
+    preserveDocumentViewDuring(editor, () => {
+      for (const entry of mine)
+        entry.target = resolveAppearanceTargets(editor, [entry.restore])[0];
+    });
+  };
+  /**
+   * The appearance inverse, settled once the group is finished.
+   *
+   * Accepting any member keeps part of the change, so nothing is repainted -
+   * and every older snapshot of the same cell is now unreachable, because what
+   * the user kept is what stands. Rejecting the whole group hands a snapshot
+   * down to the newest sibling still holding the same cell, and writes only
+   * when it is the last one left; that is what makes rejecting cards in the
+   * order the rail lists them end at the value that predates the change set.
+   */
+  const settleAppearance = (accepted: boolean) => {
+    if (!ledger) return;
+    const mine = ledger
+      .filter((entry) => entry.groupKey === groupKey && entry.pending)
+      .sort((left, right) => right.seq - left.seq);
+    const play: AppearanceTarget[] = [];
+    for (const entry of mine) {
+      entry.pending = false;
+      const siblings = ledger.filter(
+        (other) => other.pending && other.key === entry.key
+      );
+      if (accepted) {
+        for (const older of siblings)
+          if (older.seq < entry.seq) older.pending = false;
+        continue;
+      }
+      const heir = siblings
+        .filter((other) => other.seq > entry.seq)
+        .sort((left, right) => left.seq - right.seq)[0];
+      if (heir) heir.restore = entry.restore;
+      // The bound target carries the cell; the payload is whatever this entry
+      // holds now, which is not what it held when the target was bound if an
+      // older sibling handed its snapshot down.
+      else play.push({ ...entry.target, restore: entry.restore });
+    }
+    if (!play.length) return;
     try {
-      onReject();
+      // Newest first, which is how the replay walks its list.
+      replayAppearanceRestores(editor, play.reverse());
     } catch {
       // Content still resolves consistently if an appearance restore fails.
     }
   };
   /**
-   * The paragraph-style inverse. Same ownership as the appearance inverse - it
-   * belongs to the whole group and runs at most once - but the opposite TIMING:
-   * the merge that loses a paragraph's style IS the content resolution, so this
-   * has to run after it rather than before.
+   * The paragraph-style inverse, settled with the appearance one and on either
+   * outcome: accepting a tracked delete merges its last mark into the following
+   * paragraph and restyles that one exactly as rejecting an insertion does.
+   * Identity matching in the replay is what makes it safe here, where the
+   * indices have moved.
    */
   const restoreParagraphStyles = () => {
-    if (state.settled || !onRejected) return;
+    if (state.settled || !paragraphStyles?.length) return;
     state.settled = true;
     try {
-      onRejected();
+      replayParagraphStyles(editor, paragraphStyles);
     } catch {
       // Content still resolves consistently if a style restore fails.
     }
   };
+  const groupHasLiveMembers = () =>
+    snapshotRevisions(editor).some(
+      (revision) => (revision as any).robinGroupToken === token
+    );
+  const settleIfFinished = () => {
+    if (groupHasLiveMembers()) return;
+    settleAppearance(acceptedAlone.size > 0);
+    restoreParagraphStyles();
+  };
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
-    if (!isAccept && !acceptedAlone.size) restoreAppearance();
     for (let index = 0; index < members.length; index++) {
       if (resolvedAlone.has(index)) continue;
+      if (isAccept) acceptedAlone.add(index);
       try {
         resolveSingleRevision(members[index], isAccept);
       } catch {
         // A later member can become stale after the first resolves.
       }
     }
-    // Both outcomes: accepting a tracked delete merges its last mark into the
-    // following paragraph and restyles that one exactly as rejecting an
-    // insertion does. Identity matching in the replay is what makes it safe to
-    // run here, where the indices have moved.
-    restoreParagraphStyles();
+    settleIfFinished();
     if (members.length > 1) invalidateDocumentLayout(editor);
   };
   group.forEach((revision, index) => {
     if (changeSetId) (revision as any).robinChangeSetId = changeSetId;
     if (groupId) (revision as any).robinGroupId = groupId;
     (revision as any).robinGroupBound = true;
+    (revision as any).robinGroupToken = token;
     (revision as any).robinResolveSelf = (isAccept: boolean) => {
       if (state.resolved || resolvedAlone.has(index)) return;
       // The non-cascading path the review rail resolves every card through:
-      // per-chip, per-card and rail-wide all arrive here, member by member. The
-      // group's appearance inverse has to fire on this route too, or rejecting a
-      // card clears the content and leaves the shading behind. It fires as the
-      // LAST undecided member is rejected - by then the whole group is a reject,
-      // and the restore still runs before that member's content resolves.
-      const lastUndecided = resolvedAlone.size === members.length - 1;
-      if (!isAccept && !acceptedAlone.size && lastUndecided)
-        restoreAppearance();
+      // per-chip, per-card and rail-wide all arrive here, member by member.
       resolvedAlone.add(index);
       if (isAccept) acceptedAlone.add(index);
       resolveSingleRevision(members[index], isAccept);
-      // After the last member's content resolves: this is the route the rail's
-      // card buttons take, so the style inverse has to fire here too or a
-      // resolved card leaves a restyled paragraph behind. It runs for accept as
-      // well as reject, because both merge a paragraph mark away.
-      if (lastUndecided) restoreParagraphStyles();
+      settleIfFinished();
     };
     (revision as any).robinReviveSelf = () => {
       state.resolved = false;
-      state.restored = false;
       state.settled = false;
       resolvedAlone.delete(index);
       acceptedAlone.delete(index);
@@ -775,6 +926,7 @@ export function groupRevisionsAtomic(
     revision.accept = () => resolveAll(true);
     revision.reject = () => resolveAll(false);
   });
+  bindAppearanceTargets();
 }
 
 export function resolveRevisionIndividually(
@@ -933,13 +1085,37 @@ export function resolveLiveRevisionGroupsAsOneUndo(
 }
 
 export interface RevisionGroupItem {
+  /** The first revision of the chip; what the rail focuses and scrolls to. */
   revision: LiveRevision;
+  /**
+   * Everything this chip resolves. A chip is a PARAGRAPH's worth of change, not
+   * a single SyncFusion revision: resolving a paragraph's text apart from its
+   * own paragraph mark merges it into its neighbour, which no inverse can put
+   * back. Every resolve path has to settle the whole array with one decision.
+   */
+  revisions: LiveRevision[];
   revisionType: string;
   text: string;
   beforeText?: string;
   partner?: LiveRevision;
+  /** The insertion half of a replace chip, resolved with the deletion half. */
+  partnerRevisions?: LiveRevision[];
   author?: string;
+  /** The paragraph this chip belongs to; how members are collected. */
+  paragraph?: unknown;
 }
+
+/** The paragraph a revision lives in: a text run's, or the mark's own owner. */
+const revisionParagraph = (revision: LiveRevision): unknown => {
+  let range: any[];
+  try {
+    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
+  } catch {
+    return undefined;
+  }
+  const node = Array.isArray(range) ? range[0] : undefined;
+  return node?.line?.paragraph ?? node?.ownerBase ?? undefined;
+};
 
 interface RevisionGroupView {
   changeSetId: string;
@@ -1046,21 +1222,49 @@ export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
         : { changeSetId: '', group: author, untagged: true, items: [] };
       views.set(key, view);
     }
+    const revisionType = String(revision.revisionType ?? '');
+    const paragraph = revisionParagraph(revision);
+    const previous = view.items[view.items.length - 1];
+    // Same paragraph, same direction: one chip. SyncFusion tracks a
+    // paragraph's text and its MARK as separate revisions, and the mark is not
+    // an edit anyone reviews - it is what makes the paragraph a paragraph. Left
+    // separable, accepting the text and rejecting the mark deletes the boundary
+    // between the accepted paragraph and the next one and welds two headings
+    // into one, with no card left to undo it. The rail also stopped listing the
+    // empty chips those marks used to produce.
+    if (
+      previous &&
+      !previous.partner &&
+      previous.revisionType === revisionType &&
+      paragraph !== undefined &&
+      previous.paragraph === paragraph
+    ) {
+      previous.revisions.push(revision);
+      previous.text = `${previous.text}${
+        previous.text ? ' ' : ''
+      }${revisionRangeText(revision)}`.trim();
+      continue;
+    }
     const item: RevisionGroupItem = {
       revision,
-      revisionType: String(revision.revisionType ?? ''),
+      revisions: [revision],
+      revisionType,
       text: revisionRangeText(revision),
-      author
+      author,
+      ...(paragraph !== undefined ? { paragraph } : {})
     };
-    const previous = view.items[view.items.length - 1];
     if (
       previous &&
       !previous.partner &&
       previous.revisionType === 'Deletion' &&
       item.revisionType === 'Insertion' &&
-      isReplacePair(previous.revision, item.revision)
+      isReplacePair(
+        previous.revisions[previous.revisions.length - 1],
+        item.revision
+      )
     ) {
       previous.partner = item.revision;
+      previous.partnerRevisions = item.revisions;
       previous.revisionType = 'Replace';
       previous.beforeText = previous.text;
       previous.text = item.text;
@@ -1181,29 +1385,77 @@ export function writeTableLayout(
   tableFormat.leftIndent = layout.leftIndent;
 }
 
-const replayAppearanceRestores = (
+const cellParagraphAt = (editor: LiveEditor, cellAnchor: string): unknown => {
+  try {
+    editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
+    return (editor as any).selection?.start?.paragraph ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Bind every restore to its live cell, while the anchors it names still hold.
+ * Called before the first member of a group resolves, which is the last moment
+ * at which that is true.
+ */
+export const resolveAppearanceTargets = (
   editor: LiveEditor,
   restores: AppearanceRestore[]
+): AppearanceTarget[] =>
+  restores.map((restore) => ({
+    restore,
+    paragraph: cellParagraphAt(editor, restore.cellAnchor)
+  }));
+
+/** The anchor that names this widget NOW, or nothing if the document dropped it. */
+const liveCellAnchorOf = (
+  editor: LiveEditor,
+  paragraph: unknown
+): string | undefined => {
+  if (!paragraph) return undefined;
+  let index: unknown;
+  try {
+    index = (editor as any).selection?.getHierarchicalIndex?.(paragraph, '0');
+  } catch {
+    return undefined;
+  }
+  if (typeof index !== 'string') return undefined;
+  const parts = index.split(';');
+  // Fewer than five parts means the widget is no longer inside a table cell.
+  if (parts.length < 5) return undefined;
+  const cellAnchor = parts.slice(0, 5).join(';');
+  // The derived anchor has to lead back to the SAME widget. Without that check
+  // a detached widget still answers with a plausible index, and writing through
+  // it is the positional failure this exists to avoid.
+  return cellParagraphAt(editor, cellAnchor) === paragraph
+    ? cellAnchor
+    : undefined;
+};
+
+const replayAppearanceRestores = (
+  editor: LiveEditor,
+  targets: AppearanceTarget[]
 ) => {
-  for (let index = restores.length - 1; index >= 0; index--) {
-    const restore = restores[index];
+  for (let index = targets.length - 1; index >= 0; index--) {
+    const { restore, paragraph } = targets[index];
+    // No widget was ever bound (a tag read straight off a reloaded document):
+    // the stored anchor is all there is, and it is still correct until the
+    // group starts resolving. A widget that WAS bound and is now gone restores
+    // nothing rather than repainting whatever moved into its place.
+    const anchor = paragraph
+      ? liveCellAnchorOf(editor, paragraph)
+      : restore.cellAnchor;
+    if (!anchor) continue;
+    const tableAnchor = anchor.split(';').slice(0, 2).join(';');
     if (restore.tableProperties)
-      writeTableProperties(
-        editor,
-        restore.cellAnchor.split(';').slice(0, 2).join(';'),
-        restore.tableProperties
-      );
+      writeTableProperties(editor, tableAnchor, restore.tableProperties);
     if (restore.tableLayout)
-      writeTableLayout(
-        editor,
-        restore.cellAnchor.split(';').slice(0, 2).join(';'),
-        restore.tableLayout
-      );
+      writeTableLayout(editor, tableAnchor, restore.tableLayout);
     if (restore.tableBorders) {
-      const tableAnchor = restore.cellAnchor.split(';').slice(0, 2).join(';');
-      const cellAnchor = `${tableAnchor};0;0;0`;
+      const firstCell = `${tableAnchor};0;0;0`;
       const selectTable = () => {
-        selectForAppearance(editor, cellAnchor, 'cell');
+        selectForAppearance(editor, firstCell, 'cell');
         editor.selection?.selectTable?.();
       };
       selectTable();
@@ -1213,19 +1465,19 @@ const replayAppearanceRestores = (
       }
     }
     if (restore.rowBorders) {
-      selectForAppearance(editor, restore.cellAnchor, 'row');
+      selectForAppearance(editor, anchor, 'row');
       for (const border of restore.rowBorders) {
         applyBorders(editor, [border]);
-        selectForAppearance(editor, restore.cellAnchor, 'row');
+        selectForAppearance(editor, anchor, 'row');
       }
     }
     if (restore.rowIsHeader !== undefined) {
-      selectForAppearance(editor, restore.cellAnchor, 'row');
+      selectForAppearance(editor, anchor, 'row');
       if (editor.selection?.rowFormat)
         editor.selection.rowFormat.isHeader = restore.rowIsHeader;
     }
     if (restore.write) {
-      selectForAppearance(editor, restore.cellAnchor, 'cell');
+      selectForAppearance(editor, anchor, 'cell');
       const cellFormat = editor.selection?.cellFormat;
       if (cellFormat) {
         if (restore.write.shading !== undefined)
@@ -1235,7 +1487,7 @@ const replayAppearanceRestores = (
       }
       for (const border of restore.write.borders ?? []) {
         applyBorders(editor, [border]);
-        selectForAppearance(editor, restore.cellAnchor, 'cell');
+        selectForAppearance(editor, anchor, 'cell');
       }
     }
   }
@@ -1371,10 +1623,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       partition.revisions,
       partition.changeSetId,
       partition.group,
-      restores?.length
-        ? () => replayAppearanceRestores(editor, restores)
-        : undefined,
-      styles?.length ? () => replayParagraphStyles(editor, styles) : undefined
+      restores,
+      styles
     );
     bound += partition.revisions.length;
   });

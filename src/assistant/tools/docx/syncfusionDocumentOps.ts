@@ -100,7 +100,6 @@ import {
   parseRevisionGroupTag,
   preserveDocumentViewDuring,
   rebindRevisionGroups,
-  replayParagraphStyles,
   resolveRevisionIndividually,
   revisionGroupTag,
   snapshotRevisions,
@@ -9220,8 +9219,16 @@ function writeRowIsHeader(
   rowFormat.isHeader = isHeader;
 }
 
-/** Put every recorded appearance back, newest first. */
-function replayAppearanceRestores(
+/**
+ * Undo this change set's own appearance writes mid-apply, newest first.
+ *
+ * Rollback only, never a card's inverse: it runs inside the failing write, so
+ * the anchors it names are still exactly what they were, and a failure has to
+ * surface as an OpError rather than be swallowed. Resolving a card is the other
+ * situation entirely - the content has moved by then - and that inverse has one
+ * owner, `groupRevisionsAtomic`.
+ */
+function rollbackAppearanceWrites(
   editor: LiveEditor,
   restores: AppearanceRestore[]
 ): void {
@@ -9277,7 +9284,7 @@ function runAppearanceTransaction<T>(
     };
   } catch (error) {
     try {
-      replayAppearanceRestores(editor, restores);
+      rollbackAppearanceWrites(editor, restores);
     } catch (rollbackError) {
       throw new OpError(
         'appearance_rollback_failed',
@@ -10145,23 +10152,16 @@ function groupNewRevisions(
           );
       }
     }
-    const onReject =
-      restores && restores.length
-        ? () => replayAppearanceRestores(editor, restores)
-        : undefined;
-    if (onReject) appearanceGroups.add(group);
-    // The paragraph-style inverse runs AFTER the content resolves, which is why
-    // it is a separate hook rather than more work inside onReject.
-    const onRejected = styles?.length
-      ? () => replayParagraphStyles(editor, styles)
-      : undefined;
+    if (restores?.length) appearanceGroups.add(group);
+    // Both inverses belong to the group primitive: it is the only place that
+    // knows when a card is finished and whether anything in it was kept.
     groupRevisionsAtomic(
       editor,
       partition,
       changeSetId,
       group,
-      onReject,
-      onRejected
+      restores,
+      styles
     );
     revisionsByGroup.set(group, partition.length);
   });
@@ -14933,6 +14933,12 @@ function applyDocumentEditsMeasured(
     restores: AppearanceRestore[]
   ) => {
     if (!restores.length) return;
+    // Write order across the WHOLE change set, not within this group: it is
+    // what lets a rejected card hand its snapshot down to the sibling card that
+    // overwrote the same cell after it, instead of the two racing.
+    restores.forEach((restore, index) => {
+      restore.seq = appearanceRestores.length + index;
+    });
     appearanceRestores.push(...restores);
     const id = opGroupId(op, changeSetId);
     const bucket = appearanceRestoresByGroup.get(id);
@@ -15015,7 +15021,7 @@ function applyDocumentEditsMeasured(
     };
     const restores = appearanceRestoresByGroup.get(groupId) ?? [];
     if (restores.length)
-      attempt(() => replayAppearanceRestores(editor, restores));
+      attempt(() => rollbackAppearanceWrites(editor, restores));
     appearanceRestoresByGroup.delete(groupId);
     if (restores.length) {
       const owned = new Set(restores);
