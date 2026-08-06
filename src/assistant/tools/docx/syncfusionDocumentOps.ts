@@ -6422,28 +6422,119 @@ function foreignPendingAuthor(
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// The document-tail table deletion SyncFusion cannot accept
+//
+// ONE SyncFusion defect, and it presented as three before it was isolated:
+// accepting a tracked deletion that removes the LAST ROW of a table which is the
+// LAST BLOCK of the document throws, part-way through `acceptAll`. The deletion
+// has already applied by then, so the edit lands and the review pane breaks when
+// the user accepts the card - which is why this is a refusal and not a repair.
+//
+// The precondition was pinned by control, not inferred:
+//
+//   mid-document table, last row deleted   -> acceptAll OK
+//   document-tail table, NON-last row      -> acceptAll OK
+//   document-tail table, last row          -> acceptAll THROWS
+//   document-tail table, last row, REJECT  -> clean, and byte-identical
+//
+// Do NOT key this guard off the exception: the same precondition throws
+// `getTextPosBasedOnLogicalIndex` reading 'paragraph' (inside
+// `deleteTrackedContents`), `getCharacterFormatInternalInTable` reading
+// 'childWidgets' (inside `retrieveCharacterFormat`), or `nextSplitWidget`,
+// depending only on where the selection happens to sit when the accept runs.
+// Three messages, three stacks, one missing widget after the accept-side delete.
+// Matching on any of them would have produced three guards for one defect.
+//
+// Two ops delete content that can cover that row, and they are two SHAPES of one
+// rule rather than two rules: a relocation deletes a block RANGE, and
+// `delete_row` deletes a ROW SET. Both ask this module the same question, so the
+// FACT has one owner below and each caller only decides whether its own extent
+// covers it. Their refusal messages differ because their remedies differ; the
+// reason they share, so it cannot drift.
+// ---------------------------------------------------------------------------
+
 /**
- * The refusal that is about DELETING the range: the document's last section when
- * the document ends with a table. SyncFusion's `acceptAll` throws inside its own
- * `deleteTrackedContents` there, so the edit would apply and then break the
- * review pane - refusing beats crashing.
+ * The last row of a table that is the document's last block, when there is one.
+ *
+ * Flattening emits a table's cells in row-major order, so the document's final
+ * flattened block being a table cell IS "the document ends with a table", and
+ * that cell's row index IS the table's last row. No second traversal needs to
+ * agree with this one.
+ */
+function documentTailTableLastRow(
+  blocks: FlatBlock[]
+): { tableAnchor: string; row: number } | undefined {
+  const last = blocks[blocks.length - 1];
+  const tableAnchor = last ? tableAnchorForBlock(last) : undefined;
+  if (!tableAnchor) return undefined;
+  const row = Number(last.anchor.split(';')[2]);
+  return Number.isInteger(row) ? { tableAnchor, row } : undefined;
+}
+
+/** The half of the refusal that is about SyncFusion, shared so it cannot drift. */
+const DOCUMENT_TAIL_TABLE_REASON =
+  'SyncFusion cannot accept the revision that would produce: `acceptAll` throws part-way through, after the deletion has already applied, so the edit would land and then break the review pane when the card is accepted. Rejecting is unaffected. Nothing was written.';
+
+/**
+ * The refusal that is about DELETING a block RANGE: the document's last section
+ * when the document ends with a table.
+ *
+ * A range that ends the document at a table cell necessarily covers that table's
+ * last row, which is why this is the range-shaped instance of the one rule above
+ * rather than a rule of its own.
  *
  * A copy never deletes its source, so this does not apply to one.
  */
-function assertRangeIsRemovable(range: BlockRange): void {
+function assertRangeIsRemovable(blocks: FlatBlock[], range: BlockRange): void {
   const last = range.blocks[range.blocks.length - 1];
-  if (range.endsDocument && last.kind === 'table_cell')
-    throw new OpError(
-      'relocation_document_tail_table',
-      `Refusing to relocate the section at ${JSON.stringify(
-        range.anchor
-      )}: it is the last section of the document and the document ends with a table. SyncFusion cannot accept the revisions that would produce - \`acceptAll\` throws inside its own delete of the tracked table - so the move would apply and then break the review pane. Nothing was written.`,
-      [
-        `anchor: ${range.anchor}`,
-        `last block in range: ${last.anchor}`,
-        'Express the change from the other side and the document tail stays put: move the section you want beside this one with move_section, using this section as the targetAnchor. To duplicate it rather than move it, copy_section leaves the tail alone.'
-      ]
-    );
+  const tail = documentTailTableLastRow(blocks);
+  if (
+    !range.endsDocument ||
+    !tail ||
+    tableAnchorForBlock(last) !== tail.tableAnchor
+  )
+    return;
+  throw new OpError(
+    'relocation_document_tail_table',
+    `Refusing to relocate the section at ${JSON.stringify(
+      range.anchor
+    )}: it is the last section of the document and the document ends with a table. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `anchor: ${range.anchor}`,
+      `last block in range: ${last.anchor}`,
+      `the document ends with the table at ${tail.tableAnchor}, whose last row is ${tail.row}`,
+      'Express the change from the other side and the document tail stays put: move the section you want beside this one with move_section, using this section as the targetAnchor. To duplicate it rather than move it, copy_section leaves the tail alone.'
+    ]
+  );
+}
+
+/**
+ * The refusal that is about DELETING a ROW SET - the same rule, the other shape.
+ *
+ * `delete_row` reaches this today with no guard at all: it reports `ok: true`
+ * over a document whose accept will crash, so the failure surfaces later, to the
+ * user, as a broken review pane on a card that looked applied.
+ */
+function assertRowsAreRemovable(
+  blocks: FlatBlock[],
+  tableAnchor: string,
+  rows: number[]
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor || !rows.includes(tail.row))
+    return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to delete row ${tail.row} of the table at ${JSON.stringify(
+      tableAnchor
+    )}: it is the last row of that table, and that table is the last block of the document. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `table: ${tableAnchor}, last row: ${tail.row}`,
+      `rows this edit would remove: ${rows.join(', ')}`,
+      'Any other row of this table can be removed as usual. To remove this one, give the document a paragraph after the table first, so the table is no longer what the document ends with.'
+    ]
+  );
 }
 
 /**
@@ -6880,7 +6971,7 @@ export const ANCHORED_OP_HANDLERS: {
     // block sequence are both things flattening drops.
     const sfdt = serializeSfdt(editor);
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
-    assertRangeIsRemovable(source);
+    assertRangeIsRemovable(blocks, source);
     assertRangeHasNoForeignEdits(sfdt, source);
     relocateBlockRange(
       editor,
@@ -6940,8 +7031,8 @@ export const ANCHORED_OP_HANDLERS: {
           'To move a subsection out of the section that contains it, use move_section with a targetAnchor outside that section.'
         ]
       );
-    assertRangeIsRemovable(earlier);
-    assertRangeIsRemovable(later);
+    assertRangeIsRemovable(blocks, earlier);
+    assertRangeIsRemovable(blocks, later);
     assertRangeHasNoForeignEdits(sfdt, earlier);
     assertRangeHasNoForeignEdits(sfdt, later);
     // Bottom-up, and the ordering is the whole reason a swap needs no
@@ -7192,7 +7283,15 @@ export const ANCHORED_OP_HANDLERS: {
   delete_table: ({ editor }) => {
     callEditor(editor, 'deleteTable');
   },
-  delete_row: ({ editor }) => {
+  delete_row: ({ editor, block, byAnchor }) => {
+    // The one deletion SyncFusion cannot accept. Guarded only when the anchor
+    // really is a cell: a non-cell anchor is a different failure and the
+    // structural tracked-op check already owns it.
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor)
+      assertRowsAreRemovable(Array.from(byAnchor.values()), tableAnchor, [
+        Number(block.anchor.split(';')[2])
+      ]);
     callEditor(editor, 'deleteRow');
   },
   // --- Table appearance ------------------------------------------------------
