@@ -1897,6 +1897,29 @@ const partialReadMessage = (returned: number, total: number): string =>
   `PARTIAL READ: returned ${returned} of ${total} entries (maxEntries cap). ` +
   'Do not treat this as the complete list - re-read with a larger maxEntries or omit maxEntries.';
 
+/**
+ * Where the unit starting at `blocks[start]` ends: the index of the next heading
+ * at the SAME level or shallower, or the end of the document.
+ *
+ * A DEEPER heading is a subsection OF this unit, so it must not end it. The
+ * `scope: 'section'` read stopped at the plain next heading of any level, which
+ * truncated every parent section at its own first subsection - a live read
+ * defect on most of the HILB proposal. The depth-aware rule already existed in
+ * `unitsAtLevel`; this is that one comparison, owned in one place, so the
+ * inventory read and the relocation range can never disagree about where a
+ * section ends.
+ *
+ * A start block that is not a heading has no level of its own to compare
+ * against, so any heading ends it - the behaviour a body anchor always had.
+ */
+function sectionUnitEnd(blocks: FlatBlock[], start: number): number {
+  const from = blocks[start];
+  const level = from?.isHeading ? from.level : Number.POSITIVE_INFINITY;
+  for (let index = start + 1; index < blocks.length; index++)
+    if (blocks[index].isHeading && blocks[index].level <= level) return index;
+  return blocks.length;
+}
+
 // Build the response for a given scope from an already-parsed SFDT.
 export function buildInventoryFromBlocks(
   blocks: FlatBlock[],
@@ -2113,14 +2136,7 @@ export function buildInventoryFromBlocks(
         retry: 'after_remedy'
       };
     }
-    let end = blocks.length;
-    for (let i = start + 1; i < blocks.length; i++) {
-      if (blocks[i].isHeading) {
-        end = i;
-        break;
-      }
-    }
-    const section = blocks.slice(start, end);
+    const section = blocks.slice(start, sectionUnitEnd(blocks, start));
     const slice = cap(section);
     if (slice.length < section.length) {
       // The live bug this guards: a 94-row table read at maxEntries 60 looked
@@ -2274,13 +2290,7 @@ function unitsAtLevel(blocks: FlatBlock[], level: number): SectionUnit[] {
     // scaffolding, not sibling sections. Treating them as units lets a run of
     // placeholders between two real sections become the dominant "family".
     if (!heading.text.replace(/\f/g, '').trim()) continue;
-    let end = blocks.length;
-    for (let index = start + 1; index < blocks.length; index++) {
-      if (blocks[index].isHeading && blocks[index].level <= level) {
-        end = index;
-        break;
-      }
-    }
+    const end = sectionUnitEnd(blocks, start);
     units.push({ blocks: blocks.slice(start, end), start, end });
   }
   return units;
@@ -3757,6 +3767,32 @@ function selectRange(
   endOffset: number
 ): void {
   editor.selection.select(`${anchor};${startOffset}`, `${anchor};${endOffset}`);
+}
+
+/**
+ * The end of a selection that must consume the trailing PARAGRAPH MARK of the
+ * run it covers - the one rule `delete_paragraph` and the relocation primitive
+ * share, owned here so they cannot drift apart.
+ *
+ * A mark sits BETWEEN two paragraphs, so when a following block exists the end
+ * is the START of that block. Stopping at the last block's own `length` leaves
+ * the mark behind, and both failures that produces are silent: a
+ * delete_paragraph empties its paragraph in place instead of removing it, and a
+ * relocated section's tail fuses with whatever it lands beside ("g bodyAlpha")
+ * while accepting strands an empty paragraph where the section used to be.
+ *
+ * With no following block the run reaches the end of the document, and there
+ * SyncFusion accepts `length + 1` and reports it back verbatim as the live
+ * endOffset. The trailing empty paragraph that accepting leaves is Word's own
+ * behaviour - a document must end with a paragraph. `delete_paragraph` never
+ * takes this branch inside a section: the mark beside its last paragraph is the
+ * SECTION BREAK, which is its own refusal rather than a range decision.
+ */
+function markInclusiveRangeEnd(
+  next: FlatBlock | undefined,
+  last: FlatBlock
+): string {
+  return next ? `${next.anchor};0` : `${last.anchor};${last.length + 1}`;
 }
 
 // What the whole document would read if every revision were rejected: pending
@@ -6018,6 +6054,418 @@ function declaresNumberProvenance(op: EditOp): boolean {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic relocation - the engine half of move_section / swap_sections
+//
+// The model supplies identifiers and a position. It never supplies content, and
+// that is the entire point of these two ops. Asked to move a section, a model
+// with no relocation primitive RETYPED the whole section as a new one and left
+// the original behind; asked to swap two subsections it improvised a three-way
+// text shuffle through placeholder tokens and failed on a one-character offset.
+// Every content write a model authors to express a STRUCTURAL intent is a fresh
+// chance to mis-transcribe, mis-count or invent. Neither op has a content
+// field, so neither can.
+//
+// The mechanism is SyncFusion's own and needs nothing new: select the range,
+// take `selection.sfdt`, paste it at the target, delete the source. Under the
+// executor's forced track changes that authors Insertions at the target and
+// Deletions at the source, accepting completes the move, and rejecting restores
+// the document byte for byte with the table's style, header row, shading,
+// column widths and allowAutoFit intact.
+//
+// It runs INSIDE applyDocumentEdits, so it already inherits forced track
+// changes, one revision group per op (stampRevisionGroup / groupNewRevisions ->
+// one rail card, one accept, one reject, one undo), atomic rollback
+// (rollbackGroup) and viewport stability (withSilentEditSelections). It adds no
+// wrapper of its own - `preserveDocumentViewDuring` is the primitive for callers
+// OUTSIDE the executor and a second wrapper here would be a second owner.
+//
+// SyncFusion has no producer for the MoveTo/MoveFrom revision types (it reads,
+// writes, renders and resolves them, but nothing in the editor authors one), so
+// a move appears in the rail as an insertion plus a deletion under one card -
+// exactly what Word shows with "track moves" off. A fidelity limit, not a
+// correctness one.
+// ---------------------------------------------------------------------------
+
+/** The `section;block` address of a top-level block, or of a cell's own table. */
+function topLevelAddress(anchor: string): { section: number; block: number } {
+  const [section, block] = anchor.split(';');
+  return { section: Number(section), block: Number(block) };
+}
+
+function addressIsBefore(
+  left: { section: number; block: number },
+  right: { section: number; block: number }
+): boolean {
+  return (
+    left.section < right.section ||
+    (left.section === right.section && left.block < right.block)
+  );
+}
+
+/** The raw (unflattened) top-level blocks of one Word section. */
+function rawSectionBlocks(sfdt: any, section: number): any[] {
+  const sections = pick(sfdt, 'sections', 'sec');
+  return Array.isArray(sections) ? getBlocks(sections[section]) : [];
+}
+
+/** A resolved, contiguous run of blocks - one section unit, at one moment. */
+interface BlockRange {
+  /** The anchor the range was resolved from. */
+  anchor: string;
+  /** The flattened blocks it covers, in document order. */
+  blocks: FlatBlock[];
+  /** Selection start: offset 0 of the first block. */
+  startAnchor: string;
+  /** Selection end, from the shared mark-inclusive rule. */
+  endAnchor: string;
+  /** No following block: this range runs to the end of the document. */
+  toDocumentEnd: boolean;
+}
+
+/** Where a payload is pasted, as a caret and as a top-level insertion point. */
+interface PasteTarget {
+  /** The collapsed caret the paste happens at. */
+  anchor: string;
+  /** The top-level address the pasted blocks are inserted at. */
+  address: { section: number; block: number };
+}
+
+/** What one paste did to the block indices around it. */
+interface PasteEffect {
+  at: { section: number; block: number };
+  /** Top-level blocks the paste added at `at`. */
+  blocks: number;
+}
+
+function relocationAnchorMissing(anchor: string, field: string): OpError {
+  return new OpError(
+    'relocation_anchor_not_found',
+    `No block is addressed by ${JSON.stringify(
+      anchor
+    )}, so there is nothing to relocate. The document may have changed since it was read. Nothing was written.`,
+    [
+      `${field}: ${anchor}`,
+      'Re-read getDocumentInventory with scope "structure" and use a current heading anchor.'
+    ]
+  );
+}
+
+/**
+ * The blocks one anchor's section unit covers, plus the selection that spans it.
+ * Shares `sectionUnitEnd` with the `scope: 'section'` inventory read, so what a
+ * relocation moves is exactly what a section read reports - subsections
+ * included, which is why moving a parent carries its children along and moving
+ * a subsection leaves its parent behind.
+ */
+function resolveSectionRange(
+  blocks: FlatBlock[],
+  anchor: string,
+  field: string
+): BlockRange {
+  if (!anchor) throw relocationAnchorMissing(anchor, field);
+  const start = blocks.findIndex((candidate) => candidate.anchor === anchor);
+  if (start < 0) throw relocationAnchorMissing(anchor, field);
+  const from = blocks[start];
+  if (from.kind === 'table_cell')
+    throw new OpError(
+      'relocation_anchor_in_table',
+      `${JSON.stringify(
+        anchor
+      )} addresses a paragraph inside a table cell, and a table cell is not a section: a relocation moves whole top-level blocks. Nothing was written.`,
+      [
+        `${field}: ${anchor}`,
+        'Use the heading anchor of the section itself, from a structure read. To move a table on its own, anchor the heading of the section that contains it.'
+      ]
+    );
+  const end = sectionUnitEnd(blocks, start);
+  const covered = blocks.slice(start, end);
+  const last = covered[covered.length - 1];
+  const next = blocks[end];
+  return {
+    anchor,
+    blocks: covered,
+    startAnchor: `${from.anchor};0`,
+    endAnchor: markInclusiveRangeEnd(next, last),
+    toDocumentEnd: !next
+  };
+}
+
+/** The caret and insertion point at the very start of a range. */
+function pasteAtRangeStart(range: BlockRange): PasteTarget {
+  return {
+    anchor: range.startAnchor,
+    address: topLevelAddress(range.blocks[0].anchor)
+  };
+}
+
+/** Every raw block a range covers, for the reads flattening cannot answer. */
+function rawBlocksInRange(sfdt: any, range: BlockRange): any[] {
+  const first = topLevelAddress(range.blocks[0].anchor);
+  const last = topLevelAddress(range.blocks[range.blocks.length - 1].anchor);
+  const out: any[] = [];
+  for (let section = first.section; section <= last.section; section++) {
+    const blocks = rawSectionBlocks(sfdt, section);
+    const from = section === first.section ? first.block : 0;
+    const to = section === last.section ? last.block : blocks.length - 1;
+    for (let index = from; index <= to; index++)
+      if (blocks[index]) out.push(blocks[index]);
+  }
+  return out;
+}
+
+/** Every revision id anywhere inside one raw block, tables included. */
+function collectRevisionIds(block: any, out: Set<string>): void {
+  const add = (ids: unknown) => {
+    if (Array.isArray(ids)) for (const id of ids) out.add(String(id));
+  };
+  const rows = getRows(block);
+  if (rows) {
+    for (const row of rows) {
+      add(rowRevisionIds(row));
+      const cells = pick(row, 'cells', 'c');
+      if (!Array.isArray(cells)) continue;
+      for (const cell of cells)
+        for (const cellBlock of getBlocks(cell))
+          collectRevisionIds(cellBlock, out);
+    }
+    return;
+  }
+  add(paragraphMarkRevisionIds(block));
+  for (const inline of getInlines(block))
+    add(pick(inline, 'revisionIds', 'rids'));
+}
+
+/**
+ * A pending revision inside the range that somebody else authored, if any.
+ *
+ * A relocation folds whatever it moves into its own card: the delete consumes a
+ * pending insertion instead of authoring a Deletion beside it, so REJECTING the
+ * move reverts that earlier edit too. For Robin's own pending edits that is
+ * correct - reject restores the true original. For a human reviewer's pending
+ * change it is not: their edit would disappear because we moved a section, and
+ * nothing would say so. Read from the document's own revision table rather than
+ * from widget state, and treat an unattributed revision as ours rather than
+ * refusing a document we cannot name an author for.
+ */
+function foreignPendingAuthor(
+  sfdt: any,
+  range: BlockRange
+): string | undefined {
+  const revisions = pick(sfdt, 'revisions', 'r');
+  if (!Array.isArray(revisions) || !revisions.length) return undefined;
+  const authorById = new Map<string, string>();
+  for (const revision of revisions) {
+    const id = pick(revision, 'revisionID', 'revisionId', 'rid');
+    if (id == null) continue;
+    const author = pick(revision, 'author', 'a');
+    authorById.set(String(id), typeof author === 'string' ? author : '');
+  }
+  const ids = new Set<string>();
+  for (const block of rawBlocksInRange(sfdt, range))
+    collectRevisionIds(block, ids);
+  for (const id of Array.from(ids)) {
+    const author = authorById.get(id);
+    if (author && author !== ASSISTANT_DOCUMENT_AUTHOR) return author;
+  }
+  return undefined;
+}
+
+/** The two refusals that are about the source range itself. */
+function assertRangeIsMovable(sfdt: any, range: BlockRange): void {
+  const last = range.blocks[range.blocks.length - 1];
+  if (range.toDocumentEnd && last.kind === 'table_cell')
+    throw new OpError(
+      'relocation_document_tail_table',
+      `Refusing to relocate the section at ${JSON.stringify(
+        range.anchor
+      )}: it is the last section of the document and the document ends with a table. SyncFusion cannot accept the revisions that would produce - \`acceptAll\` throws inside its own delete of the tracked table - so the move would apply and then break the review pane. Nothing was written.`,
+      [
+        `anchor: ${range.anchor}`,
+        `last block in range: ${last.anchor}`,
+        'Express the change from the other side and the document tail stays put: move the section you want beside this one with move_section, using this section as the targetAnchor.'
+      ]
+    );
+  const author = foreignPendingAuthor(sfdt, range);
+  if (author)
+    throw new OpError(
+      'relocation_source_has_pending_review',
+      `Refusing to relocate the section at ${JSON.stringify(
+        range.anchor
+      )}: it contains a pending tracked change by ${JSON.stringify(
+        author
+      )}. A relocation folds what it moves into its own card, so rejecting this move would silently revert their edit as well. Nothing was written.`,
+      [
+        `anchor: ${range.anchor}`,
+        `pending author: ${author}`,
+        `Ask for ${author}'s change to be accepted or rejected first, then relocate the section.`
+      ]
+    );
+}
+
+/**
+ * Where a range's anchors moved to after a paste, re-derived and verified.
+ *
+ * Only a PASTE shifts block indices - a tracked delete marks its content and
+ * leaves it exactly where it was, which is the property that makes a two-step
+ * relocation (and the bottom-up swap) deterministic without predicting
+ * anything. A paste shifts only the blocks at or after it, and only within its
+ * own Word section.
+ *
+ * The arithmetic is then CHECKED against the document rather than trusted: the
+ * re-derived range must cover the same blocks reading the same text. If it does
+ * not, the op fails and the group rolls back, instead of deleting whatever
+ * happens to sit at the computed index.
+ */
+function shiftedRange(
+  sfdt: any,
+  range: BlockRange,
+  paste: PasteEffect
+): BlockRange {
+  const first = topLevelAddress(range.blocks[0].anchor);
+  const shift =
+    first.section === paste.at.section && first.block >= paste.at.block
+      ? paste.blocks
+      : 0;
+  const anchor = `${first.section};${first.block + shift}`;
+  const blocks = flattenSfdt(sfdt);
+  const moved = resolveSectionRange(blocks, anchor, 'relocated anchor');
+  const before = range.blocks.map((block) => block.text).join('\r');
+  const after = moved.blocks.map((block) => block.text).join('\r');
+  if (moved.blocks.length !== range.blocks.length || before !== after)
+    throw new OpError(
+      'relocation_source_lost',
+      `The section that was at ${JSON.stringify(
+        range.anchor
+      )} is no longer readable at ${JSON.stringify(
+        anchor
+      )} after the content was inserted at its destination, so the engine refused to delete what is there now. Nothing of this change set was kept.`,
+      [
+        `expected ${range.blocks.length} blocks reading ${JSON.stringify(
+          before.slice(0, 200)
+        )}`,
+        `found ${moved.blocks.length} blocks reading ${JSON.stringify(
+          after.slice(0, 200)
+        )}`
+      ]
+    );
+  return moved;
+}
+
+/**
+ * The primitive: relocate a resolved range to a target caret, tracked.
+ *
+ * Returns the paste's effect on block indices, which is what a caller relocating
+ * a SECOND range needs in order to find it again. Also returns the document as
+ * it stood immediately after the paste - every shift this relocation causes is
+ * already in it, because the delete that follows shifts nothing.
+ */
+function relocateBlockRange(
+  editor: LiveEditor,
+  preSfdt: any,
+  source: BlockRange,
+  target: PasteTarget
+): { paste: PasteEffect; pastedSfdt: any } {
+  editor.selection.select(source.startAnchor, source.endAnchor);
+  const payload = (editor.selection as any)?.sfdt;
+  if (typeof payload !== 'string' || !payload)
+    throw new OpError(
+      'relocation_payload_unavailable',
+      `SyncFusion returned no content for the range ${source.startAnchor} - ${source.endAnchor}, so there is nothing to relocate. Nothing was written.`
+    );
+  const blocksBefore = rawSectionBlocks(preSfdt, target.address.section).length;
+  editor.selection.select(target.anchor, target.anchor);
+  callEditor(editor, 'paste', payload);
+  const pastedSfdt = serializeSfdt(editor);
+  const paste: PasteEffect = {
+    at: target.address,
+    blocks:
+      rawSectionBlocks(pastedSfdt, target.address.section).length - blocksBefore
+  };
+  const moved = shiftedRange(pastedSfdt, source, paste);
+  editor.selection.select(moved.startAnchor, moved.endAnchor);
+  editor.editor.delete();
+  return { paste, pastedSfdt };
+}
+
+/** Resolves `targetAnchor` + `position` into the caret the payload lands at. */
+function resolveRelocationTarget(
+  blocks: FlatBlock[],
+  op: EditOp,
+  source: BlockRange
+): PasteTarget {
+  const anchor = String(op.targetAnchor ?? '').trim();
+  const target = resolveSectionRange(blocks, anchor, 'targetAnchor');
+  const first = topLevelAddress(source.blocks[0].anchor);
+  const last = topLevelAddress(source.blocks[source.blocks.length - 1].anchor);
+  const inSource = (address: { section: number; block: number }) =>
+    !addressIsBefore(address, first) && !addressIsBefore(last, address);
+  // Both the anchor the model named AND the caret it resolves to have to be
+  // outside the range. They are not the same test: `position: 'after'` on a
+  // section that runs to the end of the document resolves to the last block of
+  // the document, which is inside the source whenever the source is the tail.
+  const refuseInsideSource = (where: string): never => {
+    throw new OpError(
+      'relocation_target_inside_source',
+      `Refusing to move the section at ${JSON.stringify(
+        source.anchor
+      )} to ${JSON.stringify(
+        anchor
+      )}: ${where} is inside the range that section covers, so the move has no destination outside what it is moving. Nothing was written.`,
+      [
+        `source range: ${source.blocks[0].anchor} .. ${
+          source.blocks[source.blocks.length - 1].anchor
+        }`,
+        `targetAnchor: ${anchor}`,
+        `resolved paste point: ${where}`,
+        'Pick a targetAnchor outside that range. To move only a SUBSECTION of it, anchor that subsection heading instead - the range rule is depth-aware, so a subsection moves without its parent.'
+      ]
+    );
+  };
+  if (inSource(topLevelAddress(anchor))) refuseInsideSource(anchor);
+  const after = op.position === 'after';
+  const tail = target.blocks[target.blocks.length - 1];
+  const following = after ? blocks[blocks.indexOf(tail) + 1] : undefined;
+  const caretBlock = after ? following ?? tail : target.blocks[0];
+  if (caretBlock.kind === 'table_cell')
+    throw new OpError(
+      'relocation_target_in_table',
+      `Refusing to move the section at ${JSON.stringify(source.anchor)} ${
+        after ? 'after' : 'before'
+      } ${JSON.stringify(
+        anchor
+      )}: that lands the content inside the table cell at ${JSON.stringify(
+        caretBlock.anchor
+      )}. A section is relocated between top-level blocks, never into a cell. Nothing was written.`,
+      [
+        `targetAnchor: ${anchor}`,
+        `resolved paste point: ${caretBlock.anchor}`,
+        !after
+          ? 'Use the anchor of a heading or body paragraph from a structure read.'
+          : following
+          ? 'Use position "before" on the section that follows this one instead.'
+          : 'That table is the end of the document, so there is no body block after it: relocate the other section with position "before" this one instead.'
+      ]
+    );
+  if (inSource(topLevelAddress(caretBlock.anchor)))
+    refuseInsideSource(caretBlock.anchor);
+  // `after` means after everything the target section covers, not after its
+  // heading paragraph: both anchors name section UNITS, which is what makes
+  // "move A below B" mean what the user said when B has subsections.
+  if (after && !following)
+    return {
+      anchor: `${tail.anchor};${tail.length}`,
+      address: {
+        ...topLevelAddress(tail.anchor),
+        block: topLevelAddress(tail.anchor).block + 1
+      }
+    };
+  return {
+    anchor: `${caretBlock.anchor};0`,
+    address: topLevelAddress(caretBlock.anchor)
+  };
+}
+
 // Exported for the registry parity spec: the spec re-asserts at runtime what
 // the mapped types already guarantee at compile time, guarding the emitted JS
 // against an `as any` regression at the table itself.
@@ -6178,7 +6626,11 @@ export const ANCHORED_OP_HANDLERS: {
     };
     const next = bodyNeighbour(1);
     const previous = bodyNeighbour(-1);
-    if (next) editor.selection.select(`${block.anchor};0`, `${next.anchor};0`);
+    if (next)
+      editor.selection.select(
+        `${block.anchor};0`,
+        markInclusiveRangeEnd(next, block)
+      );
     else if (previous)
       editor.selection.select(
         `${previous.anchor};${previous.length}`,
@@ -6195,6 +6647,81 @@ export const ANCHORED_OP_HANDLERS: {
         ]
       );
     editor.editor.delete();
+  },
+  move_section: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    // One read of the raw document for the whole op: the revision table and the
+    // per-section block counts are both things flattening drops.
+    const sfdt = serializeSfdt(editor);
+    const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    assertRangeIsMovable(sfdt, source);
+    relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      resolveRelocationTarget(blocks, op, source)
+    );
+  },
+  swap_sections: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const sfdt = serializeSfdt(editor);
+    const one = resolveSectionRange(blocks, block.anchor, 'anchor');
+    const other = resolveSectionRange(
+      blocks,
+      String(op.otherAnchor ?? '').trim(),
+      'otherAnchor'
+    );
+    const [earlier, later] = addressIsBefore(
+      topLevelAddress(one.blocks[0].anchor),
+      topLevelAddress(other.blocks[0].anchor)
+    )
+      ? [one, other]
+      : [other, one];
+    const earlierLast = topLevelAddress(
+      earlier.blocks[earlier.blocks.length - 1].anchor
+    );
+    const laterFirst = topLevelAddress(later.blocks[0].anchor);
+    if (!addressIsBefore(earlierLast, laterFirst))
+      throw new OpError(
+        'swap_sections_overlap',
+        `Refusing to swap ${JSON.stringify(one.anchor)} with ${JSON.stringify(
+          other.anchor
+        )}: one of them is inside the other (or they are the same section), so there is nothing to exchange. Nothing was written.`,
+        [
+          `${earlier.anchor} covers ${earlier.blocks[0].anchor} .. ${
+            earlier.blocks[earlier.blocks.length - 1].anchor
+          }`,
+          `${later.anchor} covers ${later.blocks[0].anchor} .. ${
+            later.blocks[later.blocks.length - 1].anchor
+          }`,
+          'To move a subsection out of the section that contains it, use move_section with a targetAnchor outside that section.'
+        ]
+      );
+    assertRangeIsMovable(sfdt, earlier);
+    assertRangeIsMovable(sfdt, later);
+    // Bottom-up, and the ordering is the whole reason a swap needs no
+    // prediction. Both ranges and both payloads are resolved BEFORE any write.
+    // The first relocation's paste lands at `later`'s start and its delete
+    // marks `earlier` in place, so nothing above `later` moves: `earlier`'s
+    // originally resolved anchors are still valid when its turn comes, and only
+    // `later` has to be found again - which is arithmetic the paste itself
+    // reports, checked against the document.
+    //
+    // One op, therefore one revision group, therefore one rail card: a failure
+    // in the second relocation rolls the first back through rollbackGroup, so a
+    // half-swap cannot survive.
+    const first = relocateBlockRange(
+      editor,
+      sfdt,
+      earlier,
+      pasteAtRangeStart(later)
+    );
+    relocateBlockRange(
+      editor,
+      first.pastedSfdt,
+      shiftedRange(first.pastedSfdt, later, first.paste),
+      pasteAtRangeStart(earlier)
+    );
   },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
@@ -8495,6 +9022,13 @@ export const TRACKED_TEXT_OPS = new Set([
   'delete_text',
   'delete_paragraph',
   'insert_text',
+  // A relocation is content moving, so it carries the same requirement as any
+  // other content write - and for these two the reject-projection comparison
+  // that membership buys IS the property they exist to have: rejecting the card
+  // must restore the document exactly, which is what makes a move reviewable
+  // rather than merely applied.
+  'move_section',
+  'swap_sections',
   // The composer expands to tracked insert_text/insert_table writes before
   // dispatch; membership keeps the registry-exhaustive content-op invariant
   // honest at the public operation boundary.
@@ -10971,6 +11505,175 @@ function detectUnsourcedAuthoredFigures(edits: EditOp[]): BatchRefusal | null {
 }
 
 /**
+ * Placeholder-looking text, matched by SHAPE and never by a known token.
+ *
+ * The live failure: asked to swap two subsections, the model expressed it as a
+ * three-way text shuffle and wrote `__TMP_SWAP_HEADING_1__` and
+ * `__TMP_SWAP_PARA_1__` into the captain's client proposal as intermediate
+ * values. That change set happened to roll back, so the tokens never survived -
+ * but "one op away from a placeholder in a client document" is not a property to
+ * rely on, and it is not something prompt guidance can prevent. Matching the
+ * literal tokens that were seen would only refuse the one shuffle we already
+ * know about; matching the shape refuses the class.
+ */
+const SENTINEL_SHAPES: Array<{ shape: RegExp; description: string }> = [
+  {
+    // `__TMP_SWAP_PARA_1__` - a delimited, shouted, underscore-wrapped token.
+    shape: /(?:^|[^A-Za-z0-9])(__[A-Z0-9_]{3,}__)(?![A-Za-z0-9])/,
+    description: 'a __DELIMITED_TOKEN__ placeholder'
+  },
+  { shape: /(\{\{[^{}]*\}\})/, description: 'a {{template}} marker' },
+  { shape: /(<<[^<>]*>>)/, description: 'a <<template>> marker' },
+  { shape: /(%%[^%]*%%)/, description: 'a %%template%% marker' },
+  {
+    shape: /(\$\{[^{}]*\})/,
+    description: 'a shell-style dollar-brace template marker'
+  },
+  {
+    shape:
+      /(?:^|[^A-Za-z0-9_])(PLACEHOLDER|TODO|TBD|LOREM IPSUM|XXX)(?![A-Za-z0-9_])/,
+    description: 'a standalone placeholder word'
+  }
+];
+
+/**
+ * The model-authored WRITE fields of the vocabulary. Deliberately not `find` or
+ * `expect`: those are reads, and refusing to search for a placeholder would
+ * block the one edit that cleans one up.
+ */
+export const MODEL_AUTHORED_TEXT_FIELDS = [
+  'text',
+  'replace',
+  'newText',
+  'displayText',
+  'screenTip',
+  'name',
+  'label'
+];
+
+/**
+ * `op.field` pairs that only LOOK like write fields. `delete_bookmark` names a
+ * bookmark that already exists, so its `name` is a selector in exactly the way
+ * `find` is, and refusing it would block the one op that removes a placeholder
+ * bookmark an earlier run left behind. Exported so the registry-exhaustive spec
+ * reads the same list instead of keeping its own copy of the exception.
+ */
+export const SENTINEL_SELECTOR_FIELDS = new Set(['delete_bookmark.name']);
+
+function sentinelToken(
+  value: unknown
+): { token: string; description: string } | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  for (const { shape, description } of SENTINEL_SHAPES) {
+    const match = shape.exec(value);
+    if (match) return { token: match[1] ?? match[0], description };
+  }
+  return undefined;
+}
+
+/** Every string one op would WRITE, with a human-readable location for each. */
+function authoredStrings(op: EditOp): Array<{ where: string; value: string }> {
+  const out: Array<{ where: string; value: string }> = [];
+  for (const field of MODEL_AUTHORED_TEXT_FIELDS)
+    if (
+      typeof op[field] === 'string' &&
+      !SENTINEL_SELECTOR_FIELDS.has(`${op.op}.${field}`)
+    )
+      out.push({ where: field, value: op[field] });
+  const matrix = op.initialCells;
+  if (Array.isArray(matrix))
+    matrix.forEach((row: unknown, rowIndex: number) => {
+      if (!Array.isArray(row)) return;
+      row.forEach((value: unknown, column: number) => {
+        if (typeof value === 'string')
+          out.push({
+            where: `initialCells row ${rowIndex}, column ${column}`,
+            value
+          });
+      });
+    });
+  // A section spec still attached after expansion (the refusal backstop keeps
+  // it) is composed content too, and its table cells are exactly the write path
+  // that bypasses the per-op checks.
+  const spec = op.sectionSpec;
+  if (spec && typeof spec === 'object') {
+    if (typeof spec.title === 'string')
+      out.push({ where: 'sectionSpec.title', value: spec.title });
+    if (Array.isArray(spec.blocks))
+      spec.blocks.forEach((specBlock: any, index: number) => {
+        if (!specBlock || typeof specBlock !== 'object') return;
+        if (typeof specBlock.text === 'string')
+          out.push({
+            where: `sectionSpec.blocks[${index}].text`,
+            value: specBlock.text
+          });
+        const table = specBlock.table;
+        if (!table || typeof table !== 'object') return;
+        if (Array.isArray(table.columnHeaders))
+          table.columnHeaders.forEach((header: unknown, column: number) => {
+            if (typeof header === 'string')
+              out.push({
+                where: `sectionSpec.blocks[${index}].table.columnHeaders[${column}]`,
+                value: header
+              });
+          });
+        if (Array.isArray(table.rows))
+          table.rows.forEach((row: unknown, rowIndex: number) => {
+            if (!Array.isArray(row)) return;
+            row.forEach((value: unknown, column: number) => {
+              if (typeof value === 'string')
+                out.push({
+                  where: `sectionSpec.blocks[${index}].table.rows[${rowIndex}][${column}]`,
+                  value
+                });
+            });
+          });
+      });
+  }
+  return out;
+}
+
+/**
+ * No write may put placeholder text into a document, from ANY op.
+ *
+ * One pass over the post-expansion `edits` array, which is the only place where
+ * every model-authored string in the change set - composed section-table cells
+ * included - is visible before a single write. A guard wired into one handler
+ * protects one handler; this is the boundary every op passes through, and the
+ * registry-enumerating spec fails if an op added later can bypass it.
+ */
+function detectSentinelContent(edits: EditOp[]): BatchRefusal | null {
+  for (let index = 0; index < edits.length; index++) {
+    const op = edits[index];
+    if (!op?.op) continue;
+    for (const { where, value } of authoredStrings(op)) {
+      const found = sentinelToken(value);
+      if (!found) continue;
+      return {
+        code: 'sentinel_content_refused',
+        message:
+          `Refusing to write ${JSON.stringify(
+            found.token
+          )} into the document: ` +
+          `edit ${index + 1} (${op.op}) carries ${
+            found.description
+          } in \`${where}\`. ` +
+          'Placeholder text is never an intermediate step - a change set that half-applies would leave it in the document for the client to read. ' +
+          'To REORDER existing content use move_section or swap_sections: they take only anchors and a position, and the engine relocates the real content with its formatting as one tracked group, so no temporary value is needed. ' +
+          'To write real content, send the final text. Nothing was written.',
+        details: [
+          `op: ${op.op}`,
+          `field: ${where}`,
+          `value: ${JSON.stringify(value.slice(0, 200))}`
+        ],
+        indices: [index]
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * The announcement gate. A batch that writes into more than one column of one
  * table is following a dependency chain, and must say so first.
  */
@@ -12562,6 +13265,7 @@ function applyDocumentEditsMeasured(
   // Phase 0: what only the whole batch can show. Both of these refuse BEFORE
   // any anchor is resolved, so a refused change set costs nothing at all.
   const batchRefusal =
+    detectSentinelContent(edits) ??
     detectInconsistentAggregateRanges(edits) ??
     detectEmptyInsertedTables(edits) ??
     detectMultilineAuthoredCells(edits) ??

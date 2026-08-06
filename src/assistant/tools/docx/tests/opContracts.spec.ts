@@ -35,7 +35,9 @@ import {
   getDocumentInventory,
   ApplyEditsResult,
   EditOp,
+  MODEL_AUTHORED_TEXT_FIELDS,
   MutationGuardCoverage,
+  SENTINEL_SELECTOR_FIELDS,
   TRACKED_STRUCTURAL_OPS,
   TRACKED_TEXT_OPS,
   TableFacts
@@ -313,6 +315,47 @@ const multiSectionFixture = () => ({
   ]
 });
 
+// Three level-1 sections. The relocation ops address section UNITS, so their
+// contract needs a document whose headings are real: a DocumentEditor keeps a
+// paragraph's style only when the document DECLARES it, and without the style
+// table `open()` normalizes everything to Normal and leaves one flat run of
+// text with no section boundaries to move.
+const orderedSectionsFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Alpha', 'Heading 1'),
+        para('a body'),
+        para('Beta', 'Heading 1'),
+        para('b body'),
+        para('Gamma', 'Heading 1'),
+        para('g body')
+      ]
+    }
+  ],
+  styles: [
+    {
+      type: 'Paragraph',
+      name: 'Normal',
+      next: 'Normal',
+      characterFormat: { fontSize: 11 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Heading 1',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 16 },
+      paragraphFormat: { outlineLevel: 'Level1' }
+    }
+  ]
+});
+
+const headingTexts = (editor: DocumentEditor) =>
+  flattenSfdt(JSON.parse(editor.serialize()))
+    .filter((block) => block.isHeading)
+    .map((block) => block.text);
+
 // --- Contract cases ----------------------------------------------------------
 
 interface ContractCase {
@@ -388,6 +431,33 @@ const CONTRACTS: Record<string, ContractCase> = {
     edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }],
     verify: (ed) => {
       expect(blockTexts(ed)).toEqual(['Before', 'After']);
+    }
+  },
+  move_section: {
+    fixture: orderedSectionsFixture,
+    edits: [
+      {
+        op: 'move_section',
+        anchor: '0;2',
+        expect: 'Beta',
+        targetAnchor: '0;0',
+        position: 'before'
+      }
+    ],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Gamma']);
+      // Relocated, not retyped: exactly one copy of the body that travelled.
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(1);
+    }
+  },
+  swap_sections: {
+    fixture: orderedSectionsFixture,
+    edits: [{ op: 'swap_sections', anchor: '0;0', otherAnchor: '0;4' }],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      expect(headingTexts(ed)).toEqual(['Gamma', 'Beta', 'Alpha']);
+      expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(1);
     }
   },
   insert_text: {
@@ -1435,7 +1505,12 @@ describe('op contracts: every advertised op works over its real route', () => {
       'insert_text',
       'insert_section',
       'insert_table',
-      'insert_row'
+      'insert_row',
+      // A relocation creates the content at its destination just as literally
+      // as an insert does - it is the same tracked write, with the engine
+      // rather than the model supplying the bytes.
+      'move_section',
+      'swap_sections'
     ]);
     const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
       .filter((op) => contentCreatingOps.has(op))
@@ -1486,6 +1561,79 @@ describe('op contracts: every advertised op works over its real route', () => {
         : 'not_applicable'
     );
   });
+
+  // Principle 8's second half, for the sentinel guard: a guard wired into one
+  // call site protects one call site, so this enumerates the REGISTRY and fails
+  // if an op added later can carry placeholder text into the document. The
+  // fields are derived from the registry's declared param types and the engine's
+  // own exported field list - no second copy of either to drift.
+  const sentinelTargets = DOCUMENT_EDITOR_CAPABILITIES.flatMap((entry) =>
+    Object.entries(entry.params as Record<string, string>)
+      .filter(([param, type]) => {
+        if (SENTINEL_SELECTOR_FIELDS.has(`${entry.op}.${param}`)) return false;
+        if (type === 'sectionSpec' || type === 'string[][]?') return true;
+        return (
+          MODEL_AUTHORED_TEXT_FIELDS.includes(param) &&
+          (type === 'string' || type === 'string?')
+        );
+      })
+      .map(([param, type]) => [entry.op, param, type] as const)
+  );
+
+  it('covers every registry op that can carry authored text', () => {
+    // A true positive before the guard is trusted: if this list ever empties,
+    // every case below would pass vacuously.
+    expect(sentinelTargets.length).toBeGreaterThan(8);
+    expect(sentinelTargets.map(([op, param]) => `${op}.${param}`)).toEqual(
+      expect.arrayContaining([
+        'replace_text.replace',
+        'insert_text.text',
+        'insert_section.sectionSpec',
+        'insert_table.initialCells',
+        'set_cell_text.text'
+      ])
+    );
+  });
+
+  it.each(sentinelTargets)(
+    '%s: a sentinel in `%s` is refused before any write',
+    (op, param, type) => {
+      const SENTINEL = '__TMP_SWAP_PARA_1__';
+      const value =
+        type === 'sectionSpec'
+          ? {
+              title: 'Policy Details',
+              blocks: [{ role: 'paragraph', text: SENTINEL }]
+            }
+          : type === 'string[][]?'
+          ? [[SENTINEL, 'Limit']]
+          : SENTINEL;
+      // The rest of the op is its own contract case's shape, so the refusal is
+      // the only thing that can be under test here.
+      const contract = CONTRACTS[op];
+      const editor = makeEditor(contract.fixture());
+      try {
+        contract.setup?.(editor);
+        const before = editor.serialize();
+        const edits = contract.edits.map((edit, index) =>
+          index === 0 ? { ...edit, [param]: value } : edit
+        );
+        const result = applyDocumentEdits(editor as any, {
+          edits,
+          changeSetId: `sentinel-${op}-${param}`
+        });
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'sentinel_content_refused'
+        });
+        expect(result.results[0].message).toContain(SENTINEL);
+        expect(editor.serialize()).toBe(before);
+        expect(editor.revisions.length).toBe(0);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
 
   it.each(PARAMETER_VARIANTS)('%s variant: %s', (op, _variant, contract) => {
     runContractCase(op, contract);

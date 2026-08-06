@@ -173,6 +173,43 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     requiresAnchor: true
   },
   {
+    // handler: ANCHORED_OP_HANDLERS.move_section
+    //
+    // Reordering, expressed as a structure change instead of as a rewrite. The
+    // engine relocates the REAL content - paragraphs, tables, images, styles,
+    // shading, column widths - as one tracked group, so it carries NO content
+    // field at all: `anchor` names the section to move, `targetAnchor` names the
+    // section to move it beside, `position` says which side. There is nothing
+    // here to mis-transcribe, no offset to count, and no figure to source.
+    //
+    // Both anchors name section UNITS, and the unit rule is depth-aware: moving
+    // a parent carries its subsections along, moving a subsection leaves its
+    // parent behind, and `position: 'after'` means after everything the target
+    // section covers. `expect` still applies as the compare-and-swap on the
+    // heading text at `anchor`, which a read already gave the model.
+    //
+    // Never express a reorder as insert_section plus a delete: that retypes the
+    // content, and a group that half-applies leaves a duplicate behind.
+    op: 'move_section',
+    params: {
+      targetAnchor: 'string',
+      position: 'enum[before,after]?'
+    },
+    requiresAnchor: true
+  },
+  {
+    // handler: ANCHORED_OP_HANDLERS.swap_sections
+    //
+    // The same primitive twice, bottom-up, inside one op - so the exchange is
+    // one accept/reject card and cannot half-apply. It is a separate op rather
+    // than two move_sections because the second move's anchors are only
+    // knowable after the first has run, and those are values the model would
+    // have to count.
+    op: 'swap_sections',
+    params: { otherAnchor: 'string' },
+    requiresAnchor: true
+  },
+  {
     // handler: applyAnchoredOp case 'set_cell_text'
     //
     // A figure written into a column of formatted amounts is re-rendered in
