@@ -245,10 +245,7 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
-import {
-  discardDocxDirty,
-  hasDirtyDocxEditors
-} from '../elements/components/DocxEditor/docxDirtyRegistry';
+import { hasDirtyDocxEditors } from '../elements/components/DocxEditor/docxDirtyRegistry';
 
 const UNSAVED_DOCX_MESSAGE =
   'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
@@ -2255,8 +2252,7 @@ function Form({
     textSpanStart,
     textSpanEnd,
     triggerPayload,
-    preOpenedWindows: externalPreOpenedWindows,
-    docxDiscardApproved = false
+    preOpenedWindows: externalPreOpenedWindows
   }: {
     actions: any[];
     element: any;
@@ -2268,7 +2264,6 @@ function Form({
     textSpanEnd?: number | undefined;
     triggerPayload?: Record<string, any>;
     preOpenedWindows?: Map<number, Window | null>;
-    docxDiscardApproved?: boolean;
   }) => {
     const id = element.id ?? '';
     const preOpenedWindows =
@@ -2287,33 +2282,14 @@ function Form({
 
     updateButtonActionState(elementType, element, triggerPayload);
 
-    // Confirm before step navigation would discard unsaved docx editor changes
-    if (
-      !docxDiscardApproved &&
-      actions.some((action: any) =>
-        [ACTION_NEXT, ACTION_BACK].includes(action.type)
-      ) &&
-      hasDirtyDocxEditors(_internalId)
-    ) {
+    // Prompted at the Next/Back action itself so validation and submission
+    // decide the step is really leaving first. Full-page exits use beforeunload.
+    let docxDiscardDeclined = false;
+    const confirmDocxDiscard = () => {
+      if (!hasDirtyDocxEditors(_internalId)) return true;
       const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
-      if (!proceed) {
-        elementClicks[id] = false;
-        clearButtonActionState();
-        closePreOpenedWindows(preOpenedWindows);
-        return;
-      }
-      docxDiscardApproved = true;
-    }
-
-    // Keep the unload guard armed until a full-page navigation actually
-    // commits. In-form step navigation unmounts DocumentEditorContainer, whose
-    // cleanup removes its own dirty entry. This one-shot commit is only needed
-    // before assigning location.href, where beforeunload would otherwise show
-    // a second prompt after the user has already chosen Leave.
-    const commitDocxDiscard = () => {
-      if (!docxDiscardApproved) return;
-      discardDocxDirty(_internalId);
-      docxDiscardApproved = false;
+      docxDiscardDeclined = !proceed;
+      return proceed;
     };
 
     const metadata = {
@@ -2460,8 +2436,7 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload,
-        docxDiscardApproved
+        triggerPayload
       });
       if (!running) onAsyncEnd();
     };
@@ -2574,7 +2549,6 @@ function Form({
             completed: true
           };
           await client.registerEvent(eventData);
-          commitDocxDiscard();
           featheryWindow().location.href = url;
         }
       } else if (type === ACTION_SEND_SMS_MESSAGE) {
@@ -2665,6 +2639,7 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
+        if (!confirmDocxDiscard()) break;
         await goToNewStep({
           redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
@@ -2673,8 +2648,10 @@ function Form({
           completionButton:
             elementType === 'button' ? (element as ClickActionElement) : null
         });
-      } else if (type === ACTION_BACK) await goToPreviousStep();
-      else if (type === ACTION_PURCHASE_PRODUCTS) {
+      } else if (type === ACTION_BACK) {
+        if (!confirmDocxDiscard()) break;
+        await goToPreviousStep();
+      } else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
         if (!actionSuccess) break;
       } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
@@ -2844,7 +2821,6 @@ function Form({
                   completed: true
                 };
                 await client.registerEvent(eventData);
-                commitDocxDiscard();
                 featheryWindow().location.href = url;
               } else openTab(url);
             } else if (envAction === 'download' && data.files) {
@@ -2878,7 +2854,6 @@ function Form({
             event: submit ? 'complete' : 'skip',
             completed: true
           });
-          commitDocxDiscard();
           featheryWindow().location.href = url;
         } else openTab(url);
       } else if (type === ACTION_GENERATE_QUIK_DOCUMENTS) {
@@ -3056,6 +3031,10 @@ function Form({
     if (i < actions.length) {
       elementClicks[id] = false;
       clearButtonActionState();
+
+      // The user chose to keep their unsaved docx changes, so nothing is
+      // pending. Return falsy so the caller clears the button loader.
+      if (docxDiscardDeclined) return;
 
       return true;
     }
@@ -3357,10 +3336,7 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider
-          navigationId={_internalId}
-          confirmPopNavigation={confirmDocxPopNavigation}
-        >
+        <RouterProvider confirmPopNavigation={confirmDocxPopNavigation}>
           <Form
             {...props}
             formId={formId}

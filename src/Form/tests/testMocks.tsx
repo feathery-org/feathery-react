@@ -64,10 +64,14 @@ jest.mock('../../utils/hideAndRepeats', () => ({
 }));
 
 // Validation
-jest.mock('../../utils/validation', () => ({
-  validateElements: () => ({ invalid: false, inlineErrors: {} }),
-  validators: { phone: () => true, email: () => true }
-}));
+jest.mock('../../utils/validation', () => {
+  const state = { invalid: false };
+  return {
+    validateElements: () => ({ invalid: state.invalid, inlineErrors: {} }),
+    validators: { phone: () => true, email: () => true },
+    _spies: state
+  };
+});
 
 // Init and globals
 jest.mock('../../utils/init', () => {
@@ -158,8 +162,9 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
 
 // Grid mock: no out of scope captures, only uses props
 jest.mock('../grid', () => {
-  const state = { actions: [] as any[], submit: false };
+  const state = { actions: [] as any[], submit: false, form: null as any };
   const GridMock = ({ form }: any) => {
+    state.form = form;
     return (
       <button
         data-testid='btn'
@@ -473,3 +478,7 @@ export const GridMod: any = jest.requireMock('../grid');
 // Expose the browser confirmation mock used by Form integration tests.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const BrowserMod: any = jest.requireMock('../../utils/browser');
+
+// Lets tests force step validation to fail.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ValidationMod: any = jest.requireMock('../../utils/validation');

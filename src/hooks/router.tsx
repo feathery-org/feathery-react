@@ -4,6 +4,7 @@ import React, {
   useContext,
   useCallback,
   useMemo,
+  useRef,
   type ReactNode,
   useEffect
 } from 'react';
@@ -23,24 +24,117 @@ type RouterData = {
 type RouterProviderProps = {
   children: ReactNode;
   initialPath?: string;
-  navigationId?: string;
   confirmPopNavigation?: () => boolean;
 };
 
-const HISTORY_INDEXES_KEY = '__featheryNavigationIndexes';
+type Subscriber = {
+  syncLocation: (pathname: string) => void;
+  confirmPopNavigation: () => boolean;
+};
 
-const getHistoryIndexes = (state: any): Record<string, number> =>
-  state && typeof state === 'object' && state[HISTORY_INDEXES_KEY]
-    ? state[HISTORY_INDEXES_KEY]
-    : {};
+const HISTORY_INDEX_KEY = '__featheryHistoryIndex';
 
-const withHistoryIndex = (state: any, navigationId: string, index: number) => ({
+const getHistoryIndex = (state: any): number | undefined => {
+  const index =
+    state && typeof state === 'object' ? state[HISTORY_INDEX_KEY] : undefined;
+  return typeof index === 'number' ? index : undefined;
+};
+
+const withHistoryIndex = (state: any, index: number) => ({
   ...(state && typeof state === 'object' ? state : {}),
-  [HISTORY_INDEXES_KEY]: {
-    ...getHistoryIndexes(state),
-    [navigationId]: index
-  }
+  [HISTORY_INDEX_KEY]: index
 });
+
+// Browser history is page-wide, so a single module-level owner indexes it for
+// every mounted RouterProvider — per-provider counters drift once two forms
+// interleave pushes, and the undo delta then targets the wrong entry.
+const subscribers = new Set<Subscriber>();
+let currentHistoryIndex = 0;
+// Where we asked the browser to return after a declined pop, so that pop is
+// swallowed instead of re-prompting
+let restoringHistoryIndex: number | null = null;
+let popStateListener: ((event: PopStateEvent) => void) | null = null;
+
+const syncSubscriberLocations = () => {
+  const { pathname } = featheryWindow().location;
+  subscribers.forEach((subscriber) => subscriber.syncLocation(pathname));
+};
+
+const handlePopState = (event: PopStateEvent) => {
+  const window = featheryWindow();
+  const destinationIndex = getHistoryIndex(event.state);
+
+  if (restoringHistoryIndex !== null) {
+    const restored = destinationIndex === restoringHistoryIndex;
+    restoringHistoryIndex = null;
+    if (restored) {
+      currentHistoryIndex = destinationIndex as number;
+      return;
+    }
+  }
+
+  // Only Feathery-owned entries carry an index. Cross-document navigation
+  // remains protected by beforeunload, while host SPA navigation must be
+  // guarded by the host router.
+  if (destinationIndex === undefined) {
+    syncSubscriberLocations();
+    return;
+  }
+
+  const delta = destinationIndex - currentHistoryIndex;
+  if (delta !== 0) {
+    const declined = [...subscribers].some(
+      (subscriber) => !subscriber.confirmPopNavigation()
+    );
+    if (declined) {
+      restoringHistoryIndex = currentHistoryIndex;
+      window.history.go(-delta);
+      return;
+    }
+  }
+
+  currentHistoryIndex = destinationIndex;
+  syncSubscriberLocations();
+};
+
+const subscribeToHistory = (subscriber: Subscriber) => {
+  const window = featheryWindow();
+
+  // Adopt the index already on the entry when another provider (or a reload of
+  // a Feathery-pushed entry) got here first.
+  const existingIndex = getHistoryIndex(window.history.state);
+  if (existingIndex === undefined) {
+    window.history.replaceState(
+      withHistoryIndex(window.history.state, currentHistoryIndex),
+      '',
+      window.location.href
+    );
+  } else currentHistoryIndex = existingIndex;
+
+  subscribers.add(subscriber);
+  if (!popStateListener) {
+    popStateListener = handlePopState;
+    window.addEventListener('popstate', popStateListener);
+  }
+
+  return () => {
+    subscribers.delete(subscriber);
+    if (subscribers.size === 0 && popStateListener) {
+      featheryWindow().removeEventListener('popstate', popStateListener);
+      popStateListener = null;
+    }
+  };
+};
+
+export const _resetRouterHistory = () => {
+  if (popStateListener) {
+    featheryWindow().removeEventListener('popstate', popStateListener);
+    popStateListener = null;
+  }
+  subscribers.clear();
+  currentHistoryIndex = 0;
+  restoringHistoryIndex = null;
+};
 
 const RouterContext = createContext<RouterData>({
   location: {
@@ -52,83 +146,36 @@ const RouterContext = createContext<RouterData>({
 export function RouterProvider({
   children,
   initialPath = featheryWindow().location.pathname,
-  navigationId = '__default_form__',
   confirmPopNavigation
 }: RouterProviderProps) {
   const [location, setLocation] = useState({ pathname: initialPath });
-  const currentHistoryIndex = React.useRef(0);
-  const restoringHistoryIndex = React.useRef<number | null>(null);
+  // Kept in a ref so a new callback identity doesn't resubscribe the listener
+  const confirmRef = useRef(confirmPopNavigation);
+  confirmRef.current = confirmPopNavigation;
 
-  useEffect(() => {
-    const window = featheryWindow();
-    const existingIndex = getHistoryIndexes(window.history.state)[navigationId];
-    const initialIndex = typeof existingIndex === 'number' ? existingIndex : 0;
-    currentHistoryIndex.current = initialIndex;
-
-    if (typeof existingIndex !== 'number') {
-      window.history.replaceState(
-        withHistoryIndex(window.history.state, navigationId, initialIndex),
-        '',
-        window.location.href
-      );
-    }
-  }, [navigationId]);
-
-  const navigate = useCallback(
-    (to: string, options: NavigateOptions = {}) => {
-      const window = featheryWindow();
-      const historyMethod = options.replace ? 'replaceState' : 'pushState';
-      const nextIndex = options.replace
-        ? currentHistoryIndex.current
-        : currentHistoryIndex.current + 1;
-      window.history[historyMethod](
-        withHistoryIndex(window.history.state, navigationId, nextIndex),
-        '',
-        to
-      );
-      currentHistoryIndex.current = nextIndex;
-      setLocation({ pathname: to });
-    },
-    [navigationId]
+  useEffect(
+    () =>
+      subscribeToHistory({
+        syncLocation: (pathname) => setLocation({ pathname }),
+        confirmPopNavigation: () => confirmRef.current?.() ?? true
+      }),
+    []
   );
 
-  // listen to browser back/forward navigation
-  useEffect(() => {
+  const navigate = useCallback((to: string, options: NavigateOptions = {}) => {
     const window = featheryWindow();
-    const handlePopState = (event: PopStateEvent) => {
-      const destinationIndex = getHistoryIndexes(event.state)[navigationId];
-
-      if (restoringHistoryIndex.current !== null) {
-        if (destinationIndex === restoringHistoryIndex.current) {
-          currentHistoryIndex.current = destinationIndex;
-          restoringHistoryIndex.current = null;
-          return;
-        }
-        restoringHistoryIndex.current = null;
-      }
-
-      // Only Feathery-owned entries have an index. Cross-document navigation
-      // remains protected by beforeunload, while host SPA navigation must be
-      // guarded by the host router.
-      if (typeof destinationIndex !== 'number') {
-        setLocation({ pathname: window.location.pathname });
-        return;
-      }
-
-      const delta = destinationIndex - currentHistoryIndex.current;
-      if (delta !== 0 && confirmPopNavigation && !confirmPopNavigation()) {
-        restoringHistoryIndex.current = currentHistoryIndex.current;
-        window.history.go(-delta);
-        return;
-      }
-
-      currentHistoryIndex.current = destinationIndex;
-      setLocation({ pathname: window.location.pathname });
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [confirmPopNavigation, navigationId]);
+    const historyMethod = options.replace ? 'replaceState' : 'pushState';
+    const nextIndex = options.replace
+      ? currentHistoryIndex
+      : currentHistoryIndex + 1;
+    window.history[historyMethod](
+      withHistoryIndex(window.history.state, nextIndex),
+      '',
+      to
+    );
+    currentHistoryIndex = nextIndex;
+    setLocation({ pathname: to });
+  }, []);
 
   const routerData = useMemo(
     () => ({

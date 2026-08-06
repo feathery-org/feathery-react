@@ -1,5 +1,11 @@
-import { BrowserMod, CheckButtonActionMod, GridMod } from './testMocks';
 import {
+  BrowserMod,
+  CheckButtonActionMod,
+  GridMod,
+  ValidationMod
+} from './testMocks';
+import {
+  act,
   render,
   screen,
   fireEvent,
@@ -30,11 +36,14 @@ afterEach(() => {
   CheckButtonActionMod._spies.setButtonLoaderRef.current = jest.fn();
   GridMod._spies.actions = [];
   GridMod._spies.submit = false;
+  GridMod._spies.form = null;
+  ValidationMod._spies.invalid = false;
   BrowserMod._spies.confirm.mockReset();
   BrowserMod._spies.history.state = null;
   BrowserMod._spies.history.go.mockReset();
   BrowserMod._spies.history.pushState.mockClear();
   BrowserMod._spies.history.replaceState.mockClear();
+  BrowserMod._spies.location.href = 'https://example.com/';
   _clearDocxDirtyRegistry();
 
   // Restore FeatheryClient prototype if a test overrode it
@@ -42,36 +51,29 @@ afterEach(() => {
 });
 
 describe('docx discard navigation boundary', () => {
-  it('keeps the editor dirty when an approved Next action fails before navigation', async () => {
+  const clickTrigger = async () =>
+    fireEvent.click(await screen.findByTestId('btn'));
+
+  // Editors register dirty state under the id the grid hands them, which must
+  // match the id the Next/Back guard and browser history guard look up.
+  it('renders the grid with the same form id the guard checks', async () => {
+    render(<JSForm formId='f1' _internalId='iid-docx-key' />);
+    await screen.findByTestId('btn');
+
+    expect(GridMod._spies.form.formInstanceId).toBe('iid-docx-key');
+  });
+
+  it('prompts once when a Next action is about to run', async () => {
     BrowserMod._spies.confirm.mockReturnValue(true);
     GridMod._spies.actions = [{ type: 'next' }];
-    GridMod._spies.submit = true;
-    setDocxEditorDirty('iid-docx-failure', 'document-container-a', true);
+    setDocxEditorDirty('iid-docx-next', 'document-container-a', true);
 
-    render(<JSForm formId='f1' _internalId='iid-docx-failure' />);
-    fireEvent.click(await screen.findByTestId('btn'));
+    render(<JSForm formId='f1' _internalId='iid-docx-next' />);
+    await clickTrigger();
 
     await waitFor(() =>
       expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1)
     );
-    expect(hasDirtyDocxEditors('iid-docx-failure')).toBe(true);
-  });
-
-  it('discards immediately before an approved full-page URL navigation', async () => {
-    BrowserMod._spies.confirm.mockReturnValue(true);
-    GridMod._spies.actions = [
-      { type: 'url', url: 'https://example.com/next', open_tab: false },
-      { type: 'next' }
-    ];
-    setDocxEditorDirty('iid-docx-redirect', 'document-container-a', true);
-
-    render(<JSForm formId='f1' _internalId='iid-docx-redirect' />);
-    fireEvent.click(await screen.findByTestId('btn'));
-
-    await waitFor(() =>
-      expect(hasDirtyDocxEditors('iid-docx-redirect')).toBe(false)
-    );
-    expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1);
   });
 
   it('stops Next navigation when discarding docx changes is declined', async () => {
@@ -80,12 +82,46 @@ describe('docx discard navigation boundary', () => {
     setDocxEditorDirty('iid-docx-stay', 'document-container-a', true);
 
     render(<JSForm formId='f1' _internalId='iid-docx-stay' />);
-    fireEvent.click(await screen.findByTestId('btn'));
+    await clickTrigger();
 
     await waitFor(() =>
       expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1)
     );
     expect(hasDirtyDocxEditors('iid-docx-stay')).toBe(true);
+    expect(screen.getByTestId('btn')).toBeInTheDocument();
+  });
+
+  it('does not prompt when validation blocks the step before Next runs', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    ValidationMod._spies.invalid = true;
+    GridMod._spies.actions = [{ type: 'next' }];
+    GridMod._spies.submit = true;
+    setDocxEditorDirty('iid-docx-invalid', 'document-container-a', true);
+
+    render(<JSForm formId='f1' _internalId='iid-docx-invalid' />);
+    await clickTrigger();
+
+    await act(async () => {});
+    expect(BrowserMod._spies.confirm).not.toHaveBeenCalled();
+    expect(hasDirtyDocxEditors('iid-docx-invalid')).toBe(true);
+  });
+
+  it('does not prompt for actions that stay on the current step', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    GridMod._spies.actions = [
+      { type: 'url', url: 'https://example.com/next', open_tab: false }
+    ];
+    setDocxEditorDirty('iid-docx-url', 'document-container-a', true);
+
+    render(<JSForm formId='f1' _internalId='iid-docx-url' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(BrowserMod._spies.location.href).toBe('https://example.com/next')
+    );
+    // Full-page exits stay on the browser's own beforeunload warning
+    expect(BrowserMod._spies.confirm).not.toHaveBeenCalled();
+    expect(hasDirtyDocxEditors('iid-docx-url')).toBe(true);
   });
 });
 

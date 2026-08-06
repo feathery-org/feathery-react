@@ -2,7 +2,6 @@ import { featheryWindow } from '../../../utils/browser';
 import {
   _clearDocxDirtyRegistry,
   clearDocxEditorDirty,
-  discardDocxDirty,
   hasDirtyDocxEditors,
   setDocxEditorDirty
 } from './docxDirtyRegistry';
@@ -74,24 +73,6 @@ describe('docxDirtyRegistry', () => {
 
     setDocxEditorDirty('form-2', 'container-b', false);
     expect(unloadCalls(removeSpy)).toHaveLength(1);
-  });
-
-  it('discardDocxDirty clears the whole form and disarms the listener', () => {
-    setDocxEditorDirty('form-1', 'container-a', true);
-    setDocxEditorDirty('form-1', 'container-b', true);
-
-    discardDocxDirty('form-1');
-    expect(hasDirtyDocxEditors('form-1')).toBe(false);
-    expect(unloadCalls(removeSpy)).toHaveLength(1);
-  });
-
-  it('discardDocxDirty leaves other forms armed', () => {
-    setDocxEditorDirty('form-1', 'container-a', true);
-    setDocxEditorDirty('form-2', 'container-b', true);
-
-    discardDocxDirty('form-1');
-    expect(hasDirtyDocxEditors('form-2')).toBe(true);
-    expect(unloadCalls(removeSpy)).toHaveLength(0);
   });
 
   it('prevents unload while dirty', () => {

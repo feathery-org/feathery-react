@@ -54,13 +54,6 @@ export const clearDocxEditorDirty = (
 export const hasDirtyDocxEditors = (formId?: string): boolean =>
   (dirtyByForm.get(formKey(formId))?.size ?? 0) > 0;
 
-// Called when the user opts to discard changes so a subsequent redirect
-// doesn't re-trigger the browser unload warning
-export const discardDocxDirty = (formId?: string) => {
-  dirtyByForm.delete(formKey(formId));
-  syncUnloadListener();
-};
-
 export const _clearDocxDirtyRegistry = () => {
   dirtyByForm.clear();
   syncUnloadListener();
