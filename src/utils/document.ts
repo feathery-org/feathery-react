@@ -9,7 +9,9 @@ function isValidUrl(urlString: string): boolean {
   }
 }
 
-function signUrl(token: string, redirect?: boolean | string) {
+// Everyone who can sign has a signer row, so an envelope is always opened as
+// that one signer rather than left for the server to guess.
+export function getSignUrl(token: string, redirect?: boolean | string) {
   const regionPart =
     initState.region && initState.region !== 'us' ? `${initState.region}.` : '';
 
@@ -34,18 +36,6 @@ function signUrl(token: string, redirect?: boolean | string) {
   }
 
   return `https://${regionPart}document.feathery.io/to/${token}${query}`;
-}
-
-// Everyone who can sign has a signer row, so an envelope is always opened as
-// that one signer rather than left for the server to guess.
-export function getSignUrl(signerId: string, redirect?: boolean | string) {
-  return signUrl(signerId, redirect);
-}
-
-// The whole submission's envelopes instead of one signer's view - only for the
-// action that reopens whatever was already generated.
-export function getSubmissionSignUrl(redirect?: boolean | string) {
-  return signUrl(initState._internalUserId, redirect);
 }
 
 /** The Document Editor container this action targets, or '' when it doesn't
