@@ -380,13 +380,38 @@ describe('TrackedChangeGroups', () => {
     editor.focusIn = jest.fn();
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 1' }));
+    // Single-edit groups have no group-wide buttons; resolve via the chip.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    fireEvent.click(screen.getByLabelText('Accept this edit'));
 
     // The rail unmounted; focus on <body> would swallow the next ⌘Z, so it
     // goes back into the document instead.
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
     expect(editor.focusIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the group-wide Accept/Reject for single-edit groups', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // No "Accept 1"/"Reject 1" — a lone edit resolves through its chip.
+    expect(
+      screen.queryByRole('button', { name: 'Accept 1' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Reject 1' })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    expect(screen.getByLabelText('Accept this edit')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reject this edit')).toBeInTheDocument();
   });
 
   it('does not skip chips when selectRevision echoes a neighbouring selectionChange', () => {

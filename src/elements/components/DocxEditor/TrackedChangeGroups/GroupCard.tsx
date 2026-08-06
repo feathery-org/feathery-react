@@ -36,8 +36,9 @@ interface Props {
   onResolveChips: (chips: ChipView[], isAccept: boolean) => void;
 }
 
-// One accept group: expandable header with tally, group-wide Accept/Reject,
-// and — while open — the chip list joined by a spine.
+// One accept group: expandable header with tally, group-wide Accept/Reject
+// (only when there is more than one edit — a lone edit resolves through its
+// chip's own actions), and — while open — the chip list joined by a spine.
 export default function GroupCard({
   group,
   isOpen,
@@ -123,22 +124,24 @@ export default function GroupCard({
           </span>
         </span>
       </button>
-      <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
-        <button
-          type='button'
-          css={btn}
-          onClick={() => onResolveChips(group.chips, true)}
-        >
-          Accept {group.chips.length}
-        </button>
-        <button
-          type='button'
-          css={rejectBtn}
-          onClick={() => onResolveChips(group.chips, false)}
-        >
-          Reject {group.chips.length}
-        </button>
-      </div>
+      {group.chips.length > 1 && (
+        <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
+          <button
+            type='button'
+            css={btn}
+            onClick={() => onResolveChips(group.chips, true)}
+          >
+            Accept {group.chips.length}
+          </button>
+          <button
+            type='button'
+            css={rejectBtn}
+            onClick={() => onResolveChips(group.chips, false)}
+          >
+            Reject {group.chips.length}
+          </button>
+        </div>
+      )}
       {isOpen && (
         <div
           css={{
