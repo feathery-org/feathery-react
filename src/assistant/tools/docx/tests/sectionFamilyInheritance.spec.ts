@@ -724,6 +724,93 @@ describe('an inserted row is never a header it was not asked to be', () => {
     }
   });
 
+  it('treats a header the SFDT never declares as a header', () => {
+    // The blind spot every other fixture in this suite shares: they state
+    // header-ness one of the two ways the engine reads directly - Word's
+    // isHeader flag, or a distinct cell fill - so they can only ever confirm
+    // what it already believes. Here the header row carries NEITHER. Its
+    // header-ness exists only in how it RENDERS, which is how the real
+    // proposal expresses it (there, through the table style's first-row
+    // conditional formatting; jsdom will not resolve those, so this states the
+    // same thing as direct typography). The table is stripped to that one row,
+    // so there is no second row to infer contrast from either.
+    const houseHeader = (text: string) => ({
+      cellFormat: {},
+      blocks: [
+        {
+          inlines: [
+            { text, characterFormat: { bold: true, fontColor: '#FFFFFF' } }
+          ]
+        }
+      ]
+    });
+    const houseCell = (text: string) => ({
+      cellFormat: {},
+      blocks: [{ inlines: [{ text }] }]
+    });
+    const houseTable = (withData: boolean) => ({
+      tableFormat: {},
+      rows: [
+        {
+          rowFormat: {},
+          cells: [houseHeader('Team Member'), houseHeader('Role')]
+        },
+        ...(withData
+          ? [
+              {
+                rowFormat: {},
+                cells: [houseCell('Dana Reid'), houseCell('Executive')]
+              }
+            ]
+          : [])
+      ]
+    });
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            paragraph('Team', 'Title'),
+            prose('Team'),
+            houseTable(false),
+            paragraph('Reference', 'Title'),
+            prose('Reference'),
+            houseTable(true)
+          ]
+        }
+      ],
+      styles: STYLES
+    });
+    try {
+      const [stripped, reference] = tableShadings(editor);
+      expect(stripped.rows).toHaveLength(1);
+      // Neither encoding the engine reads directly says "header".
+      expect(stripped.rows[0].isHeader).toBe(false);
+      expect(stripped.rows[0].shading).toBeNull();
+      const headerLook = renderedFormat(editor, `${stripped.anchor};0;0;0`, 0);
+      const dataLook = renderedFormat(editor, `${reference.anchor};1;0;0`, 0);
+      expect(headerLook).not.toEqual(dataLook);
+
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'undeclared-header',
+        edits: [
+          { op: 'insert_row', anchor: `${stripped.anchor};0;0;0`, count: 1 }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'insert_row' });
+
+      const after = tableShadings(editor)[0];
+      expect(after.rows).toHaveLength(2);
+      expect(after.rows[1].isHeader).toBe(false);
+      // The created row was NOT dressed from the undeclared header, and does
+      // match the data row the document proves elsewhere.
+      const created = renderedFormat(editor, `${stripped.anchor};1;0;0`, 0);
+      expect(created).not.toEqual(headerLook);
+      expect(created).toEqual(dataLook);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   it('holds for every op in the registry that brings rows into existence', () => {
     // The guard belongs to the row-creating primitive, not to one caller, so
     // this enumerates the vocabulary rather than naming insert_row.

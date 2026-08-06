@@ -10702,6 +10702,13 @@ interface CreationAppearanceResolver {
     tableAnchor: string;
     source: TableAppearance;
     targetRow: number;
+    /**
+     * A row's RENDERED text format, resolved through the table style. Supplied
+     * by callers holding a live editor; without it the band is derived only
+     * from what the SFDT states outright, which is not always enough - see the
+     * header-band derivation in `row`.
+     */
+    rendered?: (tableAnchor: string, row: number) => FormatBag | undefined;
   }): Resolution<CreatedRowAppearance>;
 }
 
@@ -10757,6 +10764,28 @@ function creationAppearance(
     return found
       .sort((left, right) => left.distance - right.distance)
       .map((entry) => entry.anchor);
+  };
+
+  /**
+   * The nearest row elsewhere in the document that is a data row by STRUCTURE:
+   * the last row of a table that has more than one.
+   *
+   * Deliberately not "the first row below inferHeaderRows". That would derive
+   * the baseline with the very inference the baseline exists to check, so a
+   * document whose headers are undeclared everywhere - which is this one -
+   * hands back another undeclared header and every comparison against it says
+   * "no difference". Headers lead a table; the last row of a multi-row table
+   * is below any of them, whatever encoding declared them.
+   */
+  const firstDocumentDataRow = (exclude: string) => {
+    for (const anchor of tableAnchorsByDistance(exclude, exclude)) {
+      const appearance = appearanceOf(anchor);
+      if (!appearance || appearance.rows.length < 2) continue;
+      const row = appearance.rows.length - 1;
+      if (row < inferHeaderRows(appearance)) continue;
+      return { anchor, appearance, row };
+    }
+    return undefined;
   };
 
   return {
@@ -10874,7 +10903,35 @@ function creationAppearance(
       const searched: string[] = [];
       const { source, targetRow } = options;
       // DERIVED: which rows are the header band.
-      const headerRows = inferHeaderRows(source);
+      //
+      // HEADER-NESS HAS AT LEAST THREE EXPRESSIONS, and reading only some of
+      // them has now caused two separate defects on this project:
+      //   1. Word's `isHeader` FLAG - the only one that is a declaration, and
+      //      so the only one that may be COPIED onto a row being created;
+      //   2. a distinct cell FILL, which `inferHeaderRows` infers by contrast
+      //      with the rows below it;
+      //   3. the TABLE STYLE's first-row conditional formatting, which states
+      //      nothing on the row or its cells at all - the SFDT is empty and
+      //      the page is navy and bold.
+      // (3) is invisible to the other two, and a table stripped to its header
+      // row cannot even use (2), because contrast needs a second row. So the
+      // engine read "no header rows", concluded the header WAS a data row, and
+      // dressed a newly added row as a second header.
+      //
+      // The document answers what its own encoding does not: compare the row
+      // AS RENDERED against a data row proven elsewhere in the document. A
+      // false positive here is safe - it widens to that proven data row, which
+      // is the right look either way - while a false negative is the defect.
+      let headerRows = inferHeaderRows(source);
+      const documentRow = firstDocumentDataRow(options.tableAnchor);
+      if (headerRows === 0 && options.rendered && source.rows.length) {
+        const own = options.rendered(options.tableAnchor, 0);
+        const proven = documentRow
+          ? options.rendered(documentRow.anchor, documentRow.row)
+          : undefined;
+        if (own && proven && JSON.stringify(own) !== JSON.stringify(proven))
+          headerRows = 1;
+      }
       const lastRow = source.rows.length - 1;
       const displaced = Math.min(targetRow, lastRow);
       const inBand = headerBandContains(source, targetRow, headerRows);
@@ -10902,26 +10959,21 @@ function creationAppearance(
       searched.push(
         'every table in the document with a data row, nearest first'
       );
-      for (const anchor of tableAnchorsByDistance(
-        options.tableAnchor,
-        options.tableAnchor
-      )) {
-        const appearance = appearanceOf(anchor);
-        if (!appearance) continue;
-        const donorHeaderRows = inferHeaderRows(appearance);
-        if (appearance.rows.length <= donorHeaderRows) continue;
+      if (documentRow)
         return {
           resolved: true,
           value: {
-            isHeader: copiedRowIsHeader(appearance, donorHeaderRows),
-            donorTable: anchor,
-            donorAppearance: appearance,
-            donorRow: donorHeaderRows
+            isHeader: copiedRowIsHeader(
+              documentRow.appearance,
+              documentRow.row
+            ),
+            donorTable: documentRow.anchor,
+            donorAppearance: documentRow.appearance,
+            donorRow: documentRow.row
           },
-          from: `${anchor};${donorHeaderRows}`,
+          from: `${documentRow.anchor};${documentRow.row}`,
           evidence: { siblings: 0, scope: 'document' }
         };
-      }
       return unresolved('the document contains no data row to copy', searched);
     }
   };
@@ -11050,9 +11102,18 @@ function planRowInsertInheritance(
     { length: count },
     (_, index) => firstRow + index
   );
-  const resolver = creationAppearance(blocks, sfdt, byAnchorOf(blocks));
+  const byAnchor = byAnchorOf(blocks);
+  const resolver = creationAppearance(blocks, sfdt, byAnchor);
+  // The rendered read is what makes a style-only header visible at all: it
+  // resolves through the table style, exactly as the page does.
+  const rendered = (anchor: string, row: number) => {
+    const cell = byAnchor.get(`${anchor};${row};0;0`);
+    return cell
+      ? readEffectiveSourceFormat(editor, cell).characterFormat
+      : undefined;
+  };
   const resolutions = targetRows.map((targetRow) =>
-    resolver.row({ tableAnchor, source, targetRow })
+    resolver.row({ tableAnchor, source, targetRow, rendered })
   );
   const gap = resolutions.find((entry) => !entry.resolved);
   if (gap && !gap.resolved)
