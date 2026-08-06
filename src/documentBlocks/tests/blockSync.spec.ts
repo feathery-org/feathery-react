@@ -370,7 +370,10 @@ describe('attachBlockSync', () => {
               id: 'blk_note',
               type: 'paragraph',
               content: [
-                { kind: 'token', spec: { id: 'note', format: { kind: 'text' } } }
+                {
+                  kind: 'token',
+                  spec: { id: 'note', format: { kind: 'text' } }
+                }
               ]
             }
           ]
@@ -412,7 +415,10 @@ describe('attachBlockSync', () => {
   });
 
   it('skips the foreign-document reassert when the store data has no block anchors at all', () => {
-    const emptyDoc: DocumentData = { theme: SAMPLE_DOCUMENT.theme, sections: [] };
+    const emptyDoc: DocumentData = {
+      theme: SAMPLE_DOCUMENT.theme,
+      sections: []
+    };
     const editor = makeEditor();
     const store = createBlockStore(emptyDoc);
     const sync = attachBlockSync(editor, store, null);

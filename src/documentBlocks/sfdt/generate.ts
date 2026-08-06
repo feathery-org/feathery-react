@@ -61,7 +61,8 @@ const inlinesFor = (
   const out: Record<string, any>[] = [];
   for (const inline of content) {
     if (inline.kind === 'text') {
-      if (inline.text.length > 0) out.push(textRun(inline.text, characterFormat));
+      if (inline.text.length > 0)
+        out.push(textRun(inline.text, characterFormat));
       continue;
     }
     const name = tokenBookmark(inline.spec);

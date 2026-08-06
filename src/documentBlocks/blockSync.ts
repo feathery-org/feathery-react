@@ -208,13 +208,10 @@ export const attachBlockSync = (
       // they collapse into one undo step instead of forcing two undos to
       // get back to where the user started.
       if (blockEvents.length > 0 || mutations.length > 0) {
-        store.apply(
-          (d) => {
-            const withBlocks = blockEvents.length > 0 ? result.data : d;
-            return mutations.reduce((acc, mutate) => mutate(acc), withBlocks);
-          },
-          'document'
-        );
+        store.apply((d) => {
+          const withBlocks = blockEvents.length > 0 ? result.data : d;
+          return mutations.reduce((acc, mutate) => mutate(acc), withBlocks);
+        }, 'document');
         if (blockEvents.length > 0) {
           appendLog('absorb', summarizeEvents(blockEvents));
         }

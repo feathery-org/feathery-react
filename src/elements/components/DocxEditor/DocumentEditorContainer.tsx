@@ -493,6 +493,10 @@ export default function DocumentEditorContainer({
   const [activeTab, setActiveTab] = useState<'document' | 'components'>(
     'document'
   );
+  // The window flag preseeds visibility; the tab-strip button toggles it.
+  const [showDebug, setShowDebug] = useState(() =>
+    debugPanelEnabled(featheryWindow())
+  );
 
   useEffect(() => {
     if (!blocksEnabled || !blockStore) return undefined;
@@ -693,6 +697,22 @@ export default function DocumentEditorContainer({
               {tab === 'document' ? 'Document' : 'Components'}
             </button>
           ))}
+          <button
+            type='button'
+            onClick={() => setShowDebug((v) => !v)}
+            css={{
+              font: 'inherit',
+              marginLeft: 'auto',
+              padding: '4px 10px',
+              border: '1px solid #d4d4d8',
+              borderRadius: 4,
+              cursor: 'pointer',
+              background: showDebug ? '#18181b' : '#fff',
+              color: showDebug ? '#fff' : '#18181b'
+            }}
+          >
+            Debug
+          </button>
         </div>
         <div css={{ flex: 1, minHeight: 0, position: 'relative' as const }}>
           <div
@@ -722,7 +742,7 @@ export default function DocumentEditorContainer({
             <BlockPanel store={blockStore!} />
           )}
         </div>
-        {debugPanelEnabled(featheryWindow()) &&
+        {showDebug &&
           debugPanelSync &&
           editorSurfaceRef.current && (
             <DebugPanel
