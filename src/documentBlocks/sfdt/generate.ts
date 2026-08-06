@@ -30,6 +30,23 @@ const HEADING_STYLES: Record<BlockType, string> = {
   table: 'Normal'
 };
 
+/**
+ * A paragraph's `paragraphFormat.styleName` (e.g. "Heading 2") is a
+ * dangling reference unless the SFDT also defines that style: on import,
+ * Syncfusion resolves it via `documentHelper.styles.findByName(...)` and
+ * silently drops the link (no error, no fallback) if that lookup misses —
+ * confirmed against a real DocumentEditor. Every style this module ever
+ * assigns (see HEADING_STYLES / theme.ts's SAMPLE_TEXT) needs an entry here
+ * so the link survives open()/serialize(), which matters for saved-docx
+ * semantics (Word's Heading styles drive TOC/navigation).
+ */
+export const DOCUMENT_STYLES: Record<string, any>[] = [
+  { type: 'Paragraph', name: 'Normal', next: 'Normal' },
+  { type: 'Paragraph', name: 'Heading 1', basedOn: 'Normal', next: 'Normal' },
+  { type: 'Paragraph', name: 'Heading 2', basedOn: 'Normal', next: 'Normal' },
+  { type: 'Paragraph', name: 'Heading 3', basedOn: 'Normal', next: 'Normal' }
+];
+
 const textRun = (text: string, characterFormat: Record<string, any>) => ({
   characterFormat: { ...characterFormat },
   text
@@ -150,5 +167,9 @@ export const generateSfdt = (
     blocks: section.blocks.map((b) => blockFor(b, data.theme, tokenValues)),
     headersFooters: {}
   }));
-  return JSON.stringify({ optimizeSfdt: false, sections });
+  return JSON.stringify({
+    optimizeSfdt: false,
+    sections,
+    styles: DOCUMENT_STYLES
+  });
 };

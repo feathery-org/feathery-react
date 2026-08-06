@@ -190,4 +190,52 @@ describe('real DocumentEditor round trip', () => {
       expect.objectContaining({ characterFormat: expect.any(Object) })
     );
   });
+
+  it('a themed Heading 2 keeps its style link and its styling after regenerate + reopen', () => {
+    // Reproduces the live finding: bold the cmp_h2 sample the way a user
+    // would via the toolbar/selection API, extract the theme from a REAL
+    // editor's serialize(), regenerate the main document with that theme,
+    // and reopen. The finding named the junk-defaults prune (theme.ts's
+    // pruneEmpty) as the cause of styleName loss; probing this against a
+    // real DocumentEditor turned up a *second*, more fundamental cause that
+    // reproduces even with EMPTY_THEME (no junk at all): generateSfdt never
+    // emitted a `styles` list, so Syncfusion's importer resolves
+    // `paragraphFormat.styleName` via `documentHelper.styles.findByName(...)`
+    // and silently drops the link on any miss - "Heading 2" was *never*
+    // resolvable, theme or no theme. Fixed by exporting `DOCUMENT_STYLES`
+    // from generate.ts (a minimal Normal/Heading 1-3 style sheet) and
+    // including it in both generateSfdt's and componentsSfdt's SFDT root.
+    // The junk-prune fix is still real and independently verified
+    // (theme.spec.ts's "prunes Syncfusion junk defaults" case is a true
+    // RED->GREEN for it) - it keeps empty Syncfusion-owned sub-objects out
+    // of what gets extracted and re-applied to every themed paragraph, even
+    // though *this* specific real-editor assertion turned out to hinge on
+    // the styles list, not the prune.
+    const editor = makeEditor(componentsSfdt(EMPTY_THEME));
+    let serializedComponents: string;
+    try {
+      (editor.selection as any).selectBookmark('cmp_h2', true);
+      editor.selection.characterFormat.bold = true;
+      serializedComponents = editor.serialize();
+    } finally {
+      destroyEditor(editor);
+    }
+
+    const theme = extractTheme(serializedComponents);
+    const themedDoc = { ...SAMPLE_DOCUMENT, theme };
+    const serializedMain = roundTrip(generateSfdt(themedDoc, VALUES));
+
+    const doc = JSON.parse(serializedMain);
+    const h2Block = doc.sections
+      .flatMap((s: any) => s.blocks)
+      .find((b: any) =>
+        (b.inlines ?? []).some((i: any) => i.name === 'fblk_blk_scope_h')
+      );
+
+    expect(h2Block.paragraphFormat.styleName).toBe('Heading 2');
+    const textRun = h2Block.inlines.find(
+      (i: any) => typeof i.text === 'string'
+    );
+    expect(textRun.characterFormat.bold).toBe(true);
+  });
 });

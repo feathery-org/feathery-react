@@ -71,6 +71,51 @@ describe('theme', () => {
     });
   });
 
+  it('prunes Syncfusion junk defaults (empty borders/listFormat) from extracted formats', () => {
+    const doc = JSON.parse(componentsSfdt(EMPTY_THEME));
+    for (const block of doc.sections[0].blocks) {
+      const names = (block.inlines ?? [])
+        .map((i: any) => i.name)
+        .filter(Boolean);
+      if (!names.includes('cmp_h2')) continue;
+      // Mirrors a real editor's serialize() on a bolded+recolored sample:
+      // paragraphFormat expanded with empty default sub-objects, alongside
+      // the real user styling on the run's characterFormat.
+      block.paragraphFormat = {
+        ...block.paragraphFormat,
+        borders: {
+          top: {},
+          left: {},
+          bottom: {},
+          right: {},
+          horizontal: {},
+          vertical: {},
+          diagonalDown: {},
+          diagonalUp: {}
+        },
+        listFormat: {}
+      };
+      for (const inline of block.inlines) {
+        if (typeof inline.text === 'string') {
+          inline.characterFormat = {
+            ...inline.characterFormat,
+            bold: true,
+            fontColor: '#336699',
+            borders: { top: {}, bottom: {} }
+          };
+        }
+      }
+    }
+
+    const extracted = extractTheme(JSON.stringify(doc));
+
+    expect(extracted.h2.paragraphFormat).toEqual({});
+    expect(extracted.h2.characterFormat).toEqual({
+      bold: true,
+      fontColor: '#336699'
+    });
+  });
+
   it('leaves theme entries empty when a sample is missing', () => {
     const doc = JSON.parse(componentsSfdt(EMPTY_THEME));
     doc.sections[0].blocks = doc.sections[0].blocks.filter((b: any) => {

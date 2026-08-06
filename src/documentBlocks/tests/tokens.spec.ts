@@ -57,7 +57,7 @@ describe('resolveTokens', () => {
     expect(errors.size).toBe(0);
   });
 
-  it('puts a formula error in errors, not rendered', () => {
+  it('puts a formula error in errors and renders empty, never the string "undefined"', () => {
     const fields = stubFields({ customer_name: 'Acme Corp', retainer: 1500 });
     const broken: DocumentData = {
       ...SAMPLE_DOCUMENT,
@@ -92,7 +92,20 @@ describe('resolveTokens', () => {
 
     const { rendered, errors } = resolveTokens(broken, fields);
     expect(errors.has('total')).toBe(true);
-    expect(rendered.has('total')).toBe(false);
+    // Not left unset: an unset key reads back `undefined`, which
+    // string-interpolates into the document (and sync logs) as "undefined".
+    expect(rendered.get('total')).toBe('');
+  });
+
+  it('renders empty (not the string "undefined") for a computed token whose input is missing', () => {
+    // retainer resolves to undefined here, so the 'total' formula (which
+    // references it) throws "unknown token" during recalc — no numeric
+    // fallback, no coercion to the string 'undefined'.
+    const fields = stubFields({ customer_name: 'Acme Corp' });
+    const { rendered, errors } = resolveTokens(SAMPLE_DOCUMENT, fields);
+
+    expect(errors.has('total')).toBe(true);
+    expect(rendered.get('total')).toBe('');
   });
 
   it('falls back to data.values for a token with no source (in-memory input)', () => {

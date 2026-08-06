@@ -10,6 +10,7 @@ import {
   bookmarkName,
   isBookmarkStart
 } from './anchors';
+import { DOCUMENT_STYLES } from './sfdt/generate';
 
 const SAMPLE_ANCHORS = [
   'cmp_h1',
@@ -110,8 +111,32 @@ export const componentsSfdt = (theme: Theme): string => {
   }
   return JSON.stringify({
     optimizeSfdt: false,
-    sections: [{ sectionFormat: {}, blocks, headersFooters: {} }]
+    sections: [{ sectionFormat: {}, blocks, headersFooters: {} }],
+    styles: DOCUMENT_STYLES
   });
+};
+
+// Syncfusion's serialize() expands every paragraph/character format with its
+// own default sub-objects (paragraphFormat.borders, .listFormat, ...) even
+// when the sample was never touched there — these come back as {} (or an
+// object whose every leaf is {}), not real user styling. Left in the
+// extracted theme, they get re-applied to every themed paragraph and can
+// make Syncfusion drop that paragraph's styleName (Heading 2, etc.) on
+// reopen. Recursively drop any key whose value prunes down to {}.
+const pruneEmpty = (value: any): any => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    return value;
+  const result: Record<string, any> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const pruned = pruneEmpty(raw);
+    const isEmptyObject =
+      pruned !== null &&
+      typeof pruned === 'object' &&
+      !Array.isArray(pruned) &&
+      Object.keys(pruned).length === 0;
+    if (!isEmptyObject) result[key] = pruned;
+  }
+  return result;
 };
 
 const stripStyleName = (
@@ -119,12 +144,13 @@ const stripStyleName = (
 ): Record<string, any> | undefined => {
   if (!pf) return undefined;
   const { styleName, ...rest } = pf;
-  return rest;
+  return pruneEmpty(rest);
 };
 
 const firstRunFormat = (para: any): Record<string, any> | undefined => {
   for (const inline of para?.inlines ?? []) {
-    if (typeof inline.text === 'string') return inline.characterFormat ?? {};
+    if (typeof inline.text === 'string')
+      return pruneEmpty(inline.characterFormat ?? {});
   }
   return undefined;
 };

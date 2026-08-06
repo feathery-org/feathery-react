@@ -78,6 +78,11 @@ export const resolveTokens = (
     const key = valueKey(spec);
     const error = recalcErrors.get(key);
     if (error) {
+      // An errored/unresolvable computed token still needs a rendered
+      // entry: leaving the key unset makes callers' `rendered.get(key)`
+      // read back `undefined`, which string-interpolates into the document
+      // (and into sync logs) as the literal text "undefined".
+      rendered.set(key, '');
       errors.set(key, error);
       continue;
     }
