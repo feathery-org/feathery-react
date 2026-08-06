@@ -800,6 +800,179 @@ describe('swap_sections: one primitive, twice, bottom-up', () => {
   });
 });
 
+describe('copy_section: the same primitive without its delete', () => {
+  it('duplicates a section with its table; accept keeps both, reject removes only the new one', () => {
+    const editor = makeEditor(proposalFixture());
+    try {
+      const before = editor.serialize();
+      const factsBefore = tableFacts(editor);
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'copy_section',
+            anchor: '0;2',
+            expect: 'Your Client Services Team',
+            targetAnchor: '0;5',
+            position: 'before'
+          }
+        ],
+        'copy-client-services'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'copy_section' });
+      expect(result.changeSet?.groups).toHaveLength(1);
+      expect(result.changeSet?.announcement).toContain('copies the section');
+      expect(result.changeSet?.announcement).toContain(
+        'leaving the original in place'
+      );
+
+      // A copy authors Insertions ONLY - there is nothing to delete - so
+      // rejecting removes just the new copy and the document is byte-identical.
+      editor.revisions.rejectAll();
+      expect(editor.serialize()).toBe(before);
+      expect(headings(editor)).toEqual([
+        'About Hilb Group',
+        'Your Client Services Team',
+        'Next Steps'
+      ]);
+      expect(tableFacts(editor)).toEqual(factsBefore);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('accepting keeps both copies, the duplicate carrying the same table', () => {
+    const editor = makeEditor(proposalFixture());
+    try {
+      const factsBefore = tableFacts(editor);
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'copy_section',
+            anchor: '0;2',
+            targetAnchor: '0;5',
+            position: 'before'
+          }
+        ],
+        'copy-client-services-accept'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(headings(editor)).toEqual([
+        'About Hilb Group',
+        'Your Client Services Team',
+        'Your Client Services Team',
+        'Next Steps'
+      ]);
+      // TWO copies of the body now, which is the whole point of a copy - and the
+      // duplicated table keeps the shaded header row and autofit.
+      expect(
+        bodyTexts(editor).filter(
+          (text) => text === 'Your dedicated team is listed below.'
+        )
+      ).toHaveLength(2);
+      expect(tableFacts(editor)).toEqual(factsBefore);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it("copies a section holding another author's pending edit, and leaves it alone", () => {
+    const editor = makeEditor(nestedFixture());
+    try {
+      // The refusal a MOVE gets here does not apply: a copy takes nothing away,
+      // so the reviewer's pending change is never at risk.
+      editor.enableTrackChanges = true;
+      editor.currentUser = 'Dana Reviewer';
+      editor.selection.select('0;3;0', '0;3;8');
+      editor.editor.insertText('Regionally, ');
+      const pendingRevisions = editor.revisions.length;
+      expect(pendingRevisions).toBeGreaterThan(0);
+
+      const result = apply(
+        editor,
+        [{ op: 'copy_section', anchor: '0;2', targetAnchor: '0;6' }],
+        'copy-over-foreign-revision'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      // Their revision is still pending, untouched, alongside the copy's own.
+      expect(editor.revisions.length).toBeGreaterThan(pendingRevisions);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('copies the last section of a document that ends in a table', () => {
+    // The move refusal exists because `acceptAll` throws inside SyncFusion's own
+    // delete of the tracked tail table. A copy deletes nothing, so the crash
+    // cannot arise - asserted rather than assumed, because refusing a copy here
+    // would be a refusal with no cause.
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            para('Alpha', 'Heading 1'),
+            para('a body'),
+            para('Beta', 'Heading 1'),
+            para('b body'),
+            {
+              tableFormat: {},
+              rows: [
+                { rowFormat: {}, cells: [cell('one'), cell('two')] },
+                { rowFormat: {}, cells: [cell('three'), cell('four')] }
+              ]
+            }
+          ]
+        }
+      ],
+      styles: headingStyles()
+    });
+    try {
+      const result = apply(
+        editor,
+        [{ op: 'copy_section', anchor: '0;2', targetAnchor: '0;0' }],
+        'copy-document-tail-table'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(() => editor.revisions.acceptAll()).not.toThrow();
+      expect(headings(editor)).toEqual(['Beta', 'Alpha', 'Beta']);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it.each([
+    [
+      'a target inside the range being copied',
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;4' } as EditOp,
+      'relocation_target_inside_source'
+    ],
+    [
+      'a target inside a table cell',
+      {
+        op: 'copy_section',
+        anchor: '0;0',
+        targetAnchor: '0;4;1;0;0'
+      } as EditOp,
+      'relocation_anchor_in_table'
+    ]
+  ])('refuses %s', (_name, edit, error) => {
+    const editor = makeEditor(
+      error === 'relocation_anchor_in_table' ? proposalFixture() : nestedFixture()
+    );
+    try {
+      const before = editor.serialize();
+      const result = apply(editor, [edit], 'copy-refusal');
+      expect(result.results[0]).toMatchObject({ ok: false, error });
+      expect(editor.serialize()).toBe(before);
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
 describe('relocation refusals: each names what to do instead', () => {
   const refusalCases: Array<{
     name: string;

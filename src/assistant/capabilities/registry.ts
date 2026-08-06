@@ -198,6 +198,26 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     requiresAnchor: true
   },
   {
+    // handler: ANCHORED_OP_HANDLERS.copy_section
+    //
+    // The same relocation primitive WITHOUT its delete step: select the source,
+    // capture it, paste it at the target, stop. Asked to copy a section, a model
+    // with no copy primitive retypes it - the identical failure class move and
+    // swap exist to remove - so this carries no content field either.
+    //
+    // A copy authors Insertion revisions only, so accepting keeps both copies
+    // and rejecting removes just the new one, leaving the original untouched.
+    // The original is never read for deletion, which is why neither source-side
+    // refusal applies: no document-tail delete, and a pending edit by another
+    // author inside the source is safe because nothing takes it away.
+    op: 'copy_section',
+    params: {
+      targetAnchor: 'string',
+      position: 'enum[before,after]?'
+    },
+    requiresAnchor: true
+  },
+  {
     // handler: ANCHORED_OP_HANDLERS.swap_sections
     //
     // The same primitive twice, bottom-up, inside one op - so the exchange is

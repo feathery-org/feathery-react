@@ -451,6 +451,24 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(1);
     }
   },
+  copy_section: {
+    fixture: orderedSectionsFixture,
+    edits: [
+      {
+        op: 'copy_section',
+        anchor: '0;2',
+        expect: 'Beta',
+        targetAnchor: '0;0',
+        position: 'before'
+      }
+    ],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      // Both copies survive a copy, which is the whole difference from a move.
+      expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Beta', 'Gamma']);
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(2);
+    }
+  },
   swap_sections: {
     fixture: orderedSectionsFixture,
     edits: [{ op: 'swap_sections', anchor: '0;0', otherAnchor: '0;4' }],
@@ -1510,7 +1528,8 @@ describe('op contracts: every advertised op works over its real route', () => {
       // as an insert does - it is the same tracked write, with the engine
       // rather than the model supplying the bytes.
       'move_section',
-      'swap_sections'
+      'swap_sections',
+      'copy_section'
     ]);
     const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
       .filter((op) => contentCreatingOps.has(op))

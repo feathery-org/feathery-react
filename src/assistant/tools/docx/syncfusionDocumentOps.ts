@@ -6344,8 +6344,15 @@ function foreignPendingAuthor(
   return undefined;
 }
 
-/** The two refusals that are about the source range itself. */
-function assertRangeIsMovable(sfdt: any, range: BlockRange): void {
+/**
+ * The refusal that is about DELETING the range: the document's last section when
+ * the document ends with a table. SyncFusion's `acceptAll` throws inside its own
+ * `deleteTrackedContents` there, so the edit would apply and then break the
+ * review pane - refusing beats crashing.
+ *
+ * A copy never deletes its source, so this does not apply to one.
+ */
+function assertRangeIsRemovable(range: BlockRange): void {
   const last = range.blocks[range.blocks.length - 1];
   if (range.endsDocument && last.kind === 'table_cell')
     throw new OpError(
@@ -6356,9 +6363,25 @@ function assertRangeIsMovable(sfdt: any, range: BlockRange): void {
       [
         `anchor: ${range.anchor}`,
         `last block in range: ${last.anchor}`,
-        'Express the change from the other side and the document tail stays put: move the section you want beside this one with move_section, using this section as the targetAnchor.'
+        'Express the change from the other side and the document tail stays put: move the section you want beside this one with move_section, using this section as the targetAnchor. To duplicate it rather than move it, copy_section leaves the tail alone.'
       ]
     );
+}
+
+/**
+ * The refusal that is about REJECTING the range: a pending change somebody else
+ * authored inside it.
+ *
+ * A move folds whatever it moves into its own card - the delete consumes a
+ * pending insertion rather than authoring a Deletion beside it - so rejecting the
+ * move reverts that earlier edit too. For Robin's own pending edits that is
+ * correct. For a human reviewer's it is not: their edit would disappear because
+ * we moved a section, and nothing would say so.
+ *
+ * A copy leaves the source untouched, so it takes nothing away from anyone and
+ * this does not apply to one either.
+ */
+function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
   const author = foreignPendingAuthor(sfdt, range);
   if (author)
     throw new OpError(
@@ -6447,18 +6470,26 @@ function shiftedRange(
 }
 
 /**
- * The primitive: relocate a resolved range to a target caret, tracked.
+ * The primitive behind all three relocation ops: put a copy of a resolved range
+ * at a target caret, tracked, and optionally remove the original.
  *
- * Returns the paste's effect on block indices, which is what a caller relocating
- * a SECOND range needs in order to find it again. Also returns the document as
- * it stood immediately after the paste - every shift this relocation causes is
- * already in it, because the delete that follows shifts nothing.
+ * `removeSource: false` IS the copy - a copy is this relocation without its
+ * delete, which is why there is one routine and three entry points rather than a
+ * second code path to keep correct. It also means a copy cannot be affected by
+ * the post-paste source re-resolution at all: nothing is deleted, so there is
+ * nothing to find again.
+ *
+ * Returns the paste's measured effect on block positions, which is what a caller
+ * relocating a SECOND range needs in order to find it again, and the document as
+ * it stood immediately after the paste - every shift is already in it, because
+ * the delete that may follow shifts nothing.
  */
 function relocateBlockRange(
   editor: LiveEditor,
   preSfdt: any,
   source: BlockRange,
-  target: PasteTarget
+  target: PasteTarget,
+  { removeSource }: { removeSource: boolean } = { removeSource: true }
 ): { paste: PasteEffect; pastedSfdt: any } {
   editor.selection.select(source.startAnchor, source.endAnchor);
   const payload = (editor.selection as any)?.sfdt;
@@ -6497,9 +6528,11 @@ function relocateBlockRange(
     // so the two are not the same number.
     blocks: topLevelSequence(pastedSfdt).length - sequenceBefore.length
   };
-  const moved = shiftedRange(pastedSfdt, source, paste, sourceIndex);
-  editor.selection.select(moved.startAnchor, moved.endAnchor);
-  editor.editor.delete();
+  if (removeSource) {
+    const moved = shiftedRange(pastedSfdt, source, paste, sourceIndex);
+    editor.selection.select(moved.startAnchor, moved.endAnchor);
+    editor.editor.delete();
+  }
   return { paste, pastedSfdt };
 }
 
@@ -6766,15 +6799,32 @@ export const ANCHORED_OP_HANDLERS: {
   move_section: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
     // One read of the raw document for the whole op: the revision table and the
-    // per-section block counts are both things flattening drops.
+    // block sequence are both things flattening drops.
     const sfdt = serializeSfdt(editor);
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
-    assertRangeIsMovable(sfdt, source);
+    assertRangeIsRemovable(source);
+    assertRangeHasNoForeignEdits(sfdt, source);
     relocateBlockRange(
       editor,
       sfdt,
       source,
       resolveRelocationTarget(blocks, op, source)
+    );
+  },
+  copy_section: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const sfdt = serializeSfdt(editor);
+    const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    // Neither source-side refusal applies to a duplication: nothing is deleted,
+    // so there is no document-tail delete to crash `acceptAll` and no pending
+    // edit of anyone else's that rejecting could take away. The target-side
+    // refusals are the same ones a move gets, from the same resolver.
+    relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      resolveRelocationTarget(blocks, op, source),
+      { removeSource: false }
     );
   },
   swap_sections: ({ editor, op, block, byAnchor }) => {
@@ -6812,8 +6862,10 @@ export const ANCHORED_OP_HANDLERS: {
           'To move a subsection out of the section that contains it, use move_section with a targetAnchor outside that section.'
         ]
       );
-    assertRangeIsMovable(sfdt, earlier);
-    assertRangeIsMovable(sfdt, later);
+    assertRangeIsRemovable(earlier);
+    assertRangeIsRemovable(later);
+    assertRangeHasNoForeignEdits(sfdt, earlier);
+    assertRangeHasNoForeignEdits(sfdt, later);
     // Bottom-up, and the ordering is the whole reason a swap needs no
     // prediction. Both ranges and both payloads are resolved BEFORE any write.
     // The first relocation's paste lands at `later`'s start and its delete
@@ -9149,6 +9201,7 @@ export const TRACKED_TEXT_OPS = new Set([
   // rather than merely applied.
   'move_section',
   'swap_sections',
+  'copy_section',
   // The composer expands to tracked insert_text/insert_table writes before
   // dispatch; membership keeps the registry-exhaustive content-op invariant
   // honest at the public operation boundary.
@@ -11257,7 +11310,8 @@ function describeChangeSetTouches(touches: ColumnTouch[]): string {
 
 const RELOCATION_OPS: ReadonlySet<string> = new Set([
   'move_section',
-  'swap_sections'
+  'swap_sections',
+  'copy_section'
 ]);
 
 /**
@@ -11272,15 +11326,20 @@ function describeChangeSet(edits: EditOp[], touches: ColumnTouch[]): string {
   const quoted = (value: unknown) => JSON.stringify(String(value ?? ''));
   const relocations = edits
     .filter((op) => op?.op && RELOCATION_OPS.has(op.op))
-    .map((op) =>
-      op.op === 'swap_sections'
-        ? `swaps the sections at ${quoted(op.anchor)} and ${quoted(
-            op.otherAnchor
-          )}`
-        : `moves the section at ${quoted(op.anchor)} ${
-            op.position === 'after' ? 'after' : 'before'
-          } ${quoted(op.targetAnchor)}`
-    );
+    .map((op) => {
+      if (op.op === 'swap_sections')
+        return `swaps the sections at ${quoted(op.anchor)} and ${quoted(
+          op.otherAnchor
+        )}`;
+      const where = `${op.position === 'after' ? 'after' : 'before'} ${quoted(
+        op.targetAnchor
+      )}`;
+      return op.op === 'copy_section'
+        ? `copies the section at ${quoted(
+            op.anchor
+          )} ${where}, leaving the original in place`
+        : `moves the section at ${quoted(op.anchor)} ${where}`;
+    });
   if (!relocations.length) return describeChangeSetTouches(touches);
   const relocation =
     `This change set ${relocations.join(', and ')}. ` +
