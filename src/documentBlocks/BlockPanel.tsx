@@ -95,7 +95,11 @@ const styles = {
     color: '#6d28d9',
     cursor: 'pointer'
   },
-  table: { width: '100%', borderCollapse: 'collapse' as const, marginBottom: 4 },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+    marginBottom: 4
+  },
   cellInput: {
     width: '100%',
     padding: '2px 4px',

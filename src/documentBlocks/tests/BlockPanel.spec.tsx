@@ -29,7 +29,9 @@ describe('BlockPanel', () => {
       .getData()
       .sections.flatMap((s) => s.blocks)
       .find((b) => b.id === 'blk_scope_p')!;
-    expect(block.content).toEqual([{ kind: 'text', text: 'Updated scope text.' }]);
+    expect(block.content).toEqual([
+      { kind: 'text', text: 'Updated scope text.' }
+    ]);
   });
 
   it('clicking delete removes the block; undo restores it', () => {
@@ -40,14 +42,14 @@ describe('BlockPanel', () => {
     const deleteButtons = screen.getAllByRole('button', { name: '✕ delete' });
     fireEvent.click(deleteButtons[0]);
 
-    expect(
-      store.getData().sections.flatMap((s) => s.blocks).length
-    ).toBe(before - 1);
+    expect(store.getData().sections.flatMap((s) => s.blocks).length).toBe(
+      before - 1
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
-    expect(
-      store.getData().sections.flatMap((s) => s.blocks).length
-    ).toBe(before);
+    expect(store.getData().sections.flatMap((s) => s.blocks).length).toBe(
+      before
+    );
   });
 
   it('clicking "＋ table" inserts a table block with 3 rows after that card', () => {
@@ -56,7 +58,9 @@ describe('BlockPanel', () => {
 
     const cards = screen.getAllByTestId('docx-block-card');
     const firstCard = cards[0];
-    fireEvent.click(within(firstCard).getByRole('button', { name: '＋ table' }));
+    fireEvent.click(
+      within(firstCard).getByRole('button', { name: '＋ table' })
+    );
 
     const blocks = store.getData().sections[0].blocks;
     expect(blocks[1].type).toBe('table');

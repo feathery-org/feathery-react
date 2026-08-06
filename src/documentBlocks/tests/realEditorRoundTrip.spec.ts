@@ -132,9 +132,7 @@ describe('real DocumentEditor round trip', () => {
       .flat()
       .flatMap((b) => b.runs ?? b.cells?.flat().flat() ?? []);
     const byKey = new Map(
-      allRuns
-        .filter((r) => r.kind === 'token')
-        .map((r: any) => [r.key, r.text])
+      allRuns.filter((r) => r.kind === 'token').map((r: any) => [r.key, r.text])
     );
     expect(byKey.get('customer_name')).toBe('Acme Corp');
     expect(byKey.get('retainer')).toBe('$1,500.00');
