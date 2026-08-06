@@ -49,6 +49,8 @@ export type Theme = {
 export type DocumentData = {
   sections: Section[];
   theme: Theme;
+  /** In-memory token values — a token with neither `source` nor `formula`. */
+  values?: Record<string, string | number>;
 };
 
 export const EMPTY_THEME: Theme = {
