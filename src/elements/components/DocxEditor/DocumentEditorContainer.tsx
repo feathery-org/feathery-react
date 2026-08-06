@@ -39,12 +39,9 @@ import {
 import { BlockStore, createBlockStore } from '../../../documentBlocks/store';
 import { blockSaveBlockers } from '../../../documentBlocks/tokens';
 import { SAMPLE_DOCUMENT } from '../../../documentBlocks/sampleDocument';
-import BlockPanel, {
-  blockPanelEnabled
-} from '../../../documentBlocks/BlockPanel';
-import DebugPanel, {
-  debugPanelEnabled
-} from '../../../documentBlocks/DebugPanel';
+import BlockPanel from '../../../documentBlocks/BlockPanel';
+import DebugPanel from '../../../documentBlocks/DebugPanel';
+import { docxBlocksConfig } from '../../../documentBlocks/config';
 import ComponentsTab from '../../../documentBlocks/ComponentsTab';
 
 // Syncfusion's public test converter. Used ONLY in a local build: document
@@ -402,13 +399,11 @@ export default function DocumentEditorContainer({
   // separate from the token cycle above: a document with dynamic blocks owns
   // its own tokens through the block sync loop, so the two must never attach
   // to the same editor at once.
-  const blocksEnabled = Boolean(
-    (featheryWindow() as any)?.featheryDocxBlocks?.enabled
-  );
+  const blocksConfig = docxBlocksConfig(featheryWindow());
+  const blocksEnabled = Boolean(blocksConfig.enabled);
   const storeRef = useRef<BlockStore | null>(null);
   if (blocksEnabled && !storeRef.current) {
-    const initialData =
-      (featheryWindow() as any)?.featheryDocxBlocks?.data ?? SAMPLE_DOCUMENT;
+    const initialData = (blocksConfig.data as any) ?? SAMPLE_DOCUMENT;
     storeRef.current = createBlockStore(initialData);
   }
   const blockStore = storeRef.current;
@@ -493,15 +488,15 @@ export default function DocumentEditorContainer({
   const [activeTab, setActiveTab] = useState<'document' | 'components'>(
     'document'
   );
-  // The window flag preseeds visibility; the tab-strip button toggles it.
+  // The config flag preseeds visibility; the tab-strip button toggles it.
   const [showDebug, setShowDebug] = useState(() =>
-    debugPanelEnabled(featheryWindow())
+    Boolean(docxBlocksConfig(featheryWindow()).debug)
   );
 
   useEffect(() => {
     if (!blocksEnabled || !blockStore) return undefined;
     return blockStore.subscribe((data) => {
-      (featheryWindow() as any)?.featheryDocxBlocks?.onDataChange?.(data);
+      docxBlocksConfig(featheryWindow()).onDataChange?.(data);
     });
   }, [blockStore, blocksEnabled]);
 
@@ -738,19 +733,17 @@ export default function DocumentEditorContainer({
                 is exactly when storeRef.current was initialized above. */}
             <ComponentsTab store={blockStore!} />
           </div>
-          {blockPanelEnabled(featheryWindow()) && (
+          {Boolean(blocksConfig.panel) && (
             <BlockPanel store={blockStore!} />
           )}
         </div>
-        {showDebug &&
-          debugPanelSync &&
-          editorSurfaceRef.current && (
-            <DebugPanel
-              store={blockStore!}
-              sync={debugPanelSync}
-              editor={editorSurfaceRef.current}
-            />
-          )}
+        {showDebug && debugPanelSync && editorSurfaceRef.current && (
+          <DebugPanel
+            store={blockStore!}
+            sync={debugPanelSync}
+            editor={editorSurfaceRef.current}
+          />
+        )}
         {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
       </div>
     );
