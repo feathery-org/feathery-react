@@ -241,7 +241,8 @@ describe('attachBlockSync', () => {
       sync
         .getLog()
         .some(
-          (e) => e.kind === 'open' && e.detail === 'reassert after foreign document'
+          (e) =>
+            e.kind === 'open' && e.detail === 'reassert after foreign document'
         )
     ).toBe(true);
   });

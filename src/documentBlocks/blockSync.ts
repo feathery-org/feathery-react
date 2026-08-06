@@ -232,8 +232,7 @@ export const attachBlockSync = (
     documentChangeTimer = null;
     if (applying) return;
     const serialized = editor.serialize();
-    if (serialized === lastOpenedSfdt || serialized.includes('"fblk_'))
-      return;
+    if (serialized === lastOpenedSfdt || serialized.includes('"fblk_')) return;
     reopenPreservingScroll('open', 'reassert after foreign document');
   };
   const onDocumentChange = () => {
