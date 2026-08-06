@@ -65,8 +65,12 @@ export const createBlockStore = (initial: DocumentData): BlockStore => {
 };
 
 const defaultRows = (): Cell[][] => [
-  [1, 2, 3].map((n) => ({ content: [{ kind: 'text', text: `Column ${n}` } as Inline] })),
-  [1, 2, 3].map(() => ({ content: [{ kind: 'text', text: 'Cell' } as Inline] })),
+  [1, 2, 3].map((n) => ({
+    content: [{ kind: 'text', text: `Column ${n}` } as Inline]
+  })),
+  [1, 2, 3].map(() => ({
+    content: [{ kind: 'text', text: 'Cell' } as Inline]
+  })),
   [1, 2, 3].map(() => ({ content: [{ kind: 'text', text: 'Cell' } as Inline] }))
 ];
 
@@ -76,9 +80,12 @@ const defaultContent = (type: BlockType): Inline[] =>
     : [{ kind: 'text', text: 'New paragraph' }];
 
 const buildBlock = (type: BlockType, id: string): Block =>
-  type === 'table' ? { id, type, rows: defaultRows() } : { id, type, content: defaultContent(type) };
+  type === 'table'
+    ? { id, type, rows: defaultRows() }
+    : { id, type, content: defaultContent(type) };
 
-export const insertBlock = (
+export const insertBlock =
+  (
     sectionId: string,
     afterBlockId: string | null,
     type: BlockType,
@@ -103,46 +110,69 @@ export const insertBlock = (
 
     return {
       ...data,
-      sections: data.sections.map((s, i) => (i === sectionIndex ? { ...s, blocks } : s))
+      sections: data.sections.map((s, i) =>
+        i === sectionIndex ? { ...s, blocks } : s
+      )
     };
   };
 
-export const deleteBlock = (blockId: string) => (data: DocumentData): DocumentData => {
-  const sectionIndex = data.sections.findIndex((s) => s.blocks.some((b) => b.id === blockId));
-  if (sectionIndex === -1) return data;
-
-  const section = data.sections[sectionIndex];
-  const blocks = section.blocks.filter((b) => b.id !== blockId);
-
-  return {
-    ...data,
-    sections: data.sections.map((s, i) => (i === sectionIndex ? { ...s, blocks } : s))
-  };
-};
-
-export const updateBlockContent = (blockId: string, content: Inline[]) =>
+export const deleteBlock =
+  (blockId: string) =>
   (data: DocumentData): DocumentData => {
-    const sectionIndex = data.sections.findIndex((s) => s.blocks.some((b) => b.id === blockId));
+    const sectionIndex = data.sections.findIndex((s) =>
+      s.blocks.some((b) => b.id === blockId)
+    );
     if (sectionIndex === -1) return data;
 
     const section = data.sections[sectionIndex];
-    const blocks = section.blocks.map((b) => (b.id === blockId ? { ...b, content } : b));
+    const blocks = section.blocks.filter((b) => b.id !== blockId);
 
     return {
       ...data,
-      sections: data.sections.map((s, i) => (i === sectionIndex ? { ...s, blocks } : s))
+      sections: data.sections.map((s, i) =>
+        i === sectionIndex ? { ...s, blocks } : s
+      )
     };
   };
 
-export const updateCell = (blockId: string, row: number, col: number, content: Inline[]) =>
+export const updateBlockContent =
+  (blockId: string, content: Inline[]) =>
   (data: DocumentData): DocumentData => {
-    const sectionIndex = data.sections.findIndex((s) => s.blocks.some((b) => b.id === blockId));
+    const sectionIndex = data.sections.findIndex((s) =>
+      s.blocks.some((b) => b.id === blockId)
+    );
     if (sectionIndex === -1) return data;
 
     const section = data.sections[sectionIndex];
+    const blocks = section.blocks.map((b) =>
+      b.id === blockId ? { ...b, content } : b
+    );
+
+    return {
+      ...data,
+      sections: data.sections.map((s, i) =>
+        i === sectionIndex ? { ...s, blocks } : s
+      )
+    };
+  };
+
+export const updateCell =
+  (blockId: string, row: number, col: number, content: Inline[]) =>
+  (data: DocumentData): DocumentData => {
+    const sectionIndex = data.sections.findIndex((s) =>
+      s.blocks.some((b) => b.id === blockId)
+    );
+    if (sectionIndex === -1) return data;
+
+    const block = data.sections[sectionIndex].blocks.find(
+      (b) => b.id === blockId
+    )!;
+    if (!block.rows?.[row]?.[col]) return data; // not a table, or row/col out of range
+
+    const section = data.sections[sectionIndex];
     const blocks = section.blocks.map((b) => {
-      if (b.id !== blockId || !b.rows) return b;
-      const rows = b.rows.map((r, ri) =>
+      if (b.id !== blockId) return b;
+      const rows = b.rows!.map((r, ri) =>
         ri === row ? r.map((c, ci) => (ci === col ? { ...c, content } : c)) : r
       );
       return { ...b, rows };
@@ -150,11 +180,15 @@ export const updateCell = (blockId: string, row: number, col: number, content: I
 
     return {
       ...data,
-      sections: data.sections.map((s, i) => (i === sectionIndex ? { ...s, blocks } : s))
+      sections: data.sections.map((s, i) =>
+        i === sectionIndex ? { ...s, blocks } : s
+      )
     };
   };
 
-export const setTheme = (theme: Theme) => (data: DocumentData): DocumentData => ({
-  ...data,
-  theme
-});
+export const setTheme =
+  (theme: Theme) =>
+  (data: DocumentData): DocumentData => ({
+    ...data,
+    theme
+  });

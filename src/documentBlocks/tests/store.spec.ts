@@ -13,7 +13,10 @@ describe('createBlockStore', () => {
   it('apply replaces data immutably; the previous object is untouched', () => {
     const store = createBlockStore(SAMPLE_DOCUMENT);
     const before = store.getData();
-    store.apply(updateBlockContent('blk_title', [{ kind: 'text', text: 'New Title' }]), 'panel');
+    store.apply(
+      updateBlockContent('blk_title', [{ kind: 'text', text: 'New Title' }]),
+      'panel'
+    );
     expect(store.getData()).not.toBe(before);
     expect(before).toBe(SAMPLE_DOCUMENT);
     expect(before.sections[0].blocks[0].content).toEqual([
@@ -24,7 +27,10 @@ describe('createBlockStore', () => {
   it("undo restores the previous data and notifies with origin 'history'; redo reverses it. A fresh apply clears the redo stack", () => {
     const store = createBlockStore(SAMPLE_DOCUMENT);
     const initial = store.getData();
-    store.apply(updateBlockContent('blk_title', [{ kind: 'text', text: 'Edit 1' }]), 'panel');
+    store.apply(
+      updateBlockContent('blk_title', [{ kind: 'text', text: 'Edit 1' }]),
+      'panel'
+    );
     const afterFirst = store.getData();
 
     const events: string[] = [];
@@ -42,7 +48,10 @@ describe('createBlockStore', () => {
     expect(store.getData()).toBe(initial);
     expect(store.canRedo()).toBe(true);
 
-    store.apply(updateBlockContent('blk_title', [{ kind: 'text', text: 'Edit 2' }]), 'panel');
+    store.apply(
+      updateBlockContent('blk_title', [{ kind: 'text', text: 'Edit 2' }]),
+      'panel'
+    );
     expect(store.canRedo()).toBe(false);
   });
 
@@ -71,12 +80,25 @@ describe('createBlockStore', () => {
   });
 
   it('insertBlock after an id places it immediately after that block', () => {
-    const mutate = insertBlock('sec_intro', 'blk_title', 'paragraph', 'blk_new');
+    const mutate = insertBlock(
+      'sec_intro',
+      'blk_title',
+      'paragraph',
+      'blk_new'
+    );
     const next = mutate(SAMPLE_DOCUMENT);
     const section = next.sections.find((s) => s.id === 'sec_intro')!;
     const ids = section.blocks.map((b) => b.id);
-    expect(ids).toEqual(['blk_title', 'blk_new', 'blk_intro', 'blk_scope_h', 'blk_scope_p']);
-    expect(section.blocks[1].content).toEqual([{ kind: 'text', text: 'New paragraph' }]);
+    expect(ids).toEqual([
+      'blk_title',
+      'blk_new',
+      'blk_intro',
+      'blk_scope_h',
+      'blk_scope_p'
+    ]);
+    expect(section.blocks[1].content).toEqual([
+      { kind: 'text', text: 'New paragraph' }
+    ]);
   });
 
   it('deleteBlock removes it from whichever section holds it', () => {
@@ -90,7 +112,9 @@ describe('createBlockStore', () => {
   });
 
   it("updateCell replaces one cell's content, leaving every other cell identical (same reference)", () => {
-    const mutate = updateCell('blk_pricing_tbl', 1, 1, [{ kind: 'text', text: '$500' }]);
+    const mutate = updateCell('blk_pricing_tbl', 1, 1, [
+      { kind: 'text', text: '$500' }
+    ]);
     const next = mutate(SAMPLE_DOCUMENT);
     const table = next.sections
       .flatMap((s) => s.blocks)
@@ -106,30 +130,60 @@ describe('createBlockStore', () => {
     expect(table.rows![2]).toBe(originalTable.rows![2]);
   });
 
+  it('updateCell on a non-table block is a no-op that does not pollute undo history', () => {
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    store.apply(updateCell('blk_title', 0, 0, [{ kind: 'text', text: 'X' }]), 'panel');
+    expect(store.getData()).toBe(SAMPLE_DOCUMENT);
+    expect(store.canUndo()).toBe(false);
+  });
+
+  it('updateCell with out-of-range row/col on a real table is a no-op that does not pollute undo history', () => {
+    const store = createBlockStore(SAMPLE_DOCUMENT);
+    store.apply(
+      updateCell('blk_pricing_tbl', 99, 99, [{ kind: 'text', text: 'X' }]),
+      'panel'
+    );
+    expect(store.getData()).toBe(SAMPLE_DOCUMENT);
+    expect(store.canUndo()).toBe(false);
+  });
+
   it('subscribe fires on every apply/undo/redo with the origin passed through; unsubscribe stops it', () => {
     const store = createBlockStore(SAMPLE_DOCUMENT);
     const events: string[] = [];
     const unsubscribe = store.subscribe((_data, origin) => events.push(origin));
 
-    store.apply(updateBlockContent('blk_title', [{ kind: 'text', text: 'X' }]), 'panel');
+    store.apply(
+      updateBlockContent('blk_title', [{ kind: 'text', text: 'X' }]),
+      'panel'
+    );
     store.undo();
     store.redo();
     expect(events).toEqual(['panel', 'history', 'history']);
 
     unsubscribe();
-    store.apply(updateBlockContent('blk_title', [{ kind: 'text', text: 'Y' }]), 'document');
+    store.apply(
+      updateBlockContent('blk_title', [{ kind: 'text', text: 'Y' }]),
+      'document'
+    );
     expect(events).toEqual(['panel', 'history', 'history']);
   });
 
   it('mutations that find no matching block/section return data unchanged', () => {
-    expect(updateBlockContent('nope', [])(SAMPLE_DOCUMENT)).toBe(SAMPLE_DOCUMENT);
+    expect(updateBlockContent('nope', [])(SAMPLE_DOCUMENT)).toBe(
+      SAMPLE_DOCUMENT
+    );
     expect(deleteBlock('nope')(SAMPLE_DOCUMENT)).toBe(SAMPLE_DOCUMENT);
     expect(updateCell('nope', 0, 0, [])(SAMPLE_DOCUMENT)).toBe(SAMPLE_DOCUMENT);
-    expect(insertBlock('nope', null, 'paragraph', 'blk_x')(SAMPLE_DOCUMENT)).toBe(SAMPLE_DOCUMENT);
+    expect(
+      insertBlock('nope', null, 'paragraph', 'blk_x')(SAMPLE_DOCUMENT)
+    ).toBe(SAMPLE_DOCUMENT);
   });
 
   it('setTheme replaces the theme immutably', () => {
-    const newTheme = { ...EMPTY_THEME, h1: { characterFormat: { bold: true } } };
+    const newTheme = {
+      ...EMPTY_THEME,
+      h1: { characterFormat: { bold: true } }
+    };
     const next = setTheme(newTheme)(SAMPLE_DOCUMENT);
     expect(next.theme).toBe(newTheme);
     expect(next.sections).toBe(SAMPLE_DOCUMENT.sections);
