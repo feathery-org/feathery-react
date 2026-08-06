@@ -3769,30 +3769,41 @@ function selectRange(
   editor.selection.select(`${anchor};${startOffset}`, `${anchor};${endOffset}`);
 }
 
+/** The Word section index an anchor belongs to. */
+const wordSectionOf = (anchor: string): string => anchor.split(';')[0];
+
 /**
  * The end of a selection that must consume the trailing PARAGRAPH MARK of the
  * run it covers - the one rule `delete_paragraph` and the relocation primitive
  * share, owned here so they cannot drift apart.
  *
- * A mark sits BETWEEN two paragraphs, so when a following block exists the end
- * is the START of that block. Stopping at the last block's own `length` leaves
- * the mark behind, and both failures that produces are silent: a
- * delete_paragraph empties its paragraph in place instead of removing it, and a
- * relocated section's tail fuses with whatever it lands beside ("g bodyAlpha")
- * while accepting strands an empty paragraph where the section used to be.
+ * A mark sits BETWEEN two paragraphs, so when a following block exists IN THIS
+ * WORD SECTION the end is the START of that block. Stopping at the last block's
+ * own `length` leaves the mark behind, and both failures that produces are
+ * silent: a delete_paragraph empties its paragraph in place instead of removing
+ * it, and a relocated section's tail fuses with whatever it lands beside
+ * ("g bodyAlpha") while accepting strands an empty paragraph behind.
  *
- * With no following block the run reaches the end of the document, and there
- * SyncFusion accepts `length + 1` and reports it back verbatim as the live
- * endOffset. The trailing empty paragraph that accepting leaves is Word's own
- * behaviour - a document must end with a paragraph. `delete_paragraph` never
- * takes this branch inside a section: the mark beside its last paragraph is the
- * SECTION BREAK, which is its own refusal rather than a range decision.
+ * `next` is ignored when it belongs to a DIFFERENT Word section, and that
+ * condition is the whole reason this lives in one place. Ending at the first
+ * block of the next Word section puts the SECTION BREAK inside the range, and
+ * SyncFusion authors no rejectable revision for deleting one - so the page setup
+ * changes with no card to reject and a group rollback has nothing to put back.
+ * Live, that surfaced as the relocation's own `untracked_write` refusal on the
+ * captain's move, because the section being moved was a Word section of its own.
+ *
+ * With no usable following block the range ends at `length + 1`, which SyncFusion
+ * accepts and reports back verbatim as the live endOffset.
  */
 function markInclusiveRangeEnd(
   next: FlatBlock | undefined,
   last: FlatBlock
 ): string {
-  return next ? `${next.anchor};0` : `${last.anchor};${last.length + 1}`;
+  const sameSection =
+    !!next && wordSectionOf(next.anchor) === wordSectionOf(last.anchor);
+  return sameSection && next
+    ? `${next.anchor};0`
+    : `${last.anchor};${last.length + 1}`;
 }
 
 // What the whole document would read if every revision were rejected: pending
@@ -6109,6 +6120,63 @@ function rawSectionBlocks(sfdt: any, section: number): any[] {
   return Array.isArray(sections) ? getBlocks(sections[section]) : [];
 }
 
+/**
+ * Every top-level block address in DOCUMENT order, across Word sections.
+ *
+ * The relocation's position arithmetic runs in this sequence rather than in
+ * per-section block counts, because a paste can change the Word SECTION
+ * structure: when the payload carries a section break, pasting it splits the
+ * destination section and the content after the paste point is renumbered into a
+ * new section index. Measured per section, that reads as the destination section
+ * LOSING blocks - a negative delta - and the source's computed post-paste anchor
+ * lands back inside the copy that was just pasted. Live, that produced
+ * `relocation_source_lost` on the captain's own move: expected 15 blocks, found
+ * 14, because the range it found was the normalized copy rather than the source.
+ *
+ * A whole-document sequence has no such failure mode: the paste inserts N
+ * entries at one position in it, and every entry after that position keeps its
+ * order however the sections renumber.
+ */
+function topLevelSequence(
+  sfdt: any
+): Array<{ section: number; block: number }> {
+  const sections = pick(sfdt, 'sections', 'sec');
+  const out: Array<{ section: number; block: number }> = [];
+  if (!Array.isArray(sections)) return out;
+  sections.forEach((section, si) =>
+    getBlocks(section).forEach((_block, bi) =>
+      out.push({ section: si, block: bi })
+    )
+  );
+  return out;
+}
+
+function sequenceIndexOf(
+  sequence: Array<{ section: number; block: number }>,
+  address: { section: number; block: number }
+): number {
+  return sequence.findIndex(
+    (entry) =>
+      entry.section === address.section && entry.block === address.block
+  );
+}
+
+/**
+ * A range's texts with trailing EMPTY paragraphs dropped.
+ *
+ * Identity has to tolerate them: pasting a payload whose tail is a run of empty
+ * paragraphs normalizes one away, so a strict comparison rejects the correct
+ * range over a paragraph that says nothing. Everything that carries content
+ * still has to match exactly, in order - so this tolerates the normalization
+ * without weakening what it proves. The extent that is actually deleted is the
+ * re-derived range's own, so a dropped trailing empty cannot leave one behind.
+ */
+function rangeIdentity(blocks: FlatBlock[]): string {
+  const texts = blocks.map((block) => block.text);
+  while (texts.length > 1 && texts[texts.length - 1] === '') texts.pop();
+  return texts.join('\r');
+}
+
 /** A resolved, contiguous run of blocks - one section unit, at one moment. */
 interface BlockRange {
   /** The anchor the range was resolved from. */
@@ -6119,8 +6187,8 @@ interface BlockRange {
   startAnchor: string;
   /** Selection end, from the shared mark-inclusive rule. */
   endAnchor: string;
-  /** No following block: this range runs to the end of the document. */
-  toDocumentEnd: boolean;
+  /** No following block at all: this range runs to the end of the document. */
+  endsDocument: boolean;
 }
 
 /** Where a payload is pasted, as a caret and as a top-level insertion point. */
@@ -6131,10 +6199,15 @@ interface PasteTarget {
   address: { section: number; block: number };
 }
 
-/** What one paste did to the block indices around it. */
+/**
+ * What one paste did to the document's top-level block sequence. Positions are
+ * indices into `topLevelSequence`, never per-section block numbers - see the
+ * note there for the live failure that distinction caused.
+ */
 interface PasteEffect {
-  at: { section: number; block: number };
-  /** Top-level blocks the paste added at `at`. */
+  /** Sequence index the pasted run starts at. */
+  at: number;
+  /** How many top-level blocks the paste actually added, measured. */
   blocks: number;
 }
 
@@ -6187,7 +6260,7 @@ function resolveSectionRange(
     blocks: covered,
     startAnchor: `${from.anchor};0`,
     endAnchor: markInclusiveRangeEnd(next, last),
-    toDocumentEnd: !next
+    endsDocument: !next
   };
 }
 
@@ -6274,7 +6347,7 @@ function foreignPendingAuthor(
 /** The two refusals that are about the source range itself. */
 function assertRangeIsMovable(sfdt: any, range: BlockRange): void {
   const last = range.blocks[range.blocks.length - 1];
-  if (range.toDocumentEnd && last.kind === 'table_cell')
+  if (range.endsDocument && last.kind === 'table_cell')
     throw new OpError(
       'relocation_document_tail_table',
       `Refusing to relocate the section at ${JSON.stringify(
@@ -6320,33 +6393,54 @@ function assertRangeIsMovable(sfdt: any, range: BlockRange): void {
 function shiftedRange(
   sfdt: any,
   range: BlockRange,
-  paste: PasteEffect
+  paste: PasteEffect,
+  sourceIndex: number
 ): BlockRange {
-  const first = topLevelAddress(range.blocks[0].anchor);
-  const shift =
-    first.section === paste.at.section && first.block >= paste.at.block
-      ? paste.blocks
-      : 0;
-  const anchor = `${first.section};${first.block + shift}`;
+  const movedIndex =
+    paste.at <= sourceIndex ? sourceIndex + paste.blocks : sourceIndex;
+  // The invariant that makes landing on the copy impossible rather than merely
+  // unlikely: the pasted run occupies exactly [at, at + blocks) of the sequence,
+  // and the source is never inside it. Without this the two are almost
+  // indistinguishable by content - which is the whole reason the live failure
+  // got as far as a comparison instead of stopping here.
+  if (movedIndex >= paste.at && movedIndex < paste.at + paste.blocks)
+    throw new OpError(
+      'relocation_source_lost',
+      `Refusing to delete the source of the move at ${JSON.stringify(
+        range.anchor
+      )}: after the paste it resolves to block ${movedIndex}, which is inside the run this op just pasted (blocks ${
+        paste.at
+      }..${
+        paste.at + paste.blocks - 1
+      }). That would delete the copy instead of the original. Nothing of this change set was kept.`,
+      [
+        `source at sequence index ${sourceIndex}, paste of ${paste.blocks} blocks at ${paste.at}`
+      ]
+    );
+  const sequence = topLevelSequence(sfdt);
+  const address = sequence[movedIndex];
   const blocks = flattenSfdt(sfdt);
-  const moved = resolveSectionRange(blocks, anchor, 'relocated anchor');
-  const before = range.blocks.map((block) => block.text).join('\r');
-  const after = moved.blocks.map((block) => block.text).join('\r');
-  if (moved.blocks.length !== range.blocks.length || before !== after)
+  const anchor = address ? `${address.section};${address.block}` : '';
+  const moved = anchor
+    ? resolveSectionRange(blocks, anchor, 'relocated anchor')
+    : undefined;
+  const before = rangeIdentity(range.blocks);
+  const after = moved ? rangeIdentity(moved.blocks) : '';
+  if (!moved || before !== after)
     throw new OpError(
       'relocation_source_lost',
       `The section that was at ${JSON.stringify(
         range.anchor
       )} is no longer readable at ${JSON.stringify(
-        anchor
+        anchor || `sequence index ${movedIndex}`
       )} after the content was inserted at its destination, so the engine refused to delete what is there now. Nothing of this change set was kept.`,
       [
         `expected ${range.blocks.length} blocks reading ${JSON.stringify(
           before.slice(0, 200)
         )}`,
-        `found ${moved.blocks.length} blocks reading ${JSON.stringify(
-          after.slice(0, 200)
-        )}`
+        `found ${
+          moved ? moved.blocks.length : 0
+        } blocks reading ${JSON.stringify(after.slice(0, 200))}`
       ]
     );
   return moved;
@@ -6373,16 +6467,37 @@ function relocateBlockRange(
       'relocation_payload_unavailable',
       `SyncFusion returned no content for the range ${source.startAnchor} - ${source.endAnchor}, so there is nothing to relocate. Nothing was written.`
     );
-  const blocksBefore = rawSectionBlocks(preSfdt, target.address.section).length;
+  // Measured in the whole-document sequence, before any write: a paste that
+  // carries a section break renumbers Word sections, so neither the paste point
+  // nor the source can be tracked by (section, block) across it.
+  const sequenceBefore = topLevelSequence(preSfdt);
+  const pasteAt = (() => {
+    const index = sequenceIndexOf(sequenceBefore, target.address);
+    // One past the last block of the document - the `position: 'after'` tail.
+    return index < 0 ? sequenceBefore.length : index;
+  })();
+  const sourceIndex = sequenceIndexOf(
+    sequenceBefore,
+    topLevelAddress(source.blocks[0].anchor)
+  );
+  if (sourceIndex < 0)
+    throw new OpError(
+      'relocation_source_lost',
+      `The section at ${JSON.stringify(
+        source.anchor
+      )} is not addressable in the document as it stands, so nothing was moved.`
+    );
   editor.selection.select(target.anchor, target.anchor);
   callEditor(editor, 'paste', payload);
   const pastedSfdt = serializeSfdt(editor);
   const paste: PasteEffect = {
-    at: target.address,
-    blocks:
-      rawSectionBlocks(pastedSfdt, target.address.section).length - blocksBefore
+    at: pasteAt,
+    // The ACTUAL number of blocks the paste added, never the source's own count:
+    // SyncFusion normalizes a payload (a trailing empty paragraph in particular),
+    // so the two are not the same number.
+    blocks: topLevelSequence(pastedSfdt).length - sequenceBefore.length
   };
-  const moved = shiftedRange(pastedSfdt, source, paste);
+  const moved = shiftedRange(pastedSfdt, source, paste, sourceIndex);
   editor.selection.select(moved.startAnchor, moved.endAnchor);
   editor.editor.delete();
   return { paste, pastedSfdt };
@@ -6710,6 +6825,7 @@ export const ANCHORED_OP_HANDLERS: {
     // One op, therefore one revision group, therefore one rail card: a failure
     // in the second relocation rolls the first back through rollbackGroup, so a
     // half-swap cannot survive.
+    const laterIndex = sequenceIndexOf(topLevelSequence(sfdt), laterFirst);
     const first = relocateBlockRange(
       editor,
       sfdt,
@@ -6719,7 +6835,11 @@ export const ANCHORED_OP_HANDLERS: {
     relocateBlockRange(
       editor,
       first.pastedSfdt,
-      shiftedRange(first.pastedSfdt, later, first.paste),
+      // `later` has to be found again, by the same measured arithmetic and with
+      // the same not-the-copy assertion: the first relocation's paste landed at
+      // its start and moved it down. `earlier`'s anchors need no such fix-up -
+      // nothing above them was pasted, and its tracked delete shifted nothing.
+      shiftedRange(first.pastedSfdt, later, first.paste, laterIndex),
       pasteAtRangeStart(earlier)
     );
   },
@@ -11135,6 +11255,41 @@ function describeChangeSetTouches(touches: ColumnTouch[]): string {
     .join('. Then ');
 }
 
+const RELOCATION_OPS: ReadonlySet<string> = new Set([
+  'move_section',
+  'swap_sections'
+]);
+
+/**
+ * What the engine - reading the ops, never the model's claim - says this change
+ * set does.
+ *
+ * Cell writes are the usual answer, but a relocation writes no cell values at
+ * all, so answering "writes no table-cell values" for one is true and useless:
+ * beside a card that moved a whole section it reads as "nothing happened".
+ */
+function describeChangeSet(edits: EditOp[], touches: ColumnTouch[]): string {
+  const quoted = (value: unknown) => JSON.stringify(String(value ?? ''));
+  const relocations = edits
+    .filter((op) => op?.op && RELOCATION_OPS.has(op.op))
+    .map((op) =>
+      op.op === 'swap_sections'
+        ? `swaps the sections at ${quoted(op.anchor)} and ${quoted(
+            op.otherAnchor
+          )}`
+        : `moves the section at ${quoted(op.anchor)} ${
+            op.position === 'after' ? 'after' : 'before'
+          } ${quoted(op.targetAnchor)}`
+    );
+  if (!relocations.length) return describeChangeSetTouches(touches);
+  const relocation =
+    `This change set ${relocations.join(', and ')}. ` +
+    'The engine moves the existing blocks with their tables, formatting and subsections; no text or figure is authored.';
+  return touches.length
+    ? `${relocation} It also writes ${describeChangeSetTouches(touches)}`
+    : relocation;
+}
+
 /** A refusal that applies to the whole change set, before any write. */
 interface BatchRefusal {
   code: string;
@@ -13102,7 +13257,7 @@ function applyDocumentEditsMeasured(
   // What the engine, reading the ops, says this change set does. Always
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
-  const announcement = describeChangeSetTouches(columnTouches);
+  const announcement = describeChangeSet(edits, columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
   // enableTrackChanges flips to true only inside the protected try below

@@ -95,8 +95,12 @@ function destroyEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+// An empty paragraph carries NO inline, which is what a real document holds. A
+// degenerate `{ text: '' }` inline survives `open()` but SFDT normalizes it away
+// on the next write, so a fixture built that way fails a byte-for-byte reject
+// comparison over a difference that is not content.
 const para = (text: string, styleName?: string) => ({
-  inlines: [{ text }],
+  inlines: text ? [{ text }] : [],
   ...(styleName ? { paragraphFormat: { styleName } } : {})
 });
 
@@ -511,6 +515,141 @@ describe('move_section: a relocation writes no content', () => {
       } finally {
         destroyEditor(rejectEditor);
       }
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
+// The captain's live document, reduced to the shape that actually broke.
+//
+// "Your Client Services Team" is a Word SECTION of its own, so the section unit
+// starting at its heading runs to the first block of the NEXT Word section, and
+// its tail is a run of empty paragraphs ("Email: " then blanks). Two defects met
+// here, and the live move failed with relocation_source_lost:
+//
+//   - the post-paste source position was computed from PER-SECTION block counts,
+//     but the payload carries a section break, so pasting it SPLIT the
+//     destination section and the destination's own count went DOWN. A negative
+//     delta put the computed anchor back inside the copy that had just been
+//     pasted - the engine was one comparison away from deleting the copy and
+//     keeping the original in place.
+//   - the identity comparison demanded the trailing empty paragraphs match
+//     exactly, and a paste normalizes one away.
+//
+// Both are fixed by measuring in the whole-document block sequence and asserting
+// the resolved source is not inside the pasted run.
+const wordSectionFixture = () => ({
+  sections: [
+    {
+      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      blocks: [
+        para('About Hilb Group', 'Heading 1'), // 0;0
+        para('Hilb Group is a national broker.'), // 0;1
+        para('Our Approach', 'Heading 1'), // 0;2
+        para('We start with your risk.') // 0;3
+      ]
+    },
+    {
+      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      blocks: [
+        para('Your Client Services Team', 'Heading 1'), // 1;0
+        para('Your dedicated team is listed below.'), // 1;1
+        para('Email: '), // 1;2
+        para(''), // 1;3
+        para(''), // 1;4
+        para('') // 1;5
+      ]
+    },
+    {
+      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      blocks: [
+        para('Location Schedule', 'Heading 1'), // 2;0
+        para('Schedule body.') // 2;1
+      ]
+    }
+  ],
+  styles: headingStyles()
+});
+
+describe("the captain's move: a section that is its own Word section", () => {
+  it('moves above an earlier section, one card, clean reject', () => {
+    const editor = makeEditor(wordSectionFixture());
+    try {
+      const before = editor.serialize();
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'move_section',
+            anchor: '1;0',
+            expect: 'Your Client Services Team',
+            targetAnchor: '0;0',
+            position: 'before'
+          }
+        ],
+        'captain-move'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'move_section' });
+      expect(result.changeSet?.groups).toHaveLength(1);
+      // The engine describes a relocation as a relocation. Reporting "writes no
+      // table-cell values" beside a card that moved a whole section reads as
+      // "nothing happened".
+      expect(result.changeSet?.announcement).toContain('moves the section');
+      expect(result.changeSet?.announcement).not.toContain(
+        'no table-cell values'
+      );
+
+      editor.revisions.rejectAll();
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('accepting puts it in front, once, with the section break intact', () => {
+    const editor = makeEditor(wordSectionFixture());
+    try {
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'move_section',
+            anchor: '1;0',
+            targetAnchor: '0;0',
+            position: 'before'
+          }
+        ],
+        'captain-move-accept'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(headings(editor)).toEqual([
+        'Your Client Services Team',
+        'About Hilb Group',
+        'Our Approach',
+        'Location Schedule'
+      ]);
+      // Relocated, not retyped, and the original is gone rather than duplicated.
+      expect(
+        bodyTexts(editor).filter(
+          (text) => text === 'Your dedicated team is listed below.'
+        )
+      ).toHaveLength(1);
+      // The section that held the moved content held ONLY it, so accepting
+      // collapses it rather than stranding a blank page - and no surviving Word
+      // section is left empty. The section BREAK was never inside the range
+      // (that would be an untracked delete with no card to reject); this is
+      // SyncFusion retiring a section that no longer has content, on accept.
+      const sfdt = JSON.parse(editor.serialize());
+      const sections: any[] = sfdt.sec ?? sfdt.sections;
+      expect(
+        sections.map((section) => (section.b ?? section.blocks).length)
+      ).not.toContain(0);
+      // Page setup is intact on what remains - a relocation carries content, not
+      // page geometry.
+      for (const section of sections)
+        expect((section.secpr ?? section.sectionFormat).pw).toBe(612);
     } finally {
       destroyEditor(editor);
     }
