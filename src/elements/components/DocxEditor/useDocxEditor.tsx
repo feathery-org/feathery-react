@@ -472,6 +472,9 @@ interface Props {
   readOnly?: boolean;
   /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
   openNonce?: number;
+  /** Use Syncfusion's built-in toolbar + properties pane instead of the
+   *  custom DocxToolbar (e.g. the Components tab needs its formatting UI). */
+  builtinToolbar?: boolean;
   onReady?: () => void;
   /** Hands the live DocumentEditor instance to the host (e.g. the AI assistant
    *  drives the document directly through this — no iframe boundary). */
@@ -499,6 +502,7 @@ export function useDocxEditor({
   headers,
   readOnly,
   openNonce = 0,
+  builtinToolbar,
   onReady,
   onEditorReady,
   onDirty,
@@ -563,8 +567,9 @@ export function useDocxEditor({
           ej.documenteditor.Toolbar
         );
         instance = new ej.documenteditor.DocumentEditorContainer({
-          enableToolbar: false,
-          showPropertiesPane: false,
+          enableToolbar: !!builtinToolbar,
+          showPropertiesPane: !!builtinToolbar,
+          documentEditorSettings: { optimizeSfdt: false },
           serviceUrl: serviceUrl || '',
           headers: headers || [],
           height: '100%'
@@ -635,7 +640,7 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [resolvedLicenseKey, serviceUrl, headersKey]);
+  }, [resolvedLicenseKey, serviceUrl, headersKey, builtinToolbar]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
