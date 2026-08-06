@@ -74,6 +74,7 @@ import {
   cellAppearanceAt,
   collectTableAppearance,
   copiedCellAppearance,
+  copiedRowIsHeader,
   detectTableBanding,
   inferHeaderRows,
   resolvedCellAppearanceAt,
@@ -714,6 +715,29 @@ export interface LiteralNumberWrite {
   note: string;
 }
 
+/**
+ * What the composer actually inherited, and from where. The engine has exactly
+ * one honest answer for "did this composed unit take the sibling family's look,
+ * or did it fall back to the editor's defaults?", and it belongs in the result
+ * rather than in the appearance of the output - a fallback that reads exactly
+ * like a success is how a wrong family survived a day of testing.
+ */
+export interface ComposedSectionInheritance {
+  /** The block whose sibling family every inherited format came from. */
+  familyAnchor: string;
+  /** That family's outline level, and how many siblings it was derived from. */
+  level?: number;
+  siblings: number;
+  /** The donor each composed unit copied, in spec order. */
+  donors: Array<{ unit: string; from: string }>;
+  /**
+   * Composed units the family could not supply a donor for. These are written
+   * with the editor's defaults, NOT with the document's look, and that is the
+   * single fact this report exists to make visible.
+   */
+  withoutDonor?: string[];
+}
+
 export interface EditResult {
   ok: boolean;
   anchor?: string;
@@ -753,6 +777,11 @@ export interface EditResult {
   // the stripe it detected. The engine's own account, so "did the restripe
   // actually do anything" is answerable from the result.
   appearance?: AppearanceWriteReport;
+  // Present on a successful `insert_section`: which sibling family the composed
+  // unit inherited from, the donor behind each composed block, and - the point
+  // of the field - any block the family could not dress, which therefore wears
+  // the editor's defaults rather than the document's look.
+  inherited?: ComposedSectionInheritance;
 }
 
 export interface ApplyEditsResult {
@@ -8676,6 +8705,33 @@ function applyBandingRows(
   return { report, restores: transaction.restores };
 }
 
+/**
+ * Enforce the header flag each inserted row resolved to. SyncFusion clones the
+ * anchored row's `rowFormat.isHeader`, so without this an insert anchored on
+ * the header hands back a second header row: it repeats on every page and Word
+ * renders it with the table style's first-row treatment, which is how a new
+ * team member arrived navy and bold instead of as a data row.
+ */
+function applyPlannedRowHeaders(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  planned: Array<{ row: number; isHeader: boolean }>
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (const { row, isHeader } of planned) {
+      const target = current.rows[row];
+      if (!target?.cells.length || !!target.isHeader === isHeader) continue;
+      const cellAnchor = cellAnchorOf(tableAnchor, row, 0);
+      record({ cellAnchor, rowIsHeader: !!target.isHeader });
+      writeRowIsHeader(editor, cellAnchor, isHeader);
+      report.rowsWritten++;
+    }
+  });
+  return { report, restores: transaction.restores };
+}
+
 /** Enforce only the inserted rows' resolved fallback fills. */
 function applyPlannedRowShadings(
   editor: LiveEditor,
@@ -8875,9 +8931,9 @@ function applyCopiedTableAppearance(
     target.rows.forEach((targetRow, row) => {
       // The same mapping copiedCellAppearance uses, so the header flag and the
       // cell appearance can never be taken from two different source rows.
-      const mapped = source.rows[sourceRowForTarget(source, headerRows, row)];
+      const sourceRow = sourceRowForTarget(source, headerRows, row);
       let rowTouched = false;
-      const wantsHeader = !!mapped?.isHeader;
+      const wantsHeader = copiedRowIsHeader(source, sourceRow);
       if (wantsHeader !== !!targetRow.isHeader && targetRow.cells.length) {
         const cellAnchor = cellAnchorOf(targetAnchor, row, 0);
         record({ cellAnchor, rowIsHeader: !!targetRow.isHeader });
@@ -9552,6 +9608,13 @@ interface PlannedTableAppearanceInheritance {
   banding?: TableBanding;
   /** The pre-insert stripe an inserted row must restore below itself. */
   preserveBanding?: { fromRow: number; banding: TableBanding };
+  /**
+   * Whether each inserted row is part of the table's header band, decided by
+   * the SAME source-row mapping its cell appearance uses. SyncFusion clones the
+   * ANCHORED row's `isHeader`, so a row added below a header came out flagged
+   * as a second header - navy, bold and repeating on every page.
+   */
+  rowHeaders?: Array<{ row: number; isHeader: boolean }>;
   /** When no stripe resolves, the locally observed fill for each new row. */
   fallbackShadings?: Array<{ row: number; shading: string | null }>;
 }
@@ -10140,6 +10203,26 @@ function resolveChangeSetBlock(
       `Anchor "${anchor}" moved after a structural edit and its preflight text no longer identifies one block.`,
       [`relocation attempted from: ${anchor}`, 'matching blocks: none']
     );
+  // Ambiguity is a hazard for a WRITE, which must land on one intended block.
+  // A format DONOR is read-only, so several candidates that are formatted
+  // identically are not a guess at all - every one of them copies the same
+  // thing. Insisting on a unique text match refused legitimate work outright:
+  // sibling headings in a real document repeat by design ("Drivers" once per
+  // programme), and a composed unit that shifts its own donor forward would
+  // otherwise be refused for having a well-formed family. Candidates that
+  // differ in format are still a genuine choice, and still refused.
+  if (preferEquivalentDirect) {
+    const look = (block: FlatBlock) =>
+      JSON.stringify([
+        block.format ?? {},
+        block.characterFormat ?? {},
+        block.paragraphFormat ?? {}
+      ]);
+    const baselineLook = look(baseline);
+    const identical = matches.filter((block) => look(block) === baselineLook);
+    if (identical.length && identical.length === matches.length)
+      return identical[0];
+  }
   throw new OpError(
     'anchor_relocation_ambiguous',
     `Anchor "${anchor}" moved after a structural edit and matches ${matches.length} blocks; refusing a non-deterministic write.`,
@@ -10603,6 +10686,15 @@ function planRowInsertInheritance(
         const shading = shadings[sourceRows[index]];
         return shading === undefined ? [] : [{ row: targetRow, shading }];
       });
+  // Header-ness travels with the row the insert takes its appearance from -
+  // the same `sourceRows` mapping, so there is one answer per inserted row and
+  // never two rules about what a header row is. Anchoring the insert on the
+  // header therefore adds a DATA row below it, which is the only structurally
+  // sound reading of "add one more row here".
+  const rowHeaders = targetRows.map((targetRow, index) => ({
+    row: targetRow,
+    isHeader: copiedRowIsHeader(source, sourceRows[index])
+  }));
   return [
     {
       anchor: tableAnchor,
@@ -10611,6 +10703,7 @@ function planRowInsertInheritance(
         targetTableAnchor: tableAnchor,
         source,
         targetRows,
+        rowHeaders,
         ...(banding
           ? { preserveBanding: { fromRow: firstRow, banding } }
           : fallbackShadings?.length
@@ -10992,6 +11085,21 @@ function applyInsertInheritance(
           );
           appearanceOutcomes.push(outcome);
           outcome.restores.forEach(record);
+        }
+        // Before the fills: banding and the fallback shading both read the live
+        // table, and a row still flagged as a header is not the row they are
+        // meant to stripe.
+        if (appearance.rowHeaders?.length) {
+          const headers = applyPlannedRowHeaders(
+            editor,
+            appearance.targetTableAnchor,
+            liveTableAppearance(editor, appearance.targetTableAnchor),
+            appearance.rowHeaders
+          );
+          if (headers.report.rowsWritten) {
+            appearanceOutcomes.push(headers);
+            headers.restores.forEach(record);
+          }
         }
         if (appearance.preserveBanding) {
           const outcome = applyBandingRows(
@@ -12025,6 +12133,7 @@ interface SectionExpansionEntry {
   section: boolean;
   contentBlocks: number;
   tables: number;
+  inheritance?: ComposedSectionInheritance;
 }
 
 interface SectionExpansion {
@@ -12362,7 +12471,13 @@ function composerUnitBlockCount(unit: ComposerUnit): number {
 interface ComposerInsertionBoundary {
   target: FlatBlock;
   position: 'before' | 'after';
-  /** Heading whose sibling family owns appearance, independent of placement. */
+  /**
+   * Set ONLY when the anchor NAMED a section (`before:`/`after:<heading>`).
+   * Naming a section states the family explicitly - "a peer of that one" - and
+   * that statement outranks whatever the resolved insertion point sits inside.
+   * A live block anchor states a POSITION instead, and the family is then
+   * derived from the position; see `joinedSectionFamilyAnchor`.
+   */
   familyAnchor?: string;
 }
 
@@ -12506,13 +12621,80 @@ function boundaryForComposerSection(
   entry: ComposerSectionMapEntry,
   position: 'before' | 'after'
 ): ComposerInsertionBoundary | undefined {
-  const boundary: ComposerInsertionBoundary | undefined =
-    position === 'before'
-      ? { target: entry.heading, position: 'before' }
-      : boundaryAfterComposerSection(blocks, entry);
-  return boundary
-    ? { ...boundary, familyAnchor: entry.heading.anchor }
-    : undefined;
+  return position === 'before'
+    ? { target: entry.heading, position: 'before' }
+    : boundaryAfterComposerSection(blocks, entry);
+}
+
+/**
+ * The sibling family a composed section JOINS, for an anchor that states a
+ * POSITION rather than naming a section.
+ *
+ * A section map entry is a candidate when the insertion point falls anywhere in
+ * `[start, end]` - which is one predicate covering the three ways a section can
+ * be adjacent to that point, at any depth:
+ *   - it ENDS there: the insertion appends after that section, so it is the
+ *     preceding sibling of the unit being composed;
+ *   - it STARTS there: the insertion prepends before it, so it is the following
+ *     sibling (the first-child case);
+ *   - it spans the point: the insertion lands inside it, so it is the parent
+ *     and its own family is the one being joined.
+ * The DEEPEST candidate wins, because a deeper family is by definition nested
+ * inside the shallower ones and is therefore the closest fit; equal depths
+ * prefer the sibling that precedes the insertion point.
+ *
+ * The block the insertion DISPLACES is not, on its own, evidence. Appending a
+ * subsection at the end of a parent section puts the next parent-level heading
+ * immediately after it, and that heading opens a SHALLOWER family - it loses to
+ * the subsection that ends at the same point, which is what stops a subsection
+ * being dressed as a top-level section.
+ *
+ * The spec's own structure bounds the answer: a section declaring subsections
+ * at level L cannot itself be at level L or deeper, so candidates that could
+ * not contain the spec's own headings are excluded. That is what keeps a full
+ * section (title + subsections) composed at a section boundary a section, while
+ * a bare title + table composed at the same boundary joins the subsections.
+ *
+ * Undefined when the insertion point is adjacent to no section at all; the
+ * caller then keeps the resolved target as the reference, as it always was.
+ */
+function joinedSectionFamilyAnchor(
+  blocks: FlatBlock[],
+  target: FlatBlock,
+  position: 'before' | 'after',
+  spec: SectionComposerSpec
+): string | undefined {
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (targetIndex < 0) return undefined;
+  const insertion = position === 'after' ? targetIndex + 1 : targetIndex;
+  const declaredLevels = spec.blocks
+    .filter(
+      (block): block is SectionComposerBlock & { role: 'heading' } =>
+        block.role === 'heading'
+    )
+    .map((block) => block.level)
+    .filter((level): level is number => typeof level === 'number');
+  const shallowestDeclared = declaredLevels.length
+    ? Math.min(...declaredLevels)
+    : Number.POSITIVE_INFINITY;
+  const candidates = composerSectionMap(blocks).filter(
+    (entry) =>
+      entry.start <= insertion &&
+      entry.end >= insertion &&
+      entry.heading.level < shallowestDeclared
+  );
+  const selected = candidates.reduce<ComposerSectionMapEntry | undefined>(
+    (best, entry) => {
+      if (!best || entry.heading.level > best.heading.level) return entry;
+      if (entry.heading.level < best.heading.level) return best;
+      // Same depth: the sibling that ends at the insertion point precedes it.
+      return best.end === insertion ? best : entry;
+    },
+    undefined
+  );
+  return selected?.heading.anchor;
 }
 
 function composerBodyBlocksInSection(
@@ -12637,7 +12819,8 @@ function resolveComposerInsertionBoundary(
           'tried: the section heading, the block after its last content, and a following empty body paragraph'
         ]
       );
-    return resolved;
+    // Naming the section states the family; see ComposerInsertionBoundary.
+    return { ...resolved, familyAnchor: matches[0].heading.anchor };
   }
 
   const exact = byAnchor.get(anchor);
@@ -12735,7 +12918,12 @@ function compileSectionComposer(
   originalIndex: number,
   blocks: FlatBlock[],
   byAnchor: Map<string, FlatBlock>
-): { children: CompiledSectionEdit[]; contentBlocks: number; tables: number } {
+): {
+  children: CompiledSectionEdit[];
+  contentBlocks: number;
+  tables: number;
+  inheritance: ComposedSectionInheritance;
+} {
   const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
   const positionValue = String(op.position ?? 'before').toLowerCase();
   if (positionValue !== 'before' && positionValue !== 'after')
@@ -12803,7 +12991,15 @@ function compileSectionComposer(
     typeof op.group === 'string'
       ? op.group
       : `__insert_section_${originalIndex + 1}`;
-  const familyAnchor = boundary.familyAnchor ?? resolvedTarget.anchor;
+  const familyAnchor =
+    boundary.familyAnchor ??
+    joinedSectionFamilyAnchor(
+      blocks,
+      resolvedTarget,
+      boundary.position,
+      spec
+    ) ??
+    resolvedTarget.anchor;
   const evidence = deriveSectionFamilyEvidence(blocks, familyAnchor);
   const familyBoundary = evidence
     ? sectionBoundaryPattern(blocks, evidence.units).separator
@@ -13059,10 +13255,31 @@ function compileSectionComposer(
       });
     });
   });
+  const donors: ComposedSectionInheritance['donors'] = [];
+  const withoutDonor: string[] = [];
+  for (const unit of finalUnits) {
+    if (unit.kind === 'text')
+      unit.items.forEach((item) =>
+        item.source
+          ? donors.push({ unit: item.label, from: item.source.anchor })
+          : withoutDonor.push(item.label)
+      );
+    else if (unit.kind === 'table')
+      unit.source
+        ? donors.push({ unit: unit.label, from: unit.source.anchor })
+        : withoutDonor.push(unit.label);
+  }
   return {
     children: [...structural, ...formatting],
     contentBlocks: spec.blocks.length + 1,
-    tables: tableOrdinal
+    tables: tableOrdinal,
+    inheritance: {
+      familyAnchor,
+      ...(evidence ? { level: evidence.level } : {}),
+      siblings: evidence?.units.length ?? 0,
+      donors,
+      ...(withoutDonor.length ? { withoutDonor } : {})
+    }
   };
 }
 
@@ -13120,6 +13337,7 @@ function expandSectionComposerEdits(
           children: CompiledSectionEdit[];
           contentBlocks: number;
           tables: number;
+          inheritance?: ComposedSectionInheritance;
         }
       | undefined;
     try {
@@ -13143,6 +13361,7 @@ function expandSectionComposerEdits(
             details: [describeUnexpectedError(error)]
           };
       compiled = {
+        inheritance: undefined,
         children: [
           {
             edit: {
@@ -13176,7 +13395,8 @@ function expandSectionComposerEdits(
       labels: compiled.children.map((child) => child.label),
       section: true,
       contentBlocks: compiled.contentBlocks,
-      tables: compiled.tables
+      tables: compiled.tables,
+      ...(compiled.inheritance ? { inheritance: compiled.inheritance } : {})
     });
   });
   return { edits, entries, expandedToOriginal, changed: true };
@@ -13264,7 +13484,8 @@ function collapseSectionComposerResult(
       ok: true,
       op: 'insert_section',
       ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
-      ...(appearance ? { appearance } : {})
+      ...(appearance ? { appearance } : {}),
+      ...(entry.inheritance ? { inherited: entry.inheritance } : {})
     } as EditResult;
   });
   const changeSet = result.changeSet
@@ -13760,7 +13981,20 @@ function applyDocumentEditsMeasured(
     // so a zero-match attempt remains deferred to phase 3. If the expected
     // content already exists exactly once, though, this is ordinary anchor
     // drift and we can bind the plan to that current block now.
-    if (!target && formatExpectMismatch && hasStructuralEdits) {
+    //
+    // Never for a composed section's own formatting: that op formats a
+    // paragraph THIS change set creates, and the composer already planned where
+    // it lands (`__sectionFinalAnchor`). Reading its `expect` as anchor drift
+    // binds it to a pre-existing paragraph that merely repeats the text - which
+    // is how a second "Your Client Services Team" was left as plain body text
+    // while the original heading two pages up was restyled instead. Phase 3
+    // resolves these from the planned topology; a text match cannot.
+    if (
+      !target &&
+      formatExpectMismatch &&
+      hasStructuralEdits &&
+      op.__sectionCreatorId === undefined
+    ) {
       const attempt = attemptAnchorRelocation(blocks, op);
       if ('target' in attempt) {
         target = byAnchor.get(attempt.target.anchor) ?? attempt.target;

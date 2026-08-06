@@ -744,6 +744,26 @@ export function sourceRowForTarget(
 }
 
 /**
+ * Whether a target row is a header, when it copies its look from `sourceRow`.
+ *
+ * Header-ness is an appearance property like any other, so it comes from the
+ * SAME source row the cells do - never from whichever row the caller happened
+ * to anchor on. This is the whole rule, in one place, for every path that
+ * brings rows into existence: `inferHeaderRows` decides what a header IS, this
+ * decides who inherits it, and the callers differ only in which row-mapping
+ * they hand it (cyclic for a whole-table copy, clamped for a row insert).
+ * Without it, SyncFusion's own clone-the-anchored-row behaviour turns a row
+ * added below a header into a second header - navy, bold, and repeated on
+ * every page of the deliverable.
+ */
+export function copiedRowIsHeader(
+  source: TableAppearance,
+  sourceRow: number
+): boolean {
+  return !!source.rows[sourceRow]?.isHeader;
+}
+
+/**
  * The appearance one target cell should end up with when copying `source` onto
  * a table of `targetColumns` columns.
  *
