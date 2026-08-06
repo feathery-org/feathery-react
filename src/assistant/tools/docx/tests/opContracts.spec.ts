@@ -153,6 +153,32 @@ const tableFixture = () => ({
   ]
 });
 
+// A header row plus three data rows, so a split can take a NON-contiguous set
+// and still leave something behind - the shape the captain asked for.
+const splittableTableFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Coverage Schedule'), // 0;0
+        {
+          // 0;1
+          tableFormat: { allowAutoFit: true },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [cell('Line'), cell('Carrier')]
+            },
+            { rowFormat: {}, cells: [cell('General Liability'), cell('Acme')] },
+            { rowFormat: {}, cells: [cell('Auto'), cell('Beta')] },
+            { rowFormat: {}, cells: [cell('Property'), cell('Acme')] }
+          ]
+        },
+        para('End') // 0;2
+      ]
+    }
+  ]
+});
+
 // The captain's re-total shape: 0;0 title, 0;1 premium table with a header
 // row, three currency line items, a non-numeric line and a Total row whose
 // premium cell holds a stale formatted value.
@@ -476,6 +502,32 @@ const CONTRACTS: Record<string, ContractCase> = {
       ed.revisions.acceptAll();
       expect(headingTexts(ed)).toEqual(['Gamma', 'Beta', 'Alpha']);
       expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(1);
+    }
+  },
+  split_table: {
+    fixture: splittableTableFixture,
+    // Rows 1 and 3 are NOT adjacent, which is the point: the Acme lines are
+    // pulled into their own table and the Beta line stays behind.
+    edits: [
+      {
+        op: 'split_table',
+        anchor: '0;1;0;0;0',
+        rows: [1, 3],
+        targetAnchor: '0;2',
+        position: 'before'
+      }
+    ],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      const texts = blockTexts(ed);
+      // Every cell that moved exists exactly once - relocated, never retyped.
+      for (const value of ['General Liability', 'Auto', 'Property', 'Beta'])
+        expect(texts.filter((text) => text === value)).toHaveLength(1);
+      // The header band is on BOTH tables, so it appears twice while every data
+      // value appears once. Nothing authored it: the copy carried it.
+      expect(texts.filter((text) => text === 'Line')).toHaveLength(2);
+      expect(texts.filter((text) => text === 'Carrier')).toHaveLength(2);
+      expect(texts.filter((text) => text === 'Acme')).toHaveLength(2);
     }
   },
   insert_text: {
