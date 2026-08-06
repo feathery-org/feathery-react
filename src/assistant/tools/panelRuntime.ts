@@ -154,7 +154,7 @@ export const getCurrentStepKey = (formId: string): string | undefined =>
   internalState[formId]?.currentStep?.key;
 
 const sanitizeRuntimeValue = (value: unknown): unknown =>
-  sanitizeTransportValue(value, Number.MAX_SAFE_INTEGER).value;
+  sanitizeTransportValue(value);
 
 const isMeaningful = (value: unknown): boolean => {
   if (value === null || value === undefined) return false;

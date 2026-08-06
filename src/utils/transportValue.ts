@@ -1,26 +1,26 @@
 /**
- * Convert an arbitrary runtime value into bounded, JSON-shaped data that can
- * safely cross the assistant transport boundary.
+ * Convert an arbitrary runtime value into JSON-shaped data that can safely
+ * cross the assistant transport boundary.
  *
  * The stringify/parse round trip is intentional: browser/runtime objects such
  * as File and Promise may be structured-clone hostile even when their JSON
- * representation is tiny. Returning the original value after measuring that
- * representation would let the hostile reference escape.
+ * representation is tiny. Returning the original value would let the hostile
+ * reference escape. Prompt bounding stays the server's job (it digests
+ * oversized values with full-fidelity recall via queryOutput), so the cap here
+ * is a coarse wire guard only.
  */
-export function sanitizeTransportValue(
-  value: unknown,
-  maxChars: number
-): { value: unknown; truncated: boolean } {
-  if (value === null || value === undefined)
-    return { value: null, truncated: false };
-  if (typeof value === 'string') {
-    if (JSON.stringify(value).length <= maxChars)
-      return { value, truncated: false };
-    return {
-      value: truncateStringToJsonLimit(value, maxChars),
-      truncated: true
-    };
-  }
+// Every request carries the whole message history, so one unbounded value can
+// push later requests past the server's body limit and wedge the thread
+const TRANSPORT_MAX_CHARS = 250_000;
+
+const withinTransportLimit = (text: string): string =>
+  text.length > TRANSPORT_MAX_CHARS
+    ? `${text.slice(0, TRANSPORT_MAX_CHARS)}…[truncated]`
+    : text;
+
+export function sanitizeTransportValue(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return withinTransportLimit(value);
 
   const ancestors: Record<string, unknown>[] = [];
   let serialized: string | undefined;
@@ -64,42 +64,20 @@ export function sanitizeTransportValue(
       return current;
     });
   } catch {
-    // Cyclic values, BigInts, and other non-JSON inputs still become a bounded
+    // Cyclic values, BigInts, and other non-JSON inputs still become a
     // primitive rather than escaping by reference.
     serialized = JSON.stringify(String(value));
   }
   if (serialized === undefined) serialized = JSON.stringify(String(value));
 
-  if (serialized.length > maxChars) {
-    return {
-      value: truncateStringToJsonLimit(serialized, maxChars),
-      truncated: true
-    };
-  }
+  // Over the cap the value crosses as truncated text: a clipped serialization
+  // is not parseable, and the head still tells the model what it held
+  if (serialized.length > TRANSPORT_MAX_CHARS)
+    return withinTransportLimit(serialized);
 
   try {
-    return { value: JSON.parse(serialized), truncated: false };
+    return JSON.parse(serialized);
   } catch {
-    return { value: serialized, truncated: false };
+    return serialized;
   }
-}
-
-/**
- * Preserve a useful prefix while bounding the JSON representation of the
- * returned string, including quotes and escapes. Measuring raw string length
- * is insufficient because control characters may expand to six characters on
- * the wire.
- */
-function truncateStringToJsonLimit(value: string, maxChars: number): string {
-  const suffix = '…';
-  let low = 0;
-  let high = value.length;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (JSON.stringify(`${value.slice(0, middle)}${suffix}`).length <= maxChars)
-      low = middle;
-    else high = middle - 1;
-  }
-  const candidate = `${value.slice(0, low)}${suffix}`;
-  return JSON.stringify(candidate).length <= maxChars ? candidate : '';
 }

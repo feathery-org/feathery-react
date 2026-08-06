@@ -93,13 +93,13 @@ import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
   readDocxSelection
-} from './tools/docxEditorBridge';
-import { getDocxEditor } from './tools/docxEditorRegistry';
+} from './tools/docx/docxEditorBridge';
+import { getDocxEditor } from './tools/docx/docxEditorRegistry';
 import {
   ENVELOPE_TARGET_TYPE,
-  getDocumentIndexFreshness,
+  getDocumentTargetContentHash,
   useDocumentIndex
-} from './tools/documentIndex';
+} from './tools/docx/documentIndex';
 import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
@@ -334,33 +334,28 @@ const AssistantChat = ({
   useDocumentIndex({ baseUrl, formId: instanceId, getTargets, headers });
 
   const buildChatBody = (): Record<string, unknown> => {
-    // ai-services reads assistant scope exclusively from body.context;
-    // form_key stays top-level because backend form auth reads body params.
+    // form_key stays top-level because backend form auth reads body params
     const body: Record<string, unknown> = {};
     if (formKey) body.form_key = formKey;
-    const context: Record<string, unknown> = {};
-    const targets = getTargets();
-    if (targets.length > 0) context.targets = targets;
+    // The envelope target carries the client's current content hash, re-read
+    // on every request; ai-services compares it to the hash stored with the
+    // index so stale hits fail loud instead of reading plausible
+    const targets = getTargets().map((target) =>
+      target.type === ENVELOPE_TARGET_TYPE
+        ? { ...target, contentHash: getDocumentTargetContentHash(target) }
+        : target
+    );
+    if (targets.length > 0) body.targets = targets;
 
     if (instanceId) {
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
-      if (panelRuntime) context.panel_runtime = panelRuntime;
-      context.selection = readDocxSelection(getDocxEditor(instanceId));
+      if (panelRuntime) body.panel_runtime = panelRuntime;
+      body.selection = readDocxSelection(getDocxEditor(instanceId));
       // Machine-only executor facts: protocol version and operation names.
       // ai-services intersects these names with its canonical server enum and
       // owns every description, example, payload rule, and result shape.
-      context.capabilities = CAPABILITIES_DECLARATION;
+      body.capabilities = CAPABILITIES_DECLARATION;
     }
-    // How fresh the semantic index is for the open document, re-read on every
-    // request (each tool round trip rebuilds this body, so the answer tracks
-    // edits within a turn). ai-services refuses semantic search when the index
-    // is dirty or holds someone else's content - stale hits must fail loud,
-    // not read plausible (S3). Never rendered into the prompt, so its
-    // per-request variation cannot break prompt caching.
-    const documentTarget = targets.find((t) => t.type === ENVELOPE_TARGET_TYPE);
-    if (documentTarget)
-      context.document_state = getDocumentIndexFreshness(documentTarget);
-    body.context = context;
     return body;
   };
 
@@ -1598,6 +1593,7 @@ const AssistantChat = ({
                 const lastPart = message.parts[message.parts.length - 1];
                 const turnFinished =
                   !isLastMsg ||
+                  status === 'error' ||
                   (status === 'ready' && lastPart?.type === 'text');
                 // Voice: reveal parts top-to-bottom, paced by how much audio has played
                 const paceByAudio =

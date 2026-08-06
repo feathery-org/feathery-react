@@ -27,7 +27,7 @@ import {
   AnchorlessDocumentOp,
   DOCUMENT_EDITOR_CAPABILITIES,
   OpParams
-} from '../capabilities/registry';
+} from '../../capabilities/registry';
 import {
   classifyNumericText,
   parseNumericCell,
@@ -313,6 +313,9 @@ export interface EditOp {
   op: string;
   anchor?: string;
   expect?: string;
+  /** Accept/reject unit: same-`group` ops resolve together (default: the
+   *  change set id). Persisted in revision `customData`, survives reload. */
+  group?: string;
   [field: string]: any;
 }
 
@@ -548,6 +551,13 @@ export interface ApplyEditsResult {
     // first-class grouped card in the revisions UI.
     revisionGrouping: 'bridge_bound_revision_cards' | 'no_revisions';
     uiGrouping: 'requires_cross_layer_group_card';
+    /** Accept units created: one entry per `group` (ungrouped ops share the
+     *  change set id). A group whose ops all no-opped reports 0 revisions. */
+    groups: Array<{
+      id: string;
+      opIndices: number[];
+      revisionCount: number;
+    }>;
     /**
      * What this change set touched, in resolved terms, derived by the ENGINE
      * from the ops. Always present, so "which columns moved" is a property of
@@ -668,6 +678,13 @@ export interface LiveEditor {
   // The collection interface is declared below with the other revision types.
   // eslint-disable-next-line no-use-before-define
   revisions?: LiveRevisionCollection;
+  // SyncFusion stamps `revisionSettings.customData` onto every revision it
+  // creates while set — the accept-group tagging channel. Optional: fakes
+  // without it skip tagging.
+  documentEditorSettings?: {
+    revisionSettings?: { customData?: string | null; [k: string]: any };
+    [k: string]: any;
+  };
   editorHistory?: { undo?(): void; redo?(): void; [k: string]: any };
   search?: any;
   [k: string]: any;
@@ -678,8 +695,15 @@ export interface LiveEditor {
 export interface LiveRevision {
   revisionType?: string;
   revisionID?: string;
+  /** SyncFusion's durable free-form tag; carries the accept-group binding. */
+  customData?: string | null;
   accept?(): void;
   reject?(): void;
+  /** Engine-internal single-revision resolve; preferred over accept/reject,
+   *  whose public path also resolves adjacent same-author/type NEIGHBOURS. */
+  handleAcceptReject?(isAccept: boolean, isGroupAcceptOrReject: boolean): void;
+  /** Public SyncFusion navigation: select this revision's range in the document. */
+  select?(): void;
   [k: string]: any;
 }
 
@@ -2108,13 +2132,8 @@ function describeUnexpectedError(err: unknown): string {
 // op writes nothing, so an edit cannot land on content that moved or changed
 // under it. That protection is the point and is not relaxed here.
 //
-// What IS fixed is two ways the guard refused correct work, plus its name.
-// Live evidence (2026-07-27): every refusal in a 30-minute window but one was a
-// misfire, and the name sent three investigations hunting positional anchor
-// drift that this module has never measured - there is no anchor-revision map
-// anywhere in it. Worse, the name made the advice wrong: the model was told to
-// re-read the inventory and correct the anchor, which cannot help when the anchor
-// was right, so it burned round trips re-reading unchanged content.
+// A refusal must name the real text mismatch, never anchor drift this module
+// does not measure, wrong advice sends the model re-reading unchanged content
 
 /**
  * A paragraph mark is not content.
@@ -2153,8 +2172,8 @@ function expectGuardRefuses(expected: unknown, live: string): boolean {
 
 // An expect_mismatch refusal must name what actually mismatched, or the model
 // re-reads the inventory, gets the same anchor back, and re-sends the same
-// request forever (observed live: 7+ identical round trips). The live text is
-// the one fact that lets the next attempt differ.
+// request forever. The live text is the one fact that lets the next attempt
+// differ.
 const STALE_TEXT_EXCERPT_LIMIT = 300;
 function staleAnchorDetails(expected: unknown, live: string): string[] {
   const cap = (text: string) =>
@@ -2213,16 +2232,15 @@ function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
 // offset short of the block end) legitimately moves the pre-existing text off
 // its index, so the anchor's new occupant is a different logical block.
 //
-// Text-frame content is included. It lives in the serialized SFDT exactly like
-// any other content - as `inline.textFrame.blocks`, which is where
-// currentTextFrameText already reads it - but this walk used to skip it, so a
-// text-frame write had no projection to be proven by and fell back to a
-// revision-type guess: the very heuristic this projection was introduced to
-// replace, carrying the very false negative it was introduced to fix.
+// Text-frame content must be walked too. It lives in the serialized SFDT
+// exactly like any other content - as `inline.textFrame.blocks`, which is
+// where currentTextFrameText already reads it - and a walk that skips it
+// leaves a text-frame write with no projection to be proven by, falling back
+// to the revision-type guess this projection exists to replace.
 // Exported for its own test: this projection IS the tracked-write proof, so
 // "does it actually see the content it claims to cover" has to be assertable
 // directly. A projection blind to a story would pass every write in it
-// vacuously - which is exactly how text-frame writes went unverified.
+// vacuously.
 export function rejectProjectionStream(sfdt: any): string {
   return revisionProjectionStream(sfdt, insertedRevisionIds(sfdt));
 }
@@ -2641,15 +2659,10 @@ function replaceSelectedText(editor: LiveEditor, replacement: string): void {
 // `start`/`end` are a DISAMBIGUATOR among several matches of the same spelling,
 // never a validity test on a match SyncFusion already resolved.
 //
-// They used to be an equality filter, and that is what killed the captain's
-// selection rewrite (2026-07-27 14:2x EDT, ai-services-3002.log line 26661):
-// the model sent a 457-character `find` with `end: 0` on the first attempt
-// (the tool schema fills every field, so an unset `end` arrives as 0) and
-// `end: 451` on the two retries - it tried to count the characters and was off
-// by six. Search had found the range perfectly, at 0..457, all three times.
-// The filter threw it away and reported `exact_match_range_not_found`, so a
-// paragraph that was sitting right there under the user's own selection was
-// declared missing three times and the turn ended in "please do it by hand".
+// Treating them as an equality filter discards ranges search already resolved
+// correctly: the tool schema fills every field so an unset `end` arrives as 0,
+// and a model-counted offset is routinely off by a few characters, either one
+// would report a text right under the user's selection as not found.
 //
 // A character offset is a value the model has to COUNT, and it cannot count.
 // The live search result is authoritative for WHERE the text is; `expect` -
@@ -3548,10 +3561,8 @@ function runFormulaCellWrite(
 // Column-wide recompute (set_column_formula)
 //
 // The failure this exists to remove: the model picks the row range and gets it
-// wrong. Live on 2026-07-27 it wrote two totals into the same row of one table
-// over DIFFERENT spans - sum(rows 1..3) for one column and sum(rows 1..4) for
-// the one beside it. One of those is wrong by construction, and nothing in the
-// output said which.
+// wrong, writing totals in the same row over DIFFERENT spans, one wrong by
+// construction with nothing in the output saying which.
 //
 // So let a formula apply down a WHOLE DATA column. The engine evaluates it for
 // every row in the span and - because of the no-op rule - writes only the cells
@@ -4917,8 +4928,7 @@ function callSelection(
 // (acceptAll / rejectAll) is always safe, but resolving them individually per
 // card in a contradictory order - reject the insertion (drop the new text) AND
 // accept the deletion (drop the old text) - deletes BOTH and the paragraph's
-// content is lost. (Reproduced live: a General Liability quote paragraph
-// vanished entirely after a multi-op edit followed by per-card rejects.)
+// content is lost.
 //
 // Fix: bind the delete+insert revisions of one logical edit into a group and
 // make each member's accept/reject cascade to the whole group, so the FIRST
@@ -5121,58 +5131,522 @@ function rejectCreatedRevisions(
       'A failed change set created a revision that could not be rejected.'
     );
   for (const revision of revisions) {
-    const reject = revision.reject;
-    if (typeof reject === 'function') reject.call(revision);
+    // Never the public reject(): its adjacency cascade could reject
+    // neighbouring revisions this change set never created.
+    resolveSingleRevision(captureNativeResolvers(revision), false);
   }
 }
 
-// Bind a set of revisions authored by ONE logical edit so per-card accept/reject
-// is all-or-nothing. The first accept/reject on any member resolves the whole
-// group with that single decision; later clicks on already-resolved members are
-// no-ops. Each native handler is wrapped in try/catch so a stale-range throw on a
-// later member cannot undo the first member's (safe) result.
+// Durable accept-group tag, carried in revision customData: unlike the
+// in-memory bindings, it round-trips through SFDT/DOCX.
+const REVISION_GROUP_TAG_VERSION = 1;
+
+export interface RevisionGroupTag {
+  changeSetId: string;
+  group: string;
+}
+
+/** The accept group an op belongs to; ungrouped ops share the change set id. */
+function opGroupId(op: EditOp, changeSetId: string): string {
+  return typeof op.group === 'string' && op.group.trim()
+    ? op.group.trim()
+    : changeSetId;
+}
+
+function revisionGroupTag(changeSetId: string, group: string): string {
+  return JSON.stringify({
+    v: REVISION_GROUP_TAG_VERSION,
+    source: 'robin',
+    changeSetId,
+    group
+  });
+}
+
+export function parseRevisionGroupTag(
+  customData: unknown
+): RevisionGroupTag | undefined {
+  if (typeof customData !== 'string' || !customData.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(customData);
+    if (
+      parsed &&
+      parsed.source === 'robin' &&
+      typeof parsed.changeSetId === 'string' &&
+      typeof parsed.group === 'string'
+    )
+      return { changeSetId: parsed.changeSetId, group: parsed.group };
+  } catch {
+    // Foreign customData (another producer's tag, or plain text) is not ours
+    // to interpret; the revision simply stays outside assistant grouping.
+  }
+  return undefined;
+}
+
+// Resolve ONE revision without the adjacency cascade: public accept/reject
+// resolve the pane's whole same-author/type neighbour card. The internal
+// `handleAcceptReject` is feature-detected (fallback: public call); note it
+// skips `beforeAcceptRejectChanges`.
+function resolveSingleRevision(
+  natives: {
+    accept?: () => void;
+    reject?: () => void;
+    single?: (isAccept: boolean, isGroup: boolean) => void;
+  },
+  isAccept: boolean
+): void {
+  if (natives.single) {
+    natives.single(isAccept, false);
+    return;
+  }
+  const fn = isAccept ? natives.accept : natives.reject;
+  if (fn) fn();
+}
+
+// Every revision created until the next stamp carries this op's group tag.
+// Editors without `revisionSettings` (test fakes) skip tagging and fall back
+// to change-set-wide grouping.
+function stampRevisionGroup(
+  editor: LiveEditor,
+  changeSetId: string,
+  op: EditOp
+): void {
+  const settings = editor.documentEditorSettings?.revisionSettings;
+  if (!settings) return;
+  settings.customData = revisionGroupTag(
+    changeSetId,
+    opGroupId(op, changeSetId)
+  );
+}
+
+// SyncFusion coalesces adjacent same-author/same-type revisions into one
+// object, silently folding a second group's content (and losing its tag)
+// into the first — so gate the engine's merge predicates on the group tag.
+// Untagged content normalizes to one empty key: native merge behavior.
+const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
+
+function revisionTagKey(customData: unknown): string {
+  const tag = parseRevisionGroupTag(customData);
+  return tag ? `${tag.changeSetId} ${tag.group}` : '';
+}
+
+export function installRevisionGroupIsolation(editor: LiveEditor): void {
+  const mod: any = (editor as any).editorModule ?? editor.editor;
+  if (!mod || typeof mod.isRevisionMatched !== 'function') return;
+  if (mod[REVISION_ISOLATION_INSTALLED]) return;
+  mod[REVISION_ISOLATION_INSTALLED] = true;
+
+  // The tag new content would carry.
+  const activeKey = () =>
+    revisionTagKey(editor.documentEditorSettings?.revisionSettings?.customData);
+
+  // "May this new tracked content extend `item`?" Unwrap element revisions so
+  // the author/type check and the tag check apply to the same revision.
+  const originalMatched = mod.isRevisionMatched.bind(mod);
+  mod.isRevisionMatched = (item: any, type: any): boolean => {
+    // Type-less calls are OWNERSHIP checks ("is this pending insertion my
+    // own?" → remove outright, no Deletion layered) and must stay native:
+    // tag-gating them leaves content rejecting cannot restore. Only the
+    // typed combine/extend calls are group-scoped.
+    if (type === undefined || type === null) return originalMatched(item, type);
+    const revisions: any[] =
+      item && typeof item.revisionLength === 'number'
+        ? Array.from(
+            { length: item.revisionLength },
+            (_, i) => item.revisions?.[i]
+          )
+        : [item];
+    const key = activeKey();
+    return revisions.some(
+      (rev) =>
+        rev &&
+        originalMatched(rev, type) &&
+        revisionTagKey(rev.customData) === key
+    );
+  };
+
+  // "May these two existing revisions merge?" (e.g. the content separating
+  // them was removed). Only within one group.
+  if (typeof mod.compareTwoRevisions === 'function') {
+    const originalCompare = mod.compareTwoRevisions.bind(mod);
+    mod.compareTwoRevisions = (a: any, b: any): boolean =>
+      originalCompare(a, b) &&
+      revisionTagKey(a?.customData) === revisionTagKey(b?.customData);
+  }
+}
+
+function captureNativeResolvers(rev: LiveRevision) {
+  return {
+    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
+    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined,
+    single:
+      typeof rev.handleAcceptReject === 'function'
+        ? rev.handleAcceptReject.bind(rev)
+        : undefined
+  };
+}
+
+// Bind one edit group's revisions so accept/reject on ANY member resolves
+// the whole group — never wider — through the non-cascading path. Later
+// calls on resolved members are no-ops; single-revision groups are bound
+// too (the wrapper is what routes around the adjacency cascade).
 function groupRevisionsAtomic(
   group: LiveRevision[],
-  changeSetId?: string
+  changeSetId?: string,
+  groupId?: string
 ): void {
-  if (group.length < 2) return;
-  const natives = group.map((rev) => ({
-    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
-    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined
-  }));
+  if (!group.length) return;
+  const members = group.map(captureNativeResolvers);
   const state = { resolved: false };
+  // Members a reviewer resolved one-by-one (robinResolveSelf); a later group
+  // decision must not resolve them a second time.
+  const resolvedAlone = new Set<number>();
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
-    for (const n of natives) {
-      const fn = isAccept ? n.accept : n.reject;
-      if (!fn) continue;
+    for (let index = 0; index < members.length; index++) {
+      if (resolvedAlone.has(index)) continue;
       try {
-        fn();
+        resolveSingleRevision(members[index], isAccept);
       } catch {
         // A later member's range may be stale once the first resolved; the
         // group's outcome is already consistent, so swallow and move on.
       }
     }
   };
-  for (const rev of group) {
+  group.forEach((rev, index) => {
     if (changeSetId) (rev as any).robinChangeSetId = changeSetId;
+    if (groupId) (rev as any).robinGroupId = groupId;
+    // Rebind guard: marks this revision's accept/reject as already wrapped so
+    // a later rebind pass cannot stack wrappers.
+    (rev as any).robinGroupBound = true;
+    // The per-edit escape hatch: resolve THIS member alone through the native
+    // single-revision path, leaving the rest of the group pending.
+    (rev as any).robinResolveSelf = (isAccept: boolean) => {
+      if (state.resolved || resolvedAlone.has(index)) return;
+      resolvedAlone.add(index);
+      resolveSingleRevision(members[index], isAccept);
+    };
     rev.accept = () => resolveAll(true);
     rev.reject = () => resolveAll(false);
+  });
+}
+
+/** Resolve ONE revision — not its accept group, no adjacency cascade.
+ *  Group-bound revisions use the natives captured at bind time (their public
+ *  accept/reject were rewired to whole-group resolution). */
+export function resolveRevisionIndividually(
+  revision: LiveRevision,
+  isAccept: boolean
+): void {
+  const self = (revision as any).robinResolveSelf;
+  if (typeof self === 'function') {
+    self(isAccept);
+    return;
+  }
+  resolveSingleRevision(captureNativeResolvers(revision), isAccept);
+}
+
+/** Resolve several revisions as ONE undo step via the engine's complex
+ *  history (native Accept All's mechanism) — per-revision entries would let
+ *  undo peel the unit apart (e.g. a replace reviving only its insert half). */
+export function resolveRevisionsAsOneUndo(
+  editor: LiveEditor,
+  revisions: LiveRevision[],
+  isAccept: boolean
+): void {
+  const editorModule: any = (editor as any).editorModule ?? editor.editor;
+  const history: any =
+    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
+  let complex = false;
+  if (
+    revisions.length > 1 &&
+    typeof editorModule?.initComplexHistory === 'function'
+  ) {
+    try {
+      editorModule.initComplexHistory(isAccept ? 'Accept All' : 'Reject All');
+      complex = true;
+    } catch {
+      complex = false;
+    }
+  }
+  try {
+    for (const revision of revisions) {
+      try {
+        resolveRevisionIndividually(revision, isAccept);
+      } catch {
+        // A stale member range must not stop the rest of the unit.
+      }
+    }
+  } finally {
+    if (complex) {
+      try {
+        history?.updateComplexHistory?.();
+      } catch {
+        // History bookkeeping must never break the resolution itself.
+      }
+    }
   }
 }
 
-// Diff the revisions created by a single op (against a pre-op snapshot) and bind
-// them atomically. A no-op when the op added fewer than two revisions.
+/** Result of binding one change set's created revisions into accept groups. */
+interface RevisionGroupingReport {
+  revisionCount: number;
+  /** group id -> number of live revisions bound to it. */
+  revisionsByGroup: Map<string, number>;
+}
+
+// Partition this change set's created revisions by their customData group
+// tag and bind each partition atomically; untaggable revisions fall back to
+// the change-set-wide group.
 function groupNewRevisions(
   editor: LiveEditor,
   before: LiveRevision[],
-  changeSetId?: string
-): number {
+  changeSetId: string
+): RevisionGroupingReport {
   const created = createdRevisions(editor, before);
-  if (!created.length) return 0;
-  groupRevisionsAtomic(created, changeSetId);
-  return created.length;
+  const revisionsByGroup = new Map<string, number>();
+  if (!created.length) return { revisionCount: 0, revisionsByGroup };
+  const partitions = new Map<string, LiveRevision[]>();
+  for (const rev of created) {
+    const tag = parseRevisionGroupTag(rev.customData);
+    const group =
+      tag && tag.changeSetId === changeSetId ? tag.group : changeSetId;
+    const partition = partitions.get(group);
+    if (partition) partition.push(rev);
+    else partitions.set(group, [rev]);
+  }
+  partitions.forEach((partition, group) => {
+    groupRevisionsAtomic(partition, changeSetId, group);
+    revisionsByGroup.set(group, partition.length);
+  });
+  return { revisionCount: created.length, revisionsByGroup };
+}
+
+// changeSet.groups: ops declare the units, the post-write partition supplies
+// the facts — a group whose writes all no-opped reports visibly empty.
+function reportRevisionGroups(
+  edits: EditOp[],
+  changeSetId: string,
+  revisionsByGroup: Map<string, number>
+): Array<{ id: string; opIndices: number[]; revisionCount: number }> {
+  const opIndicesById = new Map<string, number[]>();
+  edits.forEach((op, index) => {
+    if (!op?.op) return;
+    const id = opGroupId(op, changeSetId);
+    const indices = opIndicesById.get(id);
+    if (indices) indices.push(index);
+    else opIndicesById.set(id, [index]);
+  });
+  // Untagged revisions land in the change-set-wide group; make sure it is
+  // reported even when every op declared its own group.
+  revisionsByGroup.forEach((_, id) => {
+    if (!opIndicesById.has(id)) opIndicesById.set(id, []);
+  });
+  return [...opIndicesById.entries()].map(([id, opIndices]) => ({
+    id,
+    opIndices,
+    revisionCount: revisionsByGroup.get(id) ?? 0
+  }));
+}
+
+/** One tracked revision inside an accept group, shaped for review UI. */
+export interface RevisionGroupItem {
+  revision: LiveRevision;
+  /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | 'Replace' | ''. */
+  revisionType: string;
+  /** Excerpt of the tracked content (Replace: the NEW text); empty for
+   *  pure structure. */
+  text: string;
+  /** Replace only: the deleted (old) text for a `− old / + new` diff. */
+  beforeText?: string;
+  /** Replace only: the insertion half (`revision` holds the deletion) —
+   *  one approval must resolve both. */
+  partner?: LiveRevision;
+  /** Who made the edit (the revision's author string). */
+  author?: string;
+}
+
+/** One accept group with its live member revisions: an assistant-defined
+ *  group (tagged), or one author's manual tracked edits (untagged). */
+export interface RevisionGroupView {
+  changeSetId: string;
+  /** The assistant's group id, or the author name for untagged views. */
+  group: string;
+  /** True when this view aggregates one author's manual (untagged) edits. */
+  untagged?: boolean;
+  items: RevisionGroupItem[];
+}
+
+// The range's visible text: structural markers (paragraph marks, row
+// formats) have no `.text` and contribute nothing.
+function revisionRangeText(revision: LiveRevision): string {
+  let range: any[];
+  try {
+    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
+  } catch {
+    return '';
+  }
+  if (!Array.isArray(range)) return '';
+  let out = '';
+  for (const item of range) {
+    if (typeof item?.text === 'string') out += item.text;
+  }
+  return out.trim();
+}
+
+// A tracked replace is a Deletion whose range links directly to an adjacent
+// Insertion's first element — ONE edit to a reviewer.
+function isReplacePair(
+  deletion: LiveRevision,
+  insertion: LiveRevision
+): boolean {
+  try {
+    const delRange =
+      typeof deletion.getRange === 'function' ? deletion.getRange() : [];
+    const insRange =
+      typeof insertion.getRange === 'function' ? insertion.getRange() : [];
+    const last: any = delRange[delRange.length - 1];
+    return !!last && !!insRange[0] && last.nextNode === insRange[0];
+  } catch {
+    return false;
+  }
+}
+
+// Memo key for findReplaceCounterpart: null = computed, no counterpart.
+const REPLACE_COUNTERPART_MEMO = '__robinReplaceCounterpart';
+
+/** The other half of a tracked replace, from either side. Memoized on the
+ *  revision objects — the halves are created together, so the linkage is
+ *  stable for the revision's lifetime. */
+export function findReplaceCounterpart(
+  revision: LiveRevision
+): LiveRevision | undefined {
+  const memo = (revision as any)[REPLACE_COUNTERPART_MEMO];
+  if (memo !== undefined) return memo ?? undefined;
+  const counterpart = computeReplaceCounterpart(revision);
+  (revision as any)[REPLACE_COUNTERPART_MEMO] = counterpart ?? null;
+  if (counterpart) (counterpart as any)[REPLACE_COUNTERPART_MEMO] = revision;
+  return counterpart;
+}
+
+// Two revisions form one replace when their group identity matches: the same
+// assistant tag, or — for human (untagged) edits — the same author.
+function sameEditUnit(a: LiveRevision, b: LiveRevision): boolean {
+  const tagA = parseRevisionGroupTag(a.customData);
+  const tagB = parseRevisionGroupTag(b.customData);
+  if (tagA && tagB)
+    return tagA.changeSetId === tagB.changeSetId && tagA.group === tagB.group;
+  if (!tagA && !tagB) return String(a.author ?? '') === String(b.author ?? '');
+  return false;
+}
+
+function computeReplaceCounterpart(
+  revision: LiveRevision
+): LiveRevision | undefined {
+  const type = String(revision.revisionType ?? '');
+  if (type !== 'Deletion' && type !== 'Insertion') return undefined;
+  let range: any[];
+  try {
+    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(range) || !range.length) return undefined;
+  // A deletion's replacement text follows it; an insertion's replaced text
+  // precedes it.
+  const neighbour: any =
+    type === 'Deletion'
+      ? range[range.length - 1]?.nextNode
+      : range[0]?.previousNode;
+  const count = neighbour?.revisionLength ?? 0;
+  for (let i = 0; i < count; i++) {
+    const other = neighbour.getRevision?.(i);
+    if (!other) continue;
+    const otherType = String(other.revisionType ?? '');
+    if (otherType !== (type === 'Deletion' ? 'Insertion' : 'Deletion'))
+      continue;
+    if (!sameEditUnit(revision, other)) continue;
+    const deletion = type === 'Deletion' ? revision : other;
+    const insertion = type === 'Deletion' ? other : revision;
+    if (isReplacePair(deletion, insertion)) return other;
+  }
+  return undefined;
+}
+
+/** Review-rail read model: pending revisions grouped by accept-group tag
+ *  (human/untagged edits group by author), replace pairs folded to one item. */
+export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
+  const views = new Map<string, RevisionGroupView>();
+  for (const revision of snapshotRevisions(editor)) {
+    const tag = parseRevisionGroupTag(revision.customData);
+    const author = String(revision.author ?? '').trim() || 'Unknown author';
+    // Assistant edits group by their accept-group tag; human edits group by
+    // who made them.
+    const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
+    let view = views.get(key);
+    if (!view) {
+      view = tag
+        ? { changeSetId: tag.changeSetId, group: tag.group, items: [] }
+        : { changeSetId: '', group: author, untagged: true, items: [] };
+      views.set(key, view);
+    }
+    const item: RevisionGroupItem = {
+      revision,
+      revisionType: String(revision.revisionType ?? ''),
+      text: revisionRangeText(revision),
+      author
+    };
+    const prev = view.items[view.items.length - 1];
+    if (
+      prev &&
+      !prev.partner &&
+      prev.revisionType === 'Deletion' &&
+      item.revisionType === 'Insertion' &&
+      isReplacePair(prev.revision, item.revision)
+    ) {
+      prev.partner = item.revision;
+      prev.revisionType = 'Replace';
+      prev.beforeText = prev.text;
+      prev.text = item.text;
+      continue;
+    }
+    view.items.push(item);
+  }
+  return [...views.values()];
+}
+
+/** Rebuild accept-group bindings from persisted customData tags — the
+ *  in-memory wrappers die on save/reload, the tags don't. Idempotent
+ *  (bound revisions are skipped). Returns how many revisions were bound. */
+export function rebindRevisionGroups(editor: LiveEditor): number {
+  const partitions = new Map<
+    string,
+    { changeSetId: string; group: string; revisions: LiveRevision[] }
+  >();
+  for (const rev of snapshotRevisions(editor)) {
+    if ((rev as any).robinGroupBound) continue;
+    const tag = parseRevisionGroupTag(rev.customData);
+    if (!tag) continue;
+    const key = `${tag.changeSetId} ${tag.group}`;
+    const partition = partitions.get(key);
+    if (partition) partition.revisions.push(rev);
+    else
+      partitions.set(key, {
+        changeSetId: tag.changeSetId,
+        group: tag.group,
+        revisions: [rev]
+      });
+  }
+  let bound = 0;
+  partitions.forEach((partition) => {
+    groupRevisionsAtomic(
+      partition.revisions,
+      partition.changeSetId,
+      partition.group
+    );
+    bound += partition.revisions.length;
+  });
+  return bound;
 }
 
 const FORMAT_OPS = new Set([
@@ -5623,11 +6097,9 @@ function applyInsertInheritance(
 // Two things live here, and both exist because they are invisible one op at a
 // time:
 //
-//   1. TWO TOTALS OVER THE SAME TABLE THAT SPAN DIFFERENT ROWS. Live on
-//      2026-07-27 the model wrote sum(rows 1..3) into one column's total and
-//      sum(rows 1..4) into the column beside it. Each op is individually
-//      perfect; together, one of them is wrong by construction. Nothing except
-//      a cross-op check can see it.
+//   1. TWO TOTALS OVER THE SAME TABLE THAT SPAN DIFFERENT ROWS. Each op is
+//      individually perfect, together one of them is wrong by construction,
+//      and nothing except a cross-op check can see it.
 //   2. THE DEPENDENCY CHAIN, ANNOUNCED. A person asks to re-total BECAUSE they
 //      changed an input, so when an input column changes the derived column and
 //      the totals are all stale and Robin should follow the chain rather than
@@ -5903,6 +6375,10 @@ export function applyDocumentEdits(
   const announcement = describeChangeSetTouches(columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
+  // The group tag rides on SyncFusion's revision customData for the duration
+  // of this change set; whatever the host set there before is restored after.
+  const revisionSettings = editor.documentEditorSettings?.revisionSettings;
+  const priorRevisionCustomData = revisionSettings?.customData;
   let blocks: FlatBlock[] = [];
   let byAnchor = new Map<string, FlatBlock>();
   // "What the whole document would read if every revision were rejected",
@@ -5912,6 +6388,12 @@ export function applyDocumentEdits(
   // replaced the text it targeted rather than landing beside it.
   let rejectStream = '';
   let acceptStream = '';
+  // Catch-all: rebuild bindings lost to reload/earlier sessions before any
+  // new writes land.
+  rebindRevisionGroups(editor);
+  // Adjacent writes from different accept groups must not coalesce into one
+  // revision; see installRevisionGroupIsolation. Idempotent.
+  installRevisionGroupIsolation(editor);
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
   const nonBlockingStoryWriteFailures = new Set<number>();
@@ -5974,6 +6456,22 @@ export function applyDocumentEdits(
       results[index] = { ok: false, op: '', error: 'missing_op' };
       return;
     }
+    if (
+      op.group !== undefined &&
+      (typeof op.group !== 'string' ||
+        !op.group.trim() ||
+        op.group.trim().length > 120)
+    ) {
+      results[index] = {
+        ok: false,
+        op: name,
+        ...(op.anchor ? { anchor: op.anchor } : {}),
+        error: 'invalid_group',
+        message:
+          "`group` names this edit's accept/reject unit: a non-empty string of at most 120 characters, shared by every edit that must resolve together. Omit it to group the whole change set."
+      };
+      return;
+    }
     if (UNSAFE_CHANGE_SET_OPS.has(name)) {
       results[index] = {
         ok: false,
@@ -6016,10 +6514,8 @@ export function applyDocumentEdits(
     // as the preflight target. That deferral only means something in a change
     // set whose structural ops can shift anchors: in a formatting-only set no
     // anchor can move, so today's occupant IS the block the model named, and
-    // an expect discrepancy must be reported as what it is - stale expect
-    // text - never as a missing anchor (observed live: a follow-up formatting
-    // set styling freshly inserted paragraphs died anchor_not_found 18 times
-    // on anchors that existed).
+    // an expect discrepancy must be reported as what it is, stale expect
+    // text, never as a missing anchor on an anchor that exists.
     const formatExpectMismatch =
       FORMAT_OPS.has(name) &&
       op.expect != null &&
@@ -6197,6 +6693,7 @@ export function applyDocumentEdits(
       for (const plan of plans) {
         const { op, index } = plan;
         if (results[index] || FORMAT_OPS.has(op.op)) continue;
+        stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
         let priorRejectStream: string | undefined;
@@ -6345,6 +6842,7 @@ export function applyDocumentEdits(
       for (const plan of plans) {
         const { op, index } = plan;
         if (results[index] || !FORMAT_OPS.has(op.op)) continue;
+        stampRevisionGroup(editor, changeSetId, op);
         try {
           if (!op.anchor)
             throw new OpError(
@@ -6418,6 +6916,7 @@ export function applyDocumentEdits(
   } finally {
     editor.enableTrackChanges = priorTrackChanges;
     editor.currentUser = priorCurrentUser;
+    if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
   }
 
   const hasMaterialFailure = results.some(
@@ -6439,11 +6938,8 @@ export function applyDocumentEdits(
     }
   }
 
-  const revisionCount = groupNewRevisions(
-    editor,
-    revisionSnapshot,
-    changeSetId
-  );
+  const grouping = groupNewRevisions(editor, revisionSnapshot, changeSetId);
+  const revisionCount = grouping.revisionCount;
   const hasFailure = results.some((result) => result && !result.ok);
   if (hasFailure) {
     // Never use global undo: it can revert unrelated history. Existing writes
@@ -6483,6 +6979,11 @@ export function applyDocumentEdits(
         ? 'bridge_bound_revision_cards'
         : 'no_revisions',
       uiGrouping: 'requires_cross_layer_group_card',
+      groups: reportRevisionGroups(
+        edits,
+        changeSetId,
+        grouping.revisionsByGroup
+      ),
       // The engine's own account of what this batch touched, beside the
       // model's announcement of what it was about to do. Two independent
       // statements of the same thing: if they disagree, that is visible.

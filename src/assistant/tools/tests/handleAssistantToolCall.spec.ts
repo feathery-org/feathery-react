@@ -12,7 +12,10 @@ import {
   handleAssistantToolCall,
   NativeToolHandlers
 } from '../handleAssistantToolCall';
-import { unhandledToolOutput } from '../assistantToolDispatch';
+import {
+  UNHANDLED_TOOL_ERROR,
+  unhandledToolOutput
+} from '../assistantToolDispatch';
 
 type Emitted = { tool: string; toolCallId: string; output: any };
 
@@ -66,7 +69,7 @@ describe('every streamed tool call produces exactly one output', () => {
     expect(h.emitted[0]).toMatchObject({
       tool: 'futureServerTool',
       toolCallId: 'call_a4',
-      output: { ok: false, error: 'unhandled_tool' }
+      output: { ok: false, error: UNHANDLED_TOOL_ERROR }
     });
   });
 
@@ -87,7 +90,7 @@ describe('every streamed tool call produces exactly one output', () => {
     // no output at all, and dynamic tools are the per-request `rule_*` catalog,
     // so a catalog or naming mismatch landed here.
     expect(h.emitted).toHaveLength(1);
-    expect(h.emitted[0].output).toMatchObject({ error: 'unhandled_tool' });
+    expect(h.emitted[0].output).toMatchObject({ error: UNHANDLED_TOOL_ERROR });
   });
 
   it.each([

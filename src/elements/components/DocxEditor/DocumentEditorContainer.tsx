@@ -14,7 +14,11 @@ import { getSignUrl } from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
-} from '../../../assistant/tools/docxEditorRegistry';
+} from '../../../assistant/tools/docx/docxEditorRegistry';
+import {
+  installRevisionGroupIsolation,
+  rebindRevisionGroups
+} from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import {
   attachTokenCycle,
   saveBlockers,
@@ -27,6 +31,18 @@ import type {
 import TokenPanel, {
   tokenPanelEnabled
 } from '../../../documentTokens/TokenPanel';
+import {
+  attachBlockSync,
+  BlockSync,
+  EditorSurface
+} from '../../../documentBlocks/blockSync';
+import { BlockStore, createBlockStore } from '../../../documentBlocks/store';
+import { blockSaveBlockers } from '../../../documentBlocks/tokens';
+import { SAMPLE_DOCUMENT } from '../../../documentBlocks/sampleDocument';
+import BlockPanel from '../../../documentBlocks/BlockPanel';
+import DebugPanel from '../../../documentBlocks/DebugPanel';
+import { docxBlocksConfig } from '../../../documentBlocks/config';
+import ComponentsTab from '../../../documentBlocks/ComponentsTab';
 
 // Syncfusion's public test converter. Used ONLY in a local build: document
 // content is uploaded to a third party, which is fine for synthetic fixtures
@@ -370,13 +386,43 @@ export default function DocumentEditorContainer({
       : undefined
     : undefined;
 
+  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
+  // point. The schema container id is stable for this editor across renders;
+  // retain the editor object as well so cleanup can only remove this exact
+  // registration, never another mounted container's editor.
+  const registeredEditor = useRef<any>(undefined);
+  const tokenCycle = useRef<TokenCycle | undefined>(undefined);
+  // Dev-only token inspector; nothing renders unless the flag is set.
+  const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
+
+  // Dynamic blocks (theming/generation) is an opt-in feature, entirely
+  // separate from the token cycle above: a document with dynamic blocks owns
+  // its own tokens through the block sync loop, so the two must never attach
+  // to the same editor at once.
+  const blocksConfig = docxBlocksConfig(featheryWindow());
+  const blocksEnabled = Boolean(blocksConfig.enabled);
+  const storeRef = useRef<BlockStore | null>(null);
+  if (blocksEnabled && !storeRef.current) {
+    const initialData = (blocksConfig.data as any) ?? SAMPLE_DOCUMENT;
+    storeRef.current = createBlockStore(initialData);
+  }
+  const blockStore = storeRef.current;
+
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
       if (!envelope) return;
       // A token that fails validation — or whose formula cannot evaluate and
-      // is showing its 0 fallback — must not reach the envelope.
+      // is showing its 0 fallback — must not reach the envelope. Blocks
+      // documents have no TokenCycle of their own, so they're checked via
+      // the block store's data instead of tokenCycle's state.
       const state = tokenCycle.current?.getState();
-      const blocked = state ? saveBlockers(state) : null;
+      const blocked = blocksEnabled
+        ? blockStore
+          ? blockSaveBlockers(blockStore.getData(), formFieldAccess)
+          : null
+        : state
+        ? saveBlockers(state)
+        : null;
       if (blocked) {
         setError(blocked);
         return;
@@ -407,7 +453,7 @@ export default function DocumentEditorContainer({
       }
       return updated;
     },
-    [client, envelope, targetAction]
+    [client, envelope, targetAction, blocksEnabled, blockStore]
   );
 
   // Only the sign action is handled here — the download action downloads the
@@ -432,17 +478,39 @@ export default function DocumentEditorContainer({
     else openTab(url);
   }, [client, envelope, targetAction, terminalAction]);
 
-  // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
-  // point. The schema container id is stable for this editor across renders;
-  // retain the editor object as well so cleanup can only remove this exact
-  // registration, never another mounted container's editor.
-  const registeredEditor = useRef<any>(undefined);
-  const tokenCycle = useRef<TokenCycle | undefined>(undefined);
-  // Dev-only token inspector; nothing renders unless the flag is set.
-  const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
+  const blockSync = useRef<BlockSync | undefined>(undefined);
+  const editorSurfaceRef = useRef<EditorSurface | undefined>(undefined);
+  // Refs alone would attach the sync loop silently: setting a ref inside
+  // onEditorReady does not itself trigger a render, so the Debug panel (which
+  // needs the live BlockSync/EditorSurface pair to render at all) would never
+  // appear. This state's only job is forcing that one re-render.
+  const [debugPanelSync, setDebugPanelSync] = useState<BlockSync>();
+  const [activeTab, setActiveTab] = useState<'document' | 'components'>(
+    'document'
+  );
+  // The config flag preseeds visibility; the tab-strip button toggles it.
+  const [showDebug, setShowDebug] = useState(() =>
+    Boolean(docxBlocksConfig(featheryWindow()).debug)
+  );
+
+  useEffect(() => {
+    if (!blocksEnabled || !blockStore) return undefined;
+    return blockStore.subscribe((data) => {
+      docxBlocksConfig(featheryWindow()).onDataChange?.(data);
+    });
+  }, [blockStore, blocksEnabled]);
+
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
+      // Detach both sync mechanisms before branching on the flag — a session
+      // that flips blocksEnabled between mounts (or a fast remount) must never
+      // let a stale tokenCycle linger into a blocks session: it still feeds
+      // saveEnvelope's blockers via tokenCycle.current.getState().
+      tokenCycle.current?.detach();
+      tokenCycle.current = undefined;
+      blockSync.current?.detach();
+      blockSync.current = undefined;
       registeredEditor.current = editor;
       registerDocxEditor(containerId, editor, {
         formId,
@@ -450,10 +518,47 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
+      // Group rebinding deliberately does NOT happen here: this fires from
+      // SyncFusion's `created` callback, before the source document is opened,
+      // so there are no persisted revisions to bind yet. See onDocumentReady.
+      // Isolation is document-independent, so installing it once at create is
+      // both correct and cheapest.
+      try {
+        installRevisionGroupIsolation(editor);
+      } catch {
+        // A grouping failure must not break the editor mount.
+      }
+
+      if (blocksEnabled && blockStore) {
+        const editorSurface: EditorSurface = {
+          open: (sfdt) => editor.open(sfdt),
+          serialize: () => editor.serialize(),
+          addEventListener: (name, fn) => editor.addEventListener(name, fn),
+          removeEventListener: (name, fn) => {
+            // detach() can run after the Syncfusion instance was destroyed
+            // (unmount, HMR) — its removeEventListener then throws on nulled
+            // internals. The listener died with the editor; ignore.
+            try {
+              editor.removeEventListener?.(name, fn);
+            } catch {
+              /* editor already torn down */
+            }
+          },
+          scrollContainer: () => editor.documentHelper?.viewerContainer
+        };
+        editorSurfaceRef.current = editorSurface;
+        blockSync.current = attachBlockSync(
+          editorSurface,
+          blockStore,
+          formFieldAccess
+        );
+        setDebugPanelSync(blockSync.current);
+        return;
+      }
+
       // Linked tokens keep themselves up to date from here on. Inert for a
       // document that declares none; the cycle re-reads on documentChange,
       // because the editor is ready before its .docx has loaded.
-      tokenCycle.current?.detach();
       tokenCycle.current = attachTokenCycle(editor, {
         fields: formFieldAccess
       });
@@ -461,8 +566,37 @@ export default function DocumentEditorContainer({
         setTokenPanelCycle(tokenCycle.current);
       }
     },
-    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+    [
+      activeDocumentId,
+      blockStore,
+      blocksEnabled,
+      containerId,
+      envelope?.id,
+      formId,
+      stepId
+    ]
   );
+  // Runs after openAsync resolves — and again on every reload (openNonce), which
+  // is the case that matters: the in-memory group wrappers die with the old
+  // document, while the customData tags survive in the saved file. Rebinding
+  // here is what lets a reloaded document regain its atomic accept groups.
+  // Idempotent (already-bound revisions are skipped), so the blank-document
+  // firing of this same callback is a harmless no-op.
+  const onDocumentReady = useCallback(() => {
+    const editor = registeredEditor.current;
+    if (!editor) return;
+    try {
+      rebindRevisionGroups(editor);
+    } catch {
+      // A grouping failure must not break the opened document.
+    }
+    // openAsync (the source .docx load) fires this callback and clobbers
+    // whatever blockSync had open — it never goes through blockSync's own
+    // open(), so nothing here re-fires onDocumentReady. Reassert the
+    // generated document on top. refresh() calls editor.open() directly
+    // (see blockSync.ts), not openAsync, so this is loop-safe.
+    if (blocksEnabled) blockSync.current?.refresh();
+  }, [blocksEnabled]);
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
@@ -478,6 +612,8 @@ export default function DocumentEditorContainer({
     () => () => {
       tokenCycle.current?.detach();
       tokenCycle.current = undefined;
+      blockSync.current?.detach();
+      blockSync.current = undefined;
       if (containerId && registeredEditor.current) {
         unregisterDocxEditor(containerId, registeredEditor.current, formId);
       }
@@ -523,12 +659,101 @@ export default function DocumentEditorContainer({
     return () => editing.removeEventListener('blur', onBlur);
   });
 
-  const box = (child: React.ReactNode) => (
-    <div css={wrap}>
-      {child}
-      {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
-    </div>
-  );
+  // Flag off: identical to the pre-existing render (no tab strip, no panels,
+  // no Components editor mounted) so the untouched container spec keeps
+  // passing byte-for-byte.
+  const box = (child: React.ReactNode) => {
+    if (!blocksEnabled) {
+      return (
+        <div css={wrap}>
+          {child}
+          {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
+        </div>
+      );
+    }
+    return (
+      <div css={{ ...wrap, display: 'flex', flexDirection: 'column' as const }}>
+        <div
+          css={{
+            display: 'flex',
+            gap: 4,
+            flex: '0 0 auto',
+            padding: '6px 8px',
+            borderBottom: '1px solid #e4e4e7'
+          }}
+        >
+          {(['document', 'components'] as const).map((tab) => (
+            <button
+              key={tab}
+              type='button'
+              onClick={() => setActiveTab(tab)}
+              css={{
+                font: 'inherit',
+                padding: '4px 10px',
+                border: '1px solid #d4d4d8',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: activeTab === tab ? '#e2626e' : '#fff',
+                color: activeTab === tab ? '#fff' : '#18181b'
+              }}
+            >
+              {tab === 'document' ? 'Document' : 'Components'}
+            </button>
+          ))}
+          <button
+            type='button'
+            onClick={() => setShowDebug((v) => !v)}
+            css={{
+              font: 'inherit',
+              marginLeft: 'auto',
+              padding: '4px 10px',
+              border: '1px solid #d4d4d8',
+              borderRadius: 4,
+              cursor: 'pointer',
+              background: showDebug ? '#18181b' : '#fff',
+              color: showDebug ? '#fff' : '#18181b'
+            }}
+          >
+            Debug
+          </button>
+        </div>
+        <div css={{ flex: 1, minHeight: 0, position: 'relative' as const }}>
+          <div
+            css={{
+              width: '100%',
+              height: '100%',
+              display: activeTab === 'document' ? 'block' : 'none'
+            }}
+          >
+            {child}
+          </div>
+          {/* Kept mounted (never unmounted) even while inactive — recreating
+              the Syncfusion instance on every tab switch is expensive and
+              loses the user's in-progress edits. */}
+          <div
+            css={{
+              position: 'absolute',
+              inset: 0,
+              display: activeTab === 'components' ? 'block' : 'none'
+            }}
+          >
+            {/* Non-null: this branch only renders while blocksEnabled, which
+                is exactly when storeRef.current was initialized above. */}
+            <ComponentsTab store={blockStore!} />
+          </div>
+          {Boolean(blocksConfig.panel) && <BlockPanel store={blockStore!} />}
+        </div>
+        {showDebug && debugPanelSync && editorSurfaceRef.current && (
+          <DebugPanel
+            store={blockStore!}
+            sync={debugPanelSync}
+            editor={editorSurfaceRef.current}
+          />
+        )}
+        {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
+      </div>
+    );
+  };
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!activeDocumentId && !envelope) {
@@ -570,6 +795,7 @@ export default function DocumentEditorContainer({
       headers={serviceHeaders}
       licenseKey={syncfusion.licenseKey}
       readOnly={readOnly}
+      unoptimizedSfdt={blocksEnabled}
       openNonce={reloadKey}
       fileName='document'
       terminalAction={terminalAction}
@@ -580,6 +806,7 @@ export default function DocumentEditorContainer({
       hideDownload={targetAction?.envelope_action === 'save'}
       onSave={saveEnvelope}
       onEditorReady={onEditorReady}
+      onReady={onDocumentReady}
       // Server-side docx→pdf conversion (doc-conversion Lambda); does not
       // persist anything — the envelope stays an editable docx.
       onExportPdf={() => client.downloadEnvelopePdf(envelope.id)}

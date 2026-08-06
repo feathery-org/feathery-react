@@ -244,7 +244,7 @@ import AssistantClient from '../assistant/AssistantClient';
 import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
-} from '../assistant/tools/docxEditorRegistry';
+} from '../assistant/tools/docx/docxEditorRegistry';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
