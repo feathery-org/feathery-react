@@ -134,6 +134,39 @@ describe('attachBlockSync', () => {
     expect(sync.getLog().some((e) => e.kind === 'tokenWrite')).toBe(true);
   });
 
+  it('rejects a source-backed token edit when fields is null: no tokenWrite log, and recalcReopen restores it', () => {
+    const editor = makeEditor();
+    // retainer is source-backed (spec.source = 'retainer'); seeding it via
+    // data.values lets resolveTokens render a real value even with no
+    // FieldAccess, so the edit below has something concrete to overwrite.
+    const docWithValues = { ...SAMPLE_DOCUMENT, values: { retainer: 1500 } };
+    const store = createBlockStore(docWithValues);
+    const sync = attachBlockSync(editor, store, null);
+
+    const opened = lastOpenedSfdt(editor);
+    // sec_pricing, blk_pricing_tbl (index 1), retainer row (index 1), Amount col
+    // (index 1): [bookmarkStart, textRun, bookmarkEnd]
+    opened.sections[1].blocks[1].rows[1].cells[1].blocks[0].inlines[1].text =
+      '$2,000.00';
+    (editor.serialize as jest.Mock).mockReturnValue(JSON.stringify(opened));
+    (editor.open as jest.Mock).mockClear();
+    const before = store.getData();
+
+    editor.fireContentChange();
+    jest.advanceTimersByTime(400);
+
+    expect(sync.getLog().some((e) => e.kind === 'tokenWrite')).toBe(false);
+    expect(store.getData()).toBe(before); // no store.apply from the rejected edit
+
+    // recalcReopen restores the real ($1,500.00-backed) values, discarding
+    // the edit fields had no way to persist.
+    expect(editor.open).toHaveBeenCalledTimes(1);
+    const reopened = lastOpenedSfdt(editor);
+    expect(JSON.stringify(reopened)).toContain('$1,500.00');
+    expect(JSON.stringify(reopened)).not.toContain('$2,000.00');
+    expect(sync.getLog().some((e) => e.kind === 'recalcReopen')).toBe(true);
+  });
+
   it('rejects an edit to a computed token: no tokenWrite log, and recalcReopen restores it', () => {
     const editor = makeEditor();
     const store = createBlockStore(SAMPLE_DOCUMENT);

@@ -79,18 +79,21 @@ const shownTokenTexts = (parsed: ParsedDoc): Map<string, string> => {
 
 /**
  * True when routeTokenEdit will write nothing for this key: no spec, a
- * computed spec (not writable), or text that fails to parse for a numeric
- * spec. routeTokenEdit itself returns null both for these rejections and for
- * a successful field-backed write, so the caller has to know which before
- * logging 'tokenWrite'.
+ * computed spec (not writable), text that fails to parse for a numeric spec,
+ * or a source-backed spec with no FieldAccess to write through (`fields?.write`
+ * is then a silent no-op). routeTokenEdit itself returns null both for these
+ * rejections and for a successful field-backed write, so the caller has to
+ * know which before logging 'tokenWrite'.
  */
 const isRejectedTokenEdit = (
   specs: ReturnType<typeof collectSpecs>,
+  fields: FieldAccess | null,
   key: string,
   text: string
 ): boolean => {
   const spec = specs.find((s) => valueKey(s) === key);
   if (!spec || spec.formula) return true;
+  if (spec.source && !fields) return true;
   const isTextFormat = (spec.format?.kind ?? 'text') === 'text';
   return !isTextFormat && parseValue(text) === null;
 };
@@ -170,7 +173,7 @@ export const attachBlockSync = (
     const specs = collectSpecs(prevData);
     const mutations: Array<(d: DocumentData) => DocumentData> = [];
     for (const [key, text] of result.tokenEdits) {
-      if (isRejectedTokenEdit(specs, key, text)) continue;
+      if (isRejectedTokenEdit(specs, fields, key, text)) continue;
       const mutation = routeTokenEdit(prevData, fields, key, text);
       if (mutation) mutations.push(mutation);
       appendLog('tokenWrite', `${key} -> ${text}`);
