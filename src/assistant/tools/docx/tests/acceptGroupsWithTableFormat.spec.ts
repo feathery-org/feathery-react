@@ -42,7 +42,8 @@ import {
   listRevisionGroups,
   parseRevisionGroupTag,
   rebindRevisionGroups,
-  resolveLiveRevisionGroupsAsOneUndo
+  resolveLiveRevisionGroupsAsOneUndo,
+  resolveRevisionsAsOneUndo
 } from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
@@ -185,6 +186,78 @@ const rejectGroup = (ed: DocumentEditor, group: string) => {
   expect(view).toBeDefined();
   (view as any).items[0].revision.reject();
 };
+
+/**
+ * What the SFDT STATES about a table's layout, normalized. A reject has to leave
+ * these as the document had them: SyncFusion's own widget always answers with a
+ * concrete `allowAutoFit` and materialized column widths, so replaying a widget
+ * reading as the restore would write `allowAutoFit: false` and a point-width
+ * grid INTO a table that stated neither.
+ */
+const widthType = (raw: any): string =>
+  raw === undefined
+    ? 'Auto'
+    : typeof raw === 'number'
+    ? ['Auto', 'Percent', 'Point'][raw] ?? String(raw)
+    : String(raw);
+
+const statedTableLayout = (ed: DocumentEditor, tableAnchor: string) => {
+  const parsed = JSON.parse(ed.serialize());
+  const sections = parsed.sections ?? parsed.sec;
+  const [section, block] = tableAnchor.split(';').map(Number);
+  const table = (sections[section].blocks ?? sections[section].b)[block];
+  const format = table.tableFormat ?? table.tblpr ?? {};
+  const rows = table.rows ?? table.r ?? [];
+  const cells = rows[0]?.cells ?? rows[0]?.c ?? [];
+  const rawAutoFit = format.allowAutoFit ?? format.auft;
+  return {
+    allowAutoFit: rawAutoFit === undefined ? true : Boolean(rawAutoFit),
+    preferredWidthType: widthType(
+      format.preferredWidthType ?? format.pwt ?? undefined
+    ),
+    cellWidthTypes: cells.map((entry: any) => {
+      const cellFormat = entry.cellFormat ?? entry.tcpr ?? {};
+      return widthType(cellFormat.preferredWidthType ?? cellFormat.pwt);
+    })
+  };
+};
+
+/** A source with a stated fixed layout, and a target that states none. */
+const statedLayoutFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        { inlines: [{ text: 'Location Schedule' }] },
+        {
+          tableFormat: {
+            preferredWidth: 400,
+            preferredWidthType: 'Point',
+            allowAutoFit: false
+          },
+          rows: [
+            row(['Loc #', 'Address'], HEADER_FILL, true),
+            row(['1', 'A St']),
+            row(['2', 'B St'], BAND_FILL)
+          ]
+        },
+        {
+          tableFormat: {},
+          rows: [
+            { rowFormat: {}, cells: ['Loc #', 'Address'].map(plainCell) },
+            { rowFormat: {}, cells: ['5', 'E St'].map(plainCell) },
+            { rowFormat: {}, cells: ['6', 'F St'].map(plainCell) }
+          ]
+        },
+        { inlines: [{ text: 'End' }] }
+      ]
+    }
+  ]
+});
+
+const plainCell = (text: string) => ({
+  cellFormat: {},
+  blocks: [{ inlines: [{ text }] }]
+});
 
 // ---------------------------------------------------------------------------
 
@@ -632,6 +705,133 @@ describe('the grouped card survives a save and reload', () => {
     } finally {
       destroyEditor(ed);
       if (reloaded) destroyEditor(reloaded);
+    }
+  });
+});
+
+describe('a rejected card puts back the layout the DOCUMENT stated', () => {
+  it('does not write allowAutoFit:false or a point-width grid into a table that stated neither', () => {
+    const ed = makeEditor(statedLayoutFixture());
+    try {
+      const before = statedTableLayout(ed, '0;2');
+      expect(before).toEqual({
+        allowAutoFit: true,
+        preferredWidthType: 'Auto',
+        cellWidthTypes: ['Auto', 'Auto']
+      });
+
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
+          {
+            op: 'copy_table_format',
+            group: 'sched',
+            anchor: '0;2;0;0;0',
+            sourceTable: '0;1'
+          }
+        ],
+        'stated-layout-card'
+      );
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      // The copy really did impose the source's fixed layout.
+      expect(statedTableLayout(ed, '0;2')).toMatchObject({
+        allowAutoFit: false,
+        preferredWidthType: 'Point'
+      });
+
+      rejectGroup(ed, 'sched');
+
+      expect(statedTableLayout(ed, '0;2')).toEqual(before);
+      expect(revisions(ed)).toHaveLength(0);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  // The review rail never calls the native cascading reject: every card - chip,
+  // group and rail-wide - resolves member by member through robinResolveSelf, so
+  // the group's appearance inverse was never reached from the UI at all. Reject
+  // cleared the content and left the shading behind.
+  it('restores appearance when the rail rejects the group member by member', () => {
+    const ed = makeEditor(statedLayoutFixture());
+    try {
+      const beforeAppearance = appearanceSnapshot(ed, '0;2');
+      const beforeLayout = statedTableLayout(ed, '0;2');
+      const beforeRowCount = facts(ed, '0;2').rowCount;
+
+      const result = apply(
+        ed,
+        [
+          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
+          {
+            op: 'copy_table_format',
+            group: 'sched',
+            anchor: '0;2;0;0;0',
+            sourceTable: '0;1'
+          }
+        ],
+        'rail-rejected-card'
+      );
+      expect(result.results.every((entry) => entry.ok)).toBe(true);
+      expect(appearanceSnapshot(ed, '0;2')).not.toEqual(beforeAppearance);
+
+      const live = ed as unknown as LiveEditor;
+      resolveLiveRevisionGroupsAsOneUndo(
+        live,
+        listRevisionGroups(live).filter((view) => view.group === 'sched'),
+        false
+      );
+
+      expect(revisions(ed)).toHaveLength(0);
+      expect(facts(ed, '0;2').rowCount).toBe(beforeRowCount);
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(beforeAppearance);
+      expect(statedTableLayout(ed, '0;2')).toEqual(beforeLayout);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('keeps the appearance when one member of the group was accepted', () => {
+    const ed = makeEditor(statedLayoutFixture());
+    try {
+      const beforeAppearance = appearanceSnapshot(ed, '0;2');
+      apply(
+        ed,
+        [
+          { op: 'insert_row', group: 'sched', anchor: '0;2;1;0;0' },
+          { op: 'set_cell_text', group: 'sched', anchor: '0;2;2;1;0', text: 'Z St' },
+          {
+            op: 'copy_table_format',
+            group: 'sched',
+            anchor: '0;2;0;0;0',
+            sourceTable: '0;1'
+          }
+        ],
+        'partly-accepted-card'
+      );
+      const applied = appearanceSnapshot(ed, '0;2');
+      const live = ed as unknown as LiveEditor;
+      const view = listRevisionGroups(live).find(
+        (entry) => entry.group === 'sched'
+      );
+      expect(view).toBeDefined();
+      const items = (view as any).items;
+      expect(items.length).toBeGreaterThan(1);
+
+      // Accept one chip, then reject the rest: part of the change survives, so
+      // repainting the table would undo appearance the survivor still needs.
+      resolveRevisionsAsOneUndo(live, [items[0].revision], true);
+      resolveRevisionsAsOneUndo(
+        live,
+        items.slice(1).map((item: any) => item.revision),
+        false
+      );
+
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(applied);
+      expect(appearanceSnapshot(ed, '0;2')).not.toEqual(beforeAppearance);
+    } finally {
+      destroyEditor(ed);
     }
   });
 });

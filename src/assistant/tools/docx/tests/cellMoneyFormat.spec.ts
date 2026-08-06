@@ -665,3 +665,202 @@ describe('the premium row from the uploaded policy, end to end', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The same rule where a whole matrix is authored at once.
+//
+// `insert_table` writes its `initialCells` inside ONE op, so the per-cell gate
+// above - one op's text against the one cell it targets - never saw those
+// figures, and the section composer routes every composed table through that
+// op. These hold the matrix to the same rule, with the same quantity-column
+// definition, checked before any of the batch is written.
+// ---------------------------------------------------------------------------
+
+const FEE_SCHEDULE_QUOTE =
+  'Fee schedule: policy fee $125.00, inspection fee $75.00, filing fee $40.00.';
+
+const feeTableEdit = (extra: Record<string, unknown> = {}) => ({
+  op: 'insert_table',
+  anchor: '0;0',
+  position: 'before',
+  rows: 4,
+  columns: 2,
+  initialCells: [
+    ['Fee', 'Amount'],
+    ['Policy fee', '$125.00'],
+    ['Inspection', '$75.00'],
+    ['Filing', '$40.00']
+  ],
+  ...extra
+});
+
+describe('an authored cell matrix crosses the same number-provenance gate', () => {
+  it('real SDK: a quantity column with no cited source is refused, document untouched', () => {
+    const ed = makeRealDocumentEditor(scheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [feeTableEdit()]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'unsourced_authored_figure'
+      });
+      expect(result.results[0].message).toContain('$125.00');
+      expect(result.changeSet).toMatchObject({ status: 'failed' });
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a citation that does not contain the figure is refused as a citation, not as a missing one', () => {
+    const ed = makeRealDocumentEditor(scheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          feeTableEdit({
+            sourcedFrom: {
+              quotedFrom: 'fees-2026.pdf',
+              // Two of the three figures are here; the filing fee is not.
+              quotedText: 'Policy fee $125.00 and inspection fee $75.00.'
+            }
+          })
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'unsourced_authored_figure'
+      });
+      expect(result.results[0].message).toContain('$40.00');
+      expect(result.results[0].message).toContain(
+        'does not contain this figure'
+      );
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: every figure quoted from the cited excerpt applies, and rejecting restores the document', () => {
+    const ed = makeRealDocumentEditor(scheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          feeTableEdit({
+            sourcedFrom: {
+              quotedFrom: 'fees-2026.pdf',
+              quotedText: FEE_SCHEDULE_QUOTE
+            }
+          })
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(result.changeSet).toMatchObject({ status: 'applied' });
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a total the engine can verify against its own column needs no citation', () => {
+    const ed = makeRealDocumentEditor(scheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          feeTableEdit({
+            initialCells: [
+              ['Fee', 'Amount'],
+              ['Policy fee', '$125.00'],
+              ['Inspection', '$75.00'],
+              // Not in the excerpt; it is the exact sum of the two above it.
+              ['Total fees', '$200.00']
+            ],
+            sourcedFrom: {
+              quotedFrom: 'fees-2026.pdf',
+              quotedText: 'Policy fee $125.00 and inspection fee $75.00.'
+            }
+          })
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(cellTextAt(ed, '0;0;3;1;0')).toBe('$200.00');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: the column headers are labels, not figures, and need no citation', () => {
+    const ed = makeRealDocumentEditor(scheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          feeTableEdit({
+            initialCells: [
+              // A header can read like an amount; it is still a label the model
+              // composed, and the service's half exempts headers for the same
+              // reason - so both sides read the same cells as data.
+              ['Fee', '$ per year'],
+              ['Policy fee', '$125.00'],
+              ['Inspection', '$75.00'],
+              ['Filing', '$40.00']
+            ],
+            sourcedFrom: {
+              quotedFrom: 'fees-2026.pdf',
+              quotedText: FEE_SCHEDULE_QUOTE
+            }
+          })
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({ ok: true });
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a total that does not add up is not derivable, so the citation must carry it', () => {
+    const ed = makeRealDocumentEditor(scheduleSfdt());
+    try {
+      ed.enableTrackChanges = true;
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          feeTableEdit({
+            initialCells: [
+              ['Fee', 'Amount'],
+              ['Policy fee', '$125.00'],
+              ['Inspection', '$75.00'],
+              ['Total fees', '$210.00']
+            ],
+            sourcedFrom: {
+              quotedFrom: 'fees-2026.pdf',
+              quotedText: 'Policy fee $125.00 and inspection fee $75.00.'
+            }
+          })
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'unsourced_authored_figure'
+      });
+      expect(result.results[0].message).toContain('$210.00');
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+});

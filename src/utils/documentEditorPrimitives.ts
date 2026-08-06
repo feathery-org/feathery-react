@@ -611,18 +611,32 @@ export function groupRevisionsAtomic(
 ): void {
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
-  const state = { resolved: false };
+  const state = { resolved: false, restored: false };
   const resolvedAlone = new Set<number>();
+  const acceptedAlone = new Set<number>();
+  /**
+   * The appearance inverse, run at most once per group and always BEFORE the
+   * content resolves, while the row and cell indices it names are still valid.
+   *
+   * It belongs to the WHOLE group - SyncFusion authors no revision for a fill or
+   * a border, so the snapshots ride on the group's card and nowhere else - so it
+   * runs only when the whole group is being rejected. A group with one member
+   * accepted has kept part of the change; repainting the table then would undo
+   * appearance the surviving member still needs.
+   */
+  const restoreAppearance = () => {
+    if (state.restored || !onReject) return;
+    state.restored = true;
+    try {
+      onReject();
+    } catch {
+      // Content still resolves consistently if an appearance restore fails.
+    }
+  };
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
-    if (!isAccept && onReject) {
-      try {
-        onReject();
-      } catch {
-        // Content still resolves consistently if an appearance restore fails.
-      }
-    }
+    if (!isAccept && !acceptedAlone.size) restoreAppearance();
     for (let index = 0; index < members.length; index++) {
       if (resolvedAlone.has(index)) continue;
       try {
@@ -639,12 +653,27 @@ export function groupRevisionsAtomic(
     (revision as any).robinGroupBound = true;
     (revision as any).robinResolveSelf = (isAccept: boolean) => {
       if (state.resolved || resolvedAlone.has(index)) return;
+      // The non-cascading path the review rail resolves every card through:
+      // per-chip, per-card and rail-wide all arrive here, member by member. The
+      // group's appearance inverse has to fire on this route too, or rejecting a
+      // card clears the content and leaves the shading behind. It fires as the
+      // LAST undecided member is rejected - by then the whole group is a reject,
+      // and the restore still runs before that member's content resolves.
+      if (
+        !isAccept &&
+        !acceptedAlone.size &&
+        resolvedAlone.size === members.length - 1
+      )
+        restoreAppearance();
       resolvedAlone.add(index);
+      if (isAccept) acceptedAlone.add(index);
       resolveSingleRevision(members[index], isAccept);
     };
     (revision as any).robinReviveSelf = () => {
       state.resolved = false;
+      state.restored = false;
       resolvedAlone.delete(index);
+      acceptedAlone.delete(index);
     };
     revision.accept = () => resolveAll(true);
     revision.reject = () => resolveAll(false);

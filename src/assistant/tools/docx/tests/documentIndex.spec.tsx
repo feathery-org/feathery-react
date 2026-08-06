@@ -562,6 +562,88 @@ describe('document-index delta protocol', () => {
     expect(full.blocks).toHaveLength(10);
   });
 
+  // What the two protocols leave behind when the server reports an INCOMPLETE
+  // sync differs, because what the server has already done differs: a refused
+  // delta returns before it applies anything, while a full post has already
+  // upserted what embedded and removed vanished anchors.
+  it('keeps the base when a DELTA sync comes back incomplete, so the retry finishes it', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    const initial = JSON.parse(indexPosts()[0][1].body);
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        indexed: 0,
+        updated: 0,
+        removed: 0,
+        remapped: 0,
+        failed: 1,
+        // The service reports the base's own block count: it applied nothing.
+        storedBlocks: 20
+      })
+    });
+    editor.texts[10] = 'An embed failed, so the delta never applied.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    expect(JSON.parse(indexPosts()[1][1].body).mode).toBe('delta');
+
+    editor.texts[11] = 'The retry must still name the confirmed base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const retried = JSON.parse(indexPosts()[2][1].body);
+    expect(retried.mode).toBe('delta');
+    expect(retried.baseHash).toBe(initial.contentHash);
+  });
+
+  it('forgets the base when a FULL sync comes back incomplete, so no delta certifies it', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let envelopeId = ENV_ID;
+    const editor = blockEditor(paragraphs(20));
+    mount(() => targets(DOC_ID, envelopeId)());
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    expect(JSON.parse(indexPosts()[0][1].body).mode).toBeUndefined();
+
+    // An envelope switch and back takes the forced-full path. This one comes
+    // back INCOMPLETE, which means the service already upserted what embedded
+    // and removed vanished anchors, while skipping its freshness marker.
+    envelopeId = OTHER_ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        indexed: 17,
+        updated: 0,
+        removed: 0,
+        failed: 3,
+        storedBlocks: 17
+      })
+    });
+    envelopeId = ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+    const partialFull = JSON.parse(indexPosts()[2][1].body);
+    expect(partialFull.mode).toBeUndefined();
+
+    // A delta here would still pass the service's compare-and-swap - its
+    // freshness marker reads the pre-partial hash - and would stamp a
+    // half-written index fresh. The next sync must be another full post.
+    editor.texts[3] = 'One more small edit after the partial full sync.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const next = JSON.parse(indexPosts()[3][1].body);
+    expect(next.mode).toBeUndefined();
+    expect(next.baseHash).toBeUndefined();
+    expect(next.blocks).toHaveLength(20);
+  });
+
   it('counts repeated-group remap arrays in the compaction guard', async () => {
     const editor = blockEditor(['$', '$', 'end']);
     mount();

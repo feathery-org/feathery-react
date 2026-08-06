@@ -51,6 +51,20 @@ const handleEditorEvent = (fn: () => void) => {
   }
 };
 
+// An instance on its way out is an EXPECTED state, not a fault: EJ2 throws on
+// any touch of a destroyed editor, and the destroy can land between an
+// isDestroyed check and the read after it. Such a read means "no editor" and
+// nothing more. Anything else - a real fault in a read of a LIVE editor - is a
+// programming error and must still reach the boundary, which is why this asks
+// the instance rather than swallowing every failure here.
+const isTornDown = (editor: any): boolean => {
+  try {
+    return !editor || editor.isDestroyed === true || !editor.revisions;
+  } catch {
+    return true;
+  }
+};
+
 // 'update-premium-2026' -> 'Update premium 2026'. The id is the assistant's
 // own kebab/snake label; render it as a title rather than as code.
 const humanizeGroupId = (id: string) => {
@@ -143,7 +157,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       setGroups([]);
       return;
     }
-    refresh();
+    // The read that reaches the host's boundary if it throws - and a destroy
+    // racing this effect is not what that boundary is for.
+    try {
+      refresh();
+    } catch (error) {
+      if (!isTornDown(editor)) throw error;
+      setGroups([]);
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onContentChange = () =>
       handleEditorEvent(() => {

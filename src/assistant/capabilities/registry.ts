@@ -44,11 +44,36 @@ export interface CapabilityEntry {
   requiresAnchor: boolean;
 }
 
+/**
+ * Where a figure the engine did not compute came from. The same two fields
+ * `set_cell_text` carries per cell (`quotedFrom` / `quotedText`), lifted to the
+ * whole authored matrix: a table's figures are transcribed from one source, so
+ * one citation covers them all and the engine checks EVERY figure against it.
+ *
+ * Server-authored, never model-authored: ai-services stamps this onto a composed
+ * section table after validation, from the attachment evidence it holds, so it
+ * appears in no model-facing schema on either side. The engine still verifies
+ * every figure against it - neither side assumes the other ran.
+ */
+export interface FigureSourceCitation {
+  /** The attachment the figures were read out of. */
+  quotedFrom: string;
+  /** The verbatim excerpt containing them. */
+  quotedText: string;
+}
+
 export interface SectionComposerTableSpec {
   columnHeaders: string[];
   rows: string[][];
   /** Optional semantic labels for the already-ordered columns. */
   columnRoles?: string[];
+  /**
+   * The source excerpt the figures in this table were transcribed from.
+   * Required once a column holds formatted amounts - see the provenance gate in
+   * `syncfusionDocumentOps`, which refuses a figure the excerpt does not
+   * contain unless the engine can derive it from the matrix itself.
+   */
+  sourcedFrom?: FigureSourceCitation;
 }
 
 export type SectionComposerBlock =
@@ -257,6 +282,18 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // and per-column header/body text formats by default. Explicit appearance
     // and character/paragraph formatting ops in the same change set run later
     // and override only the properties they name.
+    //
+    // `initialCells` writes cell text, so it crosses the same number-provenance
+    // gate every other cell write does: once a column of the matrix holds
+    // formatted amounts, each of those figures must be traceable to the source
+    // the table was transcribed from, or be exactly derivable from the matrix.
+    //
+    // That source is NOT a model-facing parameter, deliberately. A composed
+    // section table carries `sourcedFrom` because ai-services stamps it after
+    // validation from the attachment evidence it holds; the model never gets a
+    // channel to author its own provenance. To write a figure through this op
+    // directly, use `set_cell_text` per cell with its own `literal` /
+    // `quotedFrom` provenance instead.
     op: 'insert_table',
     params: {
       rows: 'int>0?',

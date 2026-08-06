@@ -398,6 +398,9 @@ const performSnapshotSync = async (
   const hashed = await hashSnapshot(blocks);
   const delta =
     !forceFull && hashed ? buildDelta(blocks, digest, hashed, state) : null;
+  // Which protocol the result below describes. The two differ in what the
+  // server has already DONE by the time it reports an incomplete sync.
+  let postedDelta = !!delta;
   let result = await postDocumentIndex({
     baseUrl,
     targets,
@@ -411,6 +414,7 @@ const performSnapshotSync = async (
     // before rebuilding it with the same current full inventory.
     state.postedHash = null;
     state.confirmedBlocks = null;
+    postedDelta = false;
     result = await postDocumentIndex({
       baseUrl,
       targets,
@@ -421,9 +425,8 @@ const performSnapshotSync = async (
   }
 
   const { failed, storedBlocks } = result;
-  // The server reporting fewer blocks than were sent (or failed embeds)
-  // means the index does NOT hold this document. Preserve the last confirmed
-  // base so a later retry can finish the same CAS delta.
+  // The server reporting fewer blocks than were sent (or failed embeds) means
+  // the index does NOT hold this document.
   if (
     (typeof failed === 'number' && failed > 0) ||
     (typeof storedBlocks === 'number' && storedBlocks !== blocks.length)
@@ -435,6 +438,22 @@ const performSnapshotSync = async (
           failed ?? 0
         } failed embeds) - semantic search will refuse until a re-index succeeds`
     );
+    // A REFUSED DELTA MUTATED NOTHING: the service returns before applyDelta
+    // when an embed fails, so the chunks and the freshness marker are both still
+    // the base this client holds, and keeping it lets a retry finish the same
+    // compare-and-swap. That is why this base was preserved.
+    //
+    // A FULL POST IS THE OPPOSITE. It upserts every block that did embed and
+    // removes vanished anchors BEFORE it reports the failure, and it then skips
+    // the freshness marker - so the index has already moved while the server
+    // still answers with the OLD content hash. Keeping that base here would let
+    // the next delta pass compare-and-swap over a half-written index and stamp
+    // it fresh: the stale certification. Forget it, so the next sync is another
+    // full post that re-sends everything.
+    if (!postedDelta) {
+      state.postedHash = null;
+      state.confirmedBlocks = null;
+    }
     return;
   }
   state.postedHash = digest;

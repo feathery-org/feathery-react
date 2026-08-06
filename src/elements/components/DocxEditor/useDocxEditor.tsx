@@ -581,6 +581,23 @@ export function useDocxEditor({
     if (reviewChanges !== reviewGate && !loading) setReviewGate(reviewChanges);
   }, [reviewChanges, reviewGate, loading]);
 
+  // The document as it stands, carried across an instance recreation.
+  //
+  // A gate flip is not a document change - and the host derives the gate from
+  // `readOnly` (`assistantEnabled && !readOnly`), so finalizing an envelope for
+  // signature flips it mid-session. Recreating the instance then re-ran the open
+  // effect, which re-fetches `sourceUrl` - the PRE-SAVE url - and the editor came
+  // back holding older bytes than the ones the user was just looking at:
+  // unreviewed assistant edits and unsaved typing, gone with no signal at all.
+  //
+  // So the recreation carries the live document with it. Only when there is
+  // something to lose: a pristine document re-opens from its source exactly as
+  // before, which stays the most faithful path for it. The stash is keyed to the
+  // source it came from, so a regenerate (new url, or a bumped `openNonce`)
+  // always wins over it.
+  const carriedRef = useRef<{ sfdt: string; key: string } | null>(null);
+  const unsavedRef = useRef(false);
+
   // Load the CDN assets and instantiate the editor. Ordinary readOnly updates
   // happen in place; changing the review gate recreates the instance so an
   // editor that becomes gated-off cannot retain instance-scoped patches.
@@ -648,6 +665,7 @@ export function useDocxEditor({
         ed.isReadOnly = isReadOnly;
         ed.addEventListener('contentChange', () => {
           if (ignoreContentChangeRef.current) return;
+          unsavedRef.current = true;
           onDirtyRef.current?.();
         });
         // Native right-click menu — insert/delete table rows & columns,
@@ -661,8 +679,19 @@ export function useDocxEditor({
         setEditor(ed);
         onEditorReady?.(ed);
 
-        // With no source the editor opens a blank document immediately.
+        // With no source the editor opens a blank document immediately - and
+        // there is no open effect to put a carried document back, so it happens
+        // here instead. Typing into a sourceless editor is work like any other.
         if (!source) {
+          const carried = carriedRef.current;
+          carriedRef.current = null;
+          if (carried && carried.key === openKeyRef.current) {
+            try {
+              ed.open(carried.sfdt);
+            } catch {
+              // A blank document is the fallback, as it was before the carry.
+            }
+          }
           ignoreContentChangeRef.current = false;
           setLoading(false);
           onReady?.();
@@ -676,6 +705,18 @@ export function useDocxEditor({
       cancelled = true;
       ignoreContentChangeRef.current = true;
       setEditor(null);
+      const live = instance?.documentEditor;
+      if (live && (unsavedRef.current || live.revisions?.length)) {
+        try {
+          carriedRef.current = {
+            sfdt: live.serialize(),
+            key: openKeyRef.current
+          };
+        } catch {
+          // An unreadable instance leaves the source open as the fallback.
+          carriedRef.current = null;
+        }
+      }
       try {
         instance?.destroy?.();
       } catch {
@@ -703,9 +744,35 @@ export function useDocxEditor({
   // re-renders that recreate `{ url }` don't cancel an in-flight open.
   const sourceUrl = source && 'url' in source ? source.url : undefined;
   const sourceBuffer = source && 'buffer' in source ? source.buffer : undefined;
+  // What "the same document, opened the same time" means, for the carried stash.
+  const openKey = `${openNonce ?? 0}|${sourceUrl ?? ''}|${
+    sourceBuffer ? sourceBuffer.byteLength : ''
+  }`;
+  const openKeyRef = useRef(openKey);
+  openKeyRef.current = openKey;
 
   useEffect(() => {
     if (!editor || (!sourceUrl && !sourceBuffer)) return;
+    const carried = carriedRef.current;
+    carriedRef.current = null;
+    if (carried && carried.key === openKey) {
+      // Same document, new instance: put back exactly what was on screen
+      // instead of re-fetching bytes that predate it.
+      try {
+        editor.open(carried.sfdt);
+        ignoreContentChangeRef.current = false;
+        setLoading(false);
+        onReady?.();
+        return;
+      } catch (err) {
+        // Falling through to the source is a worse outcome than this open, but
+        // it is a working one, and it is what happened before the carry.
+        console.warn(
+          'Feathery: could not restore the in-progress document after recreating the editor; reopening the source.',
+          err
+        );
+      }
+    }
     let cancelled = false;
     const openSource: DocxSource = sourceBuffer
       ? { buffer: sourceBuffer }

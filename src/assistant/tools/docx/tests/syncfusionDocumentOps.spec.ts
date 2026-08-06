@@ -3753,7 +3753,13 @@ describe('insert_table requires same-batch cell writes', () => {
               ['First', '$100'],
               ['Second', '$200'],
               ['Third', '$300']
-            ]
+            ],
+            // Three amounts make this a quantity column, so each figure has to
+            // be traceable to the source it was transcribed from.
+            sourcedFrom: {
+              quotedFrom: 'coverages.pdf',
+              quotedText: 'First $100, Second $200, Third $300'
+            }
           },
           { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Deductibles' },
           {
@@ -4490,6 +4496,120 @@ describe('new page: add a page and put formatted text on it', () => {
       expect(blockTexts(ed)).toEqual(['Before', 'After']);
       expect(revisionTypes(ed)).toContain('Deletion');
       rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: the document last paragraph consumes the mark before it, and the delete is rejectable', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [{ inlines: [{ text: 'Before' }] }, { inlines: [] }]
+        }
+      ]
+    });
+    try {
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-last-paragraph',
+        edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }]
+      });
+
+      // There is no paragraph mark AFTER the last paragraph to consume, so
+      // before this the same op reported ok over an unchanged document.
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'delete_paragraph'
+      });
+      expect(revisionTypes(ed)).toEqual(['Deletion']);
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+
+      // The mark deletion is pending until it is resolved, so the reviewable
+      // outcome is what accepting produces: the paragraph is really gone.
+      applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-last-paragraph-again',
+        edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }]
+      });
+      realRevisions(ed)[0].accept();
+      expect(blockTexts(ed)).toEqual(['Before']);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: the last paragraph of a section is removed without spanning the section break', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          sectionFormat: { breakCode: 'NewPage' },
+          blocks: [{ inlines: [{ text: 'Section one' }] }, { inlines: [] }]
+        },
+        {
+          sectionFormat: { breakCode: 'NewPage' },
+          blocks: [{ inlines: [{ text: 'Section two' }] }]
+        }
+      ]
+    });
+    try {
+      const before = ed.serialize();
+      const sectionsBefore = serializedSections(ed).length;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-last-paragraph-of-section',
+        edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'delete_paragraph'
+      });
+      // The break is intact: the next block was in ANOTHER section, and
+      // selecting across that break deletes the break itself, which SyncFusion
+      // authors no rejectable card for.
+      expect(serializedSections(ed).length).toBe(sectionsBefore);
+      expect(revisionTypes(ed)).toEqual(['Deletion']);
+      rejectEveryRealRevision(ed);
+      expect(ed.serialize()).toBe(before);
+
+      applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-last-paragraph-of-section-again',
+        edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }]
+      });
+      realRevisions(ed)[0].accept();
+      expect(blockTexts(ed)).toEqual(['Section one', 'Section two']);
+      expect(serializedSections(ed).length).toBe(sectionsBefore);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: a section whose only body paragraph is the target is refused, not emptied', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          sectionFormat: { breakCode: 'NewPage' },
+          blocks: [{ inlines: [] }]
+        },
+        {
+          sectionFormat: { breakCode: 'NewPage' },
+          blocks: [{ inlines: [{ text: 'Section two' }] }]
+        }
+      ]
+    });
+    try {
+      const before = ed.serialize();
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'delete-only-paragraph-of-section',
+        edits: [{ op: 'delete_paragraph', anchor: '0;0', expect: '' }]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'delete_paragraph',
+        error: 'paragraph_mark_unavailable'
+      });
       expect(ed.serialize()).toBe(before);
     } finally {
       destroyRealDocumentEditor(ed);

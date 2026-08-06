@@ -1473,6 +1473,8 @@ describe('op contracts: every advertised op works over its real route', () => {
     expect(coverage?.numberProvenance).toBe(
       ['set_cell_formula', 'set_column_formula'].includes(op)
         ? 'engine_computed'
+        : op === 'insert_table'
+        ? 'authored_matrix_checked'
         : [
             'replace_text',
             'replace_selection',

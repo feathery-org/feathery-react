@@ -900,6 +900,87 @@ describe('RailErrorBoundary', () => {
     }
   });
 
+  // Hiding the rail for the rest of the session is its own defect: the pending
+  // changes are still in the document and there is no longer any way to see
+  // them. A transient failure has to come back.
+  it('retries a transient failure and shows the rail again', async () => {
+    jest.useFakeTimers();
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      // An EFFECT throw, which is the case Anthony cited: the rail's mount
+      // effect reads the editor, and React does not retry an effect the way it
+      // retries a render.
+      let throwOnce = true;
+      const Flaky = () => {
+        React.useEffect(() => {
+          if (throwOnce) {
+            throwOnce = false;
+            throw new TypeError('read during teardown');
+          }
+        }, []);
+        return <div data-testid='rail-child' />;
+      };
+      render(
+        <RailErrorBoundary>
+          <Flaky />
+        </RailErrorBoundary>
+      );
+      expect(screen.queryByTestId('rail-child')).not.toBeInTheDocument();
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+      });
+      expect(screen.getByTestId('rail-child')).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
+  it('stops retrying a fault that reproduces, and stays hidden', async () => {
+    jest.useFakeTimers();
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      let runs = 0;
+      const Bomb = () => {
+        React.useEffect(() => {
+          runs++;
+          throw new TypeError('a real fault, every time');
+        }, []);
+        return <div data-testid='rail-child' />;
+      };
+      const { container } = render(
+        <RailErrorBoundary>
+          <Bomb />
+        </RailErrorBoundary>
+      );
+      for (let i = 0; i < 5; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await act(async () => {
+          jest.advanceTimersByTime(500);
+        });
+      }
+      expect(container).toBeEmptyDOMElement();
+      // The first mount plus the bounded retries, and no more.
+      expect(runs).toBe(3);
+    } finally {
+      jest.useRealTimers();
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
   it('renders its child untouched when nothing fails', () => {
     render(
       <RailErrorBoundary>

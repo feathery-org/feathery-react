@@ -281,7 +281,14 @@ const sectionSpec = {
           ['Property', '$500,000'],
           ['Liability', '$1,000,000'],
           ['Cyber', '$250,000']
-        ]
+        ],
+        // Every figure in a quantity column must be traceable to the source it
+        // was transcribed from; the engine checks each one against this excerpt.
+        sourcedFrom: {
+          quotedFrom: 'renewal-proposal-2026.pdf',
+          quotedText:
+            'Property $500,000 per occurrence; Liability $1,000,000 aggregate; Cyber $250,000.'
+        }
       }
     },
     { role: 'heading' as const, level: 2, text: 'Fee Schedule' },
@@ -293,8 +300,14 @@ const sectionSpec = {
         rows: [
           ['Policy fee', '$125'],
           ['Inspection', '$75'],
+          // The total is the exact sum of the two fees above it, so the engine
+          // verifies it arithmetically and the citation is not what carries it.
           ['Total fees', '$200']
-        ]
+        ],
+        sourcedFrom: {
+          quotedFrom: 'renewal-proposal-2026.pdf',
+          quotedText: 'Policy fee $125. Inspection $75.'
+        }
       }
     }
   ]
@@ -1143,4 +1156,123 @@ describe('insert_section deterministic composer', () => {
       destroyEditor(editor);
     }
   });
+  it('names the unsourced figure when a composed table cites no source', () => {
+    const editor = makeEditor();
+    try {
+      const before = editor.serialize();
+      const result = applyDocumentEdits(editor as LiveEditor, {
+        changeSetId: 'uncited-composed-figures',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: targetAnchor(editor),
+            position: 'before',
+            sectionSpec: {
+              title: 'New Policy Section',
+              blocks: [
+                {
+                  role: 'table' as const,
+                  table: {
+                    columnHeaders: ['Coverage', 'Limit'],
+                    rows: [
+                      ['Property', '$500,000'],
+                      ['Liability', '$1,000,000'],
+                      ['Cyber', '$250,000']
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'insert_section',
+        error: 'unsourced_authored_figure'
+      });
+      // The refusal has to reach the caller with its reason: a composed section
+      // reported only the generic preflight code before.
+      expect(result.results[0].message).toContain('sourcedFrom');
+      expect(result.results[0].message).toContain('$500,000');
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // A cell is one paragraph for the same reason a title is: SyncFusion splits
+  // the cell at a newline and the composer's formatting and verification only
+  // ever address the first of the two anchors that produces. Cells used to be
+  // type-checked and nothing more.
+  it.each([
+    [
+      'a paragraph',
+      {
+        title: 'New Policy Section',
+        blocks: [{ role: 'paragraph' as const, text: 'Line one\nLine two' }]
+      },
+      'invalid_section_text'
+    ],
+    [
+      'a table cell',
+      {
+        title: 'New Policy Section',
+        blocks: [
+          {
+            role: 'table' as const,
+            table: {
+              columnHeaders: ['Coverage', 'Notes'],
+              rows: [['Property', 'Covered\nExcept flood']]
+            }
+          }
+        ]
+      },
+      'multiline_authored_cell'
+    ],
+    [
+      'a column header',
+      {
+        title: 'New Policy Section',
+        blocks: [
+          {
+            role: 'table' as const,
+            table: {
+              columnHeaders: ['Coverage', 'Limit\nper claim'],
+              rows: [['Property', 'Included']]
+            }
+          }
+        ]
+      },
+      'multiline_authored_cell'
+    ]
+  ])(
+    'refuses a line break in %s, writing nothing',
+    (_where, spec, error) => {
+      const editor = makeEditor();
+      try {
+        const before = editor.serialize();
+        const result = applyDocumentEdits(editor as LiveEditor, {
+          changeSetId: 'multiline-section-content',
+          edits: [
+            {
+              op: 'insert_section',
+              anchor: targetAnchor(editor),
+              position: 'before',
+              sectionSpec: spec
+            }
+          ]
+        });
+
+        expect(result.results[0]).toMatchObject({ ok: false, error });
+        expect(result.changeSet).toMatchObject({ status: 'failed' });
+        expect(editor.revisions.length).toBe(0);
+        expect(editor.serialize()).toBe(before);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
 });

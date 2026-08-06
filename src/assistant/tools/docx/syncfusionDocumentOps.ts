@@ -26,6 +26,7 @@ import {
   AnchoredDocumentOp,
   AnchorlessDocumentOp,
   DOCUMENT_EDITOR_CAPABILITIES,
+  FigureSourceCitation,
   OpParams,
   SectionComposerBlock,
   SectionComposerSpec
@@ -34,6 +35,7 @@ import {
   CellNumberFormat,
   classifyNumericText,
   isZeroPaddedInteger,
+  NumericValue,
   ParsedColumnCell,
   parseNumericCell,
   RenderFormatSource,
@@ -82,7 +84,8 @@ import {
   tableLayoutEquals,
   tableLayoutForTarget,
   tableIsUnstyled,
-  uniformDataRowShading
+  uniformDataRowShading,
+  UNSTATED_TABLE_LAYOUT
 } from './tableAppearance';
 import {
   createdRevisions,
@@ -491,6 +494,7 @@ export type MutationGuardCoverage = {
   cas: 'block_expect' | 'selection_content' | 'find_content' | 'not_applicable';
   numberProvenance:
     | 'model_authored_text_checked'
+    | 'authored_matrix_checked'
     | 'engine_computed'
     | 'not_applicable';
 };
@@ -518,6 +522,10 @@ const ENGINE_COMPUTED_CELL_TEXT_OPS = new Set([
   'set_cell_formula',
   'set_column_formula'
 ]);
+// Writes a whole cell matrix in one op, so its figures are checked over that
+// matrix at the batch boundary (detectUnsourcedAuthoredFigures) rather than one
+// op text against one cell. Same rule, same quantity-column definition.
+const MATRIX_AUTHORED_CELL_TEXT_OPS = new Set(['insert_table']);
 
 function observeMutationGuardBoundary(
   op: EditOp,
@@ -528,6 +536,8 @@ function observeMutationGuardBoundary(
     cas,
     numberProvenance: MODEL_AUTHORED_CELL_TEXT_OPS.has(op.op)
       ? 'model_authored_text_checked'
+      : MATRIX_AUTHORED_CELL_TEXT_OPS.has(op.op)
+      ? 'authored_matrix_checked'
       : ENGINE_COMPUTED_CELL_TEXT_OPS.has(op.op)
       ? 'engine_computed'
       : 'not_applicable'
@@ -6139,14 +6149,51 @@ export const ANCHORED_OP_HANDLERS: {
         ]
       );
     }
+    // A paragraph only disappears when its MARK goes with it, and a mark sits
+    // BETWEEN two paragraphs - so this path has to know where the document, and
+    // its own section, ends.
+    //
+    // Both ends of the range must be in this section. Selecting from here to a
+    // block in the NEXT section spans the section break, and deleting a section
+    // break is not something SyncFusion authors a rejectable revision for: the
+    // page setup would change with no card to reject, so a group rollback would
+    // have nothing to put back.
+    //
+    // At the end of a section (the document's last paragraph included) there is
+    // no following mark left to consume. Consume the PRECEDING one instead -
+    // exactly the range a person removes a trailing empty paragraph with - so
+    // the paragraph is really gone rather than emptied in place. When neither
+    // neighbour is a body paragraph of this section there is no mark to take at
+    // all, and nothing is written.
+    const sectionOf = (anchor: string) => anchor.split(';')[0];
+    const section = sectionOf(block.anchor);
     const blocks = Array.from(byAnchor.values());
     const index = blocks.findIndex(
       (candidate) => candidate.anchor === block.anchor
     );
-    const next = index >= 0 ? blocks[index + 1] : undefined;
-    if (next && next.kind !== 'table_cell')
-      editor.selection.select(`${block.anchor};0`, `${next.anchor};0`);
-    else selectParagraph(editor, block);
+    const bodyNeighbour = (offset: number): FlatBlock | undefined => {
+      const candidate = index >= 0 ? blocks[index + offset] : undefined;
+      if (!candidate || candidate.kind === 'table_cell') return undefined;
+      return sectionOf(candidate.anchor) === section ? candidate : undefined;
+    };
+    const next = bodyNeighbour(1);
+    const previous = bodyNeighbour(-1);
+    if (next) editor.selection.select(`${block.anchor};0`, `${next.anchor};0`);
+    else if (previous)
+      editor.selection.select(
+        `${previous.anchor};${previous.length}`,
+        `${block.anchor};${block.length}`
+      );
+    else
+      throw new OpError(
+        'paragraph_mark_unavailable',
+        `The paragraph at "${block.anchor}" has no paragraph mark that can be removed with it: it is the only body paragraph of its section, so the only mark beside it is the section break itself, and deleting that leaves no card to reject. Nothing was written.`,
+        [
+          `anchor: ${block.anchor}`,
+          `paragraph text: ${JSON.stringify(block.text)}`,
+          'Clear the content with delete_text or replace_text if the paragraph should stay in place but read empty.'
+        ]
+      );
     editor.editor.delete();
   },
   insert_text: ({ editor, op, block }) => {
@@ -7663,6 +7710,17 @@ function copySeparatedTableBorders(
   });
 }
 
+/**
+ * The layout a table currently RENDERS with, widget values and all - the
+ * DESIRED-value reader, for "make the target look like this source". It samples
+ * rendered `cellWidth` when no preferred width was stated, which is what makes
+ * an inherited grid match a sibling that Word laid out.
+ *
+ * Never use it for a restore. A restore must put back what the SFDT stated
+ * (`collectTableAppearance(...).layout`, defaulting to `UNSTATED_TABLE_LAYOUT`);
+ * replaying a widget reading writes concrete values the document never carried,
+ * so rejecting the write would ADD untracked damage instead of removing it.
+ */
 function liveTableLayout(
   editor: LiveEditor,
   tableAnchor: string
@@ -8041,8 +8099,16 @@ function applyCopiedTableAppearance(
   );
   const copyLayout =
     !!desiredLayout && !tableLayoutEquals(desiredLayout, target.layout);
+  // The restore is what the SFDT STATED, not what SyncFusion materialized. The
+  // live widget always answers with a concrete `allowAutoFit` and, once laid
+  // out, with rendered `cellWidth` values that the document never stated - so
+  // replaying a widget reading as the restore wrote `allowAutoFit: false` and a
+  // point-width grid INTO a table that had neither, which is untracked damage a
+  // reject is supposed to remove rather than add. `target` is the pre-write SFDT
+  // reading this path already compares against; `UNSTATED_TABLE_LAYOUT` is what
+  // the same reader means by "the document stated no layout".
   const layoutBefore = copyLayout
-    ? liveTableLayout(editor, targetAnchor)
+    ? target.layout ?? UNSTATED_TABLE_LAYOUT
     : undefined;
   const report = emptyAppearanceReport();
   if (source.styleName) report.sourceStyleName = source.styleName;
@@ -8440,11 +8506,16 @@ export const TRACKED_TEXT_OPS = new Set([
   'change_case'
 ]);
 
-// A structural table edit is content just as much as text is, so it carries the
-// same requirement: SyncFusion must author a rejectable card of the right kind.
+// A structural edit is content just as much as text is, so it carries the same
+// requirement: SyncFusion must author a rejectable card of the right kind.
+// `delete_paragraph` belongs here for both reasons a structural op can fail
+// silently - a selection that mutates something SyncFusion does not track, and a
+// delete that had nothing left to consume and changed nothing at all. Either way
+// this reports the op failed rather than `ok: true` over an untouched document.
 export const TRACKED_STRUCTURAL_OPS = new Map([
   ['insert_row', 'insertion'],
-  ['delete_row', 'deletion']
+  ['delete_row', 'deletion'],
+  ['delete_paragraph', 'deletion']
 ]);
 
 function deletionRevisionDetails(
@@ -10706,6 +10777,200 @@ function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
 }
 
 /**
+ * THE NUMBER-PROVENANCE GATE ON AN AUTHORED MATRIX.
+ *
+ * `insert_table` writes its whole `initialCells` matrix inside ONE op, so the
+ * per-cell gate in applyAnchoredOp - which reads one op's text against the one
+ * cell it targets - never saw those figures, and `compileSectionComposer` routes
+ * every composed table through that op. That made the matrix the only cell-write
+ * path in the vocabulary with no provenance requirement at all.
+ *
+ * This is the same rule, applied to the matrix the op carries. "A column of
+ * formatted amounts" is `resolveQuantityCellFormat` - the engine's single
+ * definition, so an id column (`0093`) and prose containing digits are excluded
+ * here exactly as they are for `set_cell_text`. A figure in such a column may be
+ * written only when one of these holds:
+ *
+ *   - it appears in the excerpt the table cites (`sourcedFrom`), compared by
+ *     VALUE through the same `quotedExcerptContains` a per-cell citation uses;
+ *   - the engine can derive it from the matrix exactly - a cell that IS the sum
+ *     of the other amounts in its own column is arithmetic the engine can check
+ *     for itself, and checking beats citing.
+ *
+ * Anything else is a figure nothing in the request supports, so it is refused
+ * before any of the batch is written. The engine cannot verify that an excerpt
+ * came from the named attachment - that is the service's half, and it holds the
+ * evidence - but neither side depends on the other having run.
+ */
+function authoredMatrixBlocks(matrix: string[][]): FlatBlock[] {
+  const blocks: FlatBlock[] = [];
+  matrix.forEach((row, rowIndex) =>
+    row.forEach((cell, column) => {
+      const text = String(cell ?? '');
+      blocks.push({
+        anchor: `0;0;${rowIndex};${column};0`,
+        kind: 'table_cell',
+        text,
+        isHeading: false,
+        level: -1,
+        length: text.length
+      });
+    })
+  );
+  return blocks;
+}
+
+/** Exact sum, or null when the scales cannot be aligned without precision loss. */
+function sumFiguresExact(values: NumericValue[]): NumericValue | null {
+  const scale = values.reduce(
+    (widest, value) => Math.max(widest, value.scale),
+    0
+  );
+  let units = 0;
+  for (const value of values) {
+    const scaled = rescaleExact(value, scale);
+    if (!scaled) return null;
+    units += scaled.units;
+  }
+  return Number.isSafeInteger(units) ? { units, scale } : null;
+}
+
+/**
+ * Is this cell the exact total of the other amounts in its own column? Then the
+ * engine has verified the arithmetic itself and no citation can add to that.
+ * Same-unit amounts only - a mixed-unit column has no meaningful sum, which is
+ * the refusal `collectNumericCells` already applies to arithmetic.
+ */
+function isExactColumnAggregate(blocks: FlatBlock[], cell: FlatBlock): boolean {
+  const target = parseNumericCell(cell.text.trim());
+  if (!target) return false;
+  const column = Number(cell.anchor.split(';')[3]);
+  const siblings: NumericValue[] = [];
+  for (const candidate of blocks) {
+    if (candidate === cell) continue;
+    if (Number(candidate.anchor.split(';')[3]) !== column) continue;
+    const text = candidate.text.trim();
+    if (!text || !isQuantityText(text)) continue;
+    const parsed = parseNumericCell(text);
+    if (!parsed || parsed.unit !== target.unit) return false;
+    siblings.push(parsed.value);
+  }
+  if (siblings.length < 2) return false;
+  const total = sumFiguresExact(siblings);
+  if (!total) return false;
+  const scale = Math.max(total.scale, target.value.scale);
+  const left = rescaleExact(total, scale);
+  const right = rescaleExact(target.value, scale);
+  return !!left && !!right && left.units === right.units;
+}
+
+/** Every well-formed `initialCells` matrix in the batch, with its op's index. */
+function authoredMatrices(
+  edits: EditOp[]
+): Array<{ index: number; op: EditOp; matrix: string[][] }> {
+  const found: Array<{ index: number; op: EditOp; matrix: string[][] }> = [];
+  edits.forEach((op, index) => {
+    if (op?.op !== 'insert_table' || !Array.isArray(op.initialCells)) return;
+    const matrix = op.initialCells as unknown[];
+    // Shape validity is detectEmptyInsertedTables' refusal, not these.
+    if (
+      !matrix.every(
+        (row) =>
+          Array.isArray(row) && row.every((cell) => typeof cell === 'string')
+      )
+    )
+      return;
+    found.push({ index, op, matrix: matrix as string[][] });
+  });
+  return found;
+}
+
+/**
+ * A cell is one paragraph, for the reason AUTHORS_MULTIPLE_PARAGRAPHS states.
+ * Cells were type-checked and nothing more while the spec's own titles and
+ * paragraphs were held to that rule, so a newline in a cell passed validation
+ * and then split the cell into two anchors at write time.
+ */
+function detectMultilineAuthoredCells(edits: EditOp[]): BatchRefusal | null {
+  for (const { index, op, matrix } of authoredMatrices(edits)) {
+    for (let row = 0; row < matrix.length; row++) {
+      for (let column = 0; column < matrix[row].length; column++) {
+        if (!AUTHORS_MULTIPLE_PARAGRAPHS.test(matrix[row][column])) continue;
+        return {
+          code: 'multiline_authored_cell',
+          message:
+            `Row ${row}, column ${column} of the table this ${op.op} would create contains a line break, so SyncFusion would split that cell into two cell paragraphs. ` +
+            'The second one gets neither the inherited format nor the post-write verification, because both address the first - the same reason a title or a paragraph must describe exactly one paragraph. ' +
+            'Write the cell as one line, or make the second part its own row. Nothing was written.',
+          details: [
+            `cell: row ${row}, column ${column}`,
+            `cell text: ${JSON.stringify(matrix[row][column])}`
+          ],
+          indices: [index]
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function detectUnsourcedAuthoredFigures(edits: EditOp[]): BatchRefusal | null {
+  for (const { index, op, matrix } of authoredMatrices(edits)) {
+    // Body cells only. The first row is the column headers - labels the model
+    // composed, not figures - and the service's half exempts them for the same
+    // reason, so both sides read the same cells as data.
+    const blocks = authoredMatrixBlocks(matrix).filter(
+      (cell) => Number(cell.anchor.split(';')[2]) > 0
+    );
+    const citation = op.sourcedFrom;
+    const excerpt =
+      typeof citation?.quotedText === 'string' ? citation.quotedText : '';
+    const attachment =
+      typeof citation?.quotedFrom === 'string'
+        ? citation.quotedFrom.trim()
+        : '';
+    for (const cell of blocks) {
+      const figure = cell.text.trim();
+      if (!figure || !isQuantityText(figure)) continue;
+      // The live cell is empty until this op writes it, so the column's own
+      // authored amounts are what make it a quantity column - the same reading
+      // the cell-by-cell path arrives at by the time it writes the third one.
+      if (!resolveQuantityCellFormat(blocks, { ...cell, text: '', length: 0 }))
+        continue;
+      if (excerpt && attachment && quotedExcerptContains(excerpt, figure))
+        continue;
+      if (isExactColumnAggregate(blocks, cell)) continue;
+      const [, , row, column] = cell.anchor.split(';');
+      const tableAnchor = resultingInsertedTableAnchor(op) ?? String(op.anchor);
+      return {
+        code: 'unsourced_authored_figure',
+        message:
+          `Refusing to write the figure ${JSON.stringify(
+            figure
+          )} into row ${row}, column ${column} of the table this ${
+            op.op
+          } would create at "${tableAnchor}": nothing in this request supports it. ` +
+          'A figure in a column of formatted amounts must either be quoted from a source - `sourcedFrom` with `quotedFrom` (the attachment it was read out of) and `quotedText` (the verbatim excerpt containing it), which the engine checks every figure in the matrix against - or be exactly derivable from the other amounts in its own column, which the engine checks itself. ' +
+          (excerpt && attachment
+            ? 'The excerpt this table cites does not contain this figure, so the citation does not support it. '
+            : excerpt || attachment
+            ? '`sourcedFrom` needs BOTH `quotedFrom` and `quotedText`. '
+            : 'This table cites no source at all. ') +
+          'A figure the USER stated goes in one at a time through set_cell_text with `literal: true`, and a value derived from cells that already exist goes through set_cell_formula. Nothing was written.',
+        details: [
+          `figure: ${JSON.stringify(figure)}`,
+          `cell: ${tableAnchor};${row};${column};0`,
+          `cited attachment: ${attachment || '(none)'}`,
+          `cited excerpt: ${excerpt ? JSON.stringify(excerpt) : '(none)'}`
+        ],
+        indices: [index]
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * The announcement gate. A batch that writes into more than one column of one
  * table is following a dependency chain, and must say so first.
  */
@@ -10843,16 +11108,67 @@ function sectionSpecError(
   );
 }
 
+/**
+ * ONE PARAGRAPH PER AUTHORED UNIT. This is an engine property, not a
+ * preference, and it is the same property for a title, a paragraph and a table
+ * cell - which is why it is defined once here and enforced everywhere text is
+ * authored (`sectionText` below for the spec's own strings,
+ * `detectMultilineAuthoredCells` for the cell matrices any insert_table
+ * carries).
+ *
+ * Text: the composer joins its text items with newlines into one insert_text and
+ * plans each resulting paragraph's final anchor, so an embedded newline shifts
+ * every later anchor and its formatting by one.
+ *
+ * Cells: SyncFusion splits a cell at a newline into two cell paragraphs, so the
+ * cell gains a SECOND anchor - and the format inheritance and the post-write
+ * verification both address the first, leaving the rest of the cell unstyled and
+ * unchecked.
+ *
+ * Note the tool schema does not carry this rule (`ai-services` types section
+ * text as `z.string().min(1)` and cells as plain strings), so the engine is the
+ * only place it can hold.
+ */
+const AUTHORS_MULTIPLE_PARAGRAPHS = /\r|\n/;
+
 function sectionText(value: unknown, label: string): string {
   if (typeof value !== 'string' || !value.trim())
     sectionSpecError('invalid_section_text', label, 'needs non-empty text.');
-  if (/\r|\n/.test(value))
+  if (AUTHORS_MULTIPLE_PARAGRAPHS.test(value))
     sectionSpecError(
       'invalid_section_text',
       label,
       'must describe one paragraph. Split multi-paragraph content into separate semantic blocks.'
     );
   return value;
+}
+
+/**
+ * A citation is worth nothing unless both halves are there: the attachment the
+ * figures were read out of, and the excerpt they appear in. Half a citation is a
+ * malformed request, not an unsourced table, so it is named as one here rather
+ * than falling through to the figure gate's generic refusal.
+ */
+function validatedFigureSource(
+  value: unknown,
+  label: string
+): FigureSourceCitation {
+  const candidate = value as FigureSourceCitation;
+  const quotedFrom =
+    typeof candidate?.quotedFrom === 'string'
+      ? candidate.quotedFrom.trim()
+      : '';
+  const quotedText =
+    typeof candidate?.quotedText === 'string'
+      ? candidate.quotedText.trim()
+      : '';
+  if (!quotedFrom || !quotedText)
+    sectionSpecError(
+      'invalid_section_table_source',
+      label,
+      'has a `sourcedFrom` missing `quotedFrom` (the attachment the figures were read out of) or `quotedText` (the verbatim excerpt containing them).'
+    );
+  return { quotedFrom, quotedText };
 }
 
 function validatedSectionSpec(value: unknown): SectionComposerSpec {
@@ -10959,7 +11275,12 @@ function validatedSectionSpec(value: unknown): SectionComposerSpec {
       table: {
         columnHeaders: [...table.columnHeaders],
         rows: table.rows.map((row) => [...row]),
-        ...(table.columnRoles ? { columnRoles: [...table.columnRoles] } : {})
+        ...(table.columnRoles ? { columnRoles: [...table.columnRoles] } : {}),
+        ...(table.sourcedFrom
+          ? {
+              sourcedFrom: validatedFigureSource(table.sourcedFrom, tableLabel)
+            }
+          : {})
       }
     };
   });
@@ -11747,6 +12068,12 @@ function compileSectionComposer(
           rows: cells.length,
           columns: unit.table.table.columnHeaders.length,
           initialCells: cells,
+          // The table's citation rides on the op that writes the cells, so the
+          // matrix and the source it was transcribed from reach the provenance
+          // gate together.
+          ...(unit.table.table.sourcedFrom
+            ? { sourcedFrom: unit.table.table.sourcedFrom }
+            : {}),
           ...(unit.source ? { inheritFormatFrom: unit.source.anchor } : {})
         }
       });
@@ -11949,6 +12276,12 @@ function combinedComposerAppearance(
   );
 }
 
+/** Codes that say "a sibling failed", never why this op did. */
+const GENERIC_GROUP_FAILURES = new Set([
+  'change_set_failed',
+  'change_set_preflight_failed'
+]);
+
 function collapseSectionComposerResult(
   result: ApplyEditsResult,
   expansion: SectionExpansion
@@ -11960,8 +12293,12 @@ function collapseSectionComposerResult(
       entry.start + entry.count
     );
     if (!entry.section) return children[0];
+    // A batch-level refusal names ONE child and every sibling carries a generic
+    // group code, so the child that failed for a reason is the one to report -
+    // otherwise a composed section is refused as `change_set_preflight_failed`
+    // with no reason attached, and the refusal cannot be acted on.
     const failedIndex = children.findIndex(
-      (child) => !child.ok && child.error !== 'change_set_failed'
+      (child) => !child.ok && !GENERIC_GROUP_FAILURES.has(String(child.error))
     );
     const fallbackFailure = children.findIndex((child) => !child.ok);
     const failureAt = failedIndex >= 0 ? failedIndex : fallbackFailure;
@@ -12227,6 +12564,8 @@ function applyDocumentEditsMeasured(
   const batchRefusal =
     detectInconsistentAggregateRanges(edits) ??
     detectEmptyInsertedTables(edits) ??
+    detectMultilineAuthoredCells(edits) ??
+    detectUnsourcedAuthoredFigures(edits) ??
     detectUnannouncedChain(edits, columnTouches, plan);
   if (batchRefusal) {
     for (const index of batchRefusal.indices) {

@@ -61,15 +61,31 @@ const overlay = {
   color: '#3f3f46'
 };
 
+// One retry per failure, twice at most: enough for a transient fault to clear,
+// too few to loop or flicker if the fault is real and immediate.
+const RAIL_RETRY_LIMIT = 2;
+const RAIL_RETRY_DELAY_MS = 250;
+
 // The review rail is an overlay on the document — no failure inside it may
 // take down the host form. Without this, a teardown race against a destroyed
 // Syncfusion instance (step navigation, remount) escapes to the form's own
 // boundary and ejects the user from their step. Exported for tests.
+//
+// Hiding the rail is the containment, but hiding it FOREVER is a defect of its
+// own: one transient read - an instance destroyed under a mid-flight refresh -
+// used to cost the reviewer their review surface for the rest of the session,
+// with the pending changes still in the document and no way to see them. So a
+// failure is retried, briefly and a bounded number of times. A fault that
+// reproduces re-latches on the retry and stays hidden; the retry budget is
+// restored whenever the rail is remounted for a new editor or a reopened
+// document (see the `key` at the render site).
 export class RailErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
+  private retries = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
 
   static getDerivedStateFromError() {
     return { failed: true };
@@ -80,6 +96,16 @@ export class RailErrorBoundary extends React.Component<
       'Feathery: tracked-changes panel failed and was hidden.',
       error
     );
+    if (this.retries >= RAIL_RETRY_LIMIT) return;
+    this.retries++;
+    this.retryTimer = setTimeout(
+      () => this.setState({ failed: false }),
+      RAIL_RETRY_DELAY_MS
+    );
+  }
+
+  componentWillUnmount() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
   }
 
   render() {
@@ -143,6 +169,16 @@ function DocxEditor({
     },
     onError
   });
+
+  // Which editor instance the rail is showing. Derived, not state: a recreation
+  // must remount the rail's boundary in the same render that swaps the editor.
+  const railGenerationRef = useRef({ editor: null as any, count: 0 });
+  if (railGenerationRef.current.editor !== editor)
+    railGenerationRef.current = {
+      editor,
+      count: railGenerationRef.current.count + 1
+    };
+  const railGeneration = railGenerationRef.current.count;
 
   const triggerDownload = (blob: Blob, extension: 'docx' | 'pdf' = 'docx') => {
     const doc = featheryDoc();
@@ -339,7 +375,10 @@ function DocxEditor({
         {/* Grouped review cards for assistant-authored tracked changes.
             Read-only hosts cannot resolve revisions, so no panel there. */}
         {editor && reviewChanges && (
-          <RailErrorBoundary>
+          // Keyed on the editor generation and the open nonce: a new instance or
+          // a reopened document is a different situation from the one that
+          // failed, so the boundary starts clean with its retries back.
+          <RailErrorBoundary key={`${railGeneration}:${openNonce ?? 0}`}>
             <TrackedChangeGroups
               editor={editor}
               hidden={changesPanelHidden}

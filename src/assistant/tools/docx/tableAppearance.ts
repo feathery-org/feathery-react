@@ -340,6 +340,23 @@ function readColumnLayout(
   return undefined;
 }
 
+/**
+ * What a table layout means when the SFDT states none of it. SyncFusion's own
+ * widget always reports a concrete value (and materializes rendered column
+ * widths after layout), so this is the only honest reading of "the document said
+ * nothing" - and it is what a restore has to put back, or a reject would leave
+ * an explicit `allowAutoFit: false` and a point-width grid the document never
+ * had. `readTableLayout` builds every stated layout from it too, so absence has
+ * exactly one meaning.
+ */
+export const UNSTATED_TABLE_LAYOUT: TableLayoutFacts = {
+  preferredWidth: 0,
+  preferredWidthType: 'Auto',
+  leftIndent: 0,
+  tableAlignment: 'Left',
+  allowAutoFit: true
+};
+
 function readTableLayout(
   tableFormat: any,
   rawRows: any[]
@@ -364,12 +381,18 @@ function readTableLayout(
   const preferredWidth = Number(rawPreferredWidth);
   const leftIndent = Number(rawLeftIndent);
   return {
-    preferredWidth: Number.isFinite(preferredWidth) ? preferredWidth : 0,
-    preferredWidthType: readEnum(rawPreferredWidthType, WIDTH_TYPES) ?? 'Auto',
-    leftIndent: Number.isFinite(leftIndent) ? leftIndent : 0,
-    tableAlignment: readEnum(rawAlignment, TABLE_ALIGNMENTS) ?? 'Left',
-    allowAutoFit:
-      rawAllowAutoFit === undefined ? true : Boolean(rawAllowAutoFit),
+    ...UNSTATED_TABLE_LAYOUT,
+    ...(Number.isFinite(preferredWidth) ? { preferredWidth } : {}),
+    ...(readEnum(rawPreferredWidthType, WIDTH_TYPES)
+      ? { preferredWidthType: readEnum(rawPreferredWidthType, WIDTH_TYPES) }
+      : {}),
+    ...(Number.isFinite(leftIndent) ? { leftIndent } : {}),
+    ...(readEnum(rawAlignment, TABLE_ALIGNMENTS)
+      ? { tableAlignment: readEnum(rawAlignment, TABLE_ALIGNMENTS) }
+      : {}),
+    ...(rawAllowAutoFit === undefined
+      ? {}
+      : { allowAutoFit: Boolean(rawAllowAutoFit) }),
     ...columnLayout
   };
 }
