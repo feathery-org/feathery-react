@@ -132,7 +132,10 @@ describe('createBlockStore', () => {
 
   it('updateCell on a non-table block is a no-op that does not pollute undo history', () => {
     const store = createBlockStore(SAMPLE_DOCUMENT);
-    store.apply(updateCell('blk_title', 0, 0, [{ kind: 'text', text: 'X' }]), 'panel');
+    store.apply(
+      updateCell('blk_title', 0, 0, [{ kind: 'text', text: 'X' }]),
+      'panel'
+    );
     expect(store.getData()).toBe(SAMPLE_DOCUMENT);
     expect(store.canUndo()).toBe(false);
   });

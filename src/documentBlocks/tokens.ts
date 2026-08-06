@@ -13,12 +13,7 @@
  * rather than seeded as zero.
  */
 import { allInlines, DocumentData } from './types';
-import {
-  buildPlan,
-  recalc,
-  TokenSpec,
-  valueKey
-} from '../documentTokens/plan';
+import { buildPlan, recalc, TokenSpec, valueKey } from '../documentTokens/plan';
 import { parseValue, renderValue } from '../documentTokens/format';
 import { FieldAccess } from '../documentTokens/cycleTypes';
 
@@ -33,7 +28,8 @@ export const collectSpecs = (data: DocumentData): TokenSpec[] => {
   for (const section of data.sections) {
     for (const block of section.blocks) {
       for (const inline of allInlines(block)) {
-        if (inline.kind === 'token') specs.set(valueKey(inline.spec), inline.spec);
+        if (inline.kind === 'token')
+          specs.set(valueKey(inline.spec), inline.spec);
       }
     }
   }
@@ -45,7 +41,8 @@ const rawValueOf = (
   data: DocumentData,
   fields: FieldAccess | null,
   spec: TokenSpec
-): string | number | undefined => fields?.read(spec) ?? data.values?.[valueKey(spec)];
+): string | number | undefined =>
+  fields?.read(spec) ?? data.values?.[valueKey(spec)];
 
 export type ResolvedTokens = {
   rendered: Map<string, string>;

@@ -3,9 +3,7 @@ import { SAMPLE_DOCUMENT } from '../sampleDocument';
 import { DocumentData } from '../types';
 import { FieldAccess, TokenValue } from '../../documentTokens/cycleTypes';
 
-const stubFields = (
-  values: Record<string, TokenValue>
-): FieldAccess => ({
+const stubFields = (values: Record<string, TokenValue>): FieldAccess => ({
   read: (spec) => values[spec.source ?? spec.id],
   write: jest.fn()
 });
@@ -76,7 +74,8 @@ describe('resolveTokens', () => {
                       rows: block.rows?.map((row) =>
                         row.map((cell) => ({
                           content: cell.content.map((inline) =>
-                            inline.kind === 'token' && inline.spec.id === 'total'
+                            inline.kind === 'token' &&
+                            inline.spec.id === 'total'
                               ? {
                                   kind: 'token' as const,
                                   spec: { ...inline.spec, formula: 'total +' }
@@ -108,7 +107,10 @@ describe('resolveTokens', () => {
               id: 'blk_note',
               type: 'paragraph',
               content: [
-                { kind: 'token', spec: { id: 'note', format: { kind: 'text' } } }
+                {
+                  kind: 'token',
+                  spec: { id: 'note', format: { kind: 'text' } }
+                }
               ]
             }
           ]
@@ -125,7 +127,12 @@ describe('routeTokenEdit', () => {
     const write = jest.fn();
     const fields: FieldAccess = { read: () => undefined, write };
 
-    const mutation = routeTokenEdit(SAMPLE_DOCUMENT, fields, 'retainer', '$2,000');
+    const mutation = routeTokenEdit(
+      SAMPLE_DOCUMENT,
+      fields,
+      'retainer',
+      '$2,000'
+    );
 
     expect(mutation).toBeNull();
     expect(write).toHaveBeenCalledTimes(1);
@@ -148,7 +155,12 @@ describe('routeTokenEdit', () => {
     const write = jest.fn();
     const fields: FieldAccess = { read: () => undefined, write };
 
-    const mutation = routeTokenEdit(SAMPLE_DOCUMENT, fields, 'total', '$999.00');
+    const mutation = routeTokenEdit(
+      SAMPLE_DOCUMENT,
+      fields,
+      'total',
+      '$999.00'
+    );
 
     expect(mutation).toBeNull();
     expect(write).not.toHaveBeenCalled();
@@ -165,7 +177,10 @@ describe('routeTokenEdit', () => {
               id: 'blk_note',
               type: 'paragraph',
               content: [
-                { kind: 'token', spec: { id: 'note', format: { kind: 'text' } } }
+                {
+                  kind: 'token',
+                  spec: { id: 'note', format: { kind: 'text' } }
+                }
               ]
             }
           ]
