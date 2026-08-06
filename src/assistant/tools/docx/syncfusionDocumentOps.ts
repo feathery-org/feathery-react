@@ -93,9 +93,11 @@ import {
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
   liveTableWidgetAt,
+  paragraphIdentityText,
   parseRevisionGroupTag,
   preserveDocumentViewDuring,
   rebindRevisionGroups,
+  replayParagraphStyles,
   resolveRevisionIndividually,
   revisionGroupTag,
   snapshotRevisions,
@@ -105,6 +107,7 @@ import {
 import type {
   AppearanceRestore,
   AppearanceWrite,
+  ParagraphStyleRestore,
   BorderWrite,
   CellPropertyFacts,
   LiveEditor,
@@ -9405,7 +9408,8 @@ function groupNewRevisions(
   editor: LiveEditor,
   before: LiveRevision[],
   changeSetId: string,
-  restoresByGroup?: Map<string, AppearanceRestore[]>
+  restoresByGroup?: Map<string, AppearanceRestore[]>,
+  stylesByGroup?: Map<string, ParagraphStyleRestore[]>
 ): RevisionGroupingReport {
   const created = createdRevisions(editor, before);
   const revisionsByGroup = new Map<string, number>();
@@ -9423,7 +9427,8 @@ function groupNewRevisions(
   }
   partitions.forEach((partition, group) => {
     const restores = restoresByGroup?.get(group);
-    if (restores?.length) {
+    const styles = stylesByGroup?.get(group);
+    if (restores?.length || styles?.length) {
       // The live closures below disappear on reload; the same customData that
       // carries group identity therefore carries the exact appearance inverse.
       // SyncFusion removes the revision metadata when the group resolves and
@@ -9431,7 +9436,12 @@ function groupNewRevisions(
       for (const revision of partition) {
         const tag = parseRevisionGroupTag(revision.customData);
         if (tag?.changeSetId === changeSetId && tag.group === group)
-          revision.customData = revisionGroupTag(changeSetId, group, restores);
+          revision.customData = revisionGroupTag(
+            changeSetId,
+            group,
+            restores,
+            styles
+          );
       }
     }
     const onReject =
@@ -9439,7 +9449,19 @@ function groupNewRevisions(
         ? () => replayAppearanceRestores(editor, restores)
         : undefined;
     if (onReject) appearanceGroups.add(group);
-    groupRevisionsAtomic(editor, partition, changeSetId, group, onReject);
+    // The paragraph-style inverse runs AFTER the content resolves, which is why
+    // it is a separate hook rather than more work inside onReject.
+    const onRejected = styles?.length
+      ? () => replayParagraphStyles(editor, styles)
+      : undefined;
+    groupRevisionsAtomic(
+      editor,
+      partition,
+      changeSetId,
+      group,
+      onReject,
+      onRejected
+    );
     revisionsByGroup.set(group, partition.length);
   });
   return { revisionCount: created.length, revisionsByGroup, appearanceGroups };
@@ -13356,6 +13378,55 @@ function applyDocumentEditsMeasured(
   // Every still-applied appearance snapshot, in write order. A failed group's
   // entries are replayed and removed without touching successful siblings.
   const appearanceRestores: AppearanceRestore[] = [];
+  /**
+   * The paragraph style of every block a paragraph-creating op writes NEXT TO,
+   * per accept group.
+   *
+   * Rejecting an inserted paragraph mark merges two paragraphs and the survivor
+   * keeps the removed paragraph's format, which SyncFusion tracks as no revision
+   * at all - so a rejected card can leave a paragraph wearing a style it never
+   * had. Captured here, at the one boundary every op crosses, rather than in any
+   * single op: `insert_section` has the defect today and relocation only made it
+   * easy to see. An op added later is covered by construction.
+   */
+  const paragraphStylesByGroup = new Map<string, ParagraphStyleRestore[]>();
+  const recordParagraphStyles = (op: EditOp, anchors: unknown[]) => {
+    // Only ops that can create or remove a paragraph can trigger the merge.
+    if (!mayShiftAnchors(op)) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = paragraphStylesByGroup.get(id) ?? [];
+    // Each named paragraph, and the two that can end up merged with it: the one
+    // straight after it (an insert lands between them) and the one after its
+    // whole section unit (which is what a relocation's accepted delete merges
+    // into). Same `sectionUnitEnd` rule the reads and the ranges use.
+    const named = anchors.flatMap((raw) => {
+      const anchor = typeof raw === 'string' ? raw.trim() : '';
+      if (!anchor) return [];
+      const index = blocks.findIndex(
+        (candidate) => candidate.anchor === anchor
+      );
+      if (index < 0) return [anchor];
+      return [
+        anchor,
+        blocks[index + 1]?.anchor,
+        blocks[sectionUnitEnd(blocks, index)]?.anchor
+      ];
+    });
+    for (const raw of named) {
+      const anchor = typeof raw === 'string' ? raw.trim() : '';
+      if (!anchor || !/^\d+;\d+$/.test(anchor)) continue;
+      const block = byAnchor.get(anchor);
+      const styleName = block?.format?.styleName;
+      if (!block || block.kind === 'table_cell' || !styleName) continue;
+      if (bucket.some((entry) => entry.anchor === anchor)) continue;
+      bucket.push({
+        anchor,
+        styleName,
+        text: paragraphIdentityText(block.text)
+      });
+    }
+    if (bucket.length) paragraphStylesByGroup.set(id, bucket);
+  };
   // The same snapshots split by the accept group whose op took them, so a reject
   // of ONE grouped card puts back exactly that group's appearance and never a
   // sibling group's. Every appearance write in this change set goes through
@@ -14057,6 +14128,14 @@ function applyDocumentEditsMeasured(
                 )?.sectionBoundary;
                 if (boundary) writtenOp = { ...writtenOp, text: boundary.text };
               }
+              // Both anchors, because the paragraph at risk is the one the write
+              // lands NEXT TO: for insert_section that is the op's own anchor,
+              // for a relocation it is the destination.
+              recordParagraphStyles(op, [
+                target.anchor,
+                op.targetAnchor,
+                op.otherAnchor
+              ]);
               opExtras = applyAnchoredOp(editor, writtenOp, target, byAnchor);
               if (
                 op.op === 'insert_text' &&
@@ -14437,7 +14516,8 @@ function applyDocumentEditsMeasured(
     editor,
     revisionSnapshot,
     changeSetId,
-    appearanceRestoresByGroup
+    appearanceRestoresByGroup,
+    paragraphStylesByGroup
   );
   const revisionCount = grouping.revisionCount;
   const hasFailure = results.some((result) => result && !result.ok);

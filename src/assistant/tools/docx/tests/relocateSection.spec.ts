@@ -1153,18 +1153,13 @@ describe('relocation refusals: each names what to do instead', () => {
 // machine, not the code. This settles it deterministically instead: the path the
 // button uses, over a relocation change set, restoring byte for byte.
 //
-// SCOPE OF THESE CASES, deliberately: the relocated section and its destination
-// carry the SAME paragraph style. When they differ, that group path leaves the
-// destination paragraph wearing the moved section's style after a reject - and
-// that is NOT a relocation defect. It reproduces with `insert_section` alone
-// (insert a section before a Normal paragraph, reject the card, and the
-// paragraph comes back as Heading 1), it does not reproduce through
-// `revisions.rejectAll()`, and nothing in the relocation work touches either
-// that path or insert_section. Rejecting an inserted paragraph MARK merges two
-// paragraphs and the survivor takes the REMOVED paragraph's format, which
-// SyncFusion does not track as a revision at all. It belongs with the
-// appearance-restore mechanism in `documentEditorPrimitives`, one fix for every
-// op, and asserting it here would only pin a bug in the wrong layer.
+// Cross-level relocations are included on purpose. They used to leave the
+// destination paragraph wearing the moved section's style after a reject, which
+// turned out not to be a relocation defect at all: it reproduced on
+// `insert_section` alone and that op is already shipped. The fix is the
+// paragraph-style inverse on the revision group itself, beside the appearance
+// inverse - one owner, every op - and it is asserted over both outcomes in
+// `acceptGroupsWithTableFormat.spec.ts`, where that property lives.
 describe('the rail card resolves a relocation as one unit', () => {
   const railGroups = (editor: DocumentEditor) =>
     listRevisionGroups(editor as unknown as LiveEditor);
@@ -1172,7 +1167,12 @@ describe('the rail card resolves a relocation as one unit', () => {
   it.each([
     ['a move', { op: 'move_section', anchor: '0;6', targetAnchor: '0;0' }],
     ['a swap', { op: 'swap_sections', anchor: '0;2', otherAnchor: '0;4' }],
-    ['a copy', { op: 'copy_section', anchor: '0;6', targetAnchor: '0;0' }]
+    ['a copy', { op: 'copy_section', anchor: '0;6', targetAnchor: '0;0' }],
+    // Cross-level, the shape that exposed the shared paragraph-style defect:
+    // a subsection moved above a top-level section, so the two sides of the
+    // paste carry different styles.
+    ['a cross-level move', { op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }],
+    ['a cross-level copy', { op: 'copy_section', anchor: '0;2', targetAnchor: '0;0' }]
   ] as Array<[string, EditOp]>)(
     'rejecting the card restores the document exactly after %s',
     (_name, edit) => {

@@ -147,6 +147,49 @@ export interface AppearanceRestore {
   tableProperties?: TablePropertyRestore;
 }
 
+/**
+ * The paragraph style a block wore before a change set touched the paragraph
+ * next to it.
+ *
+ * SyncFusion has no Formatting revision type, so a paragraph's STYLE is never
+ * part of what accepting or rejecting a card resolves. That is invisible until a
+ * card's content resolution MERGES two paragraphs: rejecting an inserted
+ * paragraph mark joins the inserted paragraph to the one after it, and the
+ * survivor keeps the REMOVED paragraph's format. The content comes back exactly
+ * right and the surviving paragraph is left wearing the wrong style, with no
+ * revision to explain it - untracked damage that outlives a reject.
+ *
+ * This is a LIVE defect, not one the relocation ops introduced. It reproduces on
+ * `insert_section` alone - insert a section before a Normal paragraph, reject the
+ * card, and that paragraph comes back as a heading - and `insert_section` is
+ * already shipped. Relocation only made it easy to see, because moving a
+ * subsection above a top-level section puts two different styles either side of
+ * one paste.
+ *
+ * Unlike an appearance restore this one must run AFTER the content resolves, not
+ * before: the merge that loses the style is the resolution itself, so restoring
+ * first would just be overwritten. And unlike an appearance restore it applies to
+ * ACCEPT as well as reject - accepting a tracked delete merges its last mark into
+ * the following paragraph and restyles that one just the same.
+ *
+ * `text` is what makes it safe to replay after either outcome. Block indices move
+ * when a change set is accepted, so an anchor alone could name a different
+ * paragraph entirely; a restore is applied only to a paragraph that still reads
+ * the same, and never to one whose content the change set rewrote.
+ */
+export interface ParagraphStyleRestore {
+  anchor: string;
+  styleName: string;
+  /** The paragraph's text when the style was captured (capped). */
+  text: string;
+}
+
+/** How much paragraph text identifies a restore. Long enough to be unique. */
+const PARAGRAPH_IDENTITY_LIMIT = 200;
+
+export const paragraphIdentityText = (text: string): string =>
+  text.slice(0, PARAGRAPH_IDENTITY_LIMIT);
+
 export function preserveDocumentViewDuring<T>(
   editor: LiveEditor,
   operation: () => T,
@@ -226,19 +269,22 @@ interface RevisionGroupTag {
   changeSetId: string;
   group: string;
   appearanceRestores?: AppearanceRestore[];
+  paragraphStyles?: ParagraphStyleRestore[];
 }
 
 export function revisionGroupTag(
   changeSetId: string,
   group: string,
-  appearanceRestores?: AppearanceRestore[]
+  appearanceRestores?: AppearanceRestore[],
+  paragraphStyles?: ParagraphStyleRestore[]
 ): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
     source: 'robin',
     changeSetId,
     group,
-    ...(appearanceRestores?.length ? { appearanceRestores } : {})
+    ...(appearanceRestores?.length ? { appearanceRestores } : {}),
+    ...(paragraphStyles?.length ? { paragraphStyles } : {})
   });
 }
 
@@ -492,6 +538,29 @@ function parsePersistedAppearanceRestores(
   return restores;
 }
 
+/** Persisted paragraph-style restores, validated like every other tag payload. */
+function parsePersistedParagraphStyles(
+  value: unknown
+): ParagraphStyleRestore[] | undefined {
+  if (!Array.isArray(value) || !value.length) return undefined;
+  const restores: ParagraphStyleRestore[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const entry = raw as Record<string, unknown>;
+    if (typeof entry.anchor !== 'string' || !/^\d+;\d+$/.test(entry.anchor))
+      return undefined;
+    if (typeof entry.styleName !== 'string' || !entry.styleName.trim())
+      return undefined;
+    if (typeof entry.text !== 'string') return undefined;
+    restores.push({
+      anchor: entry.anchor,
+      styleName: entry.styleName,
+      text: entry.text
+    });
+  }
+  return restores;
+}
+
 export function parseRevisionGroupTag(
   customData: unknown
 ): RevisionGroupTag | undefined {
@@ -507,10 +576,14 @@ export function parseRevisionGroupTag(
       const appearanceRestores = parsePersistedAppearanceRestores(
         parsed.appearanceRestores
       );
+      const paragraphStyles = parsePersistedParagraphStyles(
+        parsed.paragraphStyles
+      );
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
-        ...(appearanceRestores ? { appearanceRestores } : {})
+        ...(appearanceRestores ? { appearanceRestores } : {}),
+        ...(paragraphStyles ? { paragraphStyles } : {})
       };
     }
   } catch {
@@ -607,11 +680,12 @@ export function groupRevisionsAtomic(
   group: LiveRevision[],
   changeSetId?: string,
   groupId?: string,
-  onReject?: () => void
+  onReject?: () => void,
+  onRejected?: () => void
 ): void {
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
-  const state = { resolved: false, restored: false };
+  const state = { resolved: false, restored: false, settled: false };
   const resolvedAlone = new Set<number>();
   const acceptedAlone = new Set<number>();
   /**
@@ -633,6 +707,21 @@ export function groupRevisionsAtomic(
       // Content still resolves consistently if an appearance restore fails.
     }
   };
+  /**
+   * The paragraph-style inverse. Same ownership as the appearance inverse - it
+   * belongs to the whole group and runs at most once - but the opposite TIMING:
+   * the merge that loses a paragraph's style IS the content resolution, so this
+   * has to run after it rather than before.
+   */
+  const restoreParagraphStyles = () => {
+    if (state.settled || !onRejected) return;
+    state.settled = true;
+    try {
+      onRejected();
+    } catch {
+      // Content still resolves consistently if a style restore fails.
+    }
+  };
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
@@ -645,6 +734,11 @@ export function groupRevisionsAtomic(
         // A later member can become stale after the first resolves.
       }
     }
+    // Both outcomes: accepting a tracked delete merges its last mark into the
+    // following paragraph and restyles that one exactly as rejecting an
+    // insertion does. Identity matching in the replay is what makes it safe to
+    // run here, where the indices have moved.
+    restoreParagraphStyles();
     if (members.length > 1) invalidateDocumentLayout(editor);
   };
   group.forEach((revision, index) => {
@@ -659,19 +753,22 @@ export function groupRevisionsAtomic(
       // card clears the content and leaves the shading behind. It fires as the
       // LAST undecided member is rejected - by then the whole group is a reject,
       // and the restore still runs before that member's content resolves.
-      if (
-        !isAccept &&
-        !acceptedAlone.size &&
-        resolvedAlone.size === members.length - 1
-      )
+      const lastUndecided = resolvedAlone.size === members.length - 1;
+      if (!isAccept && !acceptedAlone.size && lastUndecided)
         restoreAppearance();
       resolvedAlone.add(index);
       if (isAccept) acceptedAlone.add(index);
       resolveSingleRevision(members[index], isAccept);
+      // After the last member's content resolves: this is the route the rail's
+      // card buttons take, so the style inverse has to fire here too or a
+      // resolved card leaves a restyled paragraph behind. It runs for accept as
+      // well as reject, because both merge a paragraph mark away.
+      if (lastUndecided) restoreParagraphStyles();
     };
     (revision as any).robinReviveSelf = () => {
       state.resolved = false;
       state.restored = false;
+      state.settled = false;
       resolvedAlone.delete(index);
       acceptedAlone.delete(index);
     };
@@ -1144,6 +1241,75 @@ const replayAppearanceRestores = (
   }
 };
 
+/**
+ * Put back the paragraph styles a resolution merged away, after either outcome.
+ *
+ * Identity, not position, decides what gets written: a restore applies only to a
+ * paragraph that still reads exactly as it did when the style was captured. That
+ * is what makes it safe after an ACCEPT, where block indices have moved and the
+ * captured anchor may now name a completely different paragraph - and it also
+ * means a paragraph whose text the change set rewrote is never touched, because
+ * its identity no longer matches. When the text appears more than once and the
+ * anchor does not settle it, nothing is written rather than the wrong one.
+ *
+ * A paragraph already reading the right style is left alone, so this never
+ * overwrites a style someone set deliberately. A collapsed caret is enough:
+ * SyncFusion applies a paragraph style to the paragraph containing the selection.
+ */
+export const replayParagraphStyles = (
+  editor: LiveEditor,
+  restores: ParagraphStyleRestore[]
+) => {
+  const sections = (() => {
+    try {
+      const parsed = JSON.parse(editor.serialize());
+      const list = parsed?.sections ?? parsed?.sec;
+      if (!Array.isArray(list)) return undefined;
+      return list.map((section: any) => section?.blocks ?? section?.b ?? []);
+    } catch {
+      return undefined;
+    }
+  })();
+  if (!sections) return;
+  const readStyle = (block: any): string | undefined =>
+    block?.paragraphFormat?.styleName ?? block?.pf?.stn;
+  const readText = (block: any): string =>
+    ((block?.inlines ?? block?.i ?? []) as any[])
+      .map((run) => run?.text ?? run?.tlp ?? '')
+      .join('');
+  const identify = (block: any) => paragraphIdentityText(readText(block));
+  for (const restore of restores) {
+    const [sectionIndex, blockIndex] = restore.anchor.split(';').map(Number);
+    const atAnchor = sections[sectionIndex]?.[blockIndex];
+    let target: { section: number; block: number } | undefined;
+    if (atAnchor && identify(atAnchor) === restore.text)
+      target = { section: sectionIndex, block: blockIndex };
+    else {
+      // The anchor moved. Fall back to the one paragraph that still reads the
+      // same; ambiguity means leave it alone.
+      const matches: Array<{ section: number; block: number }> = [];
+      sections.forEach((blocks: any[], section: number) =>
+        blocks.forEach((block: any, index: number) => {
+          if (block?.rows ?? block?.r) return;
+          if (identify(block) === restore.text)
+            matches.push({ section, block: index });
+        })
+      );
+      if (matches.length === 1) target = matches[0];
+    }
+    if (!target) continue;
+    const block = sections[target.section]?.[target.block];
+    if (readStyle(block) === restore.styleName) continue;
+    const anchor = `${target.section};${target.block}`;
+    try {
+      editor.selection?.select?.(`${anchor};0`, `${anchor};0`);
+      (editor.editor as any)?.applyStyle?.(restore.styleName);
+    } catch {
+      // Content still resolves consistently if one style restore fails.
+    }
+  }
+};
+
 export function rebindRevisionGroups(editor: LiveEditor): number {
   const partitions = new Map<
     string,
@@ -1152,6 +1318,7 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       group: string;
       revisions: LiveRevision[];
       restoreCandidates: AppearanceRestore[][];
+      styleCandidates: ParagraphStyleRestore[][];
     }
   >();
   for (const revision of snapshotRevisions(editor)) {
@@ -1164,6 +1331,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       partition.revisions.push(revision);
       if (tag.appearanceRestores)
         partition.restoreCandidates.push(tag.appearanceRestores);
+      if (tag.paragraphStyles)
+        partition.styleCandidates.push(tag.paragraphStyles);
     } else {
       partitions.set(key, {
         changeSetId: tag.changeSetId,
@@ -1171,7 +1340,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
         revisions: [revision],
         restoreCandidates: tag.appearanceRestores
           ? [tag.appearanceRestores]
-          : []
+          : [],
+        styleCandidates: tag.paragraphStyles ? [tag.paragraphStyles] : []
       });
     }
   }
@@ -1185,6 +1355,17 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     );
     const restores =
       payloads.size === 1 ? [...payloads.values()][0] : undefined;
+    // Same agreement rule as the appearance payload: every member of a group
+    // carries the same snapshot, so disagreement means a stale or mixed tag and
+    // the safe reading is to restore nothing.
+    const stylePayloads = new Map(
+      partition.styleCandidates.map((styles) => [
+        JSON.stringify(styles),
+        styles
+      ])
+    );
+    const styles =
+      stylePayloads.size === 1 ? [...stylePayloads.values()][0] : undefined;
     groupRevisionsAtomic(
       editor,
       partition.revisions,
@@ -1192,7 +1373,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       partition.group,
       restores?.length
         ? () => replayAppearanceRestores(editor, restores)
-        : undefined
+        : undefined,
+      styles?.length ? () => replayParagraphStyles(editor, styles) : undefined
     );
     bound += partition.revisions.length;
   });

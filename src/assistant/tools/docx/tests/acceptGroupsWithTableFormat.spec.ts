@@ -835,3 +835,156 @@ describe('a rejected card puts back the layout the DOCUMENT stated', () => {
     }
   });
 });
+
+// The other thing a rejected card must not leave behind: a paragraph wearing a
+// style it never had.
+//
+// SyncFusion has no Formatting revision type, so a paragraph's STYLE is not part
+// of what a card resolves. Rejecting an inserted paragraph MARK merges the
+// inserted paragraph into the one after it, and the survivor keeps the REMOVED
+// paragraph's format - so the content comes back exactly right and the paragraph
+// is silently restyled, with no revision to explain it.
+//
+// This is a LIVE defect, not one the relocation ops introduced: `insert_section`
+// has it today and is already shipped. It only became easy to see through
+// `move_section`, where moving a subsection above a top-level section puts two
+// different styles either side of one paste. Both are asserted here, over the
+// path the rail card's Reject button actually takes, because the fix belongs to
+// the group mechanism and therefore to every op at once.
+const styledFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'How We Support Clients' }] },
+        { paragraphFormat: { styleName: 'Normal' }, inlines: [{ text: 'Our service model has two halves.' }] },
+        { paragraphFormat: { styleName: 'Heading 2' }, inlines: [{ text: 'National Capabilities' }] },
+        { paragraphFormat: { styleName: 'Normal' }, inlines: [{ text: 'National scale, local team.' }] },
+        { paragraphFormat: { styleName: 'Heading 1' }, inlines: [{ text: 'Next Steps' }] },
+        { paragraphFormat: { styleName: 'Normal' }, inlines: [{ text: 'Confirm by Friday.' }] }
+      ]
+    }
+  ],
+  styles: [
+    { type: 'Paragraph', name: 'Normal', next: 'Normal', characterFormat: { fontSize: 11 } },
+    {
+      type: 'Paragraph',
+      name: 'Heading 1',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 16 },
+      paragraphFormat: { outlineLevel: 'Level1' }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Heading 2',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 13 },
+      paragraphFormat: { outlineLevel: 'Level2' }
+    }
+  ]
+});
+
+const paragraphStyles = (ed: DocumentEditor): string[] => {
+  const sfdt: any = JSON.parse(ed.serialize());
+  return (sfdt.sec ?? sfdt.sections)[0].b.map(
+    (block: any) => block.pf?.stn ?? block.paragraphFormat?.styleName ?? '?'
+  );
+};
+
+const rejectTheCard = (ed: DocumentEditor) =>
+  resolveLiveRevisionGroupsAsOneUndo(
+    ed as unknown as LiveEditor,
+    listRevisionGroups(ed as unknown as LiveEditor),
+    false
+  );
+
+describe('a rejected card leaves no paragraph wearing the wrong style', () => {
+  it('insert_section next to a differently styled paragraph - the shipped defect', () => {
+    const ed = makeEditor(styledFixture());
+    try {
+      const before = ed.serialize();
+      const styledBefore = paragraphStyles(ed);
+      expect(styledBefore[1]).toBe('Normal');
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: '0;1',
+            position: 'before',
+            sectionSpec: {
+              title: 'Inserted Heading',
+              blocks: [{ role: 'paragraph', text: 'Inserted body.' }]
+            }
+          }
+        ],
+        changeSetId: 'insert-style-leak'
+      });
+      expect(result.results[0].ok).toBe(true);
+
+      rejectTheCard(ed);
+      expect(ed.revisions.length).toBe(0);
+      // The paragraph the insert landed in front of is still Normal - before the
+      // fix it came back as a heading.
+      expect(paragraphStyles(ed)).toEqual(styledBefore);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('a cross-level move_section, rejected from its card', () => {
+    const ed = makeEditor(styledFixture());
+    try {
+      const before = ed.serialize();
+      const styledBefore = paragraphStyles(ed);
+      expect(styledBefore[0]).toBe('Heading 1');
+
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [
+          { op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }
+        ],
+        changeSetId: 'move-style-leak'
+      });
+      expect(result.results[0].ok).toBe(true);
+
+      rejectTheCard(ed);
+      expect(ed.revisions.length).toBe(0);
+      // "How We Support Clients" is Heading 1 again - before the fix the moved
+      // subsection's Heading 2 stayed on it.
+      expect(paragraphStyles(ed)).toEqual(styledBefore);
+      expect(ed.serialize()).toBe(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+
+  it('accepting keeps the styles the change set intended, restoring nothing', () => {
+    const ed = makeEditor(styledFixture());
+    try {
+      applyDocumentEdits(ed as unknown as LiveEditor, {
+        edits: [{ op: 'move_section', anchor: '0;2', targetAnchor: '0;0' }],
+        changeSetId: 'move-style-accept'
+      });
+      resolveLiveRevisionGroupsAsOneUndo(
+        ed as unknown as LiveEditor,
+        listRevisionGroups(ed as unknown as LiveEditor),
+        true
+      );
+      expect(ed.revisions.length).toBe(0);
+      // The moved subsection keeps ITS own style at its new home, and the
+      // paragraph it displaced keeps its own: the inverse must not fire here.
+      expect(paragraphStyles(ed)).toEqual([
+        'Heading 2',
+        'Normal',
+        'Heading 1',
+        'Normal',
+        'Heading 1',
+        'Normal'
+      ]);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+});
