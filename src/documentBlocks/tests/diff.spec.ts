@@ -188,12 +188,7 @@ describe('absorbDocEdits', () => {
     parsed.sections[1].push({
       id: null,
       kind: 'table',
-      cells: [
-        [
-          [{ kind: 'text', text: 'A' }],
-          [{ kind: 'text', text: 'B' }]
-        ]
-      ]
+      cells: [[[{ kind: 'text', text: 'A' }], [{ kind: 'text', text: 'B' }]]]
     });
     const { data, events } = absorbDocEdits(SAMPLE_DOCUMENT, parsed, RENDERED);
     const blocks = data.sections[1].blocks;

@@ -71,7 +71,8 @@ const collectTokenEdits = (
       const i = events.findIndex(
         (e) => e.type === 'tokenEdited' && e.key === run.key
       );
-      if (i !== -1) events[i] = { type: 'tokenEdited', key: run.key, text: run.text };
+      if (i !== -1)
+        events[i] = { type: 'tokenEdited', key: run.key, text: run.text };
     } else {
       events.push({ type: 'tokenEdited', key: run.key, text: run.text });
     }

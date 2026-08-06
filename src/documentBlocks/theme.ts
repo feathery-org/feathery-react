@@ -4,15 +4,29 @@
  * reads them back and generate re-applies them to every instance.
  */
 import { BlockFormats, Theme } from './types';
-import { bookmarkEnd, bookmarkStart, bookmarkName, isBookmarkStart } from './anchors';
+import {
+  bookmarkEnd,
+  bookmarkStart,
+  bookmarkName,
+  isBookmarkStart
+} from './anchors';
 
-const SAMPLE_ANCHORS = ['cmp_h1', 'cmp_h2', 'cmp_h3', 'cmp_paragraph', 'cmp_table'] as const;
+const SAMPLE_ANCHORS = [
+  'cmp_h1',
+  'cmp_h2',
+  'cmp_h3',
+  'cmp_paragraph',
+  'cmp_table'
+] as const;
 
 const SAMPLE_TEXT: Record<string, { style: string; text: string }> = {
   cmp_h1: { style: 'Heading 1', text: 'Heading 1 — top-level title' },
   cmp_h2: { style: 'Heading 2', text: 'Heading 2 — section heading' },
   cmp_h3: { style: 'Heading 3', text: 'Heading 3 — subsection heading' },
-  cmp_paragraph: { style: 'Normal', text: 'Paragraph — body copy sample. Style this text and every paragraph follows.' }
+  cmp_paragraph: {
+    style: 'Normal',
+    text: 'Paragraph — body copy sample. Style this text and every paragraph follows.'
+  }
 };
 
 const sampleParagraph = (anchor: string, formats: BlockFormats) => ({
@@ -23,7 +37,10 @@ const sampleParagraph = (anchor: string, formats: BlockFormats) => ({
   characterFormat: {},
   inlines: [
     bookmarkStart(anchor),
-    { characterFormat: { ...(formats.characterFormat ?? {}) }, text: SAMPLE_TEXT[anchor].text },
+    {
+      characterFormat: { ...(formats.characterFormat ?? {}) },
+      text: SAMPLE_TEXT[anchor].text
+    },
     bookmarkEnd(anchor)
   ]
 });
@@ -37,7 +54,10 @@ const sampleCell = (
     {
       paragraphFormat: { ...(formats.paragraphFormat ?? {}) },
       characterFormat: {},
-      inlines: [...extra, { characterFormat: { ...(formats.characterFormat ?? {}) }, text }]
+      inlines: [
+        ...extra,
+        { characterFormat: { ...(formats.characterFormat ?? {}) }, text }
+      ]
     }
   ],
   cellFormat: { ...(formats.cellFormat ?? {}) }
@@ -48,7 +68,9 @@ const sampleTable = (theme: Theme) => ({
     {
       rowFormat: { isHeader: true },
       cells: [
-        sampleCell('Header', theme.table.headerRow, [bookmarkStart('cmp_table')]),
+        sampleCell('Header', theme.table.headerRow, [
+          bookmarkStart('cmp_table')
+        ]),
         sampleCell('Header', theme.table.headerRow)
       ]
     },
@@ -92,7 +114,9 @@ export const componentsSfdt = (theme: Theme): string => {
   });
 };
 
-const stripStyleName = (pf?: Record<string, any>): Record<string, any> | undefined => {
+const stripStyleName = (
+  pf?: Record<string, any>
+): Record<string, any> | undefined => {
   if (!pf) return undefined;
   const { styleName, ...rest } = pf;
   return rest;
@@ -115,7 +139,8 @@ const anchorsIn = (block: any): string[] => {
       }
   };
   if (block.rows) {
-    for (const row of block.rows) for (const cell of row.cells ?? []) walk(cell.blocks ?? []);
+    for (const row of block.rows)
+      for (const cell of row.cells ?? []) walk(cell.blocks ?? []);
   } else {
     walk([block]);
   }
@@ -124,7 +149,13 @@ const anchorsIn = (block: any): string[] => {
 
 export const extractTheme = (sfdt: string): Theme => {
   const doc = JSON.parse(sfdt);
-  const theme: Theme = { h1: {}, h2: {}, h3: {}, paragraph: {}, table: { headerRow: {}, body: {} } };
+  const theme: Theme = {
+    h1: {},
+    h2: {},
+    h3: {},
+    paragraph: {},
+    table: { headerRow: {}, body: {} }
+  };
   const keyOf: Record<string, 'h1' | 'h2' | 'h3' | 'paragraph'> = {
     cmp_h1: 'h1',
     cmp_h2: 'h2',
@@ -149,12 +180,16 @@ export const extractTheme = (sfdt: string): Theme => {
             tableFormat: block.tableFormat ?? {},
             headerRow: {
               characterFormat: firstRunFormat(headerCell?.blocks?.[0]),
-              paragraphFormat: stripStyleName(headerCell?.blocks?.[0]?.paragraphFormat),
+              paragraphFormat: stripStyleName(
+                headerCell?.blocks?.[0]?.paragraphFormat
+              ),
               cellFormat: headerCell?.cellFormat ?? {}
             },
             body: {
               characterFormat: firstRunFormat(bodyCell?.blocks?.[0]),
-              paragraphFormat: stripStyleName(bodyCell?.blocks?.[0]?.paragraphFormat),
+              paragraphFormat: stripStyleName(
+                bodyCell?.blocks?.[0]?.paragraphFormat
+              ),
               cellFormat: bodyCell?.cellFormat ?? {}
             }
           };
