@@ -596,7 +596,8 @@ export default class IntegrationClient {
                 document_id: doc.documentId,
                 envelope_id: doc.envelopeId,
                 fill_data: doc.fillData,
-                signer_map: doc.signerMap
+                signer_map: doc.signerMap,
+                repeat_index: doc.repeatIndex
               }
         ),
         library_documents: libraryDocuments,
