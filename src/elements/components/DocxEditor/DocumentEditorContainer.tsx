@@ -31,6 +31,20 @@ import type {
 import TokenPanel, {
   tokenPanelEnabled
 } from '../../../documentTokens/TokenPanel';
+import {
+  attachBlockSync,
+  BlockSync,
+  EditorSurface
+} from '../../../documentBlocks/blockSync';
+import { BlockStore, createBlockStore } from '../../../documentBlocks/store';
+import { SAMPLE_DOCUMENT } from '../../../documentBlocks/sampleDocument';
+import BlockPanel, {
+  blockPanelEnabled
+} from '../../../documentBlocks/BlockPanel';
+import DebugPanel, {
+  debugPanelEnabled
+} from '../../../documentBlocks/DebugPanel';
+import ComponentsTab from '../../../documentBlocks/ComponentsTab';
 
 // Syncfusion's public test converter. Used ONLY in a local build: document
 // content is uploaded to a third party, which is fine for synthetic fixtures
@@ -444,6 +458,34 @@ export default function DocumentEditorContainer({
   const tokenCycle = useRef<TokenCycle | undefined>(undefined);
   // Dev-only token inspector; nothing renders unless the flag is set.
   const [tokenPanelCycle, setTokenPanelCycle] = useState<TokenCycle>();
+
+  // Dynamic blocks (theming/generation) is an opt-in feature, entirely
+  // separate from the token cycle above: a document with dynamic blocks owns
+  // its own tokens through the block sync loop, so the two must never attach
+  // to the same editor at once.
+  const blocksEnabled = Boolean(
+    (featheryWindow() as any)?.featheryDocxBlocks?.enabled
+  );
+  const storeRef = useRef<BlockStore | null>(null);
+  if (!storeRef.current) {
+    const initialData =
+      (featheryWindow() as any)?.featheryDocxBlocks?.data ?? SAMPLE_DOCUMENT;
+    storeRef.current = createBlockStore(initialData);
+  }
+  const blockStore = storeRef.current;
+  const blockSync = useRef<BlockSync | undefined>(undefined);
+  const editorSurfaceRef = useRef<EditorSurface | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<'document' | 'components'>(
+    'document'
+  );
+
+  useEffect(() => {
+    if (!blocksEnabled) return undefined;
+    return blockStore.subscribe((data) => {
+      (featheryWindow() as any)?.featheryDocxBlocks?.onDataChange?.(data);
+    });
+  }, [blockStore, blocksEnabled]);
+
   const onEditorReady = useCallback(
     (editor: any) => {
       if (!containerId) return;
@@ -464,6 +506,28 @@ export default function DocumentEditorContainer({
       } catch {
         // A grouping failure must not break the editor mount.
       }
+
+      if (blocksEnabled) {
+        // The block sync loop owns tokens in a blocks document — attaching
+        // the token cycle too would give tokens two writers that fight.
+        blockSync.current?.detach();
+        const editorSurface: EditorSurface = {
+          open: (sfdt) => editor.open(sfdt),
+          serialize: () => editor.serialize(),
+          addEventListener: (name, fn) => editor.addEventListener(name, fn),
+          removeEventListener: (name, fn) =>
+            editor.removeEventListener?.(name, fn),
+          scrollContainer: () => editor.documentHelper?.viewerContainer
+        };
+        editorSurfaceRef.current = editorSurface;
+        blockSync.current = attachBlockSync(
+          editorSurface,
+          blockStore,
+          formFieldAccess
+        );
+        return;
+      }
+
       // Linked tokens keep themselves up to date from here on. Inert for a
       // document that declares none; the cycle re-reads on documentChange,
       // because the editor is ready before its .docx has loaded.
@@ -475,7 +539,15 @@ export default function DocumentEditorContainer({
         setTokenPanelCycle(tokenCycle.current);
       }
     },
-    [activeDocumentId, containerId, envelope?.id, formId, stepId]
+    [
+      activeDocumentId,
+      blockStore,
+      blocksEnabled,
+      containerId,
+      envelope?.id,
+      formId,
+      stepId
+    ]
   );
   // Runs after openAsync resolves — and again on every reload (openNonce), which
   // is the case that matters: the in-memory group wrappers die with the old
@@ -507,6 +579,8 @@ export default function DocumentEditorContainer({
     () => () => {
       tokenCycle.current?.detach();
       tokenCycle.current = undefined;
+      blockSync.current?.detach();
+      blockSync.current = undefined;
       if (containerId && registeredEditor.current) {
         unregisterDocxEditor(containerId, registeredEditor.current, formId);
       }
@@ -552,12 +626,87 @@ export default function DocumentEditorContainer({
     return () => editing.removeEventListener('blur', onBlur);
   });
 
-  const box = (child: React.ReactNode) => (
-    <div css={wrap}>
-      {child}
-      {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
-    </div>
-  );
+  // Flag off: identical to the pre-existing render (no tab strip, no panels,
+  // no Components editor mounted) so the untouched container spec keeps
+  // passing byte-for-byte.
+  const box = (child: React.ReactNode) => {
+    if (!blocksEnabled) {
+      return (
+        <div css={wrap}>
+          {child}
+          {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
+        </div>
+      );
+    }
+    return (
+      <div css={{ ...wrap, display: 'flex', flexDirection: 'column' as const }}>
+        <div
+          css={{
+            display: 'flex',
+            gap: 4,
+            flex: '0 0 auto',
+            padding: '6px 8px',
+            borderBottom: '1px solid #e4e4e7'
+          }}
+        >
+          {(['document', 'components'] as const).map((tab) => (
+            <button
+              key={tab}
+              type='button'
+              onClick={() => setActiveTab(tab)}
+              css={{
+                font: 'inherit',
+                padding: '4px 10px',
+                border: '1px solid #d4d4d8',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: activeTab === tab ? '#e2626e' : '#fff',
+                color: activeTab === tab ? '#fff' : '#18181b'
+              }}
+            >
+              {tab === 'document' ? 'Document' : 'Components'}
+            </button>
+          ))}
+        </div>
+        <div css={{ flex: 1, minHeight: 0, position: 'relative' as const }}>
+          <div
+            css={{
+              width: '100%',
+              height: '100%',
+              display: activeTab === 'document' ? 'block' : 'none'
+            }}
+          >
+            {child}
+          </div>
+          {/* Kept mounted (never unmounted) even while inactive — recreating
+              the Syncfusion instance on every tab switch is expensive and
+              loses the user's in-progress edits. */}
+          <div
+            css={{
+              position: 'absolute',
+              inset: 0,
+              display: activeTab === 'components' ? 'block' : 'none'
+            }}
+          >
+            <ComponentsTab store={blockStore} />
+          </div>
+          {blockPanelEnabled(featheryWindow()) && (
+            <BlockPanel store={blockStore} />
+          )}
+        </div>
+        {debugPanelEnabled(featheryWindow()) &&
+          blockSync.current &&
+          editorSurfaceRef.current && (
+            <DebugPanel
+              store={blockStore}
+              sync={blockSync.current}
+              editor={editorSurfaceRef.current}
+            />
+          )}
+        {tokenPanelCycle && <TokenPanel cycle={tokenPanelCycle} />}
+      </div>
+    );
+  };
 
   if (editMode) return box(<div css={placeholder}>Document editor</div>);
   if (!activeDocumentId && !envelope) {
