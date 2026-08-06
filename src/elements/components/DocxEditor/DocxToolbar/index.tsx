@@ -1,4 +1,4 @@
-import React, { ReactNode, useRef } from 'react';
+import React, { ReactNode, useLayoutEffect, useRef } from 'react';
 import { featheryWindow } from '../../../../utils/browser';
 import { ChevronDownIcon } from '../icons';
 import Menu from './Menu';
@@ -66,6 +66,7 @@ export default function DocxToolbar({
     rootRef,
     measureRowRef,
     setMeasureEl,
+    recompute,
     visibleCount,
     centered,
     layerLeft,
@@ -73,6 +74,16 @@ export default function DocxToolbar({
     actionRef,
     compact
   } = useToolbarOverflow();
+
+  // The table group mounting/unmounting changes the row's natural width in
+  // the same render. Refit BEFORE that frame paints — waiting for the
+  // measurement row's ResizeObserver paints one frame with the stale
+  // visibleCount (an overflowing, clipped row) and reshuffles on the next,
+  // which reads as a toolbar flicker on narrow widths every time the cursor
+  // enters or leaves a table.
+  useLayoutEffect(() => {
+    recompute();
+  }, [format.isInTable]);
 
   const insertImageFile = (file: File) => {
     const reader = new FileReader();

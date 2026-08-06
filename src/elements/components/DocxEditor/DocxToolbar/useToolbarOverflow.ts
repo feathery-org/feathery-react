@@ -145,6 +145,11 @@ export function useToolbarOverflow() {
     measureRowRef,
     setMeasureEl,
     actionRef: setActionEl,
+    // For pre-paint refits when the caller KNOWS the row's content changed
+    // (e.g. the conditional table group toggling): the ResizeObserver path
+    // fires only after the browser paints the stale layout — one flickered
+    // frame — while a layout-effect call refits before that paint.
+    recompute,
     visibleCount: overflow.visibleCount,
     centered: overflow.centered,
     // Layer bounds for the tool row: the right side always clears the pinned
