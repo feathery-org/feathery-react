@@ -697,6 +697,18 @@ export interface ColumnFormatRender {
  * is auditable in the change set instead of being indistinguishable from a
  * computed write.
  */
+/**
+ * A style the engine resolved from the document where the model had asked for
+ * a different one, on a paragraph this change set created. Reported in BOTH
+ * directions - it is how a wrong resolver stays visible instead of silently
+ * imposed.
+ */
+export interface ComposedStyleDisagreement {
+  requested: string;
+  resolved: string;
+  from: string;
+}
+
 /** The record a creation path leaves when the document could not answer. */
 export interface CreationGap {
   /** The component that could not inherit. */
@@ -748,6 +760,9 @@ export interface ComposedSectionInheritance {
    * to make visible.
    */
   withoutDonor?: CreationGap[];
+  // Present when the engine resolved a style from the document that differs
+  // from the one the op asked for, on a paragraph this change set created.
+  styleResolved?: ComposedStyleDisagreement;
 }
 
 export interface EditResult {
@@ -9717,6 +9732,25 @@ interface ChangeSetPlan {
 // allowed to defer to it.
 const CELL_CREATING_OPS = new Set(['insert_row']);
 
+/**
+ * Every op that brings CONTENT into existence, and therefore every op that
+ * must consult `creationAppearance` before writing. This is the enforcement
+ * point for that rule: tests enumerate this set and require each member to
+ * demonstrably inherit the document's look, so adding a creating op without
+ * routing it through the resolver fails CI rather than shipping a path that
+ * quietly writes the editor's defaults.
+ *
+ * `insert_section` is here because it composes; the primitives are here
+ * because a model that prefers primitives hand-builds the same thing out of
+ * them, and the guarantee has to hold either way or the door is still open.
+ */
+export const CONTENT_CREATING_OPS = new Set([
+  'insert_section',
+  'insert_table',
+  'insert_row',
+  'insert_text'
+]);
+
 // The rows every earlier `insert_row` in this batch brings into existence,
 // keyed "section;block;row". A mid-table insert creates rows at indices that
 // are OCCUPIED at preflight time - the rows below the anchor shift down to
@@ -10904,6 +10938,48 @@ function creationGap(
   outcome: { reason: string; searched: string[] }
 ): CreationGap {
   return { what, reason: outcome.reason, searched: outcome.searched };
+}
+
+/**
+ * The donor a paragraph created by this change set should wear, and whether
+ * that disagrees with the style the model asked for.
+ *
+ * The family is resolved from the paragraph's POSITION with no declared
+ * subsections to bound it, so the deepest family adjacent to that position
+ * wins - the same rule insert_section applies, which is the point: a section
+ * hand-built out of insert_text + apply_style must come out looking like a
+ * section composed by the single op.
+ */
+function composedParagraphDonor(
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  target: FlatBlock
+): { donor?: FlatBlock; disagreement?: ComposedStyleDisagreement } | undefined {
+  const familyAnchor =
+    joinedSectionFamilyAnchor(blocks, target, 'before', {
+      title: '',
+      blocks: []
+    }) ?? target.anchor;
+  const family = deriveSectionFamilyEvidence(blocks, familyAnchor, true);
+  // `role` reads only the flattened blocks; the SFDT is what the table and
+  // row queries need, and serializing one per format op would cost a whole
+  // document pass for an answer that does not use it.
+  const outcome = creationAppearance(blocks, undefined, byAnchor).role(
+    family,
+    'section_heading',
+    { at: familyAnchor }
+  );
+  if (!outcome.resolved) return undefined;
+  const donor = outcome.value;
+  if (donor.anchor === target.anchor) return undefined;
+  const requested = target.format?.styleName;
+  const resolved = donor.format?.styleName;
+  return {
+    donor,
+    ...(requested && resolved && requested !== resolved
+      ? { disagreement: { requested, resolved, from: donor.anchor } }
+      : {})
+  };
 }
 
 function planTableInsertInheritance(
@@ -13990,6 +14066,7 @@ function applyDocumentEditsMeasured(
   const revisionsByAppliedGroup = new Map<string, Set<LiveRevision>>();
   const nonBlockingStoryWriteFailures = new Set<number>();
   const resolvedFormatTargets = new Map<number, FlatBlock>();
+  const composedDisagreements = new Map<number, ComposedStyleDisagreement>();
   // Every still-applied appearance snapshot, in write order. A failed group's
   // entries are replayed and removed without touching successful siblings.
   const appearanceRestores: AppearanceRestore[] = [];
@@ -15071,12 +15148,36 @@ function applyDocumentEditsMeasured(
               )
             : undefined;
           resolvedFormatTargets.set(index, target);
+          // Styling a paragraph THIS change set created is composition, not
+          // judgment: the model is hand-building a section out of primitives,
+          // which is the same act insert_section performs, and it must reach
+          // the same result. So the resolver wins there. A paragraph that
+          // PRE-EXISTED is the user asking for something ("make this Heading
+          // 2") and the model's choice wins - the engine must not override it.
+          // The distinguishing fact is `createdTarget`, not a preference.
+          const composedStyle =
+            op.op === 'apply_style' && !!createdTarget && !source
+              ? composedParagraphDonor(blocks, byAnchor, target)
+              : undefined;
+          if (composedStyle?.disagreement)
+            composedDisagreements.set(index, composedStyle.disagreement);
           const extras = applyAnchoredOp(
             editor,
             {
               ...op,
               anchor: target.anchor,
               ...(source ? { inheritFormatFrom: source.anchor } : {}),
+              // The donor supplies the style NAME too. Leaving the model's
+              // styleName on the op would win over it inside
+              // applyInheritedFormat, so the paragraph would take the family's
+              // colour and size while keeping the style the model guessed -
+              // inheriting everything except the thing a reader checks.
+              ...(composedStyle?.donor
+                ? {
+                    inheritFormatFrom: composedStyle.donor.anchor,
+                    styleName: undefined
+                  }
+                : {}),
               ...(plan.inherited ? { __inheritedFormat: plan.inherited } : {})
             },
             target,
@@ -15094,7 +15195,14 @@ function applyDocumentEditsMeasured(
             ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
             ...collectOpExtras(extras, (restores) =>
               recordAppearanceRestores(op, restores)
-            )
+            ),
+            ...(composedDisagreements.has(index)
+              ? {
+                  styleResolved: composedDisagreements.get(
+                    index
+                  ) as ComposedStyleDisagreement
+                }
+              : {})
           };
         } catch (err) {
           fail(index, op, err);

@@ -12,6 +12,7 @@ import {
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
 import {
   applyDocumentEdits,
+  CONTENT_CREATING_OPS,
   flattenSfdt,
   getDocumentInventory,
   LiveEditor
@@ -759,4 +760,142 @@ describe('an inserted row is never a header it was not asked to be', () => {
       }
     }
   });
+
+  it('leaves a pre-existing paragraph to the style the caller asked for', () => {
+    // The other half of the rule. This paragraph was NOT created by this
+    // change set, so "make this look like a subsection heading" is the user's
+    // instruction and the engine must not overrule it with the family.
+    const editor = makeEditor();
+    try {
+      const target = anchorOf(editor, 'Alpha Motor Overview');
+      const wanted = formatOf(editor, 'Interests').format;
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'pre-existing-style',
+        edits: [
+          {
+            op: 'apply_style',
+            anchor: target,
+            expect: 'Alpha Motor Overview',
+            styleName: 'subsectionBanner'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(result.results[0].styleResolved).toBeUndefined();
+      expect(formatOf(editor, 'Alpha Motor Overview').format).toEqual(wanted);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
+describe('every content-creating op consults the creation resolver', () => {
+  // The recipes are keyed by op name and CHECKED against the engine's own set
+  // below, so a new creating op that nobody routed through the resolver fails
+  // here rather than shipping a path that writes the editor's defaults.
+  const recipes: Record<
+    string,
+    (editor: DocumentEditor) => { edits: any[]; created: () => string[] }
+  > = {
+    insert_section: (editor) => ({
+      edits: [
+        {
+          op: 'insert_section',
+          anchor: anchorOf(editor, 'Beta Motor'),
+          expect: 'Beta Motor',
+          position: 'before',
+          sectionSpec: tableSpec('Composed Unit')
+        }
+      ],
+      created: () => ['Composed Unit']
+    }),
+    insert_text: (editor) => ({
+      edits: [
+        {
+          op: 'insert_text',
+          anchor: anchorOf(editor, 'Interests'),
+          position: 'after',
+          text: '\nHand Rolled Unit'
+        },
+        {
+          op: 'apply_style',
+          anchor: anchorOf(editor, 'Interests'),
+          expect: 'Hand Rolled Unit',
+          styleName: 'Normal'
+        }
+      ],
+      created: () => ['Hand Rolled Unit']
+    }),
+    insert_table: (editor) => ({
+      edits: [
+        {
+          op: 'insert_table',
+          anchor: anchorOf(editor, 'Beta Motor'),
+          position: 'after',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Item', 'Value'],
+            ['Row', '1']
+          ]
+        }
+      ],
+      created: () => []
+    }),
+    insert_row: (editor) => ({
+      edits: [
+        {
+          op: 'insert_row',
+          anchor: `${tableShadings(editor)[0].anchor};0;0;0`,
+          count: 1
+        }
+      ],
+      created: () => []
+    })
+  };
+
+  it('has coverage for every op the engine calls content-creating', () => {
+    expect(Object.keys(recipes).sort()).toEqual(
+      Array.from(CONTENT_CREATING_OPS).sort()
+    );
+  });
+
+  it.each(Array.from(CONTENT_CREATING_OPS))(
+    '%s inherits the document look rather than the editor default',
+    (op) => {
+      const editor = makeEditor();
+      try {
+        const family = formatOf(editor, 'Interests');
+        const siblingTable = tableShadings(editor).find(
+          (table) => table.rows.length === 4
+        );
+        if (!siblingTable) throw new Error('fixture lost its sibling table');
+        const recipe = recipes[op](editor);
+        const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+          changeSetId: `creates-${op}`,
+          edits: recipe.edits
+        });
+        expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+        // Nothing was written blind: no component reported a missing donor.
+        for (const entry of result.results) {
+          expect(entry.withoutDonor).toBeUndefined();
+          expect(entry.inherited?.withoutDonor).toBeUndefined();
+        }
+        // Any heading this op created wears the family's heading format, not
+        // whatever the editor or the caller would have defaulted to.
+        for (const text of recipe.created())
+          expect(formatOf(editor, text).format).toEqual(family.format);
+        // Any table row this op created carries the document's row look.
+        const tables = tableShadings(editor);
+        for (const table of tables)
+          for (const row of table.rows)
+            expect(
+              row.isHeader ||
+                siblingTable.rows.some((known) => known.shading === row.shading)
+            ).toBe(true);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
 });
