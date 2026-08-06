@@ -75,7 +75,9 @@ import {
   collectTableAppearance,
   copiedCellAppearance,
   copiedRowIsHeader,
+  headerBandContains,
   detectTableBanding,
+  effectiveCellAppearance,
   inferHeaderRows,
   resolvedCellAppearanceAt,
   rowShadings,
@@ -2520,17 +2522,29 @@ function clusterSectionFamilies(
   return families;
 }
 
+/**
+ * Which unit of `units` an anchor selects as the authoring example.
+ *
+ * `anchorNamesMember` is what the anchor MEANS, and the two meanings pick
+ * different units when the anchor is a section's first block:
+ *   - a BOUNDARY (the default): the composed unit is going in front of that
+ *     section, so the sibling immediately BEFORE the boundary is the example;
+ *   - a MEMBER: the anchor names the very section being joined, so that
+ *     section is the example. Reading a member as a boundary silently skips to
+ *     its predecessor - which is how a second "Your Client Services Team" was
+ *     built from the section above it, one that has no table at all, and so
+ *     found no table donor to copy.
+ * An anchor inside a section selects that section under either meaning.
+ */
 function nearestUnitIndex(
   blocks: FlatBlock[],
   units: SectionUnit[],
-  near?: string
+  near?: string,
+  anchorNamesMember = false
 ): number | undefined {
   if (!near) return undefined;
-  // `near` is the insertion boundary. When it is exactly the first block of a
-  // section, the sibling immediately before that boundary is the relevant
-  // authoring example; an anchor inside a section still selects that section.
   const boundary = units.findIndex((unit) => unit.blocks[0]?.anchor === near);
-  if (boundary > 0) return boundary - 1;
+  if (!anchorNamesMember && boundary > 0) return boundary - 1;
   const containing = units.findIndex((unit) => unitContainsAnchor(unit, near));
   if (containing >= 0) return containing;
   const blockIndex = blocks.findIndex(
@@ -2562,10 +2576,11 @@ function selectSectionFamily(
   blocks: FlatBlock[],
   units: SectionUnit[],
   sequences: SectionPatternSequenceElement[][],
-  near?: string
+  near?: string,
+  anchorNamesMember = false
 ): { units: SectionUnit[]; sequences: SectionPatternSequenceElement[][] } {
   const families = clusterSectionFamilies(sequences);
-  const nearest = nearestUnitIndex(blocks, units, near);
+  const nearest = nearestUnitIndex(blocks, units, near, anchorNamesMember);
   const candidates =
     nearest !== undefined
       ? families.filter((family) => family.includes(nearest))
@@ -2945,7 +2960,8 @@ interface SectionFamilyEvidence {
  */
 function deriveSectionFamilyEvidence(
   blocks: FlatBlock[],
-  near?: string
+  near?: string,
+  anchorNamesMember = false
 ): SectionFamilyEvidence | undefined {
   const level = chooseSectionLevel(blocks, near);
   if (level === undefined) return undefined;
@@ -2959,7 +2975,8 @@ function deriveSectionFamilyEvidence(
     blocks,
     sampledUnits,
     sampledTruncatedSequences,
-    near
+    near,
+    anchorNamesMember
   );
   return {
     level,
@@ -8931,9 +8948,11 @@ function applyCopiedTableAppearance(
     target.rows.forEach((targetRow, row) => {
       // The same mapping copiedCellAppearance uses, so the header flag and the
       // cell appearance can never be taken from two different source rows.
-      const sourceRow = sourceRowForTarget(source, headerRows, row);
       let rowTouched = false;
-      const wantsHeader = copiedRowIsHeader(source, sourceRow);
+      const wantsHeader = copiedRowIsHeader(
+        source,
+        sourceRowForTarget(source, headerRows, row)
+      );
       if (wantsHeader !== !!targetRow.isHeader && targetRow.cells.length) {
         const cellAnchor = cellAnchorOf(targetAnchor, row, 0);
         record({ cellAnchor, rowIsHeader: !!targetRow.isHeader });
@@ -9070,6 +9089,22 @@ function applyCopiedTableAppearance(
           desiredLayout
         )}, got ${JSON.stringify(after.layout)}`
       );
+    // Both sides of the comparison are read as a GRID, so a shared interior
+    // edge is judged by whether it is drawn rather than by which of the two
+    // cells happens to store it. See effectiveCellAppearance.
+    const wanted = after.rows.map((row, rowIndex) =>
+      row.cells.map((_unused, column) =>
+        copiedCellAppearance(source, banding, headerRows, rowIndex, column, {
+          rows: after.rows.length,
+          columns: row.cells.length
+        })
+      )
+    );
+    const wantedAt = (row: number, column: number) => wanted[row]?.[column];
+    const actualAt = (row: number, column: number) =>
+      uniformAllBorder
+        ? resolvedCellAppearanceAt(after, row, column)
+        : cellAppearanceAt(after, row, column);
     after.rows.forEach((row, rowIndex) => {
       const mapped =
         source.rows[sourceRowForTarget(source, headerRows, rowIndex)];
@@ -9078,17 +9113,8 @@ function applyCopiedTableAppearance(
           `row ${rowIndex} header: expected ${!!mapped?.isHeader}, got ${!!row.isHeader}`
         );
       for (let column = 0; column < row.cells.length; column++) {
-        const expected = copiedCellAppearance(
-          source,
-          banding,
-          headerRows,
-          rowIndex,
-          column,
-          { rows: after.rows.length, columns: row.cells.length }
-        );
-        const actual = uniformAllBorder
-          ? resolvedCellAppearanceAt(after, rowIndex, column)
-          : cellAppearanceAt(after, rowIndex, column);
+        const expected = effectiveCellAppearance(wantedAt, rowIndex, column);
+        const actual = effectiveCellAppearance(actualAt, rowIndex, column);
         if (!appearanceEquals(expected, actual))
           mismatches.push(
             `row ${rowIndex}, column ${column}: expected ${JSON.stringify(
@@ -10480,10 +10506,61 @@ function planTableCellFormats(
  */
 function sourceRowsForInsertedRows(
   source: TableAppearance,
-  targetRows: number[]
-): number[] {
+  targetRows: number[],
+  headerRows: number
+): Array<number | undefined> {
   const lastRow = source.rows.length - 1;
-  return targetRows.map((targetRow) => Math.min(targetRow, lastRow));
+  return targetRows.map((targetRow) => {
+    const displaced = Math.min(targetRow, lastRow);
+    if (headerBandContains(source, targetRow, headerRows)) return displaced;
+    // A DATA row never copies a header, so a table whose only row is its
+    // header offers no donor at all rather than the header by default. That
+    // default is exactly what produced a navy, white-on-bold "data" row in a
+    // table someone had just emptied; the caller looks outward instead.
+    return displaced >= headerRows ? displaced : undefined;
+  });
+}
+
+/**
+ * The nearest table in the document with a real data row, for when the table
+ * being edited has none of its own.
+ *
+ * A document that styles its tables states the data-row look many times over;
+ * the table in front of us simply happens not to be showing it right now. The
+ * search is by document distance, so the closest example wins, and it is the
+ * same outward widening the section composer uses for a table donor.
+ */
+function documentDataRowDonor(
+  sfdt: any,
+  targetTableAnchor: string
+): { anchor: string; appearance: TableAppearance; row: number } | undefined {
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const targetBlock = Number(targetTableAnchor.split(';')[1]);
+  const candidates: Array<{
+    anchor: string;
+    appearance: TableAppearance;
+    row: number;
+    distance: number;
+  }> = [];
+  sections.forEach((section, sectionIndex) => {
+    getBlocks(section).forEach((block, blockIndex) => {
+      const anchor = `${sectionIndex};${blockIndex}`;
+      if (anchor === targetTableAnchor || !getRows(block)) return;
+      const appearance = collectTableAppearance(block);
+      if (!appearance) return;
+      const headerRows = inferHeaderRows(appearance);
+      if (appearance.rows.length <= headerRows) return;
+      candidates.push({
+        anchor,
+        appearance,
+        row: headerRows,
+        distance: Number.isInteger(targetBlock)
+          ? Math.abs(blockIndex - targetBlock)
+          : blockIndex
+      });
+    });
+  });
+  return candidates.sort((left, right) => left.distance - right.distance)[0];
 }
 
 /**
@@ -10657,18 +10734,46 @@ function planRowInsertInheritance(
     { length: count },
     (_, index) => firstRow + index
   );
-  const sourceRows = sourceRowsForInsertedRows(source, targetRows);
+  const headerRows = inferHeaderRows(source);
+  const sourceRows = sourceRowsForInsertedRows(source, targetRows, headerRows);
   const columns = Math.max(...source.rows.map((entry) => entry.cells.length));
-  const formats = planTableCellFormats(
-    editor,
-    blocks,
-    tableAnchor,
-    source,
-    tableAnchor,
-    targetRows,
-    columns,
-    { sourceRows }
+  // Rows this table can dress itself, and rows it cannot (it has no data row).
+  const inTable = targetRows.filter((_row, index) => sourceRows[index] != null);
+  const orphaned = targetRows.filter(
+    (_row, index) => sourceRows[index] == null
   );
+  const donor = orphaned.length
+    ? documentDataRowDonor(sfdt, tableAnchor)
+    : undefined;
+  const formats = [
+    ...(inTable.length
+      ? planTableCellFormats(
+          editor,
+          blocks,
+          tableAnchor,
+          source,
+          tableAnchor,
+          inTable,
+          columns,
+          {
+            sourceRows: sourceRows.filter((row): row is number => row != null),
+            headerRows
+          }
+        )
+      : []),
+    ...(donor
+      ? planTableCellFormats(
+          editor,
+          blocks,
+          donor.anchor,
+          donor.appearance,
+          tableAnchor,
+          orphaned,
+          columns,
+          { sourceRows: orphaned.map(() => donor.row) }
+        )
+      : [])
+  ];
   // `preserveBanding: false` is the explicit request for SyncFusion's raw row
   // appearance. Typography still inherits, but no fill/border/header write is
   // added by the engine.
@@ -10680,10 +10785,15 @@ function planRowInsertInheritance(
     shortInsertBanding(source) ??
     documentInsertBanding(sfdt, tableAnchor, source);
   const shadings = rowShadings(source);
+  const donorShadings = donor ? rowShadings(donor.appearance) : [];
   const fallbackShadings = banding
     ? undefined
     : targetRows.flatMap((targetRow, index) => {
-        const shading = shadings[sourceRows[index]];
+        const sourceRow = sourceRows[index];
+        const shading =
+          sourceRow == null
+            ? donorShadings[donor?.row ?? -1]
+            : shadings[sourceRow];
         return shading === undefined ? [] : [{ row: targetRow, shading }];
       });
   // Header-ness travels with the row the insert takes its appearance from -
@@ -12375,30 +12485,71 @@ function composerRoleSource(
   return candidates.find((block) => JSON.stringify(roleFormat(block)) === key);
 }
 
+/**
+ * The table a composed table copies: the nearest real table, searched OUTWARD
+ * from the family it is joining.
+ *
+ * Order, and why each step exists rather than stopping:
+ *   1. the family's own units, nearest first, at the SAME ordinal - a family
+ *      whose sections carry two tables says the second one looks like the
+ *      second one, so position within the section is the best evidence;
+ *   2. the same units at ANY ordinal - ordinal is a preference, not a
+ *      requirement, and a family member with one table still shows the house
+ *      style;
+ *   3. the nearest table anywhere in the document.
+ *
+ * Step 3 is the one that stops "no donor" from being a routine outcome.
+ * Falling straight through to the editor's defaults dressed a composed table
+ * in Word's own look inside a styled document and reported success - and the
+ * document's furthest table is still the document's look, while the default
+ * is nobody's. Only a document with NO table at all now yields no donor, and
+ * then there is genuinely nothing to imitate.
+ */
 function composerTableSource(
   blocks: FlatBlock[],
   evidence: SectionFamilyEvidence | undefined,
   near: string,
   ordinal: number,
-  byAnchor: Map<string, FlatBlock>
+  byAnchor: Map<string, FlatBlock>,
+  anchorNamesMember = false
 ): FlatBlock | undefined {
-  if (!evidence?.units.length) return undefined;
-  const nearest = nearestUnitIndex(blocks, evidence.units, near) ?? 0;
-  const ranked = evidence.units
-    .map((unit, index) => ({ unit, index }))
-    .sort(
-      (left, right) =>
-        Math.abs(left.index - nearest) - Math.abs(right.index - nearest) ||
-        left.index - right.index
-    );
-  for (const { unit } of ranked) {
-    const tableAnchor = tableAnchorsForUnit(unit)[ordinal];
-    const firstCell = tableAnchor
-      ? byAnchor.get(`${tableAnchor};0;0;0`)
-      : undefined;
-    if (firstCell) return firstCell;
+  const firstCellOf = (tableAnchor: string | undefined) =>
+    tableAnchor ? byAnchor.get(`${tableAnchor};0;0;0`) : undefined;
+  const units = evidence?.units ?? [];
+  if (units.length) {
+    const nearest =
+      nearestUnitIndex(blocks, units, near, anchorNamesMember) ?? 0;
+    const ranked = units
+      .map((unit, index) => ({ unit, index }))
+      .sort(
+        (left, right) =>
+          Math.abs(left.index - nearest) - Math.abs(right.index - nearest) ||
+          left.index - right.index
+      );
+    for (const { unit } of ranked) {
+      const firstCell = firstCellOf(tableAnchorsForUnit(unit)[ordinal]);
+      if (firstCell) return firstCell;
+    }
+    for (const { unit } of ranked)
+      for (const tableAnchor of tableAnchorsForUnit(unit)) {
+        const firstCell = firstCellOf(tableAnchor);
+        if (firstCell) return firstCell;
+      }
   }
-  return undefined;
+  const from = blocks.findIndex(
+    (block) => block.anchor === near || near.startsWith(`${block.anchor};`)
+  );
+  const tables = blocks
+    .map((block, index) => ({ anchor: tableAnchorForBlock(block), index }))
+    .filter(
+      (entry): entry is { anchor: string; index: number } => !!entry.anchor
+    );
+  const closest = tables.sort(
+    (left, right) =>
+      Math.abs(left.index - from) - Math.abs(right.index - from) ||
+      left.index - right.index
+  )[0];
+  return firstCellOf(closest?.anchor);
 }
 
 function missingSectionPrefix(
@@ -12991,16 +13142,26 @@ function compileSectionComposer(
     typeof op.group === 'string'
       ? op.group
       : `__insert_section_${originalIndex + 1}`;
+  // A NAMED section states a boundary to compose beside; a derived one names
+  // the family MEMBER being joined. The two select different authoring
+  // examples, so the composer says which it has rather than leaving the unit
+  // selection to guess. See nearestUnitIndex.
+  const joinedFamilyAnchor = boundary.familyAnchor
+    ? undefined
+    : joinedSectionFamilyAnchor(
+        blocks,
+        resolvedTarget,
+        boundary.position,
+        spec
+      );
+  const familyAnchorNamesMember = !!joinedFamilyAnchor;
   const familyAnchor =
-    boundary.familyAnchor ??
-    joinedSectionFamilyAnchor(
-      blocks,
-      resolvedTarget,
-      boundary.position,
-      spec
-    ) ??
-    resolvedTarget.anchor;
-  const evidence = deriveSectionFamilyEvidence(blocks, familyAnchor);
+    boundary.familyAnchor ?? joinedFamilyAnchor ?? resolvedTarget.anchor;
+  const evidence = deriveSectionFamilyEvidence(
+    blocks,
+    familyAnchor,
+    familyAnchorNamesMember
+  );
   const familyBoundary = evidence
     ? sectionBoundaryPattern(blocks, evidence.units).separator
     : undefined;
@@ -13093,7 +13254,8 @@ function compileSectionComposer(
         evidence,
         familyAnchor,
         tableOrdinal,
-        byAnchor
+        byAnchor,
+        familyAnchorNamesMember
       ),
       label
     });

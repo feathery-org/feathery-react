@@ -456,6 +456,121 @@ describe('a composed section inherits from the family it joins', () => {
     }
   });
 
+  it('copies the table of the section it is joining, not of the one before it', () => {
+    // The shape that produced a table with no donor at all: the section being
+    // duplicated is the family's own member, and the section BEFORE it carries
+    // no table. Reading the family anchor as a boundary skipped to that
+    // predecessor and found nothing to copy.
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            paragraph('About The Group', 'Title'),
+            prose('About'),
+            paragraph('Your Client Services Team', 'Title'),
+            prose('Your team'),
+            grid(['Name', 'Role'], [['Dana Reid', 'Executive']]),
+            paragraph('Location Schedule', 'Title'),
+            prose('Locations'),
+            grid(['Location', 'Address'], [['1', '100 Main Street']])
+          ]
+        }
+      ],
+      styles: STYLES
+    });
+    try {
+      const teamTable = tableShadings(editor)[0];
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'join-team',
+        edits: [
+          {
+            op: 'insert_section',
+            anchor: anchorOf(editor, 'Location Schedule'),
+            expect: 'Location Schedule',
+            position: 'before',
+            sectionSpec: {
+              title: 'Second Client Services Team',
+              blocks: [
+                {
+                  role: 'table',
+                  table: {
+                    columnHeaders: ['Name', 'Role'],
+                    rows: [['Tyler', 'Engineer']]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+      // A donor was found for EVERY composed block - nothing wrote blind.
+      expect(result.results[0].inherited?.withoutDonor).toBeUndefined();
+      const composed = formatOf(editor, 'Second Client Services Team');
+      const composedRows = composedTableRows(editor, composed.block.anchor);
+      // Header stays the header; the data row is a data row, not a second one.
+      expect(composedRows).toEqual(
+        teamTable.rows.slice(0, composedRows.length)
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('dresses a composed table from the document when its family has none', () => {
+    const editor = makeEditor(fixture({ withTables: false }));
+    try {
+      // One table exists, in a section outside the family being joined.
+      const editorWithTable = editor;
+      const result = applyDocumentEdits(
+        editorWithTable as unknown as LiveEditor,
+        {
+          changeSetId: 'document-wide-donor',
+          edits: [
+            {
+              op: 'insert_table',
+              anchor: anchorOf(editor, 'Alpha Motor'),
+              position: 'after',
+              rows: 2,
+              columns: 2,
+              initialCells: [
+                ['Item', 'Value'],
+                ['Seed', '1']
+              ]
+            }
+          ]
+        }
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      const composedResult = applyDocumentEdits(
+        editorWithTable as unknown as LiveEditor,
+        {
+          changeSetId: 'document-wide-donor-2',
+          edits: [
+            {
+              op: 'insert_section',
+              anchor: anchorOf(editor, 'Beta Motor'),
+              expect: 'Beta Motor',
+              position: 'before',
+              sectionSpec: tableSpec('Discount')
+            }
+          ]
+        }
+      );
+      expect(composedResult.results[0]).toMatchObject({ ok: true });
+      // The family carries no table, but the DOCUMENT does - so the composed
+      // table still inherits rather than falling back to the editor default.
+      expect(composedResult.results[0].inherited?.withoutDonor).toBeUndefined();
+      expect(composedResult.results[0].inherited?.donors).toEqual(
+        expect.arrayContaining([
+          { unit: 'block 1 (table)', from: expect.any(String) }
+        ])
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
   it('reports the family it inherited from and every block it could not dress', () => {
     const editor = makeEditor(fixture({ withTables: false }));
     try {
@@ -552,6 +667,51 @@ describe('an inserted row is never a header it was not asked to be', () => {
       }
     }
   );
+
+  it('makes a data row out of a table that has nothing but a header left', () => {
+    // The captain deleted every data row, so the ONLY row available to copy is
+    // a header. A rule that inherits header-ness reproduces it; a rule that
+    // assigns it by position cannot.
+    const editor = makeEditor({
+      sections: [
+        {
+          blocks: [
+            paragraph('Team', 'Title'),
+            prose('Team'),
+            grid(['Name', 'Role'], []),
+            paragraph('Reference', 'Title'),
+            prose('Reference'),
+            grid(['Name', 'Role'], [['Dana Reid', 'Executive']])
+          ]
+        }
+      ],
+      styles: STYLES
+    });
+    try {
+      const [emptied, reference] = tableShadings(editor);
+      expect(emptied.rows).toHaveLength(1);
+      expect(emptied.rows[0].isHeader).toBe(true);
+      const referenceDataRow = reference.rows[1];
+
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'header-only-insert',
+        edits: [
+          { op: 'insert_row', anchor: `${emptied.anchor};0;0;0`, count: 1 }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'insert_row' });
+
+      const after = tableShadings(editor)[0];
+      expect(after.rows).toHaveLength(2);
+      expect(after.rows[0].isHeader).toBe(true);
+      // Not a second header, and dressed like the document's own data rows -
+      // taken from another table, since this one had no data row to show.
+      expect(after.rows[1].isHeader).toBe(false);
+      expect(after.rows[1].shading).toEqual(referenceDataRow.shading);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
 
   it('holds for every op in the registry that brings rows into existence', () => {
     // The guard belongs to the row-creating primitive, not to one caller, so

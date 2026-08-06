@@ -469,6 +469,27 @@ function readCellAppearance(cell: any): AppearanceFacts | undefined {
   return readAppearanceFrom(sfdtCellFormat(cell), true);
 }
 
+/**
+ * The four sides a border set actually draws, with `all` expanded.
+ *
+ * `{ all: X }` and `{ top: X, left: X, right: X, bottom: X }` are the same
+ * border in two spellings - `readBorders` emits the first when all four agree
+ * and the second otherwise, so which one a given read produces depends on
+ * incidental facts about the cell. Every comparison goes through here, so no
+ * caller can accidentally compare the spelling instead of the border.
+ */
+export function borderSides(
+  borders?: BorderFactsBySide
+): Record<BorderSide, BorderFacts | undefined> {
+  const all = borders?.all;
+  return {
+    top: borders?.top ?? all,
+    left: borders?.left ?? all,
+    right: borders?.right ?? all,
+    bottom: borders?.bottom ?? all
+  };
+}
+
 export function appearanceEquals(
   a?: AppearanceFacts,
   b?: AppearanceFacts
@@ -479,8 +500,63 @@ export function appearanceEquals(
   const ab = a.borders;
   const bb = b.borders;
   if (!ab || !bb) return !ab && !bb;
-  if (!sameBorder(ab.all, bb.all)) return false;
-  return BORDER_SIDES.every((side) => sameBorder(ab[side], bb[side]));
+  const as = borderSides(ab);
+  const bs = borderSides(bb);
+  return BORDER_SIDES.every((side) => sameBorder(as[side], bs[side]));
+}
+
+const OPPOSITE_SIDE: Record<BorderSide, BorderSide> = {
+  top: 'bottom',
+  bottom: 'top',
+  left: 'right',
+  right: 'left'
+};
+
+const NEIGHBOUR_OFFSET: Record<BorderSide, [number, number]> = {
+  top: [-1, 0],
+  bottom: [1, 0],
+  left: [0, -1],
+  right: [0, 1]
+};
+
+/**
+ * One cell's appearance AS IT RENDERS, including the edges its neighbours draw.
+ *
+ * An interior edge belongs to two cells and is stored once, on whichever side
+ * of the boundary the writer chose - so a side this cell does not state, whose
+ * neighbour states it, is still a drawn border. Comparing the stored object
+ * instead of the drawn result made the copy verifier refuse its own correct
+ * write: the source declared `all`, SyncFusion materialized top/left/bottom and
+ * left `right` to the next cell, and three identical borders read as a
+ * mismatch.
+ *
+ * This does NOT weaken the check. The table PERIMETER has no neighbour to
+ * borrow from, so a table that genuinely lost its borders still fails on its
+ * outer cells, and shading, alignment and every stated side are compared
+ * exactly as before.
+ */
+export function effectiveCellAppearance(
+  cellAt: (row: number, column: number) => AppearanceFacts | undefined,
+  row: number,
+  column: number
+): AppearanceFacts | undefined {
+  const own = cellAt(row, column);
+  const sides = borderSides(own?.borders);
+  let borrowed = false;
+  for (const side of BORDER_SIDES) {
+    if (sides[side]) continue;
+    const [rowStep, columnStep] = NEIGHBOUR_OFFSET[side];
+    const shared = borderSides(
+      cellAt(row + rowStep, column + columnStep)?.borders
+    )[OPPOSITE_SIDE[side]];
+    if (!shared) continue;
+    sides[side] = shared;
+    borrowed = true;
+  }
+  if (!borrowed) return own;
+  const borders: BorderFactsBySide = {};
+  for (const side of BORDER_SIDES) if (sides[side]) borders[side] = sides[side];
+  return { ...own, borders };
 }
 
 /**
@@ -636,7 +712,13 @@ export function inferHeaderRows(appearance: TableAppearance): number {
   let flagged = 0;
   while (flagged < appearance.rows.length && appearance.rows[flagged].isHeader)
     flagged++;
-  if (flagged > 0) return Math.min(flagged, appearance.rows.length - 1);
+  // Reported as-is, even when EVERY row is flagged. Clamping this to leave one
+  // body row was meant to protect the stripe maths, but those callers already
+  // handle an empty body - and the clamp made a table stripped to its header
+  // row answer "0 header rows", i.e. claim its header was a data row. Every
+  // rule built on that answer then treated the header as the data-row example,
+  // which is how a newly inserted row came back navy and bold.
+  if (flagged > 0) return flagged;
   const shadings = rowShadings(appearance);
   // A banner needs at least one row below it to be a banner OVER.
   if (shadings.length < 2) return 0;
@@ -744,23 +826,49 @@ export function sourceRowForTarget(
 }
 
 /**
- * Whether a target row is a header, when it copies its look from `sourceRow`.
+ * Whether the row at `targetRow` belongs to the table's header band.
  *
- * Header-ness is an appearance property like any other, so it comes from the
- * SAME source row the cells do - never from whichever row the caller happened
- * to anchor on. This is the whole rule, in one place, for every path that
- * brings rows into existence: `inferHeaderRows` decides what a header IS, this
- * decides who inherits it, and the callers differ only in which row-mapping
- * they hand it (cyclic for a whole-table copy, clamped for a row insert).
- * Without it, SyncFusion's own clone-the-anchored-row behaviour turns a row
- * added below a header into a second header - navy, bold, and repeated on
- * every page of the deliverable.
+ * Header-ness is ASSIGNED by the engine from the table's own shape, never
+ * inherited from a donor row. That distinction is the whole rule, and it is
+ * why this takes no source row: the header band is rows `0..headerRows-1`, so
+ * a row lands in it if and only if it sits there, whatever row a caller
+ * happened to anchor on or copy from.
+ *
+ * Deriving it from a donor instead looked equivalent and was not. A table
+ * stripped down to its header row has NO data row to copy, so the only donor
+ * available is a header - and a rule phrased as "inherit header-ness" then
+ * faithfully reproduces a second header, navy and bold, on the data row a user
+ * just asked for. A rule phrased as a position cannot: there is nothing to be
+ * missing. `inferHeaderRows` remains the only definition of what a header is;
+ * this is the only definition of who is one.
+ */
+export function headerBandContains(
+  source: TableAppearance,
+  targetRow: number,
+  headerRows: number = inferHeaderRows(source)
+): boolean {
+  return targetRow < headerRows;
+}
+
+/**
+ * Whether a row copying `sourceRow` should be flagged as a header.
+ *
+ * The flag is COPIED, never inferred: a document whose header row is merely
+ * shaded like one, without Word's flag, must not acquire the flag by being
+ * copied - `inferHeaderRows` recognises that banner for banding purposes, and
+ * that is a different question from what the row IS.
+ *
+ * `undefined` - no source row at all - is `false`, and that is the case worth
+ * naming. A data row inserted into a table stripped down to its header has no
+ * data row to copy, and the honest answer to "is the row I could not copy a
+ * header?" is no. Header-ness is only ever taken FROM a header; it is never
+ * invented for a row that could not find one.
  */
 export function copiedRowIsHeader(
   source: TableAppearance,
-  sourceRow: number
+  sourceRow: number | undefined
 ): boolean {
-  return !!source.rows[sourceRow]?.isHeader;
+  return sourceRow == null ? false : !!source.rows[sourceRow]?.isHeader;
 }
 
 /**
