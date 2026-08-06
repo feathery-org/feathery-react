@@ -75,7 +75,19 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
     const onComplete = jest.fn();
     render(
       <DocumentViewer
-        payload={basePayload}
+        payload={{
+          ...basePayload,
+          // The filler's own token on one document only — finalize needs it to
+          // open that one inline rather than emailing them an invite to it.
+          documents: [
+            { ...basePayload.documents[0], signer_id: 'signer-1' },
+            {
+              type: 'form' as const,
+              pdf_url: 'http://x/b.pdf',
+              envelope_id: 'env-2'
+            }
+          ]
+        }}
         action={{
           envelope_action: 'open_in_editor',
           editor_toolbar_actions: ['download']
@@ -90,7 +102,10 @@ describe('DocumentViewer — generic Generate Documents review mode', () => {
 
     await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
     expect(onFinalize).toHaveBeenCalledWith({
-      envelopes: [{ envelopeId: 'env-1' }],
+      envelopes: [
+        { envelopeId: 'env-1', signerId: 'signer-1' },
+        { envelopeId: 'env-2', signerId: undefined }
+      ],
       envelopeAction: 'download',
       draft: false
     });

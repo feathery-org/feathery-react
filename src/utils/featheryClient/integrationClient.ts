@@ -486,16 +486,13 @@ export default class IntegrationClient {
     // filler signs themselves, which are opened inline rather than emailed —
     // only those signing tokens come back.
     const envelopeSigners = isDraftView ? [] : action.envelope_signers ?? [];
-    const roleDocumentIds = new Set(
-      envelopeSigners.map((entry: any) => entry.document_id)
-    );
     // Whichever entries are the filler's own are flagged, so the backend
     // opens those inline instead of emailing a link, and hands back only
     // their signing token.
     const isFiller = (email: string) =>
       !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase();
-    const signers = [
-      ...envelopeSigners.map((entry: any) => {
+    const roleSigners = envelopeSigners
+      .map((entry: any) => {
         const email = fieldValues[entry.field_key]?.toString() ?? '';
         return {
           document_id: entry.document_id,
@@ -506,7 +503,16 @@ export default class IntegrationClient {
           email,
           filler: isFiller(email)
         };
-      }),
+      })
+      .filter((entry: any) => entry.email);
+    // Only a document whose roles actually resolved to someone opts out of the
+    // shared signer field. A mapping whose field came back empty routes to
+    // nobody, so the field covers every role there instead.
+    const roleDocumentIds = new Set(
+      roleSigners.map((entry: any) => entry.document_id)
+    );
+    const signers = [
+      ...roleSigners,
       ...documentIds
         .filter((documentId: any) => !roleDocumentIds.has(documentId))
         .map((documentId: any) => ({
@@ -751,7 +757,10 @@ export default class IntegrationClient {
       envelopeAction,
       draft = false
     }: {
-      envelopes: { envelopeId: string }[];
+      // signerId: the filler's own signing token for that envelope, as handed
+      // back by generate. Keeps finalize from emailing them an invite to a
+      // document they open and sign inline.
+      envelopes: { envelopeId: string; signerId?: string }[];
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
       // DocuSign sign only: create the envelope as a draft instead of sending.
       draft?: boolean;
@@ -767,7 +776,9 @@ export default class IntegrationClient {
       form_key: this.formKey,
       fuser_key: userId,
       envelopes: envelopes.map((envelope) => ({
-        envelope_id: envelope.envelopeId
+        envelope_id: envelope.envelopeId,
+        // Omitted rather than nulled: the backend rejects an explicit null.
+        ...(envelope.signerId ? { signer_id: envelope.signerId } : {})
       })),
       envelope_action: envelopeAction,
       merge_docs: action.merge_docs ?? false,
