@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
+import { isTablerIconName, TablerGlyph } from './icons/tabler';
 import { fieldValues, initInfo } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 
@@ -102,6 +103,26 @@ function TextNodes({
     ...responsiveStyles.getTarget(cssTarget)
   };
 
+  // While typing, the browser can drop characters into bare text nodes that
+  // sit outside the styled per-op spans (empty label, caret at the end, after
+  // an icon embed). Those nodes inherit from this wrapper, so in edit mode
+  // seed it with the last run's resolved font styles — appended text then
+  // matches until blur re-serializes it into a proper op.
+  // ponytail: heuristic — typing at a boundary BETWEEN differently-styled runs
+  // still shows the last run's style until blur; per-caret-run inheritance
+  // would need an input listener.
+  if (editMode === 'editable') {
+    const lastAttrs = (element.properties.text_formatted ?? []).at(
+      -1
+    )?.attributes;
+    if (lastAttrs) {
+      editableProps.css = {
+        ...editableProps.css,
+        ...responsiveStyles.getRichFontStyles(lastAttrs)
+      };
+    }
+  }
+
   // Not using jsonpath because of issues with NextJS
   const extractProperty = (obj: any, path: string[]): any => {
     if (path.length === 0) return obj;
@@ -143,7 +164,12 @@ function TextNodes({
         id={`span-${element.id}`}
         ref={spanRef}
         {...editableProps}
-        key={text}
+        // Key on the full formatted content, not just the plain text: icon
+        // embeds contribute no plain text, so an icon-only change (e.g.
+        // deleting an icon in the contenteditable) must still remount the
+        // wrapper. Diffing children against browser-mutated DOM throws
+        // removeChild NotFoundError.
+        key={JSON.stringify(element.properties.text_formatted ?? text)}
       >
         {textIsFromData ? (
           <TextNode
@@ -158,7 +184,22 @@ function TextNodes({
         ) : (
           delta
             .filter((op) => !!op.insert)
-            .map((op, i) => {
+            .map((op, i, ops) => {
+              // Icon-only labels: whitespace-only text ops (e.g. a trailing
+              // "\n") render as real spans beside the glyph and knock it off
+              // center. When every string op is whitespace and an embed
+              // exists, skip the whitespace — the icon(s) are the content.
+              // EXCEPT while focused for editing: those spans are the only
+              // caret targets, so they must stay clickable.
+              const editingNow = editMode === 'editable' && focused;
+              const iconOnly =
+                !editingNow &&
+                ops.some((o) => typeof o.insert === 'object') &&
+                ops.every(
+                  (o) =>
+                    typeof o.insert === 'object' || !(o.insert as string).trim()
+                );
+              if (iconOnly && typeof op.insert === 'string') return null;
               const attrs = op.attributes || {};
               let onClick = () => {};
               let cursor = 'inherit';
@@ -174,6 +215,40 @@ function TextNodes({
                   onClick = () => textSpanOnClick(attrs.start, attrs.end);
                   cursor = 'pointer';
                 }
+              }
+
+              // Inline icon embed: `{ insert: { icon: "IconHeart" } }`. The
+              // wrapper carries the op's resolved font styles so the glyph
+              // (stroke = currentColor, 1em) tracks the run's color and size.
+              // In edit mode the node is contenteditable=false and tagged with
+              // data-feathery-icon so the builder's blur serializer can map it
+              // back to its op.
+              if (typeof op.insert === 'object') {
+                const iconName = (op.insert as any)?.icon;
+                if (!isTablerIconName(iconName)) return null;
+                return (
+                  <span
+                    key={i}
+                    data-index={i}
+                    data-feathery-icon={iconName}
+                    contentEditable={editMode ? false : undefined}
+                    onClick={onClick}
+                    css={{
+                      display: 'inline-flex',
+                      verticalAlign: '-0.125em',
+                      cursor,
+                      // Mirrors the native text selection — set by
+                      // syncIconSelection in useTextEdit since browsers skip
+                      // contenteditable=false nodes when painting highlights.
+                      '&[data-icon-selected]': {
+                        backgroundColor: 'Highlight'
+                      },
+                      ...responsiveStyles.getRichFontStyles(attrs)
+                    }}
+                  >
+                    <TablerGlyph name={iconName} />
+                  </span>
+                );
               }
 
               const text = editMode
