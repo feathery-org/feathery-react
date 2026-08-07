@@ -308,6 +308,25 @@ const revisionTally = (editor: DocumentEditor) => {
 const rowsOf = (editor: DocumentEditor, index: number): string[] =>
   tablesOf(editor)[index]?.rows.map((row) => row.text) ?? [];
 
+/** Each table's column grid beside the cell count its rows carry, counts not widths */
+const gridsOf = (editor: DocumentEditor) => {
+  const sfdt = JSON.parse(editor.serialize());
+  const blocks: any[] = sfdt.sections?.[0]?.blocks ?? sfdt.sec?.[0]?.b ?? [];
+  return blocks
+    .filter((block) => block.rows ?? block.r)
+    .map((block) => ({
+      columnCount: block.columnCount ?? block.colc ?? null,
+      gridColumns: (block.grid ?? block.grd ?? []).length,
+      cellsPerRow: Array.from(
+        new Set(
+          (block.rows ?? block.r).map(
+            (row: any) => (row.cells ?? row.c ?? []).length
+          )
+        )
+      )
+    }));
+};
+
 describe('split_table: the selective split, rows anywhere in the table', () => {
   const ACME = [1, 3, 5];
 
@@ -1668,6 +1687,38 @@ describe('split_table: the rail card resolves a split as one unit', () => {
     } finally {
       destroyEditor(viaAll);
       destroyEditor(viaRail);
+    }
+  });
+
+  // collectTableAppearance never reports the column grid, so a table left claiming
+  // more columns than its rows have passes the comparison above and renders ragged
+  it('accepting a split that takes the last row leaves each table its own column grid', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const edit = {
+        op: 'split_table',
+        anchor: '0;2;0;0;0',
+        rows: [1, 3, 5],
+        targetAnchor: '0;3',
+        position: 'before'
+      } as EditOp;
+      expect(apply(editor, [edit], 'split-grid').results[0]).toMatchObject({
+        ok: true
+      });
+      resolveLiveRevisionGroupsAsOneUndo(
+        editor as any,
+        listRevisionGroups(editor as any),
+        true
+      );
+      const grids = gridsOf(editor);
+      expect(grids).toHaveLength(2);
+      for (const grid of grids) {
+        expect(grid.cellsPerRow).toEqual([2]);
+        expect(grid.columnCount).toBe(2);
+        expect(grid.gridColumns).toBe(2);
+      }
+    } finally {
+      destroyEditor(editor);
     }
   });
 

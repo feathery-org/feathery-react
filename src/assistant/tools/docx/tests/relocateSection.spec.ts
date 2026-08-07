@@ -1765,20 +1765,10 @@ describe('accepting a relocation is verified, not only rejecting it', () => {
     }
   });
 
-  // Recorded rather than asserted correct, because asking the accept side this
-  // question is what found it and quietly leaving it out would repeat exactly
-  // the mistake this describe exists to fix.
-  //
-  // Moving the section that IS the document tail strands an empty paragraph on
-  // BOTH accept routes - the range carries its own paragraph mark - and the two
-  // routes then disagree about that paragraph's STYLE: `acceptAll` leaves it
-  // Normal, the rail card leaves it wearing the moved section's Heading 1.
-  // 6280 vs 6283 serialized characters, one field. It is not the relocation
-  // TARGET (it survives the fix for that, and it reproduces with the target
-  // untouched), and per the header investigation it reproduces in Chrome under
-  // Pages layout too, so it belongs to the rail accept path and is filed
-  // separately rather than fixed here.
-  it('the two accept routes still disagree on one field for a tail-source move', () => {
+  // Moving the section that IS the document tail strands an empty paragraph on both
+  // accept routes, the range carries its own paragraph mark. The stranded paragraph's
+  // style is the field most sensitive to the order the rail resolves a group in
+  it('the two accept routes agree on a tail-source move', () => {
     const edit: EditOp = {
       op: 'move_section',
       anchor: '0;6',
@@ -1802,9 +1792,10 @@ describe('accepting a relocation is verified, not only rejecting it', () => {
         ...NESTED.slice(at('National Capabilities, Local Service'), at('Next Steps')),
         ''
       ]);
-      // The stranded paragraph is the only disagreement, and only its style.
+      // The stranded paragraph is Normal on both routes, not the moved heading.
       expect(headings(viaAll)).not.toContain('');
-      expect(headings(viaRail)).toContain('');
+      expect(headings(viaRail)).not.toContain('');
+      expect(viaRail.serialize()).toBe(viaAll.serialize());
     } finally {
       destroyEditor(viaAll);
       destroyEditor(viaRail);

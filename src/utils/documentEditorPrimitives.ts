@@ -1074,7 +1074,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
     while (budget-- > 0) {
       const current = snapshotRevisions(editor).filter(matchesGroup);
       if (!current.length) break;
-      const revision = current[current.length - 1];
+      const revision = isAccept ? current[0] : current[current.length - 1];
       (revision as any).robinReviveSelf?.();
       resolved.push(revision);
       try {
