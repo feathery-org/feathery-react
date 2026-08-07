@@ -132,6 +132,12 @@ describe('BoxFolderPicker', () => {
         }
       )
     );
+    // handleCreateFolder's post-success setShowNewFolder(false)/setFolderName('')
+    // settle a tick AFTER the call assertion resolves. Without asserting the
+    // resulting UI state too, those setStates land outside act() and warn.
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText('Folder name')).toBeNull()
+    );
   });
 
   it('reports a browse failure through onError', async () => {
