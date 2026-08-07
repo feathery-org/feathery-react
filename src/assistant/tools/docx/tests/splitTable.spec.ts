@@ -11,9 +11,22 @@
 //
 // What every case asserts, because `ok: true` from SyncFusion only means "did not
 // throw": accepting produces the two intended tables, every value that moved
-// exists exactly ONCE, the appearance facts of each surviving row equal the facts
-// that row had BEFORE the split, rejecting restores the document string-equal on
-// the same editor instance, and the whole split is ONE entry in changeSet.groups.
+// exists exactly ONCE, each half is correctly BANDED against the stripe the source
+// proved before the split, rejecting restores the document string-equal on the same
+// editor instance, and the whole split is ONE entry in changeSet.groups.
+//
+// A row's own fill is deliberately NOT preserved, and the test that used to assert
+// it was the defect stated as a property: rows 1, 3 and 5 of a striped table are
+// all banded, so carrying their fills verbatim makes the new table three
+// consecutive banded rows and shifts the source's parity by whatever was taken out
+// of the middle of it. The split re-lays the source's stripe over both halves, the
+// same way `insert_row` already does and behind the same `preserveBanding` flag.
+//
+// `rejectedSerialization` is the one tolerance in the reject assertions, and it
+// names its exception byte for byte: once a cell's background has been written,
+// SyncFusion 34.1.31 cannot restore the ABSENT `shading` key - it comes back as an
+// explicit "no fill", which renders and exports identically. Probed on the SDK, not
+// assumed. Everything else, including every appearance fact, is compared exactly.
 //
 // Nothing here asserts a literal colour. Every appearance assertion compares a
 // row against what the FIXTURE gave that row, matched by the row's own text - so
@@ -37,7 +50,14 @@ import {
   EditOp,
   LiveEditor
 } from '../syncfusionDocumentOps';
-import { collectTableAppearance, inferHeaderRows } from '../tableAppearance';
+import {
+  bandedShadingForRow,
+  collectTableAppearance,
+  detectTableBanding,
+  inferHeaderRows,
+  rowShadings,
+  TableBanding
+} from '../tableAppearance';
 import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo
@@ -151,6 +171,39 @@ const scheduleFixture = () => ({
             line('Property', 'Acme', BAND_FILL), // 3
             line('Workers Comp', 'Gamma'), // 4
             line('Umbrella', 'Acme', BAND_FILL) // 5
+          ]
+        },
+        para('Next Steps', 'Heading 1'), // 0;3
+        para('Confirm by Friday.') // 0;4
+      ]
+    }
+  ],
+  styles: headingStyles()
+});
+
+/**
+ * A table with a header and ONE highlighted row - the case a restripe must not
+ * mistake for a stripe. Strict detection is what keeps a deliberate per-row
+ * highlight from being repainted into an alternation nobody asked for.
+ */
+const unstripedFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Coverage Schedule', 'Heading 1'), // 0;0
+        para('All lines are listed below.'), // 0;1
+        {
+          // 0;2
+          tableFormat: { allowAutoFit: true },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [cell('Line', HEADER_FILL), cell('Carrier', HEADER_FILL)]
+            },
+            line('General Liability', 'Acme'), // 1
+            line('Auto', 'Beta', BAND_FILL), // 2 - the one highlight
+            line('Property', 'Acme'), // 3
+            line('Workers Comp', 'Gamma') // 4
           ]
         },
         para('Next Steps', 'Heading 1'), // 0;3
@@ -379,6 +432,80 @@ const factsByRowText = (editor: DocumentEditor) => {
   return out;
 };
 
+/**
+ * The stripe a table proves on its own, read from the live document.
+ *
+ * Taken from the FIXTURE rather than written down, so the assertions below say
+ * "this table is banded the way its own rows are banded" and hold whatever
+ * colours the fixture happens to use. A hardcoded palette would pass on a table
+ * repainted in the wrong colours and fail the day the fixture changed shade.
+ */
+const bandingOf = (
+  editor: DocumentEditor,
+  index: number
+): TableBanding | null => {
+  const sfdt = JSON.parse(editor.serialize());
+  const blocks: any[] = sfdt.sections?.[0]?.blocks ?? sfdt.sec?.[0]?.b ?? [];
+  const tables = blocks.filter((block) => block.rows ?? block.r);
+  const appearance = collectTableAppearance(tables[index]);
+  return appearance ? detectTableBanding(appearance, { strict: true }) : null;
+};
+
+/**
+ * Every body row of one table whose fill is NOT what `banding` calls for, as
+ * `row: actual != wanted`. An empty array is a correctly banded table.
+ *
+ * Header rows are excluded by `bandedShadingForRow` itself, which answers
+ * `undefined` above the band - the same call the engine's own restripe makes, so
+ * the test cannot disagree with it about where the stripe starts.
+ */
+const bandingBreaks = (
+  editor: DocumentEditor,
+  index: number,
+  banding: TableBanding
+): string[] => {
+  const sfdt = JSON.parse(editor.serialize());
+  const blocks: any[] = sfdt.sections?.[0]?.blocks ?? sfdt.sec?.[0]?.b ?? [];
+  const tables = blocks.filter((block) => block.rows ?? block.r);
+  const appearance = collectTableAppearance(tables[index]);
+  if (!appearance) return [`table ${index} not found`];
+  const shadings = rowShadings(appearance);
+  return appearance.rows.flatMap((_row, row) => {
+    const wanted = bandedShadingForRow(banding, row);
+    if (wanted === undefined) return [];
+    const actual = shadings[row] ?? null;
+    return actual === wanted ? [] : [`${row}: ${actual} != ${wanted}`];
+  });
+};
+
+/**
+ * `sd:{"bgc":"empty",...}` written back to `sd:{}`, and how many times.
+ *
+ * The ONE divergence a restripe's reject cannot avoid, measured from the SDK
+ * rather than assumed: once a cell's background has been written, SyncFusion
+ * 34.1.31 materialises its `shading` object and there is no route back to the
+ * absent key. `background = 'empty'`, `= undefined` and `delete cellFormat.shading`
+ * all leave `{"bgc":"empty","fgc":"empty","t":0}` - probed on a cell that started
+ * at `{}`. That value IS "no fill": it renders the same, exports the same, and
+ * reads the same through `collectTableAppearance`.
+ *
+ * So the reject assertions below normalize exactly that and then demand string
+ * equality. This is not a loosened check - it is a stricter one. It names the only
+ * tolerated difference, byte for byte, and counts it, so a restripe that left a
+ * real fill behind still fails. A cell whose fill was CHANGED and restored comes
+ * back exact and needs no tolerance at all.
+ */
+const MATERIALIZED_EMPTY_FILL = /"sd":\{"bgc":"empty","fgc":"empty","t":0\}/g;
+const rejectedSerialization = (
+  editor: DocumentEditor
+): { sfdt: string; emptiedFills: number } => {
+  const raw = editor.serialize();
+  return {
+    sfdt: raw.replace(MATERIALIZED_EMPTY_FILL, '"sd":{}'),
+    emptiedFills: raw.match(MATERIALIZED_EMPTY_FILL)?.length ?? 0
+  };
+};
+
 const allTexts = (editor: DocumentEditor): string[] =>
   flattenSfdt(JSON.parse(editor.serialize())).map((block) => block.text);
 
@@ -559,11 +686,26 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
     }
   });
 
-  it('every surviving row keeps the appearance facts it had before the split', () => {
+  // This test used to assert the opposite - that each row kept the exact fill it
+  // had before - and that assertion was the defect, stated as a property.
+  //
+  // The captain, on his own proposal: "If you notice the columns have different
+  // width" and the stripes read wrong. Rows 1, 3 and 5 of a striped table are all
+  // BAND_FILL; carried faithfully into a table of their own they are three
+  // consecutive banded rows, which is not a stripe. The source has the mirror
+  // problem: rows taken out of the middle of it shift the parity of everything
+  // below them. Keeping each row's own fill is precisely how both halves come out
+  // wrong.
+  //
+  // A row insert already re-lays the stripe for exactly this reason
+  // (`preserveBanding`, ON by default). A split changes which rows sit where too,
+  // so it does the same, to BOTH halves.
+  it('re-lays the source stripe over BOTH halves, each banded from its own header', () => {
     const editor = makeEditor(scheduleFixture());
     try {
-      // The property, computed from the fixture: whatever each row looked like
-      // before, it looks like that afterwards - in whichever table it landed.
+      // The pattern comes from the FIXTURE, never from a written-down palette.
+      const banding = bandingOf(editor, 0);
+      expect(banding).not.toBeNull();
       const before = factsByRowText(editor);
       apply(
         editor,
@@ -579,12 +721,230 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
         'split-appearance'
       );
       editor.revisions.acceptAll();
+      // Each table is internally correct against that same pattern - the source
+      // with its parity repaired, the copy phased from its own first data row.
+      expect(bandingBreaks(editor, 0, banding as TableBanding)).toEqual([]);
+      expect(bandingBreaks(editor, 1, banding as TableBanding)).toEqual([]);
+      // The copy is not three identically filled rows, which is what carrying
+      // rows 1, 3 and 5 verbatim produced. Stated as "more than one fill in the
+      // body" rather than as colours, so the fixture owns the palette. It cannot
+      // be asked to PROVE the stripe on its own - a three-row body is too short
+      // for `detectTableBanding` to call a 2-period cycle, which is exactly why
+      // the stripe has to be read from the source before the split.
+      expect(
+        new Set(
+          tablesOf(editor)[1]
+            .rows.slice(1)
+            .map((row) => row.shading)
+        ).size
+      ).toBeGreaterThan(1);
+      // Everything that is not the stripe is untouched: the header band keeps its
+      // own fill and its header flag in both halves, and no row ends up
+      // half-filled.
+      const header = before.get('Line|Carrier');
+      for (const index of [0, 1]) {
+        const rows = tablesOf(editor)[index].rows;
+        expect(rows[0]).toMatchObject({
+          isHeader: header.isHeader,
+          shading: header.shading,
+          cellShading: header.cellShading
+        });
+        for (const row of rows)
+          expect(new Set(row.cellShading).size).toBeLessThanOrEqual(1);
+      }
+      // No content moved or was retyped by the restripe.
+      expect(new Set(factsByRowText(editor).keys())).toEqual(
+        new Set(before.keys())
+      );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The source half is the one that needs the tracked-delete reasoning. Extracting
+  // ONE row leaves an odd hole, so every row below it changes parity - and under
+  // track changes that row is still physically in the table when the restripe
+  // runs. Appearance carries no revision, so what is written now is what the
+  // accepted document shows: the stripe has to be laid over the rows that SURVIVE,
+  // at the positions they will occupy, skipping the one on its way out.
+  it('repairs the SOURCE parity that removing an odd number of rows shifted', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const banding = bandingOf(editor, 0);
+      expect(banding).not.toBeNull();
+      expect(
+        apply(
+          editor,
+          [
+            {
+              op: 'split_table',
+              anchor: '0;2;0;0;0',
+              rows: [1],
+              targetAnchor: '0;3',
+              position: 'before'
+            }
+          ],
+          'split-odd-parity'
+        ).results[0]
+      ).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(rowsOf(editor, 0)).toEqual([
+        'Line|Carrier',
+        'Auto|Beta',
+        'Property|Acme',
+        'Workers Comp|Gamma',
+        'Umbrella|Acme'
+      ]);
+      // Without the survivor mapping this is where it breaks: those four rows
+      // carried null, BAND, null, BAND and now have to read BAND, null, BAND, null.
+      expect(bandingBreaks(editor, 0, banding as TableBanding)).toEqual([]);
+      expect(bandingBreaks(editor, 1, banding as TableBanding)).toEqual([]);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('honours `preserveBanding: false` and leaves both halves raw', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      // Same flag, same meaning as on insert_row: the caller asking for
+      // SyncFusion's raw row appearance gets exactly the fills the rows carried.
+      const before = factsByRowText(editor);
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: ACME,
+            targetAnchor: '0;3',
+            position: 'before',
+            preserveBanding: false
+          }
+        ],
+        'split-no-banding'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      expect(result.results[0].appearance).toBeUndefined();
+      editor.revisions.acceptAll();
       const after = factsByRowText(editor);
       expect(after.size).toBe(before.size);
-      for (const [text, facts] of before.entries()) {
-        expect(after.has(text)).toBe(true);
+      for (const [text, facts] of before.entries())
         expect(after.get(text)).toEqual(facts);
-      }
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('reports the stripe it re-laid, and says so when there is none to re-lay', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const banding = bandingOf(editor, 0);
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: ACME,
+            targetAnchor: '0;3',
+            position: 'before'
+          }
+        ],
+        'split-report'
+      );
+      expect(result.results[0].appearance).toMatchObject({
+        banding,
+        // One source row is skipped as pending-deleted for each row extracted,
+        // counted rather than quietly absorbed.
+        rowsExcludedFromStripe: ACME.length
+      });
+      expect(result.results[0].appearance.rowsWritten).toBeGreaterThan(0);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('touches no fill in a table that has no stripe to prove', () => {
+    const editor = makeEditor(unstripedFixture());
+    try {
+      const before = factsByRowText(editor);
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [2],
+            targetAnchor: '0;3',
+            position: 'before'
+          }
+        ],
+        'split-unstriped'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      // Deliberately untouched, and it SAYS so - a table with one highlighted
+      // row must never be mistaken for a stripe and repainted.
+      expect(result.results[0].appearance).toMatchObject({
+        noBandingDetected: true,
+        cellsWritten: 0,
+        rowsWritten: 0
+      });
+      editor.revisions.acceptAll();
+      const after = factsByRowText(editor);
+      for (const [text, facts] of before.entries())
+        expect(after.get(text)).toEqual(facts);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('rejecting the split puts every fill the restripe wrote back exactly', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const before = editor.serialize();
+      const factsBefore = factsByRowText(editor);
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: ACME,
+            targetAnchor: '0;3',
+            position: 'before'
+          }
+        ],
+        'split-restripe-reject'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      // The restripe really did write, so there is something to undo.
+      expect(result.results[0].appearance.cellsWritten).toBeGreaterThan(0);
+      // Through the RAIL, which is the button a reviewer presses, because that is
+      // the path the persisted appearance inverse rides on.
+      resolveLiveRevisionGroupsAsOneUndo(
+        editor as any,
+        listRevisionGroups(editor as any),
+        false
+      );
+      // Appearance carries no revision of its own, so rejecting the revisions
+      // alone would leave the repainted fills behind: the restores journal is
+      // what makes a card's reject exact, and this is the assertion that proves it.
+      //
+      // Byte-exact but for the one difference SyncFusion makes unavoidable - a
+      // cell whose fill was ABSENT and is painted back to absent carries an
+      // explicit "no fill" afterwards. Counted, not waved past: the restripe
+      // painted over exactly the unfilled rows the stripe called for.
+      const rejected = rejectedSerialization(editor);
+      expect(rejected.emptiedFills).toBeGreaterThan(0);
+      expect(rejected.sfdt.length).toBe(before.length);
+      expect(rejected.sfdt).toBe(before);
+      // And the facts - what the page actually shows - are restored exactly, with
+      // no tolerance of any kind.
+      expect(Array.from(factsByRowText(editor))).toEqual(
+        Array.from(factsBefore)
+      );
+      expect(editor.revisions.length).toBe(0);
     } finally {
       destroyEditor(editor);
     }
@@ -657,7 +1017,11 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
       editor.revisions.rejectAll();
       // Same editor instance: reopening normalizes styles and would give a false
       // negative that is an open/serialize artifact rather than a reject one.
-      expect(editor.serialize()).toBe(before);
+      //
+      // `rejectAll` resolves through each revision's own patched `reject`, so the
+      // restripe's inverse rides along with the content's. Exact but for the
+      // materialized empty fill the SDK cannot un-write.
+      expect(rejectedSerialization(editor).sfdt).toBe(before);
       expect(tablesOf(editor)).toHaveLength(1);
       expect(rowsOf(editor, 0)).toHaveLength(6);
     } finally {
@@ -990,7 +1354,9 @@ describe('split_table: a table sitting directly against another table', () => {
         'reject-turn-two'
       );
       editor.revisions.rejectAll();
-      expect(editor.serialize()).toEqual(before);
+      // Exact but for the materialized empty fill each restripe leaves behind on
+      // a cell that had none; see `rejectedSerialization`.
+      expect(rejectedSerialization(editor).sfdt).toEqual(before);
     } finally {
       destroyEditor(editor);
     }
@@ -1358,15 +1724,23 @@ describe('split_table: no content field exists to carry content', () => {
     expect(entry).toBeDefined();
     expect(Object.keys(entry.params).sort()).toEqual([
       'position',
+      'preserveBanding',
       'rows',
       'splitAtRow',
       'targetAnchor'
     ]);
     // No param may be free text: `targetAnchor` is an address and the rest are
-    // numbers or a closed enum, so there is nowhere for a cell value to ride in.
+    // numbers, a boolean or a closed enum, so there is nowhere for a cell value
+    // to ride in.
     expect(entry.params.rows).toBe('int>=0[]?');
     expect(entry.params.splitAtRow).toBe('int>=0?');
     expect(entry.params.position).toMatch(/^enum\[/);
+    // The SAME flag insert_row advertises, spelled the same way, so a caller
+    // learns one opt-out rather than one per op.
+    const insertRow = DOCUMENT_EDITOR_CAPABILITIES.find(
+      (candidate: any) => candidate.op === 'insert_row'
+    );
+    expect(entry.params.preserveBanding).toBe(insertRow.params.preserveBanding);
   });
 });
 
@@ -1864,8 +2238,10 @@ describe('split_table: the two halves are two tables, not one', () => {
       editor.revisions.rejectAll();
       // Byte-exact, on the same editor instance: the separator paragraph is a
       // tracked insertion in that group, so rejecting removes it with the table.
-      expect(editor.serialize()).toEqual(before);
-      expect(editor.serialize().length).toBe(before.length);
+      // The one tolerated difference is the restripe's materialized empty fill.
+      const rejected = rejectedSerialization(editor);
+      expect(rejected.sfdt).toEqual(before);
+      expect(rejected.sfdt.length).toBe(before.length);
       expect(topLevelKindsOf(editor)).toEqual(blocksBefore);
       expect(editor.revisions.length).toBe(0);
     } finally {
@@ -2081,8 +2457,9 @@ describe('split_table: the two halves are two tables, not one', () => {
         // Byte-exact on the same editor instance, and the hidden spacer is still
         // the only hidden paragraph: the separator left with the table it came
         // in with, in the same card.
-        expect(editor.serialize().length).toBe(before.length);
-        expect(editor.serialize()).toBe(before);
+        const rejected = rejectedSerialization(editor);
+        expect(rejected.sfdt.length).toBe(before.length);
+        expect(rejected.sfdt).toBe(before);
         expect(topLevelKindsOf(editor)).toEqual(blocksBefore);
         expect(hiddenMarksOf(editor)).toEqual(marksBefore);
         expect(editor.revisions.length).toBe(0);
@@ -2284,7 +2661,9 @@ describe('split_table: the rail card resolves a split as one unit', () => {
           false
         );
         expect(editor.revisions.length).toBe(0);
-        expect(editor.serialize()).toBe(before);
+        // Exact but for the restripe's materialized empty fill; see
+        // `rejectedSerialization` for why the SDK gives no way back to `sd:{}`.
+        expect(rejectedSerialization(editor).sfdt).toBe(before);
       } finally {
         destroyEditor(editor);
       }

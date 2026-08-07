@@ -158,6 +158,12 @@ export interface AppearanceWriteReport {
   cellsUnchanged: number;
   /** Rows a restripe left alone because their own cells carry different fills. */
   rowsSkippedMixed?: number;
+  /**
+   * Rows deliberately left out of the stripe because they are not part of the
+   * table the reviewer will end up with - a `split_table` source's rows on their
+   * way out, still present because their deletion is a pending revision.
+   */
+  rowsExcludedFromStripe?: number;
   /** The stripe the engine detected in the table's existing rows and re-laid. */
   banding?: TableBanding;
   /** Set when no stripe could be proven, so the table was deliberately untouched. */

@@ -250,12 +250,23 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // shape, and it exists so that shape needs no enumeration: naming a boundary
     // costs one number where listing rows 5..39 would be counting.
     // Exactly one of the two.
+    //
+    // `preserveBanding` (default ON), the same flag and the same meaning as on
+    // `insert_row`: a split changes which rows sit where, in BOTH halves, so the
+    // executor reads the source's stripe before the write and re-lays it over
+    // each half from its header band down. Without it the copy shows the fills
+    // its rows happened to carry in the original alternation - rows 4, 5 and 9 of
+    // a striped table are grey, white, white - and the source's parity is shifted
+    // by whatever was taken out of the middle of it. Costs no extra change cards,
+    // because appearance writes create no revisions. Send `false` for
+    // SyncFusion's raw behaviour.
     op: 'split_table',
     params: {
       rows: 'int>=0[]?',
       splitAtRow: 'int>=0?',
       targetAnchor: 'string',
-      position: 'enum[before,after]?'
+      position: 'enum[before,after]?',
+      preserveBanding: 'boolean?'
     },
     requiresAnchor: true
   },

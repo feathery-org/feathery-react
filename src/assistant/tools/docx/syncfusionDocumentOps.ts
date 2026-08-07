@@ -7407,6 +7407,92 @@ function assertPastedTableMatches(
   );
 }
 
+/**
+ * Re-lay the source table's own stripe over BOTH halves of a split.
+ *
+ * The captain: "we want to make sure the width of the columns, and all other
+ * properties of the parent table is carried forward." The rows the copy arrives
+ * with carry their own fills, faithfully - and that is exactly the problem. Rows
+ * 4, 5 and 9 of a striped table are grey, white and white; lifted out of the
+ * alternation that gave them meaning they read as a broken stripe, because they
+ * are one. The SOURCE has the same problem from the other direction: taking rows
+ * out of the middle of it changes the parity of every row below them.
+ *
+ * So this is not a new liberty, it is the rule the engine already follows for a
+ * row insert - read the stripe BEFORE the write, when it is still unambiguous,
+ * and re-lay it afterwards - reaching the one other op that changes which rows
+ * sit where. Same detector, same `applyBandingRows`, same `preserveBanding:
+ * false` opt-out for SyncFusion's raw behaviour. No second mechanism and no
+ * second flag.
+ *
+ * Read from the PRE-SPLIT appearance the handler already collected: after the
+ * write neither half can prove the stripe on its own - the copy is three rows of
+ * whatever it inherited, and the source has pending deletions through it.
+ *
+ * STRICT detection, like the insert path and unlike `restripe_table`: this fires
+ * without being asked, so a table with one highlighted row must not be mistaken
+ * for a stripe and repainted.
+ *
+ * Both halves are laid from `headerRows` down, so a proven header band is never
+ * restriped, and each half is phased from its own first data row - which is what
+ * makes the copy's header + three rows read as the top of the stripe rather than
+ * as rows 4, 5 and 9 of something else.
+ */
+function restripeSplitHalves(
+  editor: LiveEditor,
+  op: TypedEditOp<'split_table'>,
+  split: {
+    /** The source table as it looked BEFORE the split. */
+    source: TableAppearance;
+    headerRows: number;
+    plan: SplitRowPlan;
+    /** The source table's address after the paste shifted it. */
+    sourceAnchor: string;
+    copyAnchor: string;
+  }
+): AppearanceWriteOutcome | undefined {
+  if (op.preserveBanding === false) return undefined;
+  const banding = detectTableBanding(split.source, { strict: true });
+  if (!banding)
+    return {
+      report: { ...emptyAppearanceReport(), noBandingDetected: true },
+      restores: []
+    };
+  const { headerRows, plan } = split;
+  // The source's rows are deleted under track changes, so they are all still
+  // there. The stripe belongs to the rows that SURVIVE, at the positions they
+  // will occupy once the card is accepted; a row on its way out is left out of
+  // the cycle rather than consuming a slot in it.
+  const survivorPosition = (row: number): number | undefined => {
+    if (row < headerRows) return row;
+    const index = plan.keep.indexOf(row);
+    return index < 0 ? undefined : headerRows + index;
+  };
+  const outcomes = [
+    applyBandingRows(
+      editor,
+      split.sourceAnchor,
+      liveTableAppearance(editor, split.sourceAnchor),
+      banding,
+      headerRows,
+      survivorPosition
+    ),
+    // The copy holds exactly its own rows, all of them pending INSERTIONS rather
+    // than deletions, so its live positions are already the accepted ones.
+    applyBandingRows(
+      editor,
+      split.copyAnchor,
+      liveTableAppearance(editor, split.copyAnchor),
+      banding,
+      headerRows
+    )
+  ];
+  return {
+    report: mergeAppearanceReports(outcomes),
+    restores: outcomes.flatMap((outcome) => outcome.restores)
+  };
+}
+
 // Exported for the registry parity spec: the spec re-asserts at runtime what
 // the mapped types already guarantee at compile time, guarding the emitted JS
 // against an `as any` regression at the table itself.
@@ -7757,11 +7843,11 @@ export const ANCHORED_OP_HANDLERS: {
         transformPayload: (payload) => prunePayloadRows(payload, copied)
       }
     );
-    // Nothing is written to the copy, so its address is not needed - but it is
-    // still read back and checked, because `ok: true` from a paste only means the
-    // paste did not throw. If the new table is not there reading what it should,
-    // this fails and the group rolls back.
-    assertPastedTableMatches(
+    // Read back and checked, because `ok: true` from a paste only means the paste
+    // did not throw. If the new table is not there reading what it should, this
+    // fails and the group rolls back. Its anchor is the copy's address, which the
+    // restripe below needs.
+    const copyAnchor = assertPastedTableMatches(
       pastedSfdt,
       paste,
       source,
@@ -7779,6 +7865,14 @@ export const ANCHORED_OP_HANDLERS: {
     // so the order is not load-bearing, but it keeps the invariant visible.
     for (const row of [...plan.extract].reverse())
       deleteTableRow(editor, moved.anchor, row);
+    const restripe = restripeSplitHalves(editor, op, {
+      source: appearance,
+      headerRows,
+      plan,
+      sourceAnchor: moved.anchor,
+      copyAnchor
+    });
+    return restripe ? { appearanceWrite: restripe } : undefined;
   },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
@@ -9543,21 +9637,39 @@ const emptyAppearanceReport = (): AppearanceWriteReport => ({
  * a row whose fill actually differs, and leaves a row whose own cells carry
  * DIFFERENT fills alone - a deliberate per-cell highlight is not a stripe error,
  * and the count of such rows is reported rather than quietly absorbed.
+ *
+ * `bandPositionOf` answers "which position in the stripe does this live row
+ * occupy", and defaults to the live index. It exists because a TRACKED row
+ * delete leaves the row in place until the revision is accepted, so the table
+ * the reviewer will end up with is not the table the editor currently holds:
+ * `split_table` deletes rows out of the middle of its source, and the stripe
+ * has to be laid over the rows that SURVIVE, in their post-accept order.
+ * Appearance carries no revision of its own, so what is written now is what the
+ * accepted document shows - there is no second pass to get this right in.
+ * Returning `undefined` for a row leaves it out of the stripe entirely and
+ * consumes no cycle slot, which is what a row on its way out must do.
  */
 function applyBandingRows(
   editor: LiveEditor,
   tableAnchor: string,
   current: TableAppearance,
   banding: TableBanding,
-  fromRow: number
+  fromRow: number,
+  bandPositionOf?: (row: number) => number | undefined
 ): AppearanceWriteOutcome {
   const report = emptyAppearanceReport();
   const shadings = rowShadings(current);
   const start = Math.max(fromRow, banding.headerRows);
   let skipped = 0;
+  let excluded = 0;
   const transaction = runAppearanceTransaction(editor, (record) => {
     for (let row = start; row < current.rows.length; row++) {
-      const wanted = bandedShadingForRow(banding, row);
+      const position = bandPositionOf ? bandPositionOf(row) : row;
+      if (position === undefined) {
+        excluded++;
+        continue;
+      }
+      const wanted = bandedShadingForRow(banding, position);
       if (wanted === undefined) continue;
       if (shadings[row] === undefined) {
         skipped++;
@@ -9578,7 +9690,34 @@ function applyBandingRows(
   });
   report.banding = banding;
   if (skipped) report.rowsSkippedMixed = skipped;
+  if (excluded) report.rowsExcludedFromStripe = excluded;
   return { report, restores: transaction.restores };
+}
+
+/** One account of several appearance writes made by the same op. */
+function mergeAppearanceReports(
+  outcomes: AppearanceWriteOutcome[]
+): AppearanceWriteReport {
+  const sum = (pick: (report: AppearanceWriteReport) => number | undefined) =>
+    outcomes.reduce((total, outcome) => total + (pick(outcome.report) ?? 0), 0);
+  const mixed = sum((report) => report.rowsSkippedMixed);
+  const excluded = sum((report) => report.rowsExcludedFromStripe);
+  const last = <T>(pick: (report: AppearanceWriteReport) => T | undefined) =>
+    outcomes.reduce<T | undefined>(
+      (found, outcome) => pick(outcome.report) ?? found,
+      undefined
+    );
+  const banding = last((report) => report.banding);
+  const styleName = last((report) => report.sourceStyleName);
+  return {
+    cellsWritten: sum((report) => report.cellsWritten),
+    rowsWritten: sum((report) => report.rowsWritten),
+    cellsUnchanged: sum((report) => report.cellsUnchanged),
+    ...(mixed ? { rowsSkippedMixed: mixed } : {}),
+    ...(excluded ? { rowsExcludedFromStripe: excluded } : {}),
+    ...(banding ? { banding } : {}),
+    ...(styleName ? { sourceStyleName: styleName } : {})
+  };
 }
 
 /**
@@ -12728,33 +12867,7 @@ function applyInsertInheritance(
           );
       }
     }
-    return appearanceOutcomes.reduce<AppearanceWriteReport>(
-      (combined, outcome) => ({
-        cellsWritten: combined.cellsWritten + outcome.report.cellsWritten,
-        rowsWritten: combined.rowsWritten + outcome.report.rowsWritten,
-        cellsUnchanged: combined.cellsUnchanged + outcome.report.cellsUnchanged,
-        ...((combined.rowsSkippedMixed ?? 0) +
-          (outcome.report.rowsSkippedMixed ?? 0) >
-        0
-          ? {
-              rowsSkippedMixed:
-                (combined.rowsSkippedMixed ?? 0) +
-                (outcome.report.rowsSkippedMixed ?? 0)
-            }
-          : {}),
-        ...(outcome.report.banding
-          ? { banding: outcome.report.banding }
-          : combined.banding
-          ? { banding: combined.banding }
-          : {}),
-        ...(outcome.report.sourceStyleName
-          ? { sourceStyleName: outcome.report.sourceStyleName }
-          : combined.sourceStyleName
-          ? { sourceStyleName: combined.sourceStyleName }
-          : {})
-      }),
-      emptyAppearanceReport()
-    );
+    return mergeAppearanceReports(appearanceOutcomes);
   });
   if (!transaction.restores.length) return undefined;
   return {
