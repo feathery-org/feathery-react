@@ -470,6 +470,138 @@ export function resizeDocxEditor(
   });
 }
 
+// Table row-height drag-resize is dead code in Syncfusion 34.1.31: hovering a
+// row's bottom edge shows the row-resize cursor and mousedown records undo
+// state, but handleResizing's row branch computes the drag distance and never
+// applies it (resizeTableRow exists, referenced nowhere). Wiring it up as-is
+// would still misresize: updateRowHeight adds the pixel-space drag straight
+// into rowFormat.height, which the engine reads as POINTS everywhere else, and
+// resizeTableRow's startingPoint advance mixes the same two units. Replace
+// both with pixel-consistent versions (converting to points exactly once, at
+// the rowFormat.height write) and route the row branch into them. Undo/redo
+// needs nothing: the resize history already snapshots rowFormat.height
+// before/after the drag and only awaited the mutation itself.
+const ROW_RESIZE_PATCH = '__featheryTableRowResizeFix';
+// One drag gesture's state: base height at mousedown + accumulated travel.
+const ROW_DRAG_GESTURE = '__featheryRowDragGesture';
+// Word's minimum row height: 2.7pt == 3.6px.
+const MIN_ROW_HEIGHT_PX = 3.6;
+const PX_PER_PT = 96 / 72;
+
+// Exported for tests (installed automatically at editor create).
+export function installTableRowResizeFix(ed: any) {
+  const tableResize = ed?.editorModule?.tableResize;
+  if (!tableResize || tableResize[ROW_RESIZE_PATCH]) return;
+  if (
+    typeof tableResize.handleResizing !== 'function' ||
+    typeof tableResize.resizeTableRow !== 'function' ||
+    typeof tableResize.updateRowHeight !== 'function' ||
+    typeof tableResize.getRowFormatHeight !== 'function' ||
+    typeof tableResize.handleResize !== 'function' ||
+    typeof tableResize.updateResizingHistory !== 'function' ||
+    // Upstream wired the row branch up (or reshaped the module): leave the
+    // native implementation alone. EJ2_VERSION is pinned, so this probe only
+    // decides behavior across deliberate version bumps.
+    /resizeTableRow/.test(tableResize.handleResizing.toString())
+  ) {
+    return;
+  }
+  tableResize[ROW_RESIZE_PATCH] = true;
+
+  // dragValue is in unzoomed document pixels throughout: the viewer divides
+  // pointer offsets by zoomFactor before they reach TableResizer, and the
+  // column branch consumes the same delta with no further conversion.
+  //
+  // A drag is a stream of increments (the engine advances startingPoint after
+  // each applied move). Re-deriving "current height" from RENDERED widget
+  // geometry on every move feeds layout rounding (cell margins, page reflow)
+  // back into the next increment and the row jitters around the mouse — so
+  // the base height is captured ONCE per gesture and every move resizes to
+  // base + total mouse travel. The gesture resets at mousedown/mouseup.
+  tableResize.updateRowHeight = function (row: any, dragValue: number) {
+    const rowFormat = row.rowFormat;
+    let gesture = this[ROW_DRAG_GESTURE];
+    if (!gesture) {
+      gesture = this[ROW_DRAG_GESTURE] = {
+        basePx:
+          rowFormat.heightType === 'Exactly'
+            ? rowFormat.height * PX_PER_PT
+            : // Rendered height (max cell widget height) — already pixels.
+              this.getRowFormatHeight(row),
+        travelPx: 0
+      };
+    }
+    gesture.travelPx += dragValue;
+    const newPx = Math.max(
+      gesture.basePx + gesture.travelPx,
+      MIN_ROW_HEIGHT_PX
+    );
+    if (rowFormat.heightType === 'Auto') rowFormat.heightType = 'AtLeast';
+    rowFormat.height = newPx / PX_PER_PT;
+  };
+
+  const originalHandleResize = tableResize.handleResize.bind(tableResize);
+  tableResize.handleResize = function (point: any) {
+    // Mousedown starts a fresh gesture.
+    this[ROW_DRAG_GESTURE] = null;
+    return originalHandleResize(point);
+  };
+
+  const originalUpdateResizingHistory =
+    tableResize.updateResizingHistory.bind(tableResize);
+  tableResize.updateResizingHistory = function (point: any) {
+    // Mouseup ends the gesture.
+    this[ROW_DRAG_GESTURE] = null;
+    return originalUpdateResizingHistory(point);
+  };
+
+  // The original (never-invoked) implementation, minus its Exactly-row
+  // startingPoint advance that converted the pixel delta as if it were points.
+  tableResize.resizeTableRow = function (dragValue: number) {
+    let table = this.currentResizingTable;
+    if (!table || !dragValue || this.resizerPosition === -1) return;
+    const selection = this.owner.selectionModule;
+    // Skip child-table layout while mutating; the parent relayouts below.
+    if (table.isInsideTable) this.owner.isLayoutEnabled = false;
+    const row = table.childWidgets?.[this.resizerPosition];
+    if (row) {
+      this.updateRowHeight(row, dragValue);
+      selection.selectPosition(selection.start, selection.end);
+    }
+    if (table.isInsideTable) {
+      table = this.owner.documentHelper.layout.getParentTable(table);
+      this.owner.isLayoutEnabled = true;
+    }
+    if (row) this.startingPoint.y += dragValue;
+    this.owner.documentHelper.layout.reLayoutTable(table);
+    this.owner.editorModule.isSkipOperationsBuild =
+      this.owner.enableCollaborativeEditing;
+    this.owner.editorModule.reLayout(this.owner.selectionModule);
+    this.owner.editorModule.isSkipOperationsBuild = false;
+    if (
+      this.currentResizingTable &&
+      this.currentResizingTable.childWidgets?.[this.resizerPosition] ===
+        undefined
+    ) {
+      this.resizerPosition = -1;
+    }
+  };
+
+  const originalHandleResizing = tableResize.handleResizing.bind(tableResize);
+  tableResize.handleResizing = function (
+    touchPoint: any,
+    isTableMarkerDragging?: boolean,
+    dragValue?: number
+  ) {
+    if (!isTableMarkerDragging && this.resizeNode === 1) {
+      this.owner.isShiftingEnabled = true;
+      this.resizeTableRow(touchPoint.y - this.startingPoint.y);
+      return;
+    }
+    return originalHandleResizing(touchPoint, isTableMarkerDragging, dragValue);
+  };
+}
+
 async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
   if ('buffer' in source) return source.buffer;
   const res = await fetch(source.url);
@@ -678,8 +810,16 @@ export function useDocxEditor({
         ed.enableContextMenu = true;
         try {
           configureTrackedChangeReview(ed, reviewGate);
+          // Engine-level fixes to the editing surface itself, not review
+          // customizations: every host gets them, gated or not.
+          installTableRowResizeFix(ed);
+          // Status bar (bottom right): hide the Web-layout toggle — it flips
+          // the document into continuous view, which breaks the paginated
+          // editing/print flows this editor is built around.
+          const webButton = instance.statusBar?.webButton;
+          if (webButton?.style) webButton.style.display = 'none';
         } catch {
-          // Review-pane/grouping setup must never block the editor mount.
+          // Review-pane/grouping/engine patches must never block the mount.
         }
         setEditor(ed);
         onEditorReady?.(ed);

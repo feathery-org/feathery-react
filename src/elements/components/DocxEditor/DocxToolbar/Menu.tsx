@@ -1,7 +1,16 @@
-import React, { ReactNode, useEffect, useRef, useState } from 'react';
+import React, {
+  ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react';
 import { createPortal } from 'react-dom';
-import { featheryDoc } from '../../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { menuPanel } from './styles';
+
+// Minimum gap between a panel edge and the viewport edge.
+const EDGE_PAD = 8;
 
 interface MenuProps {
   trigger: (o: { open: boolean; toggle: () => void }) => ReactNode;
@@ -20,7 +29,30 @@ export default function Menu({
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
+  // Horizontal correction keeping the panel on-screen; null = not yet
+  // measured for this open.
+  const [shift, setShift] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // The panel anchors to its trigger, so near a viewport edge part of it can
+  // land offscreen — e.g. the More dropdown (align='end' extends LEFT of the
+  // trigger) on a narrow embed clipped every group's leading buttons. Measure
+  // once per open, pre-paint, and shift the panel back into view.
+  useLayoutEffect(() => {
+    if (!open) {
+      setShift(null);
+      return;
+    }
+    if (shift !== null) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const vw = featheryWindow().innerWidth;
+    let dx = 0;
+    if (rect.left < EDGE_PAD) dx = EDGE_PAD - rect.left;
+    else if (rect.right > vw - EDGE_PAD) dx = vw - EDGE_PAD - rect.right;
+    setShift(dx);
+  }, [open, shift]);
 
   useEffect(() => {
     if (!open) return;
@@ -64,9 +96,10 @@ export default function Menu({
       {open &&
         createPortal(
           <div
+            ref={panelRef}
             data-docx-menu=''
             css={menuPanel(align)}
-            style={{ top: pos.top, left: pos.left }}
+            style={{ top: pos.top, left: pos.left + (shift ?? 0) }}
           >
             {children(close)}
           </div>,

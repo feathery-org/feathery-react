@@ -64,10 +64,14 @@ jest.mock('../../utils/hideAndRepeats', () => ({
 }));
 
 // Validation
-jest.mock('../../utils/validation', () => ({
-  validateElements: () => ({ invalid: false, inlineErrors: {} }),
-  validators: { phone: () => true, email: () => true }
-}));
+jest.mock('../../utils/validation', () => {
+  const state = { invalid: false };
+  return {
+    validateElements: () => ({ invalid: state.invalid, inlineErrors: {} }),
+    validators: { phone: () => true, email: () => true },
+    _spies: state
+  };
+});
 
 // Init and globals
 jest.mock('../../utils/init', () => {
@@ -158,7 +162,9 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
 
 // Grid mock: no out of scope captures, only uses props
 jest.mock('../grid', () => {
+  const state = { actions: [] as any[], submit: false, form: null as any };
   const GridMock = ({ form }: any) => {
+    state.form = form;
     return (
       <button
         data-testid='btn'
@@ -166,7 +172,7 @@ jest.mock('../grid', () => {
         onClick={() =>
           form.buttonOnClick({
             id: 'b1',
-            properties: { actions: [], submit: false },
+            properties: { actions: state.actions, submit: state.submit },
             repeat: 0
           } as MockClickActionElement)
         }
@@ -175,7 +181,7 @@ jest.mock('../grid', () => {
       </button>
     );
   };
-  return { __esModule: true, default: GridMock };
+  return { __esModule: true, default: GridMock, _spies: state };
 });
 
 jest.mock('../components/DevNavBar', () => () => null);
@@ -210,19 +216,39 @@ jest.mock('../../integrations/flinks', () => ({
   }))
 }));
 
-jest.mock('../../utils/browser', () => ({
-  downloadAllFileUrls: jest.fn(),
-  featheryDoc: () => globalThis.document,
-  featheryWindow: () => ({
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    scrollTo: jest.fn(),
-    location: { href: '', pathname: '/', search: '' }
-  }),
-  isIOS: () => false,
-  openTab: jest.fn(),
-  runningInClient: () => true
-}));
+jest.mock('../../utils/browser', () => {
+  const history: any = {
+    state: null,
+    go: jest.fn()
+  };
+  history.pushState = jest.fn((nextState: any) => {
+    history.state = nextState;
+  });
+  history.replaceState = jest.fn((nextState: any) => {
+    history.state = nextState;
+  });
+  const state = {
+    confirm: jest.fn(),
+    history,
+    location: { href: 'https://example.com/', pathname: '/', search: '' }
+  };
+  return {
+    downloadAllFileUrls: jest.fn(),
+    featheryDoc: () => globalThis.document,
+    featheryWindow: () => ({
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      scrollTo: jest.fn(),
+      confirm: state.confirm,
+      history: state.history,
+      location: state.location
+    }),
+    isIOS: () => false,
+    openTab: jest.fn(),
+    runningInClient: () => true,
+    _spies: state
+  };
+});
 
 jest.mock('../../elements/styles', () => ({
   DEFAULT_MOBILE_BREAKPOINT: 480,
@@ -443,3 +469,16 @@ jest.mock('../hooks/useCheckButtonAction', () => {
 export const CheckButtonActionMod: any = jest.requireMock(
   '../hooks/useCheckButtonAction'
 );
+
+// Expose the mocked Grid's click action configuration for Form integration
+// tests without replacing the mock per test.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const GridMod: any = jest.requireMock('../grid');
+
+// Expose the browser confirmation mock used by Form integration tests.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const BrowserMod: any = jest.requireMock('../../utils/browser');
+
+// Lets tests force step validation to fail.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ValidationMod: any = jest.requireMock('../../utils/validation');
