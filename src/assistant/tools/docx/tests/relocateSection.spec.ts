@@ -1661,6 +1661,157 @@ describe('a relocation on a document that carries a header', () => {
   });
 });
 
+// The gap Anthony named: everything above proved that REJECTING restores the
+// original, and `assertTrackedMutation` compares only the reject-side
+// projection, so nothing proved that ACCEPTING produces the intended document.
+// That is why several defects reported `ok: true` over a broken accept.
+//
+// Two properties, both about accept and neither derivable from a reject:
+// the accepted document reads in the intended order, and the rail card's
+// Accept - a different code path from `revisions.acceptAll()` - agrees with it.
+describe('accepting a relocation is verified, not only rejecting it', () => {
+  const NESTED = [
+    'How We Support Clients',
+    'Our service model has two halves.',
+    'National Capabilities, Local Service',
+    'National scale with a local team.',
+    'Industry Experience',
+    'Deep experience in your industry.',
+    'Next Steps',
+    'Confirm the coverage by Friday.'
+  ];
+  const at = (text: string) => NESTED.indexOf(text);
+  const reorder = (order: string[]) =>
+    order.flatMap((text) => [NESTED[at(text)], NESTED[at(text) + 1]]);
+
+  const shapes: Array<[string, EditOp, string[]]> = [
+    [
+      'a move of a subsection above its parent',
+      { op: 'move_section', anchor: '0;2', targetAnchor: '0;0' },
+      reorder([
+        'National Capabilities, Local Service',
+        'How We Support Clients',
+        'Industry Experience',
+        'Next Steps'
+      ])
+    ],
+    [
+      'a move of a subsection below its sibling',
+      { op: 'move_section', anchor: '0;4', targetAnchor: '0;2' },
+      reorder([
+        'How We Support Clients',
+        'Industry Experience',
+        'National Capabilities, Local Service',
+        'Next Steps'
+      ])
+    ],
+    [
+      'a swap of two subsections',
+      { op: 'swap_sections', anchor: '0;2', otherAnchor: '0;4' },
+      reorder([
+        'How We Support Clients',
+        'Industry Experience',
+        'National Capabilities, Local Service',
+        'Next Steps'
+      ])
+    ],
+    [
+      'a copy of the last section to the front',
+      { op: 'copy_section', anchor: '0;6', targetAnchor: '0;0' },
+      [...reorder(['Next Steps']), ...NESTED]
+    ]
+  ];
+
+  it.each(shapes)(
+    'the accepted document reads in the intended order after %s',
+    (_label, edit, expected) => {
+      const editor = makeEditor(nestedFixture());
+      try {
+        expect(apply(editor, [edit], 'accept-order').results[0]).toMatchObject({
+          ok: true
+        });
+        editor.revisions.acceptAll();
+        expect(bodyTexts(editor)).toEqual(expected);
+        expect(editor.revisions.length).toBe(0);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
+
+  // One card, two buttons that reach it by different code: `acceptAll` walks
+  // the revision collection, the rail card calls
+  // `resolveLiveRevisionGroupsAsOneUndo` over the group. A user cannot tell
+  // which they pressed, so the documents must not differ.
+  it.each(shapes)('both accept routes agree byte for byte after %s', (
+    _label,
+    edit
+  ) => {
+    const viaAll = makeEditor(nestedFixture());
+    const viaRail = makeEditor(nestedFixture());
+    try {
+      apply(viaAll, [edit], 'accept-all');
+      apply(viaRail, [edit], 'accept-rail');
+      viaAll.revisions.acceptAll();
+      resolveLiveRevisionGroupsAsOneUndo(
+        viaRail as unknown as LiveEditor,
+        listRevisionGroups(viaRail as unknown as LiveEditor),
+        true
+      );
+      expect(viaRail.serialize()).toBe(viaAll.serialize());
+    } finally {
+      destroyEditor(viaAll);
+      destroyEditor(viaRail);
+    }
+  });
+
+  // Recorded rather than asserted correct, because asking the accept side this
+  // question is what found it and quietly leaving it out would repeat exactly
+  // the mistake this describe exists to fix.
+  //
+  // Moving the section that IS the document tail strands an empty paragraph on
+  // BOTH accept routes - the range carries its own paragraph mark - and the two
+  // routes then disagree about that paragraph's STYLE: `acceptAll` leaves it
+  // Normal, the rail card leaves it wearing the moved section's Heading 1.
+  // 6280 vs 6283 serialized characters, one field. It is not the relocation
+  // TARGET (it survives the fix for that, and it reproduces with the target
+  // untouched), and per the header investigation it reproduces in Chrome under
+  // Pages layout too, so it belongs to the rail accept path and is filed
+  // separately rather than fixed here.
+  it('the two accept routes still disagree on one field for a tail-source move', () => {
+    const edit: EditOp = {
+      op: 'move_section',
+      anchor: '0;6',
+      targetAnchor: '0;0'
+    };
+    const viaAll = makeEditor(nestedFixture());
+    const viaRail = makeEditor(nestedFixture());
+    try {
+      apply(viaAll, [edit], 'tail-source-all');
+      apply(viaRail, [edit], 'tail-source-rail');
+      viaAll.revisions.acceptAll();
+      resolveLiveRevisionGroupsAsOneUndo(
+        viaRail as unknown as LiveEditor,
+        listRevisionGroups(viaRail as unknown as LiveEditor),
+        true
+      );
+      // The content agrees. That is the half a user reads.
+      expect(bodyTexts(viaRail)).toEqual(bodyTexts(viaAll));
+      expect(bodyTexts(viaAll)).toEqual([
+        ...reorder(['Next Steps', 'How We Support Clients']),
+        ...NESTED.slice(at('National Capabilities, Local Service'), at('Next Steps')),
+        ''
+      ]);
+      // The stranded paragraph is the only disagreement, and only its style.
+      expect(headings(viaAll)).not.toContain('');
+      expect(headings(viaRail)).toContain('');
+    } finally {
+      destroyEditor(viaAll);
+      destroyEditor(viaRail);
+    }
+  });
+});
+
 describe("scope 'section' reads the section the relocation would move", () => {
   it('a parent read no longer stops at its own first subsection', () => {
     const editor = makeEditor(nestedFixture());

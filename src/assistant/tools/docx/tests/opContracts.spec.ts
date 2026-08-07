@@ -1581,7 +1581,13 @@ describe('op contracts: every advertised op works over its real route', () => {
       // rather than the model supplying the bytes.
       'move_section',
       'swap_sections',
-      'copy_section'
+      'copy_section',
+      // `split_table` is the same primitive again: it pastes a narrowed copy of
+      // a table at a target and deletes the extracted rows from the source. It
+      // was in NEITHER tracked set, so `assertTrackedMutation` returned on its
+      // first branch and the op was never checked at all - which is how a split
+      // whose reject was not byte-exact reported `ok: true`.
+      'split_table'
     ]);
     const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
       .filter((op) => contentCreatingOps.has(op))
@@ -1590,6 +1596,24 @@ describe('op contracts: every advertised op works over its real route', () => {
       );
 
     expect(uncovered).toEqual([]);
+  });
+
+  // The list above is a floor, not the invariant, and this is what keeps it
+  // honest: an op that is in it but NOT registered is a typo, and an op that
+  // creates content under a name nobody added is what split_table was. Both
+  // ends are now checked against the registry rather than trusted.
+  it('names only ops the registry actually advertises', () => {
+    const registered = new Set(
+      DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
+    );
+    for (const op of ['split_table', 'move_section', 'copy_section'])
+      expect(registered.has(op)).toBe(true);
+    // And each is genuinely covered by a tracked set, so the check above is
+    // asserting membership rather than an empty intersection.
+    for (const op of ['split_table', 'move_section', 'copy_section'])
+      expect(TRACKED_TEXT_OPS.has(op) || TRACKED_STRUCTURAL_OPS.has(op)).toBe(
+        true
+      );
   });
 
   it.each(

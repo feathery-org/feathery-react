@@ -10021,6 +10021,16 @@ export const TRACKED_TEXT_OPS = new Set([
   'move_section',
   'swap_sections',
   'copy_section',
+  // `split_table` is `copy_section`'s mechanism - capture, paste the narrowed
+  // payload, delete the extracted rows from the source - so it carries the same
+  // requirement and was simply missed. Being in neither tracked set meant
+  // `assertTrackedMutation` returned on its first branch and the op was never
+  // checked at all. The docstring beside `resolveRelocationTarget` that tells
+  // the next reader not to add `copy_section` is about CONTENT_CREATING_OPS,
+  // the appearance-resolver set, which is a different question: `copy_section`
+  // is outside that set and inside this one, and is the precedent FOR this
+  // line rather than against it.
+  'split_table',
   // The composer expands to tracked insert_text/insert_table writes before
   // dispatch; membership keeps the registry-exhaustive content-op invariant
   // honest at the public operation boundary.

@@ -38,7 +38,10 @@ import {
   LiveEditor
 } from '../syncfusionDocumentOps';
 import { collectTableAppearance, inferHeaderRows } from '../tableAppearance';
-import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -1589,6 +1592,102 @@ describe('split_table: the anchor may name the TABLE, the way a table read names
       } finally {
         destroyEditor(editor);
       }
+    }
+  });
+});
+
+// The other half of Anthony's 3733040652. A split is a tracked write like any
+// other, so it has a rail card, and the card's Accept is a DIFFERENT code path
+// from `revisions.acceptAll()` - it calls `resolveLiveRevisionGroupsAsOneUndo`
+// over the group. Nothing in this file had ever pressed it: every case above
+// resolves through `acceptAll` or `rejectAll`, so the button a user actually
+// clicks was unverified on the accept side for both split shapes.
+describe('split_table: the rail card resolves a split as one unit', () => {
+  const SPLITS: Array<[string, EditOp]> = [
+    [
+      'the selective split',
+      {
+        op: 'split_table',
+        anchor: '0;2;0;0;0',
+        rows: [1, 3, 5],
+        targetAnchor: '0;3',
+        position: 'before'
+      } as EditOp
+    ],
+    [
+      'the positional split',
+      {
+        op: 'split_table',
+        anchor: '0;2;0;0;0',
+        splitAtRow: 3,
+        targetAnchor: '0;3',
+        position: 'before'
+      } as EditOp
+    ]
+  ];
+
+  it.each(SPLITS)('accepting %s through the card matches acceptAll', (
+    _label,
+    edit
+  ) => {
+    const viaAll = makeEditor(scheduleFixture());
+    const viaRail = makeEditor(scheduleFixture());
+    try {
+      expect(apply(viaAll, [edit], 'split-accept-all').results[0]).toMatchObject(
+        { ok: true }
+      );
+      expect(
+        apply(viaRail, [edit], 'split-accept-rail').results[0]
+      ).toMatchObject({ ok: true });
+      // One split, one card - the property the card path depends on.
+      const groups = listRevisionGroups(viaRail as any);
+      expect(groups).toHaveLength(1);
+
+      viaAll.revisions.acceptAll();
+      resolveLiveRevisionGroupsAsOneUndo(viaRail as any, groups, true);
+      expect(viaRail.revisions.length).toBe(0);
+      // Two tables either way, reading the same rows in the same order, and
+      // every row wearing the same appearance facts: a user cannot tell which
+      // button they pressed.
+      //
+      // Compared on the document's facts rather than on its bytes on purpose.
+      // The fixture is `allowAutoFit`, so serialized column widths are whatever
+      // the last layout pass measured - and jsdom has no font metrics, so the
+      // two routes settle on different `cw` values (17.55 vs 13.8) for
+      // identical content. A byte comparison here would assert a layout
+      // artefact, which is exactly the kind of assertion that passes while the
+      // feature is broken for the next document.
+      expect(tablesOf(viaAll)).toHaveLength(2);
+      expect(allTexts(viaRail)).toEqual(allTexts(viaAll));
+      expect(tablesOf(viaRail).map((table) => table.rows)).toEqual(
+        tablesOf(viaAll).map((table) => table.rows)
+      );
+      expect(Array.from(factsByRowText(viaRail))).toEqual(
+        Array.from(factsByRowText(viaAll))
+      );
+    } finally {
+      destroyEditor(viaAll);
+      destroyEditor(viaRail);
+    }
+  });
+
+  it.each(SPLITS)('rejecting %s through the card restores it exactly', (
+    _label,
+    edit
+  ) => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const before = editor.serialize();
+      apply(editor, [edit], 'split-reject-rail');
+      resolveLiveRevisionGroupsAsOneUndo(
+        editor as any,
+        listRevisionGroups(editor as any),
+        false
+      );
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
     }
   });
 });
