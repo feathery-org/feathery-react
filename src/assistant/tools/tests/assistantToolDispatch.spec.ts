@@ -5,6 +5,25 @@ import {
 import * as assistantToolDispatchExports from '../assistantToolDispatch';
 
 describe('document tool dispatch', () => {
+  it('routes getSectionPattern to the live read-only document bridge', async () => {
+    const getSectionPattern = jest.fn().mockResolvedValue({
+      ok: true,
+      pattern: { sequence: [] }
+    });
+
+    const result = await dispatchAssistantTool(
+      'getSectionPattern',
+      { near: '0;7' },
+      { docxBridge: { getSectionPattern } }
+    );
+
+    expect(result).toEqual({
+      handled: true,
+      output: { ok: true, pattern: { sequence: [] } }
+    });
+    expect(getSectionPattern).toHaveBeenCalledWith({ near: '0;7' });
+  });
+
   it('routes findDocumentOccurrences to the live document bridge', async () => {
     const findDocumentOccurrences = jest
       .fn()
@@ -25,19 +44,45 @@ describe('document tool dispatch', () => {
     expect(findDocumentOccurrences).toHaveBeenCalledWith({ text: 'Robin' });
   });
 
+  it.each(['applyDocumentEdits', 'applyDocumentBlocks'])(
+    'routes %s through the common verified document mutation bridge',
+    async (toolName) => {
+      const applyDocumentEdits = jest.fn().mockResolvedValue({
+        results: [{ ok: true }],
+        changeSet: { status: 'applied' }
+      });
+      const input = { edits: [{ op: 'insert_text', anchor: '0;7', text: 'x' }] };
+
+      const result = await dispatchAssistantTool(toolName, input, {
+        docxBridge: { applyDocumentEdits }
+      });
+
+      expect(result).toEqual({
+        handled: true,
+        output: { results: [{ ok: true }], changeSet: { status: 'applied' } }
+      });
+      expect(applyDocumentEdits).toHaveBeenCalledWith(input);
+    }
+  );
+
   it.each([
     'get_document_inventory',
     'find_document_occurrences',
     'apply_document_edits'
   ])('does not claim unreachable snake_case alias %s', async (toolName) => {
     const handler = jest.fn();
-    const result = await dispatchAssistantTool(toolName, {}, {
-      docxBridge: {
-        getDocumentInventory: handler,
-        findDocumentOccurrences: handler,
-        applyDocumentEdits: handler
+    const result = await dispatchAssistantTool(
+      toolName,
+      {},
+      {
+        docxBridge: {
+          getDocumentInventory: handler,
+          getSectionPattern: handler,
+          findDocumentOccurrences: handler,
+          applyDocumentEdits: handler
+        }
       }
-    });
+    );
 
     expect(result).toEqual({ handled: false });
     expect(handler).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
 import { act, render, renderHook } from '@testing-library/react';
 import {
+  _hashDocumentIndexBlockText,
   getDocumentTargetContentHash,
   INDEX_POLL_MS,
   INDEX_STABLE_POLLS,
@@ -140,6 +141,37 @@ const indexPosts = () =>
   fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('document-index'));
 
 describe('postDocumentIndex', () => {
+  it('matches the server SHA-256 block-text hash', async () => {
+    const originalCrypto = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'crypto'
+    );
+    const originalTextEncoder = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'TextEncoder'
+    );
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: require('crypto').webcrypto
+    });
+    Object.defineProperty(globalThis, 'TextEncoder', {
+      configurable: true,
+      value: require('util').TextEncoder
+    });
+    try {
+      await expect(_hashDocumentIndexBlockText('hi')).resolves.toBe(
+        '8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4'
+      );
+    } finally {
+      if (originalCrypto)
+        Object.defineProperty(globalThis, 'crypto', originalCrypto);
+      else delete (globalThis as any).crypto;
+      if (originalTextEncoder)
+        Object.defineProperty(globalThis, 'TextEncoder', originalTextEncoder);
+      else delete (globalThis as any).TextEncoder;
+    }
+  });
+
   it('POSTs the current envelope as the only index scope', async () => {
     const sent = await postDocumentIndex({
       baseUrl: BASE_URL,
@@ -198,6 +230,433 @@ describe('postDocumentIndex', () => {
         headers
       })
     ).rejects.toThrow(/document-index failed \(500\)/);
+  });
+});
+
+describe('document-index delta protocol', () => {
+  let originalCrypto: PropertyDescriptor | undefined;
+  let originalTextEncoder: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    originalTextEncoder = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'TextEncoder'
+    );
+    Object.defineProperty(globalThis, 'crypto', {
+      configurable: true,
+      value: require('crypto').webcrypto
+    });
+    Object.defineProperty(globalThis, 'TextEncoder', {
+      configurable: true,
+      value: require('util').TextEncoder
+    });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+    if (originalCrypto)
+      Object.defineProperty(globalThis, 'crypto', originalCrypto);
+    else delete (globalThis as any).crypto;
+    if (originalTextEncoder)
+      Object.defineProperty(globalThis, 'TextEncoder', originalTextEncoder);
+    else delete (globalThis as any).TextEncoder;
+  });
+
+  const mount = (getTargets = targets(DOC_ID)) =>
+    renderHook(() =>
+      useDocumentIndex({
+        baseUrl: BASE_URL,
+        getTargets,
+        headers
+      })
+    );
+
+  const blockEditor = (texts: string[]) => {
+    const listeners: Record<string, (() => void)[]> = {};
+    return {
+      texts,
+      serialize() {
+        return JSON.stringify({
+          sections: [
+            {
+              blocks: this.texts.map((text) => ({ inlines: [{ text }] }))
+            }
+          ]
+        });
+      },
+      addEventListener(event: string, fn: () => void) {
+        (listeners[event] ||= []).push(fn);
+      },
+      removeEventListener(event: string, fn: () => void) {
+        listeners[event] = (listeners[event] ?? []).filter((f) => f !== fn);
+      },
+      emit(event: string) {
+        (listeners[event] ?? []).forEach((fn) => fn());
+      }
+    };
+  };
+
+  const settleIndexing = async (ms: number) => {
+    await act(async () => {
+      jest.advanceTimersByTime(ms);
+      // Wait for native Web Crypto work as well as the promise chain that
+      // sends and confirms the request it unlocks.
+      await _hashDocumentIndexBlockText('flush');
+      await Promise.resolve();
+    });
+  };
+
+  const paragraphs = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, index) =>
+        `Paragraph ${index}: ${'coverage terms and supporting detail '.repeat(
+          8
+        )}`
+    );
+
+  it('sends one inserted paragraph plus content-keyed anchor remaps', async () => {
+    const original = paragraphs(30);
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    const full = JSON.parse(indexPosts()[0][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(30);
+
+    editor.texts = [
+      ...original.slice(0, 15),
+      'A newly inserted paragraph in the middle of the document.',
+      ...original.slice(15)
+    ];
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta).toEqual(
+      expect.objectContaining({
+        mode: 'delta',
+        baseHash: full.contentHash,
+        blockCount: 31,
+        removedHashes: []
+      })
+    );
+    expect(delta.blocks).toBeUndefined();
+    expect(delta.changedBlocks).toHaveLength(1);
+    expect(delta.changedBlocks[0].text).toContain('newly inserted');
+    expect(delta.anchorRemap).toHaveLength(15);
+    expect(delta.anchorRemap).toContainEqual({
+      hash: await _hashDocumentIndexBlockText(original[15]),
+      anchor: '0;16'
+    });
+  });
+
+  it('keeps delta sync when an insertion shifts repeated-text anchors', async () => {
+    const original = paragraphs(30);
+    original[20] = '$';
+    original[25] = '$';
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    const initial = JSON.parse(indexPosts()[0][1].body);
+    expect(initial.mode).toBeUndefined();
+    expect(initial.blocks).toHaveLength(30);
+
+    editor.texts = [
+      ...original.slice(0, 10),
+      'Inserted text that shifts every following block anchor.',
+      ...original.slice(10)
+    ];
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    expect(indexPosts()).toHaveLength(2);
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta.mode).toBe('delta');
+    expect(delta.blocks).toBeUndefined();
+    expect(delta.changedBlocks).toEqual([
+      expect.objectContaining({
+        anchor: '0;10',
+        text: 'Inserted text that shifts every following block anchor.'
+      })
+    ]);
+    expect(delta.anchorRemap).toEqual(
+      expect.arrayContaining([
+        {
+          hash: await _hashDocumentIndexBlockText('$'),
+          anchors: ['0;21', '0;26']
+        }
+      ])
+    );
+  });
+
+  it('sends one changed block after a full load containing repeated text', async () => {
+    const original = paragraphs(30);
+    original[5] = 'Repeated coverage heading';
+    original[25] = 'Repeated coverage heading';
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    const full = JSON.parse(indexPosts()[0][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(30);
+
+    editor.texts[15] = 'A single edited paragraph after the full index landed.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    expect(indexPosts()).toHaveLength(2);
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta.mode).toBe('delta');
+    expect(delta.blocks).toBeUndefined();
+    expect(delta.changedBlocks).toEqual([
+      expect.objectContaining({
+        text: 'A single edited paragraph after the full index landed.'
+      })
+    ]);
+  });
+
+  it('uses a full sync when one occurrence of repeated text changes', async () => {
+    const original = paragraphs(20);
+    original[5] = 'Repeated coverage heading';
+    original[15] = 'Repeated coverage heading';
+    const editor = blockEditor(original);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts[5] = 'Edited one occurrence of the repeated heading';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const full = JSON.parse(indexPosts()[1][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(20);
+  });
+
+  it('uses a delta for same-scope documentChange when the base is confirmed', async () => {
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts[10] = 'Accepted revision resolved within the same envelope.';
+    editor.emit('documentChange');
+    await settleIndexing(0);
+
+    const delta = JSON.parse(indexPosts()[1][1].body);
+    expect(delta.mode).toBe('delta');
+    expect(delta.changedBlocks).toEqual([
+      expect.objectContaining({
+        text: 'Accepted revision resolved within the same envelope.'
+      })
+    ]);
+  });
+
+  it('uses a full sync when documentChange resolves a different scope', async () => {
+    let envelopeId = ENV_ID;
+    const editor = blockEditor(paragraphs(20));
+    mount(() => targets(DOC_ID, envelopeId)());
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    envelopeId = OTHER_ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+
+    envelopeId = ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+
+    expect(indexPosts()).toHaveLength(3);
+    const full = JSON.parse(indexPosts()[2][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(20);
+    expect(full.targets).toContainEqual({
+      type: 'envelope',
+      id: ENV_ID
+    });
+  });
+
+  it('falls back to full on a stale delta base and rebuilds the confirmed snapshot', async () => {
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    const initial = JSON.parse(indexPosts()[0][1].body);
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: 'delta_base_mismatch',
+          expectedBaseHash: 'server-hash',
+          fallback: 'full'
+        })
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    editor.texts[10] = 'Edited after another client advanced the server base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const rejectedDelta = JSON.parse(indexPosts()[1][1].body);
+    const fallbackFull = JSON.parse(indexPosts()[2][1].body);
+    expect(rejectedDelta.mode).toBe('delta');
+    expect(rejectedDelta.baseHash).toBe(initial.contentHash);
+    expect(fallbackFull.mode).toBeUndefined();
+    expect(fallbackFull.blocks).toHaveLength(20);
+
+    editor.texts[11] = 'A later edit uses the rebuilt local base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const nextDelta = JSON.parse(indexPosts()[3][1].body);
+    expect(nextDelta.mode).toBe('delta');
+    expect(nextDelta.baseHash).toBe(fallbackFull.contentHash);
+  });
+
+  it('keeps the last confirmed snapshot when a delta request fails', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    const initial = JSON.parse(indexPosts()[0][1].body);
+
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 500 });
+    editor.texts[10] = 'This delta is not confirmed by the server.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    expect(JSON.parse(indexPosts()[1][1].body).mode).toBe('delta');
+
+    editor.texts[11] = 'The next delta must still use the confirmed base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const retried = JSON.parse(indexPosts()[2][1].body);
+    expect(retried.mode).toBe('delta');
+    expect(retried.baseHash).toBe(initial.contentHash);
+    expect(retried.changedBlocks).toHaveLength(2);
+  });
+
+  it('uses full sync when more than 60 percent of blocks changed', async () => {
+    const editor = blockEditor(paragraphs(10));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts = editor.texts.map((text, index) =>
+      index < 7 ? `Rewritten ${text}` : text
+    );
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const full = JSON.parse(indexPosts()[1][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(10);
+  });
+
+  // What the two protocols leave behind when the server reports an INCOMPLETE
+  // sync differs, because what the server has already done differs: a refused
+  // delta returns before it applies anything, while a full post has already
+  // upserted what embedded and removed vanished anchors.
+  it('keeps the base when a DELTA sync comes back incomplete, so the retry finishes it', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const editor = blockEditor(paragraphs(20));
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    const initial = JSON.parse(indexPosts()[0][1].body);
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        indexed: 0,
+        updated: 0,
+        removed: 0,
+        remapped: 0,
+        failed: 1,
+        // The service reports the base's own block count: it applied nothing.
+        storedBlocks: 20
+      })
+    });
+    editor.texts[10] = 'An embed failed, so the delta never applied.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    expect(JSON.parse(indexPosts()[1][1].body).mode).toBe('delta');
+
+    editor.texts[11] = 'The retry must still name the confirmed base.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const retried = JSON.parse(indexPosts()[2][1].body);
+    expect(retried.mode).toBe('delta');
+    expect(retried.baseHash).toBe(initial.contentHash);
+  });
+
+  it('forgets the base when a FULL sync comes back incomplete, so no delta certifies it', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let envelopeId = ENV_ID;
+    const editor = blockEditor(paragraphs(20));
+    mount(() => targets(DOC_ID, envelopeId)());
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+    expect(JSON.parse(indexPosts()[0][1].body).mode).toBeUndefined();
+
+    // An envelope switch and back takes the forced-full path. This one comes
+    // back INCOMPLETE, which means the service already upserted what embedded
+    // and removed vanished anchors, while skipping its freshness marker.
+    envelopeId = OTHER_ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        indexed: 17,
+        updated: 0,
+        removed: 0,
+        failed: 3,
+        storedBlocks: 17
+      })
+    });
+    envelopeId = ENV_ID;
+    editor.emit('documentChange');
+    await settleIndexing(0);
+    const partialFull = JSON.parse(indexPosts()[2][1].body);
+    expect(partialFull.mode).toBeUndefined();
+
+    // A delta here would still pass the service's compare-and-swap - its
+    // freshness marker reads the pre-partial hash - and would stamp a
+    // half-written index fresh. The next sync must be another full post.
+    editor.texts[3] = 'One more small edit after the partial full sync.';
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+    const next = JSON.parse(indexPosts()[3][1].body);
+    expect(next.mode).toBeUndefined();
+    expect(next.baseHash).toBeUndefined();
+    expect(next.blocks).toHaveLength(20);
+  });
+
+  it('counts repeated-group remap arrays in the compaction guard', async () => {
+    const editor = blockEditor(['$', '$', 'end']);
+    mount();
+    registerDocxEditor(undefined, editor);
+    await settleIndexing(INDEX_POLL_MS);
+
+    editor.texts = ['start', ...editor.texts];
+    editor.emit('contentChange');
+    await settleIndexing(REINDEX_DEBOUNCE_MS);
+
+    const full = JSON.parse(indexPosts()[1][1].body);
+    expect(full.mode).toBeUndefined();
+    expect(full.blocks).toHaveLength(4);
   });
 });
 
@@ -485,7 +944,7 @@ describe('index-on-load: a progressively loading document must not be certified 
     expect(indexPosts()).toHaveLength(0);
   });
 
-  it('documentChange re-POSTs even identical content for a newly derived envelope', async () => {
+  it('documentChange skips identical content within the same envelope', async () => {
     const editor = streamingEditor();
     editor.sections = [TOC_SECTION, ...BODY_SECTIONS];
     mount(DOC_ID);
@@ -496,13 +955,13 @@ describe('index-on-load: a progressively loading document must not be certified 
     const posted = indexPosts().length;
     expect(posted).toBeGreaterThan(0);
 
-    // A regeneration can reopen byte-identical content under a brand-new
-    // envelope. The browser cannot assume the old envelope's index carries.
+    // Accept/reject may fire documentChange without altering the indexed
+    // inventory. The confirmed same-scope index already represents it.
     editor.emit('documentChange');
     await act(async () => {
       jest.advanceTimersByTime(INDEX_POLL_MS);
     });
-    expect(indexPosts()).toHaveLength(posted + 1);
+    expect(indexPosts()).toHaveLength(posted);
     expect(getDocumentTargetContentHash(ENVELOPE_TARGET)).toBe(
       lastPost().contentHash
     );
@@ -600,6 +1059,87 @@ describe('AssistantChat wiring (the regression guard)', () => {
     expect(JSON.parse(indexPosts()[0][1].body).targets).toEqual(
       mountedEditorTargets()
     );
+  });
+
+  it('sends settled and current document tool results exactly as they stand', () => {
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={targets(DOC_ID)}
+        getJwt={() => 'JWT'}
+      />
+    );
+    const transport = (globalThis as any).__capturedTransportOpts;
+    const oldOutput = { inventory: [{ text: 'old inventory' }] };
+    const recentOutput = { ok: true, occurrences: [{ blockText: 'recent' }] };
+    const currentOutput = {
+      results: [{ ok: true, echo: 'current exact output' }],
+      changeSet: { status: 'applied', groups: [] }
+    };
+    const messages = [
+      { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'one' }] },
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-getDocumentInventory',
+            toolCallId: 'call-old',
+            state: 'output-available',
+            input: {},
+            output: oldOutput
+          }
+        ]
+      },
+      { id: 'u2', role: 'user', parts: [{ type: 'text', text: 'two' }] },
+      {
+        id: 'a2',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-findDocumentOccurrences',
+            toolCallId: 'call-recent',
+            state: 'output-available',
+            input: {},
+            output: recentOutput
+          }
+        ]
+      },
+      { id: 'u3', role: 'user', parts: [{ type: 'text', text: 'three' }] },
+      {
+        id: 'a3',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-applyDocumentEdits',
+            toolCallId: 'call-current',
+            state: 'output-available',
+            input: {},
+            output: currentOutput
+          }
+        ]
+      }
+    ];
+
+    const request = transport.prepareSendMessagesRequest({
+      id: 'chat-id',
+      messages,
+      body: transport.body(),
+      trigger: 'submit-message',
+      messageId: 'a3'
+    }).body;
+
+    const part = (message: { parts: unknown[] }, index = 0) =>
+      message.parts[index] as { output?: any; toolCallId?: string };
+    expect(part(messages[1]).output).toBe(oldOutput);
+    // Settled results are never rewritten on the way out: reducing history has
+    // one owner, the service, so the provider prompt-cache prefix stays stable.
+    expect(part(request.messages[1]).output).toBe(oldOutput);
+    expect(part(request.messages[3]).output).toBe(recentOutput);
+    expect(part(request.messages[5]).toolCallId).toBe('call-current');
+    expect(part(request.messages[5]).output).toBe(currentOutput);
+    expect(request.thread_id).toEqual(expect.any(String));
   });
 
   it('indexes the incoming step under mount-before-unmount ordering and preserves the outgoing index', async () => {

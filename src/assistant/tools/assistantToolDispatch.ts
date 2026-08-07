@@ -5,6 +5,7 @@
 // from the editor implementation.
 
 import type { LogicRuleTransportResult } from '../../utils/logicRuleResult';
+import { DOCUMENT_EDITOR_READ_CAPABILITIES } from '../capabilities/registry';
 
 export type RunLogicRuleResult = LogicRuleTransportResult;
 
@@ -20,9 +21,14 @@ export const TOOL_TIMEOUT_RULE_MS = 240_000;
 // synthetic error rather than a hung turn.
 export type DocxBridge = {
   getDocumentInventory?: (input: any) => Promise<any>;
+  getSectionPattern?: (input: any) => Promise<any>;
   applyDocumentEdits?: (input: any) => Promise<any>;
   findDocumentOccurrences?: (input: any) => Promise<any>;
 };
+
+const GET_SECTION_PATTERN_TOOL = DOCUMENT_EDITOR_READ_CAPABILITIES.find(
+  (capability) => capability.tool === 'getSectionPattern'
+)?.tool;
 
 // A designer-defined `trigger_event === 'tool'` rule used only to authorize and
 // resolve a server-selected rule tool call back to a local rule id. ai-services
@@ -153,6 +159,20 @@ export async function dispatchAssistantTool(
         );
     return { handled: true, output };
   }
+  if (toolName === GET_SECTION_PATTERN_TOOL) {
+    const handler = ctx.docxBridge?.getSectionPattern;
+    const output = handler
+      ? await withToolTimeout(
+          () => handler(input),
+          TOOL_TIMEOUT_READ_MS,
+          toolName
+        )
+      : syntheticError(
+          'handler_unavailable',
+          'No document is connected to derive a section pattern from.'
+        );
+    return { handled: true, output };
+  }
   if (toolName === 'findDocumentOccurrences') {
     const handler = ctx.docxBridge?.findDocumentOccurrences;
     const output = handler
@@ -167,7 +187,7 @@ export async function dispatchAssistantTool(
         );
     return { handled: true, output };
   }
-  if (toolName === 'applyDocumentEdits') {
+  if (toolName === 'applyDocumentEdits' || toolName === 'applyDocumentBlocks') {
     const handler = ctx.docxBridge?.applyDocumentEdits;
     const output = handler
       ? await withToolTimeout(

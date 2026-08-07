@@ -32,9 +32,15 @@ import {
   _setMutationGuardObserver,
   applyDocumentEdits,
   flattenSfdt,
+  getDocumentInventory,
   ApplyEditsResult,
   EditOp,
-  MutationGuardCoverage
+  MODEL_AUTHORED_TEXT_FIELDS,
+  MutationGuardCoverage,
+  SENTINEL_SELECTOR_FIELDS,
+  TRACKED_STRUCTURAL_OPS,
+  TRACKED_TEXT_OPS,
+  TableFacts
 } from '../syncfusionDocumentOps';
 import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
 
@@ -147,6 +153,32 @@ const tableFixture = () => ({
   ]
 });
 
+// A header row plus three data rows, so a split can take a NON-contiguous set
+// and still leave something behind - the shape the captain asked for.
+const splittableTableFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Coverage Schedule'), // 0;0
+        {
+          // 0;1
+          tableFormat: { allowAutoFit: true },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [cell('Line'), cell('Carrier')]
+            },
+            { rowFormat: {}, cells: [cell('General Liability'), cell('Acme')] },
+            { rowFormat: {}, cells: [cell('Auto'), cell('Beta')] },
+            { rowFormat: {}, cells: [cell('Property'), cell('Acme')] }
+          ]
+        },
+        para('End') // 0;2
+      ]
+    }
+  ]
+});
+
 // The captain's re-total shape: 0;0 title, 0;1 premium table with a header
 // row, three currency line items, a non-numeric line and a Total row whose
 // premium cell holds a stale formatted value.
@@ -213,6 +245,75 @@ const taxColumnFixture = () => ({
   ]
 });
 
+// A banded table beside an unstyled one - the captain's shape: a sibling section
+// whose table is beautifully striped, and a new section's table that is not.
+// 0;0 title, 0;1 the banded table, 0;2 the plain table, 0;3 trailing paragraph.
+const shadedCell = (text: string, background?: string) => ({
+  cellFormat: {
+    preferredWidth: 100,
+    ...(background ? { shading: { backgroundColor: background } } : {})
+  },
+  blocks: [{ inlines: [{ text }] }]
+});
+
+const bandedTablesFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Location Schedule'),
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [
+                shadedCell('Loc #', '#1F3864'),
+                shadedCell('Address', '#1F3864')
+              ]
+            },
+            { rowFormat: {}, cells: [shadedCell('1'), shadedCell('A St')] },
+            {
+              rowFormat: {},
+              cells: [shadedCell('2', '#D9E2F3'), shadedCell('B St', '#D9E2F3')]
+            },
+            { rowFormat: {}, cells: [shadedCell('3'), shadedCell('C St')] },
+            {
+              rowFormat: {},
+              cells: [shadedCell('4', '#D9E2F3'), shadedCell('D St', '#D9E2F3')]
+            }
+          ]
+        },
+        {
+          tableFormat: { preferredWidth: 300 },
+          rows: [
+            {
+              rowFormat: {},
+              cells: [shadedCell('Loc #'), shadedCell('Address')]
+            },
+            { rowFormat: {}, cells: [shadedCell('5'), shadedCell('E St')] },
+            { rowFormat: {}, cells: [shadedCell('6'), shadedCell('F St')] },
+            { rowFormat: {}, cells: [shadedCell('7'), shadedCell('G St')] },
+            { rowFormat: {}, cells: [shadedCell('8'), shadedCell('H St')] }
+          ]
+        },
+        para('End')
+      ]
+    }
+  ]
+});
+
+/** Every row's shared fill, straight off a table_facts read. */
+const rowFills = (ed: DocumentEditor, tableAnchor: string) => {
+  const read = getDocumentInventory(ed as any, {
+    scope: 'table_facts',
+    tableAnchor
+  });
+  expect('table' in read).toBe(true);
+  return (read as { table: TableFacts }).table.rows.map(
+    (row) => row.appearance?.shading ?? null
+  );
+};
+
 // Table-less, final empty paragraph with nothing after it: the only fixture
 // shape the page-layout ops complete under jsdom (S2 probe finding).
 const pageOpsFixture = () => ({
@@ -239,6 +340,47 @@ const multiSectionFixture = () => ({
     }
   ]
 });
+
+// Three level-1 sections. The relocation ops address section UNITS, so their
+// contract needs a document whose headings are real: a DocumentEditor keeps a
+// paragraph's style only when the document DECLARES it, and without the style
+// table `open()` normalizes everything to Normal and leaves one flat run of
+// text with no section boundaries to move.
+const orderedSectionsFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Alpha', 'Heading 1'),
+        para('a body'),
+        para('Beta', 'Heading 1'),
+        para('b body'),
+        para('Gamma', 'Heading 1'),
+        para('g body')
+      ]
+    }
+  ],
+  styles: [
+    {
+      type: 'Paragraph',
+      name: 'Normal',
+      next: 'Normal',
+      characterFormat: { fontSize: 11 }
+    },
+    {
+      type: 'Paragraph',
+      name: 'Heading 1',
+      basedOn: 'Normal',
+      next: 'Normal',
+      characterFormat: { bold: true, fontSize: 16 },
+      paragraphFormat: { outlineLevel: 'Level1' }
+    }
+  ]
+});
+
+const headingTexts = (editor: DocumentEditor) =>
+  flattenSfdt(JSON.parse(editor.serialize()))
+    .filter((block) => block.isHeading)
+    .map((block) => block.text);
 
 // --- Contract cases ----------------------------------------------------------
 
@@ -302,6 +444,90 @@ const CONTRACTS: Record<string, ContractCase> = {
     edits: [{ op: 'delete_text', anchor: '0;2', find: 'DRAFT ' }],
     verify: (ed) => {
       expect(blockTexts(ed)[2]).toBe('note: Acme Corp must confirm.');
+    }
+  },
+  delete_paragraph: {
+    fixture: () => ({
+      sections: [
+        {
+          blocks: [para('Before'), { inlines: [] }, para('After')]
+        }
+      ]
+    }),
+    edits: [{ op: 'delete_paragraph', anchor: '0;1', expect: '' }],
+    verify: (ed) => {
+      expect(blockTexts(ed)).toEqual(['Before', 'After']);
+    }
+  },
+  move_section: {
+    fixture: orderedSectionsFixture,
+    edits: [
+      {
+        op: 'move_section',
+        anchor: '0;2',
+        expect: 'Beta',
+        targetAnchor: '0;0',
+        position: 'before'
+      }
+    ],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Gamma']);
+      // Relocated, not retyped: exactly one copy of the body that travelled.
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(1);
+    }
+  },
+  copy_section: {
+    fixture: orderedSectionsFixture,
+    edits: [
+      {
+        op: 'copy_section',
+        anchor: '0;2',
+        expect: 'Beta',
+        targetAnchor: '0;0',
+        position: 'before'
+      }
+    ],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      // Both copies survive a copy, which is the whole difference from a move.
+      expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Beta', 'Gamma']);
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(2);
+    }
+  },
+  swap_sections: {
+    fixture: orderedSectionsFixture,
+    edits: [{ op: 'swap_sections', anchor: '0;0', otherAnchor: '0;4' }],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      expect(headingTexts(ed)).toEqual(['Gamma', 'Beta', 'Alpha']);
+      expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(1);
+    }
+  },
+  split_table: {
+    fixture: splittableTableFixture,
+    // Rows 1 and 3 are NOT adjacent, which is the point: the Acme lines are
+    // pulled into their own table and the Beta line stays behind.
+    edits: [
+      {
+        op: 'split_table',
+        anchor: '0;1;0;0;0',
+        rows: [1, 3],
+        targetAnchor: '0;2',
+        position: 'before'
+      }
+    ],
+    verify: (ed) => {
+      ed.revisions.acceptAll();
+      const texts = blockTexts(ed);
+      // Every cell that moved exists exactly once - relocated, never retyped.
+      for (const value of ['General Liability', 'Auto', 'Property', 'Beta'])
+        expect(texts.filter((text) => text === value)).toHaveLength(1);
+      // The header band is on BOTH tables, so it appears twice while every data
+      // value appears once. Nothing authored it: the copy carried it.
+      expect(texts.filter((text) => text === 'Line')).toHaveLength(2);
+      expect(texts.filter((text) => text === 'Carrier')).toHaveLength(2);
+      expect(texts.filter((text) => text === 'Acme')).toHaveLength(2);
     }
   },
   insert_text: {
@@ -402,6 +628,104 @@ const CONTRACTS: Record<string, ContractCase> = {
       );
     }
   },
+  set_cell_format: {
+    fixture: bandedTablesFixture,
+    edits: [
+      {
+        op: 'set_cell_format',
+        anchor: '0;2;1;1;0',
+        shading: '#FFF2CC',
+        verticalAlignment: 'Center',
+        borders: 'AllBorders',
+        borderColor: '#7F7F7F',
+        borderWidth: 0.5,
+        borderStyle: 'Single'
+      }
+    ],
+    verify: (ed, result) => {
+      const read = getDocumentInventory(ed as any, {
+        scope: 'table_facts',
+        tableAnchor: '0;2'
+      }) as { table: TableFacts };
+      const cell = read.table.rows[1].cells[1];
+      expect(cell.appearance).toEqual({
+        shading: '#FFF2CC',
+        verticalAlignment: 'Center',
+        borders: { all: { style: 'Single', width: 0.5, color: '#7F7F7F' } }
+      });
+      expect(result.results[0].appearance).toMatchObject({ cellsWritten: 1 });
+      // Formatting alone: no revision to bind to, and the engine says so.
+      expect(result.changeSet?.formatTracking).toBe('untracked_immediate');
+    }
+  },
+  set_row_format: {
+    fixture: bandedTablesFixture,
+    edits: [
+      {
+        op: 'set_row_format',
+        anchor: '0;2;0;0;0',
+        shading: '#1F3864',
+        isHeader: true
+      }
+    ],
+    verify: (ed, result) => {
+      const read = getDocumentInventory(ed as any, {
+        scope: 'table_facts',
+        tableAnchor: '0;2'
+      }) as { table: TableFacts };
+      expect(read.table.rows[0].isHeader).toBe(true);
+      expect(read.table.rows[0].appearance?.shading).toBe('#1F3864');
+      // The row is described ONCE: no per-cell repetition of the same fill.
+      expect(read.table.rows[0].cells.map((c) => c.appearance)).toEqual([
+        undefined,
+        undefined
+      ]);
+      expect(result.results[0].appearance).toMatchObject({
+        rowsWritten: 1,
+        cellsWritten: 2
+      });
+    }
+  },
+  copy_table_format: {
+    fixture: bandedTablesFixture,
+    edits: [
+      { op: 'copy_table_format', anchor: '0;2;0;0;0', sourceTable: '0;1' }
+    ],
+    verify: (ed, result) => {
+      // The plain table now reads exactly like its banded sibling.
+      expect(rowFills(ed, '0;2')).toEqual(rowFills(ed, '0;1'));
+      const read = getDocumentInventory(ed as any, {
+        scope: 'table_facts',
+        tableAnchor: '0;2'
+      }) as { table: TableFacts };
+      expect(read.table.rows[0].isHeader).toBe(true);
+      expect(result.results[0].appearance?.cellsWritten).toBeGreaterThan(0);
+    }
+  },
+  restripe_table: {
+    fixture: bandedTablesFixture,
+    // Break the stripe first with the bare SDK, then repair it with the op.
+    setup: (ed) => {
+      ed.selection.select('0;1;3;0;0;0', '0;1;3;0;0;0');
+      ed.selection.selectRow();
+      ed.selection.cellFormat.background = '#D9E2F3';
+    },
+    edits: [{ op: 'restripe_table', anchor: '0;1;0;0;0' }],
+    verify: (ed, result) => {
+      expect(rowFills(ed, '0;1')).toEqual([
+        '#1F3864',
+        null,
+        '#D9E2F3',
+        null,
+        '#D9E2F3'
+      ]);
+      expect(result.results[0].appearance?.banding).toEqual({
+        headerRows: 1,
+        period: 2,
+        cycle: [null, '#D9E2F3']
+      });
+    }
+  },
   change_case: {
     fixture: proseFixture,
     edits: [{ op: 'change_case', anchor: '0;0', caseType: 'uppercase' }],
@@ -487,12 +811,59 @@ const CONTRACTS: Record<string, ContractCase> = {
   },
   insert_table: {
     fixture: proseFixture,
-    edits: [{ op: 'insert_table', anchor: '0;3', rows: 2, columns: 3 }],
+    edits: [
+      { op: 'insert_table', anchor: '0;3', rows: 2, columns: 3 },
+      { op: 'set_cell_text', anchor: '0;3;0;0;0', text: 'Coverage' },
+      { op: 'set_cell_text', anchor: '0;3;0;1;0', text: 'Limit' },
+      { op: 'set_cell_text', anchor: '0;3;0;2;0', text: 'Premium' }
+    ],
     verify: (ed) => {
       const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
         (b) => b.kind === 'table_cell'
       );
       expect(cells.length).toBe(6);
+      expect(cells.map((cell) => cell.text)).toEqual(
+        expect.arrayContaining(['Coverage', 'Limit', 'Premium'])
+      );
+    }
+  },
+  insert_section: {
+    fixture: proseFixture,
+    edits: [
+      {
+        op: 'insert_section',
+        anchor: '0;3',
+        sectionSpec: {
+          title: 'Policy Details',
+          blocks: [
+            { role: 'heading', text: 'Named insured' },
+            { role: 'paragraph', text: 'Example Company' },
+            {
+              role: 'table',
+              table: {
+                columnHeaders: ['Coverage', 'Limit'],
+                rows: [['Property', '$500,000']]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    verify: (ed, result) => {
+      expect(result.results).toEqual([
+        expect.objectContaining({ ok: true, op: 'insert_section' })
+      ]);
+      expect(blockTexts(ed)).toEqual(
+        expect.arrayContaining([
+          'Policy Details',
+          'Named insured',
+          'Example Company',
+          'Coverage',
+          'Limit',
+          'Property',
+          '$500,000'
+        ])
+      );
     }
   },
   delete_table: {
@@ -1199,6 +1570,52 @@ describe('op contracts: every advertised op works over its real route', () => {
     expect([...Object.keys(CONTRACTS)].sort()).toEqual([...registered].sort());
   });
 
+  it('every registered content-creating op crosses a tracked mutation contract', () => {
+    const contentCreatingOps = new Set([
+      'insert_text',
+      'insert_section',
+      'insert_table',
+      'insert_row',
+      // A relocation creates the content at its destination just as literally
+      // as an insert does - it is the same tracked write, with the engine
+      // rather than the model supplying the bytes.
+      'move_section',
+      'swap_sections',
+      'copy_section',
+      // `split_table` is the same primitive again: it pastes a narrowed copy of
+      // a table at a target and deletes the extracted rows from the source. It
+      // was in NEITHER tracked set, so `assertTrackedMutation` returned on its
+      // first branch and the op was never checked at all - which is how a split
+      // whose reject was not byte-exact reported `ok: true`.
+      'split_table'
+    ]);
+    const uncovered = DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
+      .filter((op) => contentCreatingOps.has(op))
+      .filter(
+        (op) => !TRACKED_TEXT_OPS.has(op) && !TRACKED_STRUCTURAL_OPS.has(op)
+      );
+
+    expect(uncovered).toEqual([]);
+  });
+
+  // The list above is a floor, not the invariant, and this is what keeps it
+  // honest: an op that is in it but NOT registered is a typo, and an op that
+  // creates content under a name nobody added is what split_table was. Both
+  // ends are now checked against the registry rather than trusted.
+  it('names only ops the registry actually advertises', () => {
+    const registered = new Set(
+      DOCUMENT_EDITOR_CAPABILITIES.map((entry) => entry.op)
+    );
+    for (const op of ['split_table', 'move_section', 'copy_section'])
+      expect(registered.has(op)).toBe(true);
+    // And each is genuinely covered by a tracked set, so the check above is
+    // asserting membership rather than an empty intersection.
+    for (const op of ['split_table', 'move_section', 'copy_section'])
+      expect(TRACKED_TEXT_OPS.has(op) || TRACKED_STRUCTURAL_OPS.has(op)).toBe(
+        true
+      );
+  });
+
   it.each(
     DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
   )('%s: applies through the shared mutation guards', (op, entry) => {
@@ -1226,6 +1643,8 @@ describe('op contracts: every advertised op works over its real route', () => {
     expect(coverage?.numberProvenance).toBe(
       ['set_cell_formula', 'set_column_formula'].includes(op)
         ? 'engine_computed'
+        : op === 'insert_table'
+        ? 'authored_matrix_checked'
         : [
             'replace_text',
             'replace_selection',
@@ -1237,6 +1656,79 @@ describe('op contracts: every advertised op works over its real route', () => {
         : 'not_applicable'
     );
   });
+
+  // Principle 8's second half, for the sentinel guard: a guard wired into one
+  // call site protects one call site, so this enumerates the REGISTRY and fails
+  // if an op added later can carry placeholder text into the document. The
+  // fields are derived from the registry's declared param types and the engine's
+  // own exported field list - no second copy of either to drift.
+  const sentinelTargets = DOCUMENT_EDITOR_CAPABILITIES.flatMap((entry) =>
+    Object.entries(entry.params as Record<string, string>)
+      .filter(([param, type]) => {
+        if (SENTINEL_SELECTOR_FIELDS.has(`${entry.op}.${param}`)) return false;
+        if (type === 'sectionSpec' || type === 'string[][]?') return true;
+        return (
+          MODEL_AUTHORED_TEXT_FIELDS.includes(param) &&
+          (type === 'string' || type === 'string?')
+        );
+      })
+      .map(([param, type]) => [entry.op, param, type] as const)
+  );
+
+  it('covers every registry op that can carry authored text', () => {
+    // A true positive before the guard is trusted: if this list ever empties,
+    // every case below would pass vacuously.
+    expect(sentinelTargets.length).toBeGreaterThan(8);
+    expect(sentinelTargets.map(([op, param]) => `${op}.${param}`)).toEqual(
+      expect.arrayContaining([
+        'replace_text.replace',
+        'insert_text.text',
+        'insert_section.sectionSpec',
+        'insert_table.initialCells',
+        'set_cell_text.text'
+      ])
+    );
+  });
+
+  it.each(sentinelTargets)(
+    '%s: a sentinel in `%s` is refused before any write',
+    (op, param, type) => {
+      const SENTINEL = '__TMP_SWAP_PARA_1__';
+      const value =
+        type === 'sectionSpec'
+          ? {
+              title: 'Policy Details',
+              blocks: [{ role: 'paragraph', text: SENTINEL }]
+            }
+          : type === 'string[][]?'
+          ? [[SENTINEL, 'Limit']]
+          : SENTINEL;
+      // The rest of the op is its own contract case's shape, so the refusal is
+      // the only thing that can be under test here.
+      const contract = CONTRACTS[op];
+      const editor = makeEditor(contract.fixture());
+      try {
+        contract.setup?.(editor);
+        const before = editor.serialize();
+        const edits = contract.edits.map((edit, index) =>
+          index === 0 ? { ...edit, [param]: value } : edit
+        );
+        const result = applyDocumentEdits(editor as any, {
+          edits,
+          changeSetId: `sentinel-${op}-${param}`
+        });
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'sentinel_content_refused'
+        });
+        expect(result.results[0].message).toContain(SENTINEL);
+        expect(editor.serialize()).toBe(before);
+        expect(editor.revisions.length).toBe(0);
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
 
   it.each(PARAMETER_VARIANTS)('%s variant: %s', (op, _variant, contract) => {
     runContractCase(op, contract);

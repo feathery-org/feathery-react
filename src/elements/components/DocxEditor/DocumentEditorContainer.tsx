@@ -15,10 +15,7 @@ import {
   registerDocxEditor,
   unregisterDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
-import {
-  installRevisionGroupIsolation,
-  rebindRevisionGroups
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 
 // The container carries no document. Its document is owned by the Generate
@@ -119,12 +116,14 @@ export default function DocumentEditorContainer({
   containerId,
   formId,
   stepId,
-  editMode
+  editMode,
+  assistantEnabled
 }: {
   containerId?: string;
   formId?: string;
   stepId?: string;
   editMode?: boolean;
+  assistantEnabled?: boolean;
 }) {
   // saveEnvelopeFile/getCurrentEnvelope only use initInfo(), not the form key,
   // so a lightweight client instance is sufficient here.
@@ -263,6 +262,7 @@ export default function DocumentEditorContainer({
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
+  const reviewChanges = !!assistantEnabled && !readOnly;
   const terminalAction = targetAction
     ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
       ? 'sign'
@@ -340,16 +340,6 @@ export default function DocumentEditorContainer({
         documentId: activeDocumentId,
         envelopeId: envelope?.id
       });
-      // Group rebinding deliberately does NOT happen here: this fires from
-      // SyncFusion's `created` callback, before the source document is opened,
-      // so there are no persisted revisions to bind yet. See onDocumentReady.
-      // Isolation is document-independent, so installing it once at create is
-      // both correct and cheapest.
-      try {
-        installRevisionGroupIsolation(editor);
-      } catch {
-        // A grouping failure must not break the editor mount.
-      }
     },
     [activeDocumentId, containerId, envelope?.id, formId, stepId]
   );
@@ -361,13 +351,13 @@ export default function DocumentEditorContainer({
   // firing of this same callback is a harmless no-op.
   const onDocumentReady = useCallback(() => {
     const editor = registeredEditor.current;
-    if (!editor) return;
+    if (!editor || !reviewChanges) return;
     try {
       rebindRevisionGroups(editor);
     } catch {
       // A grouping failure must not break the opened document.
     }
-  }, []);
+  }, [reviewChanges]);
   // Envelope identity can settle after SyncFusion's created callback. Refresh
   // only the assistant registration; the editor itself stays mounted.
   useEffect(() => {
@@ -433,6 +423,7 @@ export default function DocumentEditorContainer({
       headers={serviceHeaders}
       licenseKey={syncfusion.licenseKey}
       readOnly={readOnly}
+      reviewChanges={reviewChanges}
       openNonce={reloadKey}
       fileName='document'
       terminalAction={terminalAction}

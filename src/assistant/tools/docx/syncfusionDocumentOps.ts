@@ -26,12 +26,24 @@ import {
   AnchoredDocumentOp,
   AnchorlessDocumentOp,
   DOCUMENT_EDITOR_CAPABILITIES,
-  OpParams
+  FigureSourceCitation,
+  OpParams,
+  SectionComposerBlock,
+  SectionComposerSpec
 } from '../../capabilities/registry';
 import {
+  CellNumberFormat,
   classifyNumericText,
+  isZeroPaddedInteger,
+  NumericValue,
+  ParsedColumnCell,
   parseNumericCell,
-  SkippedCell
+  RenderFormatSource,
+  renderNumericCell,
+  rescaleExact,
+  resolveRenderFormat,
+  SkippedCell,
+  upgradeNegativeStyle
 } from './numericCells';
 import {
   collectFormulaAggregates,
@@ -50,6 +62,66 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+import {
+  AppearanceFacts,
+  appearanceEquals,
+  AppearanceWriteOutcome,
+  AppearanceWriteReport,
+  bandedShadingForRow,
+  BORDER_SIDES,
+  BorderFacts,
+  BorderSide,
+  cellAppearanceAt,
+  collectTableAppearance,
+  copiedCellAppearance,
+  copiedRowIsHeader,
+  headerBandContains,
+  detectTableBanding,
+  effectiveCellAppearance,
+  inferHeaderRows,
+  resolvedCellAppearanceAt,
+  rowShadings,
+  sourceRowForTarget,
+  TableAppearance,
+  TableBanding,
+  tableLayoutEquals,
+  tableLayoutForTarget,
+  tableIsUnstyled,
+  uniformDataRowShading,
+  UNSTATED_TABLE_LAYOUT
+} from './tableAppearance';
+import {
+  createdRevisions,
+  groupRevisionsAtomic,
+  invalidateDocumentLayout,
+  installRevisionGroupIsolation,
+  liveTableWidgetAt,
+  paragraphIdentityText,
+  parseRevisionGroupTag,
+  preserveDocumentViewDuring,
+  rebindRevisionGroups,
+  resolveRevisionIndividually,
+  revisionGroupTag,
+  snapshotRevisions,
+  writeTableLayout,
+  writeTableProperties
+} from '../../../utils/documentEditorPrimitives';
+import type {
+  AppearanceRestore,
+  AppearanceWrite,
+  ParagraphStyleRestore,
+  BorderWrite,
+  CellPropertyFacts,
+  LiveEditor,
+  LiveRevision,
+  RowPropertyFacts,
+  TableLayoutFacts,
+  TablePropertyFacts,
+  TablePropertyRestore
+} from '../../../utils/documentEditorPrimitives';
+
+// The engine's public editor handle type; every spec drives ops through it.
+export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
@@ -110,6 +182,77 @@ export interface IndexBlock {
   format?: DocFormat;
 }
 
+export interface SectionPatternConfidence {
+  matches: number;
+  sampled: number;
+  level: 'high' | 'medium' | 'low';
+}
+
+export interface SectionPatternValue<T> {
+  value: T;
+  confidence: SectionPatternConfidence;
+}
+
+export interface SectionPatternSequenceElement {
+  role:
+    | 'section_heading'
+    | 'intro_paragraph'
+    | 'subsection_heading'
+    | 'subsection_paragraph'
+    | 'table';
+  level?: number;
+  count: number;
+  confidence: SectionPatternConfidence;
+}
+
+export interface SectionPatternRoleFormat {
+  styleName?: string;
+  characterFormat?: FormatBag;
+  paragraphFormat?: FormatBag;
+  confidence: SectionPatternConfidence;
+}
+
+export interface SectionPatternTable {
+  ordinal: number;
+  columns: SectionPatternValue<number>;
+  headerRow: SectionPatternValue<boolean>;
+  banding: SectionPatternValue<TableBanding | null>;
+  columnHeaders: {
+    variants: Array<{ texts: string[]; observed: number }>;
+    confidence: SectionPatternConfidence;
+  };
+  styleName?: SectionPatternValue<string>;
+}
+
+export type SectionBoundaryElement = 'empty_paragraph' | 'page_break';
+
+export interface SectionPatternBoundary {
+  /** Ordered paragraph-level separator observed between sibling sections. */
+  separator: SectionPatternValue<SectionBoundaryElement[]>;
+  /** Paragraph spacing is reported separately because it does not add blocks. */
+  headingBeforeSpacing?: SectionPatternValue<number>;
+  endingParagraphAfterSpacing?: SectionPatternValue<number>;
+}
+
+export interface SectionPatternResult {
+  ok: true;
+  pattern: {
+    sectionLevel?: SectionPatternValue<number>;
+    sequence: SectionPatternSequenceElement[];
+    tables: SectionPatternTable[];
+    roles: Record<string, SectionPatternRoleFormat>;
+    boundary?: SectionPatternBoundary;
+  };
+  sample: {
+    available: number;
+    sampled: number;
+    recurring: number;
+    near?: string;
+    truncated?: true;
+  };
+  note: string;
+}
+
 // A refusal that names what to do instead of what went wrong. `retry` is the
 // loop breaker: 'never' means resending cannot succeed, 'after_remedy' means
 // retry only after performing the named remedy, 'modified_input' means the
@@ -142,6 +285,16 @@ export interface StructureTable {
   columns: number;
   firstRowCells: string[];
   firstRowCellsTruncated?: boolean;
+  /**
+   * This table has an appearance worth copying - a fill, a border, a header row
+   * or a Word table style somewhere in it. One boolean, deliberately: the
+   * skeleton read must stay cheap, and this is exactly enough for "make the new
+   * section's table look like its siblings" to know which sibling to read and
+   * that there is something to copy. The detail is a `table_facts` read.
+   */
+  styled?: true;
+  /** The Word table style, when it has one. */
+  styleName?: string;
 }
 
 // One SFDT section (the spans between section breaks), by 0-based index.
@@ -246,6 +399,12 @@ export interface TableCellFact {
   bold?: true;
   italic?: true;
   styleName?: string;
+  /**
+   * How the CELL looks - fill, borders, vertical alignment. Present only where
+   * this cell differs from the row-level `appearance` beside it, so a banded
+   * row costs one appearance object rather than one per cell.
+   */
+  appearance?: AppearanceFacts;
 }
 
 export interface TableRowFact {
@@ -260,6 +419,18 @@ export interface TableRowFact {
   allBold?: true;
   /** Some cell in this row spans columns or rows. */
   hasMergedCells?: true;
+  /**
+   * Word's own header-row flag, as stored. A FACT, unlike "row 0 is the
+   * header" - a table may carry it on two rows, or on none at all.
+   */
+  isHeader?: true;
+  /**
+   * The appearance every present cell of this row SHARES. This is where a
+   * banded table's stripe is visible: read the rows' `appearance.shading` down
+   * the table and the pattern is the list. Absent when the cells disagree, in
+   * which case each cell carries its own `appearance`.
+   */
+  appearance?: AppearanceFacts;
   cells: TableCellFact[];
 }
 
@@ -293,6 +464,10 @@ export interface TableFacts {
   }>;
   rows: TableRowFact[];
   columns: TableColumnFact[];
+  /** The Word table style this table carries, when it has one. */
+  styleName?: string;
+  /** Table-level fill/borders, when set. */
+  appearance?: AppearanceFacts;
   /**
    * Always false. A facts read has no maxEntries and is never capped: layout
    * facts are small even for a table whose contents are not, and a partial
@@ -324,6 +499,7 @@ export type MutationGuardCoverage = {
   cas: 'block_expect' | 'selection_content' | 'find_content' | 'not_applicable';
   numberProvenance:
     | 'model_authored_text_checked'
+    | 'authored_matrix_checked'
     | 'engine_computed'
     | 'not_applicable';
 };
@@ -351,6 +527,10 @@ const ENGINE_COMPUTED_CELL_TEXT_OPS = new Set([
   'set_cell_formula',
   'set_column_formula'
 ]);
+// Writes a whole cell matrix in one op, so its figures are checked over that
+// matrix at the batch boundary (detectUnsourcedAuthoredFigures) rather than one
+// op text against one cell. Same rule, same quantity-column definition.
+const MATRIX_AUTHORED_CELL_TEXT_OPS = new Set(['insert_table']);
 
 function observeMutationGuardBoundary(
   op: EditOp,
@@ -361,6 +541,8 @@ function observeMutationGuardBoundary(
     cas,
     numberProvenance: MODEL_AUTHORED_CELL_TEXT_OPS.has(op.op)
       ? 'model_authored_text_checked'
+      : MATRIX_AUTHORED_CELL_TEXT_OPS.has(op.op)
+      ? 'authored_matrix_checked'
       : ENGINE_COMPUTED_CELL_TEXT_OPS.has(op.op)
       ? 'engine_computed'
       : 'not_applicable'
@@ -494,16 +676,92 @@ export interface ColumnFormulaReport {
 }
 
 /**
+ * A numeric `set_cell_text` the engine re-rendered in its column's own number
+ * format, so the bytes written are not the bytes sent. Recorded beside the
+ * provenance: the reviewer sees the figure as the model supplied it and as the
+ * document dressed it.
+ */
+export interface ColumnFormatRender {
+  /** The figure exactly as the op supplied it. */
+  asSent: string;
+  /** The bytes actually written, in the column's own format. */
+  written: string;
+  /** Whether that format came from this cell or from the column's majority. */
+  formatSource: RenderFormatSource;
+}
+
+/**
  * A numeric `set_cell_text` that got through the model-authored-number gate by
- * declaring `literal: true`. Recorded on the result so the exception is
- * auditable in the change set instead of being indistinguishable from a
+ * declaring where the figure came from. Recorded on the result so the exception
+ * is auditable in the change set instead of being indistinguishable from a
  * computed write.
  */
+/**
+ * A style the engine resolved from the document where the model had asked for
+ * a different one, on a paragraph this change set created. Reported in BOTH
+ * directions - it is how a wrong resolver stays visible instead of silently
+ * imposed.
+ */
+export interface ComposedStyleDisagreement {
+  requested: string;
+  resolved: string;
+  from: string;
+}
+
+/** The record a creation path leaves when the document could not answer. */
+export interface CreationGap {
+  /** The component that could not inherit. */
+  what: string;
+  reason: string;
+  /** Everywhere the resolver looked, in order. */
+  searched: string[];
+}
+
 export interface LiteralNumberWrite {
   text: string;
   /** What the cell held before, when it held a number. */
   previousText: string;
+  /**
+   * The declared provenance. `user_stated` is `literal: true` - a figure the
+   * user dictated in conversation. `attachment` is `quotedFrom`/`quotedText` -
+   * a figure quoted verbatim out of a document the user supplied, whose
+   * excerpt the engine checked actually contains it.
+   */
+  source: 'user_stated' | 'attachment';
+  /** `attachment` only: the attachment the figure was read out of. */
+  quotedFrom?: string;
+  /** `attachment` only: the verbatim excerpt the figure was quoted from. */
+  quotedText?: string;
+  /** Set when the written bytes differ from the bytes sent. */
+  rendered?: ColumnFormatRender;
   note: string;
+}
+
+/**
+ * What the composer actually inherited, and from where. The engine has exactly
+ * one honest answer for "did this composed unit take the sibling family's look,
+ * or did it fall back to the editor's defaults?", and it belongs in the result
+ * rather than in the appearance of the output - a fallback that reads exactly
+ * like a success is how a wrong family survived a day of testing.
+ */
+export interface ComposedSectionInheritance {
+  /** The block whose sibling family every inherited format came from. */
+  familyAnchor: string;
+  /** That family's outline level, and how many siblings it was derived from. */
+  level?: number;
+  siblings: number;
+  /** The donor each composed unit copied, in spec order. */
+  donors: Array<{ unit: string; from: string }>;
+  /**
+   * Composed units the DOCUMENT could not supply a donor for, with everywhere
+   * the resolver looked. These are written with the editor's defaults, NOT
+   * with the document's look, and that is the single fact this report exists
+   * to make visible.
+   */
+  withoutDonor?: CreationGap[];
+  // Present when the engine resolved a style from the document that differs
+  // from the one the op asked for, on a paragraph this change set created.
+  styleResolved?: ComposedStyleDisagreement;
 }
 
 export interface EditResult {
@@ -511,6 +769,8 @@ export interface EditResult {
   anchor?: string;
   op: string;
   error?: string;
+  /** The stable content identity moved from the requested anchor before write. */
+  relocated?: { from: string; to: string };
   /**
    * The refusal's own words: what went wrong and what to do instead. Codes are
    * for branching, this is the remedy - a refusal the model cannot read is a
@@ -538,6 +798,20 @@ export interface EditResult {
   // is already there, byte for byte. `ok` is still true - the requested state
   // is the state - but there is no revision and no change card. See writeNoOp.
   noOp?: NoOpWriteReport;
+  // Present on a successful appearance op (set_cell_format / set_row_format /
+  // copy_table_format / restripe_table): what it wrote, what it left alone, and
+  // the stripe it detected. The engine's own account, so "did the restripe
+  // actually do anything" is answerable from the result.
+  appearance?: AppearanceWriteReport;
+  // Present on a successful `insert_section`: which sibling family the composed
+  // unit inherited from, the donor behind each composed block, and - the point
+  // of the field - any block the family could not dress, which therefore wears
+  // the editor's defaults rather than the document's look.
+  inherited?: ComposedSectionInheritance;
+  // Present on a successful creation the DOCUMENT could not dress: the
+  // component, why, and everywhere the resolver looked. Its absence is the
+  // engine's statement that everything it created inherited from the document.
+  withoutDonor?: CreationGap[];
 }
 
 export interface ApplyEditsResult {
@@ -551,13 +825,33 @@ export interface ApplyEditsResult {
     // first-class grouped card in the revisions UI.
     revisionGrouping: 'bridge_bound_revision_cards' | 'no_revisions';
     uiGrouping: 'requires_cross_layer_group_card';
-    /** Accept units created: one entry per `group` (ungrouped ops share the
-     *  change set id). A group whose ops all no-opped reports 0 revisions. */
+    /**
+     * The accept/reject units this change set created: one entry per
+     * assistant-defined `group` (ops without one share the change set id).
+     * Accepting or rejecting ANY revision of a group resolves exactly that
+     * group. `revisionCount` is the number of live revisions bound to the
+     * group; a group whose ops all no-opped reports 0 - nothing to review.
+     * `restoresAppearance` marks a group that also owns table-appearance
+     * snapshots, so rejecting its card puts the fills and borders back too.
+     */
     groups: Array<{
       id: string;
       opIndices: number[];
       revisionCount: number;
+      restoresAppearance?: true;
     }>;
+    /**
+     * Present only when this change set wrote table APPEARANCE. SyncFusion
+     * creates no revision for a fill or a border, so:
+     *   'grouped_with_revision_cards' - the appearance snapshots are bound to a
+     *     group that has content revisions, and rejecting that card restores the
+     *     appearance too;
+     *   'untracked_immediate' - no group carrying appearance ended up with a
+     *     revision to bind to, so there is no card and the change applies
+     *     immediately, exactly like the shipped set_char_format. Stated rather
+     *     than implied.
+     */
+    formatTracking?: 'grouped_with_revision_cards' | 'untracked_immediate';
     /**
      * What this change set touched, in resolved terms, derived by the ENGINE
      * from the ops. Always present, so "which columns moved" is a property of
@@ -653,71 +947,6 @@ export interface FindDocumentOccurrencesBatchResult {
   error?: string;
 }
 
-// Structural subset of the SyncFusion DocumentEditor instance handed to us via
-// `DocxEditor`'s `onEditorReady`. Typed loosely because the real API surface is
-// large and only exercised in a browser; unit tests supply a fake.
-export interface LiveEditor {
-  serialize(): string;
-  enableTrackChanges: boolean;
-  currentUser: string;
-  selection: {
-    select(start: string, end: string): void;
-    text: string;
-    startOffset: string;
-    endOffset: string;
-    characterFormat: any;
-    paragraphFormat: any;
-    isEmpty?: boolean;
-    [k: string]: any;
-  };
-  editor: {
-    insertText(text: string): void;
-    delete(): void;
-    [k: string]: any;
-  };
-  // The collection interface is declared below with the other revision types.
-  // eslint-disable-next-line no-use-before-define
-  revisions?: LiveRevisionCollection;
-  // SyncFusion stamps `revisionSettings.customData` onto every revision it
-  // creates while set — the accept-group tagging channel. Optional: fakes
-  // without it skip tagging.
-  documentEditorSettings?: {
-    revisionSettings?: { customData?: string | null; [k: string]: any };
-    [k: string]: any;
-  };
-  editorHistory?: { undo?(): void; redo?(): void; [k: string]: any };
-  search?: any;
-  [k: string]: any;
-}
-
-// A single SyncFusion tracked-change revision. We only lean on its per-card
-// accept/reject; everything else is opaque.
-export interface LiveRevision {
-  revisionType?: string;
-  revisionID?: string;
-  /** SyncFusion's durable free-form tag; carries the accept-group binding. */
-  customData?: string | null;
-  accept?(): void;
-  reject?(): void;
-  /** Engine-internal single-revision resolve; preferred over accept/reject,
-   *  whose public path also resolves adjacent same-author/type NEIGHBOURS. */
-  handleAcceptReject?(isAccept: boolean, isGroupAcceptOrReject: boolean): void;
-  /** Public SyncFusion navigation: select this revision's range in the document. */
-  select?(): void;
-  [k: string]: any;
-}
-
-// SyncFusion's `documentEditor.revisions` (RevisionCollection). It exposes both
-// an array (`changes`) and an indexed accessor (`get`/`length`); we read either.
-export interface LiveRevisionCollection {
-  length?: number;
-  changes?: LiveRevision[];
-  get?(index: number): LiveRevision;
-  acceptAll?(): void;
-  rejectAll?(): void;
-  [k: string]: any;
-}
-
 // A block flattened out of the SFDT with everything the inventory + apply engine
 // needs. `length` is the block's character count (offset span within the para).
 interface FlatBlock {
@@ -736,7 +965,12 @@ interface FlatBlock {
 // SFDT walking (pure)
 // ---------------------------------------------------------------------------
 
-const HEADING_STYLE = /heading\s*(\d+)/i;
+// Built-in heading styles, anchored: a paragraph is "Heading 3" only when that
+// IS the style's name. The unanchored form this replaces matched any name
+// CONTAINING "heading<digit>", which ranked the live proposal document's
+// "noTOCheading2" - its LARGEST heading style - as a second-level heading.
+const HEADING_STYLE = /^heading\s*(\d+)$/i;
+const TITLE_STYLE = /^title(\s+char)?$/i;
 
 // SyncFusion serializes an OPTIMIZED SFDT with abbreviated keys (sec/b/i/tlp/
 // pf/cf/...), while imported/full SFDT and our test fixtures use the long keys
@@ -817,6 +1051,22 @@ function inlineText(
     else if (inline.name === 'Tab' || inline.tlp === undefined) continue;
   }
   return out;
+}
+
+function allRevisionIdsIn(rids: unknown, ids: Set<string>): boolean {
+  return (
+    Array.isArray(rids) &&
+    rids.length > 0 &&
+    rids.every((id) => ids.has(String(id)))
+  );
+}
+
+function paragraphMarkRevisionIds(block: any): unknown {
+  return pick(pick(block, 'characterFormat', 'cf'), 'revisionIds', 'rids');
+}
+
+function rowRevisionIds(row: any): unknown {
+  return pick(pick(row, 'rowFormat', 'trpr'), 'revisionIds', 'rids');
 }
 
 // optimized textAlignment is numeric (0 Left,1 Center,2 Right,3 Justify).
@@ -951,11 +1201,299 @@ function readBlockFormats(block: any): {
   };
 }
 
-function headingLevel(fmt: DocFormat | undefined): number {
-  const style = (fmt?.styleName ?? '').trim();
-  if (/^title(\s+char)?$/i.test(style)) return 0;
-  const m = style.match(HEADING_STYLE);
-  return m ? Number(m[1]) : -1;
+// ---------------------------------------------------------------------------
+// Heading detection
+//
+// Three tiers, most authoritative first, so a well-formed document keeps the
+// answer it already gets:
+//   1. a declared outline level - the paragraph's own, then its style chain's;
+//      the clean OOXML answer, and the only one that is not a guess;
+//   2. a built-in style name ("Heading 3", "Title");
+//   3. typographic inference across the document's own custom styles.
+//
+// Tier 3 exists because real documents have neither of the first two. In the
+// live proposal document every section heading wears a custom style
+// ("headingNoToc", "noTOCheading2") that declares no outline level and is based
+// on "Body Text", so neither the outline level nor the inheritance chain says
+// anything - and the NAMES rank backwards: "noTOCheading2" is the document's
+// largest heading, while "H1" is not a heading at all but a 12pt bold field
+// label ("Company Name", "Rating") in a table cell.
+//
+// So the inference never reads the name. A custom style is a heading when its
+// resolved type is a clear step LARGER than the document's body text AND the
+// paragraphs wearing it are shaped like headings - short, with no sentence
+// terminator. Size alone would promote those bold 12pt labels; shape alone would
+// promote every one-line body paragraph. Levels come from the size ordering -
+// the largest heading style is level 1, each smaller distinct size one level
+// deeper - which makes them relative and consistent within one document: two
+// sections set in the same type always compare equal, a smaller one always
+// compares deeper, so a same-level comparable can always be resolved.
+// ---------------------------------------------------------------------------
+
+// A custom style must be set this much larger than body text to read as a
+// heading rather than a styled label. Measured on the live document: its body is
+// 11pt, its 12pt bold field labels are 1.09x (excluded) and its smallest real
+// heading style is 14pt at 1.27x (included).
+const HEADING_SIZE_RATIO = 1.15;
+const HEADING_SHAPE_MAX_CHARS = 120;
+// Word's own default when neither the document nor the default style says.
+const DEFAULT_BODY_FONT_SIZE = 11;
+const STYLE_CHAIN_LIMIT = 16;
+
+interface StyleDefinition {
+  basedOn?: string;
+  fontSize?: number;
+  outlineLevel?: number;
+}
+
+// Full SFDT writes 'BodyText' | 'Level1'..'Level9'; optimized SFDT writes the
+// index, 0 being BodyText. Anything outside Level1..Level9 is read as "not
+// declared" rather than "not a heading", for two reasons: BodyText carries no
+// ranking, so a document that stamped it on every paragraph would otherwise lose
+// its genuine Heading N styles; and OOXML's out-of-range levels (the live
+// document's "TOC Heading" carries w:outlineLvl 9, which OOXML defines as body
+// text) must not become a level-10 heading.
+const MAX_OUTLINE_LEVEL = 9;
+function normalizeOutlineLevel(value: any): number | undefined {
+  const level =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+      ? Number(value.match(/^level\s*(\d+)$/i)?.[1])
+      : NaN;
+  return level >= 1 && level <= MAX_OUTLINE_LEVEL ? level : undefined;
+}
+
+function readStyleTable(sfdt: any): Map<string, StyleDefinition> {
+  const table = new Map<string, StyleDefinition>();
+  const styles = pick(sfdt, 'styles', 'sty');
+  if (!Array.isArray(styles)) return table;
+  for (const style of styles) {
+    const name = pick(style, 'name', 'n');
+    if (!name) continue;
+    // Paragraph styles only ('Paragraph'/0): a linked character style repeats
+    // its paragraph style's size under a "... Char" name.
+    const type = pick(style, 'type', 't');
+    if (type !== undefined && type !== 'Paragraph' && type !== 0) continue;
+    const def: StyleDefinition = {};
+    // On a style object the optimized key 'b' is basedOn (on a characterFormat
+    // it is bold - a different object).
+    const basedOn = pick(style, 'basedOn', 'b');
+    if (basedOn) def.basedOn = String(basedOn);
+    const fontSize = pick(
+      pick(style, 'characterFormat', 'cf'),
+      'fontSize',
+      'fsz'
+    );
+    if (typeof fontSize === 'number') def.fontSize = fontSize;
+    const outlineLevel = normalizeOutlineLevel(
+      pick(pick(style, 'paragraphFormat', 'pf'), 'outlineLevel', 'ol')
+    );
+    if (outlineLevel !== undefined) def.outlineLevel = outlineLevel;
+    table.set(String(name).toLowerCase(), def);
+  }
+  return table;
+}
+
+// Resolve one inherited property up the basedOn chain. The chain is only ever
+// read for DECLARED values (size, outline level) and never for "is this a
+// heading" - the live document's headings are based on "Body Text", so
+// inheriting that judgement would classify them as body.
+function walkStyleChain<T>(
+  table: Map<string, StyleDefinition>,
+  styleName: string | undefined,
+  read: (def: StyleDefinition) => T | undefined
+): T | undefined {
+  let name = styleName;
+  for (let hops = 0; name && hops < STYLE_CHAIN_LIMIT; hops++) {
+    const def = table.get(name.toLowerCase());
+    if (!def) return undefined;
+    const value = read(def);
+    if (value !== undefined) return value;
+    name = def.basedOn;
+  }
+  return undefined;
+}
+
+// Tiers 1 (chain) and 2 (name) for one style. A built-in name outranks an
+// inherited outline level so "Title", which Word bases on "Heading 1", keeps
+// level 0 instead of inheriting level 1.
+function declaredStyleLevel(
+  table: Map<string, StyleDefinition>,
+  styleName: string
+): number | undefined {
+  const name = styleName.trim();
+  if (TITLE_STYLE.test(name)) return 0;
+  const m = name.match(HEADING_STYLE);
+  if (m) return Number(m[1]);
+  return walkStyleChain(table, name, (def) => def.outlineLevel);
+}
+
+function looksLikeHeadingText(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= HEADING_SHAPE_MAX_CHARS &&
+    !/[.!?]$/.test(trimmed)
+  );
+}
+
+interface StyleUsage {
+  styleFontSize: number;
+  declaredLevel?: number;
+  paragraphs: number;
+  characters: number;
+  headingShaped: number;
+  effectiveFontSizes: Map<number, { paragraphs: number; characters: number }>;
+}
+
+// Level per paragraph style for one document, keyed by lower-cased style name.
+// EVERY paragraph is measured, table cells included: the live document keeps most
+// of its prose inside layout tables, and measuring the body story alone left the
+// stale table of contents (211 paragraphs of 10pt "TOC 1"/"TOC 2") as the biggest
+// body-text vote, which dropped the bar far enough to promote 12pt "Body Text".
+// Only which paragraphs can BE headings is restricted - a cell paragraph never
+// is, which is where all 71 of the document's "H1" field labels live.
+function documentStyleLevels(
+  sfdt: any,
+  paragraphs: { styleName: string; text: string; fontSize?: number }[]
+): Map<string, number> {
+  const table = readStyleTable(sfdt);
+  const documentFontSize = pick(
+    pick(sfdt, 'characterFormat', 'cf'),
+    'fontSize',
+    'fsz'
+  );
+  const defaultFontSize =
+    typeof documentFontSize === 'number'
+      ? documentFontSize
+      : DEFAULT_BODY_FONT_SIZE;
+  const resolveFontSize = (styleName: string): number => {
+    const size = walkStyleChain(
+      table,
+      styleName || 'Normal',
+      (def) => def.fontSize
+    );
+    return typeof size === 'number' ? size : defaultFontSize;
+  };
+
+  const usage = new Map<string, StyleUsage>();
+  for (const paragraph of paragraphs) {
+    const styleName = paragraph.styleName.trim();
+    const key = styleName.toLowerCase();
+    let use = usage.get(key);
+    if (!use) {
+      use = {
+        styleFontSize: resolveFontSize(styleName),
+        paragraphs: 0,
+        characters: 0,
+        headingShaped: 0,
+        effectiveFontSizes: new Map()
+      };
+      const declaredLevel = styleName
+        ? declaredStyleLevel(table, styleName)
+        : undefined;
+      if (declaredLevel !== undefined) use.declaredLevel = declaredLevel;
+      usage.set(key, use);
+    }
+    // A style is registered even by an empty paragraph, so an empty "Heading 2"
+    // keeps its declared level. Only the statistics the inference reads are
+    // restricted to paragraphs that have text.
+    if (!paragraph.text.trim()) continue;
+    use.paragraphs++;
+    const characters = paragraph.text.trim().length;
+    use.characters += characters;
+    if (looksLikeHeadingText(paragraph.text)) use.headingShaped++;
+    const effectiveFontSize = paragraph.fontSize ?? use.styleFontSize;
+    const observed = use.effectiveFontSizes.get(effectiveFontSize) ?? {
+      paragraphs: 0,
+      characters: 0
+    };
+    observed.paragraphs++;
+    observed.characters += characters;
+    use.effectiveFontSizes.set(effectiveFontSize, observed);
+  }
+
+  // A direct run/paragraph size overrides the style table in Word. Rank a
+  // style by the size most of its real paragraphs render at, falling back to
+  // the declared style size. One exceptional override must not split siblings;
+  // ties choose the larger size, the conservative (shallower) interpretation.
+  const effectiveFontSize = (use: StyleUsage): number => {
+    let selected = use.styleFontSize;
+    let selectedParagraphs = 0;
+    let selectedCharacters = 0;
+    for (const [fontSize, observed] of use.effectiveFontSizes) {
+      if (
+        observed.paragraphs > selectedParagraphs ||
+        (observed.paragraphs === selectedParagraphs &&
+          (observed.characters > selectedCharacters ||
+            (observed.characters === selectedCharacters &&
+              fontSize > selected)))
+      ) {
+        selected = fontSize;
+        selectedParagraphs = observed.paragraphs;
+        selectedCharacters = observed.characters;
+      }
+    }
+    return selected;
+  };
+
+  // Body text size: the size most of the document's text - measured in
+  // characters, not paragraphs, since headings are short by nature - is set in,
+  // counting only styles that are not already recognised headings. A tie
+  // resolves to the larger size because a higher bar infers FEWER headings,
+  // which is the safe direction to be wrong in.
+  const charactersBySize = new Map<number, number>();
+  for (const use of usage.values()) {
+    if (use.declaredLevel !== undefined) continue;
+    const fontSize = effectiveFontSize(use);
+    charactersBySize.set(
+      fontSize,
+      (charactersBySize.get(fontSize) ?? 0) + use.characters
+    );
+  }
+  let bodyFontSize = defaultFontSize;
+  let bodyCharacters = 0;
+  for (const [fontSize, characters] of charactersBySize) {
+    if (
+      characters > bodyCharacters ||
+      (characters === bodyCharacters && fontSize > bodyFontSize)
+    ) {
+      bodyFontSize = fontSize;
+      bodyCharacters = characters;
+    }
+  }
+
+  const levels = new Map<string, number>();
+  const inferred: { key: string; fontSize: number }[] = [];
+  const headingFontSizes = new Set<number>();
+  for (const [key, use] of usage) {
+    const renderedFontSize = effectiveFontSize(use);
+    if (use.declaredLevel !== undefined) {
+      levels.set(key, use.declaredLevel);
+      headingFontSizes.add(renderedFontSize);
+      continue;
+    }
+    if (use.paragraphs === 0) continue;
+    // Classification and relative depth use different evidence. A custom
+    // heading style remains a heading when its own typography is distinctive,
+    // but direct overrides decide where that heading renders in the ladder.
+    if (use.styleFontSize < bodyFontSize * HEADING_SIZE_RATIO) continue;
+    if (use.headingShaped * 2 < use.paragraphs) continue;
+    inferred.push({ key, fontSize: renderedFontSize });
+    headingFontSizes.add(renderedFontSize);
+  }
+
+  // Rank by size: the document's largest heading is level 1, each smaller
+  // distinct heading size one level deeper. Declared levels are never moved, but
+  // the sizes of the styles carrying them still count, so an inferred style
+  // lands below a larger Heading N and above a smaller one.
+  for (const { key, fontSize } of inferred) {
+    let larger = 0;
+    for (const other of headingFontSizes) if (other > fontSize) larger++;
+    levels.set(key, larger + 1);
+  }
+  return levels;
 }
 
 // Walk the SFDT into a flat, in-order list of addressable blocks. Paragraphs
@@ -966,6 +1504,15 @@ export function flattenSfdt(
   dropRevisionIds?: Set<string>
 ): FlatBlock[] {
   const out: FlatBlock[] = [];
+  // Every paragraph, for the typography measurement; `block` is set only on the
+  // ones that can become headings (body paragraphs, never table cells).
+  const paragraphs: {
+    block?: FlatBlock;
+    styleName: string;
+    text: string;
+    fontSize?: number;
+    declaredLevel?: number;
+  }[] = [];
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   const deletedIds = dropRevisionIds ?? deletedRevisionIds(sfdt);
 
@@ -979,36 +1526,76 @@ export function flattenSfdt(
           cells.forEach((cell, ci) => {
             getBlocks(cell).forEach((cb, cbi) => {
               const text = inlineText(getInlines(cb), deletedIds);
+              const format = readFormat(cb);
               out.push({
                 anchor: `${si};${bi};${ri};${ci};${cbi}`,
                 kind: 'table_cell',
                 text,
-                format: readFormat(cb),
+                format,
                 ...readBlockFormats(cb),
                 isHeading: false,
                 level: -1,
                 length: text.length
+              });
+              paragraphs.push({
+                styleName: format?.styleName ?? '',
+                text,
+                ...(format?.fontSize !== undefined
+                  ? { fontSize: format.fontSize }
+                  : {})
               });
             });
           });
         });
       } else {
         const text = inlineText(getInlines(block), deletedIds);
+        if (
+          text.length === 0 &&
+          allRevisionIdsIn(paragraphMarkRevisionIds(block), deletedIds)
+        )
+          return;
         const format = readFormat(block);
-        const level = headingLevel(format);
-        out.push({
+        const flat: FlatBlock = {
           anchor: `${si};${bi}`,
-          kind: level >= 0 ? 'heading' : 'paragraph',
+          kind: 'paragraph',
           text,
           format,
           ...readBlockFormats(block),
-          isHeading: level >= 0,
-          level,
+          isHeading: false,
+          level: -1,
           length: text.length
+        };
+        out.push(flat);
+        paragraphs.push({
+          block: flat,
+          styleName: format?.styleName ?? '',
+          text,
+          ...(format?.fontSize !== undefined
+            ? { fontSize: format.fontSize }
+            : {}),
+          declaredLevel: normalizeOutlineLevel(
+            pick(pick(block, 'paragraphFormat', 'pf'), 'outlineLevel', 'ol')
+          )
         });
       }
     });
   });
+
+  // Heading level needs the whole document: the style table for declared levels
+  // and inherited sizes, and every paragraph for the body text size the inference
+  // measures custom styles against.
+  const levelByStyle = documentStyleLevels(sfdt, paragraphs);
+  for (const paragraph of paragraphs) {
+    if (!paragraph.block) continue;
+    const level =
+      paragraph.declaredLevel ??
+      levelByStyle.get(paragraph.styleName.trim().toLowerCase()) ??
+      -1;
+    if (level < 0) continue;
+    paragraph.block.kind = 'heading';
+    paragraph.block.isHeading = true;
+    paragraph.block.level = level;
+  }
 
   return out;
 }
@@ -1055,7 +1642,22 @@ interface TableAccumulator {
   headerByCell: Map<number, string[]>;
 }
 
-function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
+/** The raw SFDT block a table anchor (`"0;7"`) names, or undefined. */
+function tableBlockAt(sfdt: any, tableAnchor: string): any {
+  const [sectionIndex, blockIndex] = tableAnchor.split(';').map(Number);
+  if (!Number.isInteger(sectionIndex) || !Number.isInteger(blockIndex))
+    return undefined;
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const block = getBlocks(sections[sectionIndex] ?? {})[blockIndex];
+  return getRows(block) ? block : undefined;
+}
+
+// `sfdt` is optional because the fixture-driven read path may not have it;
+// without it the appearance hint is simply absent rather than wrong.
+function collectStructureTables(
+  blocks: FlatBlock[],
+  sfdt?: any
+): StructureTable[] {
   const order: TableAccumulator[] = [];
   const byAnchor = new Map<string, TableAccumulator>();
   for (const b of blocks) {
@@ -1105,6 +1707,13 @@ function collectStructureTables(blocks: FlatBlock[]): StructureTable[] {
     // Never truncate silently: a capped header row must say it is capped.
     if (t.columns > STRUCTURE_MAX_HEADER_CELLS)
       table.firstRowCellsTruncated = true;
+    const appearance = sfdt
+      ? collectTableAppearance(tableBlockAt(sfdt, t.anchor))
+      : null;
+    if (appearance) {
+      if (appearance.styleName) table.styleName = appearance.styleName;
+      if (!tableIsUnstyled(appearance)) table.styled = true;
+    }
     return table;
   });
 }
@@ -1194,10 +1803,13 @@ export function collectTableFacts(
   tableAnchor: string
 ): TableFacts | null {
   const [sectionIndex, blockIndex] = tableAnchor.split(';').map(Number);
-  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const tableBlock = getBlocks(sections[sectionIndex] ?? {})[blockIndex];
+  const tableBlock = tableBlockAt(sfdt, tableAnchor);
   const rawRows = tableBlock ? getRows(tableBlock) : undefined;
   if (!rawRows) return null;
+  // How the table LOOKS, read from the same raw rows: fills, borders, vertical
+  // alignment, header flags, table style. Without this a model asked to make a
+  // new section's table match its siblings had nothing to match against.
+  const appearance = collectTableAppearance(tableBlock) as TableAppearance;
 
   const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
   const rows: TableRowFact[] = [];
@@ -1223,9 +1835,16 @@ export function collectTableFacts(
       const fullText = paragraphs.map((paragraph) => paragraph.text).join('\n');
       const clipped = fullText.length > TABLE_FACTS_CELL_TEXT_CHARS;
       const classified = classifyNumericText(fullText);
-      const cellFormat = pick(rawCell, 'cellFormat', 'cf') ?? {};
-      const columnSpan = Number(pick(cellFormat, 'columnSpan', 'colSpan') ?? 1);
-      const rowSpan = Number(pick(cellFormat, 'rowSpan') ?? 1);
+      // The optimized-SFDT cell-format key is `tcpr`, NOT `cf` (`cf` is a
+      // paragraph's characterFormat). The live editor always serializes
+      // optimized SFDT, so probing `cf` here made every merge span invisible in
+      // production while the long-key fixtures kept the spec green - the same
+      // class of key mistake `getRows` documents for `r` vs `rw`.
+      const cellFormat = pick(rawCell, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const columnSpan = Number(
+        pick(cellFormat, 'columnSpan', 'colsp', 'colSpan') ?? 1
+      );
+      const rowSpan = Number(pick(cellFormat, 'rowSpan', 'rwsp') ?? 1);
       const first = paragraphs[0];
       const fact: TableCellFact = {
         row,
@@ -1250,6 +1869,11 @@ export function collectTableFacts(
         ...(first?.characterFormat?.italic ? { italic: true as const } : {}),
         ...(first?.format?.styleName
           ? { styleName: first.format.styleName }
+          : {}),
+        // Only where the cell differs from its row: collectTableAppearance
+        // already hoisted a shared row appearance up to the row.
+        ...(appearance?.rows[row]?.cells[column]
+          ? { appearance: appearance.rows[row].cells[column] }
           : {})
       };
       if (fact.columnSpan || fact.rowSpan) {
@@ -1274,6 +1898,10 @@ export function collectTableFacts(
         : {}),
       ...(cells.some((cell) => cell.columnSpan || cell.rowSpan)
         ? { hasMergedCells: true as const }
+        : {}),
+      ...(appearance?.rows[row]?.isHeader ? { isHeader: true as const } : {}),
+      ...(appearance?.rows[row]?.appearance
+        ? { appearance: appearance.rows[row].appearance }
         : {}),
       cells
     });
@@ -1309,6 +1937,8 @@ export function collectTableFacts(
     columnCount,
     uniformRows: rows.every((row) => row.cellCount === columnCount),
     mergedCells,
+    ...(appearance?.styleName ? { styleName: appearance.styleName } : {}),
+    ...(appearance?.appearance ? { appearance: appearance.appearance } : {}),
     rows,
     columns,
     truncated: false
@@ -1328,6 +1958,29 @@ function normalizeTableAnchor(raw: unknown): string | null {
 const partialReadMessage = (returned: number, total: number): string =>
   `PARTIAL READ: returned ${returned} of ${total} entries (maxEntries cap). ` +
   'Do not treat this as the complete list - re-read with a larger maxEntries or omit maxEntries.';
+
+/**
+ * Where the unit starting at `blocks[start]` ends: the index of the next heading
+ * at the SAME level or shallower, or the end of the document.
+ *
+ * A DEEPER heading is a subsection OF this unit, so it must not end it. The
+ * `scope: 'section'` read stopped at the plain next heading of any level, which
+ * truncated every parent section at its own first subsection - a live read
+ * defect on most of the HILB proposal. The depth-aware rule already existed in
+ * `unitsAtLevel`; this is that one comparison, owned in one place, so the
+ * inventory read and the relocation range can never disagree about where a
+ * section ends.
+ *
+ * A start block that is not a heading has no level of its own to compare
+ * against, so any heading ends it - the behaviour a body anchor always had.
+ */
+function sectionUnitEnd(blocks: FlatBlock[], start: number): number {
+  const from = blocks[start];
+  const level = from?.isHeading ? from.level : Number.POSITIVE_INFINITY;
+  for (let index = start + 1; index < blocks.length; index++)
+    if (blocks[index].isHeading && blocks[index].level <= level) return index;
+  return blocks.length;
+}
 
 // Build the response for a given scope from an already-parsed SFDT.
 export function buildInventoryFromBlocks(
@@ -1369,7 +2022,7 @@ export function buildInventoryFromBlocks(
     // cheap leg for navigation questions and the remedy the too-large refusal
     // names, so it must stay text-free apart from headings and header cells.
     const headings = collectOutlineSections(blocks);
-    const tables = collectStructureTables(blocks);
+    const tables = collectStructureTables(blocks, sfdt);
     const cappedHeadings = cap(headings);
     const cappedTables = cap(tables);
     const result: InventoryResult = {
@@ -1545,14 +2198,7 @@ export function buildInventoryFromBlocks(
         retry: 'after_remedy'
       };
     }
-    let end = blocks.length;
-    for (let i = start + 1; i < blocks.length; i++) {
-      if (blocks[i].isHeading) {
-        end = i;
-        break;
-      }
-    }
-    const section = blocks.slice(start, end);
+    const section = blocks.slice(start, sectionUnitEnd(blocks, start));
     const slice = cap(section);
     if (slice.length < section.length) {
       // The live bug this guards: a 94-row table read at maxEntries 60 looked
@@ -1625,12 +2271,922 @@ export function buildIndexBlocksFromBlocks(blocks: FlatBlock[]): IndexBlock[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Section-pattern read
+// ---------------------------------------------------------------------------
+
+const SECTION_PATTERN_SAMPLE_LIMIT = 12;
+const SECTION_PATTERN_SEQUENCE_LIMIT = 16;
+const SECTION_PATTERN_TABLE_LIMIT = 2;
+const SECTION_PATTERN_HEADER_VARIANT_LIMIT = 3;
+const SECTION_PATTERN_HEADER_COLUMN_LIMIT = 6;
+const SECTION_PATTERN_TEXT_LIMIT = 40;
+// Similar sections must preserve more than two thirds of their ordered shape.
+const SECTION_PATTERN_FAMILY_SIMILARITY = 2 / 3;
+
+type SectionBlockRole =
+  | 'section_heading'
+  | 'intro_paragraph'
+  | 'subsection_heading'
+  | 'subsection_paragraph'
+  | 'table'
+  | 'table_header'
+  | 'table_body';
+
+interface SectionUnit {
+  blocks: FlatBlock[];
+  start: number;
+  end: number;
+}
+
+interface SectionTableObservation {
+  columns: number;
+  headerRow: boolean;
+  banding: TableBanding | null;
+  columnHeaders: string[];
+  styleName?: string;
+}
+
+function patternConfidence(
+  matches: number,
+  sampled: number
+): SectionPatternConfidence {
+  const ratio = sampled > 0 ? matches / sampled : 0;
+  const level =
+    sampled >= 3 && matches >= 2 && ratio >= 2 / 3
+      ? 'high'
+      : sampled >= 2 && matches >= 2
+      ? 'medium'
+      : 'low';
+  return { matches, sampled, level };
+}
+
+function modal<T>(
+  values: T[],
+  key: (value: T) => string = (value) => JSON.stringify(value)
+): { value: T; count: number } | undefined {
+  const counts = new Map<string, { value: T; count: number }>();
+  let best: { value: T; count: number } | undefined;
+  for (const value of values) {
+    const id = key(value);
+    const current = counts.get(id) ?? { value, count: 0 };
+    current.count++;
+    counts.set(id, current);
+    if (!best || current.count > best.count) best = current;
+  }
+  return best;
+}
+
+function tableAnchorForBlock(block: FlatBlock): string | undefined {
+  if (block.kind !== 'table_cell') return undefined;
+  const parts = block.anchor.split(';');
+  return parts.length === 5 ? `${parts[0]};${parts[1]}` : undefined;
+}
+
+function unitsAtLevel(blocks: FlatBlock[], level: number): SectionUnit[] {
+  const units: SectionUnit[] = [];
+  for (let start = 0; start < blocks.length; start++) {
+    const heading = blocks[start];
+    if (!heading.isHeading || heading.level !== level) continue;
+    // Empty styled headings and page-break-only title paragraphs are layout
+    // scaffolding, not sibling sections. Treating them as units lets a run of
+    // placeholders between two real sections become the dominant "family".
+    if (!heading.text.replace(/\f/g, '').trim()) continue;
+    const end = sectionUnitEnd(blocks, start);
+    units.push({ blocks: blocks.slice(start, end), start, end });
+  }
+  return units;
+}
+
+function unitContainsAnchor(unit: SectionUnit, near: string): boolean {
+  return unit.blocks.some(
+    (block) =>
+      block.anchor === near ||
+      block.anchor.startsWith(`${near};`) ||
+      near.startsWith(`${block.anchor};`)
+  );
+}
+
+function chooseSectionLevel(
+  blocks: FlatBlock[],
+  near?: string
+): number | undefined {
+  const levels = Array.from(
+    new Set(
+      blocks.filter((block) => block.isHeading).map((block) => block.level)
+    )
+  ).sort((a, b) => a - b);
+  if (!levels.length) return undefined;
+
+  // A heading named as the anchor is stronger evidence than the containing
+  // document hierarchy. Without this, every subsection also belongs to its
+  // top-level parent's unit and the shallowest repeated level wins below.
+  const anchoredHeading = near
+    ? blocks.find(
+        (block) =>
+          block.isHeading &&
+          (block.anchor === near || near.startsWith(`${block.anchor};`))
+      )
+    : undefined;
+  if (anchoredHeading) return anchoredHeading.level;
+
+  const repeated = levels.filter(
+    (level) => unitsAtLevel(blocks, level).length >= 2
+  );
+  if (near) {
+    const nearbyRepeated = repeated.filter((level) =>
+      unitsAtLevel(blocks, level).some((unit) => unitContainsAnchor(unit, near))
+    );
+    if (nearbyRepeated.length) return nearbyRepeated[0];
+  }
+  if (repeated.length) return repeated[0];
+  if (near) {
+    const nearby = levels.filter((level) =>
+      unitsAtLevel(blocks, level).some((unit) => unitContainsAnchor(unit, near))
+    );
+    if (nearby.length) return nearby[0];
+  }
+  return levels[0];
+}
+
+function sampleSectionUnits(
+  units: SectionUnit[],
+  near?: string
+): SectionUnit[] {
+  if (units.length <= SECTION_PATTERN_SAMPLE_LIMIT) return units;
+  if (!near) return units.slice(0, SECTION_PATTERN_SAMPLE_LIMIT);
+  const nearby = units.findIndex((unit) => unitContainsAnchor(unit, near));
+  if (nearby < 0) return units.slice(0, SECTION_PATTERN_SAMPLE_LIMIT);
+  const start = Math.max(
+    0,
+    Math.min(
+      units.length - SECTION_PATTERN_SAMPLE_LIMIT,
+      nearby - Math.floor(SECTION_PATTERN_SAMPLE_LIMIT / 2)
+    )
+  );
+  return units.slice(start, start + SECTION_PATTERN_SAMPLE_LIMIT);
+}
+
+function sequenceForUnit(unit: SectionUnit): SectionPatternSequenceElement[] {
+  const sequence: SectionPatternSequenceElement[] = [];
+  let seenSubsection = false;
+  let lastTable = '';
+  const push = (
+    role: SectionPatternSequenceElement['role'],
+    level?: number
+  ) => {
+    const previous = sequence[sequence.length - 1];
+    if (previous && previous.role === role && previous.level === level) {
+      previous.count++;
+      return;
+    }
+    sequence.push({
+      role,
+      ...(level !== undefined ? { level } : {}),
+      count: 1,
+      // Replaced after the recurring sequence is selected.
+      confidence: patternConfidence(0, 0)
+    });
+  };
+
+  unit.blocks.forEach((block, index) => {
+    if (index === 0) {
+      push('section_heading', block.level);
+      return;
+    }
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor) {
+      if (tableAnchor !== lastTable) push('table');
+      lastTable = tableAnchor;
+      return;
+    }
+    lastTable = '';
+    if (block.isHeading) {
+      seenSubsection = true;
+      push('subsection_heading', block.level);
+      return;
+    }
+    if (!block.text.trim()) return;
+    push(seenSubsection ? 'subsection_paragraph' : 'intro_paragraph');
+  });
+  return sequence;
+}
+
+function sequenceTokens(sequence: SectionPatternSequenceElement[]): string[] {
+  return sequence.flatMap((element) =>
+    Array(Math.min(element.count, SECTION_PATTERN_SEQUENCE_LIMIT)).fill(
+      `${element.role}:${element.level ?? ''}`
+    )
+  );
+}
+
+function sequenceSimilarity(
+  left: SectionPatternSequenceElement[],
+  right: SectionPatternSequenceElement[]
+): number {
+  const leftTokens = sequenceTokens(left);
+  const rightTokens = sequenceTokens(right);
+  const longest = Math.max(leftTokens.length, rightTokens.length);
+  if (!longest) return 1;
+
+  const previous = Array(rightTokens.length + 1).fill(0);
+  for (const leftToken of leftTokens) {
+    let diagonal = 0;
+    for (let rightIndex = 1; rightIndex <= rightTokens.length; rightIndex++) {
+      const above = previous[rightIndex];
+      previous[rightIndex] =
+        leftToken === rightTokens[rightIndex - 1]
+          ? diagonal + 1
+          : Math.max(previous[rightIndex], previous[rightIndex - 1]);
+      diagonal = above;
+    }
+  }
+  const structuralTokens = (sequence: SectionPatternSequenceElement[]) =>
+    new Set(
+      sequence
+        .filter(
+          ({ role }) =>
+            role !== 'intro_paragraph' && role !== 'subsection_paragraph'
+        )
+        .map(({ role, level }) => `${role}:${level ?? ''}`)
+    );
+  const leftStructure = structuralTokens(left);
+  const rightStructure = structuralTokens(right);
+  const sharedStructure = Array.from(leftStructure).filter((role) =>
+    rightStructure.has(role)
+  ).length;
+  const totalStructure = new Set([...leftStructure, ...rightStructure]).size;
+  const structuralOverlap = totalStructure
+    ? sharedStructure / totalStructure
+    : 1;
+  return Math.min(previous[rightTokens.length] / longest, structuralOverlap);
+}
+
+function clusterSectionFamilies(
+  sequences: SectionPatternSequenceElement[][]
+): number[][] {
+  const unassigned = new Set(sequences.map((_sequence, index) => index));
+  const families: number[][] = [];
+  while (unassigned.size) {
+    const first = unassigned.values().next().value as number;
+    const family: number[] = [];
+    const pending = [first];
+    unassigned.delete(first);
+    while (pending.length) {
+      const current = pending.pop() as number;
+      family.push(current);
+      for (const candidate of Array.from(unassigned)) {
+        if (
+          sequenceSimilarity(sequences[current], sequences[candidate]) >
+          SECTION_PATTERN_FAMILY_SIMILARITY
+        ) {
+          unassigned.delete(candidate);
+          pending.push(candidate);
+        }
+      }
+    }
+    families.push(family.sort((left, right) => left - right));
+  }
+  return families;
+}
+
+/**
+ * Which unit of `units` an anchor selects as the authoring example.
+ *
+ * `anchorNamesMember` is what the anchor MEANS, and the two meanings pick
+ * different units when the anchor is a section's first block:
+ *   - a BOUNDARY (the default): the composed unit is going in front of that
+ *     section, so the sibling immediately BEFORE the boundary is the example;
+ *   - a MEMBER: the anchor names the very section being joined, so that
+ *     section is the example. Reading a member as a boundary silently skips to
+ *     its predecessor - which is how a second "Your Client Services Team" was
+ *     built from the section above it, one that has no table at all, and so
+ *     found no table donor to copy.
+ * An anchor inside a section selects that section under either meaning.
+ */
+function nearestUnitIndex(
+  blocks: FlatBlock[],
+  units: SectionUnit[],
+  near?: string,
+  anchorNamesMember = false
+): number | undefined {
+  if (!near) return undefined;
+  const boundary = units.findIndex((unit) => unit.blocks[0]?.anchor === near);
+  if (!anchorNamesMember && boundary > 0) return boundary - 1;
+  const containing = units.findIndex((unit) => unitContainsAnchor(unit, near));
+  if (containing >= 0) return containing;
+  const blockIndex = blocks.findIndex(
+    (block) =>
+      block.anchor === near ||
+      block.anchor.startsWith(`${near};`) ||
+      near.startsWith(`${block.anchor};`)
+  );
+  if (blockIndex < 0) return undefined;
+
+  let nearest = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  units.forEach((unit, index) => {
+    const distance =
+      blockIndex < unit.start
+        ? unit.start - blockIndex
+        : blockIndex >= unit.end
+        ? blockIndex - unit.end + 1
+        : 0;
+    if (distance < nearestDistance) {
+      nearest = index;
+      nearestDistance = distance;
+    }
+  });
+  return units.length ? nearest : undefined;
+}
+
+function selectSectionFamily(
+  blocks: FlatBlock[],
+  units: SectionUnit[],
+  sequences: SectionPatternSequenceElement[][],
+  near?: string,
+  anchorNamesMember = false
+): { units: SectionUnit[]; sequences: SectionPatternSequenceElement[][] } {
+  const families = clusterSectionFamilies(sequences);
+  const nearest = nearestUnitIndex(blocks, units, near, anchorNamesMember);
+  const candidates =
+    nearest !== undefined
+      ? families.filter((family) => family.includes(nearest))
+      : families;
+  const selected = candidates.reduce((best, candidate) => {
+    if (!best || candidate.length > best.length) {
+      return candidate;
+    }
+    if (candidate.length < best.length) return best;
+    const cohesion = (family: number[]) =>
+      family.reduce(
+        (total, left, leftIndex) =>
+          total +
+          family
+            .slice(leftIndex + 1)
+            .reduce(
+              (sum, right) =>
+                sum + sequenceSimilarity(sequences[left], sequences[right]),
+              0
+            ),
+        0
+      );
+    return cohesion(candidate) > cohesion(best) ? candidate : best;
+  }, candidates[0]);
+  const indices = selected ?? [];
+  return {
+    units: indices.map((index) => units[index]),
+    sequences: indices.map((index) => sequences[index])
+  };
+}
+
+function roleBlocksForUnit(
+  unit: SectionUnit
+): Map<SectionBlockRole, FlatBlock[]> {
+  const roles = new Map<SectionBlockRole, FlatBlock[]>();
+  const add = (role: SectionBlockRole, block: FlatBlock) => {
+    const current = roles.get(role) ?? [];
+    current.push(block);
+    roles.set(role, current);
+  };
+  let seenSubsection = false;
+  unit.blocks.forEach((block, index) => {
+    if (index === 0) {
+      add('section_heading', block);
+      return;
+    }
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor) {
+      const row = Number(block.anchor.split(';')[2]);
+      add(row === 0 ? 'table_header' : 'table_body', block);
+      return;
+    }
+    if (block.isHeading) {
+      seenSubsection = true;
+      add('subsection_heading', block);
+      return;
+    }
+    if (!block.text.trim()) return;
+    add(seenSubsection ? 'subsection_paragraph' : 'intro_paragraph', block);
+  });
+  return roles;
+}
+
+const SECTION_CHARACTER_FORMAT_KEYS = new Set([
+  'bold',
+  'italic',
+  'fontSize',
+  'fontFamily',
+  'fontColor',
+  'highlightColor',
+  'underline',
+  'allCaps'
+]);
+const SECTION_PARAGRAPH_FORMAT_KEYS = new Set([
+  'leftIndent',
+  'rightIndent',
+  'firstLineIndent',
+  'textAlignment',
+  'beforeSpacing',
+  'afterSpacing',
+  'lineSpacing',
+  'lineSpacingType',
+  'keepWithNext',
+  'outlineLevel'
+]);
+
+function clipPatternValue(value: unknown): unknown {
+  return typeof value === 'string'
+    ? value.slice(0, SECTION_PATTERN_TEXT_LIMIT * 2)
+    : value;
+}
+
+function compactFormatBag(
+  source: FormatBag | undefined,
+  allowed: Set<string>
+): FormatBag | undefined {
+  if (!source) return undefined;
+  const compact: FormatBag = {};
+  for (const key of Object.keys(source)) {
+    if (allowed.has(key)) compact[key] = clipPatternValue(source[key]);
+  }
+  return Object.keys(compact).length ? compact : undefined;
+}
+
+function roleFormat(
+  block: FlatBlock
+): Omit<SectionPatternRoleFormat, 'confidence'> {
+  const styleName = block.format?.styleName;
+  const characterFormat = compactFormatBag(
+    block.characterFormat,
+    SECTION_CHARACTER_FORMAT_KEYS
+  );
+  const paragraphFormat = compactFormatBag(
+    block.paragraphFormat,
+    SECTION_PARAGRAPH_FORMAT_KEYS
+  );
+  return {
+    ...(styleName
+      ? { styleName: styleName.slice(0, SECTION_PATTERN_TEXT_LIMIT * 2) }
+      : {}),
+    ...(characterFormat ? { characterFormat } : {}),
+    ...(paragraphFormat ? { paragraphFormat } : {})
+  };
+}
+
+function tableAnchorsForUnit(unit: SectionUnit): string[] {
+  const anchors: string[] = [];
+  for (const block of unit.blocks) {
+    const anchor = tableAnchorForBlock(block);
+    if (anchor && anchors[anchors.length - 1] !== anchor) anchors.push(anchor);
+  }
+  return anchors;
+}
+
+function tableObservation(
+  sfdt: any,
+  tableAnchor: string
+): SectionTableObservation | undefined {
+  const table = tableBlockAt(sfdt, tableAnchor);
+  const rows = getRows(table);
+  if (!table || !rows) return undefined;
+  const appearance = collectTableAppearance(table);
+  const columns = rows.reduce((widest, row) => {
+    const cells: any[] = pick(row, 'cells', 'c') ?? [];
+    return Math.max(widest, cells.length);
+  }, 0);
+  const headerRow = appearance ? inferHeaderRows(appearance) > 0 : false;
+  const deletedIds = deletedRevisionIds(sfdt);
+  const firstRowCells: any[] = pick(rows[0], 'cells', 'c') ?? [];
+  const columnHeaders = headerRow
+    ? firstRowCells.slice(0, SECTION_PATTERN_HEADER_COLUMN_LIMIT).map((cell) =>
+        getBlocks(cell)
+          .map((block) => inlineText(getInlines(block), deletedIds))
+          .join('\n')
+          .slice(0, SECTION_PATTERN_TEXT_LIMIT)
+      )
+    : [];
+  return {
+    columns,
+    headerRow,
+    banding: appearance ? detectTableBanding(appearance) : null,
+    columnHeaders,
+    ...(appearance?.styleName ? { styleName: appearance.styleName } : {})
+  };
+}
+
+function observedValue<T>(
+  values: Array<T | undefined>,
+  sampled: number
+): SectionPatternValue<T> | undefined {
+  const present = values.filter((value): value is T => value !== undefined);
+  const chosen = modal(present);
+  return chosen
+    ? {
+        value: chosen.value,
+        confidence: patternConfidence(chosen.count, sampled)
+      }
+    : undefined;
+}
+
+function boundaryElement(block: FlatBlock): SectionBoundaryElement | undefined {
+  if (block.kind !== 'paragraph') return undefined;
+  if (block.text === '\f') return 'page_break';
+  return block.text.trim() ? undefined : 'empty_paragraph';
+}
+
+function separatorBeforeUnit(
+  blocks: FlatBlock[],
+  unit: SectionUnit
+): SectionBoundaryElement[] | undefined {
+  let priorSibling = false;
+  for (let index = unit.start - 1; index >= 0; index--) {
+    const block = blocks[index];
+    if (block.isHeading && block.level <= unit.blocks[0].level) {
+      priorSibling = true;
+      break;
+    }
+  }
+  if (!priorSibling) return undefined;
+
+  const separator: SectionBoundaryElement[] = [];
+  for (let index = unit.start - 1; index >= 0; index--) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    separator.unshift(element);
+  }
+  return separator;
+}
+
+function endingParagraphForUnit(unit: SectionUnit): FlatBlock | undefined {
+  for (let index = unit.blocks.length - 1; index >= 1; index--) {
+    const block = unit.blocks[index];
+    if (boundaryElement(block)) continue;
+    return block.kind === 'paragraph' ? block : undefined;
+  }
+  return undefined;
+}
+
+function sectionBoundaryPattern(
+  blocks: FlatBlock[],
+  units: SectionUnit[]
+): SectionPatternBoundary {
+  const separators = units
+    .map((unit) => separatorBeforeUnit(blocks, unit))
+    .filter(
+      (separator): separator is SectionBoundaryElement[] =>
+        separator !== undefined
+    );
+  const selectedSeparator = modal(separators);
+  const separator = selectedSeparator
+    ? {
+        value: selectedSeparator.value,
+        confidence: patternConfidence(
+          selectedSeparator.count,
+          separators.length
+        )
+      }
+    : {
+        value: [] as SectionBoundaryElement[],
+        confidence: patternConfidence(0, 0)
+      };
+  const headingBeforeSpacing = observedValue(
+    units.map((unit) => unit.blocks[0]?.paragraphFormat?.beforeSpacing),
+    units.length
+  );
+  const endingParagraphAfterSpacing = observedValue(
+    units.map(
+      (unit) => endingParagraphForUnit(unit)?.paragraphFormat?.afterSpacing
+    ),
+    units.length
+  );
+  return {
+    separator,
+    ...(headingBeforeSpacing ? { headingBeforeSpacing } : {}),
+    ...(endingParagraphAfterSpacing ? { endingParagraphAfterSpacing } : {})
+  };
+}
+
+function subsectionBoundaryPattern(
+  units: SectionUnit[]
+): SectionPatternValue<SectionBoundaryElement[]> {
+  const separators = units.flatMap((unit) => {
+    let seenSubsection = false;
+    const observed: SectionBoundaryElement[][] = [];
+    unit.blocks.forEach((block, index) => {
+      if (
+        index === 0 ||
+        !block.isHeading ||
+        block.level <= unit.blocks[0].level ||
+        !block.text.replace(/\f/g, '').trim()
+      )
+        return;
+      if (seenSubsection) {
+        const separator: SectionBoundaryElement[] = [];
+        for (let prior = index - 1; prior >= 0; prior--) {
+          const element = boundaryElement(unit.blocks[prior]);
+          if (!element) break;
+          separator.unshift(element);
+        }
+        observed.push(separator);
+      }
+      seenSubsection = true;
+    });
+    return observed;
+  });
+  const selected = modal(separators);
+  return selected
+    ? {
+        value: selected.value,
+        confidence: patternConfidence(selected.count, separators.length)
+      }
+    : {
+        value: [],
+        confidence: patternConfidence(0, 0)
+      };
+}
+
+function tablePatterns(sfdt: any, units: SectionUnit[]): SectionPatternTable[] {
+  const observations = units.map((unit) =>
+    tableAnchorsForUnit(unit).map((anchor) => tableObservation(sfdt, anchor))
+  );
+  const tableCount = Math.min(
+    SECTION_PATTERN_TABLE_LIMIT,
+    observations.reduce(
+      (largest, tables) => Math.max(largest, tables.length),
+      0
+    )
+  );
+  const patterns: SectionPatternTable[] = [];
+  for (let ordinal = 0; ordinal < tableCount; ordinal++) {
+    const tableAtOrdinal = observations.map((tables) => tables[ordinal]);
+    const columns = observedValue(
+      tableAtOrdinal.map((table) => table?.columns),
+      units.length
+    );
+    const headerRow = observedValue(
+      tableAtOrdinal.map((table) => table?.headerRow),
+      units.length
+    );
+    const banding = observedValue(
+      tableAtOrdinal.map((table) => table?.banding),
+      units.length
+    );
+    if (!columns || !headerRow || !banding) continue;
+    const headerVariants = new Map<
+      string,
+      { texts: string[]; observed: number }
+    >();
+    for (const table of tableAtOrdinal) {
+      if (!table?.headerRow) continue;
+      const id = JSON.stringify(table.columnHeaders);
+      const variant = headerVariants.get(id) ?? {
+        texts: table.columnHeaders,
+        observed: 0
+      };
+      variant.observed++;
+      headerVariants.set(id, variant);
+    }
+    const variants = Array.from(headerVariants.values())
+      .sort((a, b) => b.observed - a.observed)
+      .slice(0, SECTION_PATTERN_HEADER_VARIANT_LIMIT);
+    const styleName = observedValue(
+      tableAtOrdinal.map((table) => table?.styleName),
+      units.length
+    );
+    patterns.push({
+      ordinal: ordinal + 1,
+      columns,
+      headerRow,
+      banding,
+      columnHeaders: {
+        variants,
+        confidence: patternConfidence(
+          tableAtOrdinal.filter((table) => table?.headerRow).length,
+          units.length
+        )
+      },
+      ...(styleName ? { styleName } : {})
+    });
+  }
+  return patterns;
+}
+
+interface SectionFamilyEvidence {
+  level: number;
+  availableUnits: SectionUnit[];
+  sampledUnits: SectionUnit[];
+  units: SectionUnit[];
+  sequences: SectionPatternSequenceElement[][];
+}
+
+/**
+ * The single family-selection seam shared by the read tool and the composer.
+ * Planning from a different sample than the one advertised by
+ * deriveSectionPattern is the section equivalent of copying table perimeter
+ * evidence from one grid and verifying another.
+ */
+function deriveSectionFamilyEvidence(
+  blocks: FlatBlock[],
+  near?: string,
+  anchorNamesMember = false
+): SectionFamilyEvidence | undefined {
+  const level = chooseSectionLevel(blocks, near);
+  if (level === undefined) return undefined;
+  const availableUnits = unitsAtLevel(blocks, level);
+  const sampledUnits = sampleSectionUnits(availableUnits, near);
+  const sampledSequences = sampledUnits.map(sequenceForUnit);
+  const sampledTruncatedSequences = sampledSequences.map((sequence) =>
+    sequence.slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
+  );
+  const family = selectSectionFamily(
+    blocks,
+    sampledUnits,
+    sampledTruncatedSequences,
+    near,
+    anchorNamesMember
+  );
+  return {
+    level,
+    availableUnits,
+    sampledUnits,
+    units: family.units,
+    sequences: family.sequences
+  };
+}
+
+/**
+ * Derive the document's own recurring section schema from sibling sections.
+ * `near` only selects the relevant sibling family/sample; inference still works
+ * from the document alone, and a document with no repetition returns an honest
+ * low-confidence observable shape instead of failing.
+ */
+export function deriveSectionPattern(
+  editor: LiveEditor,
+  options: { near?: string } = {}
+): SectionPatternResult {
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const near =
+    typeof options?.near === 'string' && options.near.trim()
+      ? options.near.trim().slice(0, 100)
+      : undefined;
+  const evidence = deriveSectionFamilyEvidence(blocks, near);
+  if (!evidence) {
+    return {
+      ok: true,
+      pattern: { sequence: [], tables: [], roles: {} },
+      sample: {
+        available: 0,
+        sampled: 0,
+        recurring: 0,
+        ...(near ? { near } : {})
+      },
+      note: 'Low confidence: no heading-delimited sibling sections were found; returning an empty observable pattern.'
+    };
+  }
+
+  const { level, availableUnits, sampledUnits, units, sequences } = evidence;
+  const sequenceTruncated = units.some(
+    (unit) => sequenceForUnit(unit).length > SECTION_PATTERN_SEQUENCE_LIMIT
+  );
+  const selectedSequence = modal(sequences);
+  const recurring = units.length;
+  const sequence = (selectedSequence?.value ?? []).map((element, index) => ({
+    ...element,
+    confidence: patternConfidence(
+      sequences.filter((candidate) => {
+        const atIndex = candidate[index];
+        return (
+          atIndex?.role === element.role &&
+          atIndex?.level === element.level &&
+          atIndex?.count === element.count
+        );
+      }).length,
+      units.length
+    )
+  }));
+
+  const unitRoles = units.map(roleBlocksForUnit);
+  const selectedRoles = new Set<SectionBlockRole>();
+  sequence.forEach((element) => selectedRoles.add(element.role));
+  if (sequence.some((element) => element.role === 'table')) {
+    selectedRoles.add('table_header');
+    selectedRoles.add('table_body');
+  }
+  const roles: Record<string, SectionPatternRoleFormat> = {};
+  for (const role of selectedRoles) {
+    if (role === 'table') continue;
+    const candidates = unitRoles.reduce(
+      (all, byRole) =>
+        all.concat((byRole.get(role) ?? []).map((block) => roleFormat(block))),
+      [] as Array<Omit<SectionPatternRoleFormat, 'confidence'>>
+    );
+    const selected = modal(candidates);
+    if (!selected) continue;
+    const selectedKey = JSON.stringify(selected.value);
+    const matches = unitRoles.filter((byRole) =>
+      (byRole.get(role) ?? []).some(
+        (block) => JSON.stringify(roleFormat(block)) === selectedKey
+      )
+    ).length;
+    roles[role] = {
+      ...selected.value,
+      confidence: patternConfidence(matches, units.length)
+    };
+  }
+
+  const confidence = patternConfidence(recurring, units.length);
+  const baseNote =
+    confidence.level === 'low'
+      ? units.length < 2
+        ? `Low confidence: only ${units.length} sibling section was available at heading level ${level}; returning its observable minimal shape.`
+        : `Low confidence: no section shape clearly repeats across the selected family of ${units.length} sampled siblings at heading level ${level}; returning the most common observable shape.`
+      : `Recurring section family observed in ${units.length} of ${sampledUnits.length} sampled siblings at heading level ${level}.`;
+  const tableTruncated = units.some(
+    (unit) => tableAnchorsForUnit(unit).length > SECTION_PATTERN_TABLE_LIMIT
+  );
+  const truncated = sequenceTruncated || tableTruncated;
+  const note = truncated
+    ? `${baseNote} Output is capped to the first ${SECTION_PATTERN_SEQUENCE_LIMIT} sequence elements and ${SECTION_PATTERN_TABLE_LIMIT} table shapes.`
+    : baseNote;
+
+  return {
+    ok: true,
+    pattern: {
+      sectionLevel: {
+        value: level,
+        confidence: patternConfidence(units.length, units.length)
+      },
+      sequence,
+      tables: tablePatterns(sfdt, units),
+      roles,
+      boundary: sectionBoundaryPattern(blocks, units)
+    },
+    sample: {
+      available: availableUnits.length,
+      sampled: units.length,
+      recurring,
+      ...(near ? { near } : {}),
+      ...(truncated ? { truncated: true as const } : {})
+    },
+    note
+  };
+}
+
 function parseSfdt(raw: string): any {
   if (!raw) return { sections: [] };
   try {
     return JSON.parse(raw);
   } catch {
     return { sections: [] };
+  }
+}
+
+interface SerializationTiming {
+  count: number;
+  totalMs: number;
+}
+
+const serializationTimingByEditor = new WeakMap<
+  LiveEditor,
+  SerializationTiming
+>();
+
+function serializationClockMs(): number {
+  return typeof performance !== 'undefined' && performance.now
+    ? performance.now()
+    : Date.now();
+}
+
+/** Parse one editor snapshot and account for the expensive serialize call. */
+function serializeSfdt(editor: LiveEditor): any {
+  const timing = serializationTimingByEditor.get(editor);
+  const startedAt = serializationClockMs();
+  let raw = '';
+  try {
+    raw = editor.serialize();
+  } finally {
+    if (timing) {
+      timing.count++;
+      timing.totalMs += serializationClockMs() - startedAt;
+    }
+  }
+  return parseSfdt(raw);
+}
+
+function withSerializationTiming<T>(
+  editor: LiveEditor,
+  timing: SerializationTiming,
+  run: () => T
+): T {
+  const previous = serializationTimingByEditor.get(editor);
+  serializationTimingByEditor.set(editor, timing);
+  try {
+    return run();
+  } finally {
+    if (previous) serializationTimingByEditor.set(editor, previous);
+    else serializationTimingByEditor.delete(editor);
   }
 }
 
@@ -1648,12 +3204,12 @@ export function getDocumentInventory(
     column?: number;
   }
 ): InventoryResult {
-  const sfdt = parseSfdt(editor.serialize());
+  const sfdt = serializeSfdt(editor);
   return buildInventoryFromBlocks(flattenSfdt(sfdt), input, sfdt);
 }
 
 export function buildIndexBlocks(editor: LiveEditor): IndexBlock[] {
-  return buildIndexBlocksFromBlocks(flattenSfdt(parseSfdt(editor.serialize())));
+  return buildIndexBlocksFromBlocks(flattenSfdt(serializeSfdt(editor)));
 }
 
 export const MAX_LIVE_OCCURRENCE_QUERIES = 20;
@@ -1673,6 +3229,58 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
     anchor: parts.join(';'),
     offset: Number.isFinite(value) ? value : 0
   };
+}
+
+// SyncFusion treats every public selection as navigation. That is correct for
+// a person clicking in the editor, but not for the engine's transient CAS,
+// formatting, and post-write verification ranges. Worse, when layout is
+// resumed after a batch, SyncFusion's refresh path calls Control-Home and
+// scrolls the document to page one. Keep those two internal behaviours scoped
+// to this synchronous transaction: user selection methods are restored before
+// control returns to the host, and the exact viewport is retained as a final
+// safety boundary.
+function withSilentEditSelections<T>(
+  editor: LiveEditor,
+  operation: () => T
+): T {
+  const selection = editor.selection as any;
+  const documentHelper = (editor as any).documentHelper;
+  const viewer = documentHelper?.viewerContainer as HTMLElement | undefined;
+  if (!selection || typeof selection.select !== 'function') return operation();
+
+  const originalSelect = selection.select;
+  const originalHome = selection.handleControlHomeKey;
+  const priorSkipScroll = documentHelper?.skipScrollToPosition;
+  const scrollTop = viewer?.scrollTop;
+  const scrollLeft = viewer?.scrollLeft;
+  const silentSelect = function (this: unknown, ...args: unknown[]) {
+    const beforeSelect = documentHelper?.skipScrollToPosition;
+    if (documentHelper) documentHelper.skipScrollToPosition = true;
+    try {
+      return originalSelect.apply(this, args);
+    } finally {
+      if (documentHelper) documentHelper.skipScrollToPosition = beforeSelect;
+    }
+  };
+  const ignoreLayoutHome = () => undefined;
+
+  selection.select = silentSelect;
+  if (typeof originalHome === 'function')
+    selection.handleControlHomeKey = ignoreLayoutHome;
+  try {
+    return operation();
+  } finally {
+    if (selection.select === silentSelect) selection.select = originalSelect;
+    if (selection.handleControlHomeKey === ignoreLayoutHome)
+      selection.handleControlHomeKey = originalHome;
+    if (documentHelper) documentHelper.skipScrollToPosition = priorSkipScroll;
+    if (viewer) {
+      if (typeof scrollTop === 'number' && viewer.scrollTop !== scrollTop)
+        viewer.scrollTop = scrollTop;
+      if (typeof scrollLeft === 'number' && viewer.scrollLeft !== scrollLeft)
+        viewer.scrollLeft = scrollLeft;
+    }
+  }
 }
 
 function kindFromLiveAnchor(anchor: string, block?: FlatBlock): string {
@@ -1850,89 +3458,111 @@ function findOneDocumentOccurrences(
   if (!search?.findAll || !search?.searchResults?.getTextSearchResultsOffset)
     return { ok: false, ...base, error: 'search_unavailable' };
 
-  const previousStart = editor.selection?.startOffset;
-  const previousEnd = editor.selection?.endOffset;
-  try {
-    // WholeWord cannot be delegated to SyncFusion while a tracked deletion is
-    // adjacent to an insertion: replacing `Marlow` with `Torrey` leaves the two
-    // runs neighbours, so its raw stream sees the single token `MarlowTorrey`
-    // and neither word looks whole.
-    // Always obtain public, selection-ready candidate ranges without the word
-    // constraint, then evaluate word boundaries against current SFDT text.
-    search.findAll(text, findOption(matchCase, false));
-    // A zero-match findAll never populates the internal result list, and on a
-    // fresh editor getTextSearchResultsOffset() then crashes on the undefined
-    // list. An unpopulated list is an honest zero-occurrence result, not a
-    // search failure.
-    const offsets = (search as any).textSearchResults?.innerList
-      ? search.searchResults.getTextSearchResultsOffset() ?? []
-      : [];
-    const sfdt = parseSfdt(editor.serialize());
-    const byAnchor = new Map(
-      flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
-    );
-    const occurrences: DocumentOccurrence[] = [];
-    const rawCandidateOrdinals = new Map<string, number>();
-    let count = 0;
-    for (const result of offsets) {
-      const startOffset = String(result?.startOffset ?? '');
-      const endOffset = String(result?.endOffset ?? '');
-      const start = offsetParts(startOffset);
-      const end = offsetParts(endOffset);
-      if (!start.anchor || start.anchor !== end.anchor) continue;
-      const block = byAnchor.get(start.anchor);
-      const rawOrdinal = rawCandidateOrdinals.get(start.anchor) ?? 0;
-      rawCandidateOrdinals.set(start.anchor, rawOrdinal + 1);
-      // `findAll` can expose a tracked deletion. For body/table stories we have
-      // the serialized current-text projection, so reject a result that exists
-      // only in deleted revision text. Header/footer/text-frame offsets remain
-      // public and selectable even when SFDT lacks a stable story/page anchor.
-      const frameText = !block
-        ? currentTextFrameText(sfdt, start.anchor)
-        : undefined;
-      const currentText = block?.text ?? frameText;
-      if (currentText !== undefined) {
-        const currentOffsets = currentQueryOffsets(
-          currentText,
-          text,
-          matchCase
-        );
-        const currentOffset = currentOffsets[rawOrdinal];
-        if (
-          currentOffset === undefined ||
-          (wholeWord && !isWholeWordAt(currentText, currentOffset, text.length))
-        )
-          continue;
+  const documentHelper = (editor as any).documentHelper;
+  return preserveDocumentViewDuring(editor, () => {
+    try {
+      // WholeWord cannot be delegated to SyncFusion while a tracked deletion is
+      // adjacent to an insertion: replacing `Marlow` with `Torrey` leaves the two
+      // runs neighbours, so its raw stream sees the single token `MarlowTorrey`
+      // and neither word looks whole.
+      // Always obtain public, selection-ready candidate ranges without the word
+      // constraint, then evaluate word boundaries against current SFDT text.
+      search.findAll(text, findOption(matchCase, false));
+      // A zero-match findAll never populates the internal result list, and on a
+      // fresh editor getTextSearchResultsOffset() then crashes on the undefined
+      // list. An unpopulated list is an honest zero-occurrence result, not a
+      // search failure.
+      const offsets = (search as any).textSearchResults?.innerList
+        ? search.searchResults.getTextSearchResultsOffset() ?? []
+        : [];
+      const searchResults = (search as any).textSearchResults?.innerList ?? [];
+      const sfdt = serializeSfdt(editor);
+      const byAnchor = new Map(
+        flattenSfdt(sfdt).map((block) => [block.anchor, block] as const)
+      );
+      const occurrences: DocumentOccurrence[] = [];
+      const rawCandidateOrdinals = new Map<string, number>();
+      let count = 0;
+      for (const [resultIndex, result] of offsets.entries()) {
+        const startOffset = String(result?.startOffset ?? '');
+        const endOffset = String(result?.endOffset ?? '');
+        const start = offsetParts(startOffset);
+        const end = offsetParts(endOffset);
+        if (!start.anchor || start.anchor !== end.anchor) continue;
+        const block = byAnchor.get(start.anchor);
+        const rawOrdinal = rawCandidateOrdinals.get(start.anchor) ?? 0;
+        rawCandidateOrdinals.set(start.anchor, rawOrdinal + 1);
+        // `findAll` can expose a tracked deletion. For body/table stories we have
+        // the serialized current-text projection, so reject a result that exists
+        // only in deleted revision text. Header/footer/text-frame offsets remain
+        // public and selectable even when SFDT lacks a stable story/page anchor.
+        const frameText = !block
+          ? currentTextFrameText(sfdt, start.anchor)
+          : undefined;
+        const currentText = block?.text ?? frameText;
+        let matchText = text;
+        if (currentText !== undefined) {
+          const currentOffsets = currentQueryOffsets(
+            currentText,
+            text,
+            matchCase
+          );
+          const currentOffset = currentOffsets[rawOrdinal];
+          if (
+            currentOffset === undefined ||
+            (wholeWord &&
+              !isWholeWordAt(currentText, currentOffset, text.length))
+          )
+            continue;
+          matchText = currentText.slice(
+            currentOffset,
+            currentOffset + text.length
+          );
+        } else {
+          // Story/page text is absent from flattened SFDT. Read the search
+          // result's already-resolved positions directly; its public `.text`
+          // getter resolves logical indexes through Selection and moves the UI.
+          const searchResult = searchResults[resultIndex];
+          const getTextInternal = documentHelper?.selection?.getTextInternal;
+          if (
+            searchResult?.start &&
+            searchResult?.end &&
+            typeof getTextInternal === 'function'
+          )
+            matchText = String(
+              getTextInternal.call(
+                documentHelper.selection,
+                searchResult.start,
+                searchResult.end,
+                false
+              ) ?? text
+            );
+        }
+        count++;
+        if (occurrences.length >= maxResults) continue;
+        occurrences.push({
+          anchor: start.anchor,
+          kind: kindFromLiveAnchor(start.anchor, block),
+          // Header/footer/note public offsets are selection-ready, but SFDT does
+          // not expose their runtime page index. Return the exact matched span as
+          // context in those stories rather than fabricate a non-selectable anchor.
+          blockText: block?.text ?? matchText,
+          matchText,
+          start: start.offset,
+          end: end.offset
+        });
       }
-      count++;
-      if (occurrences.length >= maxResults) continue;
-      editor.selection.select(startOffset, endOffset);
-      const matchText = String(editor.selection.text ?? '');
-      occurrences.push({
-        anchor: start.anchor,
-        kind: kindFromLiveAnchor(start.anchor, block),
-        // Header/footer/note public offsets are selection-ready, but SFDT does
-        // not expose their runtime page index. Return the exact matched span as
-        // context in those stories rather than fabricate a non-selectable anchor.
-        blockText: block?.text ?? matchText,
-        matchText,
-        start: start.offset,
-        end: end.offset
-      });
+      return {
+        ok: true,
+        ...base,
+        count,
+        truncated: count > occurrences.length,
+        occurrences
+      };
+    } catch {
+      return { ok: false, ...base, error: 'search_failed' };
     }
-    return {
-      ok: true,
-      ...base,
-      count,
-      truncated: count > occurrences.length,
-      occurrences
-    };
-  } catch {
-    return { ok: false, ...base, error: 'search_failed' };
-  } finally {
-    if (typeof previousStart === 'string' && typeof previousEnd === 'string')
-      editor.selection.select(previousStart, previousEnd);
-  }
+  });
 }
 
 // A bounded, live-editor-only occurrence API. `queries` batches candidate
@@ -2216,10 +3846,71 @@ function selectRange(
   editor.selection.select(`${anchor};${startOffset}`, `${anchor};${endOffset}`);
 }
 
-function freshBlock(editor: LiveEditor, anchor: string): FlatBlock | undefined {
-  return flattenSfdt(parseSfdt(editor.serialize())).find(
-    (block) => block.anchor === anchor
-  );
+/** The Word section index an anchor belongs to. */
+const wordSectionOf = (anchor: string): string => anchor.split(';')[0];
+
+/**
+ * A TOP-LEVEL body paragraph: the only kind of block that can SHARE a paragraph
+ * mark with another one.
+ *
+ * Tested positively rather than as `!== 'table_cell'` so that every kind which
+ * is not a body paragraph - a table cell today, a header/footer/footnote story
+ * block if one ever reaches this path - is excluded by default rather than by
+ * enumeration.
+ */
+const isBodyParagraph = (block: FlatBlock): boolean =>
+  block.kind === 'paragraph' || block.kind === 'heading';
+
+/**
+ * The end of a selection that must consume the trailing PARAGRAPH MARK of the
+ * run it covers - the one rule `delete_paragraph` and the relocation primitive
+ * share, owned here so they cannot drift apart.
+ *
+ * A mark sits BETWEEN two paragraphs, so when a following block exists IN THIS
+ * WORD SECTION the end is the START of that block. Stopping at the last block's
+ * own `length` leaves the mark behind, and both failures that produces are
+ * silent: a delete_paragraph empties its paragraph in place instead of removing
+ * it, and a relocated section's tail fuses with whatever it lands beside
+ * ("g bodyAlpha") while accepting strands an empty paragraph behind.
+ *
+ * Crossing into `next` is therefore allowed only when `next` is a BODY PARAGRAPH
+ * OF THE SAME WORD SECTION. Both halves of that condition exist because ending at
+ * the start of the wrong kind of block silently drags that block into the range,
+ * and they are the whole reason this lives in one place:
+ *
+ *   - a DIFFERENT Word section: ending at its first block puts the SECTION BREAK
+ *     inside the range, and SyncFusion authors no rejectable revision for
+ *     deleting one - so the page setup changes with no card to reject and a group
+ *     rollback has nothing to put back. Live, that surfaced as the relocation's
+ *     own `untracked_write` refusal on the captain's move, because the section
+ *     being moved was a Word section of its own.
+ *
+ *   - NOT A BODY PARAGRAPH: `flattenSfdt` gives a table no block of its own - its
+ *     CELLS are the blocks - so the block following a table is a `table_cell`
+ *     whose Word section matches, which the section test alone waves through.
+ *     Ending at a cell's offset 0 selects the ENTIRE neighbouring table (measured:
+ *     the captured payload came back holding two tables and the paragraphs past
+ *     them), so a split of a table that happens to sit directly against another
+ *     one pasted a copy of its neighbour alongside its own rows. A split is how
+ *     two tables come to be adjacent in the first place, so the second split of
+ *     any table reached it. `delete_paragraph` already screened its own `next`
+ *     through this same "body paragraph of this section" rule before calling; the
+ *     rule belongs here, where every caller passes through it.
+ *
+ * With no usable following block the range ends at `length + 1`, which SyncFusion
+ * accepts and reports back verbatim as the live endOffset.
+ */
+function markInclusiveRangeEnd(
+  next: FlatBlock | undefined,
+  last: FlatBlock
+): string {
+  if (
+    next &&
+    isBodyParagraph(next) &&
+    wordSectionOf(next.anchor) === wordSectionOf(last.anchor)
+  )
+    return `${next.anchor};0`;
+  return `${last.anchor};${last.length + 1}`;
 }
 
 // What the whole document would read if every revision were rejected: pending
@@ -2257,22 +3948,14 @@ function acceptProjectionStream(sfdt: any): string {
 }
 
 function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
-  const allDropped = (rids: unknown): boolean =>
-    Array.isArray(rids) &&
-    rids.length > 0 &&
-    rids.every((id) => dropIds.has(String(id)));
   const out: string[] = [];
   const pushParagraph = (block: any) => {
     const inlines = getInlines(block);
     out.push(inlineText(inlines, dropIds));
-    const markRevisionIds = pick(
-      pick(block, 'characterFormat', 'cf'),
-      'revisionIds',
-      'rids'
-    );
+    const markRevisionIds = paragraphMarkRevisionIds(block);
     // Rejecting an inserted paragraph mark joins this paragraph with the next
     // one, so an inserted mark contributes no separator to the projection.
-    if (!allDropped(markRevisionIds)) out.push('\n');
+    if (!allRevisionIdsIn(markRevisionIds, dropIds)) out.push('\n');
     // A shape anchored in this paragraph carries its own block stream. Emitted
     // after the host paragraph and fenced by a control character, so frame
     // content can never read as body content and a frame boundary that moved
@@ -2291,6 +3974,7 @@ function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
       const rows = getRows(block);
       if (rows) {
         for (const row of rows) {
+          if (allRevisionIdsIn(rowRevisionIds(row), dropIds)) continue;
           const cells: any[] = pick(row, 'cells', 'c') ?? [];
           for (const cell of cells) {
             for (const cellBlock of getBlocks(cell)) pushParagraph(cellBlock);
@@ -2801,6 +4485,209 @@ function offsetString(value: unknown): string {
     : '';
 }
 
+interface SelectionTextRunBlock {
+  block: FlatBlock;
+  start: number;
+  textEnd: number;
+  markEnd: number;
+}
+
+interface SelectionTextRun {
+  container: string;
+  text: string;
+  blocks: SelectionTextRunBlock[];
+}
+
+interface LocatedSelectionRange {
+  target: FlatBlock;
+  startOffset: string;
+  endOffset: string;
+}
+
+type SelectionRelocationAttempt =
+  | { range: LocatedSelectionRange; relocated?: { from: string; to: string } }
+  | { details: string[] };
+
+// Body paragraphs form one searchable story, while every table cell is its own
+// selection container. Starting a fresh run whenever the flattened walk enters
+// a different container also prevents a body match from jumping across a table.
+function selectionSearchContainer(anchor: string): string {
+  const parts = String(anchor).split(';');
+  return parts.length >= 5 ? `cell:${parts.slice(0, 4).join(';')}` : 'body';
+}
+
+function selectionTextRuns(blocks: FlatBlock[]): SelectionTextRun[] {
+  const runs: SelectionTextRun[] = [];
+  for (const block of blocks) {
+    const container = selectionSearchContainer(block.anchor);
+    let run = runs[runs.length - 1];
+    if (!run || run.container !== container) {
+      run = { container, text: '', blocks: [] };
+      runs.push(run);
+    }
+    const start = run.text.length;
+    run.blocks.push({
+      block,
+      start,
+      textEnd: start + block.length,
+      markEnd: start + block.length + 1
+    });
+    // SyncFusion Selection exposes paragraph boundaries as carriage returns.
+    run.text += `${block.text}\r`;
+  }
+  return runs;
+}
+
+function selectionIdentityMatches(op: EditOp, text: string): boolean {
+  if (op.expect == null) return false;
+  const expect = String(op.expect);
+  const expectLength =
+    typeof op.expectLength === 'number' && op.expectLength > 0
+      ? op.expectLength
+      : null;
+  return expectLength == null
+    ? text === expect
+    : text.length === expectLength && text.startsWith(expect);
+}
+
+function declaredSelectionText(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>,
+  runs: SelectionTextRun[]
+): string | undefined {
+  const anchor = String(op.anchor ?? '');
+  const block = byAnchor.get(anchor);
+  if (!block) return undefined;
+  const startOffset = offsetString(op.startOffset) || `${anchor};0`;
+  const endOffset = offsetString(op.endOffset) || `${anchor};${block.length}`;
+  const start = offsetParts(startOffset);
+  const end = offsetParts(endOffset);
+  if (start.anchor !== anchor) return undefined;
+  const run = runs.find((candidate) =>
+    candidate.blocks.some((entry) => entry.block.anchor === start.anchor)
+  );
+  if (!run) return undefined;
+  const startEntry = run.blocks.find(
+    (entry) => entry.block.anchor === start.anchor
+  );
+  const endEntry = run.blocks.find(
+    (entry) => entry.block.anchor === end.anchor
+  );
+  if (!startEntry || !endEntry) return undefined;
+  if (
+    start.offset < 0 ||
+    start.offset > startEntry.block.length ||
+    end.offset < 0 ||
+    end.offset > endEntry.block.length + 1
+  )
+    return undefined;
+  const from = startEntry.start + start.offset;
+  const to = endEntry.start + end.offset;
+  return from < to ? run.text.slice(from, to) : undefined;
+}
+
+function declaredSelectionCrossesContainer(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>
+): boolean {
+  const start = byAnchor.get(String(op.anchor ?? ''));
+  const end = offsetParts(offsetString(op.endOffset));
+  const endBlock = byAnchor.get(end.anchor);
+  return !!(
+    start &&
+    endBlock &&
+    rangeContainer(start.anchor) !== rangeContainer(endBlock.anchor)
+  );
+}
+
+function rangeAtRunPosition(
+  run: SelectionTextRun,
+  start: number,
+  end: number
+): LocatedSelectionRange | undefined {
+  const startEntry = run.blocks.find(
+    (entry) => start >= entry.start && start <= entry.textEnd
+  );
+  const endEntry = run.blocks.find(
+    (entry) => end > entry.start && end <= entry.markEnd
+  );
+  if (!startEntry || !endEntry) return undefined;
+  if (
+    rangeContainer(startEntry.block.anchor) !==
+    rangeContainer(endEntry.block.anchor)
+  )
+    return undefined;
+  return {
+    target: startEntry.block,
+    startOffset: `${startEntry.block.anchor};${start - startEntry.start}`,
+    endOffset: `${endEntry.block.anchor};${end - endEntry.start}`
+  };
+}
+
+// Selection relocation is the range-shaped extension of the existing anchor
+// doctrine below: content is authoritative, matches must be unique, and a
+// table/cell boundary is never crossed. It consumes the request-time identity;
+// it does not consult the mutable UI selection.
+function attemptSelectionRelocation(
+  blocks: FlatBlock[],
+  op: EditOp
+): SelectionRelocationAttempt {
+  const from = String(op.anchor ?? '');
+  const expect = op.expect == null ? '' : String(op.expect);
+  const expectLength =
+    typeof op.expectLength === 'number' && op.expectLength > 0
+      ? op.expectLength
+      : expect.length;
+  const attempted = `selection relocation attempted from "${from}" using \`expect\` ${JSON.stringify(
+    expect
+  )}${op.expectLength ? ` and length ${expectLength}` : ''}`;
+  if (!expect || expectLength < expect.length)
+    return {
+      details: [
+        attempted,
+        'selection content identity is empty or internally inconsistent'
+      ]
+    };
+
+  const matches: LocatedSelectionRange[] = [];
+  for (const run of selectionTextRuns(blocks)) {
+    let cursor = 0;
+    while (cursor <= run.text.length - expect.length) {
+      const start = run.text.indexOf(expect, cursor);
+      if (start < 0) break;
+      const end = start + expectLength;
+      if (
+        end <= run.text.length &&
+        run.text.slice(start, end).startsWith(expect)
+      ) {
+        const range = rangeAtRunPosition(run, start, end);
+        if (range && sameRelocationContainer(from, range.target.anchor))
+          matches.push(range);
+      }
+      cursor = start + Math.max(expect.length, 1);
+    }
+  }
+
+  if (!matches.length)
+    return { details: [attempted, 'matching selection ranges: none'] };
+  if (matches.length > 1)
+    return {
+      details: [
+        attempted,
+        `matching selection ranges (${matches.length}): ${matches
+          .map((match) => `${match.startOffset}..${match.endOffset}`)
+          .join(', ')}`
+      ]
+    };
+  const range = matches[0];
+  return {
+    range,
+    ...(range.target.anchor !== from
+      ? { relocated: { from, to: range.target.anchor } }
+      : {})
+  };
+}
+
 function resolveSelectionRange(
   editor: LiveEditor,
   op: EditOp,
@@ -2941,71 +4828,88 @@ function assertSelectionGuard(op: EditOp, range: SelectionRange): void {
     );
 }
 
-// Proof the replacement is readable in the document after the write. A range
-// that spanned paragraphs collapses them, so the text may land on any block of
-// the original span (SyncFusion keeps the deleted paragraph marks as tracked
-// deletions until the revision is accepted) - the span, not one anchor, is what
-// can be asserted. Reversibility itself is proven separately and globally by
-// assertTrackedMutation's reject-projection comparison.
-function verifySelectionWrite(
+// SyncFusion accepts CR, LF, and CRLF as paragraph boundaries but exposes
+// paragraph boundaries through Selection as CR. Normalize that one boundary
+// convention before planning or verifying text spans.
+function normalizeParagraphBreaks(text: string): string {
+  return text.replace(/\r\n|\r|\n/g, '\r');
+}
+
+// One post-write verifier for every block-backed text mutation. A text payload
+// can create blocks (replace_selection, replace_text, insert_text), so verify
+// the complete block span implied by the payload rather than re-reading only
+// the pre-write anchor. Reversibility remains the separate reject-projection
+// invariant in assertTrackedMutation.
+function verifyTextWrite(
   editor: LiveEditor,
-  range: SelectionRange,
-  replacement: string
-): void {
-  if (!replacement) return;
-  const blocks = flattenSfdt(parseSfdt(editor.serialize()));
-  const startIndex = blocks.findIndex(
-    (block) => block.anchor === range.startAnchor
+  target: {
+    startAnchor: string;
+    endAnchor?: string;
+    expected: string;
+    exact?: boolean;
+  }
+): any {
+  const sfdt = serializeSfdt(editor);
+  if (!target.exact && !target.expected) return sfdt;
+  const blocks = flattenSfdt(sfdt);
+  let startIndex = blocks.findIndex(
+    (block) => block.anchor === target.startAnchor
   );
+  const endAnchor = target.endAnchor ?? target.startAnchor;
+  let endIndex = blocks.findIndex((block) => block.anchor === endAnchor);
+  if (startIndex < 0) {
+    startIndex = blocks.findIndex(
+      (block) =>
+        compareOffsets(block.anchor, target.startAnchor) >= 0 &&
+        compareOffsets(block.anchor, endAnchor) <= 0
+    );
+  }
+  if (endIndex < 0) {
+    for (let index = blocks.length - 1; index >= 0; index--) {
+      const block = blocks[index];
+      if (
+        compareOffsets(block.anchor, target.startAnchor) >= 0 &&
+        compareOffsets(block.anchor, endAnchor) <= 0
+      ) {
+        endIndex = index;
+        break;
+      }
+    }
+  }
   if (startIndex < 0)
     throw new OpError(
       'post_write_anchor_not_found',
-      `The edited anchor "${range.startAnchor}" disappeared after the write.`
+      `The edited anchor "${target.startAnchor}" disappeared after the write.`
     );
-  const endIndex = blocks.findIndex(
-    (block) => block.anchor === range.endAnchor
+  const normalizedExpected = normalizeParagraphBreaks(target.expected);
+  const createdParagraphMarks = (normalizedExpected.match(/\r/g) ?? []).length;
+  const resultingEndIndex = Math.min(
+    blocks.length - 1,
+    Math.max(endIndex, startIndex) + createdParagraphMarks
   );
-  const span = blocks
-    .slice(startIndex, Math.max(endIndex, startIndex) + 1)
-    .map((block) => block.text)
-    .join('\n');
-  if (!span.includes(replacement))
+  const span = normalizeParagraphBreaks(
+    blocks
+      .slice(startIndex, resultingEndIndex + 1)
+      .map((block) => block.text)
+      .join('\r')
+  );
+  const matches = target.exact
+    ? span === normalizedExpected
+    : span.includes(normalizedExpected);
+  if (!matches)
     throw new OpError(
       'text_verification_failed',
-      `Text verification failed across "${range.startAnchor}".."${range.endAnchor}".`,
+      target.endAnchor
+        ? `Text verification failed across "${target.startAnchor}".."${endAnchor}".`
+        : `Text verification failed at "${target.startAnchor}".`,
       [
-        `expected to contain: ${JSON.stringify(replacement)}`,
+        `${target.exact ? 'expected' : 'expected to contain'}: ${JSON.stringify(
+          normalizedExpected
+        )}`,
         `actual: ${JSON.stringify(span)}`
       ]
     );
-}
-
-function verifyWrittenText(
-  editor: LiveEditor,
-  anchor: string,
-  expected: string
-): void {
-  const current = freshBlock(editor, anchor);
-  if (!current)
-    throw new OpError(
-      'post_write_anchor_not_found',
-      `The edited anchor "${anchor}" disappeared after the write.`
-    );
-  // The selection API includes deleted tracked-revision runs in its raw text.
-  // `freshBlock` projects the live SFDT to current text (skipping Deletion
-  // revisions), so this verifies what the document resolves to while preserving
-  // the native insertion/deletion revisions for review.
-  const actual = current.text;
-  if (actual !== expected) {
-    throw new OpError(
-      'text_verification_failed',
-      `Text verification failed at "${anchor}".`,
-      [
-        `expected: ${JSON.stringify(expected)}`,
-        `actual: ${JSON.stringify(actual)}`
-      ]
-    );
-  }
+  return sfdt;
 }
 
 // SyncFusion's table structure methods default a missing/invalid count to 1.
@@ -3073,6 +4977,26 @@ interface ReservedOpFields {
     characterFormat?: FormatBag;
     paragraphFormat?: FormatBag;
   };
+  /** Engine-internal identity linking a composed paragraph to its creator. */
+  __sectionCreatorId?: string;
+  /** Engine-internal non-empty segment ordinal within that creator. */
+  __sectionSegmentIndex?: number;
+  /** Exact final body anchor planned from the complete composed topology. */
+  __sectionFinalAnchor?: string;
+  /**
+   * Exact live boundary before one composer-owned structural write. Unlike a
+   * content match, this remains deterministic when the section itself repeats
+   * the boundary heading or the boundary is an ordinary blank paragraph.
+   */
+  __sectionBoundaryAnchor?: string;
+  /** Composer-owned perimeter handling suppresses the generic insert heuristic. */
+  __suppressSectionBoundary?: boolean;
+  /** A malformed composer request is routed through the ordinary group refusal. */
+  __sectionRefusal?: {
+    code: string;
+    message: string;
+    details?: string[];
+  };
 }
 
 /**
@@ -3122,6 +5046,14 @@ interface OpSuccessExtras {
    * no revision to assert) and to report the op as done-without-a-change.
    */
   noOp?: NoOpWriteReport;
+  /**
+   * Set by the table-appearance ops. Its `report` half becomes the result's
+   * `appearance`; its `restores` half is engine-internal and is collected by the
+   * executor, never returned to the model.
+   */
+  appearanceWrite?: AppearanceWriteOutcome;
+  /** Fresh post-write snapshot reused by the executor's integrity checks. */
+  postWriteSfdt?: any;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -3159,6 +5091,34 @@ function insertionText(op: TypedEditOp<'insert_text'>): string {
   if (position === 'before' && text && !/[\r\n]$/.test(text))
     text = `${text}\n`;
   return text;
+}
+
+// Hierarchical offsets are serialized-text coordinates. After an earlier
+// tracked replacement in the same change set, those coordinates still count
+// pending deletion/insertion runs and can point before the visible replacement.
+// For paragraph-boundary inserts, let SyncFusion move within its live selection
+// model; test doubles without those public methods retain the offset fallback.
+function selectInsertionPoint(
+  editor: LiveEditor,
+  op: TypedEditOp<'insert_text'>,
+  block: FlatBlock
+): void {
+  const position =
+    typeof op.position === 'string' ? op.position.toLowerCase() : '';
+  const method =
+    position === 'after' || position === 'end'
+      ? 'moveToParagraphEnd'
+      : position === 'before' || position === 'start'
+      ? 'moveToParagraphStart'
+      : '';
+  const move = method ? (editor.selection as any)?.[method] : undefined;
+  if (typeof move === 'function') {
+    selectRange(editor, block.anchor, 0, 0);
+    move.call(editor.selection);
+    return;
+  }
+  const offset = insertionPoint(op, block);
+  selectRange(editor, block.anchor, offset, offset);
 }
 
 // ---------------------------------------------------------------------------
@@ -3352,7 +5312,7 @@ function writeAndVerifyFormulaResult(
     round: RoundingMode | null;
     decimals?: number;
   }
-): FlatBlock[] {
+): { blocks: FlatBlock[]; postWriteSfdt: any } {
   const { formulaText, evaluation, rendered, target, selfReferencing } = args;
   const targetAnchor = target.anchor;
   const targetTextBefore = target.text;
@@ -3372,13 +5332,28 @@ function writeAndVerifyFormulaResult(
 
   selectBlock(editor, target);
   replaceSelectedText(editor, rendered.renderedValue);
-  verifyWrittenText(editor, targetAnchor, rendered.renderedValue);
 
-  const freshBlocks = flattenSfdt(parseSfdt(editor.serialize()));
+  const postWriteSfdt = serializeSfdt(editor);
+  const freshBlocks = flattenSfdt(postWriteSfdt);
   const freshResolver = makeFormulaResolver(freshBlocks);
   const freshByAnchor = new Map(
     freshBlocks.map((block) => [block.anchor, block])
   );
+  const writtenText = freshByAnchor.get(targetAnchor)?.text;
+  if (writtenText !== rendered.renderedValue) {
+    throw new OpError(
+      writtenText == null
+        ? 'post_write_anchor_not_found'
+        : 'text_verification_failed',
+      writtenText == null
+        ? `The edited anchor "${targetAnchor}" disappeared after the write.`
+        : `Text verification failed at "${targetAnchor}".`,
+      [
+        `expected: ${JSON.stringify(rendered.renderedValue)}`,
+        `actual: ${JSON.stringify(writtenText ?? null)}`
+      ]
+    );
+  }
   for (const [anchor, before] of Array.from(readBefore.entries())) {
     if (anchor === targetAnchor) continue;
     const after = freshByAnchor.get(anchor)?.text ?? null;
@@ -3442,7 +5417,7 @@ function writeAndVerifyFormulaResult(
       );
     }
   }
-  return freshBlocks;
+  return { blocks: freshBlocks, postWriteSfdt };
 }
 
 function runFormulaCellWrite(
@@ -3525,7 +5500,7 @@ function runFormulaCellWrite(
     };
   }
 
-  writeAndVerifyFormulaResult(editor, {
+  const written = writeAndVerifyFormulaResult(editor, {
     formulaText,
     evaluation,
     rendered,
@@ -3553,7 +5528,11 @@ function runFormulaCellWrite(
     verifiedByReRead: true
   };
   return {
-    formula: { ...withoutReceipt, receipt: buildFormulaReceipt(withoutReceipt) }
+    formula: {
+      ...withoutReceipt,
+      receipt: buildFormulaReceipt(withoutReceipt)
+    },
+    postWriteSfdt: written.postWriteSfdt
   };
 }
 
@@ -3763,6 +5742,7 @@ function runColumnFormulaWrite(
     );
 
   const rows: ColumnRowOutcome[] = [];
+  let postWriteSfdt: any;
   for (let row = startRow; row <= endRow; row++) {
     const targetAnchor = `${tableAnchor};${row};${column};${cellParagraph}`;
     const target = blocks.find(
@@ -3844,7 +5824,7 @@ function runColumnFormulaWrite(
     // Every write is proven exactly as strictly as a single-cell write, and the
     // post-write stream becomes the input map for the next row - so a column
     // whose formula reads an earlier row of itself still sees written values.
-    blocks = writeAndVerifyFormulaResult(editor, {
+    const written = writeAndVerifyFormulaResult(editor, {
       formulaText: source,
       evaluation,
       rendered,
@@ -3853,6 +5833,8 @@ function runColumnFormulaWrite(
       round: roundingMode,
       ...decimals
     });
+    blocks = written.blocks;
+    postWriteSfdt = written.postWriteSfdt;
     rows.push({
       row,
       anchor: targetAnchor,
@@ -3896,7 +5878,7 @@ function runColumnFormulaWrite(
       }
     };
   }
-  return { column: report };
+  return { column: report, postWriteSfdt };
 }
 
 // ---------------------------------------------------------------------------
@@ -3918,35 +5900,142 @@ function isQuantityText(text: string): boolean {
   return classifyNumericText(text).quantity;
 }
 
+// Currency symbols and number-format punctuation without a digit are an empty
+// amount placeholder, not prose. This deliberately excludes letters so
+// "Included" and "N/A" keep the prose carve-out below.
+function isDigitFreeQuantityPlaceholder(text: string): boolean {
+  return (
+    text !== '' &&
+    !/\d/.test(text) &&
+    /^[\s$¢£¤¥\u058F\u060B\u09F2\u09F3\u09FB\u0AF1\u0BF9\u0E3F\u17DB\u20A0-\u20CF.,'’()\-−+%]*$/.test(
+      text
+    )
+  );
+}
+
 /**
- * How many cells of the target's own column are quantity-formatted. Two is the
- * threshold for calling the column a quantity column: one lone formatted cell
- * could be the header or a stray.
+ * THE ONE JUDGEMENT: does this cell belong to a column of formatted amounts,
+ * and - if it does - what number format does the DOCUMENT say a value written
+ * here should wear? Both halves of the money-cell contract read it: the
+ * provenance gate below (which numeric writes need a declared source) and the
+ * `set_cell_text` render (what bytes such a write actually lays down). There is
+ * deliberately one implementation, so the two can never disagree about which
+ * cells are money cells.
+ *
+ * The rule, and where each part of it comes from:
+ * - "a formatted amount" is `classifyNumericText(...).quantity` - the same
+ *   three-tier test `table_facts` publishes and the gate has always used, so an
+ *   id column (`0093`) and prose that happens to contain digits are excluded by
+ *   construction rather than by a second opinion.
+ * - the cell BELONGS to such a column when it already holds a quantity itself,
+ *   or when it is empty and at least two OTHER cells of its own column hold
+ *   one. Two is the gate's existing threshold: one lone formatted cell could be
+ *   the header or a stray.
+ * - the FORMAT is `resolveRenderFormat`, the formula path's own discovery,
+ *   unchanged: the target cell's own format when it has one, otherwise the
+ *   column's dominant format (`renders in this cell's own number format`).
+ * - a column whose amounts do not agree on one unit has no single format to
+ *   write in, so it resolves to null and nothing is re-rendered - the same
+ *   mixed-unit refusal `collectNumericCells` applies to arithmetic.
  */
-function quantitySiblingCount(blocks: FlatBlock[], cellAnchor: string): number {
-  const parts = cellAnchor.split(';');
-  if (parts.length !== 5) return 0;
+function resolveQuantityCellFormat(
+  blocks: FlatBlock[],
+  block: FlatBlock
+): {
+  format: CellNumberFormat;
+  formatSource: RenderFormatSource;
+  /** The column's own formatted amounts, as the formula path names them. */
+  inputs: ParsedColumnCell[];
+} | null {
+  const parts = block.anchor.split(';');
+  if (block.kind !== 'table_cell' || parts.length !== 5) return null;
+  const existing = block.text.trim();
+  const existingIsQuantity = existing !== '' && isQuantityText(existing);
+  // A cell holding "Included" or "N/A" is not a money cell, whatever its
+  // neighbours look like.
+  if (
+    existing !== '' &&
+    !existingIsQuantity &&
+    !isDigitFreeQuantityPlaceholder(existing)
+  )
+    return null;
+
   const collected = collectTableColumnCells(
     blocks,
     `${parts[0]};${parts[1]}`,
     Number(parts[3])
   );
-  if (!collected) return 0;
-  return collected.cells.filter(
-    (cellEntry) =>
-      cellEntry.anchor !== cellAnchor &&
-      cellEntry.text != null &&
-      isQuantityText(cellEntry.text)
-  ).length;
+  const siblings: ParsedColumnCell[] = [];
+  for (const cellEntry of collected?.cells ?? []) {
+    if (cellEntry.anchor === block.anchor) continue;
+    if (cellEntry.text == null || !isQuantityText(cellEntry.text)) continue;
+    const parsed = parseNumericCell(cellEntry.text);
+    if (!parsed) continue;
+    siblings.push({
+      row: cellEntry.row,
+      anchor: cellEntry.anchor,
+      text: cellEntry.text,
+      parsed: parsed
+    });
+  }
+  if (!existingIsQuantity && siblings.length < 2) return null;
+
+  const units = new Set(
+    siblings.map((sibling) => sibling.parsed.unit).filter(Boolean)
+  );
+  const existingUnit = existingIsQuantity
+    ? parseNumericCell(existing)?.unit ?? ''
+    : '';
+  if (existingUnit) units.add(existingUnit);
+  if (units.size > 1) return null;
+
+  return {
+    ...resolveRenderFormat(existingIsQuantity ? block.text : null, siblings),
+    inputs: siblings
+  };
 }
 
 const LITERAL_NUMBER_NOTE =
   'Written verbatim as a literal figure (literal: true), NOT computed by the engine. Only valid for a figure the user stated; anything derived from other cells must go through set_cell_formula.';
 
+const QUOTED_NUMBER_NOTE =
+  'Quoted verbatim from an attachment the user supplied (quotedFrom / quotedText), NOT computed by the engine. The engine verified the figure appears in the quoted excerpt; it cannot verify the excerpt came from that attachment, so the citation is recorded for review. Anything derived from other cells must go through set_cell_formula.';
+
 /**
- * The gate. Returns the audit record when a numeric write is allowed through
- * the user-dictated exception, `undefined` when the write is not numeric at
- * all, and throws the refusal otherwise.
+ * What the engine can and cannot check about "this figure came out of the
+ * user's document".
+ *
+ * It CANNOT check the claim itself: the attachment is read server-side, this
+ * engine runs against the editor and has no copy of the PDF, so "quotedFrom
+ * names a real attachment" is an assertion and stays one. Saying otherwise
+ * would be the same unverifiable-number problem one level up.
+ *
+ * It CAN check the claim is INTERNALLY CONSISTENT, and that is worth having:
+ * the figure being written must actually occur in the excerpt the model says it
+ * read it out of. A number the model derived cannot be dressed as a quotation
+ * without also fabricating an excerpt containing it, and the excerpt travels
+ * with the change set, so a reviewer can search the attachment for that exact
+ * sentence. Value equality, not string equality, is the test - a PDF reading
+ * `$9,660.00` justifies writing `9660` into a column that renders it that way.
+ */
+function quotedExcerptContains(excerpt: string, figure: string): boolean {
+  const target = parseNumericCell(figure);
+  if (!target) return false;
+  const candidates = excerpt.match(/[^\s]*\d[^\s]*/g) ?? [];
+  return candidates.some((candidate) => {
+    const parsed = parseNumericCell(candidate.replace(/[.,;:)]+$/, ''));
+    if (!parsed) return false;
+    const scale = Math.max(parsed.value.scale, target.value.scale);
+    const a = rescaleExact(parsed.value, scale);
+    const b = rescaleExact(target.value, scale);
+    return !!a && !!b && a.units === b.units;
+  });
+}
+
+/**
+ * The gate. Returns the audit record when a numeric write is allowed through on
+ * a declared provenance, `undefined` when the write is not numeric at all, and
+ * throws the refusal otherwise.
  */
 function modelAuthoredCellText(op: EditOp): string | undefined {
   switch (op.op) {
@@ -3966,32 +6055,42 @@ function modelAuthoredCellText(op: EditOp): string | undefined {
 function guardModelAuthoredNumber(
   op: EditOp,
   block: FlatBlock,
-  byAnchor: Map<string, FlatBlock>
+  byAnchor: Map<string, FlatBlock>,
+  rendered?: ColumnFormatRender
 ): LiteralNumberWrite | undefined {
   const text = modelAuthoredCellText(op);
   if (text === undefined) return undefined;
   if (block.kind !== 'table_cell') return undefined;
-  if (!isQuantityText(text)) return undefined;
+  const { record, citationFailure } =
+    op.op === 'set_cell_text'
+      ? resolveNumberProvenance(
+          op as TypedEditOp<'set_cell_text'>,
+          text.trim(),
+          block.text.trim()
+        )
+      : { record: undefined, citationFailure: '' };
+  // `literal: true` is an auditable claim even outside a quantity-formatted
+  // column. The change-set boundary uses these records to enforce the
+  // single-use licence for a user-stated figure.
+  const userStatedRecord =
+    record?.source === 'user_stated' && classifyNumericText(text).numeric
+      ? { ...record, ...(rendered ? { rendered } : {}) }
+      : undefined;
+  if (!isQuantityText(text)) return userStatedRecord;
   // A QUANTITY SLOT IN A QUANTITY COLUMN: either the cell already holds a
   // quantity, or it is empty and sits in a column that plainly holds them - the
   // freshly-inserted Total cell, which is exactly where a fabricated total
   // lands, so leaving the empty case open would leave the gate open.
   const existing = block.text.trim();
   const existingIsQuantity = existing !== '' && isQuantityText(existing);
-  const emptyInQuantityColumn =
-    existing === '' &&
-    quantitySiblingCount(Array.from(byAnchor.values()), block.anchor) >= 2;
-  if (!existingIsQuantity && !emptyInQuantityColumn) return undefined;
-  if (op.op === 'set_cell_text' && op.literal === true) {
-    return {
-      text: text.trim(),
-      previousText: existing,
-      note: LITERAL_NUMBER_NOTE
-    };
-  }
+  if (!resolveQuantityCellFormat(Array.from(byAnchor.values()), block))
+    return userStatedRecord;
+  if (record) return { ...record, ...(rendered ? { rendered } : {}) };
   throw new OpError(
     'model_authored_number',
-    `Refusing to write the number ${JSON.stringify(text.trim())} into ${
+    `Refusing to write the number ${JSON.stringify(text.trim())}${
+      rendered ? ` (sent as ${JSON.stringify(rendered.asSent)})` : ''
+    } into ${
       existingIsQuantity
         ? 'a cell that already holds a formatted amount'
         : 'an empty cell in a column of formatted amounts'
@@ -3999,10 +6098,1186 @@ function guardModelAuthoredNumber(
       op.op
     }: a value in a quantity column is almost always derived from other cells, and a number in the response body is unverifiable - the engine cannot tell a correct total from a plausible one. Use set_cell_formula with a \`formula\` that REFERENCES the cells the value comes from (e.g. "[${
       block.anchor
-    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived - the user dictated this exact number - use set_cell_text with \`literal: true\`, which records it as a verbatim user-stated figure rather than a computed one.`,
+    }] * 1.13", or "sum([0;7;1..93;3])"): the engine reads those cells, computes exactly, renders in this cell's own number format and verifies by re-reading. If this figure is not derived, declare where it came from instead: the user dictated this exact number - set_cell_text with \`literal: true\`; or it is quoted verbatim from a document the user attached - set_cell_text with \`quotedFrom\` (the attachment) and \`quotedText\` (the verbatim excerpt containing the figure), which the engine checks the figure against and records as a citation.${citationFailure}`,
     [
       `target cell: ${block.anchor}`,
       `current content: ${JSON.stringify(block.text)}`
+    ]
+  );
+}
+
+/**
+ * The sanctioned provenances for a figure the engine did not compute, and the
+ * audit record each one leaves. Anything else is refused by the gate above.
+ *
+ * `citationFailure` is the sentence the refusal appends when a citation WAS
+ * offered and did not hold up. Falling silently back to the generic refusal
+ * would read as "attachments are not supported" and send the model round the
+ * same loop it was already stuck in.
+ */
+function resolveNumberProvenance(
+  op: TypedEditOp<'set_cell_text'>,
+  text: string,
+  previousText: string
+): { record?: LiteralNumberWrite; citationFailure: string } {
+  if (op.literal === true) {
+    return {
+      record: {
+        text,
+        previousText,
+        source: 'user_stated',
+        note: LITERAL_NUMBER_NOTE
+      },
+      citationFailure: ''
+    };
+  }
+  const quotedFrom =
+    typeof op.quotedFrom === 'string' ? op.quotedFrom.trim() : '';
+  const quotedText =
+    typeof op.quotedText === 'string' ? op.quotedText.trim() : '';
+  if (!quotedFrom && !quotedText) return { citationFailure: '' };
+  if (!quotedFrom || !quotedText) {
+    return {
+      citationFailure:
+        ' `quotedFrom` and `quotedText` must BOTH be sent: the attachment the figure was read out of, and the verbatim excerpt containing it.'
+    };
+  }
+  if (!quotedExcerptContains(quotedText, text)) {
+    return {
+      citationFailure: ` The excerpt sent as \`quotedText\` (${JSON.stringify(
+        quotedText
+      )}) does not contain this figure, so the citation does not support it.`
+    };
+  }
+  return {
+    record: {
+      text,
+      previousText,
+      source: 'attachment',
+      quotedFrom,
+      quotedText,
+      note: QUOTED_NUMBER_NOTE
+    },
+    citationFailure: ''
+  };
+}
+
+/** True when this op declares a provenance for a figure it is writing. */
+function declaresNumberProvenance(op: EditOp): boolean {
+  if (op.op !== 'set_cell_text') return false;
+  return (
+    op.literal === true ||
+    (typeof op.quotedFrom === 'string' && op.quotedFrom.trim() !== '') ||
+    (typeof op.quotedText === 'string' && op.quotedText.trim() !== '')
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic relocation - the engine half of move_section / swap_sections
+//
+// The model supplies identifiers and a position. It never supplies content, and
+// that is the entire point of these two ops. Asked to move a section, a model
+// with no relocation primitive RETYPED the whole section as a new one and left
+// the original behind; asked to swap two subsections it improvised a three-way
+// text shuffle through placeholder tokens and failed on a one-character offset.
+// Every content write a model authors to express a STRUCTURAL intent is a fresh
+// chance to mis-transcribe, mis-count or invent. Neither op has a content
+// field, so neither can.
+//
+// The mechanism is SyncFusion's own and needs nothing new: select the range,
+// take `selection.sfdt`, paste it at the target, delete the source. Under the
+// executor's forced track changes that authors Insertions at the target and
+// Deletions at the source, accepting completes the move, and rejecting restores
+// the document byte for byte with the table's style, header row, shading,
+// column widths and allowAutoFit intact.
+//
+// It runs INSIDE applyDocumentEdits, so it already inherits forced track
+// changes, one revision group per op (stampRevisionGroup / groupNewRevisions ->
+// one rail card, one accept, one reject, one undo), atomic rollback
+// (rollbackGroup) and viewport stability (withSilentEditSelections). It adds no
+// wrapper of its own - `preserveDocumentViewDuring` is the primitive for callers
+// OUTSIDE the executor and a second wrapper here would be a second owner.
+//
+// SyncFusion has no producer for the MoveTo/MoveFrom revision types (it reads,
+// writes, renders and resolves them, but nothing in the editor authors one), so
+// a move appears in the rail as an insertion plus a deletion under one card -
+// exactly what Word shows with "track moves" off. A fidelity limit, not a
+// correctness one.
+// ---------------------------------------------------------------------------
+
+/** The `section;block` address of a top-level block, or of a cell's own table. */
+function topLevelAddress(anchor: string): { section: number; block: number } {
+  const [section, block] = anchor.split(';');
+  return { section: Number(section), block: Number(block) };
+}
+
+function addressIsBefore(
+  left: { section: number; block: number },
+  right: { section: number; block: number }
+): boolean {
+  return (
+    left.section < right.section ||
+    (left.section === right.section && left.block < right.block)
+  );
+}
+
+/** The raw (unflattened) top-level blocks of one Word section. */
+function rawSectionBlocks(sfdt: any, section: number): any[] {
+  const sections = pick(sfdt, 'sections', 'sec');
+  return Array.isArray(sections) ? getBlocks(sections[section]) : [];
+}
+
+/**
+ * Every top-level block address in DOCUMENT order, across Word sections.
+ *
+ * The relocation's position arithmetic runs in this sequence rather than in
+ * per-section block counts, because a paste can change the Word SECTION
+ * structure: when the payload carries a section break, pasting it splits the
+ * destination section and the content after the paste point is renumbered into a
+ * new section index. Measured per section, that reads as the destination section
+ * LOSING blocks - a negative delta - and the source's computed post-paste anchor
+ * lands back inside the copy that was just pasted. Live, that produced
+ * `relocation_source_lost` on the captain's own move: expected 15 blocks, found
+ * 14, because the range it found was the normalized copy rather than the source.
+ *
+ * A whole-document sequence has no such failure mode: the paste inserts N
+ * entries at one position in it, and every entry after that position keeps its
+ * order however the sections renumber.
+ */
+function topLevelSequence(
+  sfdt: any
+): Array<{ section: number; block: number }> {
+  const sections = pick(sfdt, 'sections', 'sec');
+  const out: Array<{ section: number; block: number }> = [];
+  if (!Array.isArray(sections)) return out;
+  sections.forEach((section, si) =>
+    getBlocks(section).forEach((_block, bi) =>
+      out.push({ section: si, block: bi })
+    )
+  );
+  return out;
+}
+
+function sequenceIndexOf(
+  sequence: Array<{ section: number; block: number }>,
+  address: { section: number; block: number }
+): number {
+  return sequence.findIndex(
+    (entry) =>
+      entry.section === address.section && entry.block === address.block
+  );
+}
+
+/**
+ * A range's texts with trailing EMPTY paragraphs dropped.
+ *
+ * Identity has to tolerate them: pasting a payload whose tail is a run of empty
+ * paragraphs normalizes one away, so a strict comparison rejects the correct
+ * range over a paragraph that says nothing. Everything that carries content
+ * still has to match exactly, in order - so this tolerates the normalization
+ * without weakening what it proves. The extent that is actually deleted is the
+ * re-derived range's own, so a dropped trailing empty cannot leave one behind.
+ */
+function rangeIdentity(blocks: FlatBlock[]): string {
+  const texts = blocks.map((block) => block.text);
+  while (texts.length > 1 && texts[texts.length - 1] === '') texts.pop();
+  return texts.join('\r');
+}
+
+/** A resolved, contiguous run of blocks - one section unit, at one moment. */
+interface BlockRange {
+  /** The anchor the range was resolved from. */
+  anchor: string;
+  /** The flattened blocks it covers, in document order. */
+  blocks: FlatBlock[];
+  /** Selection start: offset 0 of the first block. */
+  startAnchor: string;
+  /** Selection end, from the shared mark-inclusive rule. */
+  endAnchor: string;
+  /** No following block at all: this range runs to the end of the document. */
+  endsDocument: boolean;
+}
+
+/** Where a payload is pasted, as a caret and as a top-level insertion point. */
+interface PasteTarget {
+  /** The collapsed caret the paste happens at. */
+  anchor: string;
+  /** The top-level address the pasted blocks are inserted at. */
+  address: { section: number; block: number };
+  /**
+   * The end-of-text caret a landing paragraph must be created at first, when
+   * the destination is past the document's last paragraph mark.
+   *
+   * "After the last block" is the one destination the document has no caret
+   * for: a block anchor addresses a paragraph's TEXT, so the furthest caret
+   * that exists is `${tail.anchor};${tail.length}` - before the final paragraph
+   * mark, not after it. Pasting there merges the payload's first block into the
+   * document's last paragraph, which is the fusion Anthony read as
+   * `...Friday.National Capabilities` wearing `Heading 2`.
+   *
+   * Consuming the mark by arithmetic is not available here the way it is for a
+   * selection END: `${tail.anchor};${tail.length + 1}` was measured to produce
+   * byte-identical output, because SyncFusion clamps a paste caret to the
+   * paragraph it sits in. The payload needs a real paragraph to land at, so one
+   * is created - as a TRACKED insertion inside the same card, which is what
+   * keeps reject byte-exact.
+   */
+  appendParagraphAt?: string;
+}
+
+/**
+ * What one paste did to the document's top-level block sequence. Positions are
+ * indices into `topLevelSequence`, never per-section block numbers - see the
+ * note there for the live failure that distinction caused.
+ */
+interface PasteEffect {
+  /** Sequence index the pasted run starts at. */
+  at: number;
+  /** How many top-level blocks the paste actually added, measured. */
+  blocks: number;
+}
+
+function relocationAnchorMissing(anchor: string, field: string): OpError {
+  return new OpError(
+    'relocation_anchor_not_found',
+    `No block is addressed by ${JSON.stringify(
+      anchor
+    )}, so there is nothing to relocate. The document may have changed since it was read. Nothing was written.`,
+    [
+      `${field}: ${anchor}`,
+      'Re-read getDocumentInventory with scope "structure" and use a current heading anchor.'
+    ]
+  );
+}
+
+/**
+ * The blocks one anchor's section unit covers, plus the selection that spans it.
+ * Shares `sectionUnitEnd` with the `scope: 'section'` inventory read, so what a
+ * relocation moves is exactly what a section read reports - subsections
+ * included, which is why moving a parent carries its children along and moving
+ * a subsection leaves its parent behind.
+ */
+function resolveSectionRange(
+  blocks: FlatBlock[],
+  anchor: string,
+  field: string
+): BlockRange {
+  if (!anchor) throw relocationAnchorMissing(anchor, field);
+  const start = blocks.findIndex((candidate) => candidate.anchor === anchor);
+  if (start < 0) throw relocationAnchorMissing(anchor, field);
+  const from = blocks[start];
+  if (from.kind === 'table_cell')
+    throw new OpError(
+      'relocation_anchor_in_table',
+      `${JSON.stringify(
+        anchor
+      )} addresses a paragraph inside a table cell, and a table cell is not a section: a relocation moves whole top-level blocks. Nothing was written.`,
+      [
+        `${field}: ${anchor}`,
+        'Use the heading anchor of the section itself, from a structure read. To move a table on its own, anchor the heading of the section that contains it.'
+      ]
+    );
+  const end = sectionUnitEnd(blocks, start);
+  const covered = blocks.slice(start, end);
+  const last = covered[covered.length - 1];
+  const next = blocks[end];
+  return {
+    anchor,
+    blocks: covered,
+    startAnchor: `${from.anchor};0`,
+    endAnchor: markInclusiveRangeEnd(next, last),
+    endsDocument: !next
+  };
+}
+
+/** The caret and insertion point at the very start of a range. */
+function pasteAtRangeStart(range: BlockRange): PasteTarget {
+  return {
+    anchor: range.startAnchor,
+    address: topLevelAddress(range.blocks[0].anchor)
+  };
+}
+
+/** Every raw block a range covers, for the reads flattening cannot answer. */
+function rawBlocksInRange(sfdt: any, range: BlockRange): any[] {
+  const first = topLevelAddress(range.blocks[0].anchor);
+  const last = topLevelAddress(range.blocks[range.blocks.length - 1].anchor);
+  const out: any[] = [];
+  for (let section = first.section; section <= last.section; section++) {
+    const blocks = rawSectionBlocks(sfdt, section);
+    const from = section === first.section ? first.block : 0;
+    const to = section === last.section ? last.block : blocks.length - 1;
+    for (let index = from; index <= to; index++)
+      if (blocks[index]) out.push(blocks[index]);
+  }
+  return out;
+}
+
+/** Every revision id anywhere inside one raw block, tables included. */
+function collectRevisionIds(block: any, out: Set<string>): void {
+  const add = (ids: unknown) => {
+    if (Array.isArray(ids)) for (const id of ids) out.add(String(id));
+  };
+  const rows = getRows(block);
+  if (rows) {
+    for (const row of rows) {
+      add(rowRevisionIds(row));
+      const cells = pick(row, 'cells', 'c');
+      if (!Array.isArray(cells)) continue;
+      for (const cell of cells)
+        for (const cellBlock of getBlocks(cell))
+          collectRevisionIds(cellBlock, out);
+    }
+    return;
+  }
+  add(paragraphMarkRevisionIds(block));
+  for (const inline of getInlines(block))
+    add(pick(inline, 'revisionIds', 'rids'));
+}
+
+/**
+ * A pending revision inside the range that somebody else authored, if any.
+ *
+ * A relocation folds whatever it moves into its own card: the delete consumes a
+ * pending insertion instead of authoring a Deletion beside it, so REJECTING the
+ * move reverts that earlier edit too. For Robin's own pending edits that is
+ * correct - reject restores the true original. For a human reviewer's pending
+ * change it is not: their edit would disappear because we moved a section, and
+ * nothing would say so. Read from the document's own revision table rather than
+ * from widget state, and treat an unattributed revision as ours rather than
+ * refusing a document we cannot name an author for.
+ */
+function foreignPendingAuthor(
+  sfdt: any,
+  range: BlockRange
+): string | undefined {
+  const revisions = pick(sfdt, 'revisions', 'r');
+  if (!Array.isArray(revisions) || !revisions.length) return undefined;
+  const authorById = new Map<string, string>();
+  for (const revision of revisions) {
+    const id = pick(revision, 'revisionID', 'revisionId', 'rid');
+    if (id == null) continue;
+    const author = pick(revision, 'author', 'a');
+    authorById.set(String(id), typeof author === 'string' ? author : '');
+  }
+  const ids = new Set<string>();
+  for (const block of rawBlocksInRange(sfdt, range))
+    collectRevisionIds(block, ids);
+  for (const id of Array.from(ids)) {
+    const author = authorById.get(id);
+    if (author && author !== ASSISTANT_DOCUMENT_AUTHOR) return author;
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// The document-tail table deletion SyncFusion cannot accept
+//
+// ONE SyncFusion defect, and it presented as three before it was isolated:
+// accepting a tracked deletion that removes the LAST ROW of a table which is the
+// LAST BLOCK of the document throws, part-way through `acceptAll`. The deletion
+// has already applied by then, so the edit lands and the review pane breaks when
+// the user accepts the card - which is why this is a refusal and not a repair.
+//
+// The precondition was pinned by control, not inferred:
+//
+//   mid-document table, last row deleted   -> acceptAll OK
+//   document-tail table, NON-last row      -> acceptAll OK
+//   document-tail table, last row          -> acceptAll THROWS
+//   document-tail table, last row, REJECT  -> clean, and byte-identical
+//
+// Do NOT key this guard off the exception: the same precondition throws
+// `getTextPosBasedOnLogicalIndex` reading 'paragraph' (inside
+// `deleteTrackedContents`), `getCharacterFormatInternalInTable` reading
+// 'childWidgets' (inside `retrieveCharacterFormat`), or `nextSplitWidget`,
+// depending only on where the selection happens to sit when the accept runs.
+// Three messages, three stacks, one missing widget after the accept-side delete.
+// Matching on any of them would have produced three guards for one defect.
+//
+// Three ops delete content that can cover that row, and they are three SHAPES of
+// one rule rather than three rules: a relocation deletes a block RANGE,
+// `delete_row` deletes a ROW SET, and `delete_table` deletes a WHOLE TABLE. All
+// three ask this module the same question, so the FACT has one owner below and
+// each caller only decides whether its own extent covers it. Their refusal
+// messages differ because their remedies differ; the reason they share, so it
+// cannot drift.
+//
+// `opContracts.spec.ts` enumerates the registry and fails when a registered op
+// that deletes table content reaches SyncFusion without one of these shapes -
+// `delete_table` bypassed the guard because nothing was checking the list.
+// ---------------------------------------------------------------------------
+
+/**
+ * The last row of a table that is the document's last block, when there is one.
+ *
+ * Flattening emits a table's cells in row-major order, so the document's final
+ * flattened block being a table cell IS "the document ends with a table", and
+ * that cell's row index IS the table's last row. No second traversal needs to
+ * agree with this one.
+ */
+function documentTailTableLastRow(
+  blocks: FlatBlock[]
+): { tableAnchor: string; row: number } | undefined {
+  const last = blocks[blocks.length - 1];
+  const tableAnchor = last ? tableAnchorForBlock(last) : undefined;
+  if (!tableAnchor) return undefined;
+  const row = Number(last.anchor.split(';')[2]);
+  return Number.isInteger(row) ? { tableAnchor, row } : undefined;
+}
+
+/** The half of the refusal that is about SyncFusion, shared so it cannot drift. */
+const DOCUMENT_TAIL_TABLE_REASON =
+  'SyncFusion cannot accept the revision that would produce: `acceptAll` throws part-way through, after the deletion has already applied, so the edit would land and then break the review pane when the card is accepted. Rejecting is unaffected. Nothing was written.';
+
+/**
+ * The refusal that is about DELETING a block RANGE: the document's last section
+ * when the document ends with a table.
+ *
+ * A range that ends the document at a table cell necessarily covers that table's
+ * last row, which is why this is the range-shaped instance of the one rule above
+ * rather than a rule of its own.
+ *
+ * A copy never deletes its source, so this does not apply to one.
+ */
+function assertRangeIsRemovable(blocks: FlatBlock[], range: BlockRange): void {
+  const last = range.blocks[range.blocks.length - 1];
+  const tail = documentTailTableLastRow(blocks);
+  if (
+    !range.endsDocument ||
+    !tail ||
+    tableAnchorForBlock(last) !== tail.tableAnchor
+  )
+    return;
+  throw new OpError(
+    'relocation_document_tail_table',
+    `Refusing to relocate the section at ${JSON.stringify(
+      range.anchor
+    )}: it is the last section of the document and the document ends with a table. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `anchor: ${range.anchor}`,
+      `last block in range: ${last.anchor}`,
+      `the document ends with the table at ${tail.tableAnchor}, whose last row is ${tail.row}`,
+      'Express the change from the other side and the document tail stays put: move the section you want beside this one with move_section, using this section as the targetAnchor. To duplicate it rather than move it, copy_section leaves the tail alone.'
+    ]
+  );
+}
+
+/**
+ * The refusal that is about DELETING a ROW SET - the same rule, the other shape.
+ *
+ * `delete_row` reaches this today with no guard at all: it reports `ok: true`
+ * over a document whose accept will crash, so the failure surfaces later, to the
+ * user, as a broken review pane on a card that looked applied.
+ */
+function assertRowsAreRemovable(
+  blocks: FlatBlock[],
+  tableAnchor: string,
+  rows: number[]
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor || !rows.includes(tail.row))
+    return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to delete row ${tail.row} of the table at ${JSON.stringify(
+      tableAnchor
+    )}: it is the last row of that table, and that table is the last block of the document. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `table: ${tableAnchor}, last row: ${tail.row}`,
+      `rows this edit would remove: ${rows.join(', ')}`,
+      'Any other row of this table can be removed as usual. To remove this one, give the document a paragraph after the table first, so the table is no longer what the document ends with.'
+    ]
+  );
+}
+
+/**
+ * The refusal that is about DELETING A WHOLE TABLE - the same rule, third shape.
+ *
+ * Deleting a table deletes every row it has, so a table that is the document's
+ * last block always covers the row above. `delete_table` shipped on
+ * `origin/master` with no guard at all, and it is reachable there today: it
+ * answers `ok: true` and then `acceptAll` throws
+ * `Cannot read properties of undefined (reading 'childWidgets')`, measured on a
+ * real DocumentEditor, with a paragraph after the table as the control that
+ * accepts cleanly.
+ *
+ * Its own remedy differs from the row-set one - there is no "some other row" to
+ * offer when the request was the whole table - so it names its own, and takes
+ * the SyncFusion half of the reason from the shared constant so the three
+ * explanations of one defect cannot drift apart.
+ */
+function assertTableIsRemovable(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor) return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to delete the table at ${JSON.stringify(
+      tableAnchor
+    )}: that table is the last block of the document, so deleting it removes its last row. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `table: ${tableAnchor}, last row: ${tail.row}`,
+      'this edit would remove every row of that table',
+      'Give the document a paragraph after the table first, so the table is no longer what the document ends with, and the table can then be deleted as usual.'
+    ]
+  );
+}
+
+/**
+ * The refusal that is about REJECTING the range: a pending change somebody else
+ * authored inside it.
+ *
+ * A move folds whatever it moves into its own card - the delete consumes a
+ * pending insertion rather than authoring a Deletion beside it - so rejecting the
+ * move reverts that earlier edit too. For Robin's own pending edits that is
+ * correct. For a human reviewer's it is not: their edit would disappear because
+ * we moved a section, and nothing would say so.
+ *
+ * A copy leaves the source untouched, so it takes nothing away from anyone and
+ * this does not apply to one either.
+ */
+function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
+  const author = foreignPendingAuthor(sfdt, range);
+  if (author)
+    throw new OpError(
+      'relocation_source_has_pending_review',
+      `Refusing to relocate the section at ${JSON.stringify(
+        range.anchor
+      )}: it contains a pending tracked change by ${JSON.stringify(
+        author
+      )}. A relocation folds what it moves into its own card, so rejecting this move would silently revert their edit as well. Nothing was written.`,
+      [
+        `anchor: ${range.anchor}`,
+        `pending author: ${author}`,
+        `Ask for ${author}'s change to be accepted or rejected first, then relocate the section.`
+      ]
+    );
+}
+
+/**
+ * Where a range's anchors moved to after a paste, re-derived and verified.
+ *
+ * Only a PASTE shifts block indices - a tracked delete marks its content and
+ * leaves it exactly where it was, which is the property that makes a two-step
+ * relocation (and the bottom-up swap) deterministic without predicting
+ * anything. A paste shifts only the blocks at or after it, and only within its
+ * own Word section.
+ *
+ * The arithmetic is then CHECKED against the document rather than trusted: the
+ * re-derived range must cover the same blocks reading the same text. If it does
+ * not, the op fails and the group rolls back, instead of deleting whatever
+ * happens to sit at the computed index.
+ */
+function shiftedRange(
+  sfdt: any,
+  range: BlockRange,
+  paste: PasteEffect,
+  sourceIndex: number,
+  // How to read the range back at its new address. A section range and a table
+  // range are addressed differently - a table anchor is not among the flattened
+  // blocks at all, its CELLS are - so the resolver that produced the range is
+  // the only thing that can find it again.
+  resolve: (blocks: FlatBlock[], anchor: string) => BlockRange = (
+    blocks,
+    anchor
+  ) => resolveSectionRange(blocks, anchor, 'relocated anchor')
+): BlockRange {
+  const movedIndex =
+    paste.at <= sourceIndex ? sourceIndex + paste.blocks : sourceIndex;
+  // The invariant that makes landing on the copy impossible rather than merely
+  // unlikely: the pasted run occupies exactly [at, at + blocks) of the sequence,
+  // and the source is never inside it. Without this the two are almost
+  // indistinguishable by content - which is the whole reason the live failure
+  // got as far as a comparison instead of stopping here.
+  if (movedIndex >= paste.at && movedIndex < paste.at + paste.blocks)
+    throw new OpError(
+      'relocation_source_lost',
+      `Refusing to delete the source of the move at ${JSON.stringify(
+        range.anchor
+      )}: after the paste it resolves to block ${movedIndex}, which is inside the run this op just pasted (blocks ${
+        paste.at
+      }..${
+        paste.at + paste.blocks - 1
+      }). That would delete the copy instead of the original. Nothing of this change set was kept.`,
+      [
+        `source at sequence index ${sourceIndex}, paste of ${paste.blocks} blocks at ${paste.at}`
+      ]
+    );
+  const sequence = topLevelSequence(sfdt);
+  const address = sequence[movedIndex];
+  const blocks = flattenSfdt(sfdt);
+  const anchor = address ? `${address.section};${address.block}` : '';
+  const moved = anchor ? resolve(blocks, anchor) : undefined;
+  const before = rangeIdentity(range.blocks);
+  const after = moved ? rangeIdentity(moved.blocks) : '';
+  if (!moved || before !== after)
+    throw new OpError(
+      'relocation_source_lost',
+      `The section that was at ${JSON.stringify(
+        range.anchor
+      )} is no longer readable at ${JSON.stringify(
+        anchor || `sequence index ${movedIndex}`
+      )} after the content was inserted at its destination, so the engine refused to delete what is there now. Nothing of this change set was kept.`,
+      [
+        `expected ${range.blocks.length} blocks reading ${JSON.stringify(
+          before.slice(0, 200)
+        )}`,
+        `found ${
+          moved ? moved.blocks.length : 0
+        } blocks reading ${JSON.stringify(after.slice(0, 200))}`
+      ]
+    );
+  return moved;
+}
+
+/**
+ * The primitive behind all three relocation ops: put a copy of a resolved range
+ * at a target caret, tracked, and optionally remove the original.
+ *
+ * `removeSource: false` IS the copy - a copy is this relocation without its
+ * delete, which is why there is one routine and three entry points rather than a
+ * second code path to keep correct. It also means a copy cannot be affected by
+ * the post-paste source re-resolution at all: nothing is deleted, so there is
+ * nothing to find again.
+ *
+ * Returns the paste's measured effect on block positions, which is what a caller
+ * relocating a SECOND range needs in order to find it again, and the document as
+ * it stood immediately after the paste - every shift is already in it, because
+ * the delete that may follow shifts nothing.
+ */
+function relocateBlockRange(
+  editor: LiveEditor,
+  preSfdt: any,
+  source: BlockRange,
+  target: PasteTarget,
+  {
+    removeSource,
+    transformPayload
+  }: {
+    removeSource: boolean;
+    /**
+     * Relocate only PART of the captured range, by returning a narrowed payload.
+     *
+     * `split_table` is the caller: it needs a copy holding the header band and
+     * the extracted rows only. Narrowing the payload BEFORE the paste rather
+     * than deleting rows from the pasted copy afterwards is not a preference -
+     * SyncFusion's `deleteRow` on a row that is itself an unaccepted insertion
+     * writes rowSpan back into a DIFFERENT table, which left the source's
+     * untouched rows reading rowSpan 0 and -1 with no revision to reject. Isolated
+     * to that exact case: two ordinary tables are fine, and deleting a row from
+     * either of them is fine, tracked or not.
+     *
+     * This reads and writes no content. It drops entries from a row array in the
+     * same SFDT the engine parses everywhere else.
+     */
+    transformPayload?: (payload: string) => string;
+  } = { removeSource: true }
+): { paste: PasteEffect; pastedSfdt: any } {
+  editor.selection.select(source.startAnchor, source.endAnchor);
+  const captured = (editor.selection as any)?.sfdt;
+  const payload =
+    typeof captured === 'string' && captured && transformPayload
+      ? transformPayload(captured)
+      : captured;
+  if (typeof payload !== 'string' || !payload)
+    throw new OpError(
+      'relocation_payload_unavailable',
+      `SyncFusion returned no content for the range ${source.startAnchor} - ${source.endAnchor}, so there is nothing to relocate. Nothing was written.`
+    );
+  // Measured in the whole-document sequence, before any write: a paste that
+  // carries a section break renumbers Word sections, so neither the paste point
+  // nor the source can be tracked by (section, block) across it.
+  const sequenceBefore = topLevelSequence(preSfdt);
+  const pasteAt = (() => {
+    const index = sequenceIndexOf(sequenceBefore, target.address);
+    // One past the last block of the document - the `position: 'after'` tail.
+    return index < 0 ? sequenceBefore.length : index;
+  })();
+  const sourceIndex = sequenceIndexOf(
+    sequenceBefore,
+    topLevelAddress(source.blocks[0].anchor)
+  );
+  if (sourceIndex < 0)
+    throw new OpError(
+      'relocation_source_lost',
+      `The section at ${JSON.stringify(
+        source.anchor
+      )} is not addressable in the document as it stands, so nothing was moved.`
+    );
+  // The destination past the document's last paragraph mark has no caret until
+  // one is made. Created AFTER the payload is captured, so the capture reads
+  // the document the caller resolved its anchors against, and as a tracked
+  // insertion inside this same card, so rejecting takes it away again.
+  if (target.appendParagraphAt) {
+    editor.selection.select(target.appendParagraphAt, target.appendParagraphAt);
+    callEditor(editor, 'insertText', '\n');
+  }
+  editor.selection.select(target.anchor, target.anchor);
+  callEditor(editor, 'paste', payload);
+  const pastedSfdt = serializeSfdt(editor);
+  const paste: PasteEffect = {
+    at: pasteAt,
+    // The ACTUAL number of blocks the paste added, never the source's own count:
+    // SyncFusion normalizes a payload (a trailing empty paragraph in particular),
+    // so the two are not the same number.
+    blocks: topLevelSequence(pastedSfdt).length - sequenceBefore.length
+  };
+  if (removeSource) {
+    const moved = shiftedRange(pastedSfdt, source, paste, sourceIndex);
+    editor.selection.select(moved.startAnchor, moved.endAnchor);
+    editor.editor.delete();
+  }
+  return { paste, pastedSfdt };
+}
+
+/** Resolves `targetAnchor` + `position` into the caret the payload lands at. */
+function resolveRelocationTarget(
+  blocks: FlatBlock[],
+  op: EditOp,
+  source: BlockRange
+): PasteTarget {
+  const anchor = String(op.targetAnchor ?? '').trim();
+  const target = resolveSectionRange(blocks, anchor, 'targetAnchor');
+  const first = topLevelAddress(source.blocks[0].anchor);
+  const last = topLevelAddress(source.blocks[source.blocks.length - 1].anchor);
+  const inSource = (address: { section: number; block: number }) =>
+    !addressIsBefore(address, first) && !addressIsBefore(last, address);
+  // Both the anchor the model named AND the caret it resolves to have to be
+  // outside the range. They are not the same test: `position: 'after'` on a
+  // section that runs to the end of the document resolves to the last block of
+  // the document, which is inside the source whenever the source is the tail.
+  const refuseInsideSource = (where: string): never => {
+    throw new OpError(
+      'relocation_target_inside_source',
+      `Refusing to move the section at ${JSON.stringify(
+        source.anchor
+      )} to ${JSON.stringify(
+        anchor
+      )}: ${where} is inside the range that section covers, so the move has no destination outside what it is moving. Nothing was written.`,
+      [
+        `source range: ${source.blocks[0].anchor} .. ${
+          source.blocks[source.blocks.length - 1].anchor
+        }`,
+        `targetAnchor: ${anchor}`,
+        `resolved paste point: ${where}`,
+        'Pick a targetAnchor outside that range. To move only a SUBSECTION of it, anchor that subsection heading instead - the range rule is depth-aware, so a subsection moves without its parent.'
+      ]
+    );
+  };
+  if (inSource(topLevelAddress(anchor))) refuseInsideSource(anchor);
+  const after = op.position === 'after';
+  const tail = target.blocks[target.blocks.length - 1];
+  const following = after ? blocks[blocks.indexOf(tail) + 1] : undefined;
+  const caretBlock = after ? following ?? tail : target.blocks[0];
+  if (caretBlock.kind === 'table_cell')
+    throw new OpError(
+      'relocation_target_in_table',
+      `Refusing to move the section at ${JSON.stringify(source.anchor)} ${
+        after ? 'after' : 'before'
+      } ${JSON.stringify(
+        anchor
+      )}: that lands the content inside the table cell at ${JSON.stringify(
+        caretBlock.anchor
+      )}. A section is relocated between top-level blocks, never into a cell. Nothing was written.`,
+      [
+        `targetAnchor: ${anchor}`,
+        `resolved paste point: ${caretBlock.anchor}`,
+        !after
+          ? 'Use the anchor of a heading or body paragraph from a structure read.'
+          : following
+          ? 'Use position "before" on the section that follows this one instead.'
+          : 'That table is the end of the document, so there is no body block after it: relocate the other section with position "before" this one instead.'
+      ]
+    );
+  if (inSource(topLevelAddress(caretBlock.anchor)))
+    refuseInsideSource(caretBlock.anchor);
+  // `after` means after everything the target section covers, not after its
+  // heading paragraph: both anchors name section UNITS, which is what makes
+  // "move A below B" mean what the user said when B has subsections.
+  if (after && !following) {
+    // Past the document's last paragraph mark: there is no caret there, so the
+    // primitive creates the paragraph the payload lands at. See
+    // PasteTarget.appendParagraphAt for why arithmetic on the mark cannot do
+    // this and what the fusion looked like before.
+    const address = topLevelAddress(tail.anchor);
+    return {
+      anchor: `${address.section};${address.block + 1};0`,
+      address: { ...address, block: address.block + 1 },
+      appendParagraphAt: `${tail.anchor};${tail.length}`
+    };
+  }
+  return {
+    anchor: `${caretBlock.anchor};0`,
+    address: topLevelAddress(caretBlock.anchor)
+  };
+}
+
+// ---------------------------------------------------------------------------
+// split_table - one table becomes two, and the engine writes no content
+//
+// The captain: "we need split to work too. Also smart split we can be like split
+// this table into two table one with all of a specific items from the first
+// table. And the items could be in any rows in the main table."
+//
+// Two shapes, and the second is the one that matters: the extracted rows are NOT
+// contiguous. `splitAtRow` expresses the positional shape and `rows` the
+// selective one; both normalize to one row set on the way in, so there is one
+// code path rather than two.
+//
+// The mechanism is `copy_section`'s: capture the WHOLE TABLE, narrow the captured
+// payload to the header band plus the extracted rows, paste that at the target,
+// and delete the extracted rows from the source. Capturing the whole table is
+// what makes the row indices trivially correspond - payload row i is source row i
+// - and narrowing before the paste rather than pruning the pasted copy afterwards
+// is forced by a SyncFusion defect: `deleteRow` on a row that is itself an
+// unaccepted insertion writes rowSpan back into a DIFFERENT table, which left the
+// source's untouched rows reading rowSpan 0 and -1 with nothing to reject.
+//
+// That choice is what keeps the model out of the content:
+//
+//   * the new table's appearance is IDENTITY, not inheritance - it is the source
+//     table's own serialized content pasted back, so it renders the same by
+//     construction. Measured through the RESOLVED read (`cellFormat.background`
+//     per row), not merely the stated SFDT.
+//   * the HEADER BAND lands in both tables for free, because the copy is the
+//     whole table. Nothing reproduces or re-authors a header.
+//   * the alternative - build a table and fill it - would have to author every
+//     cell it moved, which is exactly what produced a duplicated section and
+//     placeholder tokens in a client proposal before move_section existed.
+//
+// SPLIT IS THEREFORE NOT A CONTENT-CREATING OP, and it deliberately does not
+// consult `creationAppearance`. That resolver answers "what should content with
+// NO source look like" - a composed section, an inserted table, a new row. A
+// split's new table HAS a source: the table it came out of. Routing it through
+// the resolver would replace an exact copy with an inferred one, and put a
+// second owner on the same pixels. `copy_section` sits outside
+// CONTENT_CREATING_OPS for the identical reason. Do not "fix" this by adding it.
+//
+// Row indices are read from a table_facts read (`TableRowFact.row`), never
+// counted - and `splitAtRow` exists so the positional shape needs no enumeration
+// of a long tail either.
+//
+// NO TITLE, and no option for one. The captain: "ok i am fine with defaulting to
+// no title when split." A title is CONTENT, so putting one on this op - even
+// routed internally through the composed-heading path - would give it a
+// model-authored text field and lose the schema-level guarantee that it cannot
+// retype or fabricate anything. A title is therefore a separate composed heading
+// through the section composer, which also means "add a title later" is the SAME
+// operation as adding one now, rather than a second path that could disagree
+// about style. Proven as two ordinary turns in splitTable.spec.ts.
+// ---------------------------------------------------------------------------
+
+/**
+ * The whole-table range: the table's own cells, and the selection spanning them.
+ *
+ * Sliced by INDEX rather than filtered by table anchor, so a nested table's
+ * cells - which carry deeper anchors and belong to no top-level table - stay
+ * inside the extent instead of silently dropping out of it and breaking the
+ * identity check that re-resolution depends on.
+ */
+function resolveTableRange(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): BlockRange {
+  const first = blocks.findIndex(
+    (block) => tableAnchorForBlock(block) === tableAnchor
+  );
+  if (first < 0) throw relocationAnchorMissing(tableAnchor, 'anchor');
+  let last = first;
+  for (let index = first; index < blocks.length; index++)
+    if (tableAnchorForBlock(blocks[index]) === tableAnchor) last = index;
+  const covered = blocks.slice(first, last + 1);
+  const next = blocks[last + 1];
+  return {
+    anchor: tableAnchor,
+    blocks: covered,
+    startAnchor: `${blocks[first].anchor};0`,
+    endAnchor: markInclusiveRangeEnd(next, blocks[last]),
+    endsDocument: !next
+  };
+}
+
+/**
+ * Every vertically merged cell's span, as { row, span }.
+ *
+ * The key set must match the inventory's own cell-format read: `tcpr` is the
+ * OPTIMIZED key and the live editor always serializes optimized SFDT, so
+ * omitting it made every merge span invisible in production once already while
+ * long-key fixtures kept the spec green.
+ */
+function verticalSpans(tableBlock: any): Array<{ row: number; span: number }> {
+  const out: Array<{ row: number; span: number }> = [];
+  const rows = getRows(tableBlock);
+  if (!rows) return out;
+  rows.forEach((row: any, index: number) => {
+    const cells = pick(row, 'cells', 'c');
+    if (!Array.isArray(cells)) return;
+    for (const cell of cells) {
+      const format = pick(cell, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const span = Number(pick(format, 'rowSpan', 'rwsp') ?? 1);
+      if (Number.isFinite(span) && span > 1) out.push({ row: index, span });
+    }
+  });
+  return out;
+}
+
+/** The rows a split takes, the rows it leaves, and the band it never touches. */
+interface SplitRowPlan {
+  /** Ascending, deduped, every one a data row. Goes to the NEW table. */
+  extract: number[];
+  /** Ascending. Stays in the SOURCE table. */
+  keep: number[];
+  headerRows: number;
+  rowCount: number;
+}
+
+function splitRefusal(
+  code: string,
+  message: string,
+  details: string[]
+): OpError {
+  return new OpError(code, `${message} Nothing was written.`, details);
+}
+
+/**
+ * Normalize `rows` / `splitAtRow` into one row set, refusing everything the
+ * document itself says cannot be a split.
+ *
+ * Every refusal here is derived from the table - its header band, its real row
+ * count, its merges - rather than enumerated from cases, which is why a
+ * two-row header band or a headerless table needs no special branch.
+ */
+function resolveSplitRows(
+  op: EditOp,
+  tableAnchor: string,
+  source: TableAppearance,
+  headerRows: number,
+  tableBlock: any
+): SplitRowPlan {
+  const rowCount = source.rows.length;
+  const data: number[] = [];
+  for (let row = headerRows; row < rowCount; row++) data.push(row);
+  const where = `table ${tableAnchor}: ${rowCount} rows, header band ${headerRows}`;
+  if (!data.length)
+    throw splitRefusal(
+      'split_table_header_only',
+      `The table at ${JSON.stringify(
+        tableAnchor
+      )} has no data rows - every row it has is part of its header band - so there is nothing to split out of it.`,
+      [where, 'Re-read the table with a table_facts read.']
+    );
+
+  const asked = Array.isArray(op.rows) ? op.rows : undefined;
+  const at = typeof op.splitAtRow === 'number' ? op.splitAtRow : undefined;
+  if (asked && at !== undefined)
+    throw splitRefusal(
+      'split_table_rows_ambiguous',
+      'split_table takes either `rows` (the row indices to extract) or `splitAtRow` (extract that row and every row below it), not both - and these two do not agree on one answer.',
+      [
+        where,
+        `rows: ${asked.join(', ')}`,
+        `splitAtRow: ${at}`,
+        'Send `rows` for a set of specific rows, or `splitAtRow` for a positional split.'
+      ]
+    );
+  if (!asked && at === undefined)
+    throw splitRefusal(
+      'split_table_no_rows',
+      'split_table needs to know which rows to extract: send `rows` with the row indices from a table_facts read, or `splitAtRow` to extract that row and every row below it.',
+      [where]
+    );
+
+  const requested = asked ?? data.filter((row) => row >= (at as number));
+  const outOfRange = (asked ?? [at as number]).filter(
+    (row) => !Number.isInteger(row) || row < 0 || row >= rowCount
+  );
+  if (outOfRange.length)
+    throw splitRefusal(
+      'split_table_row_out_of_range',
+      `The table at ${JSON.stringify(tableAnchor)} has ${rowCount} rows (0..${
+        rowCount - 1
+      }), so ${outOfRange.join(', ')} ${
+        outOfRange.length > 1 ? 'do' : 'does'
+      } not address a row in it.`,
+      [
+        where,
+        'The document may have changed since it was read. Re-read it with a table_facts read and use its row numbers.'
+      ]
+    );
+
+  const inHeader = (asked ?? [at as number]).filter((row) => row < headerRows);
+  if (inHeader.length)
+    throw splitRefusal(
+      'split_table_header_row',
+      `Row${inHeader.length > 1 ? 's' : ''} ${inHeader.join(
+        ', '
+      )} of the table at ${JSON.stringify(tableAnchor)} ${
+        inHeader.length > 1 ? 'are' : 'is'
+      } part of its header band, and a split REPRODUCES the header band in both tables rather than moving it - so a header row is not something to extract.`,
+      [
+        where,
+        "Name only data rows. Both tables come out with this table's header already on them."
+      ]
+    );
+
+  const extract = Array.from(new Set(requested)).sort(
+    (left, right) => left - right
+  );
+  if (!extract.length)
+    throw splitRefusal(
+      'split_table_no_rows',
+      at !== undefined
+        ? `Splitting the table at ${JSON.stringify(
+            tableAnchor
+          )} at row ${at} would move no rows: there are no data rows at or below it.`
+        : `No rows were named to extract from the table at ${JSON.stringify(
+            tableAnchor
+          )}.`,
+      [where, `data rows: ${data.join(', ')}`]
+    );
+
+  const keep = data.filter((row) => !extract.includes(row));
+  if (!keep.length)
+    throw splitRefusal(
+      'split_table_takes_every_row',
+      `Extracting rows ${extract.join(
+        ', '
+      )} takes EVERY data row of the table at ${JSON.stringify(
+        tableAnchor
+      )}, so the original would be left holding nothing but its header. That is a move, not a split.`,
+      [
+        where,
+        'Leave at least one data row behind, or move the whole thing: move_section relocates the section that contains this table, with its formatting, as one tracked change.'
+      ]
+    );
+
+  // A vertical merge spanning the boundary cannot be split without tearing the
+  // merged cell in half. Derived from the table's own spans, so a merge anywhere
+  // in it is covered rather than only the shapes anybody thought to try.
+  const torn = verticalSpans(tableBlock).find(({ row, span }) => {
+    const covered: number[] = [];
+    for (let index = row; index < Math.min(row + span, rowCount); index++)
+      covered.push(index);
+    const taken = covered.filter((index) => extract.includes(index)).length;
+    return taken > 0 && taken < covered.length;
+  });
+  if (torn)
+    throw splitRefusal(
+      'split_table_merged_row_span',
+      `A cell in the table at ${JSON.stringify(
+        tableAnchor
+      )} is vertically merged across rows ${torn.row}..${
+        torn.row + torn.span - 1
+      }, and this split would put some of those rows in each table - which would tear the merged cell in half.`,
+      [
+        where,
+        `merged span: rows ${torn.row}..${torn.row + torn.span - 1}`,
+        'Extract all of those rows together, or none of them.'
+      ]
+    );
+
+  return { extract, keep, headerRows, rowCount };
+}
+
+/** Delete one row of one table, tracked, through the selection. */
+function deleteTableRow(
+  editor: LiveEditor,
+  tableAnchor: string,
+  row: number
+): void {
+  const caret = `${tableAnchor};${row};0;0;0`;
+  editor.selection.select(caret, caret);
+  callEditor(editor, 'deleteRow');
+}
+
+/**
+ * The captured payload with only `keep`'s rows left in its table.
+ *
+ * Row indices survive this unchanged relative to the SOURCE, because the payload
+ * is the WHOLE table - payload row i is source row i. That correspondence is the
+ * reason a split copies the whole table and narrows the copy, rather than trying
+ * to select the extracted rows in the first place: a non-contiguous selection
+ * does not exist, and the header band is not adjacent to the rows being taken.
+ *
+ * Reads and writes no content: it keeps a subset of a row array, under the very
+ * key it found the array on, so an optimized payload (`r`) and a long-key one
+ * (`rows`) both come back in their own shape. Everything else in the payload -
+ * styles, lists, the image table, the table's own format - is untouched and stays
+ * opaque.
+ */
+function prunePayloadRows(payload: string, keep: number[]): string {
+  const parsed = JSON.parse(payload);
+  const sections = pick(parsed, 'sections', 'sec');
+  if (!Array.isArray(sections)) return payload;
+  let pruned = false;
+  for (const section of sections)
+    for (const block of getBlocks(section)) {
+      const key = ['rows', 'r', 'rw'].find((candidate) =>
+        Array.isArray(block?.[candidate])
+      );
+      if (!key) continue;
+      const rows = block[key];
+      block[key] = keep
+        .map((index) => rows[index])
+        .filter((row) => row !== undefined);
+      pruned = true;
+    }
+  // A payload with no table in it means the capture did not return the table
+  // this op resolved, and pasting it would put the wrong thing at the target.
+  if (!pruned)
+    throw new OpError(
+      'split_table_payload_not_a_table',
+      'SyncFusion returned no table for the range this split captured, so there is nothing to divide. Nothing was written.'
+    );
+  return JSON.stringify(parsed);
+}
+
+/** The cell blocks of a range that belong to one of `rows`. */
+function rangeRowBlocks(range: BlockRange, rows: number[]): FlatBlock[] {
+  const wanted = new Set(rows);
+  return range.blocks.filter((block) => {
+    const parts = block.anchor.split(';');
+    return parts.length === 5 && wanted.has(Number(parts[2]));
+  });
+}
+
+/**
+ * The table the paste produced, found in the run the paste actually added.
+ *
+ * Measured, never guessed: the copy occupies exactly
+ * `[paste.at, paste.at + paste.blocks)` of the whole-document sequence, and
+ * which SIDE of the source it lands on depends on the target. Its row texts are
+ * then checked against the source's, so deleting rows out of the wrong table is
+ * impossible rather than unlikely - the same discipline `shiftedRange` applies
+ * to the source.
+ */
+function assertPastedTableMatches(
+  pastedSfdt: any,
+  paste: PasteEffect,
+  source: BlockRange,
+  expectedBlocks: FlatBlock[]
+): string {
+  const sequence = topLevelSequence(pastedSfdt);
+  const blocks = flattenSfdt(pastedSfdt);
+  const expected = rangeIdentity(expectedBlocks);
+  for (let index = paste.at; index < paste.at + paste.blocks; index++) {
+    const address = sequence[index];
+    if (!address) continue;
+    const anchor = `${address.section};${address.block}`;
+    if (!collectTableAppearance(tableBlockAt(pastedSfdt, anchor))) continue;
+    const copy = resolveTableRange(blocks, anchor);
+    if (rangeIdentity(copy.blocks) === expected) return anchor;
+  }
+  throw new OpError(
+    'split_table_copy_lost',
+    `The copy of the table at ${JSON.stringify(
+      source.anchor
+    )} is not readable at the position it was pasted into, so the engine refused to delete rows from whatever is there instead. Nothing of this change set was kept.`,
+    [
+      `paste of ${paste.blocks} block(s) at sequence index ${paste.at}`,
+      `expected rows reading ${JSON.stringify(expected.slice(0, 200))}`
     ]
   );
 }
@@ -4022,8 +7297,13 @@ export const ANCHORED_OP_HANDLERS: {
       if (replacement != null) {
         selectBlock(editor, block);
         replaceSelectedText(editor, String(replacement));
-        verifyWrittenText(editor, block.anchor, String(replacement));
-        return;
+        return {
+          postWriteSfdt: verifyTextWrite(editor, {
+            startAnchor: block.anchor,
+            expected: String(replacement),
+            exact: true
+          })
+        };
       }
       throw new OpError(
         'missing_find',
@@ -4058,11 +7338,22 @@ export const ANCHORED_OP_HANDLERS: {
       // their legacy selected-range replacement primitive. Production search
       // is required and always takes the guarded delete/read/insert path.
       editor.editor.insertText(String(replacement ?? ''));
-      verifyWrittenText(editor, block.anchor, next);
-      return;
+      return {
+        postWriteSfdt: verifyTextWrite(editor, {
+          startAnchor: block.anchor,
+          expected: next,
+          exact: true
+        })
+      };
     }
     replaceSelectedText(editor, String(replacement ?? ''));
-    verifyWrittenText(editor, block.anchor, next);
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: next,
+        exact: true
+      })
+    };
   },
   replace_selection: ({ editor, op, block, byAnchor }) => {
     const replacement = op.replace ?? (op as any).text ?? (op as any).newText;
@@ -4080,7 +7371,13 @@ export const ANCHORED_OP_HANDLERS: {
     // insertText, so SyncFusion authors the paired deletion/insertion revisions
     // atomically - see replaceSelectedText on why this must not be split.
     replaceSelectedText(editor, String(replacement));
-    verifySelectionWrite(editor, range, String(replacement));
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: range.startAnchor,
+        endAnchor: range.endAnchor,
+        expected: String(replacement)
+      })
+    };
   },
   delete_text: ({ editor, op, block, liveText }) => {
     const find = String(op.find ?? '');
@@ -4088,28 +7385,335 @@ export const ANCHORED_OP_HANDLERS: {
     const idx = liveText.indexOf(find);
     if (idx < 0)
       throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+    const next = block.text.slice(0, idx) + block.text.slice(idx + find.length);
     selectRange(editor, block.anchor, idx, idx + find.length);
     editor.editor.delete();
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: next,
+        exact: true
+      })
+    };
+  },
+  delete_paragraph: ({ editor, op, block, byAnchor }) => {
+    if (block.kind === 'table_cell')
+      throw new OpError(
+        'paragraph_delete_table_cell',
+        'delete_paragraph removes document paragraphs, not table-cell content. Use set_cell_text/delete_text for a cell.'
+      );
+    if (!op.force && block.text.trim().length) {
+      throw new OpError(
+        'paragraph_not_empty',
+        'delete_paragraph only removes whitespace-only paragraphs unless `force: true` is supplied.',
+        [
+          `anchor: ${block.anchor}`,
+          `paragraph text: ${JSON.stringify(block.text)}`,
+          'Visible characters are never treated as empty. A paragraph containing "_" must be explicitly forced or handled with a more specific edit.'
+        ]
+      );
+    }
+    // A paragraph only disappears when its MARK goes with it, and a mark sits
+    // BETWEEN two paragraphs - so this path has to know where the document, and
+    // its own section, ends.
+    //
+    // Both ends of the range must be in this section. Selecting from here to a
+    // block in the NEXT section spans the section break, and deleting a section
+    // break is not something SyncFusion authors a rejectable revision for: the
+    // page setup would change with no card to reject, so a group rollback would
+    // have nothing to put back.
+    //
+    // At the end of a section (the document's last paragraph included) there is
+    // no following mark left to consume. Consume the PRECEDING one instead -
+    // exactly the range a person removes a trailing empty paragraph with - so
+    // the paragraph is really gone rather than emptied in place. When neither
+    // neighbour is a body paragraph of this section there is no mark to take at
+    // all, and nothing is written.
+    const sectionOf = (anchor: string) => anchor.split(';')[0];
+    const section = sectionOf(block.anchor);
+    const blocks = Array.from(byAnchor.values());
+    const index = blocks.findIndex(
+      (candidate) => candidate.anchor === block.anchor
+    );
+    const bodyNeighbour = (offset: number): FlatBlock | undefined => {
+      const candidate = index >= 0 ? blocks[index + offset] : undefined;
+      if (!candidate || candidate.kind === 'table_cell') return undefined;
+      return sectionOf(candidate.anchor) === section ? candidate : undefined;
+    };
+    const next = bodyNeighbour(1);
+    const previous = bodyNeighbour(-1);
+    if (next)
+      editor.selection.select(
+        `${block.anchor};0`,
+        markInclusiveRangeEnd(next, block)
+      );
+    else if (previous)
+      editor.selection.select(
+        `${previous.anchor};${previous.length}`,
+        `${block.anchor};${block.length}`
+      );
+    else
+      throw new OpError(
+        'paragraph_mark_unavailable',
+        `The paragraph at "${block.anchor}" has no paragraph mark that can be removed with it: it is the only body paragraph of its section, so the only mark beside it is the section break itself, and deleting that leaves no card to reject. Nothing was written.`,
+        [
+          `anchor: ${block.anchor}`,
+          `paragraph text: ${JSON.stringify(block.text)}`,
+          'Clear the content with delete_text or replace_text if the paragraph should stay in place but read empty.'
+        ]
+      );
+    editor.editor.delete();
+  },
+  move_section: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    // One read of the raw document for the whole op: the revision table and the
+    // block sequence are both things flattening drops.
+    const sfdt = serializeSfdt(editor);
+    const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    assertRangeIsRemovable(blocks, source);
+    assertRangeHasNoForeignEdits(sfdt, source);
+    relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      resolveRelocationTarget(blocks, op, source)
+    );
+  },
+  copy_section: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const sfdt = serializeSfdt(editor);
+    const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    // Neither source-side refusal applies to a duplication: nothing is deleted,
+    // so there is no document-tail delete to crash `acceptAll` and no pending
+    // edit of anyone else's that rejecting could take away. The target-side
+    // refusals are the same ones a move gets, from the same resolver.
+    relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      resolveRelocationTarget(blocks, op, source),
+      { removeSource: false }
+    );
+  },
+  swap_sections: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const sfdt = serializeSfdt(editor);
+    const one = resolveSectionRange(blocks, block.anchor, 'anchor');
+    const other = resolveSectionRange(
+      blocks,
+      String(op.otherAnchor ?? '').trim(),
+      'otherAnchor'
+    );
+    const [earlier, later] = addressIsBefore(
+      topLevelAddress(one.blocks[0].anchor),
+      topLevelAddress(other.blocks[0].anchor)
+    )
+      ? [one, other]
+      : [other, one];
+    const earlierLast = topLevelAddress(
+      earlier.blocks[earlier.blocks.length - 1].anchor
+    );
+    const laterFirst = topLevelAddress(later.blocks[0].anchor);
+    if (!addressIsBefore(earlierLast, laterFirst))
+      throw new OpError(
+        'swap_sections_overlap',
+        `Refusing to swap ${JSON.stringify(one.anchor)} with ${JSON.stringify(
+          other.anchor
+        )}: one of them is inside the other (or they are the same section), so there is nothing to exchange. Nothing was written.`,
+        [
+          `${earlier.anchor} covers ${earlier.blocks[0].anchor} .. ${
+            earlier.blocks[earlier.blocks.length - 1].anchor
+          }`,
+          `${later.anchor} covers ${later.blocks[0].anchor} .. ${
+            later.blocks[later.blocks.length - 1].anchor
+          }`,
+          'To move a subsection out of the section that contains it, use move_section with a targetAnchor outside that section.'
+        ]
+      );
+    assertRangeIsRemovable(blocks, earlier);
+    assertRangeIsRemovable(blocks, later);
+    assertRangeHasNoForeignEdits(sfdt, earlier);
+    assertRangeHasNoForeignEdits(sfdt, later);
+    // Bottom-up, and the ordering is the whole reason a swap needs no
+    // prediction. Both ranges and both payloads are resolved BEFORE any write.
+    // The first relocation's paste lands at `later`'s start and its delete
+    // marks `earlier` in place, so nothing above `later` moves: `earlier`'s
+    // originally resolved anchors are still valid when its turn comes, and only
+    // `later` has to be found again - which is arithmetic the paste itself
+    // reports, checked against the document.
+    //
+    // One op, therefore one revision group, therefore one rail card: a failure
+    // in the second relocation rolls the first back through rollbackGroup, so a
+    // half-swap cannot survive.
+    const laterIndex = sequenceIndexOf(topLevelSequence(sfdt), laterFirst);
+    const first = relocateBlockRange(
+      editor,
+      sfdt,
+      earlier,
+      pasteAtRangeStart(later)
+    );
+    relocateBlockRange(
+      editor,
+      first.pastedSfdt,
+      // `later` has to be found again, by the same measured arithmetic and with
+      // the same not-the-copy assertion: the first relocation's paste landed at
+      // its start and moved it down. `earlier`'s anchors need no such fix-up -
+      // nothing above them was pasted, and its tracked delete shifted nothing.
+      shiftedRange(first.pastedSfdt, later, first.paste, laterIndex),
+      pasteAtRangeStart(earlier)
+    );
+  },
+  split_table: ({ editor, op, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const tableAnchor = tableAnchorForBlock(block);
+    if (!tableAnchor)
+      throw new OpError(
+        'split_table_requires_cell_anchor',
+        `split_table splits the table an anchor sits in, and ${JSON.stringify(
+          block.anchor
+        )} is not a table cell. Nothing was written.`,
+        [
+          `anchor: ${block.anchor}`,
+          'Use any cell anchor from the table ("section;block;row;cell;paragraph"), copied from a table_facts read.'
+        ]
+      );
+    // One raw read for the whole op: the revision table, the block sequence and
+    // the merge spans are all things flattening drops.
+    const sfdt = serializeSfdt(editor);
+    const tableBlock = tableBlockAt(sfdt, tableAnchor);
+    const appearance = collectTableAppearance(tableBlock);
+    if (!appearance)
+      throw new OpError(
+        'table_not_found',
+        `No table answers to the anchor "${tableAnchor}". Re-read the structure and use a current anchor.`
+      );
+    const source = resolveTableRange(blocks, tableAnchor);
+    // Header-ness through its ONE owner, reading what the page shows rather than
+    // any single encoding of it - the refusal below depends on getting a
+    // style-only header right, and this document has one.
+    const headerRows = effectiveHeaderRows({
+      blocks,
+      sfdt,
+      tableAnchor,
+      source: appearance,
+      rendered: renderedRowFormatReader(editor, byAnchor)
+    });
+    const plan = resolveSplitRows(
+      op,
+      tableAnchor,
+      appearance,
+      headerRows,
+      tableBlock
+    );
+    // A split DELETES rows from the source, so both source-side refusals apply
+    // exactly as they do to a move: rejecting this card would fold away a third
+    // party's pending edit, and SyncFusion cannot accept a delete of the last
+    // row of a document-tail table.
+    assertRangeHasNoForeignEdits(sfdt, source);
+    assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
+    const target = resolveRelocationTarget(blocks, op, source);
+    const sourceIndex = sequenceIndexOf(
+      topLevelSequence(sfdt),
+      topLevelAddress(source.blocks[0].anchor)
+    );
+    // The new table is the header band plus the extracted rows, in the source's
+    // own order - so "they should have same column names" is satisfied by the
+    // header rows travelling with the copy, not by anything authoring them.
+    const header: number[] = [];
+    for (let row = 0; row < plan.headerRows; row++) header.push(row);
+    const copied = [...header, ...plan.extract];
+    const { paste, pastedSfdt } = relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      target,
+      {
+        removeSource: false,
+        transformPayload: (payload) => prunePayloadRows(payload, copied)
+      }
+    );
+    // Nothing is written to the copy, so its address is not needed - but it is
+    // still read back and checked, because `ok: true` from a paste only means the
+    // paste did not throw. If the new table is not there reading what it should,
+    // this fails and the group rolls back.
+    assertPastedTableMatches(
+      pastedSfdt,
+      paste,
+      source,
+      rangeRowBlocks(source, copied)
+    );
+    const moved = shiftedRange(
+      pastedSfdt,
+      source,
+      paste,
+      sourceIndex,
+      resolveTableRange
+    );
+    // The copy needs no deletion at all - it arrived holding exactly its rows.
+    // The source's extracted rows go DESCENDING; a tracked delete shifts nothing,
+    // so the order is not load-bearing, but it keeps the invariant visible.
+    for (const row of [...plan.extract].reverse())
+      deleteTableRow(editor, moved.anchor, row);
   },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
-    selectRange(editor, block.anchor, offset, offset);
-    editor.editor.insertText(insertionText(op));
+    const inserted = insertionText(op);
+    const next =
+      block.text.slice(0, offset) + inserted + block.text.slice(offset);
+    selectInsertionPoint(editor, op, block);
+    editor.editor.insertText(inserted);
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: next,
+        exact: true
+      })
+    };
+  },
+  insert_section: ({ op }) => {
+    // Valid section requests are expanded at applyDocumentEdits' common
+    // boundary. Keeping this refusal backstop in the typed handler registry
+    // makes malformed requests use the same group failure/rollback path and
+    // prevents an accidental bypass from becoming a partial write.
+    const refusal = op.__sectionRefusal;
+    if (refusal)
+      throw new OpError(refusal.code, refusal.message, refusal.details);
+    throw new OpError(
+      'section_composer_not_expanded',
+      'insert_section did not reach the engine section composer; nothing was written.',
+      [
+        'Re-send this operation through applyDocumentEdits. The low-level document operations remain available for non-section edits.'
+      ]
+    );
   },
   set_cell_text: ({ editor, op, block }) => {
     // Overwrite the (cell) block's content.
     selectBlock(editor, block);
     const replacement = String(op.text ?? '');
     replaceSelectedText(editor, replacement);
-    verifyWrittenText(editor, block.anchor, replacement);
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: replacement,
+        exact: true
+      })
+    };
   },
   set_cell_formula: ({ editor, op, block, byAnchor }) =>
     runFormulaCellWrite(editor, op, block, byAnchor),
   set_column_formula: ({ editor, op, block, byAnchor }) =>
     runColumnFormulaWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
+    const replacement = changeCase(liveText, String(op.caseType ?? ''));
     selectBlock(editor, block);
-    editor.editor.insertText(changeCase(liveText, String(op.caseType ?? '')));
+    editor.editor.insertText(replacement);
+    return {
+      postWriteSfdt: verifyTextWrite(editor, {
+        startAnchor: block.anchor,
+        expected: replacement,
+        exact: true
+      })
+    };
   },
   apply_style: ({ editor, op, block, byAnchor }) => {
     const styleName = fmtField(op, 'styleName');
@@ -4208,13 +7812,55 @@ export const ANCHORED_OP_HANDLERS: {
   insert_row: ({ editor, op }) => {
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
   },
-  insert_table: ({ editor, op }) => {
+  insert_table: ({ editor, op, block, byAnchor }) => {
+    if (block.kind === 'table_cell')
+      throw new OpError(
+        'insert_table_requires_body_anchor',
+        'A top-level table cannot be inserted from inside an existing table cell. Use an addressable body paragraph or heading before/after the intended location; nothing was written.',
+        [`cell anchor: ${block.anchor}`]
+      );
+    const position =
+      typeof op.position === 'string' ? op.position.toLowerCase() : 'before';
+    let insertionAnchor = block.anchor;
+    if (position === 'after') {
+      const parts = block.anchor.split(';');
+      const blockIndex = Number(parts[1]);
+      const nextAnchor =
+        parts.length >= 2 && Number.isInteger(blockIndex)
+          ? `${parts[0]};${blockIndex + 1}`
+          : '';
+      const next = nextAnchor ? byAnchor.get(nextAnchor) : undefined;
+      if (!next)
+        throw new OpError(
+          'insert_table_after_requires_following_block',
+          'A table can be placed after this block only when the next body block is addressable. Anchor the next block with position "before" instead; nothing was written.',
+          [`anchor after ${block.anchor}: ${nextAnchor || 'unavailable'}`]
+        );
+      insertionAnchor = next.anchor;
+    }
+    selectRange(editor, insertionAnchor, 0, 0);
     callEditor(
       editor,
       'insertTable',
       positiveCount(op.rows),
       positiveCount(op.columns)
     );
+    if (Array.isArray(op.initialCells)) {
+      op.initialCells.forEach((row: unknown, rowIndex: number) => {
+        if (!Array.isArray(row)) return;
+        row.forEach((cell: unknown, columnIndex: number) => {
+          const text = String(cell ?? '');
+          if (!text) return;
+          selectRange(
+            editor,
+            `${insertionAnchor};${rowIndex};${columnIndex};0`,
+            0,
+            0
+          );
+          callEditor(editor, 'insertText', text);
+        });
+      });
+    }
   },
   // Structural table removal. SyncFusion operates on the table or row
   // containing the selection, which selectBlock placed at the anchor.
@@ -4225,11 +7871,135 @@ export const ANCHORED_OP_HANDLERS: {
   // reject-all - probed on a real DocumentEditor, S5). This engine applies
   // every change set tracked, so all three fall to the vocabulary refusal in
   // the dispatch wrapper instead of mutating without a reviewable card.
-  delete_table: ({ editor }) => {
+  delete_table: ({ editor, block, byAnchor }) => {
+    // The whole-table shape of the deletion SyncFusion cannot accept. Guarded
+    // only when the anchor really is a cell, exactly as delete_row below: a
+    // non-cell anchor is a different failure the structural tracked-op check
+    // already owns.
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor)
+      assertTableIsRemovable(Array.from(byAnchor.values()), tableAnchor);
     callEditor(editor, 'deleteTable');
   },
-  delete_row: ({ editor }) => {
+  delete_row: ({ editor, block, byAnchor }) => {
+    // The one deletion SyncFusion cannot accept. Guarded only when the anchor
+    // really is a cell: a non-cell anchor is a different failure and the
+    // structural tracked-op check already owns it.
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor)
+      assertRowsAreRemovable(Array.from(byAnchor.values()), tableAnchor, [
+        Number(block.anchor.split(';')[2])
+      ]);
     callEditor(editor, 'deleteRow');
+  },
+  // --- Table appearance ------------------------------------------------------
+  // Each returns the restore snapshots the executor binds to the change set's
+  // revision group; see the appearance-write section for why that is how a
+  // formatting write is made rejectable at all.
+  set_cell_format: ({ editor, op, block }) => {
+    const { tableAnchor, row, column } = cellAnchorParts(
+      block.anchor,
+      'set_cell_format'
+    );
+    const write = appearanceWriteFromOp(op);
+    const current = liveTableAppearance(editor, tableAnchor);
+    const before = cellAppearanceAt(current, row, column);
+    const transaction = runAppearanceTransaction(editor, (record) => {
+      record({
+        cellAnchor: block.anchor,
+        write: restoreWriteFor(before, write)
+      });
+      writeAppearance(editor, block.anchor, write, 'cell');
+      return { ...emptyAppearanceReport(), cellsWritten: 1 };
+    });
+    return {
+      appearanceWrite: {
+        report: transaction.result,
+        restores: transaction.restores
+      }
+    };
+  },
+  set_row_format: ({ editor, op, block }) => {
+    const { tableAnchor, row } = cellAnchorParts(
+      block.anchor,
+      'set_row_format'
+    );
+    const isHeaderField = fmtField(op, 'isHeader');
+    // isHeader alone is a complete request, so the appearance fields are only
+    // required when it is absent.
+    const write =
+      isHeaderField != null
+        ? tryAppearanceWriteFromOp(op)
+        : appearanceWriteFromOp(op);
+    const current = liveTableAppearance(editor, tableAnchor);
+    const cells = current.rows[row]?.cells ?? [];
+    if (!cells.length)
+      throw new OpError(
+        'row_not_found',
+        `Row ${row} of table "${tableAnchor}" has no cells.`
+      );
+    const transaction = runAppearanceTransaction(editor, (record) => {
+      if (isHeaderField != null) {
+        const wanted = !!isHeaderField;
+        if (wanted !== !!current.rows[row].isHeader) {
+          record({
+            cellAnchor: block.anchor,
+            rowIsHeader: !!current.rows[row].isHeader
+          });
+          writeRowIsHeader(editor, block.anchor, wanted);
+        }
+      }
+      let cellsWritten = 0;
+      if (write) {
+        // One selectRow write would set every cell at once, but the RESTORE has
+        // to be per cell (the cells may have differed before), so the write is
+        // per cell too - one path, and the inverse is exact by construction.
+        for (let column = 0; column < cells.length; column++) {
+          const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+          const before = cellAppearanceAt(current, row, column);
+          record({ cellAnchor, write: restoreWriteFor(before, write) });
+          writeAppearance(editor, cellAnchor, write, 'cell');
+          cellsWritten++;
+        }
+      }
+      return { ...emptyAppearanceReport(), cellsWritten, rowsWritten: 1 };
+    });
+    return {
+      appearanceWrite: {
+        report: transaction.result,
+        restores: transaction.restores
+      }
+    };
+  },
+  copy_table_format: ({ editor, op, block }) => {
+    const { tableAnchor } = cellAnchorParts(block.anchor, 'copy_table_format');
+    const appearanceWrite = runCopyTableFormat(editor, op, tableAnchor);
+    return {
+      appearanceWrite,
+      postWriteSfdt: appearanceWrite.postWriteSfdt
+    };
+  },
+  restripe_table: ({ editor, op, block }) => {
+    const { tableAnchor } = cellAnchorParts(block.anchor, 'restripe_table');
+    const current = liveTableAppearance(editor, tableAnchor);
+    const banding = detectTableBanding(current);
+    if (!banding)
+      return {
+        appearanceWrite: {
+          report: { ...emptyAppearanceReport(), noBandingDetected: true },
+          restores: []
+        }
+      };
+    const fromRow = integerParam(op.fromRow, 'fromRow') ?? 0;
+    return {
+      appearanceWrite: applyBandingRows(
+        editor,
+        tableAnchor,
+        current,
+        banding,
+        fromRow
+      )
+    };
   },
   insert_section_break: ({ editor, op }) => {
     callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
@@ -4264,12 +8034,16 @@ export const ANCHORLESS_OP_HANDLERS: {
     editor.enableTrackChanges = op.enabled !== false;
   },
   accept_all_revisions: ({ editor }) => {
-    if (editor.revisions?.acceptAll) editor.revisions.acceptAll();
-    else throw new OpError('unsupported_op', 'No revisions to accept.');
+    if (editor.revisions?.acceptAll) {
+      editor.revisions.acceptAll();
+      invalidateDocumentLayout(editor);
+    } else throw new OpError('unsupported_op', 'No revisions to accept.');
   },
   reject_all_revisions: ({ editor }) => {
-    if (editor.revisions?.rejectAll) editor.revisions.rejectAll();
-    else throw new OpError('unsupported_op', 'No revisions to reject.');
+    if (editor.revisions?.rejectAll) {
+      editor.revisions.rejectAll();
+      invalidateDocumentLayout(editor);
+    } else throw new OpError('unsupported_op', 'No revisions to reject.');
   },
   go_to_body: ({ editor }) => {
     // selection.goToBody does not exist in ej2-documenteditor (verified on
@@ -4363,14 +8137,81 @@ function intendedBlockText(
   }
 }
 
+/**
+ * A figure written into a column of formatted amounts wears that column's
+ * format. `9660` into a column of `$36,803.00` lands as `$9,660.00`, because
+ * the neighbours say so - the captain's complaint was exactly that the engine
+ * wrote the digits it was handed and ignored the column around them:
+ * *"I gave it just the value."*
+ *
+ * WHEN. Only when the figure carries no format of its own, which is
+ * `classifyNumericText`'s own middle tier: numeric, but with no unit, no
+ * decimal places and no observed grouping. That is what "just the value" means,
+ * and reading it off the existing classifier is what keeps this from becoming a
+ * second opinion about what a number is. A figure that ARRIVES formatted -
+ * `0.00`, `$0`, `($0.00)`, `12.5%` - is an explicit instruction about how the
+ * cell should read and is written exactly as sent; that is how "drop the
+ * currency symbol from this column" is expressed, and re-dressing it would
+ * silently refuse the request.
+ *
+ * WHAT FORMAT. The document's, discovered by `resolveQuantityCellFormat` -
+ * which is `resolveRenderFormat`, the same mechanism `set_cell_formula` uses to
+ * keep `$36,803` from coming back as `36803`. There is no second formatting
+ * implementation.
+ *
+ * WHERE IN THE ORDER. Deliberately ahead of the provenance gate, not behind it,
+ * so the gate judges the bytes that will LAND. Dropping the `$` therefore stops
+ * being a way to slip a money value past it: a bare `9660` aimed at a money
+ * column is now refused exactly as `$9,660.00` already was. That closes a hole
+ * rather than opening one - a figure the engine is about to dress as money is a
+ * money write, whatever decoration it arrived with.
+ *
+ * Untouched, in every case: text that is not a number, an identifier whose
+ * leading zeros are part of what it says, a figure that already carries a
+ * format, a value that does not fit the column's decimals, and any cell whose
+ * column is not a column of formatted amounts.
+ */
+function renderCellTextInColumnFormat(
+  op: EditOp,
+  block: FlatBlock,
+  byAnchor: Map<string, FlatBlock>
+): { op: EditOp; rendered?: ColumnFormatRender } {
+  if (op.op !== 'set_cell_text') return { op };
+  const asSent = String(op.text ?? '');
+  const classified = classifyNumericText(asSent);
+  if (!classified.numeric || classified.quantity) return { op };
+  if (isZeroPaddedInteger(asSent)) return { op };
+  const parsed = parseNumericCell(asSent);
+  if (!parsed) return { op };
+  const resolved = resolveQuantityCellFormat(
+    Array.from(byAnchor.values()),
+    block
+  );
+  if (!resolved) return { op };
+  let format = resolved.format;
+  if (parsed.value.units < 0)
+    format = upgradeNegativeStyle(format, resolved.inputs);
+  const value = rescaleExact(parsed.value, format.decimals);
+  if (!value) return { op };
+  const written = renderNumericCell(value, format);
+  if (written === asSent) return { op };
+  return {
+    op: { ...op, text: written },
+    rendered: { asSent, written, formatSource: resolved.formatSource }
+  };
+}
+
 // Applies one anchored op. `block` is the freshly-resolved block. Throws OpError
 // on a recoverable failure (surfaced as {ok:false, error}).
 function applyAnchoredOp(
   editor: LiveEditor,
-  op: EditOp,
+  rawOp: EditOp,
   block: FlatBlock,
   byAnchor: Map<string, FlatBlock>
 ): OpSuccessExtras | void {
+  // One re-render, before the no-op rule, the provenance gate and the handler,
+  // so all three see the bytes that will actually land in the cell.
+  const { op, rendered } = renderCellTextInColumnFormat(rawOp, block, byAnchor);
   const liveText = selectBlock(editor, block);
   observeMutationGuardBoundary(
     op,
@@ -4412,7 +8253,7 @@ function applyAnchoredOp(
   // The engine, not an individual handler, keeps model arithmetic out of
   // numeric cells. Every registered anchored op crosses this point before its
   // handler can write.
-  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor);
+  const literalNumber = guardModelAuthoredNumber(op, block, byAnchor, rendered);
 
   const handler = ANCHORED_OP_HANDLERS[op.op as AnchoredDocumentOp];
   if (!handler)
@@ -4662,7 +8503,15 @@ function applyResolvedInheritedFormat(
   const styleName = options.styleName ?? sourceStyleName;
   if (typeof styleName === 'string' && styleName.trim()) {
     selectParagraph(editor, target);
-    callEditor(editor, 'applyStyle', styleName);
+    const currentStyleName = comparableFormatValue(
+      editor.selection?.paragraphFormat?.styleName
+    );
+    // Applying the already-resolved Normal style is not a no-op in Syncfusion:
+    // it writes an explicit styleName onto the paragraph mark. On a split that
+    // excludes the source mark, that residue survives rejection. Follow the
+    // same write-only-on-difference rule as the direct properties below.
+    if (currentStyleName !== styleName)
+      callEditor(editor, 'applyStyle', styleName);
   }
 
   // Character properties must be applied to text only; paragraph properties
@@ -4858,6 +8707,1171 @@ function applyParaFormat(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Table appearance writes (set_cell_format / set_row_format /
+// copy_table_format / restripe_table, and the insert_row banding preserve)
+//
+// SyncFusion authors NO revision for a cell fill, border or vertical alignment
+// - its RevisionType is Insertion|Deletion|MoveTo|MoveFrom and nothing else, and
+// a probe of a real DocumentEditor confirms the revision count does not move.
+// So these writes are made reversible the only honest way available: every write
+// first snapshots the appearance it is about to overwrite, and the executor binds
+// those snapshots into the change set's revision group, so rejecting the card
+// restores the appearance before it rejects the content. A change set that wrote
+// only appearance has no card to bind to and reports that fact rather than
+// implying a reviewable change exists.
+// ---------------------------------------------------------------------------
+
+const HEX_COLOR = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const CLEARED_COLORS = new Set(['none', 'empty', 'transparent', 'auto']);
+
+/**
+ * A model-supplied colour to the canonical form the READ reports, or null for
+ * "no fill". Upper-cased so that copying a `#d9e2f3` source produces a target
+ * whose read equals the source's read - without that, a copy is not idempotent.
+ */
+function normalizeShading(raw: unknown, field: string): string | null {
+  const value = String(raw ?? '').trim();
+  if (!value || CLEARED_COLORS.has(value.toLowerCase())) return null;
+  const match = HEX_COLOR.exec(value);
+  if (!match)
+    throw new OpError(
+      'invalid_color',
+      `\`${field}\` must be a hex colour like "#D9E2F3", or "none" to clear the fill; received ${JSON.stringify(
+        value
+      )}.`
+    );
+  return `#${match[1].toUpperCase()}`;
+}
+
+/** The `applyBorders` calls that reproduce `borders`, or clear them when absent. */
+function borderWritesFor(borders: AppearanceFacts['borders']): BorderWrite[] {
+  const clear: BorderWrite = { type: 'NoBorder', style: 'None' };
+  if (!borders) return [clear];
+  const spec = (type: string, facts: BorderFacts): BorderWrite => ({
+    type,
+    style: facts.style,
+    ...(facts.width != null ? { width: facts.width } : {}),
+    ...(facts.color ? { color: facts.color } : {})
+  });
+  if (borders.all) return [spec('AllBorders', borders.all)];
+  // Clear first: a side the source does not have must not survive on the target.
+  const writes: BorderWrite[] = [clear];
+  for (const side of BORDER_SIDES) {
+    const facts = borders[side as BorderSide];
+    if (facts)
+      writes.push(
+        spec(`${side[0].toUpperCase()}${side.slice(1)}Border`, facts)
+      );
+  }
+  return writes;
+}
+
+/** The write that reproduces `facts` in full (used by copy and restore). */
+function appearanceWriteFor(
+  facts: AppearanceFacts | undefined,
+  parts: { shading?: boolean; verticalAlignment?: boolean; borders?: boolean }
+): AppearanceWrite {
+  return {
+    ...(parts.shading ? { shading: facts?.shading ?? null } : {}),
+    ...(parts.verticalAlignment
+      ? { verticalAlignment: facts?.verticalAlignment ?? 'Top' }
+      : {}),
+    ...(parts.borders ? { borders: borderWritesFor(facts?.borders) } : {})
+  };
+}
+
+/** The inverse of `applied`, read from the appearance that was there before. */
+function restoreWriteFor(
+  before: AppearanceFacts | undefined,
+  applied: AppearanceWrite
+): AppearanceWrite {
+  return appearanceWriteFor(before, {
+    shading: applied.shading !== undefined,
+    verticalAlignment: applied.verticalAlignment !== undefined,
+    borders: applied.borders !== undefined
+  });
+}
+
+const BORDER_TYPES = new Set([
+  'AllBorders',
+  'OutsideBorders',
+  'LeftBorder',
+  'RightBorder',
+  'TopBorder',
+  'BottomBorder',
+  'NoBorder'
+]);
+
+type AppearanceOp =
+  | TypedEditOp<'set_cell_format'>
+  | TypedEditOp<'set_row_format'>;
+
+/**
+ * The write a `set_cell_format`/`set_row_format` op asks for. Refuses an op that
+ * carries no appearance at all, for the same reason `set_char_format` does: a
+ * styling op that silently succeeds having done nothing makes the assistant
+ * report "Done." over an unchanged document.
+ */
+function appearanceWriteFromOp(op: AppearanceOp): AppearanceWrite {
+  const shadingField = fmtField(op, 'shading');
+  const verticalAlignment = fmtMeaningfulField(op, 'verticalAlignment');
+  const borderType = fmtMeaningfulField(op, 'borders');
+  const borderStyle = fmtMeaningfulField(op, 'borderStyle');
+  const borderColor = fmtMeaningfulField(op, 'borderColor');
+  const borderWidth = fmtMeaningfulField(op, 'borderWidth');
+  const write: AppearanceWrite = {};
+  if (shadingField != null && String(shadingField).trim())
+    write.shading = normalizeShading(shadingField, 'shading');
+  if (verticalAlignment) {
+    const match = (['Top', 'Center', 'Bottom'] as const).find(
+      (value) => value.toLowerCase() === String(verticalAlignment).toLowerCase()
+    );
+    if (!match)
+      throw new OpError(
+        'invalid_vertical_alignment',
+        `\`verticalAlignment\` must be Top, Center or Bottom; received ${JSON.stringify(
+          String(verticalAlignment)
+        )}.`
+      );
+    write.verticalAlignment = match;
+  }
+  // A border colour/width/style with no `borders` type has nowhere to apply, so
+  // default the type rather than dropping the request silently.
+  if (borderType || borderStyle || borderColor || borderWidth != null) {
+    const type = String(borderType ?? 'AllBorders');
+    if (!BORDER_TYPES.has(type))
+      throw new OpError(
+        'invalid_border_type',
+        `\`borders\` must be one of ${[...BORDER_TYPES].join(
+          ', '
+        )}; received ${JSON.stringify(type)}.`
+      );
+    const style =
+      type === 'NoBorder' ? 'None' : String(borderStyle ?? 'Single');
+    const width = Number(borderWidth);
+    write.borders = [
+      {
+        type,
+        style,
+        ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+        ...(borderColor
+          ? {
+              color: normalizeShading(borderColor, 'borderColor') ?? '#000000'
+            }
+          : {})
+      }
+    ];
+  }
+  if (
+    write.shading === undefined &&
+    write.verticalAlignment === undefined &&
+    write.borders === undefined
+  )
+    throw new OpError(
+      'missing_format',
+      `${op.op} needs at least one appearance field (shading / verticalAlignment / borders).`
+    );
+  return write;
+}
+
+/**
+ * The same parse, but returning undefined instead of refusing when the op
+ * carries no appearance - for `set_row_format`, where `isHeader` on its own is
+ * already a complete request. Field-value errors still refuse.
+ */
+function tryAppearanceWriteFromOp(
+  op: AppearanceOp
+): AppearanceWrite | undefined {
+  try {
+    return appearanceWriteFromOp(op);
+  } catch (err) {
+    if (isOpError(err) && err.code === 'missing_format') return undefined;
+    throw err;
+  }
+}
+
+/** `"0;7;3;2;0"` -> `{ tableAnchor: "0;7", row: 3, column: 2 }`. */
+function cellAnchorParts(
+  anchor: string,
+  opName: string
+): { tableAnchor: string; row: number; column: number } {
+  const parts = anchor.split(';');
+  if (parts.length !== 5 || parts.some((part) => !/^\d+$/.test(part)))
+    throw new OpError(
+      'not_a_cell_anchor',
+      `${opName} needs a table-cell anchor ("section;block;row;cell;paragraph", e.g. "0;7;2;1;0"); "${anchor}" is not one. Copy one from a table_facts read.`
+    );
+  return {
+    tableAnchor: `${parts[0]};${parts[1]}`,
+    row: Number(parts[2]),
+    column: Number(parts[3])
+  };
+}
+
+/** The table's appearance as it stands in the live editor right now. */
+function liveTableAppearance(
+  editor: LiveEditor,
+  tableAnchor: string
+): TableAppearance {
+  const appearance = collectTableAppearance(
+    tableBlockAt(serializeSfdt(editor), tableAnchor)
+  );
+  if (!appearance)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${tableAnchor}". Re-read the structure and use a current anchor.`
+    );
+  return appearance;
+}
+
+const cellAnchorOf = (tableAnchor: string, row: number, column: number) =>
+  `${tableAnchor};${row};${column};0`;
+
+// `extent`, not `scope`: the registry parity spec scans this file for
+// `scope === '...'` to enumerate the inventory scopes, and a local named `scope`
+// here would forge one.
+function selectForAppearance(
+  editor: LiveEditor,
+  cellAnchor: string,
+  extent: 'cell' | 'row'
+): void {
+  editor.selection.select(`${cellAnchor};0`, `${cellAnchor};0`);
+  callSelection(editor, extent === 'row' ? 'selectRow' : 'selectCell');
+}
+
+/**
+ * Apply one appearance write to the cell (or row) the anchor names. The
+ * selection is re-established before each border call because `applyBorders`
+ * operates on whatever is selected.
+ */
+function writeAppearance(
+  editor: LiveEditor,
+  cellAnchor: string,
+  write: AppearanceWrite,
+  extent: 'cell' | 'row'
+): void {
+  selectForAppearance(editor, cellAnchor, extent);
+  const cellFormat = editor.selection?.cellFormat;
+  if (!cellFormat)
+    throw new OpError(
+      'unsupported_op',
+      'Cell formatting is unavailable on this editor.'
+    );
+  // SyncFusion's own spelling of "no fill" on the way in and out; see
+  // tableAppearance.ts on why the read treats it as absent.
+  if (write.shading !== undefined)
+    cellFormat.background = write.shading ?? 'empty';
+  if (write.verticalAlignment)
+    cellFormat.verticalAlignment = write.verticalAlignment;
+  for (const border of write.borders ?? []) {
+    callEditor(editor, 'applyBorders', {
+      type: border.type,
+      borderStyle: border.style,
+      ...(border.width != null ? { lineWidth: border.width } : {}),
+      ...(border.color ? { borderColor: border.color } : {})
+    });
+    selectForAppearance(editor, cellAnchor, extent);
+  }
+}
+
+const TABLE_BORDER_MEMBERS = [
+  ['top', 'TopBorder'],
+  ['bottom', 'BottomBorder'],
+  ['left', 'LeftBorder'],
+  ['right', 'RightBorder'],
+  ['horizontal', 'InsideHorizontalBorder'],
+  ['vertical', 'InsideVerticalBorder']
+] as const;
+
+function writeTableBorders(
+  editor: LiveEditor,
+  tableAnchor: string,
+  borders: BorderWrite[]
+): void {
+  const cellAnchor = cellAnchorOf(tableAnchor, 0, 0);
+  const selectTable = () => {
+    selectForAppearance(editor, cellAnchor, 'cell');
+    callSelection(editor, 'selectTable');
+  };
+  selectTable();
+  for (const border of borders) {
+    callEditor(editor, 'applyBorders', {
+      type: border.type,
+      borderStyle: border.style,
+      ...(border.width != null ? { lineWidth: border.width } : {}),
+      ...(border.color ? { borderColor: border.color } : {})
+    });
+    selectTable();
+  }
+}
+
+function tableWidgetAt(editor: LiveEditor, tableAnchor: string): any {
+  const table = liveTableWidgetAt(editor, tableAnchor);
+  if (!table)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${tableAnchor}".`
+    );
+  return table;
+}
+
+// SyncFusion spells "unset" differently per code path (a docx import reads
+// back null where a fresh insert reads back undefined), so the shared facts
+// reader collapses them, keeping desired-vs-after equality about real values.
+function tablePropertyFacts(format: any): TablePropertyFacts {
+  return {
+    cellSpacing: Number(format.cellSpacing) || 0,
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null,
+    bidi: !!format.bidi,
+    styleName: format.styleName ?? undefined,
+    title: format.title ?? undefined,
+    description: format.description ?? undefined,
+    horizontalPositionAbs: format.horizontalPositionAbs ?? undefined,
+    horizontalPosition: format.horizontalPosition ?? undefined
+  };
+}
+
+function rowPropertyFacts(format: any): RowPropertyFacts {
+  const gridBefore = Number(format.gridBefore) || 0;
+  const gridAfter = Number(format.gridAfter) || 0;
+  return {
+    allowBreakAcrossPages: format.allowBreakAcrossPages !== false,
+    height: Number(format.height) || 0,
+    heightType: String(format.heightType ?? 'AtLeast'),
+    gridBefore,
+    // A zero grid offset has no width: Word only stores wBefore/wAfter beside
+    // a positive gridBefore/gridAfter, and SyncFusion normalizes the inert
+    // type differently per code path ('Point' after import, 'Auto' after a
+    // fresh insert). Read the inert fields as their one canonical value.
+    gridBeforeWidth: gridBefore ? Number(format.gridBeforeWidth) || 0 : 0,
+    gridBeforeWidthType: gridBefore
+      ? format.gridBeforeWidthType ?? 'Auto'
+      : 'Auto',
+    gridAfter,
+    gridAfterWidth: gridAfter ? Number(format.gridAfterWidth) || 0 : 0,
+    gridAfterWidthType: gridAfter
+      ? format.gridAfterWidthType ?? 'Auto'
+      : 'Auto',
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null,
+    leftIndent: Number(format.leftIndent) || 0
+  };
+}
+
+function cellPropertyFacts(format: any): CellPropertyFacts {
+  return {
+    leftMargin: format.leftMargin ?? null,
+    rightMargin: format.rightMargin ?? null,
+    topMargin: format.topMargin ?? null,
+    bottomMargin: format.bottomMargin ?? null
+  };
+}
+
+function liveTablePropertyRestore(
+  editor: LiveEditor,
+  tableAnchor: string
+): TablePropertyRestore {
+  const table = tableWidgetAt(editor, tableAnchor);
+  return {
+    table: tablePropertyFacts(table.tableFormat),
+    rows: (table.childWidgets ?? []).map((row: any) => ({
+      row: rowPropertyFacts(row.rowFormat),
+      cells: (row.childWidgets ?? []).map((cell: any) =>
+        cellPropertyFacts(cell.cellFormat)
+      )
+    }))
+  };
+}
+
+function tablePropertiesForTarget(
+  source: TablePropertyRestore,
+  sourceAppearance: TableAppearance,
+  headerRows: number,
+  target: TablePropertyRestore
+): TablePropertyRestore {
+  return {
+    table: source.table,
+    rows: target.rows.map((targetRow, rowIndex) => {
+      const sourceRow =
+        source.rows[sourceRowForTarget(sourceAppearance, headerRows, rowIndex)];
+      return sourceRow
+        ? {
+            row: sourceRow.row,
+            cells: targetRow.cells.map(
+              (_, column) =>
+                sourceRow.cells[Math.min(column, sourceRow.cells.length - 1)]
+            )
+          }
+        : targetRow;
+    })
+  };
+}
+
+function tablePropertiesEqual(
+  left: TablePropertyRestore,
+  right: TablePropertyRestore
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function resolveLiveSourceTableAnchor(
+  editor: LiveEditor,
+  intendedAnchor: string,
+  targetAnchor: string,
+  source: TableAppearance
+): string {
+  try {
+    tableWidgetAt(editor, intendedAnchor);
+    return intendedAnchor;
+  } catch {
+    // A structural insert before a following sibling shifts the live anchor;
+    // its preflight appearance remains the stable identity for the search.
+  }
+  const sfdt = serializeSfdt(editor);
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  for (let section = 0; section < sections.length; section++) {
+    const blocks = getBlocks(sections[section]);
+    for (let block = 0; block < blocks.length; block++) {
+      const anchor = `${section};${block}`;
+      if (anchor === targetAnchor || !getRows(blocks[block])) continue;
+      const appearance = collectTableAppearance(blocks[block]);
+      if (appearance && JSON.stringify(appearance) === JSON.stringify(source))
+        return anchor;
+    }
+  }
+  throw new OpError(
+    'table_not_found',
+    `No table answers to the anchor "${intendedAnchor}".`
+  );
+}
+
+/**
+ * SyncFusion coalesces cell-edge writes when tables use cell spacing. Copy the
+ * sibling's stored border objects after the public writes so separated tables
+ * retain the same defined flags and therefore paint exactly like the source.
+ */
+function copySeparatedTableBorders(
+  editor: LiveEditor,
+  sourceAnchor: string,
+  targetAnchor: string,
+  sourceAppearance: TableAppearance,
+  headerRows: number
+): void {
+  const source = tableWidgetAt(editor, sourceAnchor);
+  const target = tableWidgetAt(editor, targetAnchor);
+  target.tableFormat.borders.copyFormat(source.tableFormat.borders);
+  const sourceRows: any[] = source.childWidgets ?? [];
+  (target.childWidgets ?? []).forEach((targetRow: any, rowIndex: number) => {
+    const sourceRow =
+      sourceRows[sourceRowForTarget(sourceAppearance, headerRows, rowIndex)];
+    const sourceCells: any[] = sourceRow?.childWidgets ?? [];
+    (targetRow.childWidgets ?? []).forEach(
+      (targetCell: any, column: number) => {
+        const sourceCell =
+          sourceCells[Math.min(column, sourceCells.length - 1)];
+        if (sourceCell)
+          targetCell.cellFormat.borders.copyFormat(
+            sourceCell.cellFormat.borders
+          );
+      }
+    );
+  });
+}
+
+/**
+ * The layout a table currently RENDERS with, widget values and all - the
+ * DESIRED-value reader, for "make the target look like this source". It samples
+ * rendered `cellWidth` when no preferred width was stated, which is what makes
+ * an inherited grid match a sibling that Word laid out.
+ *
+ * Never use it for a restore. A restore must put back what the SFDT stated
+ * (`collectTableAppearance(...).layout`, defaulting to `UNSTATED_TABLE_LAYOUT`);
+ * replaying a widget reading writes concrete values the document never carried,
+ * so rejecting the write would ADD untracked damage instead of removing it.
+ */
+function liveTableLayout(
+  editor: LiveEditor,
+  tableAnchor: string
+): TableLayoutFacts {
+  const table = tableWidgetAt(editor, tableAnchor);
+  const format = table.tableFormat;
+  const rows: any[] = table.childWidgets ?? [];
+  const cells: any[] = [...rows].sort(
+    (left, right) =>
+      (right.childWidgets?.length ?? 0) - (left.childWidgets?.length ?? 0)
+  )[0]?.childWidgets;
+  let columnWidths: number[] | undefined;
+  let columnWidthType: TableLayoutFacts['columnWidthType'];
+  if (cells?.length) {
+    const preferred = cells.map((cell) =>
+      Number(cell.cellFormat?.preferredWidth)
+    );
+    const types = cells.map((cell) => cell.cellFormat?.preferredWidthType);
+    if (
+      preferred.every((width) => Number.isFinite(width) && width > 0) &&
+      types.every((type) => type === types[0])
+    ) {
+      columnWidths = preferred;
+      columnWidthType = types[0];
+    } else {
+      const rendered = cells.map((cell) => Number(cell.cellFormat?.cellWidth));
+      if (rendered.every((width) => Number.isFinite(width) && width > 0)) {
+        columnWidths = rendered;
+        columnWidthType = 'Point';
+      }
+    }
+  }
+  return {
+    preferredWidth: Number(format.preferredWidth) || 0,
+    preferredWidthType: format.preferredWidthType ?? 'Auto',
+    leftIndent: Number(format.leftIndent) || 0,
+    tableAlignment: format.tableAlignment ?? 'Left',
+    allowAutoFit: format.allowAutoFit ?? true,
+    ...(columnWidths && columnWidthType
+      ? { columnWidths, columnWidthType }
+      : {})
+  };
+}
+
+/** Capture all six table/row border members as replayable public writes. */
+function borderRestoreFor(borders: any): BorderWrite[] {
+  const writes: BorderWrite[] = [{ type: 'NoBorder', style: 'None' }];
+  for (const [member, type] of TABLE_BORDER_MEMBERS) {
+    const border = borders?.[member];
+    const style = String(border?.lineStyle ?? 'None');
+    if (!border?.isBorderDefined || style === 'None' || style === 'Cleared')
+      continue;
+    const width = Number(border.lineWidth);
+    const color = String(border.color ?? '');
+    writes.push({
+      type,
+      style,
+      ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+      ...(color && color !== 'empty' ? { color } : {})
+    });
+  }
+  return writes;
+}
+
+/** Capture all six table border members before a table-level normalization. */
+function liveTableBorderRestore(
+  editor: LiveEditor,
+  tableAnchor: string
+): BorderWrite[] {
+  return borderRestoreFor(
+    tableWidgetAt(editor, tableAnchor).tableFormat.borders
+  );
+}
+
+function liveRowBorderRestores(
+  editor: LiveEditor,
+  tableAnchor: string
+): BorderWrite[][] {
+  return (tableWidgetAt(editor, tableAnchor).childWidgets ?? []).map(
+    (row: any) => borderRestoreFor(row.rowFormat.borders)
+  );
+}
+
+function copyMappedRowBorders(
+  editor: LiveEditor,
+  sourceAnchor: string,
+  targetAnchor: string,
+  sourceAppearance: TableAppearance,
+  headerRows: number
+): void {
+  const sourceRows: any[] =
+    tableWidgetAt(editor, sourceAnchor).childWidgets ?? [];
+  const targetRows: any[] =
+    tableWidgetAt(editor, targetAnchor).childWidgets ?? [];
+  targetRows.forEach((targetRow, rowIndex) => {
+    const sourceRow =
+      sourceRows[sourceRowForTarget(sourceAppearance, headerRows, rowIndex)];
+    if (sourceRow)
+      targetRow.rowFormat.borders.copyFormat(sourceRow.rowFormat.borders);
+  });
+}
+
+function tableBordersMatchAll(
+  writes: BorderWrite[],
+  expected: BorderFacts
+): boolean {
+  return TABLE_BORDER_MEMBERS.every(([, type]) => {
+    const write = writes.find((entry) => entry.type === type);
+    return (
+      write?.style === expected.style &&
+      (write.width ?? 0) === (expected.width ?? 0) &&
+      (write.color ?? '#000000').toUpperCase() ===
+        (expected.color ?? '#000000').toUpperCase()
+    );
+  });
+}
+
+function writeRowIsHeader(
+  editor: LiveEditor,
+  cellAnchor: string,
+  isHeader: boolean
+): void {
+  selectForAppearance(editor, cellAnchor, 'row');
+  const rowFormat = editor.selection?.rowFormat;
+  if (!rowFormat)
+    throw new OpError(
+      'unsupported_op',
+      'Row formatting is unavailable on this editor.'
+    );
+  rowFormat.isHeader = isHeader;
+}
+
+/**
+ * Undo this change set's own appearance writes mid-apply, newest first.
+ *
+ * Rollback only, never a card's inverse: it runs inside the failing write, so
+ * the anchors it names are still exactly what they were, and a failure has to
+ * surface as an OpError rather than be swallowed. Resolving a card is the other
+ * situation entirely - the content has moved by then - and that inverse has one
+ * owner, `groupRevisionsAtomic`.
+ */
+function rollbackAppearanceWrites(
+  editor: LiveEditor,
+  restores: AppearanceRestore[]
+): void {
+  for (let index = restores.length - 1; index >= 0; index--) {
+    const restore = restores[index];
+    if (restore.tableProperties)
+      writeTableProperties(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableProperties
+      );
+    if (restore.tableLayout)
+      writeTableLayout(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableLayout
+      );
+    if (restore.tableBorders)
+      writeTableBorders(
+        editor,
+        restore.cellAnchor.split(';').slice(0, 2).join(';'),
+        restore.tableBorders
+      );
+    if (restore.rowBorders)
+      writeAppearance(
+        editor,
+        restore.cellAnchor,
+        { borders: restore.rowBorders },
+        'row'
+      );
+    if (restore.rowIsHeader !== undefined)
+      writeRowIsHeader(editor, restore.cellAnchor, restore.rowIsHeader);
+    if (restore.write)
+      writeAppearance(editor, restore.cellAnchor, restore.write, 'cell');
+  }
+}
+
+/**
+ * Appearance is not tracked by SyncFusion. Keep every helper that writes it
+ * atomic by owning its inverse before the corresponding live write and
+ * replaying the complete local journal when either a write or its verification
+ * throws. Successful callers receive that same journal for later group reject.
+ */
+function runAppearanceTransaction<T>(
+  editor: LiveEditor,
+  work: (record: (restore: AppearanceRestore) => void) => T
+): { result: T; restores: AppearanceRestore[] } {
+  const restores: AppearanceRestore[] = [];
+  try {
+    return {
+      result: work((restore) => restores.push(restore)),
+      restores
+    };
+  } catch (error) {
+    try {
+      rollbackAppearanceWrites(editor, restores);
+    } catch (rollbackError) {
+      throw new OpError(
+        'appearance_rollback_failed',
+        'A table appearance write failed and its exact restore did not complete.',
+        [
+          `write failure: ${describeUnexpectedError(error)}`,
+          `restore failure: ${describeUnexpectedError(rollbackError)}`
+        ]
+      );
+    }
+    throw error;
+  }
+}
+
+const emptyAppearanceReport = (): AppearanceWriteReport => ({
+  cellsWritten: 0,
+  rowsWritten: 0,
+  cellsUnchanged: 0
+});
+
+/**
+ * Re-lay `banding` over the rows of one table, from `fromRow` down. Only writes
+ * a row whose fill actually differs, and leaves a row whose own cells carry
+ * DIFFERENT fills alone - a deliberate per-cell highlight is not a stripe error,
+ * and the count of such rows is reported rather than quietly absorbed.
+ */
+function applyBandingRows(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  banding: TableBanding,
+  fromRow: number
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const shadings = rowShadings(current);
+  const start = Math.max(fromRow, banding.headerRows);
+  let skipped = 0;
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (let row = start; row < current.rows.length; row++) {
+      const wanted = bandedShadingForRow(banding, row);
+      if (wanted === undefined) continue;
+      if (shadings[row] === undefined) {
+        skipped++;
+        continue;
+      }
+      if (shadings[row] === wanted) continue;
+      const cells = current.rows[row].cells;
+      for (let column = 0; column < cells.length; column++) {
+        const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+        const before = cellAppearanceAt(current, row, column);
+        const write: AppearanceWrite = { shading: wanted };
+        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        report.cellsWritten++;
+      }
+      report.rowsWritten++;
+    }
+  });
+  report.banding = banding;
+  if (skipped) report.rowsSkippedMixed = skipped;
+  return { report, restores: transaction.restores };
+}
+
+/**
+ * Enforce the header flag each inserted row resolved to. SyncFusion clones the
+ * anchored row's `rowFormat.isHeader`, so without this an insert anchored on
+ * the header hands back a second header row: it repeats on every page and Word
+ * renders it with the table style's first-row treatment, which is how a new
+ * team member arrived navy and bold instead of as a data row.
+ */
+function applyPlannedRowHeaders(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  planned: Array<{ row: number; isHeader: boolean }>
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (const { row, isHeader } of planned) {
+      const target = current.rows[row];
+      if (!target?.cells.length || !!target.isHeader === isHeader) continue;
+      const cellAnchor = cellAnchorOf(tableAnchor, row, 0);
+      record({ cellAnchor, rowIsHeader: !!target.isHeader });
+      writeRowIsHeader(editor, cellAnchor, isHeader);
+      report.rowsWritten++;
+    }
+  });
+  return { report, restores: transaction.restores };
+}
+
+/** Enforce only the inserted rows' resolved fallback fills. */
+function applyPlannedRowShadings(
+  editor: LiveEditor,
+  tableAnchor: string,
+  current: TableAppearance,
+  planned: Array<{ row: number; shading: string | null }>
+): AppearanceWriteOutcome {
+  const report = emptyAppearanceReport();
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (const { row, shading } of planned) {
+      const cells = current.rows[row]?.cells ?? [];
+      let rowTouched = false;
+      for (let column = 0; column < cells.length; column++) {
+        const before = cellAppearanceAt(current, row, column);
+        if ((before?.shading ?? null) === shading) {
+          report.cellsUnchanged++;
+          continue;
+        }
+        const cellAnchor = cellAnchorOf(tableAnchor, row, column);
+        const write: AppearanceWrite = { shading };
+        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        report.cellsWritten++;
+        rowTouched = true;
+      }
+      if (rowTouched) report.rowsWritten++;
+    }
+  });
+  return { report, restores: transaction.restores };
+}
+
+function runCopyTableFormat(
+  editor: LiveEditor,
+  op: TypedEditOp<'copy_table_format'>,
+  targetAnchor: string
+): AppearanceWriteOutcome & { postWriteSfdt?: any } {
+  const sourceAnchor = normalizeTableAnchor(op.sourceTable);
+  if (!sourceAnchor)
+    throw new OpError(
+      'missing_source_table',
+      'copy_table_format needs `sourceTable`: the table to copy the look FROM, as a table anchor ("0;7") or any of its cell anchors.'
+    );
+  if (sourceAnchor === targetAnchor)
+    throw new OpError(
+      'copy_source_is_target',
+      `copy_table_format was given the same table ("${targetAnchor}") as both source and target.`
+    );
+  const sfdt = serializeSfdt(editor);
+  const source = collectTableAppearance(tableBlockAt(sfdt, sourceAnchor));
+  if (!source)
+    throw new OpError(
+      'source_table_not_found',
+      `No table answers to the \`sourceTable\` anchor "${sourceAnchor}". Re-read the structure and name a table that exists.`
+    );
+  const target = collectTableAppearance(tableBlockAt(sfdt, targetAnchor));
+  if (!target)
+    throw new OpError(
+      'table_not_found',
+      `No table answers to the anchor "${targetAnchor}".`
+    );
+  // Source and target came from the same just-produced snapshot and nothing
+  // has written yet, so carry the target forward instead of reserializing it.
+  return applyCopiedTableAppearance(
+    editor,
+    sourceAnchor,
+    source,
+    targetAnchor,
+    target
+  );
+}
+
+/**
+ * Copy a pre-resolved table look onto a live target. Automatic insert
+ * inheritance and explicit `copy_table_format` meet here, so both use the same
+ * cyclic row/column mapping and the same exact restore snapshots.
+ */
+function applyCopiedTableAppearance(
+  editor: LiveEditor,
+  sourceAnchor: string,
+  source: TableAppearance,
+  targetAnchor: string,
+  resolvedTarget?: TableAppearance,
+  options: { banding?: TableBanding } = {}
+): AppearanceWriteOutcome & { postWriteSfdt?: any } {
+  const target = resolvedTarget ?? liveTableAppearance(editor, targetAnchor);
+  const banding = options.banding ?? detectTableBanding(source);
+  const headerRows = banding?.headerRows ?? inferHeaderRows(source);
+  const liveSourceAnchor = resolveLiveSourceTableAnchor(
+    editor,
+    sourceAnchor,
+    targetAnchor,
+    source
+  );
+  const sourceProperties = liveTablePropertyRestore(editor, liveSourceAnchor);
+  const targetProperties = liveTablePropertyRestore(editor, targetAnchor);
+  const desiredProperties = tablePropertiesForTarget(
+    sourceProperties,
+    source,
+    headerRows,
+    targetProperties
+  );
+  const copyProperties = !tablePropertiesEqual(
+    desiredProperties,
+    targetProperties
+  );
+  const sourceRowBorders = liveRowBorderRestores(editor, liveSourceAnchor);
+  const rowBordersBefore = liveRowBorderRestores(editor, targetAnchor);
+  const desiredRowBorders = target.rows.map(
+    (_, rowIndex) =>
+      sourceRowBorders[sourceRowForTarget(source, headerRows, rowIndex)] ?? [
+        { type: 'NoBorder', style: 'None' }
+      ]
+  );
+  const copyRowBorders =
+    JSON.stringify(desiredRowBorders) !== JSON.stringify(rowBordersBefore);
+  const targetColumns = target.rows.reduce(
+    (widest, row) => Math.max(widest, row.cells.length),
+    0
+  );
+  const desiredLayout = tableLayoutForTarget(
+    liveTableLayout(editor, liveSourceAnchor),
+    targetColumns
+  );
+  const copyLayout =
+    !!desiredLayout && !tableLayoutEquals(desiredLayout, target.layout);
+  // The restore is what the SFDT STATED, not what SyncFusion materialized. The
+  // live widget always answers with a concrete `allowAutoFit` and, once laid
+  // out, with rendered `cellWidth` values that the document never stated - so
+  // replaying a widget reading as the restore wrote `allowAutoFit: false` and a
+  // point-width grid INTO a table that had neither, which is untracked damage a
+  // reject is supposed to remove rather than add. `target` is the pre-write SFDT
+  // reading this path already compares against; `UNSTATED_TABLE_LAYOUT` is what
+  // the same reader means by "the document stated no layout".
+  const layoutBefore = copyLayout
+    ? target.layout ?? UNSTATED_TABLE_LAYOUT
+    : undefined;
+  const report = emptyAppearanceReport();
+  if (source.styleName) report.sourceStyleName = source.styleName;
+  if (banding) report.banding = banding;
+  const desiredRows = target.rows.map((targetRow, row) =>
+    targetRow.cells.map((_, column) =>
+      copiedCellAppearance(source, banding, headerRows, row, column, {
+        rows: target.rows.length,
+        columns: targetRow.cells.length
+      })
+    )
+  );
+  const desiredBorders = desiredRows.flat().map((entry) => entry?.borders);
+  const firstAllBorder = desiredBorders[0]?.all;
+  const separatedBorders = sourceProperties.table.cellSpacing > 0;
+  const uniformAllBorder =
+    !separatedBorders &&
+    !!firstAllBorder &&
+    desiredBorders.length > 0 &&
+    desiredBorders.every(
+      (borders) =>
+        !!borders?.all &&
+        Object.keys(borders).length === 1 &&
+        appearanceEquals(
+          { borders: { all: firstAllBorder } },
+          { borders: { all: borders.all } }
+        )
+    )
+      ? firstAllBorder
+      : undefined;
+  const targetHasCellBorders = target.rows.some((row, rowIndex) =>
+    row.cells.some(
+      (_, column) => !!cellAppearanceAt(target, rowIndex, column)?.borders
+    )
+  );
+  const tableBordersBefore =
+    uniformAllBorder || separatedBorders
+      ? liveTableBorderRestore(editor, targetAnchor)
+      : undefined;
+  const tableAlreadyNormalized =
+    !!uniformAllBorder &&
+    !targetHasCellBorders &&
+    !!tableBordersBefore &&
+    tableBordersMatchAll(tableBordersBefore, uniformAllBorder);
+  const normalizeTableBorders = !!uniformAllBorder && !tableAlreadyNormalized;
+  const withoutBorders = (
+    appearance: AppearanceFacts | undefined
+  ): AppearanceFacts | undefined => {
+    if (!appearance) return undefined;
+    const rest = { ...appearance };
+    delete rest.borders;
+    return Object.keys(rest).length ? rest : undefined;
+  };
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    if (copyProperties) {
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableProperties: targetProperties
+      });
+      writeTableProperties(editor, targetAnchor, desiredProperties);
+    }
+    target.rows.forEach((targetRow, row) => {
+      // The same mapping copiedCellAppearance uses, so the header flag and the
+      // cell appearance can never be taken from two different source rows.
+      let rowTouched = false;
+      const wantsHeader = copiedRowIsHeader(
+        source,
+        sourceRowForTarget(source, headerRows, row)
+      );
+      if (wantsHeader !== !!targetRow.isHeader && targetRow.cells.length) {
+        const cellAnchor = cellAnchorOf(targetAnchor, row, 0);
+        record({ cellAnchor, rowIsHeader: !!targetRow.isHeader });
+        writeRowIsHeader(editor, cellAnchor, wantsHeader);
+        rowTouched = true;
+      }
+      for (let column = 0; column < targetRow.cells.length; column++) {
+        const desired = desiredRows[row][column];
+        const before = cellAppearanceAt(target, row, column);
+        const resolvedBefore = uniformAllBorder
+          ? resolvedCellAppearanceAt(target, row, column)
+          : before;
+        const desiredCell = uniformAllBorder
+          ? withoutBorders(desired)
+          : desired;
+        const beforeCell = uniformAllBorder
+          ? withoutBorders(resolvedBefore)
+          : resolvedBefore;
+        const borderChanged =
+          !!uniformAllBorder &&
+          !appearanceEquals(
+            { borders: resolvedBefore?.borders },
+            { borders: { all: uniformAllBorder } }
+          );
+        const cellAnchor = cellAnchorOf(targetAnchor, row, column);
+        if (normalizeTableBorders && before?.borders)
+          record({
+            cellAnchor,
+            write: { borders: borderWritesFor(before.borders) }
+          });
+        if (appearanceEquals(desiredCell, beforeCell)) {
+          if (borderChanged) {
+            report.cellsWritten++;
+            rowTouched = true;
+          } else {
+            report.cellsUnchanged++;
+          }
+          continue;
+        }
+        const write = appearanceWriteFor(desiredCell, {
+          shading: true,
+          verticalAlignment: true,
+          borders: !uniformAllBorder
+        });
+        record({ cellAnchor, write: restoreWriteFor(before, write) });
+        writeAppearance(editor, cellAnchor, write, 'cell');
+        report.cellsWritten++;
+        rowTouched = true;
+      }
+      if (rowTouched) report.rowsWritten++;
+    });
+    if (normalizeTableBorders && uniformAllBorder) {
+      writeTableBorders(editor, targetAnchor, [
+        {
+          type: 'AllBorders',
+          style: uniformAllBorder.style,
+          ...(uniformAllBorder.width != null
+            ? { width: uniformAllBorder.width }
+            : {}),
+          ...(uniformAllBorder.color ? { color: uniformAllBorder.color } : {})
+        }
+      ]);
+      // Replay runs newest-first: restore the table border layer before putting
+      // back any cell-level overrides that the normalized write cleared.
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableBorders: tableBordersBefore
+      });
+    }
+    if (copyLayout && desiredLayout && layoutBefore) {
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableLayout: layoutBefore
+      });
+      writeTableLayout(editor, targetAnchor, desiredLayout);
+    }
+    if (copyRowBorders) {
+      rowBordersBefore.forEach((rowBorders, rowIndex) =>
+        record({
+          cellAnchor: cellAnchorOf(targetAnchor, rowIndex, 0),
+          rowBorders
+        })
+      );
+      copyMappedRowBorders(
+        editor,
+        liveSourceAnchor,
+        targetAnchor,
+        source,
+        headerRows
+      );
+    }
+    if (separatedBorders) {
+      record({
+        cellAnchor: cellAnchorOf(targetAnchor, 0, 0),
+        tableBorders: tableBordersBefore
+      });
+      copySeparatedTableBorders(
+        editor,
+        liveSourceAnchor,
+        targetAnchor,
+        source,
+        headerRows
+      );
+    }
+    if (copyProperties || copyLayout || copyRowBorders || separatedBorders)
+      invalidateDocumentLayout(editor);
+    const afterProperties = liveTablePropertyRestore(editor, targetAnchor);
+    const postWriteSfdt = serializeSfdt(editor);
+    const after = collectTableAppearance(
+      tableBlockAt(postWriteSfdt, targetAnchor)
+    );
+    if (!after)
+      throw new OpError(
+        'table_not_found',
+        `No table answers to the anchor "${targetAnchor}". Re-read the structure and use a current anchor.`
+      );
+    const mismatches: string[] = [];
+    if (!tablePropertiesEqual(desiredProperties, afterProperties))
+      mismatches.push(
+        `table properties: expected ${JSON.stringify(
+          desiredProperties
+        )}, got ${JSON.stringify(afterProperties)}`
+      );
+    const afterRowBorders = liveRowBorderRestores(editor, targetAnchor);
+    if (JSON.stringify(desiredRowBorders) !== JSON.stringify(afterRowBorders))
+      mismatches.push(
+        `row borders: expected ${JSON.stringify(
+          desiredRowBorders
+        )}, got ${JSON.stringify(afterRowBorders)}`
+      );
+    if (desiredLayout && !tableLayoutEquals(desiredLayout, after.layout))
+      mismatches.push(
+        `table layout: expected ${JSON.stringify(
+          desiredLayout
+        )}, got ${JSON.stringify(after.layout)}`
+      );
+    // Both sides of the comparison are read as a GRID, so a shared interior
+    // edge is judged by whether it is drawn rather than by which of the two
+    // cells happens to store it. See effectiveCellAppearance.
+    const wanted = after.rows.map((row, rowIndex) =>
+      row.cells.map((_unused, column) =>
+        copiedCellAppearance(source, banding, headerRows, rowIndex, column, {
+          rows: after.rows.length,
+          columns: row.cells.length
+        })
+      )
+    );
+    const wantedAt = (row: number, column: number) => wanted[row]?.[column];
+    const actualAt = (row: number, column: number) =>
+      uniformAllBorder
+        ? resolvedCellAppearanceAt(after, row, column)
+        : cellAppearanceAt(after, row, column);
+    after.rows.forEach((row, rowIndex) => {
+      const mapped =
+        source.rows[sourceRowForTarget(source, headerRows, rowIndex)];
+      if (!!row.isHeader !== !!mapped?.isHeader)
+        mismatches.push(
+          `row ${rowIndex} header: expected ${!!mapped?.isHeader}, got ${!!row.isHeader}`
+        );
+      for (let column = 0; column < row.cells.length; column++) {
+        const expected = effectiveCellAppearance(wantedAt, rowIndex, column);
+        const actual = effectiveCellAppearance(actualAt, rowIndex, column);
+        if (!appearanceEquals(expected, actual))
+          mismatches.push(
+            `row ${rowIndex}, column ${column}: expected ${JSON.stringify(
+              expected
+            )}, got ${JSON.stringify(actual)}`
+          );
+      }
+    });
+    if (mismatches.length)
+      throw new OpError(
+        'inherited_appearance_mismatch',
+        `Table appearance from ${sourceAnchor} did not resolve at ${targetAnchor}.`,
+        mismatches
+      );
+    return postWriteSfdt;
+  });
+  return {
+    report,
+    restores: transaction.restores,
+    postWriteSfdt: transaction.result
+  };
+}
+
 function readPostEditInventory(
   editor: LiveEditor,
   warnings: string[]
@@ -4937,38 +9951,12 @@ function callSelection(
 // replacement); rejecting the group rejects every member (keep the original) -
 // the only two internally-consistent outcomes. Neither can ever empty the block.
 
-// Read the editor's current revisions as a plain array (order preserved).
-function snapshotRevisions(editor: LiveEditor): LiveRevision[] {
-  const col = editor.revisions;
-  if (!col) return [];
-  if (Array.isArray(col.changes)) return col.changes.slice();
-  if (typeof col.length === 'number' && typeof col.get === 'function') {
-    const out: LiveRevision[] = [];
-    for (let i = 0; i < col.length; i++) {
-      const rev = col.get(i);
-      if (rev) out.push(rev);
-    }
-    return out;
-  }
-  return [];
-}
-
 function revisionCollectionIsObservable(editor: LiveEditor): boolean {
   const collection = editor.revisions;
   return !!(
     Array.isArray(collection?.changes) ||
     (typeof collection?.length === 'number' &&
       typeof collection?.get === 'function')
-  );
-}
-
-function createdRevisions(
-  editor: LiveEditor,
-  before: LiveRevision[]
-): LiveRevision[] {
-  const beforeSet = new Set(before);
-  return snapshotRevisions(editor).filter(
-    (revision) => !beforeSet.has(revision)
   );
 }
 
@@ -5019,23 +10007,72 @@ function describeAcceptDivergence(expected: string, actual: string): string[] {
   );
 }
 
-const TRACKED_TEXT_OPS = new Set([
+export const TRACKED_TEXT_OPS = new Set([
   'replace_text',
   'replace_selection',
   'delete_text',
+  'delete_paragraph',
   'insert_text',
+  // A relocation is content moving, so it carries the same requirement as any
+  // other content write - and for these two the reject-projection comparison
+  // that membership buys IS the property they exist to have: rejecting the card
+  // must restore the document exactly, which is what makes a move reviewable
+  // rather than merely applied.
+  'move_section',
+  'swap_sections',
+  'copy_section',
+  // `split_table` is `copy_section`'s mechanism - capture, paste the narrowed
+  // payload, delete the extracted rows from the source - so it carries the same
+  // requirement and was simply missed. Being in neither tracked set meant
+  // `assertTrackedMutation` returned on its first branch and the op was never
+  // checked at all. The docstring beside `resolveRelocationTarget` that tells
+  // the next reader not to add `copy_section` is about CONTENT_CREATING_OPS,
+  // the appearance-resolver set, which is a different question: `copy_section`
+  // is outside that set and inside this one, and is the precedent FOR this
+  // line rather than against it.
+  'split_table',
+  // The composer expands to tracked insert_text/insert_table writes before
+  // dispatch; membership keeps the registry-exhaustive content-op invariant
+  // honest at the public operation boundary.
+  'insert_section',
+  'insert_table',
   'set_cell_text',
   'set_cell_formula',
   'set_column_formula',
   'change_case'
 ]);
 
-// A structural table edit is content just as much as text is, so it carries the
-// same requirement: SyncFusion must author a rejectable card of the right kind.
-const TRACKED_STRUCTURAL_OPS = new Map([
+// A structural edit is content just as much as text is, so it carries the same
+// requirement: SyncFusion must author a rejectable card of the right kind.
+// `delete_paragraph` belongs here for both reasons a structural op can fail
+// silently - a selection that mutates something SyncFusion does not track, and a
+// delete that had nothing left to consume and changed nothing at all. Either way
+// this reports the op failed rather than `ok: true` over an untouched document.
+export const TRACKED_STRUCTURAL_OPS = new Map([
   ['insert_row', 'insertion'],
-  ['delete_row', 'deletion']
+  ['delete_row', 'deletion'],
+  ['delete_paragraph', 'deletion']
 ]);
+
+function deletionRevisionDetails(
+  revisions: LiveRevision[],
+  targetText?: string
+): string[] {
+  const destroyed = targetText
+    ? [`text that would be destroyed: ${JSON.stringify(targetText)}`]
+    : [];
+  return [
+    ...destroyed,
+    ...revisions.map(
+      (revision, index) =>
+        `unexpected deletion revision ${index + 1}: ${
+          revision.revisionID
+            ? `revisionID ${JSON.stringify(revision.revisionID)}`
+            : 'no revisionID'
+        }`
+    )
+  ];
+}
 
 // A write is reviewable only when it can be undone from the Changes pane. This
 // check runs immediately after the public write, before an op is reported
@@ -5056,7 +10093,8 @@ function assertTrackedMutation(
   before: LiveRevision[],
   op: EditOp,
   priorRejectStream: string | undefined,
-  postWriteSfdt: any
+  postWriteSfdt: any,
+  targetText?: string
 ): void {
   const structural = TRACKED_STRUCTURAL_OPS.get(op.op);
   if (
@@ -5075,6 +10113,19 @@ function assertTrackedMutation(
       String(revision.revisionType ?? '').toLowerCase()
     )
   );
+  const unexpectedDeletions =
+    op.op === 'insert_text'
+      ? revisions.filter(
+          (revision) =>
+            String(revision.revisionType ?? '').toLowerCase() === 'deletion'
+        )
+      : [];
+  if (unexpectedDeletions.length)
+    throw new OpError(
+      'insert_text_created_deletion',
+      `insert_text at "${op.anchor}" created a Deletion revision, but no deletion was requested.`,
+      deletionRevisionDetails(unexpectedDeletions, targetText)
+    );
 
   if (structural) {
     if (!revisions.length || !types.has(structural))
@@ -5116,34 +10167,21 @@ function assertTrackedMutation(
     );
 }
 
-// Revert only cards created after `before`; never touch unrelated human
-// revisions and never use global history or rejectAll. This is the safety net
-// for a post-write verification failure.
-function rejectCreatedRevisions(
-  editor: LiveEditor,
-  before: LiveRevision[]
-): void {
-  const revisions = createdRevisions(editor, before);
+// Revert only the exact cards recorded for one failed group; never touch
+// unrelated human revisions (or a successful sibling group) and never use
+// global history or rejectAll.
+function rejectRevisions(revisions: LiveRevision[]): void {
   if (!revisions.length) return;
   if (revisions.some((revision) => typeof revision.reject !== 'function'))
     throw new OpError(
       'compensating_rollback_failed',
-      'A failed change set created a revision that could not be rejected.'
+      'A failed edit group created a revision that could not be rejected.'
     );
   for (const revision of revisions) {
     // Never the public reject(): its adjacency cascade could reject
     // neighbouring revisions this change set never created.
-    resolveSingleRevision(captureNativeResolvers(revision), false);
+    resolveRevisionIndividually(revision, false);
   }
-}
-
-// Durable accept-group tag, carried in revision customData: unlike the
-// in-memory bindings, it round-trips through SFDT/DOCX.
-const REVISION_GROUP_TAG_VERSION = 1;
-
-export interface RevisionGroupTag {
-  changeSetId: string;
-  group: string;
 }
 
 /** The accept group an op belongs to; ungrouped ops share the change set id. */
@@ -5151,55 +10189,6 @@ function opGroupId(op: EditOp, changeSetId: string): string {
   return typeof op.group === 'string' && op.group.trim()
     ? op.group.trim()
     : changeSetId;
-}
-
-function revisionGroupTag(changeSetId: string, group: string): string {
-  return JSON.stringify({
-    v: REVISION_GROUP_TAG_VERSION,
-    source: 'robin',
-    changeSetId,
-    group
-  });
-}
-
-export function parseRevisionGroupTag(
-  customData: unknown
-): RevisionGroupTag | undefined {
-  if (typeof customData !== 'string' || !customData.trim()) return undefined;
-  try {
-    const parsed = JSON.parse(customData);
-    if (
-      parsed &&
-      parsed.source === 'robin' &&
-      typeof parsed.changeSetId === 'string' &&
-      typeof parsed.group === 'string'
-    )
-      return { changeSetId: parsed.changeSetId, group: parsed.group };
-  } catch {
-    // Foreign customData (another producer's tag, or plain text) is not ours
-    // to interpret; the revision simply stays outside assistant grouping.
-  }
-  return undefined;
-}
-
-// Resolve ONE revision without the adjacency cascade: public accept/reject
-// resolve the pane's whole same-author/type neighbour card. The internal
-// `handleAcceptReject` is feature-detected (fallback: public call); note it
-// skips `beforeAcceptRejectChanges`.
-function resolveSingleRevision(
-  natives: {
-    accept?: () => void;
-    reject?: () => void;
-    single?: (isAccept: boolean, isGroup: boolean) => void;
-  },
-  isAccept: boolean
-): void {
-  if (natives.single) {
-    natives.single(isAccept, false);
-    return;
-  }
-  const fn = isAccept ? natives.accept : natives.reject;
-  if (fn) fn();
 }
 
 // Every revision created until the next stamp carries this op's group tag.
@@ -5218,194 +10207,41 @@ function stampRevisionGroup(
   );
 }
 
-// SyncFusion coalesces adjacent same-author/same-type revisions into one
-// object, silently folding a second group's content (and losing its tag)
-// into the first — so gate the engine's merge predicates on the group tag.
-// Untagged content normalizes to one empty key: native merge behavior.
-const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
-
-function revisionTagKey(customData: unknown): string {
-  const tag = parseRevisionGroupTag(customData);
-  return tag ? `${tag.changeSetId} ${tag.group}` : '';
-}
-
-export function installRevisionGroupIsolation(editor: LiveEditor): void {
-  const mod: any = (editor as any).editorModule ?? editor.editor;
-  if (!mod || typeof mod.isRevisionMatched !== 'function') return;
-  if (mod[REVISION_ISOLATION_INSTALLED]) return;
-  mod[REVISION_ISOLATION_INSTALLED] = true;
-
-  // The tag new content would carry.
-  const activeKey = () =>
-    revisionTagKey(editor.documentEditorSettings?.revisionSettings?.customData);
-
-  // "May this new tracked content extend `item`?" Unwrap element revisions so
-  // the author/type check and the tag check apply to the same revision.
-  const originalMatched = mod.isRevisionMatched.bind(mod);
-  mod.isRevisionMatched = (item: any, type: any): boolean => {
-    // Type-less calls are OWNERSHIP checks ("is this pending insertion my
-    // own?" → remove outright, no Deletion layered) and must stay native:
-    // tag-gating them leaves content rejecting cannot restore. Only the
-    // typed combine/extend calls are group-scoped.
-    if (type === undefined || type === null) return originalMatched(item, type);
-    const revisions: any[] =
-      item && typeof item.revisionLength === 'number'
-        ? Array.from(
-            { length: item.revisionLength },
-            (_, i) => item.revisions?.[i]
-          )
-        : [item];
-    const key = activeKey();
-    return revisions.some(
-      (rev) =>
-        rev &&
-        originalMatched(rev, type) &&
-        revisionTagKey(rev.customData) === key
-    );
-  };
-
-  // "May these two existing revisions merge?" (e.g. the content separating
-  // them was removed). Only within one group.
-  if (typeof mod.compareTwoRevisions === 'function') {
-    const originalCompare = mod.compareTwoRevisions.bind(mod);
-    mod.compareTwoRevisions = (a: any, b: any): boolean =>
-      originalCompare(a, b) &&
-      revisionTagKey(a?.customData) === revisionTagKey(b?.customData);
-  }
-}
-
-function captureNativeResolvers(rev: LiveRevision) {
-  return {
-    accept: typeof rev.accept === 'function' ? rev.accept.bind(rev) : undefined,
-    reject: typeof rev.reject === 'function' ? rev.reject.bind(rev) : undefined,
-    single:
-      typeof rev.handleAcceptReject === 'function'
-        ? rev.handleAcceptReject.bind(rev)
-        : undefined
-  };
-}
-
-// Bind one edit group's revisions so accept/reject on ANY member resolves
-// the whole group — never wider — through the non-cascading path. Later
-// calls on resolved members are no-ops; single-revision groups are bound
-// too (the wrapper is what routes around the adjacency cascade).
-function groupRevisionsAtomic(
-  group: LiveRevision[],
-  changeSetId?: string,
-  groupId?: string
-): void {
-  if (!group.length) return;
-  const members = group.map(captureNativeResolvers);
-  const state = { resolved: false };
-  // Members a reviewer resolved one-by-one (robinResolveSelf); a later group
-  // decision must not resolve them a second time.
-  const resolvedAlone = new Set<number>();
-  const resolveAll = (isAccept: boolean) => {
-    if (state.resolved) return;
-    state.resolved = true;
-    for (let index = 0; index < members.length; index++) {
-      if (resolvedAlone.has(index)) continue;
-      try {
-        resolveSingleRevision(members[index], isAccept);
-      } catch {
-        // A later member's range may be stale once the first resolved; the
-        // group's outcome is already consistent, so swallow and move on.
-      }
-    }
-  };
-  group.forEach((rev, index) => {
-    if (changeSetId) (rev as any).robinChangeSetId = changeSetId;
-    if (groupId) (rev as any).robinGroupId = groupId;
-    // Rebind guard: marks this revision's accept/reject as already wrapped so
-    // a later rebind pass cannot stack wrappers.
-    (rev as any).robinGroupBound = true;
-    // The per-edit escape hatch: resolve THIS member alone through the native
-    // single-revision path, leaving the rest of the group pending.
-    (rev as any).robinResolveSelf = (isAccept: boolean) => {
-      if (state.resolved || resolvedAlone.has(index)) return;
-      resolvedAlone.add(index);
-      resolveSingleRevision(members[index], isAccept);
-    };
-    rev.accept = () => resolveAll(true);
-    rev.reject = () => resolveAll(false);
-  });
-}
-
-/** Resolve ONE revision — not its accept group, no adjacency cascade.
- *  Group-bound revisions use the natives captured at bind time (their public
- *  accept/reject were rewired to whole-group resolution). */
-export function resolveRevisionIndividually(
-  revision: LiveRevision,
-  isAccept: boolean
-): void {
-  const self = (revision as any).robinResolveSelf;
-  if (typeof self === 'function') {
-    self(isAccept);
-    return;
-  }
-  resolveSingleRevision(captureNativeResolvers(revision), isAccept);
-}
-
-/** Resolve several revisions as ONE undo step via the engine's complex
- *  history (native Accept All's mechanism) — per-revision entries would let
- *  undo peel the unit apart (e.g. a replace reviving only its insert half). */
-export function resolveRevisionsAsOneUndo(
-  editor: LiveEditor,
-  revisions: LiveRevision[],
-  isAccept: boolean
-): void {
-  const editorModule: any = (editor as any).editorModule ?? editor.editor;
-  const history: any =
-    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
-  let complex = false;
-  if (
-    revisions.length > 1 &&
-    typeof editorModule?.initComplexHistory === 'function'
-  ) {
-    try {
-      editorModule.initComplexHistory(isAccept ? 'Accept All' : 'Reject All');
-      complex = true;
-    } catch {
-      complex = false;
-    }
-  }
-  try {
-    for (const revision of revisions) {
-      try {
-        resolveRevisionIndividually(revision, isAccept);
-      } catch {
-        // A stale member range must not stop the rest of the unit.
-      }
-    }
-  } finally {
-    if (complex) {
-      try {
-        history?.updateComplexHistory?.();
-      } catch {
-        // History bookkeeping must never break the resolution itself.
-      }
-    }
-  }
-}
-
 /** Result of binding one change set's created revisions into accept groups. */
 interface RevisionGroupingReport {
   revisionCount: number;
   /** group id -> number of live revisions bound to it. */
   revisionsByGroup: Map<string, number>;
+  /**
+   * Groups whose appearance snapshots found a revision to bind to, so rejecting
+   * their card restores the appearance as well as the content. A group that took
+   * snapshots but produced no revision is absent here: its appearance is
+   * untracked and already applied, which is what `formatTracking` reports.
+   */
+  appearanceGroups: Set<string>;
 }
 
-// Partition this change set's created revisions by their customData group
-// tag and bind each partition atomically; untaggable revisions fall back to
-// the change-set-wide group.
+// Diff the revisions created by this change set (against a pre-batch snapshot),
+// partition them by the group tag each revision carries in `customData`, and
+// bind each partition atomically. Revisions with no readable tag (test fakes,
+// editors without `revisionSettings`) fall back into the change-set-wide group.
+//
+// `restoresByGroup` carries the appearance snapshots each group's ops took.
+// SyncFusion authors no revision for a fill or a border, so a group's snapshots
+// ride along on that group's own card and nowhere else: rejecting one group must
+// never put back appearance a different group wrote.
 function groupNewRevisions(
   editor: LiveEditor,
   before: LiveRevision[],
-  changeSetId: string
+  changeSetId: string,
+  restoresByGroup?: Map<string, AppearanceRestore[]>,
+  stylesByGroup?: Map<string, ParagraphStyleRestore[]>
 ): RevisionGroupingReport {
   const created = createdRevisions(editor, before);
   const revisionsByGroup = new Map<string, number>();
-  if (!created.length) return { revisionCount: 0, revisionsByGroup };
+  const appearanceGroups = new Set<string>();
+  if (!created.length)
+    return { revisionCount: 0, revisionsByGroup, appearanceGroups };
   const partitions = new Map<string, LiveRevision[]>();
   for (const rev of created) {
     const tag = parseRevisionGroupTag(rev.customData);
@@ -5416,10 +10252,38 @@ function groupNewRevisions(
     else partitions.set(group, [rev]);
   }
   partitions.forEach((partition, group) => {
-    groupRevisionsAtomic(partition, changeSetId, group);
+    const restores = restoresByGroup?.get(group);
+    const styles = stylesByGroup?.get(group);
+    if (restores?.length || styles?.length) {
+      // The live closures below disappear on reload; the same customData that
+      // carries group identity therefore carries the exact appearance inverse.
+      // SyncFusion removes the revision metadata when the group resolves and
+      // revives it with the revision on undo.
+      for (const revision of partition) {
+        const tag = parseRevisionGroupTag(revision.customData);
+        if (tag?.changeSetId === changeSetId && tag.group === group)
+          revision.customData = revisionGroupTag(
+            changeSetId,
+            group,
+            restores,
+            styles
+          );
+      }
+    }
+    if (restores?.length) appearanceGroups.add(group);
+    // Both inverses belong to the group primitive: it is the only place that
+    // knows when a card is finished and whether anything in it was kept.
+    groupRevisionsAtomic(
+      editor,
+      partition,
+      changeSetId,
+      group,
+      restores,
+      styles
+    );
     revisionsByGroup.set(group, partition.length);
   });
-  return { revisionCount: created.length, revisionsByGroup };
+  return { revisionCount: created.length, revisionsByGroup, appearanceGroups };
 }
 
 // changeSet.groups: ops declare the units, the post-write partition supplies
@@ -5427,8 +10291,14 @@ function groupNewRevisions(
 function reportRevisionGroups(
   edits: EditOp[],
   changeSetId: string,
-  revisionsByGroup: Map<string, number>
-): Array<{ id: string; opIndices: number[]; revisionCount: number }> {
+  revisionsByGroup: Map<string, number>,
+  appearanceGroups: Set<string>
+): Array<{
+  id: string;
+  opIndices: number[];
+  revisionCount: number;
+  restoresAppearance?: true;
+}> {
   const opIndicesById = new Map<string, number[]>();
   edits.forEach((op, index) => {
     if (!op?.op) return;
@@ -5445,210 +10315,15 @@ function reportRevisionGroups(
   return [...opIndicesById.entries()].map(([id, opIndices]) => ({
     id,
     opIndices,
-    revisionCount: revisionsByGroup.get(id) ?? 0
+    revisionCount: revisionsByGroup.get(id) ?? 0,
+    ...(appearanceGroups.has(id) ? { restoresAppearance: true as const } : {})
   }));
 }
 
-/** One tracked revision inside an accept group, shaped for review UI. */
-export interface RevisionGroupItem {
-  revision: LiveRevision;
-  /** 'Insertion' | 'Deletion' | 'MoveTo' | 'MoveFrom' | 'Replace' | ''. */
-  revisionType: string;
-  /** Excerpt of the tracked content (Replace: the NEW text); empty for
-   *  pure structure. */
-  text: string;
-  /** Replace only: the deleted (old) text for a `− old / + new` diff. */
-  beforeText?: string;
-  /** Replace only: the insertion half (`revision` holds the deletion) —
-   *  one approval must resolve both. */
-  partner?: LiveRevision;
-  /** Who made the edit (the revision's author string). */
-  author?: string;
-}
-
-/** One accept group with its live member revisions: an assistant-defined
- *  group (tagged), or one author's manual tracked edits (untagged). */
-export interface RevisionGroupView {
-  changeSetId: string;
-  /** The assistant's group id, or the author name for untagged views. */
-  group: string;
-  /** True when this view aggregates one author's manual (untagged) edits. */
-  untagged?: boolean;
-  items: RevisionGroupItem[];
-}
-
-// The range's visible text: structural markers (paragraph marks, row
-// formats) have no `.text` and contribute nothing.
-function revisionRangeText(revision: LiveRevision): string {
-  let range: any[];
-  try {
-    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
-  } catch {
-    return '';
-  }
-  if (!Array.isArray(range)) return '';
-  let out = '';
-  for (const item of range) {
-    if (typeof item?.text === 'string') out += item.text;
-  }
-  return out.trim();
-}
-
-// A tracked replace is a Deletion whose range links directly to an adjacent
-// Insertion's first element — ONE edit to a reviewer.
-function isReplacePair(
-  deletion: LiveRevision,
-  insertion: LiveRevision
-): boolean {
-  try {
-    const delRange =
-      typeof deletion.getRange === 'function' ? deletion.getRange() : [];
-    const insRange =
-      typeof insertion.getRange === 'function' ? insertion.getRange() : [];
-    const last: any = delRange[delRange.length - 1];
-    return !!last && !!insRange[0] && last.nextNode === insRange[0];
-  } catch {
-    return false;
-  }
-}
-
-// Memo key for findReplaceCounterpart: null = computed, no counterpart.
-const REPLACE_COUNTERPART_MEMO = '__robinReplaceCounterpart';
-
-/** The other half of a tracked replace, from either side. Memoized on the
- *  revision objects — the halves are created together, so the linkage is
- *  stable for the revision's lifetime. */
-export function findReplaceCounterpart(
-  revision: LiveRevision
-): LiveRevision | undefined {
-  const memo = (revision as any)[REPLACE_COUNTERPART_MEMO];
-  if (memo !== undefined) return memo ?? undefined;
-  const counterpart = computeReplaceCounterpart(revision);
-  (revision as any)[REPLACE_COUNTERPART_MEMO] = counterpart ?? null;
-  if (counterpart) (counterpart as any)[REPLACE_COUNTERPART_MEMO] = revision;
-  return counterpart;
-}
-
-// Two revisions form one replace when their group identity matches: the same
-// assistant tag, or — for human (untagged) edits — the same author.
-function sameEditUnit(a: LiveRevision, b: LiveRevision): boolean {
-  const tagA = parseRevisionGroupTag(a.customData);
-  const tagB = parseRevisionGroupTag(b.customData);
-  if (tagA && tagB)
-    return tagA.changeSetId === tagB.changeSetId && tagA.group === tagB.group;
-  if (!tagA && !tagB) return String(a.author ?? '') === String(b.author ?? '');
-  return false;
-}
-
-function computeReplaceCounterpart(
-  revision: LiveRevision
-): LiveRevision | undefined {
-  const type = String(revision.revisionType ?? '');
-  if (type !== 'Deletion' && type !== 'Insertion') return undefined;
-  let range: any[];
-  try {
-    range = typeof revision.getRange === 'function' ? revision.getRange() : [];
-  } catch {
-    return undefined;
-  }
-  if (!Array.isArray(range) || !range.length) return undefined;
-  // A deletion's replacement text follows it; an insertion's replaced text
-  // precedes it.
-  const neighbour: any =
-    type === 'Deletion'
-      ? range[range.length - 1]?.nextNode
-      : range[0]?.previousNode;
-  const count = neighbour?.revisionLength ?? 0;
-  for (let i = 0; i < count; i++) {
-    const other = neighbour.getRevision?.(i);
-    if (!other) continue;
-    const otherType = String(other.revisionType ?? '');
-    if (otherType !== (type === 'Deletion' ? 'Insertion' : 'Deletion'))
-      continue;
-    if (!sameEditUnit(revision, other)) continue;
-    const deletion = type === 'Deletion' ? revision : other;
-    const insertion = type === 'Deletion' ? other : revision;
-    if (isReplacePair(deletion, insertion)) return other;
-  }
-  return undefined;
-}
-
-/** Review-rail read model: pending revisions grouped by accept-group tag
- *  (human/untagged edits group by author), replace pairs folded to one item. */
-export function listRevisionGroups(editor: LiveEditor): RevisionGroupView[] {
-  const views = new Map<string, RevisionGroupView>();
-  for (const revision of snapshotRevisions(editor)) {
-    const tag = parseRevisionGroupTag(revision.customData);
-    const author = String(revision.author ?? '').trim() || 'Unknown author';
-    // Assistant edits group by their accept-group tag; human edits group by
-    // who made them.
-    const key = tag ? `${tag.changeSetId} ${tag.group}` : `author ${author}`;
-    let view = views.get(key);
-    if (!view) {
-      view = tag
-        ? { changeSetId: tag.changeSetId, group: tag.group, items: [] }
-        : { changeSetId: '', group: author, untagged: true, items: [] };
-      views.set(key, view);
-    }
-    const item: RevisionGroupItem = {
-      revision,
-      revisionType: String(revision.revisionType ?? ''),
-      text: revisionRangeText(revision),
-      author
-    };
-    const prev = view.items[view.items.length - 1];
-    if (
-      prev &&
-      !prev.partner &&
-      prev.revisionType === 'Deletion' &&
-      item.revisionType === 'Insertion' &&
-      isReplacePair(prev.revision, item.revision)
-    ) {
-      prev.partner = item.revision;
-      prev.revisionType = 'Replace';
-      prev.beforeText = prev.text;
-      prev.text = item.text;
-      continue;
-    }
-    view.items.push(item);
-  }
-  return [...views.values()];
-}
-
-/** Rebuild accept-group bindings from persisted customData tags — the
- *  in-memory wrappers die on save/reload, the tags don't. Idempotent
- *  (bound revisions are skipped). Returns how many revisions were bound. */
-export function rebindRevisionGroups(editor: LiveEditor): number {
-  const partitions = new Map<
-    string,
-    { changeSetId: string; group: string; revisions: LiveRevision[] }
-  >();
-  for (const rev of snapshotRevisions(editor)) {
-    if ((rev as any).robinGroupBound) continue;
-    const tag = parseRevisionGroupTag(rev.customData);
-    if (!tag) continue;
-    const key = `${tag.changeSetId} ${tag.group}`;
-    const partition = partitions.get(key);
-    if (partition) partition.revisions.push(rev);
-    else
-      partitions.set(key, {
-        changeSetId: tag.changeSetId,
-        group: tag.group,
-        revisions: [rev]
-      });
-  }
-  let bound = 0;
-  partitions.forEach((partition) => {
-    groupRevisionsAtomic(
-      partition.revisions,
-      partition.changeSetId,
-      partition.group
-    );
-    bound += partition.revisions.length;
-  });
-  return bound;
-}
-
+// Ops that change how something LOOKS and never where anything IS. Membership
+// buys three things: they cannot shift anchors, they run in phase 3 after every
+// structural edit (so a restripe sees the table's final row indices), and a
+// pre-existing target's formatting is snapshotted for the failure rollback.
 const FORMAT_OPS = new Set([
   'apply_style',
   'clear_formatting',
@@ -5657,13 +10332,99 @@ const FORMAT_OPS = new Set([
   'indent_step',
   'apply_bullets',
   'apply_numbering',
-  'clear_list'
+  'clear_list',
+  'set_cell_format',
+  'set_row_format',
+  'copy_table_format',
+  'restripe_table'
 ]);
+
+// The appearance ops whose anchor names a TABLE rather than one paragraph. A
+// structure read reports a table as `"0;7"`, which is nothing's block anchor, so
+// the preflight retargets it to the table's first cell before resolving it -
+// naming the table the way the read names it must not be an error (see
+// retargetTableScopedAnchor).
+// `split_table` belongs here for exactly the same reason and it was missed:
+// `TableFacts.tableAnchor` IS the table's block address, so a model that reads a
+// table and names it sends `"0;7"` - and without the retarget that failed with
+// `anchor_not_found` plus a suggestion to "supply `expect` or `find`", which is
+// meaningless for a table (a table has no one text) and named a cause that was
+// not the problem. Live evidence: the model sent
+// `{"op":"split_table","anchor":"5;61","rows":[4,5,9],...}` - the right rows,
+// refused on the anchor form. A split acts on the whole table and takes its rows
+// from `rows`, so any cell of that table identifies the same work; the retarget
+// is lossless here in the way it is NOT for a row-scoped op.
+export const TABLE_SCOPED_OPS = new Set([
+  'copy_table_format',
+  'restripe_table',
+  'split_table'
+]);
+
+// The appearance ops manage their own exact restores (see AppearanceRestore), so
+// the generic character/paragraph-format snapshot the other FORMAT_OPS take is
+// both useless to them and harmful: capturing and re-writing resolved character
+// formats changes serialized bytes on a target the op never touched, which would
+// leave a diff behind even after a REFUSED appearance op.
+const TABLE_APPEARANCE_OPS = new Set([
+  'set_cell_format',
+  'set_row_format',
+  'copy_table_format',
+  'restripe_table'
+]);
+
+interface PlannedTableAppearanceInheritance {
+  sourceTableAnchor: string;
+  targetTableAnchor: string;
+  source: TableAppearance;
+  /** Absent means every row of a newly inserted table. */
+  targetRows?: number[];
+  /** A document-sampled data-row cycle for a newly inserted table. */
+  banding?: TableBanding;
+  /** The pre-insert stripe an inserted row must restore below itself. */
+  preserveBanding?: { fromRow: number; banding: TableBanding };
+  /**
+   * Whether each inserted row is part of the table's header band, decided by
+   * the SAME source-row mapping its cell appearance uses. SyncFusion clones the
+   * ANCHORED row's `isHeader`, so a row added below a header came out flagged
+   * as a second header - navy, bold and repeating on every page.
+   */
+  rowHeaders?: Array<{ row: number; isHeader: boolean }>;
+  /** When no stripe resolves, the locally observed fill for each new row. */
+  fallbackShadings?: Array<{ row: number; shading: string | null }>;
+}
+
+interface PlannedInsertInheritance {
+  anchor: string;
+  /**
+   * Set INSTEAD of a donor when the document could not answer what this
+   * component should look like. It carries no formatting, so the write happens
+   * with the editor's defaults - and says so, in the op's result, rather than
+   * letting a default read as a successful inheritance.
+   */
+  unresolved?: CreationGap;
+  expectedText?: string;
+  source?: FlatBlock;
+  inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
+  fallbackStyleName?: string;
+  tableAppearance?: PlannedTableAppearanceInheritance;
+  sectionBoundary?: {
+    text: string;
+    separator: SectionBoundaryElement[];
+    beforeSeparator: SectionBoundaryElement[];
+    afterSeparator: SectionBoundaryElement[];
+    firstAnchor: string;
+    lastAnchor: string;
+    lastLength: number;
+    afterAnchor?: string;
+  };
+}
 
 interface ChangeSetPlan {
   index: number;
   op: EditOp;
   target?: FlatBlock | LiveStoryTarget;
+  /** Preflight relocation, extended at write time if another structural op moves it again. */
+  relocated?: { from: string; to: string };
   source?: FlatBlock;
   inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
   targetBefore?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
@@ -5673,14 +10434,41 @@ interface ChangeSetPlan {
   // An `insert_text` whose paragraph does not exist yet because an earlier break
   // in the same change set creates it. Same contract as deferredNewCell.
   deferredNewParagraph?: boolean;
+  /** The one table address populated after this insert in request order. */
+  expectedInsertedTableAnchor?: string;
+  /**
+   * The appearance and resolved text formats a structural insert inherits,
+   * captured before any write can move the source blocks. The same plan type is
+   * used by paragraph, table and row insertion so computed inheritance has one
+   * guarded apply boundary.
+   */
+  insertInheritance?: PlannedInsertInheritance[];
 }
 
-// Table ops which bring new, empty cells into existence WITHOUT shifting block
-// indices. `insert_table` is deliberately excluded: it adds a block, so every
-// later anchor in the batch shifts and a computed cell anchor could name a cell
-// of an entirely different table. Filling a brand new table stays a second call
-// against a re-read inventory.
+// Table ops which bring new, empty cells into existence. `insert_row` does it
+// without shifting table block indices; `insert_table` does shift body block
+// indices, so only cell anchors under the exact inserted table anchor are
+// allowed to defer to it.
 const CELL_CREATING_OPS = new Set(['insert_row']);
+
+/**
+ * Every op that brings CONTENT into existence, and therefore every op that
+ * must consult `creationAppearance` before writing. This is the enforcement
+ * point for that rule: tests enumerate this set and require each member to
+ * demonstrably inherit the document's look, so adding a creating op without
+ * routing it through the resolver fails CI rather than shipping a path that
+ * quietly writes the editor's defaults.
+ *
+ * `insert_section` is here because it composes; the primitives are here
+ * because a model that prefers primitives hand-builds the same thing out of
+ * them, and the guarantee has to hold either way or the door is still open.
+ */
+export const CONTENT_CREATING_OPS = new Set([
+  'insert_section',
+  'insert_table',
+  'insert_row',
+  'insert_text'
+]);
 
 // The rows every earlier `insert_row` in this batch brings into existence,
 // keyed "section;block;row". A mid-table insert creates rows at indices that
@@ -5710,6 +10498,111 @@ function rowsCreatedByEarlierInserts(
       created.add(`${parts[0]};${parts[1]};${first + offset}`);
   }
   return created;
+}
+
+function tableAnchorFromCellAnchor(anchor: unknown): string {
+  const parts = String(anchor ?? '').split(';');
+  if (parts.length < 5) return '';
+  return parts.slice(0, -3).join(';');
+}
+
+/**
+ * The top-level anchor at which an inserted table will be addressable.
+ * Inserting at a body paragraph puts the table at that block index and pushes
+ * the paragraph down. Inserting from a cell targets the first body block after
+ * the containing table.
+ */
+function resultingInsertedTableAnchor(op: {
+  anchor?: unknown;
+  position?: unknown;
+}): string {
+  const parts = String(op.anchor ?? '').split(';');
+  const after = String(op.position ?? '').toLowerCase() === 'after';
+  if (parts.length === 2) {
+    const block = Number(parts[1]);
+    if (!Number.isInteger(block) || block < 0) return '';
+    return `${parts[0]};${block + (after ? 1 : 0)}`;
+  }
+  if (parts.length < 5) return '';
+  const block = Number(parts[1]);
+  if (!Number.isInteger(block) || block < 0) return '';
+  return `${parts[0]};${block + 1}`;
+}
+
+/**
+ * Cell writes for a newly inserted table immediately follow that insert and
+ * precede the next table insert. Their common table anchor is the caller's
+ * planned address for the new grid after earlier structural siblings have
+ * shifted the shared insertion boundary. The live executor still verifies
+ * that the table actually appears at this address before any cell can write.
+ */
+function cellWriteTableAnchorsFollowingInsert(
+  edits: EditOp[],
+  insertIndex: number
+): string[] {
+  const group = edits[insertIndex]?.group;
+  const anchors = new Set<string>();
+  for (let index = insertIndex + 1; index < edits.length; index++) {
+    const candidate = edits[index];
+    if (candidate?.op === 'insert_table') break;
+    if (candidate?.group !== group) continue;
+    if (
+      candidate?.op !== 'set_cell_text' &&
+      candidate?.op !== 'set_cell_formula'
+    )
+      continue;
+    const tableAnchor = tableAnchorFromCellAnchor(candidate.anchor);
+    if (tableAnchor) anchors.add(tableAnchor);
+  }
+  return [...anchors];
+}
+
+function expectedInsertedTableAnchor(
+  edits: EditOp[],
+  insertIndex: number
+): string | undefined {
+  const anchors = cellWriteTableAnchorsFollowingInsert(edits, insertIndex);
+  return anchors.length === 1 ? anchors[0] : undefined;
+}
+
+function assertInsertedTableIsAddressable(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>,
+  expectedAnchor?: string
+): void {
+  if (op.op !== 'insert_table') return;
+  const resultingAnchor = resultingInsertedTableAnchor(op);
+  if (expectedAnchor && resultingAnchor !== expectedAnchor)
+    throw new OpError(
+      'inserted_table_anchor_mismatch',
+      `insert_table created a table at "${resultingAnchor}", but its following cell writes target "${expectedAnchor}". Nothing was written.`,
+      [
+        `actual resulting table anchor: ${resultingAnchor}`,
+        `planned cell-write table anchor: ${expectedAnchor}`
+      ]
+    );
+  if (resultingAnchor && byAnchor.has(`${resultingAnchor};0;0;0`)) return;
+  throw new OpError(
+    'inserted_table_not_addressable',
+    `insert_table at "${op.anchor}" did not create a distinct table at "${resultingAnchor}". Adjacent tables can coalesce instead of creating a new addressable block. Choose an anchor separated from the existing table by a paragraph, then target the new cells under "${resultingAnchor};row;column;0". Nothing was written.`,
+    [
+      `requested insert anchor: ${op.anchor}`,
+      `expected resulting table anchor: ${resultingAnchor}`
+    ]
+  );
+}
+
+function tableCreatedByEarlierInsert(edits: EditOp[], index: number): boolean {
+  const tableAnchor = tableAnchorFromCellAnchor(edits[index]?.anchor);
+  return (
+    !!tableAnchor &&
+    edits.some(
+      (earlier, earlierIndex) =>
+        earlierIndex < index &&
+        earlier?.op === 'insert_table' &&
+        expectedInsertedTableAnchor(edits, earlierIndex) === tableAnchor
+    )
+  );
 }
 
 // Breaks which end the current paragraph and so bring exactly one new, empty
@@ -5755,21 +10648,307 @@ function assertDeferredAnchorIsNewAndEmpty(
     );
 }
 
+/**
+ * A table-scoped appearance op whose anchor names the TABLE (`"0;7"`, the way a
+ * structure read reports it) is retargeted to that table's first cell
+ * paragraph, which is a real block. These ops act on the whole table, so any of
+ * its cell anchors identifies the same work - which also makes a stale row index
+ * harmless rather than a refusal.
+ */
+function retargetTableScopedAnchor(
+  op: EditOp,
+  byAnchor: Map<string, FlatBlock>
+): EditOp {
+  if (!op?.op || !TABLE_SCOPED_OPS.has(op.op)) return op;
+  const anchor = String(op.anchor ?? '');
+  if (!anchor || byAnchor.has(anchor)) return op;
+  const tableAnchor = normalizeTableAnchor(anchor);
+  if (!tableAnchor) return op;
+  const firstCell = `${tableAnchor};0;0;0`;
+  return byAnchor.has(firstCell) ? { ...op, anchor: firstCell } : op;
+}
+
+/**
+ * Split a handler's success extras into the model-facing half and the
+ * engine-internal appearance restores, which are collected rather than returned.
+ */
+function collectOpExtras(
+  extras: OpSuccessExtras | void,
+  record: (restores: AppearanceRestore[]) => void
+): Partial<EditResult> {
+  if (!extras) return {};
+  const appearanceWrite = extras.appearanceWrite;
+  const rest = { ...extras };
+  delete rest.appearanceWrite;
+  delete rest.postWriteSfdt;
+  if (appearanceWrite) record(appearanceWrite.restores);
+  return {
+    ...rest,
+    ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
+  };
+}
+
+function userStatedFigureKey(write: LiteralNumberWrite): string | null {
+  const parsed = parseNumericCell(write.rendered?.asSent ?? write.text);
+  if (!parsed) return null;
+  let { units, scale } = parsed.value;
+  while (scale > 0 && units % 10 === 0) {
+    units /= 10;
+    scale--;
+  }
+  return `${units}:${scale}`;
+}
+
+/**
+ * A user-stated figure is a one-cell licence within a change set. Successful
+ * writes already carry the common-boundary audit record, so enforce the batch
+ * invariant over those records instead of re-interpreting model-authored ops.
+ */
+function refuseReusedUserStatedFigures(
+  results: Array<EditResult | undefined>
+): void {
+  const firstUse = new Map<string, { anchor: string; text: string }>();
+  results.forEach((result, index) => {
+    if (!result?.ok) return;
+    const write = result.literalNumber;
+    if (!write || write.source !== 'user_stated') return;
+    const key = userStatedFigureKey(write);
+    if (!key) return;
+    const anchor = result.anchor ?? '(unknown cell)';
+    const first = firstUse.get(key);
+    if (!first) {
+      firstUse.set(key, { anchor, text: write.rendered?.asSent ?? write.text });
+      return;
+    }
+    if (first.anchor === anchor) return;
+    results[index] = {
+      ...result,
+      ok: false,
+      error: 'user_stated_figure_reused',
+      message:
+        `The user-stated figure ${JSON.stringify(
+          first.text
+        )} already licenses cell "${
+          first.anchor
+        }" and cannot also license cell "${anchor}" in the same change set. ` +
+        `If "${anchor}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
+      details: [
+        `first literal cell: ${first.anchor}`,
+        `reused literal cell: ${anchor}`
+      ]
+    };
+  });
+}
+
 function mayShiftAnchors(op: EditOp): boolean {
   // A selection replacement can swallow paragraph marks, so treat it as always
   // shifting: the anchors after it must be re-resolved, never reused.
   if (op.op === 'replace_selection') return true;
-  if (op.op === 'insert_text') return /[\r\n]/.test(String(op.text ?? ''));
+  if (op.op === 'insert_text')
+    return /[\r\n]/.test(insertionText(op as TypedEditOp<'insert_text'>));
   if (op.op === 'replace_text' || op.op === 'set_cell_text')
     return /[\r\n]/.test(String(op.replace ?? op.text ?? op.newText ?? ''));
   return !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op);
+}
+
+// Preflight is read-only, but one text op may intentionally make the `expect`
+// of a later op true. Model only transformations that preserve this anchor's
+// topology; paragraph/table creators keep their existing deferred-anchor path.
+// Write-time guards still re-check the real editor after every prior op.
+function simulateStableTextOp(
+  op: EditOp,
+  block: FlatBlock
+): string | undefined {
+  switch (op.op) {
+    case 'replace_text': {
+      const replacement = op.replace ?? op.text ?? op.newText;
+      if (replacement == null || /[\r\n]/.test(String(replacement)))
+        return undefined;
+      const find = op.find != null ? String(op.find) : '';
+      if (!find) return String(replacement);
+      const index = block.text.indexOf(find);
+      return index < 0
+        ? undefined
+        : block.text.slice(0, index) +
+            String(replacement) +
+            block.text.slice(index + find.length);
+    }
+    case 'delete_text': {
+      const find = String(op.find ?? '');
+      const index = find ? block.text.indexOf(find) : -1;
+      return index < 0
+        ? undefined
+        : block.text.slice(0, index) + block.text.slice(index + find.length);
+    }
+    case 'set_cell_text': {
+      const replacement = String(op.text ?? '');
+      return /[\r\n]/.test(replacement) ? undefined : replacement;
+    }
+    case 'change_case':
+      return changeCase(block.text, String(op.caseType ?? ''));
+    case 'insert_text': {
+      const typed = op as TypedEditOp<'insert_text'>;
+      const inserted = insertionText(typed);
+      if (/[\r\n]/.test(inserted)) return undefined;
+      const offset = insertionPoint(typed, block);
+      return block.text.slice(0, offset) + inserted + block.text.slice(offset);
+    }
+    case 'replace_selection': {
+      const replacement = String(op.replace ?? op.text ?? op.newText ?? '');
+      if (/[\r\n]/.test(replacement)) return undefined;
+      const start = offsetParts(offsetString(op.startOffset));
+      const end = offsetParts(offsetString(op.endOffset));
+      if (
+        start.anchor !== block.anchor ||
+        end.anchor !== block.anchor ||
+        start.offset < 0 ||
+        end.offset > block.length ||
+        start.offset >= end.offset
+      )
+        return undefined;
+      return (
+        block.text.slice(0, start.offset) +
+        replacement +
+        block.text.slice(end.offset)
+      );
+    }
+    default:
+      return undefined;
+  }
+}
+
+function withSimulatedText(
+  blocks: FlatBlock[],
+  simulatedTextByAnchor: Map<string, string>
+): FlatBlock[] {
+  return blocks.map((block) => {
+    const text = simulatedTextByAnchor.get(block.anchor);
+    return text === undefined || text === block.text
+      ? block
+      : { ...block, text, length: text.length };
+  });
+}
+
+type RelocationAttempt =
+  | { target: FlatBlock; relocated: { from: string; to: string } }
+  | { details: string[] };
+
+function sameRelocationContainer(from: string, to: string): boolean {
+  const source = String(from).split(';');
+  const target = String(to).split(';');
+  const sourceIsCell = source.length >= 5;
+  const targetIsCell = target.length >= 5;
+  if (sourceIsCell || targetIsCell)
+    return (
+      sourceIsCell &&
+      targetIsCell &&
+      source.slice(0, 4).join(';') === target.slice(0, 4).join(';')
+    );
+  // Body sections are one story/container. A section break changes page
+  // geometry, not the tracked text range's editing container.
+  return source.length === 2 && target.length === 2;
+}
+
+function relocationIdentity(
+  op: EditOp,
+  captured?: FlatBlock
+):
+  | { label: '`expect`'; text: string; matches: (block: FlatBlock) => boolean }
+  | { label: '`find`'; text: string; matches: (block: FlatBlock) => boolean }
+  | {
+      label: 'captured pre-write block text';
+      text: string;
+      matches: (block: FlatBlock) => boolean;
+    }
+  | undefined {
+  if (op.expect != null) {
+    const text = String(op.expect);
+    return {
+      label: '`expect`',
+      text,
+      matches: (block) => expectTextMatches(text, block.text)
+    };
+  }
+  if (op.find != null && String(op.find).length) {
+    const text = String(op.find);
+    return {
+      label: '`find`',
+      text,
+      matches: (block) => block.text.includes(text)
+    };
+  }
+  if (captured) {
+    return {
+      label: 'captured pre-write block text',
+      text: captured.text,
+      matches: (block) =>
+        block.kind === captured.kind && block.text === captured.text
+    };
+  }
+  return undefined;
+}
+
+function attemptAnchorRelocation(
+  blocks: FlatBlock[],
+  op: EditOp,
+  captured?: FlatBlock
+): RelocationAttempt {
+  const from = String(op.anchor ?? '');
+  const identity = relocationIdentity(op, captured);
+  if (!identity)
+    return {
+      details: [
+        `relocation attempted from: ${from}`,
+        'content identity unavailable: supply `expect` or `find` so the moved target can be identified'
+      ]
+    };
+  const matches = blocks.filter(identity.matches);
+  const attempted = `relocation attempted from "${from}" using ${
+    identity.label
+  } ${JSON.stringify(identity.text)}`;
+  if (!matches.length) return { details: [attempted, 'matching blocks: none'] };
+  if (matches.length > 1)
+    return {
+      details: [
+        attempted,
+        `matching blocks (${matches.length}): ${matches
+          .map((match) => match.anchor)
+          .join(', ')}`
+      ]
+    };
+  const target = matches[0];
+  // Never relocate across containers silently. In particular, an exact text
+  // match in a different table/cell is a refusal, not a guess; tracked changes
+  // make a same-container relocation reversible, but cannot make a wrong-cell
+  // target semantically safe.
+  if (!sameRelocationContainer(from, target.anchor))
+    return {
+      details: [
+        attempted,
+        `the only match is at "${target.anchor}", in a different table/cell container; relocation refused`
+      ]
+    };
+  return { target, relocated: { from, to: target.anchor } };
+}
+
+function retargetOpToBlock(op: EditOp, target: FlatBlock): EditOp {
+  const from = String(op.anchor ?? '');
+  const next: EditOp = { ...op, anchor: target.anchor };
+  for (const field of ['startOffset', 'endOffset'] as const) {
+    const value = offsetString(op[field]);
+    if (!value || anchorFromOffset(value) !== from) continue;
+    const suffix = value.slice(from.length);
+    next[field] = `${target.anchor}${suffix}`;
+  }
+  return next;
 }
 
 function resolveChangeSetBlock(
   blocks: FlatBlock[],
   anchor: string,
   baseline: FlatBlock | undefined,
-  anchorsMayHaveShifted: boolean
+  anchorsMayHaveShifted: boolean,
+  preferEquivalentDirect = false
 ): FlatBlock {
   const direct = blocks.find((block) => block.anchor === anchor);
   if (!baseline) {
@@ -5780,19 +10959,106 @@ function resolveChangeSetBlock(
     );
   }
   if (!anchorsMayHaveShifted && direct) return direct;
+  // Inheritance sources are read-only appearance donors. If the exact anchor
+  // still exposes the same block snapshot, copying from it is deterministic
+  // even when an unrelated structural edit elsewhere made other anchors move.
+  // Mutation targets do not use this carve-out: their logical occurrence must
+  // still be relocated conservatively.
+  if (
+    preferEquivalentDirect &&
+    direct &&
+    direct.kind === baseline.kind &&
+    direct.text === baseline.text &&
+    JSON.stringify(direct.format ?? {}) ===
+      JSON.stringify(baseline.format ?? {}) &&
+    JSON.stringify(direct.characterFormat ?? {}) ===
+      JSON.stringify(baseline.characterFormat ?? {}) &&
+    JSON.stringify(direct.paragraphFormat ?? {}) ===
+      JSON.stringify(baseline.paragraphFormat ?? {})
+  )
+    return direct;
   const matches = blocks.filter(
     (block) => block.kind === baseline.kind && block.text === baseline.text
   );
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) {
+    const match = matches[0];
+    // Content identity is strong enough to recover a moved paragraph, but it
+    // is never permission to jump into a different table cell. A cell is a
+    // hard editing container in SyncFusion; crossing one silently could put a
+    // perfectly spelled value in the wrong row/table, so that guess is refused.
+    if (!sameRelocationContainer(anchor, match.anchor))
+      throw new OpError(
+        'anchor_relocation_container_mismatch',
+        `Anchor "${anchor}" now matches content at "${match.anchor}", but that location is in a different table/cell container. Refusing to guess.`,
+        [
+          `relocation attempted from: ${anchor}`,
+          `matching content found at: ${match.anchor}`
+        ]
+      );
+    return match;
+  }
   if (!matches.length)
     throw new OpError(
       'anchor_relocation_not_found',
-      `Anchor "${anchor}" moved after a structural edit and its preflight text no longer identifies one block.`
+      `Anchor "${anchor}" moved after a structural edit and its preflight text no longer identifies one block.`,
+      [`relocation attempted from: ${anchor}`, 'matching blocks: none']
     );
+  // Ambiguity is a hazard for a WRITE, which must land on one intended block.
+  // A format DONOR is read-only, so several candidates that are formatted
+  // identically are not a guess at all - every one of them copies the same
+  // thing. Insisting on a unique text match refused legitimate work outright:
+  // sibling headings in a real document repeat by design ("Drivers" once per
+  // programme), and a composed unit that shifts its own donor forward would
+  // otherwise be refused for having a well-formed family. Candidates that
+  // differ in format are still a genuine choice, and still refused.
+  if (preferEquivalentDirect) {
+    const look = (block: FlatBlock) =>
+      JSON.stringify([
+        block.format ?? {},
+        block.characterFormat ?? {},
+        block.paragraphFormat ?? {}
+      ]);
+    const baselineLook = look(baseline);
+    const identical = matches.filter((block) => look(block) === baselineLook);
+    if (identical.length && identical.length === matches.length)
+      return identical[0];
+  }
   throw new OpError(
     'anchor_relocation_ambiguous',
-    `Anchor "${anchor}" moved after a structural edit and matches ${matches.length} blocks; refusing a non-deterministic write.`
+    `Anchor "${anchor}" moved after a structural edit and matches ${matches.length} blocks; refusing a non-deterministic write.`,
+    [
+      `relocation attempted from: ${anchor}`,
+      `matching blocks: ${matches.map((match) => match.anchor).join(', ')}`
+    ]
   );
+}
+
+function resolveSectionBoundary(
+  blocks: FlatBlock[],
+  anchor: string,
+  baseline: FlatBlock | LiveStoryTarget | undefined
+): FlatBlock {
+  const target = blocks.find((block) => block.anchor === anchor);
+  if (!target)
+    throw new OpError(
+      'section_boundary_topology_mismatch',
+      `The section insertion boundary planned at "${anchor}" no longer exists.`,
+      [`planned boundary: ${anchor}`]
+    );
+  if (
+    baseline &&
+    !isLiveStoryTarget(baseline) &&
+    (target.kind !== baseline.kind || target.text !== baseline.text)
+  )
+    throw new OpError(
+      'section_boundary_topology_mismatch',
+      `The section insertion boundary planned at "${anchor}" no longer names the captured block.`,
+      [
+        `captured kind/text: ${baseline.kind} ${JSON.stringify(baseline.text)}`,
+        `live kind/text: ${target.kind} ${JSON.stringify(target.text)}`
+      ]
+    );
+  return target;
 }
 
 function restoreCapturedFormat(
@@ -5822,7 +11088,7 @@ function restoreCapturedFormat(
 }
 
 // ---------------------------------------------------------------------------
-// Computed format inheritance for inserted paragraphs
+// Computed format inheritance for inserted paragraphs, rows and tables
 // ---------------------------------------------------------------------------
 //
 // SyncFusion formats an insertion from its insertion POINT, so a section added
@@ -5832,21 +11098,16 @@ function restoreCapturedFormat(
 // is a step the model can skip, so the engine now computes the reference
 // itself: every paragraph an insert CREATES inherits the visible format of the
 // nearest preceding non-empty block in its own container, per paragraph role.
-// Mid-text inserts and cell text writes are untouched - SyncFusion's own
-// inheritance is correct there.
+// Mid-text inserts and writes into pre-existing cells are untouched -
+// SyncFusion's own inheritance is correct there. Writes into cells a structural
+// op just created use that op's preflight column-format plan.
 
-// One paragraph the insert brings into existence, with the reference that will
-// format it. `fallbackStyleName` marks the no-reference case: the paragraph is
+// One target the insert brings into existence. Paragraph targets carry the
+// resolved source snapshot that will format them. A table target carries the
+// appearance snapshot copied through the existing table-appearance machinery.
+// `fallbackStyleName` marks the no-reference paragraph case: the paragraph is
 // set to the document default style instead of wearing whatever format the
 // split donor happened to carry (e.g. a heading's).
-interface PlannedInsertInheritance {
-  anchor: string;
-  expectedText: string;
-  source?: FlatBlock;
-  inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
-  fallbackStyleName?: string;
-}
-
 const INSERTED_HEADING_MAX_CHARS = 80;
 // The block map's isHeading covers only built-in "Heading N"/Title styles;
 // real documents carry custom heading styles (the live document's headings are
@@ -5912,6 +11173,1126 @@ function findComputedReference(
   return undefined;
 }
 
+function planTableCellFormats(
+  editor: LiveEditor,
+  blocks: FlatBlock[],
+  sourceTableAnchor: string,
+  sourceAppearance: TableAppearance,
+  targetTableAnchor: string,
+  targetRows: number[],
+  targetColumns: number,
+  options: { sourceRows?: number[]; headerRows?: number } = {}
+): PlannedInsertInheritance[] {
+  const headerRows = options.headerRows ?? inferHeaderRows(sourceAppearance);
+  const byAnchor = new Map(
+    blocks.map((block) => [block.anchor, block] as const)
+  );
+  const inheritedBySource = new Map<
+    string,
+    { characterFormat?: FormatBag; paragraphFormat?: FormatBag }
+  >();
+  const planned: PlannedInsertInheritance[] = [];
+  for (const [rowIndex, targetRow] of targetRows.entries()) {
+    const sourceRow =
+      options.sourceRows?.[rowIndex] ??
+      sourceRowForTarget(sourceAppearance, headerRows, targetRow);
+    const sourceColumns = sourceAppearance.rows[sourceRow]?.cells.length ?? 0;
+    if (!sourceColumns) continue;
+    for (let targetColumn = 0; targetColumn < targetColumns; targetColumn++) {
+      const sourceColumn = Math.min(targetColumn, sourceColumns - 1);
+      const sourceAnchor = `${sourceTableAnchor};${sourceRow};${sourceColumn};0`;
+      const source = byAnchor.get(sourceAnchor);
+      if (!source) continue;
+      let inherited = inheritedBySource.get(sourceAnchor);
+      if (!inherited) {
+        inherited = readEffectiveSourceFormat(editor, source);
+        inheritedBySource.set(sourceAnchor, inherited);
+      }
+      planned.push({
+        anchor: `${targetTableAnchor};${targetRow};${targetColumn};0`,
+        expectedText: '',
+        source,
+        inherited
+      });
+    }
+  }
+  return planned;
+}
+
+/**
+ * Strict detection deliberately needs corroboration before automatic
+ * restriping. A visual header plus exactly two differently filled data rows is
+ * the small-table exception: those two neighbours state the next alternating
+ * fill unambiguously, even though neither band can occur twice yet.
+ */
+function shortInsertBanding(source: TableAppearance): TableBanding | null {
+  const headerRows = inferHeaderRows(source);
+  const body = rowShadings(source).slice(headerRows);
+  if (headerRows === 0 || body.length !== 2) return null;
+  const [first, second] = body;
+  if (first === undefined || second === undefined || first === second)
+    return null;
+  return { headerRows, period: 2, cycle: [first, second] };
+}
+
+interface DocumentBandingCandidate {
+  banding: TableBanding;
+  dataRows: number;
+}
+
+/** Proven data-row cycles from the document's existing tables. */
+function documentBandingCandidates(
+  sfdt: any,
+  targetTableAnchor: string
+): DocumentBandingCandidate[] {
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const candidates: DocumentBandingCandidate[] = [];
+  sections.forEach((section, sectionIndex) => {
+    getBlocks(section).forEach((block, blockIndex) => {
+      const anchor = `${sectionIndex};${blockIndex}`;
+      if (anchor === targetTableAnchor || !getRows(block)) return;
+      const appearance = collectTableAppearance(block);
+      const banding = appearance ? detectTableBanding(appearance) : null;
+      if (appearance && banding)
+        candidates.push({
+          banding,
+          dataRows: appearance.rows.length - banding.headerRows
+        });
+    });
+  });
+  return candidates;
+}
+
+/**
+ * A new table has no body rows of its own to establish a cycle. Use the
+ * longest existing table that proves one: its larger body is the strongest
+ * document-local sample, and detectTableBanding has already excluded its
+ * leading header rows from the returned cycle.
+ */
+function documentTableBanding(
+  sfdt: any,
+  targetTableAnchor: string
+): TableBanding | null {
+  return (
+    documentBandingCandidates(sfdt, targetTableAnchor).sort(
+      (left, right) => right.dataRows - left.dataRows
+    )[0]?.banding ?? null
+  );
+}
+
+/**
+ * Resolve a two-colour document convention for a table with only one data row.
+ * The recurring-section read already establishes document table banding with
+ * `detectTableBanding`; row insertion reuses the same evidence across sibling
+ * tables when its target is too short to prove a stripe by itself.
+ *
+ * The target's observed data fill fixes the cycle phase, and the inserted row
+ * takes the OTHER member. If no sibling proves an alternating pair containing
+ * that fill, this declines and the caller keeps the same local fill instead.
+ */
+function documentInsertBanding(
+  sfdt: any,
+  targetTableAnchor: string,
+  source: TableAppearance
+): TableBanding | null {
+  const candidates = documentBandingCandidates(sfdt, targetTableAnchor)
+    .map((candidate) => candidate.banding)
+    .filter(
+      (banding) =>
+        banding.period === 2 &&
+        banding.cycle[0] !== banding.cycle[1] &&
+        source.rows.length === banding.headerRows + 1
+    );
+  if (!candidates.length) return null;
+
+  const shadings = rowShadings(source);
+  const matching = candidates.filter((banding) =>
+    banding.cycle.includes(shadings[banding.headerRows] ?? null)
+  );
+  const selected = modal(matching, (banding) =>
+    JSON.stringify(
+      [...banding.cycle].sort((left, right) =>
+        String(left).localeCompare(String(right))
+      )
+    )
+  )?.value;
+  if (!selected) return null;
+
+  const first = shadings[selected.headerRows];
+  if (first === undefined) return null;
+  const other = selected.cycle.find((shading) => shading !== first);
+  if (other === undefined) return null;
+  return { headerRows: selected.headerRows, period: 2, cycle: [first, other] };
+}
+
+// ---------------------------------------------------------------------------
+// Creation appearance
+//
+// The ONE answer to "what should this newly created content look like, given
+// this document?". Every path that brings content into existence asks this -
+// the section composer, insert_table, insert_row, and the insert_text +
+// apply_style + insert_table sequence a model hand-rolls when it prefers
+// primitives. Before this existed each answered separately, so each could be
+// wrong in its own way, and on 2026-08-06 each of them was: a subsection
+// dressed as a top-level section, a composed table wearing Word's defaults
+// inside a styled document, and a new row coming back as a second header.
+//
+// Two rules run through everything below, and they are easy to conflate:
+//
+//   * a FLAG is a document fact and is COPIED. `isHeader` is the example: a
+//     document may shade a row to look like a header without ever setting
+//     Word's flag, so inferring the flag from appearance invents a property
+//     the document never had. Copy it from a row that has it, or answer no.
+//   * a BAND, a BANDING CYCLE and a HEADING LEVEL are DERIVED. They are
+//     questions about shape - which rows are the header band, what stripe do
+//     the data rows cycle through, how deep does this unit sit - and the
+//     document answers them by exhibiting them, not by declaring them.
+//
+// Read that distinction before changing anything here. It has been broken once
+// already by deriving `isHeader` from the header band, which looked equivalent
+// and quietly flagged unflagged headers on every copy.
+// ---------------------------------------------------------------------------
+
+/** How far the search had to widen before the document could answer. */
+type CreationScope = 'family' | 'document';
+
+/** What answered, so a caller (and a reader of the result) can see it. */
+interface CreationEvidence {
+  /** The block whose sibling family answered, when a family did. */
+  familyAnchor?: string;
+  /** That family's outline level and how many siblings it was derived from. */
+  level?: number;
+  siblings: number;
+  scope: CreationScope;
+}
+
+/**
+ * Resolved carries a donor; unresolved carries WHY and where it looked.
+ *
+ * There is deliberately no third state and no default value. A caller cannot
+ * accidentally treat "I found nothing" as "I inherited correctly", because the
+ * two are different shapes and the compiler makes it say which it has - that
+ * confusion is the defect this whole module exists to remove.
+ */
+type Resolution<T> =
+  | { resolved: true; value: T; from: string; evidence: CreationEvidence }
+  | { resolved: false; reason: string; searched: string[] };
+
+/** The look a row brought into existence must end up with. */
+interface CreatedRowAppearance {
+  /** COPIED from the donor row's flag. No donor means not a header. */
+  isHeader: boolean;
+  /** The table the cell appearance and typography come from. */
+  donorTable: string;
+  donorAppearance: TableAppearance;
+  /** Which row of that table. */
+  donorRow: number;
+}
+
+interface CreatedTableAppearance {
+  anchor: string;
+  appearance: TableAppearance;
+  /** DERIVED: the stripe the new table's data rows should cycle through. */
+  banding: TableBanding | null;
+}
+
+interface CreationAppearanceResolver {
+  /**
+   * The sibling family a unit joining at `at` belongs to, and the donor for
+   * one of its roles. `level` selects a subsection depth when the role is a
+   * subsection heading.
+   */
+  role(
+    family: SectionFamilyEvidence | undefined,
+    role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+    options: { at: string; level?: number }
+  ): Resolution<FlatBlock>;
+  /** The table a new table copies, searched family-first then document-wide. */
+  table(options: {
+    at: string;
+    ordinal?: number;
+    family?: SectionFamilyEvidence;
+    anchorNamesMember?: boolean;
+    exclude?: string;
+    explicit?: FlatBlock;
+  }): Resolution<CreatedTableAppearance>;
+  /** What a row created at `targetRow` of `tableAnchor` must look like. */
+  row(options: {
+    tableAnchor: string;
+    source: TableAppearance;
+    targetRow: number;
+    /**
+     * A row's RENDERED text format, resolved through the table style. Supplied
+     * by callers holding a live editor; without it the band is derived only
+     * from what the SFDT states outright, which is not always enough - see the
+     * header-band derivation in `row`.
+     */
+    rendered?: (tableAnchor: string, row: number) => FormatBag | undefined;
+  }): Resolution<CreatedRowAppearance>;
+}
+
+const unresolved = (reason: string, searched: string[]): Resolution<never> => ({
+  resolved: false,
+  reason,
+  searched
+});
+
+function familyEvidenceReport(
+  family: SectionFamilyEvidence | undefined,
+  familyAnchor: string | undefined,
+  scope: CreationScope
+): CreationEvidence {
+  return {
+    ...(familyAnchor ? { familyAnchor } : {}),
+    ...(family ? { level: family.level } : {}),
+    siblings: family?.units.length ?? 0,
+    scope
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Header-ness: one owner, because the document expresses it three ways
+//
+// This derivation began inside the creation resolver's `row` query, which is
+// where the first caller who needed it happened to be. It does not belong to
+// creation: "how many leading rows of THIS EXISTING table are its header band"
+// is a question about the document, and other callers need the same answer for
+// reasons that have nothing to do with creating content - `split_table` refuses
+// to EXTRACT a header row, because a split reproduces the header band in both
+// tables rather than moving it.
+//
+// Lifting it here rather than reading header-ness a second way is the whole
+// point: header-ness has already caused two defects on this project by being
+// read through one encoding, and a second reader would be a third.
+// ---------------------------------------------------------------------------
+
+/** Every table anchor except `exclude`, nearest to `from` first. Pure. */
+function tableAnchorsNearest(
+  blocks: FlatBlock[],
+  from: string,
+  exclude?: string
+): string[] {
+  const at = blocks.findIndex(
+    (block) => block.anchor === from || from.startsWith(`${block.anchor};`)
+  );
+  const seen = new Set<string>();
+  const found: Array<{ anchor: string; distance: number }> = [];
+  blocks.forEach((block, index) => {
+    const anchor = tableAnchorForBlock(block);
+    if (!anchor || anchor === exclude || seen.has(anchor)) return;
+    seen.add(anchor);
+    found.push({ anchor, distance: at < 0 ? index : Math.abs(index - at) });
+  });
+  return found
+    .sort((left, right) => left.distance - right.distance)
+    .map((entry) => entry.anchor);
+}
+
+/**
+ * The nearest row elsewhere in the document that is a data row by STRUCTURE:
+ * the last row of a table that has more than one.
+ *
+ * Deliberately not "the first row below inferHeaderRows". That would derive the
+ * baseline with the very inference the baseline exists to check, so a document
+ * whose headers are undeclared everywhere - which is this one - hands back
+ * another undeclared header and every comparison against it says "no
+ * difference". Headers lead a table; the last row of a multi-row table is below
+ * any of them, whatever encoding declared them.
+ */
+function provenDocumentDataRow(
+  blocks: FlatBlock[],
+  sfdt: any,
+  exclude: string
+): { anchor: string; appearance: TableAppearance; row: number } | undefined {
+  for (const anchor of tableAnchorsNearest(blocks, exclude, exclude)) {
+    const appearance = collectTableAppearance(tableBlockAt(sfdt, anchor));
+    if (!appearance || appearance.rows.length < 2) continue;
+    const row = appearance.rows.length - 1;
+    if (row < inferHeaderRows(appearance)) continue;
+    return { anchor, appearance, row };
+  }
+  return undefined;
+}
+
+/** A row's rendered character format, resolved through the table style. */
+type RenderedRowFormat = (
+  tableAnchor: string,
+  row: number
+) => FormatBag | undefined;
+
+/**
+ * The rendered read that makes a style-only header visible at all: it resolves
+ * through the table style exactly as the page does, which is the only encoding
+ * of header-ness that states nothing on the row or its cells.
+ */
+function renderedRowFormatReader(
+  editor: LiveEditor,
+  byAnchor: Map<string, FlatBlock>
+): RenderedRowFormat {
+  return (tableAnchor, row) => {
+    const cell = byAnchor.get(`${tableAnchor};${row};0;0`);
+    return cell
+      ? readEffectiveSourceFormat(editor, cell).characterFormat
+      : undefined;
+  };
+}
+
+/**
+ * How many leading rows of a table are its header band, AS THE PAGE SHOWS IT.
+ *
+ * HEADER-NESS HAS AT LEAST THREE EXPRESSIONS, and reading only some of them has
+ * now caused two separate defects on this project:
+ *   1. Word's `isHeader` FLAG - the only one that is a declaration, and so the
+ *      only one that may be COPIED onto a row being created;
+ *   2. a distinct cell FILL, which `inferHeaderRows` infers by contrast with
+ *      the rows below it;
+ *   3. the TABLE STYLE's first-row conditional formatting, which states nothing
+ *      on the row or its cells at all - the SFDT is empty and the page is navy
+ *      and bold.
+ *
+ * (3) is invisible to the other two, and a table stripped to its header row
+ * cannot even use (2), because contrast needs a second row. So the engine read
+ * "no header rows", concluded the header WAS a data row, and dressed a newly
+ * added row as a second header.
+ *
+ * The document answers what its own encoding does not: compare the row AS
+ * RENDERED against a data row proven elsewhere in the document. A false positive
+ * is the safe direction for a creation caller - it widens to that proven data
+ * row, which is the right look either way - and for a refusal caller it declines
+ * an extraction rather than tearing a header out of a table.
+ *
+ * `rendered` is injected rather than taken from an editor so this stays usable
+ * from the editor-free resolver; without it only what the SFDT states outright
+ * is read, which is not always enough.
+ */
+function effectiveHeaderRows(options: {
+  blocks: FlatBlock[];
+  sfdt: any;
+  tableAnchor: string;
+  source: TableAppearance;
+  rendered?: RenderedRowFormat;
+}): number {
+  const stated = inferHeaderRows(options.source);
+  if (stated > 0 || !options.rendered || !options.source.rows.length)
+    return stated;
+  const proven = provenDocumentDataRow(
+    options.blocks,
+    options.sfdt,
+    options.tableAnchor
+  );
+  if (!proven) return stated;
+  const own = options.rendered(options.tableAnchor, 0);
+  const baseline = options.rendered(proven.anchor, proven.row);
+  return own && baseline && JSON.stringify(own) !== JSON.stringify(baseline)
+    ? 1
+    : stated;
+}
+
+/**
+ * Build the resolver for one document snapshot. Every creation path in a change
+ * set shares one of these, so they cannot disagree about what the document
+ * looks like partway through.
+ */
+function creationAppearance(
+  blocks: FlatBlock[],
+  sfdt: any,
+  byAnchor: Map<string, FlatBlock>
+): CreationAppearanceResolver {
+  const firstCellOf = (tableAnchor: string | undefined) =>
+    tableAnchor ? byAnchor.get(`${tableAnchor};0;0;0`) : undefined;
+  const appearanceOf = (anchor: string) =>
+    collectTableAppearance(tableBlockAt(sfdt, anchor)) ?? undefined;
+
+  const tableAnchorsByDistance = (from: string, exclude?: string) =>
+    tableAnchorsNearest(blocks, from, exclude);
+
+  /**
+   * A stripe proven by another table in the same sibling family. Consulted only
+   * when the donor itself is too short to prove one, and only ever the FAMILY's
+   * evidence - never a table outside it.
+   */
+  const familyBandingFor = (
+    family: SectionFamilyEvidence | undefined,
+    donorAnchor: string
+  ): TableBanding | null | undefined => {
+    if (!family) return undefined;
+    const donor = appearanceOf(donorAnchor);
+    if (donor && donor.rows.length - inferHeaderRows(donor) >= 2)
+      return undefined;
+    for (const unit of family.units)
+      for (const anchor of tableAnchorsForUnit(unit)) {
+        if (anchor === donorAnchor) continue;
+        const appearance = appearanceOf(anchor);
+        const banding = appearance ? detectTableBanding(appearance) : null;
+        if (banding) return banding;
+      }
+    return undefined;
+  };
+
+  return {
+    role(family, role, options) {
+      const searched: string[] = [];
+      searched.push(`sibling family (${family?.units.length ?? 0} sections)`);
+      const donor = composerRoleSource(family, role, options.level);
+      if (donor)
+        return {
+          resolved: true,
+          value: donor,
+          from: donor.anchor,
+          evidence: familyEvidenceReport(family, options.at, 'family')
+        };
+      // Widen to the document: a family of one that has never carried this
+      // role yet still sits in a document that shows it elsewhere.
+      searched.push('every heading in the document at that level');
+      const level = options.level ?? family?.level;
+      const wider = blocks.filter(
+        (block) =>
+          block.isHeading &&
+          !!block.text.replace(/\f/g, '').trim() &&
+          (level === undefined || block.level === level)
+      );
+      const chosen = modal(wider.map(roleFormat));
+      const key = chosen ? JSON.stringify(chosen.value) : undefined;
+      const widened = key
+        ? wider.find((block) => JSON.stringify(roleFormat(block)) === key)
+        : undefined;
+      if (widened)
+        return {
+          resolved: true,
+          value: widened,
+          from: widened.anchor,
+          evidence: familyEvidenceReport(family, options.at, 'document')
+        };
+      return unresolved('the document contains no comparable block', searched);
+    },
+
+    table(options) {
+      const searched: string[] = [];
+      const ordinal = options.ordinal ?? 0;
+      const answer = (
+        anchor: string,
+        scope: CreationScope
+      ): Resolution<CreatedTableAppearance> => {
+        const appearance = appearanceOf(anchor);
+        if (!appearance)
+          return unresolved('the donor table could not be read', searched);
+        // DERIVED, never copied. In order: the donor's own proven stripe; then
+        // the FAMILY's, when the donor is too short to have one; then a uniform
+        // body taken as the sibling's statement; then the document's sample.
+        //
+        // The family step is the one that was missing. A donor with a single
+        // data row is trivially "uniform" with itself, which read as a positive
+        // statement that this family's tables are unbanded - so a two-row
+        // sibling silently outvoted a nineteen-row table in the SAME family
+        // that exhibits the stripe unambiguously, and every table composed from
+        // it came out with the header fill and no banding. One row is absence
+        // of evidence, not evidence of absence. It still outranks an unrelated
+        // table elsewhere in the document, which is why that fallback stays
+        // below it: a lone white row beside you is better evidence about YOUR
+        // look than a striped table you have nothing to do with.
+        const banding =
+          detectTableBanding(appearance) ??
+          familyBandingFor(options.family, anchor) ??
+          (uniformDataRowShading(appearance) !== undefined
+            ? null
+            : documentTableBanding(sfdt, options.exclude ?? anchor));
+        return {
+          resolved: true,
+          value: { anchor, appearance, banding },
+          from: anchor,
+          evidence: familyEvidenceReport(options.family, options.at, scope)
+        };
+      };
+
+      if (options.explicit?.kind === 'table_cell') {
+        searched.push('the donor the caller named');
+        const anchor = tableAnchorFromCellAnchor(options.explicit.anchor);
+        if (anchor) return answer(anchor, 'family');
+      }
+      // A table AT the anchor is the strongest local statement there is.
+      searched.push('the table at the anchor');
+      const at = options.at.split(';');
+      if (at.length >= 5) {
+        const anchor = `${at[0]};${at[1]}`;
+        if (appearanceOf(anchor)) return answer(anchor, 'family');
+      }
+      const units = options.family?.units ?? [];
+      if (units.length) {
+        searched.push(`the sibling family's tables (${units.length} sections)`);
+        const nearest =
+          nearestUnitIndex(
+            blocks,
+            units,
+            options.at,
+            options.anchorNamesMember
+          ) ?? 0;
+        const ranked = units
+          .map((unit, index) => ({ unit, index }))
+          .sort(
+            (left, right) =>
+              Math.abs(left.index - nearest) -
+                Math.abs(right.index - nearest) || left.index - right.index
+          );
+        for (const { unit } of ranked) {
+          const anchor = tableAnchorsForUnit(unit)[ordinal];
+          if (anchor && anchor !== options.exclude && firstCellOf(anchor))
+            return answer(anchor, 'family');
+        }
+        for (const { unit } of ranked)
+          for (const anchor of tableAnchorsForUnit(unit))
+            if (anchor !== options.exclude && firstCellOf(anchor))
+              return answer(anchor, 'family');
+      }
+      searched.push('every table in the document, nearest first');
+      const nearestTable = tableAnchorsByDistance(
+        options.at,
+        options.exclude
+      )[0];
+      if (nearestTable) return answer(nearestTable, 'document');
+      return unresolved('the document contains no table to copy', searched);
+    },
+
+    row(options) {
+      const searched: string[] = [];
+      const { source, targetRow } = options;
+      // DERIVED: which rows are the header band. Read through the one owner of
+      // that question - see effectiveHeaderRows for why reading it a second way
+      // here would be the third encoding-specific reader this file has had.
+      const headerRows = effectiveHeaderRows({
+        blocks,
+        sfdt,
+        tableAnchor: options.tableAnchor,
+        source,
+        ...(options.rendered ? { rendered: options.rendered } : {})
+      });
+      const documentRow = provenDocumentDataRow(
+        blocks,
+        sfdt,
+        options.tableAnchor
+      );
+      const lastRow = source.rows.length - 1;
+      const displaced = Math.min(targetRow, lastRow);
+      const inBand = headerBandContains(source, targetRow, headerRows);
+      searched.push(`the table's own rows (header band ${headerRows})`);
+      const own = inBand
+        ? displaced
+        : displaced >= headerRows
+        ? displaced
+        : undefined;
+      if (own !== undefined && source.rows[own])
+        return {
+          resolved: true,
+          // COPIED: the flag, from the row this one takes its look from.
+          value: {
+            isHeader: copiedRowIsHeader(source, own),
+            donorTable: options.tableAnchor,
+            donorAppearance: source,
+            donorRow: own
+          },
+          from: `${options.tableAnchor};${own}`,
+          evidence: { siblings: 0, scope: 'family' }
+        };
+      // No data row of its own: the table was emptied down to its header. The
+      // document still shows what a data row looks like.
+      searched.push(
+        'every table in the document with a data row, nearest first'
+      );
+      if (documentRow)
+        return {
+          resolved: true,
+          value: {
+            isHeader: copiedRowIsHeader(
+              documentRow.appearance,
+              documentRow.row
+            ),
+            donorTable: documentRow.anchor,
+            donorAppearance: documentRow.appearance,
+            donorRow: documentRow.row
+          },
+          from: `${documentRow.anchor};${documentRow.row}`,
+          evidence: { siblings: 0, scope: 'document' }
+        };
+      return unresolved('the document contains no data row to copy', searched);
+    }
+  };
+}
+
+/** One block map per plan, so the resolver and the planner see one document. */
+function byAnchorOf(blocks: FlatBlock[]): Map<string, FlatBlock> {
+  return new Map(blocks.map((block) => [block.anchor, block] as const));
+}
+
+/** The record a creation path leaves when the document could not answer. */
+function creationGap(
+  what: string,
+  outcome: { reason: string; searched: string[] }
+): CreationGap {
+  return { what, reason: outcome.reason, searched: outcome.searched };
+}
+
+/**
+ * The role the paragraph being styled plays in its family, and the subsection
+ * depth to look for when that role is a subsection heading.
+ *
+ * The composer picks a donor PER ROLE - `insert_section` uses
+ * `'section_heading'` for the title, `'subsection_heading'` for a heading and
+ * `'intro_paragraph'` / `'subsection_paragraph'` for body text - so a section
+ * hand-built out of `insert_text` + `apply_style` only comes out looking
+ * composed if the role is derived from the same two facts the composer uses:
+ * whether what is being written is a HEADING, and WHERE in the family it sits.
+ * Asking for one hardcoded role gave every created paragraph the family's
+ * heading donor, so `apply_style { styleName: 'Normal' }` came back as the
+ * family's heading banner.
+ *
+ * Whether the requested style is a heading style is read off the DOCUMENT
+ * rather than off a name pattern: it is a heading style here if the paragraphs
+ * already wearing it are headings. That is what makes the rule hold for the
+ * live document's `headingNoToc` and for any custom name nobody has thought
+ * of; a style no paragraph wears yet falls back to the same name test the
+ * reference resolver already uses.
+ */
+function composedParagraphRole(
+  blocks: FlatBlock[],
+  familyAnchor: string,
+  target: FlatBlock,
+  styleName: string
+): {
+  role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>;
+  level?: number;
+} {
+  const wearers = blocks.filter(
+    (block) =>
+      block.anchor !== target.anchor &&
+      !tableAnchorForBlock(block) &&
+      (block.format?.styleName ?? '').trim() === styleName
+  );
+  const headingWearers = wearers.filter(isHeadingLikeBlock);
+  const isHeading = wearers.length
+    ? headingWearers.length * 2 >= wearers.length
+    : HEADING_LIKE_STYLE.test(styleName);
+
+  const familyIndex = blocks.findIndex(
+    (block) => block.anchor === familyAnchor
+  );
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (isHeading) {
+    // The family's own first block is its section heading; anything else
+    // wearing a heading style inside it is a subsection heading, at whatever
+    // depth the document already gives that style.
+    if (targetIndex === familyIndex || targetIndex < 0)
+      return { role: 'section_heading' };
+    const level = headingWearers.find(
+      (block) => Number.isFinite(block.level) && block.isHeading
+    )?.level;
+    return {
+      role: 'subsection_heading',
+      ...(level !== undefined ? { level } : {})
+    };
+  }
+  // Body text is intro text until a subsection heading has opened inside the
+  // family, exactly as roleBlocksForUnit classifies the blocks that are
+  // already there.
+  const opened =
+    familyIndex >= 0 &&
+    targetIndex > familyIndex &&
+    blocks
+      .slice(familyIndex + 1, targetIndex)
+      .some(
+        (block) => !tableAnchorForBlock(block) && isHeadingLikeBlock(block)
+      );
+  return { role: opened ? 'subsection_paragraph' : 'intro_paragraph' };
+}
+
+/**
+ * The donor a paragraph created by this change set should wear, and whether
+ * that disagrees with the style the model asked for.
+ *
+ * The family is resolved from the paragraph's POSITION with no declared
+ * subsections to bound it, so the deepest family adjacent to that position
+ * wins - the same rule insert_section applies, which is the point: a section
+ * hand-built out of insert_text + apply_style must come out looking like a
+ * section composed by the single op.
+ *
+ * `requestedStyleName` is the style THIS OP asked for. Reading the block's
+ * current style instead made the disagreement report compare the resolver's
+ * answer against the style the paragraph already had, which is the style the
+ * resolver is about to replace - so the one mechanism that exists to say "you
+ * asked for X and composition gave you Y" agreed with itself and stayed
+ * silent on every override it made.
+ */
+function composedParagraphDonor(
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  target: FlatBlock,
+  requestedStyleName?: string
+): { donor?: FlatBlock; disagreement?: ComposedStyleDisagreement } | undefined {
+  const familyAnchor =
+    joinedSectionFamilyAnchor(blocks, target, 'before', {
+      title: '',
+      blocks: []
+    }) ?? target.anchor;
+  const family = deriveSectionFamilyEvidence(blocks, familyAnchor, true);
+  // An op that names no style is asking for the one the paragraph already
+  // wears, so the role it plays is the same question either way.
+  const requested = (
+    requestedStyleName ??
+    target.format?.styleName ??
+    ''
+  ).trim();
+  const { role, level } = composedParagraphRole(
+    blocks,
+    familyAnchor,
+    target,
+    requested
+  );
+  // `role` reads only the flattened blocks; the SFDT is what the table and
+  // row queries need, and serializing one per format op would cost a whole
+  // document pass for an answer that does not use it.
+  const outcome = creationAppearance(blocks, undefined, byAnchor).role(
+    family,
+    role,
+    { at: familyAnchor, ...(level !== undefined ? { level } : {}) }
+  );
+  if (!outcome.resolved) return undefined;
+  const donor = outcome.value;
+  if (donor.anchor === target.anchor) return undefined;
+  const resolved = donor.format?.styleName;
+  return {
+    donor,
+    ...(requested && resolved && requested !== resolved
+      ? { disagreement: { requested, resolved, from: donor.anchor } }
+      : {})
+  };
+}
+
+function planTableInsertInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  blocks: FlatBlock[],
+  sfdt: any,
+  explicitSource?: FlatBlock
+): PlannedInsertInheritance[] | undefined {
+  const targetTableAnchor = resultingInsertedTableAnchor(op);
+  if (!targetTableAnchor) return undefined;
+  // The family at the insertion point, derived here rather than handed down,
+  // so a table inserted by the composer and one inserted by a model driving
+  // the primitive reach the same answer - including the family's stripe when
+  // the nearest table is too short to show one.
+  const family = deriveSectionFamilyEvidence(blocks, String(op.anchor ?? ''));
+  const resolved = creationAppearance(blocks, sfdt, byAnchorOf(blocks)).table({
+    at: String(op.anchor ?? ''),
+    exclude: targetTableAnchor,
+    ...(family ? { family } : {}),
+    ...(explicitSource ? { explicit: explicitSource } : {})
+  });
+  // Unresolved means the document contains no table at all, so there is
+  // nothing this one could have been made to look like. Reported, not
+  // defaulted: see PlannedInsertInheritance.unresolved.
+  if (!resolved.resolved)
+    return [
+      { anchor: targetTableAnchor, unresolved: creationGap('table', resolved) }
+    ];
+  const sourceTable = resolved.value;
+  const rows = positiveCount(op.rows);
+  const columns = positiveCount(op.columns);
+  const targetRows = Array.from({ length: rows }, (_, index) => index);
+  const banding = sourceTable.banding;
+  return [
+    {
+      anchor: targetTableAnchor,
+      tableAppearance: {
+        sourceTableAnchor: sourceTable.anchor,
+        targetTableAnchor,
+        source: sourceTable.appearance,
+        ...(banding ? { banding } : {})
+      }
+    },
+    ...planTableCellFormats(
+      editor,
+      blocks,
+      sourceTable.anchor,
+      sourceTable.appearance,
+      targetTableAnchor,
+      targetRows,
+      columns,
+      { headerRows: banding?.headerRows }
+    )
+  ];
+}
+
+function planRowInsertInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  blocks: FlatBlock[],
+  sfdt: any
+): PlannedInsertInheritance[] | undefined {
+  const parts = String(op.anchor ?? '').split(';');
+  if (parts.length !== 5) return undefined;
+  const row = Number(parts[2]);
+  if (!Number.isInteger(row) || row < 0) return undefined;
+  const tableAnchor = `${parts[0]};${parts[1]}`;
+  const source = collectTableAppearance(tableBlockAt(sfdt, tableAnchor));
+  if (!source || !source.rows.length) return undefined;
+  const count = positiveCount(op.count);
+  const firstRow = op.above === true ? row : row + 1;
+  const targetRows = Array.from(
+    { length: count },
+    (_, index) => firstRow + index
+  );
+  const byAnchor = byAnchorOf(blocks);
+  const resolver = creationAppearance(blocks, sfdt, byAnchor);
+  const rendered = renderedRowFormatReader(editor, byAnchor);
+  const resolutions = targetRows.map((targetRow) =>
+    resolver.row({ tableAnchor, source, targetRow, rendered })
+  );
+  const gap = resolutions.find((entry) => !entry.resolved);
+  if (gap && !gap.resolved)
+    return [{ anchor: tableAnchor, unresolved: creationGap('row', gap) }];
+  const resolved = resolutions.flatMap((entry) =>
+    entry.resolved ? [entry.value] : []
+  );
+  const columns = Math.max(...source.rows.map((entry) => entry.cells.length));
+  // Rows this table dresses itself, and rows it needed the document for.
+  const inTable = targetRows.filter(
+    (_row, index) => resolved[index].donorTable === tableAnchor
+  );
+  const orphaned = targetRows.filter(
+    (_row, index) => resolved[index].donorTable !== tableAnchor
+  );
+  const donor = orphaned.length
+    ? resolved.find((entry) => entry.donorTable !== tableAnchor)
+    : undefined;
+  const formats = [
+    ...(inTable.length
+      ? planTableCellFormats(
+          editor,
+          blocks,
+          tableAnchor,
+          source,
+          tableAnchor,
+          inTable,
+          columns,
+          {
+            sourceRows: resolved
+              .filter((entry) => entry.donorTable === tableAnchor)
+              .map((entry) => entry.donorRow),
+            headerRows: inferHeaderRows(source)
+          }
+        )
+      : []),
+    ...(donor
+      ? planTableCellFormats(
+          editor,
+          blocks,
+          donor.donorTable,
+          donor.donorAppearance,
+          tableAnchor,
+          orphaned,
+          columns,
+          { sourceRows: orphaned.map(() => donor.donorRow) }
+        )
+      : [])
+  ];
+  // `preserveBanding: false` is the explicit request for SyncFusion's raw row
+  // appearance. Typography still inherits, but no fill/border/header write is
+  // added by the engine.
+  if (op.preserveBanding === false) return formats.length ? formats : undefined;
+  // Strict: this fires without being asked, so a table with one highlighted row
+  // must not be mistaken for a stripe.
+  const banding =
+    detectTableBanding(source, { strict: true }) ??
+    shortInsertBanding(source) ??
+    documentInsertBanding(sfdt, tableAnchor, source);
+  const fallbackShadings = banding
+    ? undefined
+    : targetRows.flatMap((targetRow, index) => {
+        const entry = resolved[index];
+        const shading = rowShadings(entry.donorAppearance)[entry.donorRow];
+        return shading === undefined ? [] : [{ row: targetRow, shading }];
+      });
+  // Header-ness travels with the row the insert takes its appearance from -
+  // the same `sourceRows` mapping, so there is one answer per inserted row and
+  // never two rules about what a header row is. Anchoring the insert on the
+  // header therefore adds a DATA row below it, which is the only structurally
+  // sound reading of "add one more row here".
+  // COPIED from the donor row's flag by the resolver, never inferred here.
+  const rowHeaders = targetRows.map((targetRow, index) => ({
+    row: targetRow,
+    isHeader: resolved[index].isHeader
+  }));
+  return [
+    {
+      anchor: tableAnchor,
+      tableAppearance: {
+        sourceTableAnchor: tableAnchor,
+        targetTableAnchor: tableAnchor,
+        source,
+        targetRows,
+        rowHeaders,
+        ...(banding
+          ? { preserveBanding: { fromRow: firstRow, banding } }
+          : fallbackShadings?.length
+          ? { fallbackShadings }
+          : {})
+      }
+    },
+    ...formats
+  ];
+}
+
+function rebasePlannedInsertInheritance(
+  planned: PlannedInsertInheritance[] | undefined,
+  requestedOp: EditOp,
+  writtenOp: EditOp
+): PlannedInsertInheritance[] | undefined {
+  if (!planned || requestedOp.anchor === writtenOp.anchor) return planned;
+  const oldTableAnchor =
+    requestedOp.op === 'insert_table'
+      ? resultingInsertedTableAnchor(requestedOp)
+      : tableAnchorFromCellAnchor(requestedOp.anchor);
+  const newTableAnchor =
+    writtenOp.op === 'insert_table'
+      ? resultingInsertedTableAnchor(writtenOp)
+      : tableAnchorFromCellAnchor(writtenOp.anchor);
+  if (!oldTableAnchor || !newTableAnchor || oldTableAnchor === newTableAnchor)
+    return planned;
+  const rebaseAnchor = (anchor: string) =>
+    anchor === oldTableAnchor || anchor.startsWith(`${oldTableAnchor};`)
+      ? `${newTableAnchor}${anchor.slice(oldTableAnchor.length)}`
+      : anchor;
+  return planned.map((entry) => ({
+    ...entry,
+    anchor: rebaseAnchor(entry.anchor),
+    ...(entry.tableAppearance
+      ? {
+          tableAppearance: {
+            ...entry.tableAppearance,
+            targetTableAnchor: rebaseAnchor(
+              entry.tableAppearance.targetTableAnchor
+            )
+          }
+        }
+      : {})
+  }));
+}
+
+function sectionTextCore(text: string): string | undefined {
+  const lines = text.split(/\r\n|\r|\n/);
+  const content = (line: string) => line.replace(/\f/g, '').trim().length > 0;
+  const first = lines.findIndex(content);
+  let last = lines.length - 1;
+  while (last >= first && !content(lines[last])) last--;
+  if (first < 0 || last <= first) return undefined;
+  const core = lines.slice(first, last + 1).join('\n');
+  return segmentLooksLikeHeading(core.split('\n'), 0) ? core : undefined;
+}
+
+function planSectionBoundaryInheritance(
+  target: FlatBlock,
+  blocks: FlatBlock[],
+  text: string,
+  offset: number
+): PlannedInsertInheritance['sectionBoundary'] | undefined {
+  if (target.kind === 'table_cell') return undefined;
+  const core = sectionTextCore(text);
+  if (!core) return undefined;
+  const level = chooseSectionLevel(blocks, target.anchor);
+  if (level === undefined) return undefined;
+  const sampledUnits = sampleSectionUnits(
+    unitsAtLevel(blocks, level),
+    target.anchor
+  );
+  const sampledSequences = sampledUnits.map((unit) =>
+    sequenceForUnit(unit).slice(0, SECTION_PATTERN_SEQUENCE_LIMIT)
+  );
+  const family = selectSectionFamily(
+    blocks,
+    sampledUnits,
+    sampledSequences,
+    target.anchor
+  );
+  if (family.units.length < 2) return undefined;
+  const observed = sectionBoundaryPattern(blocks, family.units).separator;
+  if (observed.confidence.level === 'low') return undefined;
+
+  const hasLeadingText = target.text.slice(0, offset).length > 0;
+  const hasTrailingText = target.text.slice(offset).length > 0;
+  const normalized = `${hasLeadingText ? '\n' : ''}${core}${
+    hasTrailingText ? '\n' : ''
+  }`;
+  const segments = normalized.split('\n');
+  const firstContent = segments.findIndex((segment) => segment.trim());
+  let lastContent = segments.length - 1;
+  while (lastContent >= 0 && !segments[lastContent].trim()) lastContent--;
+  const anchorParts = target.anchor.split(';');
+  const blockIndexBase = Number(anchorParts.pop());
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (
+    firstContent < 0 ||
+    lastContent < firstContent ||
+    targetIndex < 0 ||
+    !Number.isInteger(blockIndexBase)
+  )
+    return undefined;
+  const anchorAt = (index: number) =>
+    [...anchorParts, blockIndexBase + index].join(';');
+  const previousSeparator: SectionBoundaryElement[] = [];
+  for (let index = targetIndex - 1; index >= 0; index--) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    previousSeparator.unshift(element);
+  }
+  const followingSeparator: SectionBoundaryElement[] = [];
+  for (let index = targetIndex + 1; index < blocks.length; index++) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    followingSeparator.push(element);
+  }
+  const prefixMissing = (
+    desired: SectionBoundaryElement[],
+    existing: SectionBoundaryElement[]
+  ) =>
+    JSON.stringify(desired.slice(0, existing.length)) ===
+    JSON.stringify(existing)
+      ? desired.slice(existing.length)
+      : desired;
+  const suffixMissing = (
+    desired: SectionBoundaryElement[],
+    existing: SectionBoundaryElement[]
+  ) =>
+    JSON.stringify(desired.slice(desired.length - existing.length)) ===
+    JSON.stringify(existing)
+      ? desired.slice(0, desired.length - existing.length)
+      : desired;
+  const beforeSeparator = hasLeadingText
+    ? observed.value
+    : prefixMissing(observed.value, previousSeparator);
+  const afterSeparator = hasTrailingText
+    ? observed.value
+    : suffixMissing(observed.value, followingSeparator);
+  const nextBlock = blocks[targetIndex + 1];
+  const afterAnchor = hasTrailingText
+    ? anchorAt(segments.length - 1)
+    : nextBlock?.anchor.split(';').length === 2
+    ? anchorAt(segments.length)
+    : undefined;
+  if (!observed.value.length && normalized === text) return undefined;
+  return {
+    text: normalized,
+    separator: observed.value,
+    beforeSeparator,
+    afterSeparator,
+    firstAnchor: anchorAt(firstContent),
+    lastAnchor: anchorAt(lastContent),
+    lastLength: segments[lastContent].replace(/\t/g, '').length,
+    ...(afterAnchor ? { afterAnchor } : {})
+  };
+}
+
 // Decide, BEFORE the insert runs, which created paragraphs will need a format
 // and from which reference. `explicit` carries a model-chosen source (an
 // `inheritFormatFrom` on the insert op itself), which replaces the computed
@@ -5920,19 +12301,35 @@ function findComputedReference(
 // for mid-text inserts (and for cell text), so the default must not interfere.
 function planInsertInheritance(
   editor: LiveEditor,
-  op: TypedEditOp<'insert_text'>,
+  op: EditOp,
   target: FlatBlock,
   blocks: FlatBlock[],
+  sfdt: any,
   explicit?: {
     source: FlatBlock;
     inherited?: { characterFormat?: FormatBag; paragraphFormat?: FormatBag };
   }
 ): PlannedInsertInheritance[] | undefined {
+  if (op.op === 'insert_table')
+    return planTableInsertInheritance(
+      editor,
+      op,
+      blocks,
+      sfdt,
+      explicit?.source
+    );
+  if (op.op === 'insert_row')
+    return planRowInsertInheritance(editor, op, blocks, sfdt);
+  if (op.op !== 'insert_text') return undefined;
   if (isLiveStoryAnchor(target.anchor)) return undefined;
-  const text = insertionText(op);
+  let text = insertionText(op as TypedEditOp<'insert_text'>);
   if (!text) return undefined;
+  const offset = insertionPoint(op as TypedEditOp<'insert_text'>, target);
+  const boundary = op.__suppressSectionBoundary
+    ? undefined
+    : planSectionBoundaryInheritance(target, blocks, text, offset);
+  if (boundary) text = boundary.text;
   const segments = text.split(/\r\n|\r|\n/);
-  const offset = insertionPoint(op, target);
   const createsParagraphs = segments.length > 1;
   // Filling a previously-empty paragraph IS creating the paragraph in every
   // sense that matters for formatting: its only insertion-point donor is the
@@ -5974,7 +12371,9 @@ function planInsertInheritance(
     return inherited;
   };
 
-  const planned: PlannedInsertInheritance[] = [];
+  const planned: PlannedInsertInheritance[] = boundary
+    ? [{ anchor: target.anchor, sectionBoundary: boundary }]
+    : [];
   segments.forEach((segment, index) => {
     // The current-text projection drops tab inlines, so compare without them.
     const expectedText = segment.replace(/\t/g, '');
@@ -6036,6 +12435,52 @@ function planInsertInheritance(
   return planned.length ? planned : undefined;
 }
 
+// Replacing a whole paragraph with text containing paragraph marks is also a
+// paragraph-creation operation. Syncfusion's selected-range insert correctly
+// owns the tracked structure, but it gives every inserted run/mark the document
+// default instead of the selected paragraph's resolved formatting. Reuse the
+// same pre-write format snapshot and guarded post-write apply path as
+// insert_text; do not introduce a second formatting owner for selection ops.
+function planSelectionSplitInheritance(
+  editor: LiveEditor,
+  op: EditOp,
+  target: FlatBlock
+): PlannedInsertInheritance[] | undefined {
+  if (op.op !== 'replace_selection') return undefined;
+  const replacement = op.replace ?? op.text ?? op.newText;
+  if (replacement == null) return undefined;
+  const segments = String(replacement).split(/\r\n|\r|\n/);
+  if (segments.length < 2) return undefined;
+
+  const start = offsetParts(
+    offsetString(op.startOffset) || `${target.anchor};0`
+  );
+  const end = offsetParts(
+    offsetString(op.endOffset) || `${target.anchor};${target.length}`
+  );
+  // Formatting whole result paragraphs is safe only when the selected source
+  // was itself one whole paragraph. A partial/multi-paragraph rewrite may keep
+  // unselected text in its edge paragraphs, whose own run format must win.
+  if (
+    start.anchor !== target.anchor ||
+    end.anchor !== target.anchor ||
+    start.offset !== 0 ||
+    end.offset < target.length
+  )
+    return undefined;
+
+  const anchorParts = target.anchor.split(';');
+  const blockIndexBase = Number(anchorParts.pop());
+  if (!Number.isInteger(blockIndexBase)) return undefined;
+  const inherited = readEffectiveSourceFormat(editor, target);
+  return segments.map((segment, index) => ({
+    anchor: [...anchorParts, blockIndexBase + index].join(';'),
+    expectedText: segment.replace(/\t/g, ''),
+    source: target,
+    inherited
+  }));
+}
+
 // Format the paragraphs a just-applied insert created, from the plan computed
 // before the write. Read-back verification (verifyInheritedFormat / the style
 // check on the fallback) is the success criterion; a mismatch fails the op and
@@ -6044,50 +12489,257 @@ function applyInsertInheritance(
   editor: LiveEditor,
   planned: PlannedInsertInheritance[],
   byAnchor: Map<string, FlatBlock>
-): void {
-  for (const paragraph of planned) {
-    const target = byAnchor.get(paragraph.anchor);
-    if (!target || target.text !== paragraph.expectedText) {
-      // Lightweight test doubles do not split paragraphs on newline inserts; a
-      // mounted DocumentEditor always does. Skip quietly for doubles, fail
-      // loudly when the real editor's split did not land where computed.
-      if (!(editor as any).element && !(editor as any).documentHelper) return;
-      throw new OpError(
-        'inherited_paragraph_not_found',
-        `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
-        [
-          `expected: ${JSON.stringify(paragraph.expectedText)}`,
-          `actual: ${JSON.stringify(target?.text)}`
-        ]
-      );
-    }
-    if (paragraph.source) {
-      applyResolvedInheritedFormat(
-        editor,
-        paragraph.source,
-        target,
-        paragraph.inherited ??
-          readEffectiveSourceFormat(editor, paragraph.source)
-      );
-    } else if (paragraph.fallbackStyleName) {
-      selectParagraph(editor, target);
-      callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
-      selectParagraph(editor, target);
-      const resolved = comparableFormatValue(
-        editor.selection?.paragraphFormat?.styleName
-      );
-      if (resolved !== paragraph.fallbackStyleName)
+): AppearanceWriteOutcome | undefined {
+  const appearanceOutcomes: AppearanceWriteOutcome[] = [];
+  const transaction = runAppearanceTransaction(editor, (record) => {
+    for (const paragraph of planned) {
+      if (paragraph.sectionBoundary) continue;
+      // Carries no donor by construction; it exists to be REPORTED, and the
+      // write it describes happens with the editor's defaults.
+      if (paragraph.unresolved) continue;
+      if (paragraph.tableAppearance) {
+        const appearance = paragraph.tableAppearance;
+        // A new table has no appearance of its own, so reproduce the whole
+        // sibling look. SyncFusion already clones an inserted row's non-banding
+        // cell appearance; rewriting its borders while the row is a pending
+        // insertion loses shared-edge borders in the real SDK, so the row path
+        // only restores the preflight stripe below.
+        if (!appearance.targetRows) {
+          const outcome = applyCopiedTableAppearance(
+            editor,
+            appearance.sourceTableAnchor,
+            appearance.source,
+            appearance.targetTableAnchor,
+            undefined,
+            { banding: appearance.banding }
+          );
+          appearanceOutcomes.push(outcome);
+          outcome.restores.forEach(record);
+        }
+        // Before the fills: banding and the fallback shading both read the live
+        // table, and a row still flagged as a header is not the row they are
+        // meant to stripe.
+        if (appearance.rowHeaders?.length) {
+          const headers = applyPlannedRowHeaders(
+            editor,
+            appearance.targetTableAnchor,
+            liveTableAppearance(editor, appearance.targetTableAnchor),
+            appearance.rowHeaders
+          );
+          if (headers.report.rowsWritten) {
+            appearanceOutcomes.push(headers);
+            headers.restores.forEach(record);
+          }
+        }
+        if (appearance.preserveBanding) {
+          const outcome = applyBandingRows(
+            editor,
+            appearance.targetTableAnchor,
+            liveTableAppearance(editor, appearance.targetTableAnchor),
+            appearance.preserveBanding.banding,
+            appearance.preserveBanding.fromRow
+          );
+          appearanceOutcomes.push(outcome);
+          outcome.restores.forEach(record);
+        }
+        if (appearance.fallbackShadings) {
+          const fallback = applyPlannedRowShadings(
+            editor,
+            appearance.targetTableAnchor,
+            liveTableAppearance(editor, appearance.targetTableAnchor),
+            appearance.fallbackShadings
+          );
+          if (fallback.report.cellsWritten) {
+            appearanceOutcomes.push(fallback);
+            fallback.restores.forEach(record);
+          }
+        }
+        continue;
+      }
+      const target = byAnchor.get(paragraph.anchor);
+      if (
+        !target ||
+        (paragraph.expectedText !== undefined &&
+          target.text !== paragraph.expectedText)
+      ) {
+        // Lightweight test doubles do not split paragraphs on newline inserts;
+        // a mounted DocumentEditor always does. Skip quietly for doubles, fail
+        // loudly when the real editor's split did not land where computed.
+        if (!(editor as any).element && !(editor as any).documentHelper)
+          continue;
         throw new OpError(
-          'inherited_format_mismatch',
-          `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
+          'inherited_paragraph_not_found',
+          `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
           [
-            `paragraphFormat.styleName: expected ${JSON.stringify(
-              paragraph.fallbackStyleName
-            )}, got ${JSON.stringify(resolved)}`
+            `expected: ${JSON.stringify(paragraph.expectedText)}`,
+            `actual: ${JSON.stringify(target?.text)}`
           ]
         );
+      }
+      if (paragraph.source) {
+        applyResolvedInheritedFormat(
+          editor,
+          paragraph.source,
+          target,
+          paragraph.inherited ??
+            readEffectiveSourceFormat(editor, paragraph.source)
+        );
+      } else if (paragraph.fallbackStyleName) {
+        selectParagraph(editor, target);
+        callEditor(editor, 'applyStyle', paragraph.fallbackStyleName);
+        selectParagraph(editor, target);
+        const resolved = comparableFormatValue(
+          editor.selection?.paragraphFormat?.styleName
+        );
+        if (resolved !== paragraph.fallbackStyleName)
+          throw new OpError(
+            'inherited_format_mismatch',
+            `The document-default fallback style did not resolve at ${paragraph.anchor}.`,
+            [
+              `paragraphFormat.styleName: expected ${JSON.stringify(
+                paragraph.fallbackStyleName
+              )}, got ${JSON.stringify(resolved)}`
+            ]
+          );
+      }
+    }
+    return appearanceOutcomes.reduce<AppearanceWriteReport>(
+      (combined, outcome) => ({
+        cellsWritten: combined.cellsWritten + outcome.report.cellsWritten,
+        rowsWritten: combined.rowsWritten + outcome.report.rowsWritten,
+        cellsUnchanged: combined.cellsUnchanged + outcome.report.cellsUnchanged,
+        ...((combined.rowsSkippedMixed ?? 0) +
+          (outcome.report.rowsSkippedMixed ?? 0) >
+        0
+          ? {
+              rowsSkippedMixed:
+                (combined.rowsSkippedMixed ?? 0) +
+                (outcome.report.rowsSkippedMixed ?? 0)
+            }
+          : {}),
+        ...(outcome.report.banding
+          ? { banding: outcome.report.banding }
+          : combined.banding
+          ? { banding: combined.banding }
+          : {}),
+        ...(outcome.report.sourceStyleName
+          ? { sourceStyleName: outcome.report.sourceStyleName }
+          : combined.sourceStyleName
+          ? { sourceStyleName: combined.sourceStyleName }
+          : {})
+      }),
+      emptyAppearanceReport()
+    );
+  });
+  if (!transaction.restores.length) return undefined;
+  return {
+    report: transaction.result,
+    restores: transaction.restores
+  };
+}
+
+function shiftBodyBlockAnchor(anchor: string, amount: number): string {
+  const parts = anchor.split(';');
+  const index = Number(parts[1]);
+  return parts.length === 2 && Number.isInteger(index)
+    ? `${parts[0]};${index + amount}`
+    : anchor;
+}
+
+function insertSectionSeparatorBeforeAnchor(
+  editor: LiveEditor,
+  anchor: string,
+  separator: SectionBoundaryElement[]
+): string {
+  let targetAnchor = anchor;
+  for (const [index, element] of separator.entries()) {
+    selectRange(editor, targetAnchor, 0, 0);
+    editor.editor.insertText('\n');
+    if (element === 'page_break') {
+      selectRange(editor, targetAnchor, 0, 0);
+      editor.editor.insertText('\f');
+    }
+    targetAnchor = shiftBodyBlockAnchor(anchor, index + 1);
+  }
+  return targetAnchor;
+}
+
+function shiftPlannedBodyAnchor(
+  anchor: string,
+  firstAnchor: string,
+  lastAnchor: string,
+  amount: number
+): string {
+  const parts = anchor.split(';');
+  const first = firstAnchor.split(';');
+  const last = lastAnchor.split(';');
+  if (
+    parts.length !== 2 ||
+    first.length !== 2 ||
+    last.length !== 2 ||
+    parts[0] !== first[0] ||
+    parts[0] !== last[0]
+  )
+    return anchor;
+  const index = Number(parts[1]);
+  const firstIndex = Number(first[1]);
+  const lastIndex = Number(last[1]);
+  return Number.isInteger(index) && index >= firstIndex && index <= lastIndex
+    ? `${parts[0]};${index + amount}`
+    : anchor;
+}
+
+function applySectionBoundaryInheritance(
+  editor: LiveEditor,
+  planned: PlannedInsertInheritance[]
+): PlannedInsertInheritance[] {
+  const boundary = planned.find(
+    (entry) => entry.sectionBoundary
+  )?.sectionBoundary;
+  if (!boundary || !boundary.separator.length) return planned;
+
+  if (boundary.afterAnchor && boundary.afterSeparator.length) {
+    insertSectionSeparatorBeforeAnchor(
+      editor,
+      boundary.afterAnchor,
+      boundary.afterSeparator
+    );
+  } else if (boundary.afterSeparator.length) {
+    let anchor = boundary.lastAnchor;
+    let offset = boundary.lastLength;
+    for (const element of boundary.afterSeparator) {
+      selectRange(editor, anchor, offset, offset);
+      editor.editor.insertText('\n');
+      anchor = shiftBodyBlockAnchor(anchor, 1);
+      offset = 0;
+      if (element === 'page_break') {
+        selectRange(editor, anchor, 0, 0);
+        editor.editor.insertText('\f');
+        offset = 1;
+      }
     }
   }
+
+  if (!boundary.beforeSeparator.length) return planned;
+  insertSectionSeparatorBeforeAnchor(
+    editor,
+    boundary.firstAnchor,
+    boundary.beforeSeparator
+  );
+  const shift = boundary.beforeSeparator.length;
+  return planned.map((entry) =>
+    entry.sectionBoundary
+      ? entry
+      : {
+          ...entry,
+          anchor: shiftPlannedBodyAnchor(
+            entry.anchor,
+            boundary.firstAnchor,
+            boundary.lastAnchor,
+            shift
+          )
+        }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -6123,7 +12775,15 @@ const FORMULA_OPS = new Set(['set_cell_formula', 'set_column_formula']);
 function writesCellQuantity(op: EditOp): boolean {
   if (!op?.op) return false;
   if (FORMULA_OPS.has(op.op)) return true;
-  return op.op === 'set_cell_text' && isQuantityText(String(op.text ?? ''));
+  if (op.op !== 'set_cell_text') return false;
+  const text = String(op.text ?? '');
+  // A figure sent as "just the value" is still an amount when the op declares
+  // it as one - the column, not this batch-level read, supplies the currency
+  // symbol it will land with, so the decoration cannot be the whole test.
+  return (
+    isQuantityText(text) ||
+    (declaresNumberProvenance(op) && classifyNumericText(text).numeric)
+  );
 }
 
 interface ColumnTouch {
@@ -6208,6 +12868,47 @@ function describeChangeSetTouches(touches: ColumnTouch[]): string {
     .join('. Then ');
 }
 
+const RELOCATION_OPS: ReadonlySet<string> = new Set([
+  'move_section',
+  'swap_sections',
+  'copy_section'
+]);
+
+/**
+ * What the engine - reading the ops, never the model's claim - says this change
+ * set does.
+ *
+ * Cell writes are the usual answer, but a relocation writes no cell values at
+ * all, so answering "writes no table-cell values" for one is true and useless:
+ * beside a card that moved a whole section it reads as "nothing happened".
+ */
+function describeChangeSet(edits: EditOp[], touches: ColumnTouch[]): string {
+  const quoted = (value: unknown) => JSON.stringify(String(value ?? ''));
+  const relocations = edits
+    .filter((op) => op?.op && RELOCATION_OPS.has(op.op))
+    .map((op) => {
+      if (op.op === 'swap_sections')
+        return `swaps the sections at ${quoted(op.anchor)} and ${quoted(
+          op.otherAnchor
+        )}`;
+      const where = `${op.position === 'after' ? 'after' : 'before'} ${quoted(
+        op.targetAnchor
+      )}`;
+      return op.op === 'copy_section'
+        ? `copies the section at ${quoted(
+            op.anchor
+          )} ${where}, leaving the original in place`
+        : `moves the section at ${quoted(op.anchor)} ${where}`;
+    });
+  if (!relocations.length) return describeChangeSetTouches(touches);
+  const relocation =
+    `This change set ${relocations.join(', and ')}. ` +
+    'The engine moves the existing blocks with their tables, formatting and subsections; no text or figure is authored.';
+  return touches.length
+    ? `${relocation} It also writes ${describeChangeSetTouches(touches)}`
+    : relocation;
+}
+
 /** A refusal that applies to the whole change set, before any write. */
 interface BatchRefusal {
   code: string;
@@ -6284,6 +12985,504 @@ function detectInconsistentAggregateRanges(
 }
 
 /**
+ * Two splits in one change set, refused with the shape that works instead.
+ *
+ * A split PASTES, so every anchor after it in the same batch is stale. The
+ * executor's anchor relocation can usually re-find a moved block by content, but
+ * a schedule's header row reads the same in every table in the family - the
+ * captain's own document has "Coverage | Limit" on all of them - so it finds
+ * several candidates and correctly refuses a non-deterministic write. That
+ * refusal then rolls the whole group back, and the model sees
+ * `anchor_relocation_ambiguous` about a table it never touched.
+ *
+ * Refusing up front is not a limitation being papered over: one split per change
+ * set is the shape that SHOULD be asked for, because it gives each table its own
+ * reviewable card. "Split all the Coverages and Limits tables" is several splits,
+ * and a reviewer wants to accept the Property one and reconsider the Liability
+ * one - which a single card covering both cannot offer.
+ */
+function detectBatchedSplits(edits: EditOp[]): BatchRefusal | null {
+  const indices = edits.reduce<number[]>(
+    (found, op, index) =>
+      op?.op === 'split_table' ? [...found, index] : found,
+    []
+  );
+  if (indices.length < 2) return null;
+  return {
+    code: 'split_table_one_per_change_set',
+    message: `This change set asks for ${indices.length} table splits at once. Send one split_table per change set: a split inserts a table, so every later anchor in the same batch has moved, and in a document whose tables share their column names those anchors cannot be re-found unambiguously. Nothing was written.`,
+    details: [
+      `split_table at edit ${indices.join(', ')}`,
+      'Split one table, then re-read the document and split the next. Each split is then its own reviewable card, which is what lets a reviewer accept one table and reconsider another.'
+    ],
+    indices
+  };
+}
+
+function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
+  const emptyTables: Array<{
+    index: number;
+    anchor: string;
+    size: string;
+    resultingAnchor?: string;
+    mismatchedCellWriteAnchors?: string[];
+  }> = [];
+  edits.forEach((op, index) => {
+    if (op?.op !== 'insert_table') return;
+    const anchor = String(op.anchor ?? '');
+    if (Array.isArray(op.initialCells)) {
+      const rows = positiveCount(op.rows);
+      const columns = positiveCount(op.columns);
+      const validShape =
+        op.initialCells.length === rows &&
+        op.initialCells.every(
+          (row: unknown) =>
+            Array.isArray(row) &&
+            row.length === columns &&
+            row.every((cell) => typeof cell === 'string')
+        );
+      if (!validShape) {
+        emptyTables.push({
+          index,
+          anchor,
+          size: `${rows}x${columns}`,
+          mismatchedCellWriteAnchors: ['invalid initialCells dimensions']
+        });
+        return;
+      }
+      if (
+        op.initialCells.some((row: string[]) =>
+          row.some((cell: string) => cell.trim().length > 0)
+        )
+      )
+        return;
+    }
+    const resultingAnchor = resultingInsertedTableAnchor(op);
+    const followingCellWriteAnchors = cellWriteTableAnchorsFollowingInsert(
+      edits,
+      index
+    );
+    if (followingCellWriteAnchors.length === 1) return;
+    const mismatchedCellWriteAnchors =
+      followingCellWriteAnchors.length > 1
+        ? followingCellWriteAnchors
+        : undefined;
+    emptyTables.push({
+      index,
+      anchor,
+      size: `${positiveCount(op.rows)}x${positiveCount(op.columns)}`,
+      ...(mismatchedCellWriteAnchors?.length
+        ? { resultingAnchor, mismatchedCellWriteAnchors }
+        : {})
+    });
+  });
+  if (!emptyTables.length) return null;
+  const first = emptyTables[0];
+  if (
+    first.mismatchedCellWriteAnchors?.[0] === 'invalid initialCells dimensions'
+  ) {
+    return {
+      code: 'insert_table_initial_cells_invalid',
+      message: `insert_table at "${first.anchor}" declares a ${first.size} table, but initialCells does not have exactly that many string rows and columns. Nothing was written.`,
+      details: [`expected initialCells shape: ${first.size}`],
+      indices: [first.index]
+    };
+  }
+  if (first.mismatchedCellWriteAnchors?.length) {
+    return {
+      code: 'insert_table_cell_anchor_mismatch',
+      message:
+        `insert_table at "${first.anchor}" would create the table at "${
+          first.resultingAnchor
+        }", but this change set writes cells under ${first.mismatchedCellWriteAnchors
+          .map((anchor) => `"${anchor}"`)
+          .join(', ')}. ` +
+        `Retarget those writes to "${first.resultingAnchor};row;column;0", or choose an insert anchor whose resulting table address matches them. Nothing was written.`,
+      details: [
+        `resulting table anchor: ${first.resultingAnchor}`,
+        ...first.mismatchedCellWriteAnchors.map(
+          (anchor) => `cell writes target table: ${anchor}`
+        )
+      ],
+      indices: [first.index]
+    };
+  }
+  return {
+    code: 'empty_insert_table',
+    message:
+      `insert_table at "${first.anchor}" would create an empty ${first.size} table with no cell writes in this change set. ` +
+      'Empty grids in client proposals are refused; include set_cell_text writes for the new table or do not insert it.',
+    details: emptyTables.map(
+      (table) => `empty table: ${table.size} at ${table.anchor}`
+    ),
+    indices: emptyTables.map((table) => table.index)
+  };
+}
+
+/**
+ * THE NUMBER-PROVENANCE GATE ON AN AUTHORED MATRIX.
+ *
+ * `insert_table` writes its whole `initialCells` matrix inside ONE op, so the
+ * per-cell gate in applyAnchoredOp - which reads one op's text against the one
+ * cell it targets - never saw those figures, and `compileSectionComposer` routes
+ * every composed table through that op. That made the matrix the only cell-write
+ * path in the vocabulary with no provenance requirement at all.
+ *
+ * This is the same rule, applied to the matrix the op carries. "A column of
+ * formatted amounts" is `resolveQuantityCellFormat` - the engine's single
+ * definition, so an id column (`0093`) and prose containing digits are excluded
+ * here exactly as they are for `set_cell_text`. A figure in such a column may be
+ * written only when one of these holds:
+ *
+ *   - it appears in the excerpt the table cites (`sourcedFrom`), compared by
+ *     VALUE through the same `quotedExcerptContains` a per-cell citation uses;
+ *   - the engine can derive it from the matrix exactly - a cell that IS the sum
+ *     of the other amounts in its own column is arithmetic the engine can check
+ *     for itself, and checking beats citing.
+ *
+ * Anything else is a figure nothing in the request supports, so it is refused
+ * before any of the batch is written. The engine cannot verify that an excerpt
+ * came from the named attachment - that is the service's half, and it holds the
+ * evidence - but neither side depends on the other having run.
+ */
+function authoredMatrixBlocks(matrix: string[][]): FlatBlock[] {
+  const blocks: FlatBlock[] = [];
+  matrix.forEach((row, rowIndex) =>
+    row.forEach((cell, column) => {
+      const text = String(cell ?? '');
+      blocks.push({
+        anchor: `0;0;${rowIndex};${column};0`,
+        kind: 'table_cell',
+        text,
+        isHeading: false,
+        level: -1,
+        length: text.length
+      });
+    })
+  );
+  return blocks;
+}
+
+/** Exact sum, or null when the scales cannot be aligned without precision loss. */
+function sumFiguresExact(values: NumericValue[]): NumericValue | null {
+  const scale = values.reduce(
+    (widest, value) => Math.max(widest, value.scale),
+    0
+  );
+  let units = 0;
+  for (const value of values) {
+    const scaled = rescaleExact(value, scale);
+    if (!scaled) return null;
+    units += scaled.units;
+  }
+  return Number.isSafeInteger(units) ? { units, scale } : null;
+}
+
+/**
+ * Is this cell the exact total of the other amounts in its own column? Then the
+ * engine has verified the arithmetic itself and no citation can add to that.
+ * Same-unit amounts only - a mixed-unit column has no meaningful sum, which is
+ * the refusal `collectNumericCells` already applies to arithmetic.
+ */
+function isExactColumnAggregate(blocks: FlatBlock[], cell: FlatBlock): boolean {
+  const target = parseNumericCell(cell.text.trim());
+  if (!target) return false;
+  const column = Number(cell.anchor.split(';')[3]);
+  const siblings: NumericValue[] = [];
+  for (const candidate of blocks) {
+    if (candidate === cell) continue;
+    if (Number(candidate.anchor.split(';')[3]) !== column) continue;
+    const text = candidate.text.trim();
+    if (!text || !isQuantityText(text)) continue;
+    const parsed = parseNumericCell(text);
+    if (!parsed || parsed.unit !== target.unit) return false;
+    siblings.push(parsed.value);
+  }
+  if (siblings.length < 2) return false;
+  const total = sumFiguresExact(siblings);
+  if (!total) return false;
+  const scale = Math.max(total.scale, target.value.scale);
+  const left = rescaleExact(total, scale);
+  const right = rescaleExact(target.value, scale);
+  return !!left && !!right && left.units === right.units;
+}
+
+/** Every well-formed `initialCells` matrix in the batch, with its op's index. */
+function authoredMatrices(
+  edits: EditOp[]
+): Array<{ index: number; op: EditOp; matrix: string[][] }> {
+  const found: Array<{ index: number; op: EditOp; matrix: string[][] }> = [];
+  edits.forEach((op, index) => {
+    if (op?.op !== 'insert_table' || !Array.isArray(op.initialCells)) return;
+    const matrix = op.initialCells as unknown[];
+    // Shape validity is detectEmptyInsertedTables' refusal, not these.
+    if (
+      !matrix.every(
+        (row) =>
+          Array.isArray(row) && row.every((cell) => typeof cell === 'string')
+      )
+    )
+      return;
+    found.push({ index, op, matrix: matrix as string[][] });
+  });
+  return found;
+}
+
+/**
+ * A cell is one paragraph, for the reason AUTHORS_MULTIPLE_PARAGRAPHS states.
+ * Cells were type-checked and nothing more while the spec's own titles and
+ * paragraphs were held to that rule, so a newline in a cell passed validation
+ * and then split the cell into two anchors at write time.
+ */
+function detectMultilineAuthoredCells(edits: EditOp[]): BatchRefusal | null {
+  for (const { index, op, matrix } of authoredMatrices(edits)) {
+    for (let row = 0; row < matrix.length; row++) {
+      for (let column = 0; column < matrix[row].length; column++) {
+        if (!AUTHORS_MULTIPLE_PARAGRAPHS.test(matrix[row][column])) continue;
+        return {
+          code: 'multiline_authored_cell',
+          message:
+            `Row ${row}, column ${column} of the table this ${op.op} would create contains a line break, so SyncFusion would split that cell into two cell paragraphs. ` +
+            'The second one gets neither the inherited format nor the post-write verification, because both address the first - the same reason a title or a paragraph must describe exactly one paragraph. ' +
+            'Write the cell as one line, or make the second part its own row. Nothing was written.',
+          details: [
+            `cell: row ${row}, column ${column}`,
+            `cell text: ${JSON.stringify(matrix[row][column])}`
+          ],
+          indices: [index]
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function detectUnsourcedAuthoredFigures(edits: EditOp[]): BatchRefusal | null {
+  for (const { index, op, matrix } of authoredMatrices(edits)) {
+    // Body cells only. The first row is the column headers - labels the model
+    // composed, not figures - and the service's half exempts them for the same
+    // reason, so both sides read the same cells as data.
+    const blocks = authoredMatrixBlocks(matrix).filter(
+      (cell) => Number(cell.anchor.split(';')[2]) > 0
+    );
+    const citation = op.sourcedFrom;
+    const excerpt =
+      typeof citation?.quotedText === 'string' ? citation.quotedText : '';
+    const attachment =
+      typeof citation?.quotedFrom === 'string'
+        ? citation.quotedFrom.trim()
+        : '';
+    for (const cell of blocks) {
+      const figure = cell.text.trim();
+      if (!figure || !isQuantityText(figure)) continue;
+      // The live cell is empty until this op writes it, so the column's own
+      // authored amounts are what make it a quantity column - the same reading
+      // the cell-by-cell path arrives at by the time it writes the third one.
+      if (!resolveQuantityCellFormat(blocks, { ...cell, text: '', length: 0 }))
+        continue;
+      if (excerpt && attachment && quotedExcerptContains(excerpt, figure))
+        continue;
+      if (isExactColumnAggregate(blocks, cell)) continue;
+      const [, , row, column] = cell.anchor.split(';');
+      const tableAnchor = resultingInsertedTableAnchor(op) ?? String(op.anchor);
+      return {
+        code: 'unsourced_authored_figure',
+        message:
+          `Refusing to write the figure ${JSON.stringify(
+            figure
+          )} into row ${row}, column ${column} of the table this ${
+            op.op
+          } would create at "${tableAnchor}": nothing in this request supports it. ` +
+          'A figure in a column of formatted amounts must either be quoted from a source - `sourcedFrom` with `quotedFrom` (the attachment it was read out of) and `quotedText` (the verbatim excerpt containing it), which the engine checks every figure in the matrix against - or be exactly derivable from the other amounts in its own column, which the engine checks itself. ' +
+          (excerpt && attachment
+            ? 'The excerpt this table cites does not contain this figure, so the citation does not support it. '
+            : excerpt || attachment
+            ? '`sourcedFrom` needs BOTH `quotedFrom` and `quotedText`. '
+            : 'This table cites no source at all. ') +
+          'A figure the USER stated goes in one at a time through set_cell_text with `literal: true`, and a value derived from cells that already exist goes through set_cell_formula. Nothing was written.',
+        details: [
+          `figure: ${JSON.stringify(figure)}`,
+          `cell: ${tableAnchor};${row};${column};0`,
+          `cited attachment: ${attachment || '(none)'}`,
+          `cited excerpt: ${excerpt ? JSON.stringify(excerpt) : '(none)'}`
+        ],
+        indices: [index]
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Placeholder-looking text, matched by SHAPE and never by a known token.
+ *
+ * The live failure: asked to swap two subsections, the model expressed it as a
+ * three-way text shuffle and wrote `__TMP_SWAP_HEADING_1__` and
+ * `__TMP_SWAP_PARA_1__` into the captain's client proposal as intermediate
+ * values. That change set happened to roll back, so the tokens never survived -
+ * but "one op away from a placeholder in a client document" is not a property to
+ * rely on, and it is not something prompt guidance can prevent. Matching the
+ * literal tokens that were seen would only refuse the one shuffle we already
+ * know about; matching the shape refuses the class.
+ */
+const SENTINEL_SHAPES: Array<{ shape: RegExp; description: string }> = [
+  {
+    // `__TMP_SWAP_PARA_1__` - a delimited, shouted, underscore-wrapped token.
+    shape: /(?:^|[^A-Za-z0-9])(__[A-Z0-9_]{3,}__)(?![A-Za-z0-9])/,
+    description: 'a __DELIMITED_TOKEN__ placeholder'
+  },
+  { shape: /(\{\{[^{}]*\}\})/, description: 'a {{template}} marker' },
+  { shape: /(<<[^<>]*>>)/, description: 'a <<template>> marker' },
+  { shape: /(%%[^%]*%%)/, description: 'a %%template%% marker' },
+  {
+    shape: /(\$\{[^{}]*\})/,
+    description: 'a shell-style dollar-brace template marker'
+  },
+  {
+    shape:
+      /(?:^|[^A-Za-z0-9_])(PLACEHOLDER|TODO|TBD|LOREM IPSUM|XXX)(?![A-Za-z0-9_])/,
+    description: 'a standalone placeholder word'
+  }
+];
+
+/**
+ * The model-authored WRITE fields of the vocabulary. Deliberately not `find` or
+ * `expect`: those are reads, and refusing to search for a placeholder would
+ * block the one edit that cleans one up.
+ */
+export const MODEL_AUTHORED_TEXT_FIELDS = [
+  'text',
+  'replace',
+  'newText',
+  'displayText',
+  'screenTip',
+  'name',
+  'label'
+];
+
+/**
+ * `op.field` pairs that only LOOK like write fields. `delete_bookmark` names a
+ * bookmark that already exists, so its `name` is a selector in exactly the way
+ * `find` is, and refusing it would block the one op that removes a placeholder
+ * bookmark an earlier run left behind. Exported so the registry-exhaustive spec
+ * reads the same list instead of keeping its own copy of the exception.
+ */
+export const SENTINEL_SELECTOR_FIELDS = new Set(['delete_bookmark.name']);
+
+function sentinelToken(
+  value: unknown
+): { token: string; description: string } | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  for (const { shape, description } of SENTINEL_SHAPES) {
+    const match = shape.exec(value);
+    if (match) return { token: match[1] ?? match[0], description };
+  }
+  return undefined;
+}
+
+/** Every string one op would WRITE, with a human-readable location for each. */
+function authoredStrings(op: EditOp): Array<{ where: string; value: string }> {
+  const out: Array<{ where: string; value: string }> = [];
+  for (const field of MODEL_AUTHORED_TEXT_FIELDS)
+    if (
+      typeof op[field] === 'string' &&
+      !SENTINEL_SELECTOR_FIELDS.has(`${op.op}.${field}`)
+    )
+      out.push({ where: field, value: op[field] });
+  const matrix = op.initialCells;
+  if (Array.isArray(matrix))
+    matrix.forEach((row: unknown, rowIndex: number) => {
+      if (!Array.isArray(row)) return;
+      row.forEach((value: unknown, column: number) => {
+        if (typeof value === 'string')
+          out.push({
+            where: `initialCells row ${rowIndex}, column ${column}`,
+            value
+          });
+      });
+    });
+  // A section spec still attached after expansion (the refusal backstop keeps
+  // it) is composed content too, and its table cells are exactly the write path
+  // that bypasses the per-op checks.
+  const spec = op.sectionSpec;
+  if (spec && typeof spec === 'object') {
+    if (typeof spec.title === 'string')
+      out.push({ where: 'sectionSpec.title', value: spec.title });
+    if (Array.isArray(spec.blocks))
+      spec.blocks.forEach((specBlock: any, index: number) => {
+        if (!specBlock || typeof specBlock !== 'object') return;
+        if (typeof specBlock.text === 'string')
+          out.push({
+            where: `sectionSpec.blocks[${index}].text`,
+            value: specBlock.text
+          });
+        const table = specBlock.table;
+        if (!table || typeof table !== 'object') return;
+        if (Array.isArray(table.columnHeaders))
+          table.columnHeaders.forEach((header: unknown, column: number) => {
+            if (typeof header === 'string')
+              out.push({
+                where: `sectionSpec.blocks[${index}].table.columnHeaders[${column}]`,
+                value: header
+              });
+          });
+        if (Array.isArray(table.rows))
+          table.rows.forEach((row: unknown, rowIndex: number) => {
+            if (!Array.isArray(row)) return;
+            row.forEach((value: unknown, column: number) => {
+              if (typeof value === 'string')
+                out.push({
+                  where: `sectionSpec.blocks[${index}].table.rows[${rowIndex}][${column}]`,
+                  value
+                });
+            });
+          });
+      });
+  }
+  return out;
+}
+
+/**
+ * No write may put placeholder text into a document, from ANY op.
+ *
+ * One pass over the post-expansion `edits` array, which is the only place where
+ * every model-authored string in the change set - composed section-table cells
+ * included - is visible before a single write. A guard wired into one handler
+ * protects one handler; this is the boundary every op passes through, and the
+ * registry-enumerating spec fails if an op added later can bypass it.
+ */
+function detectSentinelContent(edits: EditOp[]): BatchRefusal | null {
+  for (let index = 0; index < edits.length; index++) {
+    const op = edits[index];
+    if (!op?.op) continue;
+    for (const { where, value } of authoredStrings(op)) {
+      const found = sentinelToken(value);
+      if (!found) continue;
+      return {
+        code: 'sentinel_content_refused',
+        message:
+          `Refusing to write ${JSON.stringify(
+            found.token
+          )} into the document: ` +
+          `edit ${index + 1} (${op.op}) carries ${
+            found.description
+          } in \`${where}\`. ` +
+          'Placeholder text is never an intermediate step - a change set that half-applies would leave it in the document for the client to read. ' +
+          'To REORDER existing content use move_section or swap_sections: they take only anchors and a position, and the engine relocates the real content with its formatting as one tracked group, so no temporary value is needed. ' +
+          'To write real content, send the final text. Nothing was written.',
+        details: [
+          `op: ${op.op}`,
+          `field: ${where}`,
+          `value: ${JSON.stringify(value.slice(0, 200))}`
+        ],
+        indices: [index]
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * The announcement gate. A batch that writes into more than one column of one
  * table is following a dependency chain, and must say so first.
  */
@@ -6353,6 +13552,1473 @@ function detectUnannouncedChain(
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Deterministic section composer
+// ---------------------------------------------------------------------------
+//
+// Robin supplies semantic content and structure; this compiler supplies the
+// mechanics the model cannot make reliable by emitting a longer primitive-op
+// recipe. Every compiled write still crosses the existing CAS, tracked-write,
+// inheritance, appearance, verification and group-rollback boundaries below.
+
+interface ComposerTextItem {
+  text: string;
+  label: string;
+  source?: FlatBlock;
+  finalAnchor?: string;
+}
+
+type ComposerUnit =
+  | { kind: 'text'; items: ComposerTextItem[]; label: string }
+  | {
+      kind: 'separator';
+      elements: SectionBoundaryElement[];
+      label: string;
+    }
+  | {
+      kind: 'table';
+      table: SectionComposerBlock & { role: 'table' };
+      blockIndex: number;
+      ordinal: number;
+      source?: FlatBlock;
+      label: string;
+    };
+
+interface CompiledSectionEdit {
+  edit: EditOp;
+  label: string;
+}
+
+interface SectionExpansionEntry {
+  originalIndex: number;
+  original: EditOp;
+  start: number;
+  count: number;
+  labels: string[];
+  section: boolean;
+  contentBlocks: number;
+  tables: number;
+  inheritance?: ComposedSectionInheritance;
+}
+
+interface SectionExpansion {
+  edits: EditOp[];
+  entries: SectionExpansionEntry[];
+  expandedToOriginal: number[];
+  changed: boolean;
+}
+
+function sectionSpecError(
+  code: string,
+  label: string,
+  message: string,
+  details?: string[]
+): never {
+  throw new OpError(
+    code,
+    `insert_section ${label}: ${message} Nothing was written.`,
+    details
+  );
+}
+
+/**
+ * ONE PARAGRAPH PER AUTHORED UNIT. This is an engine property, not a
+ * preference, and it is the same property for a title, a paragraph and a table
+ * cell - which is why it is defined once here and enforced everywhere text is
+ * authored (`sectionText` below for the spec's own strings,
+ * `detectMultilineAuthoredCells` for the cell matrices any insert_table
+ * carries).
+ *
+ * Text: the composer joins its text items with newlines into one insert_text and
+ * plans each resulting paragraph's final anchor, so an embedded newline shifts
+ * every later anchor and its formatting by one.
+ *
+ * Cells: SyncFusion splits a cell at a newline into two cell paragraphs, so the
+ * cell gains a SECOND anchor - and the format inheritance and the post-write
+ * verification both address the first, leaving the rest of the cell unstyled and
+ * unchecked.
+ *
+ * Note the tool schema does not carry this rule (`ai-services` types section
+ * text as `z.string().min(1)` and cells as plain strings), so the engine is the
+ * only place it can hold.
+ */
+const AUTHORS_MULTIPLE_PARAGRAPHS = /\r|\n/;
+
+function sectionText(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value.trim())
+    sectionSpecError('invalid_section_text', label, 'needs non-empty text.');
+  if (AUTHORS_MULTIPLE_PARAGRAPHS.test(value))
+    sectionSpecError(
+      'invalid_section_text',
+      label,
+      'must describe one paragraph. Split multi-paragraph content into separate semantic blocks.'
+    );
+  return value;
+}
+
+/**
+ * A citation is worth nothing unless both halves are there: the attachment the
+ * figures were read out of, and the excerpt they appear in. Half a citation is a
+ * malformed request, not an unsourced table, so it is named as one here rather
+ * than falling through to the figure gate's generic refusal.
+ */
+function validatedFigureSource(
+  value: unknown,
+  label: string
+): FigureSourceCitation {
+  const candidate = value as FigureSourceCitation;
+  const quotedFrom =
+    typeof candidate?.quotedFrom === 'string'
+      ? candidate.quotedFrom.trim()
+      : '';
+  const quotedText =
+    typeof candidate?.quotedText === 'string'
+      ? candidate.quotedText.trim()
+      : '';
+  if (!quotedFrom || !quotedText)
+    sectionSpecError(
+      'invalid_section_table_source',
+      label,
+      'has a `sourcedFrom` missing `quotedFrom` (the attachment the figures were read out of) or `quotedText` (the verbatim excerpt containing them).'
+    );
+  return { quotedFrom, quotedText };
+}
+
+function validatedSectionSpec(value: unknown): SectionComposerSpec {
+  if (!value || typeof value !== 'object')
+    sectionSpecError(
+      'invalid_section_spec',
+      'sectionSpec',
+      'must be an object with `title` and `blocks`.'
+    );
+  const candidate = value as SectionComposerSpec;
+  const title = sectionText(candidate.title, 'title');
+  if (!Array.isArray(candidate.blocks))
+    sectionSpecError(
+      'invalid_section_spec',
+      'sectionSpec.blocks',
+      'must be an ordered array of heading, paragraph, or table blocks.'
+    );
+  const blocks = candidate.blocks.map((block, index) => {
+    const label = `block ${index + 1}`;
+    if (!block || typeof block !== 'object')
+      sectionSpecError(
+        'invalid_section_block',
+        label,
+        'must be a heading, paragraph, or table block.'
+      );
+    if (block.role === 'heading')
+      return {
+        role: 'heading' as const,
+        text: sectionText(block.text, `${label} (heading)`),
+        ...(Number.isInteger(block.level) && Number(block.level) > 0
+          ? { level: Number(block.level) }
+          : {})
+      };
+    if (block.role === 'paragraph')
+      return {
+        role: 'paragraph' as const,
+        text: sectionText(block.text, `${label} (paragraph)`)
+      };
+    if (block.role !== 'table')
+      sectionSpecError(
+        'invalid_section_role',
+        label,
+        `has unknown role ${JSON.stringify(
+          (block as any).role
+        )}; use heading, paragraph, or table.`
+      );
+    const table = block.table;
+    const tableLabel = `${label} (table)`;
+    if (!table || typeof table !== 'object')
+      sectionSpecError(
+        'invalid_section_table',
+        tableLabel,
+        'needs a `table` object.'
+      );
+    if (
+      !Array.isArray(table.columnHeaders) ||
+      !table.columnHeaders.length ||
+      table.columnHeaders.some((cell) => typeof cell !== 'string')
+    )
+      sectionSpecError(
+        'invalid_section_table_headers',
+        tableLabel,
+        'needs at least one string in `columnHeaders`.'
+      );
+    if (
+      !Array.isArray(table.rows) ||
+      table.rows.some(
+        (row) =>
+          !Array.isArray(row) ||
+          row.length !== table.columnHeaders.length ||
+          row.some((cell) => typeof cell !== 'string')
+      )
+    )
+      sectionSpecError(
+        'invalid_section_table_rows',
+        tableLabel,
+        `needs every data row to contain exactly ${table.columnHeaders.length} string cells.`,
+        [
+          `columnHeaders: ${table.columnHeaders.length}`,
+          `row widths: ${
+            Array.isArray(table.rows)
+              ? table.rows
+                  .map((row) =>
+                    Array.isArray(row) ? row.length : 'not an array'
+                  )
+                  .join(', ')
+              : 'rows is not an array'
+          }`
+        ]
+      );
+    if (
+      table.columnRoles !== undefined &&
+      (!Array.isArray(table.columnRoles) ||
+        table.columnRoles.length !== table.columnHeaders.length ||
+        table.columnRoles.some((role) => typeof role !== 'string'))
+    )
+      sectionSpecError(
+        'invalid_section_column_roles',
+        tableLabel,
+        '`columnRoles`, when supplied, must contain one string per column.'
+      );
+    return {
+      role: 'table' as const,
+      table: {
+        columnHeaders: [...table.columnHeaders],
+        rows: table.rows.map((row) => [...row]),
+        ...(table.columnRoles ? { columnRoles: [...table.columnRoles] } : {}),
+        ...(table.sourcedFrom
+          ? {
+              sourcedFrom: validatedFigureSource(table.sourcedFrom, tableLabel)
+            }
+          : {})
+      }
+    };
+  });
+  return { title, blocks };
+}
+
+function composerRoleCandidates(
+  units: SectionUnit[],
+  role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+  level?: number
+): FlatBlock[] {
+  if (role === 'section_heading')
+    return units
+      .flatMap((unit) => (unit.blocks[0] ? [unit.blocks[0]] : []))
+      .filter((block) => block.text.trim());
+  if (role === 'subsection_heading' && level !== undefined) {
+    const exact = units.flatMap((unit) =>
+      unit.blocks
+        .slice(1)
+        .filter(
+          (block) =>
+            block.isHeading && block.level === level && !!block.text.trim()
+        )
+    );
+    if (exact.length) return exact;
+  }
+  return units
+    .flatMap((unit) => roleBlocksForUnit(unit).get(role) ?? [])
+    .filter((block) => block.text.trim());
+}
+
+/** Pick a real donor carrying the modal format advertised for this role. */
+function composerRoleSource(
+  evidence: SectionFamilyEvidence | undefined,
+  role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+  level?: number
+): FlatBlock | undefined {
+  const candidates = evidence
+    ? composerRoleCandidates(evidence.units, role, level)
+    : [];
+  const selected = modal(candidates.map(roleFormat));
+  if (!selected) return undefined;
+  const key = JSON.stringify(selected.value);
+  return candidates.find((block) => JSON.stringify(roleFormat(block)) === key);
+}
+
+function missingSectionPrefix(
+  desired: SectionBoundaryElement[],
+  existing: SectionBoundaryElement[]
+): SectionBoundaryElement[] {
+  let shared = 0;
+  while (
+    shared < desired.length &&
+    shared < existing.length &&
+    desired[shared] === existing[shared]
+  )
+    shared++;
+  return desired.slice(shared);
+}
+
+function missingSectionSuffix(
+  desired: SectionBoundaryElement[],
+  existing: SectionBoundaryElement[]
+): SectionBoundaryElement[] {
+  let shared = 0;
+  while (
+    shared < desired.length &&
+    shared < existing.length &&
+    desired[desired.length - 1 - shared] ===
+      existing[existing.length - 1 - shared]
+  )
+    shared++;
+  return desired.slice(0, desired.length - shared);
+}
+
+function adjacentSectionSeparators(
+  blocks: FlatBlock[],
+  target: FlatBlock,
+  direction: -1 | 1
+): SectionBoundaryElement[] {
+  const start = blocks.findIndex((block) => block.anchor === target.anchor);
+  const separators: SectionBoundaryElement[] = [];
+  if (start < 0) return separators;
+  for (
+    let index = start + direction;
+    index >= 0 && index < blocks.length;
+    index += direction
+  ) {
+    const element = boundaryElement(blocks[index]);
+    if (!element) break;
+    if (direction < 0) separators.unshift(element);
+    else separators.push(element);
+  }
+  return separators;
+}
+
+/** Text which inserts exactly these paragraph-level separators at a boundary. */
+function composerSeparatorText(
+  elements: SectionBoundaryElement[],
+  position: 'before' | 'after'
+): string {
+  const payload = elements
+    .map((element) => (element === 'page_break' ? '\f' : ''))
+    .join('\n');
+  return position === 'before' ? `${payload}\n` : `\n${payload}`;
+}
+
+function composerUnitBlockCount(unit: ComposerUnit): number {
+  if (unit.kind === 'text') return unit.items.length;
+  if (unit.kind === 'separator') return unit.elements.length;
+  return 1;
+}
+
+interface ComposerInsertionBoundary {
+  target: FlatBlock;
+  position: 'before' | 'after';
+  /**
+   * Set ONLY when the anchor NAMED a section (`before:`/`after:<heading>`).
+   * Naming a section states the family explicitly - "a peer of that one" - and
+   * that statement outranks whatever the resolved insertion point sits inside.
+   * A live block anchor states a POSITION instead, and the family is then
+   * derived from the position; see `joinedSectionFamilyAnchor`.
+   */
+  familyAnchor?: string;
+}
+
+interface ComposerSectionMapEntry {
+  heading: FlatBlock;
+  start: number;
+  end: number;
+}
+
+interface NamedComposerSectionTarget {
+  name: string;
+  position: 'before' | 'after';
+}
+
+function composerSectionName(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/^the\s+/, '')
+    .replace(/\s+section$/, '')
+    .trim();
+}
+
+function namedComposerSectionTarget(
+  anchor: string
+): NamedComposerSectionTarget | undefined {
+  const match = anchor.match(/^\s*(before|after)\s*:\s*(.+?)\s*$/i);
+  if (!match?.[2]) return undefined;
+  return {
+    position: match[1].toLowerCase() as 'before' | 'after',
+    name: match[2]
+  };
+}
+
+/**
+ * Section-authoring map, derived exclusively from real heading blocks. Empty
+ * styled headings are layout placeholders and never become sections or split
+ * one section from its content.
+ */
+function composerSectionMap(blocks: FlatBlock[]): ComposerSectionMapEntry[] {
+  const headings = blocks
+    .map((heading, start) => ({ heading, start }))
+    .filter(
+      ({ heading }) =>
+        heading.isHeading && !!heading.text.replace(/\f/g, '').trim()
+    );
+  return headings.map(({ heading, start }, headingIndex) => {
+    const next = headings
+      .slice(headingIndex + 1)
+      .find((candidate) => candidate.heading.level <= heading.level);
+    return {
+      heading,
+      start,
+      end: next?.start ?? blocks.length
+    };
+  });
+}
+
+function composerSectionCandidate(
+  entry: ComposerSectionMapEntry,
+  entries: ComposerSectionMapEntry[]
+): string {
+  const parent = [...entries]
+    .reverse()
+    .find(
+      (candidate) =>
+        candidate.start < entry.start &&
+        candidate.end > entry.start &&
+        candidate.heading.level < entry.heading.level
+    );
+  return `${JSON.stringify(entry.heading.text)} at ${entry.heading.anchor}${
+    parent ? ` under ${JSON.stringify(parent.heading.text)}` : ''
+  }`;
+}
+
+function matchingComposerSections(
+  entries: ComposerSectionMapEntry[],
+  requestedName: string
+): ComposerSectionMapEntry[] {
+  const requested = composerSectionName(requestedName);
+  if (!requested) return [];
+  const exact = entries.filter(
+    (entry) => composerSectionName(entry.heading.text) === requested
+  );
+  if (exact.length) return exact;
+  return entries.filter((entry) => {
+    const candidate = composerSectionName(entry.heading.text);
+    if (!candidate) return false;
+    return candidate.includes(requested) || requested.includes(candidate);
+  });
+}
+
+function bodyBlockNumber(block: FlatBlock): number | undefined {
+  const parts = block.anchor.split(';');
+  const number = Number(parts[1]);
+  return Number.isInteger(number) ? number : undefined;
+}
+
+function boundaryAfterComposerSection(
+  blocks: FlatBlock[],
+  entry: ComposerSectionMapEntry
+): ComposerInsertionBoundary | undefined {
+  const section = Number(entry.heading.anchor.split(';')[0]);
+  const represented = blocks
+    .slice(entry.start, entry.end)
+    .filter((block) => Number(block.anchor.split(';')[0]) === section);
+  const finalContentBlock = represented.reduce<number | undefined>(
+    (latest, block) => {
+      if (boundaryElement(block)) return latest;
+      const number = bodyBlockNumber(block);
+      return number === undefined || (latest !== undefined && latest > number)
+        ? latest
+        : number;
+    },
+    undefined
+  );
+  if (finalContentBlock !== undefined) {
+    const paragraph = represented.find(
+      (block) =>
+        block.anchor.split(';').length === 2 &&
+        bodyBlockNumber(block) === finalContentBlock &&
+        !boundaryElement(block)
+    );
+    if (paragraph) return { target: paragraph, position: 'after' };
+  }
+
+  // A table has no public top-level anchor. When it is the last content block,
+  // compose before the next real heading; never promote an empty paragraph or
+  // page-break decoration into a content identity merely because it is nearby.
+  const nextHeading = blocks[entry.end];
+  if (nextHeading?.isHeading && nextHeading.text.replace(/\f/g, '').trim())
+    return { target: nextHeading, position: 'before' };
+  return undefined;
+}
+
+function boundaryForComposerSection(
+  blocks: FlatBlock[],
+  entry: ComposerSectionMapEntry,
+  position: 'before' | 'after'
+): ComposerInsertionBoundary | undefined {
+  return position === 'before'
+    ? { target: entry.heading, position: 'before' }
+    : boundaryAfterComposerSection(blocks, entry);
+}
+
+/**
+ * The sibling family a composed section JOINS, for an anchor that states a
+ * POSITION rather than naming a section.
+ *
+ * A section map entry is a candidate when the insertion point falls anywhere in
+ * `[start, end]` - which is one predicate covering the three ways a section can
+ * be adjacent to that point, at any depth:
+ *   - it ENDS there: the insertion appends after that section, so it is the
+ *     preceding sibling of the unit being composed;
+ *   - it STARTS there: the insertion prepends before it, so it is the following
+ *     sibling (the first-child case);
+ *   - it spans the point: the insertion lands inside it, so it is the parent
+ *     and its own family is the one being joined.
+ * The DEEPEST candidate wins, because a deeper family is by definition nested
+ * inside the shallower ones and is therefore the closest fit; equal depths
+ * prefer the sibling that precedes the insertion point.
+ *
+ * The block the insertion DISPLACES is not, on its own, evidence. Appending a
+ * subsection at the end of a parent section puts the next parent-level heading
+ * immediately after it, and that heading opens a SHALLOWER family - it loses to
+ * the subsection that ends at the same point, which is what stops a subsection
+ * being dressed as a top-level section.
+ *
+ * The spec's own structure bounds the answer: a section declaring subsections
+ * at level L cannot itself be at level L or deeper, so candidates that could
+ * not contain the spec's own headings are excluded. That is what keeps a full
+ * section (title + subsections) composed at a section boundary a section, while
+ * a bare title + table composed at the same boundary joins the subsections.
+ *
+ * Undefined when the insertion point is adjacent to no section at all; the
+ * caller then keeps the resolved target as the reference, as it always was.
+ */
+function joinedSectionFamilyAnchor(
+  blocks: FlatBlock[],
+  target: FlatBlock,
+  position: 'before' | 'after',
+  spec: SectionComposerSpec
+): string | undefined {
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (targetIndex < 0) return undefined;
+  const insertion = position === 'after' ? targetIndex + 1 : targetIndex;
+  const declaredLevels = spec.blocks
+    .filter(
+      (block): block is SectionComposerBlock & { role: 'heading' } =>
+        block.role === 'heading'
+    )
+    .map((block) => block.level)
+    .filter((level): level is number => typeof level === 'number');
+  const shallowestDeclared = declaredLevels.length
+    ? Math.min(...declaredLevels)
+    : Number.POSITIVE_INFINITY;
+  const candidates = composerSectionMap(blocks).filter(
+    (entry) =>
+      entry.start <= insertion &&
+      entry.end >= insertion &&
+      entry.heading.level < shallowestDeclared
+  );
+  const selected = candidates.reduce<ComposerSectionMapEntry | undefined>(
+    (best, entry) => {
+      if (!best || entry.heading.level > best.heading.level) return entry;
+      if (entry.heading.level < best.heading.level) return best;
+      // Same depth: the sibling that ends at the insertion point precedes it.
+      return best.end === insertion ? best : entry;
+    },
+    undefined
+  );
+  return selected?.heading.anchor;
+}
+
+function composerBodyBlocksInSection(
+  blocks: FlatBlock[],
+  section: number
+): FlatBlock[] {
+  return blocks.filter((block) => {
+    const parts = block.anchor.split(';');
+    return parts.length === 2 && Number(parts[0]) === section;
+  });
+}
+
+function composerBoundaryBesideBlock(
+  bodyBlocks: FlatBlock[],
+  block: number,
+  position: 'before' | 'after'
+): ComposerInsertionBoundary | undefined {
+  const indexed = bodyBlocks
+    .map((target) => ({
+      target,
+      block: Number(target.anchor.split(';')[1])
+    }))
+    .filter(
+      (candidate) =>
+        Number.isInteger(candidate.block) && !boundaryElement(candidate.target)
+    );
+  const following = indexed
+    .filter((candidate) => candidate.block > block)
+    .sort((left, right) => left.block - right.block)[0]?.target;
+  const preceding = indexed
+    .filter((candidate) => candidate.block < block)
+    .sort((left, right) => right.block - left.block)[0]?.target;
+  if (position === 'after') {
+    if (following)
+      return {
+        target: following,
+        position: 'before'
+      };
+    if (preceding)
+      return {
+        target: preceding,
+        position: 'after'
+      };
+  } else {
+    if (preceding)
+      return {
+        target: preceding,
+        position: 'after'
+      };
+    if (following)
+      return {
+        target: following,
+        position: 'before'
+      };
+  }
+  return undefined;
+}
+
+function resolveComposerInsertionBoundary(
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  anchor: string,
+  requestedPosition: 'before' | 'after',
+  positionWasExplicit: boolean
+): ComposerInsertionBoundary | undefined {
+  const sectionMap = composerSectionMap(blocks);
+  const named = namedComposerSectionTarget(anchor);
+  if (named) {
+    if (positionWasExplicit && requestedPosition !== named.position)
+      sectionSpecError(
+        'section_target_position_conflict',
+        'entry point',
+        `${JSON.stringify(anchor)} says ${
+          named.position
+        }, while position says ${requestedPosition}.`,
+        [
+          `section-map target: ${named.position}:${named.name}`,
+          `explicit position: ${requestedPosition}`
+        ]
+      );
+    const matches = matchingComposerSections(sectionMap, named.name);
+    if (matches.length > 1)
+      sectionSpecError(
+        'section_target_ambiguous',
+        'entry point',
+        `${JSON.stringify(named.name)} matched ${
+          matches.length
+        } section headings. Ask one question choosing between the concrete candidates below; no manual placement is needed.`,
+        matches.map((entry) => composerSectionCandidate(entry, sectionMap))
+      );
+    if (!matches.length)
+      sectionSpecError(
+        'section_target_not_found',
+        'entry point',
+        `the section map did not contain a heading matching ${JSON.stringify(
+          named.name
+        )}.`,
+        [
+          `tried: ${named.position} the named section heading and its structural boundary`,
+          `available section headings: ${
+            sectionMap
+              .map((entry) => composerSectionCandidate(entry, sectionMap))
+              .join('; ') || '(none)'
+          }`
+        ]
+      );
+    const resolved = boundaryForComposerSection(
+      blocks,
+      matches[0],
+      named.position
+    );
+    if (!resolved)
+      sectionSpecError(
+        'section_boundary_unavailable',
+        'entry point',
+        `resolved ${named.position}:${named.name} in the section map, but its structural edge had no body insertion surface.`,
+        [
+          `matched section: ${composerSectionCandidate(
+            matches[0],
+            sectionMap
+          )}`,
+          'tried: the section heading, the block after its last content, and a following empty body paragraph'
+        ]
+      );
+    // Naming the section states the family; see ComposerInsertionBoundary.
+    return { ...resolved, familyAnchor: matches[0].heading.anchor };
+  }
+
+  const exact = byAnchor.get(anchor);
+  const exactSection = exact?.isHeading
+    ? sectionMap.find((entry) => entry.heading.anchor === exact.anchor)
+    : undefined;
+  if (exactSection) {
+    const resolved = boundaryForComposerSection(
+      blocks,
+      exactSection,
+      requestedPosition
+    );
+    if (resolved) return resolved;
+  }
+  if (exact && exact.kind !== 'table_cell') {
+    if (!exact.text.replace(/\f/g, '').trim()) {
+      const exactIndex = blocks.findIndex(
+        (candidate) => candidate.anchor === exact.anchor
+      );
+      const followingSection = sectionMap.find(
+        (entry) => entry.start > exactIndex
+      );
+      if (followingSection)
+        return { target: followingSection.heading, position: 'before' };
+      const preceding = [...blocks.slice(0, exactIndex)]
+        .reverse()
+        .find(
+          (candidate) =>
+            candidate.kind !== 'table_cell' &&
+            !!candidate.text.replace(/\f/g, '').trim()
+        );
+      if (preceding) return { target: preceding, position: 'after' };
+    }
+    return {
+      target: exact,
+      position: requestedPosition
+    };
+  }
+
+  const parts = anchor.split(';');
+  const section = Number(parts[0]);
+  const block = Number(parts[1]);
+  if (!Number.isInteger(section) || !Number.isInteger(block)) return undefined;
+  const bodyBlocks = composerBodyBlocksInSection(blocks, section);
+  if (!bodyBlocks.length) return undefined;
+
+  // A table has no public body-block anchor, while every cell names its
+  // containing top-level block. Treat either a cell or that otherwise-missing
+  // top-level address as the same structural boundary and manufacture a body
+  // insertion point immediately beside it.
+  const containsTable = blocks.some((candidate) => {
+    const candidateParts = candidate.anchor.split(';');
+    return (
+      candidate.kind === 'table_cell' &&
+      Number(candidateParts[0]) === section &&
+      Number(candidateParts[1]) === block
+    );
+  });
+  if (exact?.kind === 'table_cell' || containsTable)
+    return composerBoundaryBesideBlock(bodyBlocks, block, requestedPosition);
+
+  const indexed = bodyBlocks
+    .map((target) => ({
+      target,
+      block: Number(target.anchor.split(';')[1])
+    }))
+    .filter(
+      (candidate) =>
+        Number.isInteger(candidate.block) && !boundaryElement(candidate.target)
+    );
+  if (requestedPosition === 'before') {
+    const following = indexed
+      .filter((candidate) => candidate.block >= block)
+      .sort((left, right) => left.block - right.block)[0]?.target;
+    if (following)
+      return {
+        target: following,
+        position: 'before'
+      };
+  } else {
+    const preceding = indexed
+      .filter((candidate) => candidate.block <= block)
+      .sort((left, right) => right.block - left.block)[0]?.target;
+    if (preceding)
+      return {
+        target: preceding,
+        position: 'after'
+      };
+  }
+  return composerBoundaryBesideBlock(bodyBlocks, block, requestedPosition);
+}
+
+/** The composer's table donor: the resolver's answer, as a first-cell block. */
+function composerTableDonor(
+  resolver: CreationAppearanceResolver,
+  evidence: SectionFamilyEvidence | undefined,
+  familyAnchor: string,
+  ordinal: number,
+  anchorNamesMember: boolean,
+  byAnchor: Map<string, FlatBlock>,
+  label: string,
+  gaps: CreationGap[]
+): FlatBlock | undefined {
+  const outcome = resolver.table({
+    at: familyAnchor,
+    ordinal,
+    anchorNamesMember,
+    ...(evidence ? { family: evidence } : {})
+  });
+  if (!outcome.resolved) {
+    gaps.push(creationGap(label, outcome));
+    return undefined;
+  }
+  const firstCell = byAnchor.get(`${outcome.value.anchor};0;0;0`);
+  if (firstCell) return firstCell;
+  gaps.push(
+    creationGap(label, {
+      reason: 'the donor table exposed no addressable first cell',
+      searched: [outcome.value.anchor]
+    })
+  );
+  return undefined;
+}
+
+function compileSectionComposer(
+  op: EditOp,
+  originalIndex: number,
+  blocks: FlatBlock[],
+  byAnchor: Map<string, FlatBlock>,
+  sfdt: any
+): {
+  children: CompiledSectionEdit[];
+  contentBlocks: number;
+  tables: number;
+  inheritance: ComposedSectionInheritance;
+} {
+  const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
+  const positionValue = String(op.position ?? 'before').toLowerCase();
+  if (positionValue !== 'before' && positionValue !== 'after')
+    sectionSpecError(
+      'invalid_section_position',
+      'position',
+      `must be "before" or "after", not ${JSON.stringify(op.position)}.`
+    );
+  const requestedPosition = positionValue as 'before' | 'after';
+  const boundary = anchor
+    ? resolveComposerInsertionBoundary(
+        blocks,
+        byAnchor,
+        anchor,
+        requestedPosition,
+        op.position !== undefined
+      )
+    : undefined;
+  if (!boundary)
+    sectionSpecError(
+      'section_anchor_not_found',
+      'anchor',
+      `could not resolve a structural body boundary near ${JSON.stringify(
+        anchor || op.anchor
+      )}.`,
+      [
+        `tried: an exact body anchor, a table boundary, and the document section map (${
+          composerSectionMap(blocks).length
+        } named headings)`
+      ]
+    );
+  const resolvedTarget = boundary.target;
+  let position = boundary.position;
+  const resolvedParts = resolvedTarget.anchor.split(';');
+  const resolvedBlockIndex = Number(resolvedParts[1]);
+  const needsSeedAnchor =
+    position === 'after' &&
+    resolvedParts.length === 2 &&
+    Number.isInteger(resolvedBlockIndex) &&
+    !blocks.some((block) => {
+      const parts = block.anchor.split(';');
+      return (
+        parts[0] === resolvedParts[0] &&
+        Number(parts[1]) === resolvedBlockIndex + 1
+      );
+    });
+  // At the end of a story there is no public body block on the far side of
+  // the structural boundary. Split the final paragraph once to create that
+  // body insertion surface, then compose before it in the same revision group.
+  // The paragraph starts empty; no placeholder/content identity participates.
+  const target: FlatBlock = needsSeedAnchor
+    ? {
+        ...resolvedTarget,
+        anchor: `${resolvedParts[0]};${resolvedBlockIndex + 1}`,
+        kind: 'paragraph',
+        text: '',
+        length: 0,
+        isHeading: false,
+        level: -1
+      }
+    : resolvedTarget;
+  if (needsSeedAnchor) position = 'before';
+  const spec = validatedSectionSpec(op.sectionSpec);
+  const group =
+    typeof op.group === 'string'
+      ? op.group
+      : `__insert_section_${originalIndex + 1}`;
+  // A NAMED section states a boundary to compose beside; a derived one names
+  // the family MEMBER being joined. The two select different authoring
+  // examples, so the composer says which it has rather than leaving the unit
+  // selection to guess. See nearestUnitIndex.
+  const joinedFamilyAnchor = boundary.familyAnchor
+    ? undefined
+    : joinedSectionFamilyAnchor(
+        blocks,
+        resolvedTarget,
+        boundary.position,
+        spec
+      );
+  const familyAnchorNamesMember = !!joinedFamilyAnchor;
+  const familyAnchor =
+    boundary.familyAnchor ?? joinedFamilyAnchor ?? resolvedTarget.anchor;
+  const evidence = deriveSectionFamilyEvidence(
+    blocks,
+    familyAnchor,
+    familyAnchorNamesMember
+  );
+  const familyBoundary = evidence
+    ? sectionBoundaryPattern(blocks, evidence.units).separator
+    : undefined;
+  const desiredBoundary =
+    evidence &&
+    evidence.units.length >= 2 &&
+    familyBoundary &&
+    familyBoundary.confidence.level !== 'low'
+      ? familyBoundary.value
+      : [];
+  const beforeExisting = adjacentSectionSeparators(blocks, resolvedTarget, -1);
+  const afterExisting = adjacentSectionSeparators(blocks, resolvedTarget, 1);
+  // Separators are decorations around the insertion point, never mutation
+  // anchors. Mirror only the missing part of the sibling convention on each
+  // side; an existing page boundary may be longer than that convention.
+  const leadingBoundary = missingSectionSuffix(desiredBoundary, beforeExisting);
+  let trailingBoundary = missingSectionPrefix(desiredBoundary, afterExisting);
+  if (
+    needsSeedAnchor &&
+    trailingBoundary[trailingBoundary.length - 1] === 'empty_paragraph'
+  )
+    trailingBoundary = trailingBoundary.slice(0, -1);
+  const observedSubsectionBoundary = evidence
+    ? subsectionBoundaryPattern(evidence.units)
+    : undefined;
+  const desiredSubsectionBoundary =
+    evidence &&
+    evidence.units.length >= 2 &&
+    observedSubsectionBoundary &&
+    observedSubsectionBoundary.confidence.level !== 'low'
+      ? observedSubsectionBoundary.value
+      : [];
+
+  const contentUnits: ComposerUnit[] = [];
+  let textItems: ComposerTextItem[] = [];
+  let seenSubsection = false;
+  let tableOrdinal = 0;
+  const flushText = () => {
+    if (!textItems.length) return;
+    contentUnits.push({
+      kind: 'text',
+      items: textItems,
+      label: textItems.map((item) => item.label).join(' + ')
+    });
+    textItems = [];
+  };
+  const resolver = creationAppearance(blocks, sfdt, byAnchor);
+  const gaps: CreationGap[] = [];
+  const donorFor = (
+    role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>,
+    label: string,
+    level?: number
+  ): FlatBlock | undefined => {
+    const outcome = resolver.role(evidence, role, {
+      at: familyAnchor,
+      ...(level !== undefined ? { level } : {})
+    });
+    if (outcome.resolved) return outcome.value;
+    gaps.push(creationGap(label, outcome));
+    return undefined;
+  };
+  textItems.push({
+    text: spec.title,
+    label: 'title',
+    source: donorFor('section_heading', 'title')
+  });
+  spec.blocks.forEach((block, blockIndex) => {
+    const label = `block ${blockIndex + 1} (${block.role})`;
+    if (block.role === 'heading') {
+      if (seenSubsection && desiredSubsectionBoundary.length) {
+        flushText();
+        contentUnits.push({
+          kind: 'separator',
+          elements: desiredSubsectionBoundary,
+          label: 'inherited sibling-family subsection boundary'
+        });
+      }
+      seenSubsection = true;
+      textItems.push({
+        text: block.text,
+        label,
+        source: donorFor('subsection_heading', label, block.level)
+      });
+      return;
+    }
+    if (block.role === 'paragraph') {
+      textItems.push({
+        text: block.text,
+        label,
+        source: donorFor(
+          seenSubsection ? 'subsection_paragraph' : 'intro_paragraph',
+          label
+        )
+      });
+      return;
+    }
+    flushText();
+    contentUnits.push({
+      kind: 'table',
+      table: block,
+      blockIndex,
+      ordinal: tableOrdinal,
+      source: composerTableDonor(
+        resolver,
+        evidence,
+        familyAnchor,
+        tableOrdinal,
+        familyAnchorNamesMember,
+        byAnchor,
+        label,
+        gaps
+      ),
+      label
+    });
+    tableOrdinal++;
+  });
+  flushText();
+
+  // Word coalesces adjacent top-level tables into one grid. A paragraph is a
+  // storage-topology separator, not a visual style or document-specific shape.
+  const separatedContent: ComposerUnit[] = [];
+  for (const unit of contentUnits) {
+    if (
+      unit.kind === 'table' &&
+      separatedContent[separatedContent.length - 1]?.kind === 'table'
+    )
+      separatedContent.push({
+        kind: 'separator',
+        elements: ['empty_paragraph'],
+        label: 'required separator between adjacent tables'
+      });
+    separatedContent.push(unit);
+  }
+
+  const finalUnits: ComposerUnit[] = [
+    ...(leadingBoundary.length
+      ? [
+          {
+            kind: 'separator' as const,
+            elements: leadingBoundary,
+            label: 'leading sibling-family boundary'
+          }
+        ]
+      : []),
+    ...separatedContent,
+    ...(trailingBoundary.length
+      ? [
+          {
+            kind: 'separator' as const,
+            elements: trailingBoundary,
+            label: 'trailing sibling-family boundary'
+          }
+        ]
+      : [])
+  ];
+  // Plan paragraph destinations from the COMPLETE final topology. Inserting
+  // several units `after` one stable anchor necessarily pushes earlier units
+  // forward, so a creator-time anchor is stale by the end. These final anchors
+  // are the same perimeter/topology evidence phase 3 verifies after every
+  // structural write has landed.
+  const anchorParts = target.anchor.split(';');
+  const targetBlockIndex = Number(anchorParts[1]);
+  let finalBlockOffset = position === 'after' ? 1 : 0;
+  if (anchorParts.length === 2 && Number.isInteger(targetBlockIndex))
+    finalUnits.forEach((unit) => {
+      if (unit.kind === 'text') {
+        unit.items.forEach((item, index) => {
+          item.finalAnchor = `${anchorParts[0]};${
+            targetBlockIndex + finalBlockOffset + index
+          }`;
+        });
+        finalBlockOffset += unit.items.length;
+      } else if (unit.kind === 'separator') {
+        finalBlockOffset += unit.elements.length;
+      } else {
+        finalBlockOffset++;
+      }
+    });
+  const structuralOrder =
+    position === 'before' ? finalUnits : [...finalUnits].reverse();
+  const structural: CompiledSectionEdit[] = needsSeedAnchor
+    ? [
+        {
+          label: 'created structural seed anchor',
+          edit: {
+            op: 'insert_text',
+            group,
+            anchor: resolvedTarget.anchor,
+            position: 'after',
+            text: '\n',
+            __suppressSectionBoundary: true
+          }
+        }
+      ]
+    : [];
+  const formatting: CompiledSectionEdit[] = [];
+  let insertedBeforeBoundary = 0;
+  structuralOrder.forEach((unit, unitIndex) => {
+    const sectionBoundaryAnchor =
+      position === 'before' &&
+      anchorParts.length === 2 &&
+      Number.isInteger(targetBlockIndex)
+        ? `${anchorParts[0]};${targetBlockIndex + insertedBeforeBoundary}`
+        : target.anchor;
+    if (unit.kind === 'table') {
+      const cells = [
+        [...unit.table.table.columnHeaders],
+        ...unit.table.table.rows.map((row) => [...row])
+      ];
+      structural.push({
+        label: unit.label,
+        edit: {
+          op: 'insert_table',
+          group,
+          anchor: resolvedTarget.anchor,
+          position,
+          __sectionBoundaryAnchor: sectionBoundaryAnchor,
+          rows: cells.length,
+          columns: unit.table.table.columnHeaders.length,
+          initialCells: cells,
+          // The table's citation rides on the op that writes the cells, so the
+          // matrix and the source it was transcribed from reach the provenance
+          // gate together.
+          ...(unit.table.table.sourcedFrom
+            ? { sourcedFrom: unit.table.table.sourcedFrom }
+            : {}),
+          ...(unit.source ? { inheritFormatFrom: unit.source.anchor } : {})
+        }
+      });
+      if (position === 'before')
+        insertedBeforeBoundary += composerUnitBlockCount(unit);
+      return;
+    }
+    const creatorId = `section-${originalIndex + 1}-unit-${unitIndex + 1}`;
+    const isSeparator = unit.kind === 'separator';
+    structural.push({
+      label: unit.label,
+      edit: {
+        op: 'insert_text',
+        group,
+        anchor: resolvedTarget.anchor,
+        position,
+        __sectionBoundaryAnchor: sectionBoundaryAnchor,
+        text: isSeparator
+          ? composerSeparatorText(unit.elements, position)
+          : unit.items.map((item) => item.text).join('\n'),
+        __sectionCreatorId: creatorId,
+        __suppressSectionBoundary: true
+      }
+    });
+    if (position === 'before')
+      insertedBeforeBoundary += composerUnitBlockCount(unit);
+    if (isSeparator) return;
+    unit.items.forEach((item, segmentIndex) => {
+      if (!item.source) return;
+      formatting.push({
+        label: item.label,
+        edit: {
+          op: 'apply_style',
+          group,
+          anchor: resolvedTarget.anchor,
+          expect: item.text,
+          inheritFormatFrom: item.source.anchor,
+          __sectionCreatorId: creatorId,
+          __sectionSegmentIndex: segmentIndex,
+          ...(item.finalAnchor
+            ? { __sectionFinalAnchor: item.finalAnchor }
+            : {})
+        }
+      });
+    });
+  });
+  const donors: ComposedSectionInheritance['donors'] = [];
+  for (const unit of finalUnits) {
+    if (unit.kind === 'text')
+      unit.items.forEach(
+        (item) =>
+          item.source &&
+          donors.push({ unit: item.label, from: item.source.anchor })
+      );
+    else if (unit.kind === 'table' && unit.source)
+      donors.push({ unit: unit.label, from: unit.source.anchor });
+  }
+  return {
+    children: [...structural, ...formatting],
+    contentBlocks: spec.blocks.length + 1,
+    tables: tableOrdinal,
+    inheritance: {
+      familyAnchor,
+      ...(evidence ? { level: evidence.level } : {}),
+      siblings: evidence?.units.length ?? 0,
+      donors,
+      ...(gaps.length ? { withoutDonor: gaps } : {})
+    }
+  };
+}
+
+function expandSectionComposerEdits(
+  editor: LiveEditor,
+  input: { edits: EditOp[]; changeSetId?: string; plan?: string }
+): SectionExpansion {
+  const requested = Array.isArray(input?.edits) ? input.edits : [];
+  const changed = requested.some((op) => op?.op === 'insert_section');
+  if (!changed)
+    return {
+      edits: requested,
+      entries: requested.map((original, originalIndex) => ({
+        originalIndex,
+        original,
+        start: originalIndex,
+        count: 1,
+        labels: [original.op],
+        section: false,
+        contentBlocks: 0,
+        tables: 0
+      })),
+      expandedToOriginal: requested.map((_op, index) => index),
+      changed: false
+    };
+
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
+  const edits: EditOp[] = [];
+  const entries: SectionExpansionEntry[] = [];
+  const expandedToOriginal: number[] = [];
+  requested.forEach((original, originalIndex) => {
+    const start = edits.length;
+    if (original?.op !== 'insert_section') {
+      edits.push(original);
+      expandedToOriginal.push(originalIndex);
+      entries.push({
+        originalIndex,
+        original,
+        start,
+        count: 1,
+        labels: [original?.op ?? 'edit'],
+        section: false,
+        contentBlocks: 0,
+        tables: 0
+      });
+      return;
+    }
+    // The high-level op crosses the registry-exhaustive common guard even
+    // though its compiled children perform the actual mutations below.
+    observeMutationGuardBoundary(original, 'block_expect');
+    let compiled:
+      | {
+          children: CompiledSectionEdit[];
+          contentBlocks: number;
+          tables: number;
+          inheritance?: ComposedSectionInheritance;
+        }
+      | undefined;
+    try {
+      compiled = compileSectionComposer(
+        original,
+        originalIndex,
+        blocks,
+        byAnchor,
+        sfdt
+      );
+    } catch (error) {
+      const refusal = isOpError(error)
+        ? {
+            code: error.code,
+            message: error.message,
+            ...(error.details ? { details: error.details } : {})
+          }
+        : {
+            code: 'section_compile_failed',
+            message:
+              'insert_section could not compile the supplied semantic section; nothing was written.',
+            details: [describeUnexpectedError(error)]
+          };
+      compiled = {
+        inheritance: undefined,
+        children: [
+          {
+            edit: {
+              ...original,
+              // A semantic target such as `before:Premium Summary` is not a
+              // live block anchor. Route compile-time refusals through one
+              // harmless real body anchor so the typed handler can surface
+              // the precise section-map diagnosis before generic anchor
+              // preflight has a chance to replace it with anchor_not_found.
+              anchor:
+                blocks.find((block) => block.kind !== 'table_cell')?.anchor ??
+                original.anchor,
+              __sectionRefusal: refusal
+            },
+            label: 'sectionSpec'
+          }
+        ],
+        contentBlocks: 0,
+        tables: 0
+      };
+    }
+    for (const child of compiled.children) {
+      edits.push(child.edit);
+      expandedToOriginal.push(originalIndex);
+    }
+    entries.push({
+      originalIndex,
+      original,
+      start,
+      count: compiled.children.length,
+      labels: compiled.children.map((child) => child.label),
+      section: true,
+      contentBlocks: compiled.contentBlocks,
+      tables: compiled.tables,
+      ...(compiled.inheritance ? { inheritance: compiled.inheritance } : {})
+    });
+  });
+  return { edits, entries, expandedToOriginal, changed: true };
+}
+
+function combinedComposerAppearance(
+  results: EditResult[]
+): AppearanceWriteReport | undefined {
+  const reports = results
+    .map((result) => result.appearance)
+    .filter((report): report is AppearanceWriteReport => !!report);
+  if (!reports.length) return undefined;
+  return reports.reduce<AppearanceWriteReport>(
+    (combined, report) => ({
+      cellsWritten: combined.cellsWritten + report.cellsWritten,
+      rowsWritten: combined.rowsWritten + report.rowsWritten,
+      cellsUnchanged: combined.cellsUnchanged + report.cellsUnchanged,
+      ...((combined.rowsSkippedMixed ?? 0) + (report.rowsSkippedMixed ?? 0) > 0
+        ? {
+            rowsSkippedMixed:
+              (combined.rowsSkippedMixed ?? 0) + (report.rowsSkippedMixed ?? 0)
+          }
+        : {}),
+      ...(report.banding
+        ? { banding: report.banding }
+        : combined.banding
+        ? { banding: combined.banding }
+        : {}),
+      ...(report.sourceStyleName
+        ? { sourceStyleName: report.sourceStyleName }
+        : combined.sourceStyleName
+        ? { sourceStyleName: combined.sourceStyleName }
+        : {})
+    }),
+    { cellsWritten: 0, rowsWritten: 0, cellsUnchanged: 0 }
+  );
+}
+
+/** Codes that say "a sibling failed", never why this op did. */
+const GENERIC_GROUP_FAILURES = new Set([
+  'change_set_failed',
+  'change_set_preflight_failed'
+]);
+
+function collapseSectionComposerResult(
+  result: ApplyEditsResult,
+  expansion: SectionExpansion
+): ApplyEditsResult {
+  if (!expansion.changed) return result;
+  const results = expansion.entries.map((entry) => {
+    const children = result.results.slice(
+      entry.start,
+      entry.start + entry.count
+    );
+    if (!entry.section) return children[0];
+    // A batch-level refusal names ONE child and every sibling carries a generic
+    // group code, so the child that failed for a reason is the one to report -
+    // otherwise a composed section is refused as `change_set_preflight_failed`
+    // with no reason attached, and the refusal cannot be acted on.
+    const failedIndex = children.findIndex(
+      (child) => !child.ok && !GENERIC_GROUP_FAILURES.has(String(child.error))
+    );
+    const fallbackFailure = children.findIndex((child) => !child.ok);
+    const failureAt = failedIndex >= 0 ? failedIndex : fallbackFailure;
+    if (failureAt >= 0) {
+      const child = children[failureAt];
+      const label = entry.labels[failureAt] ?? 'sectionSpec';
+      return {
+        ok: false,
+        op: 'insert_section',
+        ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
+        error: child.error ?? 'section_assembly_failed',
+        message: `insert_section failed at ${label}: ${
+          child.message ?? 'the engine refused this block'
+        }`,
+        details: [
+          `failing section component: ${label}`,
+          ...(child.details ?? [])
+        ],
+        ...(child.retry ? { retry: child.retry } : {})
+      } as EditResult;
+    }
+    const appearance = combinedComposerAppearance(children);
+    return {
+      ok: true,
+      op: 'insert_section',
+      ...(entry.original.anchor ? { anchor: entry.original.anchor } : {}),
+      ...(appearance ? { appearance } : {}),
+      ...(entry.inheritance ? { inherited: entry.inheritance } : {})
+    } as EditResult;
+  });
+  const changeSet = result.changeSet
+    ? {
+        ...result.changeSet,
+        groups: result.changeSet.groups.map((group) => ({
+          ...group,
+          opIndices: Array.from(
+            new Set(
+              group.opIndices.map(
+                (index) => expansion.expandedToOriginal[index] ?? index
+              )
+            )
+          )
+        })),
+        announcement: `${
+          result.changeSet.announcement
+        } The engine also assembled ${expansion.entries
+          .filter((entry) => entry.section)
+          .map(
+            (entry) =>
+              `${entry.contentBlocks} semantic blocks and ${
+                entry.tables
+              } tables at ${entry.original.anchor ?? '(missing anchor)'}`
+          )
+          .join('; ')}.`
+      }
+    : undefined;
+  return {
+    ...result,
+    results,
+    ...(changeSet ? { changeSet } : {})
+  };
+}
+
 // Applies a logical change set in deterministic phases. We preflight only the
 // relevant anchors, re-resolve them after structural writes, and verify only
 // each affected source/target pair; a large document never needs a full result
@@ -6360,6 +15026,25 @@ function detectUnannouncedChain(
 export function applyDocumentEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
+): ApplyEditsResult {
+  const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
+  return withSilentEditSelections(editor, () =>
+    withSerializationTiming(editor, serializationTiming, () => {
+      const expansion = expandSectionComposerEdits(editor, input);
+      const result = applyDocumentEditsMeasured(
+        editor,
+        { ...input, edits: expansion.edits },
+        serializationTiming
+      );
+      return collapseSectionComposerResult(result, expansion);
+    })
+  );
+}
+
+function applyDocumentEditsMeasured(
+  editor: LiveEditor,
+  input: { edits: EditOp[]; changeSetId?: string; plan?: string },
+  serializationTiming: SerializationTiming
 ): ApplyEditsResult {
   const edits = Array.isArray(input?.edits) ? input.edits : [];
   const results: Array<EditResult | undefined> = new Array(edits.length);
@@ -6372,9 +15057,12 @@ export function applyDocumentEdits(
   // What the engine, reading the ops, says this change set does. Always
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
-  const announcement = describeChangeSetTouches(columnTouches);
+  const announcement = describeChangeSet(edits, columnTouches);
   const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
+  // enableTrackChanges flips to true only inside the protected try below
+  // (which restores it in `finally`) - preflight here is read-only, and a
+  // serialization failure before that point must leave it exactly as found.
   // The group tag rides on SyncFusion's revision customData for the duration
   // of this change set; whatever the host set there before is restored after.
   const revisionSettings = editor.documentEditorSettings?.revisionSettings;
@@ -6394,13 +15082,97 @@ export function applyDocumentEdits(
   // Adjacent writes from different accept groups must not coalesce into one
   // revision; see installRevisionGroupIsolation. Idempotent.
   installRevisionGroupIsolation(editor);
+  // The parsed SFDT behind the current block map. Table APPEARANCE lives on
+  // cellFormat/rowFormat, which flattening drops, so the banding preserve reads
+  // it from here instead of paying a second serialize.
+  let liveSfdt: any;
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
+  const failedGroups = new Set<string>();
+  // Exact revision object membership makes per-group rollback work even in
+  // editors/test doubles which do not expose revisionSettings.customData.
+  const revisionsByAppliedGroup = new Map<string, Set<LiveRevision>>();
   const nonBlockingStoryWriteFailures = new Set<number>();
   const resolvedFormatTargets = new Map<number, FlatBlock>();
+  const composedDisagreements = new Map<number, ComposedStyleDisagreement>();
+  // Every still-applied appearance snapshot, in write order. A failed group's
+  // entries are replayed and removed without touching successful siblings.
+  const appearanceRestores: AppearanceRestore[] = [];
+  /**
+   * The paragraph style of every block a paragraph-creating op writes NEXT TO,
+   * per accept group.
+   *
+   * Rejecting an inserted paragraph mark merges two paragraphs and the survivor
+   * keeps the removed paragraph's format, which SyncFusion tracks as no revision
+   * at all - so a rejected card can leave a paragraph wearing a style it never
+   * had. Captured here, at the one boundary every op crosses, rather than in any
+   * single op: `insert_section` has the defect today and relocation only made it
+   * easy to see. An op added later is covered by construction.
+   */
+  const paragraphStylesByGroup = new Map<string, ParagraphStyleRestore[]>();
+  const recordParagraphStyles = (op: EditOp, anchors: unknown[]) => {
+    // Only ops that can create or remove a paragraph can trigger the merge.
+    if (!mayShiftAnchors(op)) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = paragraphStylesByGroup.get(id) ?? [];
+    // Each named paragraph, and the two that can end up merged with it: the one
+    // straight after it (an insert lands between them) and the one after its
+    // whole section unit (which is what a relocation's accepted delete merges
+    // into). Same `sectionUnitEnd` rule the reads and the ranges use.
+    const named = anchors.flatMap((raw) => {
+      const anchor = typeof raw === 'string' ? raw.trim() : '';
+      if (!anchor) return [];
+      const index = blocks.findIndex(
+        (candidate) => candidate.anchor === anchor
+      );
+      if (index < 0) return [anchor];
+      return [
+        anchor,
+        blocks[index + 1]?.anchor,
+        blocks[sectionUnitEnd(blocks, index)]?.anchor
+      ];
+    });
+    for (const raw of named) {
+      const anchor = typeof raw === 'string' ? raw.trim() : '';
+      if (!anchor || !/^\d+;\d+$/.test(anchor)) continue;
+      const block = byAnchor.get(anchor);
+      const styleName = block?.format?.styleName;
+      if (!block || block.kind === 'table_cell' || !styleName) continue;
+      if (bucket.some((entry) => entry.anchor === anchor)) continue;
+      bucket.push({
+        anchor,
+        styleName,
+        text: paragraphIdentityText(block.text)
+      });
+    }
+    if (bucket.length) paragraphStylesByGroup.set(id, bucket);
+  };
+  // The same snapshots split by the accept group whose op took them, so a reject
+  // of ONE grouped card puts back exactly that group's appearance and never a
+  // sibling group's. Every appearance write in this change set goes through
+  // `recordAppearanceRestores`, so neither collection can miss one.
+  const appearanceRestoresByGroup = new Map<string, AppearanceRestore[]>();
+  const recordAppearanceRestores = (
+    op: EditOp,
+    restores: AppearanceRestore[]
+  ) => {
+    if (!restores.length) return;
+    // Write order across the WHOLE change set, not within this group: it is
+    // what lets a rejected card hand its snapshot down to the sibling card that
+    // overwrote the same cell after it, instead of the two racing.
+    restores.forEach((restore, index) => {
+      restore.seq = appearanceRestores.length + index;
+    });
+    appearanceRestores.push(...restores);
+    const id = opGroupId(op, changeSetId);
+    const bucket = appearanceRestoresByGroup.get(id);
+    if (bucket) bucket.push(...restores);
+    else appearanceRestoresByGroup.set(id, [...restores]);
+  };
   let anchorsMayHaveShifted = false;
   const refresh = (serializedSfdt?: any) => {
-    const sfdt = serializedSfdt ?? parseSfdt(editor.serialize());
+    const sfdt = serializedSfdt ?? serializeSfdt(editor);
+    liveSfdt = sfdt;
     blocks = flattenSfdt(sfdt);
     byAnchor = new Map(blocks.map((block) => [block.anchor, block] as const));
     rejectStream = rejectProjectionStream(sfdt);
@@ -6424,11 +15196,92 @@ export function applyDocumentEdits(
       ...(isOpError(err) && err.retry ? { retry: err.retry } : {})
     };
   };
+  const rememberGroupRevisions = (op: EditOp, before: LiveRevision[]) => {
+    const created = createdRevisions(editor, before);
+    if (!created.length) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = revisionsByAppliedGroup.get(id) ?? new Set<LiveRevision>();
+    for (const revision of created) bucket.add(revision);
+    revisionsByAppliedGroup.set(id, bucket);
+  };
+  const markGroupFailed = (
+    groupId: string,
+    failingIndex: number,
+    disposition: 'refused' | 'rolled back'
+  ) => {
+    failedGroups.add(groupId);
+    const failure = results[failingIndex];
+    const failedOp = edits[failingIndex];
+    edits.forEach((op, index) => {
+      if (opGroupId(op, changeSetId) !== groupId || index === failingIndex)
+        return;
+      if (results[index] && !results[index]?.ok) return;
+      results[index] = {
+        ...(results[index] ?? {}),
+        ok: false,
+        op: op?.op ?? '',
+        ...(op?.anchor ? { anchor: op.anchor } : {}),
+        error: 'change_set_failed',
+        details: [
+          `Group ${JSON.stringify(groupId)} failed because edit ${
+            failingIndex + 1
+          } (${failedOp?.op ?? 'unknown op'} at ${JSON.stringify(
+            failedOp?.anchor ?? '(no anchor)'
+          )}) did not land (${
+            failure?.error ?? 'op_failed'
+          }); this sibling was ${disposition} with its group.`
+        ]
+      };
+    });
+  };
+  const rollbackGroup = (groupId: string) => {
+    const rollbackErrors: string[] = [];
+    const attempt = (work: () => void) => {
+      try {
+        work();
+      } catch (err) {
+        rollbackErrors.push(describeUnexpectedError(err));
+      }
+    };
+    const restores = appearanceRestoresByGroup.get(groupId) ?? [];
+    if (restores.length)
+      attempt(() => rollbackAppearanceWrites(editor, restores));
+    appearanceRestoresByGroup.delete(groupId);
+    if (restores.length) {
+      const owned = new Set(restores);
+      for (let index = appearanceRestores.length - 1; index >= 0; index--)
+        if (owned.has(appearanceRestores[index]))
+          appearanceRestores.splice(index, 1);
+    }
+    for (const plan of plans) {
+      if (opGroupId(plan.op, changeSetId) !== groupId) continue;
+      const target = resolvedFormatTargets.get(plan.index);
+      if (!target || !plan.targetBefore) continue;
+      const targetBefore = plan.targetBefore;
+      attempt(() => restoreCapturedFormat(editor, target, targetBefore));
+    }
+    const live = new Set(snapshotRevisions(editor));
+    const revisions = [...(revisionsByAppliedGroup.get(groupId) ?? [])].filter(
+      (revision) => live.has(revision)
+    );
+    if (revisions.length) attempt(() => rejectRevisions(revisions));
+    revisionsByAppliedGroup.delete(groupId);
+    attempt(() => refresh());
+    if (rollbackErrors.length)
+      warnings.push(
+        `group_rollback_failed: ${groupId}; ${rollbackErrors.join('; ')}`
+      );
+  };
 
   // Phase 0: what only the whole batch can show. Both of these refuse BEFORE
   // any anchor is resolved, so a refused change set costs nothing at all.
   const batchRefusal =
+    detectSentinelContent(edits) ??
     detectInconsistentAggregateRanges(edits) ??
+    detectBatchedSplits(edits) ??
+    detectEmptyInsertedTables(edits) ??
+    detectMultilineAuthoredCells(edits) ??
+    detectUnsourcedAuthoredFigures(edits) ??
     detectUnannouncedChain(edits, columnTouches, plan);
   if (batchRefusal) {
     for (const index of batchRefusal.indices) {
@@ -6448,9 +15301,14 @@ export function applyDocumentEdits(
   const hasStructuralEdits = edits.some(
     (op) => op?.op && !FORMAT_OPS.has(op.op) && !ANCHORLESS_OPS.has(op.op)
   );
-  edits.forEach((op, index) => {
+  const simulatedTextByAnchor = new Map(
+    blocks.map((block) => [block.anchor, block.text] as const)
+  );
+  edits.forEach((rawOp, index) => {
     // Already refused by a batch-level check; do not re-diagnose it.
     if (results[index]) return;
+    let op = retargetTableScopedAnchor(rawOp, byAnchor);
+    let relocated: { from: string; to: string } | undefined;
     const name = op?.op;
     if (!name) {
       results[index] = { ok: false, op: '', error: 'missing_op' };
@@ -6508,6 +15366,10 @@ export function applyDocumentEdits(
       return;
     }
     const indexedTarget = byAnchor.get(op.anchor);
+    const simulatedBlocks = withSimulatedText(blocks, simulatedTextByAnchor);
+    const simulatedByAnchor = new Map(
+      simulatedBlocks.map((block) => [block.anchor, block] as const)
+    );
     // A formatting op can intentionally point at the future anchor created by
     // an earlier insert. Its expect value identifies that future paragraph and
     // prevents today's occupant of the same hierarchical index being captured
@@ -6521,16 +15383,6 @@ export function applyDocumentEdits(
       op.expect != null &&
       indexedTarget != null &&
       !expectTextMatches(op.expect, indexedTarget.text);
-    if (formatExpectMismatch && !hasStructuralEdits) {
-      results[index] = {
-        ok: false,
-        op: name,
-        anchor: op.anchor,
-        error: 'expect_mismatch',
-        details: staleAnchorDetails(op.expect, indexedTarget.text)
-      };
-      return;
-    }
     let target: FlatBlock | LiveStoryTarget | undefined =
       formatExpectMismatch && hasStructuralEdits ? undefined : indexedTarget;
     // Search returns public, selection-ready story ranges which SFDT cannot
@@ -6546,6 +15398,56 @@ export function applyDocumentEdits(
       } catch (err) {
         fail(index, op, err);
         return;
+      }
+    }
+    if (name === 'replace_selection') {
+      const suppliedStart = offsetString(op.startOffset);
+      // A start offset that names a different anchor is malformed, not drift.
+      // Preserve resolveSelectionRange's specific refusal instead of guessing.
+      const startDisagrees =
+        suppliedStart && anchorFromOffset(suppliedStart) !== String(op.anchor);
+      const runs = selectionTextRuns(simulatedBlocks);
+      const declaredText = declaredSelectionText(op, simulatedByAnchor, runs);
+      const hasPinnedLength =
+        typeof op.expectLength === 'number' && op.expectLength > 0;
+      const declaredStartsWithExpect =
+        declaredText != null &&
+        op.expect != null &&
+        declaredText.startsWith(String(op.expect));
+      if (
+        !startDisagrees &&
+        !declaredSelectionCrossesContainer(op, byAnchor) &&
+        op.expect != null &&
+        !selectionIdentityMatches(op, declaredText ?? '') &&
+        // A pinned prefix at the declared start plus a conflicting total
+        // length is a bad CAS claim, not evidence that the range moved. Keep
+        // assertSelectionGuard's measured refusal instead of expanding it.
+        !(hasPinnedLength && declaredStartsWithExpect)
+      ) {
+        const attempt = attemptSelectionRelocation(simulatedBlocks, op);
+        if ('range' in attempt) {
+          target =
+            byAnchor.get(attempt.range.target.anchor) ?? attempt.range.target;
+          relocated = attempt.relocated;
+          op = {
+            ...op,
+            anchor: attempt.range.target.anchor,
+            startOffset: attempt.range.startOffset,
+            endOffset: attempt.range.endOffset
+          };
+        } else {
+          results[index] = {
+            ok: false,
+            op: name,
+            anchor: op.anchor,
+            error: 'stale_anchor',
+            details: [
+              ...staleAnchorDetails(op.expect, declaredText ?? ''),
+              ...attempt.details
+            ]
+          };
+          return;
+        }
       }
     }
     // `set_cell_text` may address a cell an earlier op in this same change set
@@ -6567,7 +15469,7 @@ export function applyDocumentEdits(
             .slice(0, index)
             .some(
               (earlier) => earlier?.op && CELL_CREATING_OPS.has(earlier.op)
-            ));
+            ) || tableCreatedByEarlierInsert(edits, index));
     if (deferredNewCell) target = undefined;
     // `insert_text` may address the empty paragraph an earlier break in this
     // same change set is about to create, so a new page and the text on it are
@@ -6581,43 +15483,107 @@ export function applyDocumentEdits(
         .some(
           (earlier) => earlier?.op && PARAGRAPH_CREATING_OPS.has(earlier.op)
         );
+    // A formatting target created by this batch has no pre-write identity yet,
+    // so a zero-match attempt remains deferred to phase 3. If the expected
+    // content already exists exactly once, though, this is ordinary anchor
+    // drift and we can bind the plan to that current block now.
+    //
+    // Never for a composed section's own formatting: that op formats a
+    // paragraph THIS change set creates, and the composer already planned where
+    // it lands (`__sectionFinalAnchor`). Reading its `expect` as anchor drift
+    // binds it to a pre-existing paragraph that merely repeats the text - which
+    // is how a second "Your Client Services Team" was left as plain body text
+    // while the original heading two pages up was restyled instead. Phase 3
+    // resolves these from the planned topology; a text match cannot.
+    if (
+      !target &&
+      formatExpectMismatch &&
+      hasStructuralEdits &&
+      op.__sectionCreatorId === undefined
+    ) {
+      const attempt = attemptAnchorRelocation(blocks, op);
+      if ('target' in attempt) {
+        target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
+        relocated = attempt.relocated;
+        op = retargetOpToBlock(op, target);
+      }
+    }
     if (
       !target &&
       !deferredNewCell &&
       !deferredNewParagraph &&
       (!FORMAT_OPS.has(name) || !hasStructuralEdits)
     ) {
-      results[index] = {
-        ok: false,
-        op: name,
-        anchor: op.anchor,
-        error: 'anchor_not_found'
-      };
-      return;
+      const attempt = attemptAnchorRelocation(simulatedBlocks, op);
+      if ('target' in attempt) {
+        target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
+        relocated = attempt.relocated;
+        op = retargetOpToBlock(op, target);
+      } else {
+        results[index] = {
+          ok: false,
+          op: name,
+          anchor: op.anchor,
+          error: indexedTarget ? 'expect_mismatch' : 'anchor_not_found',
+          details: [
+            ...(indexedTarget
+              ? staleAnchorDetails(op.expect, indexedTarget.text)
+              : []),
+            ...attempt.details
+          ]
+        };
+        return;
+      }
     }
+    let simulatedTargetText =
+      target && !isLiveStoryTarget(target)
+        ? simulatedTextByAnchor.get(target.anchor) ?? target.text
+        : undefined;
     if (
       target &&
       !isLiveStoryTarget(target) &&
       // See applyAnchoredOp: replace_selection's `expect` describes the selected
       // range, not the start block, so it is checked by assertSelectionGuard.
       name !== 'replace_selection' &&
-      expectGuardRefuses(op.expect, target.text)
+      expectGuardRefuses(op.expect, simulatedTargetText ?? target.text)
     ) {
-      results[index] = {
-        ok: false,
-        op: name,
-        anchor: op.anchor,
-        error: 'expect_mismatch',
-        details: staleAnchorDetails(op.expect, target.text)
+      const staleTarget = target;
+      const simulatedStaleTarget = {
+        ...staleTarget,
+        text: simulatedTargetText ?? staleTarget.text,
+        length: (simulatedTargetText ?? staleTarget.text).length
       };
-      return;
+      const attempt = attemptAnchorRelocation(
+        simulatedBlocks,
+        op,
+        simulatedStaleTarget
+      );
+      if ('target' in attempt) {
+        target = byAnchor.get(attempt.target.anchor) ?? attempt.target;
+        simulatedTargetText =
+          simulatedTextByAnchor.get(target.anchor) ?? target.text;
+        relocated = attempt.relocated;
+        op = retargetOpToBlock(op, target);
+      } else {
+        results[index] = {
+          ok: false,
+          op: name,
+          anchor: op.anchor,
+          error: 'expect_mismatch',
+          details: [
+            ...staleAnchorDetails(op.expect, simulatedStaleTarget.text),
+            ...attempt.details
+          ]
+        };
+        return;
+      }
     }
     if (
       target &&
       !isLiveStoryTarget(target) &&
       (name === 'replace_text' || name === 'delete_text') &&
       op.find != null &&
-      !target.text.includes(String(op.find))
+      !(simulatedTargetText ?? target.text).includes(String(op.find))
     ) {
       results[index] = {
         ok: false,
@@ -6657,51 +15623,124 @@ export function applyDocumentEdits(
       return;
     }
     try {
+      const inherited = source
+        ? readEffectiveSourceFormat(editor, source)
+        : undefined;
+      const insertInheritance =
+        target &&
+        !isLiveStoryTarget(target) &&
+        (op.op === 'insert_table' || op.op === 'insert_row')
+          ? planInsertInheritance(
+              editor,
+              op,
+              target,
+              blocks,
+              liveSfdt,
+              source ? { source, inherited } : undefined
+            )
+          : undefined;
+      const plannedTableAnchor =
+        op.op === 'insert_table'
+          ? expectedInsertedTableAnchor(edits, index)
+          : undefined;
       plans.push({
         index,
         op,
         target,
         source,
+        ...(relocated ? { relocated } : {}),
         ...(deferredNewCell ? { deferredNewCell: true } : {}),
         ...(deferredNewParagraph ? { deferredNewParagraph: true } : {}),
-        ...(source
-          ? { inherited: readEffectiveSourceFormat(editor, source) }
+        ...(plannedTableAnchor
+          ? { expectedInsertedTableAnchor: plannedTableAnchor }
           : {}),
-        ...(target && !isLiveStoryTarget(target) && FORMAT_OPS.has(name)
+        ...(insertInheritance ? { insertInheritance } : {}),
+        ...(inherited ? { inherited } : {}),
+        ...(target &&
+        !isLiveStoryTarget(target) &&
+        FORMAT_OPS.has(name) &&
+        !TABLE_APPEARANCE_OPS.has(name)
           ? { targetBefore: readEffectiveSourceFormat(editor, target) }
           : {})
       });
+      if (target && !isLiveStoryTarget(target)) {
+        const simulatedTarget = simulatedByAnchor.get(target.anchor) ?? target;
+        const nextText = simulateStableTextOp(op, simulatedTarget);
+        if (nextText !== undefined)
+          simulatedTextByAnchor.set(target.anchor, nextText);
+      }
     } catch (err) {
       fail(index, op, err);
     }
   });
 
-  const preflightFailed = results.some(
-    (result, index) =>
-      result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
+  const preflightFailures = results.reduce<number[]>(
+    (indices, result, index) => {
+      if (result && !result.ok && !nonBlockingStoryWriteFailures.has(index))
+        indices.push(index);
+      return indices;
+    },
+    []
   );
+  if (!batchRefusal) {
+    for (const index of preflightFailures) {
+      const groupId = opGroupId(edits[index], changeSetId);
+      if (!failedGroups.has(groupId))
+        markGroupFailed(groupId, index, 'refused');
+    }
+  }
+  const preflightFailed = !!batchRefusal || preflightFailures.length > 0;
+  // Batch layout is required for large change sets, but assigning the public
+  // enableLayout property queues onPropertyChanged. SyncFusion later handles
+  // that queue with refreshLayout(), which unconditionally Control-Homes the
+  // selection before repagination. Muted setProperties changes the same layout
+  // gate without queuing navigation; one explicit layoutWholeDocument below
+  // pays the deferred pagination cost while the silent edit boundary is active.
+  const suspendLayout = !batchRefusal && editor.enableLayout === true;
+  const setLayoutWithoutPropertyChange = (enabled: boolean) => {
+    const liveEditor = editor as any;
+    if (typeof liveEditor.setProperties === 'function')
+      liveEditor.setProperties({ enableLayout: enabled }, true);
+    else editor.enableLayout = enabled;
+  };
   try {
+    if (suspendLayout) setLayoutWithoutPropertyChange(false);
     editor.enableTrackChanges = true;
     editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
-    if (preflightFailed) {
+    if (batchRefusal) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`
       );
     } else {
+      if (preflightFailures.length)
+        warnings.push(
+          `group_preflight_failed: ${[...failedGroups].join(
+            ', '
+          )}; unaffected groups remain eligible to apply.`
+        );
       // Phase 2: apply structural writes in request order, refreshing the anchor
       // map after every mutation. This is the only phase allowed to shift blocks.
       for (const plan of plans) {
         const { op, index } = plan;
-        if (results[index] || FORMAT_OPS.has(op.op)) continue;
+        const groupId = opGroupId(op, changeSetId);
+        if (
+          results[index] ||
+          FORMAT_OPS.has(op.op) ||
+          failedGroups.has(groupId)
+        )
+          continue;
         stampRevisionGroup(editor, changeSetId, op);
         const revisionsBeforeOp = snapshotRevisions(editor);
         let writtenOp = op;
+        let appliedRelocation = plan.relocated;
         let priorRejectStream: string | undefined;
         let priorAcceptStream: string | undefined;
         let storyWrite:
           | { target: LiveStoryTarget; replacement: string }
           | undefined;
-        let insertInheritance: PlannedInsertInheritance[] | undefined;
+        let trackedMutationTargetText: string | undefined;
+        let insertInheritance = plan.insertInheritance;
+        let inheritanceAppearance: AppearanceWriteOutcome | undefined;
         let opExtras: OpSuccessExtras | void;
         try {
           if (op.op === 'replace_all') {
@@ -6722,6 +15761,7 @@ export function applyDocumentEdits(
                 'Structural edit needs an anchor.'
               );
             if (plan.target && isLiveStoryTarget(plan.target)) {
+              trackedMutationTargetText = plan.target.text;
               // A text frame's content IS in the serialized SFDT, so the reject
               // projection covers it and proves the write reversible exactly as
               // it does for a body or table anchor. Before this, story writes
@@ -6746,14 +15786,39 @@ export function applyDocumentEdits(
               }
               storyWrite = applyLiveStoryTextOp(editor, op, plan.target);
             } else {
-              const target = resolveChangeSetBlock(
-                blocks,
-                op.anchor,
-                plan.target,
-                anchorsMayHaveShifted
-              );
+              const sectionBoundaryAnchor =
+                typeof op.__sectionBoundaryAnchor === 'string'
+                  ? op.__sectionBoundaryAnchor.trim()
+                  : '';
+              const target = sectionBoundaryAnchor
+                ? resolveSectionBoundary(
+                    blocks,
+                    sectionBoundaryAnchor,
+                    // Composer boundaries are captured topology, including a
+                    // freshly seeded empty paragraph. Their address, not the
+                    // content on either side, is the identity contract.
+                    undefined
+                  )
+                : resolveChangeSetBlock(
+                    blocks,
+                    op.anchor,
+                    plan.target,
+                    anchorsMayHaveShifted
+                  );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
+              if (target.anchor !== op.anchor)
+                appliedRelocation = {
+                  from: plan.relocated?.from ?? op.anchor,
+                  to: target.anchor
+                };
+              insertInheritance = rebasePlannedInsertInheritance(
+                insertInheritance,
+                op,
+                writtenOp
+              );
+              if (insertInheritance) plan.insertInheritance = insertInheritance;
+              trackedMutationTargetText = target.text;
               // The reversibility baseline: the whole-document reject
               // projection the last refresh built, so a tracked write costs no
               // extra serialize before it lands. Never a per-anchor text - a
@@ -6766,13 +15831,23 @@ export function applyDocumentEdits(
               // their pre-insert positions. An explicit inheritFormatFrom on
               // the op replaces the computed reference (its source and format
               // snapshot were captured at preflight).
-              if (op.op === 'insert_text') {
+              if (op.op === 'replace_selection' && !insertInheritance) {
+                insertInheritance = planSelectionSplitInheritance(
+                  editor,
+                  writtenOp,
+                  target
+                );
+                if (insertInheritance)
+                  plan.insertInheritance = insertInheritance;
+              }
+              if (op.op === 'insert_text' && !insertInheritance) {
                 const explicitSource = plan.source
                   ? resolveChangeSetBlock(
                       blocks,
                       String(op.inheritFormatFrom),
                       plan.source,
-                      anchorsMayHaveShifted
+                      anchorsMayHaveShifted,
+                      true
                     )
                   : undefined;
                 insertInheritance = planInsertInheritance(
@@ -6781,12 +15856,43 @@ export function applyDocumentEdits(
                   writtenOp as TypedEditOp<'insert_text'>,
                   target,
                   blocks,
+                  liveSfdt,
                   explicitSource
                     ? { source: explicitSource, inherited: plan.inherited }
                     : undefined
                 );
+                if (insertInheritance)
+                  plan.insertInheritance = insertInheritance;
+                const boundary = insertInheritance?.find(
+                  (candidate) => candidate.sectionBoundary
+                )?.sectionBoundary;
+                if (boundary) writtenOp = { ...writtenOp, text: boundary.text };
               }
+              // Both anchors, because the paragraph at risk is the one the write
+              // lands NEXT TO: for insert_section that is the op's own anchor,
+              // for a relocation it is the destination.
+              recordParagraphStyles(op, [
+                target.anchor,
+                op.targetAnchor,
+                op.otherAnchor
+              ]);
               opExtras = applyAnchoredOp(editor, writtenOp, target, byAnchor);
+              if (
+                op.op === 'insert_text' &&
+                insertInheritance?.some(
+                  (candidate) => candidate.sectionBoundary
+                )
+              ) {
+                insertInheritance = applySectionBoundaryInheritance(
+                  editor,
+                  insertInheritance
+                );
+                plan.insertInheritance = insertInheritance;
+                // The verifier snapshot was captured before the inherited
+                // section-boundary padding was materialized. Do not refresh
+                // from that now-stale topology.
+                opExtras = undefined;
+              }
             }
             // A skipped no-op wrote nothing, so it cannot have shifted anything.
             if (mayShiftAnchors(op) && !(opExtras as OpSuccessExtras)?.noOp)
@@ -6798,7 +15904,8 @@ export function applyDocumentEdits(
             results[index] = {
               ok: true,
               op: op.op,
-              anchor: op.anchor,
+              anchor: writtenOp.anchor,
+              ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
               ...opExtras
             };
             continue;
@@ -6807,7 +15914,9 @@ export function applyDocumentEdits(
           // assertions and the refreshed anchor map. Serializing those
           // independently made every exhaustive batch pay two whole-document
           // passes per op.
-          const postWriteSfdt = parseSfdt(editor.serialize());
+          const postWriteSfdt =
+            (opExtras as OpSuccessExtras | undefined)?.postWriteSfdt ??
+            serializeSfdt(editor);
           if (storyWrite && priorAcceptStream !== undefined)
             assertStoryTextFrameReplacement(
               storyWrite,
@@ -6819,21 +15928,120 @@ export function applyDocumentEdits(
             revisionsBeforeOp,
             writtenOp,
             priorRejectStream,
-            postWriteSfdt
+            postWriteSfdt,
+            trackedMutationTargetText
           );
           refresh(postWriteSfdt);
+          assertInsertedTableIsAddressable(
+            writtenOp,
+            byAnchor,
+            plan.expectedInsertedTableAnchor
+          );
+          // Cell text aimed at a row/table created earlier in this batch gets
+          // the source-column format captured by that structural op's preflight
+          // plan. Apply after the text lands so verification observes the real
+          // run, not merely an empty insertion point.
+          if (op.op === 'set_cell_text' && writtenOp.anchor) {
+            const inheritedCell = plans
+              .filter((candidate) => candidate.index < index)
+              .flatMap((candidate) => candidate.insertInheritance ?? [])
+              .find(
+                (candidate) =>
+                  !candidate.tableAppearance &&
+                  candidate.anchor === writtenOp.anchor
+              );
+            if (inheritedCell)
+              insertInheritance = [
+                {
+                  ...inheritedCell,
+                  expectedText: byAnchor.get(writtenOp.anchor)?.text
+                }
+              ];
+          }
+          if (
+            op.op === 'insert_table' &&
+            Array.isArray(op.initialCells) &&
+            insertInheritance
+          ) {
+            insertInheritance = insertInheritance.map((candidate) =>
+              candidate.tableAppearance
+                ? candidate
+                : {
+                    ...candidate,
+                    expectedText: byAnchor.get(candidate.anchor)?.text
+                  }
+            );
+            plan.insertInheritance = insertInheritance;
+          }
           if (insertInheritance) {
-            applyInsertInheritance(editor, insertInheritance, byAnchor);
-            refresh();
+            // Text writes below format their populated cells themselves. The
+            // structural op still formats every other new cell now, including
+            // row-only/two-phase inserts, and always applies table appearance.
+            const cellsWrittenLater = new Set(
+              edits
+                .slice(index + 1)
+                .filter((candidate) => candidate?.op === 'set_cell_text')
+                .map((candidate) => String(candidate.anchor ?? ''))
+            );
+            const applicable =
+              op.op === 'insert_table' || op.op === 'insert_row'
+                ? insertInheritance.filter(
+                    (candidate) =>
+                      !!candidate.tableAppearance ||
+                      !cellsWrittenLater.has(candidate.anchor)
+                  )
+                : insertInheritance;
+            inheritanceAppearance = applyInsertInheritance(
+              editor,
+              applicable,
+              byAnchor
+            );
+            if (inheritanceAppearance)
+              recordAppearanceRestores(op, inheritanceAppearance.restores);
+            // Inheritance changes appearance only. Anchors, text, and both
+            // revision projections remain identical to postWriteSfdt, while
+            // every inherited property is verified through the public live
+            // selection API (table-copy verification carries its own fresh
+            // snapshot). Keep the content snapshot instead of serializing the
+            // whole document again.
           }
           results[index] = {
             ok: true,
             op: op.op,
-            anchor: op.anchor,
-            ...(opExtras ?? {})
+            anchor: writtenOp.anchor,
+            ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
+            ...collectOpExtras(opExtras, (restores) =>
+              recordAppearanceRestores(op, restores)
+            ),
+            ...(inheritanceAppearance
+              ? { appearance: inheritanceAppearance.report }
+              : {}),
+            // A creation the document could not dress says so on its own
+            // result. Never omitted: a silent default is indistinguishable
+            // from a successful inheritance, which is the confusion this
+            // whole resolver exists to remove.
+            ...(insertInheritance?.some((entry) => entry.unresolved)
+              ? {
+                  withoutDonor: insertInheritance.flatMap((entry) =>
+                    entry.unresolved ? [entry.unresolved] : []
+                  )
+                }
+              : {})
           };
         } catch (err) {
           fail(index, op, err);
+          if (appliedRelocation)
+            results[index] = {
+              ...(results[index] ?? { ok: false, op: op.op }),
+              anchor: writtenOp.anchor,
+              relocated: appliedRelocation
+            };
+        } finally {
+          rememberGroupRevisions(op, revisionsBeforeOp);
+        }
+        if (results[index] && !results[index]?.ok) {
+          rollbackGroup(groupId);
+          markGroupFailed(groupId, index, 'rolled back');
         }
       }
 
@@ -6841,123 +16049,271 @@ export function applyDocumentEdits(
       // paragraph format -> scoped resolved-format verification per location.
       for (const plan of plans) {
         const { op, index } = plan;
-        if (results[index] || !FORMAT_OPS.has(op.op)) continue;
+        const groupId = opGroupId(op, changeSetId);
+        if (
+          results[index] ||
+          !FORMAT_OPS.has(op.op) ||
+          failedGroups.has(groupId)
+        )
+          continue;
         stampRevisionGroup(editor, changeSetId, op);
+        const revisionsBeforeOp = snapshotRevisions(editor);
+        let appliedRelocation = plan.relocated;
         try {
           if (!op.anchor)
             throw new OpError(
               'missing_anchor',
               'Formatting edit needs an anchor.'
             );
-          const target = resolveChangeSetBlock(
-            blocks,
-            op.anchor,
+          // A table-scoped op names a TABLE, and its anchor is just one of that
+          // table's cells - so it must NOT be relocated by cell text. Two tables
+          // sharing a header cell is ordinary (it is exactly the captain's
+          // document: two Location Schedules with "Loc #" in row 0), and the
+          // text match then reports `anchor_relocation_ambiguous` for an op that
+          // had no ambiguity at all. A row insert never moves a table's block
+          // anchor, so the direct anchor is the right answer here.
+          const baselineTarget =
             plan.target && !isLiveStoryTarget(plan.target)
               ? plan.target
-              : undefined,
-            anchorsMayHaveShifted
-          );
+              : undefined;
+          let target: FlatBlock;
+          let createdTarget: FlatBlock | undefined;
+          if (!baselineTarget && op.expect != null) {
+            if (op.__sectionFinalAnchor) {
+              const planned = byAnchor.get(op.__sectionFinalAnchor);
+              if (!planned || !expectTextMatches(op.expect, planned.text))
+                throw new OpError(
+                  'section_paragraph_topology_mismatch',
+                  `The composed paragraph planned at "${op.__sectionFinalAnchor}" did not resolve after assembly.`,
+                  [
+                    `expected: ${JSON.stringify(op.expect)}`,
+                    `actual: ${JSON.stringify(planned?.text)}`
+                  ]
+                );
+              createdTarget = planned;
+            }
+            for (let prior = plans.length - 1; prior >= 0; prior--) {
+              if (createdTarget) break;
+              const creator = plans[prior];
+              if (
+                creator.index >= index ||
+                creator.op.op !== 'insert_text' ||
+                creator.op.anchor !== op.anchor ||
+                opGroupId(creator.op, changeSetId) !== groupId ||
+                (op.__sectionCreatorId !== undefined &&
+                  creator.op.__sectionCreatorId !== op.__sectionCreatorId)
+              )
+                continue;
+              const createdParagraphs = (
+                creator.insertInheritance ?? []
+              ).filter(
+                (candidate) =>
+                  !candidate.sectionBoundary &&
+                  !candidate.tableAppearance &&
+                  candidate.expectedText !== undefined
+              );
+              const inheritedTarget =
+                op.__sectionSegmentIndex !== undefined
+                  ? createdParagraphs[op.__sectionSegmentIndex]
+                  : createdParagraphs.find(
+                      (candidate) =>
+                        candidate.expectedText === String(op.expect)
+                    );
+              if (
+                inheritedTarget?.expectedText !== undefined &&
+                !expectTextMatches(op.expect, inheritedTarget.expectedText)
+              )
+                continue;
+              if (!inheritedTarget) continue;
+              const live = byAnchor.get(inheritedTarget.anchor);
+              if (live && expectTextMatches(op.expect, live.text)) {
+                createdTarget = live;
+                break;
+              }
+            }
+          }
+          if (createdTarget) {
+            target = createdTarget;
+          } else if (
+            !baselineTarget &&
+            anchorsMayHaveShifted &&
+            !TABLE_SCOPED_OPS.has(op.op) &&
+            op.expect != null
+          ) {
+            // This format target did not exist at preflight: an earlier insert
+            // created it. Resolve the model's expected text against the live
+            // post-structure map instead of blindly taking the old boundary's
+            // now-occupied numeric anchor.
+            const attempt = attemptAnchorRelocation(blocks, op);
+            if ('target' in attempt) target = attempt.target;
+            else {
+              const noMatch = attempt.details.some((detail) =>
+                detail.includes('matching blocks: none')
+              );
+              throw new OpError(
+                noMatch
+                  ? 'anchor_relocation_not_found'
+                  : 'anchor_relocation_ambiguous',
+                `The formatting target created earlier in this change set could not be identified deterministically.`,
+                attempt.details
+              );
+            }
+          } else {
+            target = resolveChangeSetBlock(
+              blocks,
+              op.anchor,
+              baselineTarget,
+              anchorsMayHaveShifted && !TABLE_SCOPED_OPS.has(op.op)
+            );
+          }
+          appliedRelocation =
+            target.anchor !== op.anchor
+              ? {
+                  from: plan.relocated?.from ?? op.anchor,
+                  to: target.anchor
+                }
+              : plan.relocated;
           const source = plan.source
             ? resolveChangeSetBlock(
                 blocks,
                 String(op.inheritFormatFrom),
                 plan.source,
-                anchorsMayHaveShifted
+                anchorsMayHaveShifted,
+                true
               )
             : undefined;
           resolvedFormatTargets.set(index, target);
-          applyAnchoredOp(
+          // Styling a paragraph THIS change set created is composition, not
+          // judgment: the model is hand-building a section out of primitives,
+          // which is the same act insert_section performs, and it must reach
+          // the same result. So the resolver wins there. A paragraph that
+          // PRE-EXISTED is the user asking for something ("make this Heading
+          // 2") and the model's choice wins - the engine must not override it.
+          // The distinguishing fact is `createdTarget`, not a preference.
+          const composedStyle =
+            op.op === 'apply_style' && !!createdTarget && !source
+              ? composedParagraphDonor(
+                  blocks,
+                  byAnchor,
+                  target,
+                  typeof op.styleName === 'string' ? op.styleName : undefined
+                )
+              : undefined;
+          if (composedStyle?.disagreement)
+            composedDisagreements.set(index, composedStyle.disagreement);
+          const extras = applyAnchoredOp(
             editor,
             {
               ...op,
               anchor: target.anchor,
               ...(source ? { inheritFormatFrom: source.anchor } : {}),
+              // The donor supplies the style NAME too. Leaving the model's
+              // styleName on the op would win over it inside
+              // applyInheritedFormat, so the paragraph would take the family's
+              // colour and size while keeping the style the model guessed -
+              // inheriting everything except the thing a reader checks.
+              ...(composedStyle?.donor
+                ? {
+                    inheritFormatFrom: composedStyle.donor.anchor,
+                    styleName: undefined
+                  }
+                : {}),
               ...(plan.inherited ? { __inheritedFormat: plan.inherited } : {})
             },
             target,
             byAnchor
           );
-          refresh();
-          results[index] = { ok: true, op: op.op, anchor: op.anchor };
+          // Formatting cannot shift blocks. Its CAS guard and resolved-format
+          // verification read the live public selection, and table appearance
+          // handlers take their own fresh snapshots where exact before/after
+          // state is required. Consecutive formatting ops therefore share the
+          // structural phase's anchor/text snapshot.
+          results[index] = {
+            ok: true,
+            op: op.op,
+            anchor: target.anchor,
+            ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
+            ...collectOpExtras(extras, (restores) =>
+              recordAppearanceRestores(op, restores)
+            ),
+            ...(composedDisagreements.has(index)
+              ? {
+                  styleResolved: composedDisagreements.get(
+                    index
+                  ) as ComposedStyleDisagreement
+                }
+              : {})
+          };
         } catch (err) {
           fail(index, op, err);
-        }
-      }
-
-      // A failed resolved-format check must not leave pre-existing formatting
-      // partially changed. Restore every affected pre-existing target from its
-      // preflight snapshot, scoped to those anchors only. New structural content
-      // has no safe generic inverse, so it remains a tracked revision for reject.
-      if (results.some((result) => result && !result.ok)) {
-        for (const plan of plans) {
-          const target = resolvedFormatTargets.get(plan.index);
-          if (!target || !plan.targetBefore) continue;
-          try {
-            restoreCapturedFormat(editor, target, plan.targetBefore);
-          } catch (err) {
-            const existing = results[plan.index];
-            results[plan.index] = {
-              ok: false,
-              op: plan.op.op,
-              anchor: plan.op.anchor,
-              error: 'compensating_rollback_failed',
-              details: [
-                ...(existing?.details ?? []),
-                err instanceof Error
-                  ? err.message
-                  : 'Could not restore captured formatting.'
-              ]
+          if (appliedRelocation)
+            results[index] = {
+              ...(results[index] ?? { ok: false, op: op.op }),
+              relocated: appliedRelocation
             };
-          }
+        } finally {
+          rememberGroupRevisions(op, revisionsBeforeOp);
         }
-        refresh();
+        if (results[index] && !results[index]?.ok) {
+          rollbackGroup(groupId);
+          markGroupFailed(groupId, index, 'rolled back');
+        }
       }
     }
   } finally {
     editor.enableTrackChanges = priorTrackChanges;
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
-  }
-
-  const hasMaterialFailure = results.some(
-    (result, index) =>
-      result && !result.ok && !nonBlockingStoryWriteFailures.has(index)
-  );
-  if (hasMaterialFailure) {
-    try {
-      // A failed text-frame/post-write verification must not leave earlier
-      // sibling edits applied. Scoped native rejects restore only this change
-      // set's cards; unrelated user revisions are never touched.
-      rejectCreatedRevisions(editor, revisionSnapshot);
-    } catch (err) {
-      warnings.push(
-        `change_set_rollback_failed: ${
-          err instanceof Error ? err.message : 'unknown revision rollback error'
-        }`
-      );
+    if (suspendLayout) {
+      setLayoutWithoutPropertyChange(true);
+      (editor as any).documentHelper?.layout?.layoutWholeDocument?.();
     }
   }
 
-  const grouping = groupNewRevisions(editor, revisionSnapshot, changeSetId);
-  const revisionCount = grouping.revisionCount;
-  const hasFailure = results.some((result) => result && !result.ok);
-  if (hasFailure) {
-    // Never use global undo: it can revert unrelated history. Existing writes
-    // remain bound to one rejectable revision decision and no op is presented as
-    // a successful logical change set when any sibling failed verification.
+  refuseReusedUserStatedFigures(results);
+  if (!batchRefusal) {
     results.forEach((result, index) => {
-      if (!result?.ok) return;
-      results[index] = {
-        ...result,
-        ok: false,
-        error: 'change_set_failed',
-        details: [
-          `Change set ${changeSetId} failed at another location; this write remains in the single rejectable revision group.`
-        ]
-      };
+      if (
+        !result ||
+        result.ok ||
+        nonBlockingStoryWriteFailures.has(index) ||
+        failedGroups.has(opGroupId(edits[index], changeSetId))
+      )
+        return;
+      const groupId = opGroupId(edits[index], changeSetId);
+      rollbackGroup(groupId);
+      markGroupFailed(groupId, index, 'rolled back');
+    });
+    // Coverage-only story refusals still make their own review group fail, but
+    // preserve the established contract that a verified body write can remain
+    // tracked. A differently named group is unaffected and remains `ok`.
+    results.forEach((result, index) => {
+      if (
+        !result ||
+        result.ok ||
+        failedGroups.has(opGroupId(edits[index], changeSetId))
+      )
+        return;
+      markGroupFailed(opGroupId(edits[index], changeSetId), index, 'refused');
     });
   }
+
+  const wroteAppearance = appearanceRestores.length > 0;
+  const grouping = groupNewRevisions(
+    editor,
+    revisionSnapshot,
+    changeSetId,
+    appearanceRestoresByGroup,
+    paragraphStylesByGroup
+  );
+  const revisionCount = grouping.revisionCount;
+  const hasFailure = results.some((result) => result && !result.ok);
   const inventory = readPostEditInventory(editor, warnings);
+  warnings.push(
+    `document_serialization: count=${
+      serializationTiming.count
+    }; total_ms=${serializationTiming.totalMs.toFixed(1)}`
+  );
   const response: ApplyEditsResult = {
     // results starts as a sparse array during preflight; Array#map skips holes,
     // so materialize every requested edit explicitly when a whole change set is
@@ -6982,8 +16338,23 @@ export function applyDocumentEdits(
       groups: reportRevisionGroups(
         edits,
         changeSetId,
-        grouping.revisionsByGroup
+        grouping.revisionsByGroup,
+        grouping.appearanceGroups
       ),
+      ...(wroteAppearance
+        ? {
+            // Only every appearance group having found a card to ride on makes
+            // "reject and the appearance comes back" true of the whole batch.
+            // If any group wrote appearance without producing a revision, that
+            // appearance is already applied with nothing to reject, so the batch
+            // says so; `groups[].restoresAppearance` still names the exact
+            // groups a reject would restore.
+            formatTracking:
+              grouping.appearanceGroups.size === appearanceRestoresByGroup.size
+                ? ('grouped_with_revision_cards' as const)
+                : ('untracked_immediate' as const)
+          }
+        : {}),
       // The engine's own account of what this batch touched, beside the
       // model's announcement of what it was about to do. Two independent
       // statements of the same thing: if they disagree, that is visible.

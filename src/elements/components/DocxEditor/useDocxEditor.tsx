@@ -3,8 +3,9 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
   findReplaceCounterpart,
-  installRevisionGroupIsolation
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+  installRevisionGroupIsolation,
+  preserveDocumentViewDuring
+} from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
 
@@ -437,6 +438,38 @@ export function installRevisionHighlightRendering(ed: any) {
   };
 }
 
+// Keep every shared-surface review customization behind the same predicate as
+// the rail. Gated-off editors retain Syncfusion's native rendering, Changes
+// pane, and revision merge behavior.
+export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
+  if (!enabled) return;
+  ed.showRevisions = false;
+  if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
+  installRevisionGroupIsolation(ed);
+  installRevisionHighlightRendering(ed);
+}
+
+export function resizeDocxEditor(
+  container: any,
+  editor: any,
+  refitZoom = false
+): void {
+  if (!container) return;
+  if (!editor) {
+    container.resize?.();
+    return;
+  }
+  preserveDocumentViewDuring(editor, () => {
+    editor.isContainerResize = false;
+    if (typeof editor.resize === 'function') editor.resize();
+    else container.resize?.();
+    if (refitZoom && editor.viewer?.zoomType === 'FitPageWidth') {
+      editor.fitPage('FitPageWidth');
+      container.statusBar?.updateZoomContent?.();
+    }
+  });
+}
+
 // Table row-height drag-resize is dead code in Syncfusion 34.1.31: hovering a
 // row's bottom edge shows the row-resize cursor and mousedown records undo
 // state, but handleResizing's row branch computes the drag distance and never
@@ -602,6 +635,8 @@ interface Props {
   /** Extra headers for Syncfusion serviceUrl requests (e.g. Feathery auth). */
   headers?: Record<string, string>[];
   readOnly?: boolean;
+  /** Must match the condition that mounts TrackedChangeGroups. */
+  reviewChanges?: boolean;
   /** Bump to force a reopen of the same source URL (e.g. after regenerate). */
   openNonce?: number;
   onReady?: () => void;
@@ -630,6 +665,7 @@ export function useDocxEditor({
   serviceUrl,
   headers,
   readOnly,
+  reviewChanges = false,
   openNonce = 0,
   onReady,
   onEditorReady,
@@ -666,10 +702,42 @@ export function useDocxEditor({
   // built with SYNCFUSION_LICENSE_KEY.
   const resolvedLicenseKey = licenseKey || BUILT_IN_SYNCFUSION_LICENSE_KEY;
 
-  // Load the CDN assets and instantiate the editor. Recreated only if license
-  // or serviceUrl changes — NOT on readOnly toggles (those update in place).
-  // Recreating mid-fetch/open destroys Syncfusion while it still holds null
-  // internal state and surfaces as "Cannot convert undefined or null to object".
+  // Changing the review gate must recreate the instance (so an editor that
+  // becomes gated-off cannot retain instance-scoped patches) - but never while
+  // a create/open is in flight: destroying Syncfusion mid-open leaves it with
+  // null internal state and surfaces as "Cannot convert undefined or null to
+  // object". Hold a gate flip until the load settles (`loading` covers both
+  // the create and the open; an open failure also settles it via fail()).
+  const [reviewGate, setReviewGate] = useState(reviewChanges);
+  useEffect(() => {
+    if (reviewChanges !== reviewGate && !loading) setReviewGate(reviewChanges);
+  }, [reviewChanges, reviewGate, loading]);
+
+  // The document as it stands, carried across an instance recreation.
+  //
+  // A gate flip is not a document change - and the host derives the gate from
+  // `readOnly` (`assistantEnabled && !readOnly`), so finalizing an envelope for
+  // signature flips it mid-session. Recreating the instance then re-ran the open
+  // effect, which re-fetches `sourceUrl` - the PRE-SAVE url - and the editor came
+  // back holding older bytes than the ones the user was just looking at:
+  // unreviewed assistant edits and unsaved typing, gone with no signal at all.
+  //
+  // So the recreation carries the live document with it. Only when there is
+  // something to lose: a pristine document re-opens from its source exactly as
+  // before, which stays the most faithful path for it. The stash is keyed to the
+  // source it came from, so a regenerate (new url, or a bumped `openNonce`)
+  // always wins over it.
+  const carriedRef = useRef<{ sfdt: string; key: string } | null>(null);
+  const unsavedRef = useRef(false);
+  // The key of the document currently OPEN in the instance - not the key the
+  // props describe. They differ for exactly one render when a gate flip and a
+  // regenerate land together, and stamping the stash with the incoming key there
+  // would restore the outgoing document into the new one.
+  const openedKeyRef = useRef('');
+
+  // Load the CDN assets and instantiate the editor. Ordinary readOnly updates
+  // happen in place; changing the review gate recreates the instance so an
+  // editor that becomes gated-off cannot retain instance-scoped patches.
   useEffect(() => {
     let cancelled = false;
     let instance: any = null;
@@ -721,22 +789,29 @@ export function useDocxEditor({
         if (!ed) {
           throw new Error('Document editor instance missing after create');
         }
+        // SyncFusion rebuilds its page DOM after a tracked edit. Chromium's
+        // generic scroll anchoring then treats that controlled relayout as
+        // newly inserted page content and adjusts scrollTop a frame after the
+        // editor transaction has restored its viewport. The editor already
+        // owns cursor/viewport mapping, so leave browser anchoring disabled on
+        // its private scroller and let SyncFusion remain the sole scroll owner.
+        const viewer = ed.documentHelper?.viewerContainer as
+          | HTMLElement
+          | undefined;
+        if (viewer) viewer.style.overflowAnchor = 'none';
         ed.isReadOnly = isReadOnly;
         ed.addEventListener('contentChange', () => {
           if (ignoreContentChangeRef.current) return;
+          unsavedRef.current = true;
           onDirtyRef.current?.();
         });
         // Native right-click menu — insert/delete table rows & columns,
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
         try {
-          // TrackedChangeGroups is the review surface: mark the native
-          // Changes pane user-closed (its ✕'s own switch) so its auto-open
-          // never fires and covers the panel.
-          ed.showRevisions = false;
-          if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
-          installRevisionGroupIsolation(ed);
-          installRevisionHighlightRendering(ed);
+          configureTrackedChangeReview(ed, reviewGate);
+          // Engine-level fixes to the editing surface itself, not review
+          // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated
@@ -749,8 +824,20 @@ export function useDocxEditor({
         setEditor(ed);
         onEditorReady?.(ed);
 
-        // With no source the editor opens a blank document immediately.
+        // With no source the editor opens a blank document immediately - and
+        // there is no open effect to put a carried document back, so it happens
+        // here instead. Typing into a sourceless editor is work like any other.
         if (!source) {
+          const carried = carriedRef.current;
+          carriedRef.current = null;
+          if (carried && carried.key === openKeyRef.current) {
+            try {
+              ed.open(carried.sfdt);
+            } catch {
+              // A blank document is the fallback, as it was before the carry.
+            }
+          }
+          openedKeyRef.current = openKeyRef.current;
           ignoreContentChangeRef.current = false;
           setLoading(false);
           onReady?.();
@@ -764,6 +851,18 @@ export function useDocxEditor({
       cancelled = true;
       ignoreContentChangeRef.current = true;
       setEditor(null);
+      const live = instance?.documentEditor;
+      if (live && (unsavedRef.current || live.revisions?.length)) {
+        try {
+          carriedRef.current = {
+            sfdt: live.serialize(),
+            key: openedKeyRef.current
+          };
+        } catch {
+          // An unreadable instance leaves the source open as the fallback.
+          carriedRef.current = null;
+        }
+      }
       try {
         instance?.destroy?.();
       } catch {
@@ -773,7 +872,9 @@ export function useDocxEditor({
     };
     // `source` / `isReadOnly` intentionally omitted — open and readOnly are
     // handled by sibling effects so we never tear down mid-fetch.
-  }, [resolvedLicenseKey, serviceUrl, headersKey]);
+    // `reviewGate` (not `reviewChanges`) so a gate flip waits out any
+    // in-flight load before recreating - see its declaration above.
+  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewGate]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
@@ -789,9 +890,36 @@ export function useDocxEditor({
   // re-renders that recreate `{ url }` don't cancel an in-flight open.
   const sourceUrl = source && 'url' in source ? source.url : undefined;
   const sourceBuffer = source && 'buffer' in source ? source.buffer : undefined;
+  // What "the same document, opened the same time" means, for the carried stash.
+  const openKey = `${openNonce ?? 0}|${sourceUrl ?? ''}|${
+    sourceBuffer ? sourceBuffer.byteLength : ''
+  }`;
+  const openKeyRef = useRef(openKey);
+  openKeyRef.current = openKey;
 
   useEffect(() => {
     if (!editor || (!sourceUrl && !sourceBuffer)) return;
+    const carried = carriedRef.current;
+    carriedRef.current = null;
+    if (carried && carried.key === openKey) {
+      // Same document, new instance: put back exactly what was on screen
+      // instead of re-fetching bytes that predate it.
+      try {
+        editor.open(carried.sfdt);
+        openedKeyRef.current = openKey;
+        ignoreContentChangeRef.current = false;
+        setLoading(false);
+        onReady?.();
+        return;
+      } catch (err) {
+        // Falling through to the source is a worse outcome than this open, but
+        // it is a working one, and it is what happened before the carry.
+        console.warn(
+          'Feathery: could not restore the in-progress document after recreating the editor; reopening the source.',
+          err
+        );
+      }
+    }
     let cancelled = false;
     const openSource: DocxSource = sourceBuffer
       ? { buffer: sourceBuffer }
@@ -820,6 +948,9 @@ export function useDocxEditor({
           liveEditor.open(blob);
         }
         if (cancelled) return;
+        openedKeyRef.current = openKey;
+        // A freshly opened document has nothing unsaved in it yet.
+        unsavedRef.current = false;
         ignoreContentChangeRef.current = false;
         setLoading(false);
         onReady?.();
@@ -838,7 +969,18 @@ export function useDocxEditor({
     return editor.saveAsBlob('Docx');
   }, [editor]);
 
-  const resize = useCallback(() => containerInstRef.current?.resize?.(), []);
+  const resizeEditor = useCallback(
+    (refitZoom = false) => {
+      const container = containerInstRef.current;
+      // DocumentEditorContainer#resize enters refreshLayout, which homes the
+      // cursor before rebuilding. The editor's own resize API performs the
+      // required geometry refresh without that navigation side effect; keep
+      // Ayesha's host-resize owner but use the narrower native operation.
+      resizeDocxEditor(container, editor, refitZoom);
+    },
+    [editor]
+  );
+  const resize = useCallback(() => resizeEditor(), [resizeEditor]);
 
   // DocumentEditorContainer caches its layout geometry at `created` and never
   // observes its host box, so a later resize leaves it laid out against stale
@@ -851,6 +993,8 @@ export function useDocxEditor({
     const el = containerRef.current?.parentElement;
     if (!el || !editor) return;
     let frame = 0;
+    let lastW = 0;
+    let lastH = 0;
     const observer = new ResizeObserver(() => {
       if (frame) return;
       frame = featheryWindow().requestAnimationFrame(() => {
@@ -858,17 +1002,15 @@ export function useDocxEditor({
         // Resizing to 0 while hidden makes Syncfusion compute a degenerate
         // layout it does not recover from when the box returns.
         const { width, height } = el.getBoundingClientRect();
-        if (width > 0 && height > 0) {
-          // Syncfusion latches this in its window handler, it gates re-measure
-          editor.isContainerResize = false;
-          containerInstRef.current?.resize?.();
-          // resize() relays out but never refits the zoom, and the built-in
-          // status bar only redraws its label when told to
-          if (editor.viewer?.zoomType === 'FitPageWidth') {
-            editor.fitPage('FitPageWidth');
-            containerInstRef.current?.statusBar?.updateZoomContent?.();
-          }
-        }
+        if (width <= 0 || height <= 0) return;
+        // Streaming chat/panel renders tick the observer without changing the
+        // editor's box; Syncfusion's resize homes the cursor and scrolls to
+        // the document top, so a same-size refresh is pure damage. Only pay
+        // the relayout when the geometry truly changed.
+        if (Math.abs(width - lastW) < 1 && Math.abs(height - lastH) < 1) return;
+        lastW = width;
+        lastH = height;
+        resizeEditor(true);
       });
     });
     observer.observe(el);
@@ -876,7 +1018,7 @@ export function useDocxEditor({
       if (frame) featheryWindow().cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [editor]);
+  }, [editor, resizeEditor]);
 
   return { containerRef, editor, loading, error, exportDoc, resize };
 }

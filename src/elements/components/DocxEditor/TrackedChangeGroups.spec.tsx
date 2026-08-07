@@ -1,7 +1,51 @@
+import 'jest-canvas-mock';
+import { randomFillSync } from 'crypto';
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  DocumentEditor,
+  Editor,
+  EditorHistory,
+  ImageResizer,
+  Search,
+  Selection,
+  SfdtExport
+} from '@syncfusion/ej2-documenteditor';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { RailErrorBoundary } from './index';
+import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import {
+  installRevisionGroupIsolation,
+  LiveEditor
+} from '../../../utils/documentEditorPrimitives';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
+
+DocumentEditor.Inject(
+  Editor,
+  Selection,
+  SfdtExport,
+  EditorHistory,
+  ImageResizer,
+  Search
+);
+
+const testWindow = featheryWindow();
+if (!testWindow.crypto?.getRandomValues) {
+  Object.defineProperty(testWindow, 'crypto', {
+    value: {
+      getRandomValues: (array: Uint8Array) => randomFillSync(array)
+    }
+  });
+}
+
+const jsdomGetComputedStyle = testWindow.getComputedStyle.bind(testWindow);
+testWindow.getComputedStyle = ((elt: Element) =>
+  jsdomGetComputedStyle(elt)) as typeof testWindow.getComputedStyle;
+
+if (!(testWindow.SVGElement.prototype as any).getBBox) {
+  (testWindow.SVGElement.prototype as any).getBBox = () =>
+    ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
+}
 
 // A minimal live-editor stand-in: tagged revisions in a collection, plus the
 // event surface the panel subscribes to. Group tags use the same JSON shape
@@ -62,6 +106,47 @@ function makeRevision(
   };
 }
 
+function makeRealEditor(text = ''): DocumentEditor {
+  const host = featheryDoc().createElement('div');
+  host.style.width = '900px';
+  host.style.height = '700px';
+  featheryDoc().body.appendChild(host);
+  const editor = new DocumentEditor({
+    isReadOnly: false,
+    enableEditor: true,
+    enableSelection: true,
+    enableImageResizer: true,
+    enableSearch: true,
+    enableSfdtExport: true,
+    enableEditorHistory: true
+  });
+  editor.appendTo(host);
+  editor.open(
+    JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text }] }] }]
+    })
+  );
+  installRevisionGroupIsolation(editor as unknown as LiveEditor);
+  return editor;
+}
+
+function destroyRealEditor(editor: DocumentEditor): void {
+  const element = editor.element;
+  editor.destroy();
+  element?.remove();
+}
+
+function acceptOnlyGroup(): void {
+  fireEvent.click(screen.getByRole('button', { name: /^Accept \d+$/ }));
+}
+
+// Single-edit groups carry no group-wide card button, so the rail-wide action
+// is how they reach the same group resolve path (resolveGroups) that a card's
+// Accept N takes.
+function acceptAllGroups(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+}
+
 describe('TrackedChangeGroups', () => {
   it('renders nothing when the document has no tracked changes at all', () => {
     const editor = makeEditor([]);
@@ -96,6 +181,38 @@ describe('TrackedChangeGroups', () => {
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
     expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+  });
+
+  it('keeps every review control from submitting the surrounding form', () => {
+    const editor = makeEditor([makeRevision()]);
+    const onHiddenChange = jest.fn();
+    const { rerender } = render(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden={false}
+        onHiddenChange={onHiddenChange}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    screen
+      .getAllByRole('button')
+      .filter((button) => button.tagName === 'BUTTON')
+      .forEach((button) => expect(button).toHaveAttribute('type', 'button'));
+
+    rerender(
+      <TrackedChangeGroups
+        editor={editor}
+        hidden
+        onHiddenChange={onHiddenChange}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Expand suggested changes' })
+    ).toHaveAttribute('type', 'button');
   });
 
   it('renders one card per group with a humanized title and a pending tally', () => {
@@ -208,6 +325,26 @@ describe('TrackedChangeGroups', () => {
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     // Nothing pending is left, so the whole rail goes away.
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('group Reject resolves every pending member and removes the card', () => {
+    const deletion = makeRevision({ revisionType: 'Deletion' });
+    const insertion = makeRevision();
+    const revisions = [deletion, insertion];
+    deletion.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(deletion), 1);
+    });
+    insertion.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(insertion), 1);
+    });
+    const editor = makeEditor(revisions);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reject 2' }));
+
+    expect(deletion.reject).toHaveBeenCalledTimes(1);
+    expect(insertion.reject).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -574,6 +711,50 @@ describe('TrackedChangeGroups', () => {
     ).toBeNull();
   });
 
+  it('never uses an editor ancestor as the rail chip scrollbox', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    const { container } = render(
+      <div data-testid='editor-viewport'>
+        <TrackedChangeGroups editor={editor} />
+      </div>
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    const viewport = screen.getByTestId('editor-viewport');
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    const row = screen.getByText('$6,000').closest('[role="button"]');
+    expect(row).not.toBeNull();
+
+    Object.defineProperties(viewport, {
+      clientHeight: { configurable: true, value: 1000 },
+      scrollHeight: { configurable: true, value: 20000 },
+      scrollTop: { configurable: true, writable: true, value: 8742 }
+    });
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 600 },
+      scrollTop: { configurable: true, writable: true, value: 0 }
+    });
+    jest
+      .spyOn(row as HTMLElement, 'getBoundingClientRect')
+      .mockReturnValue({ top: 1200, bottom: 1280 } as DOMRect);
+    jest.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 700
+    } as DOMRect);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    expect(scrollBox.scrollTop).toBe(0);
+    expect(viewport.scrollTop).toBe(8742);
+    expect(container).toContainElement(row as HTMLElement);
+  });
+
   it('every rail button is type=button so clicks never submit the host form', () => {
     // The rail renders inside the form runtime's real <form>. An untyped
     // <button> defaults to type=submit, so clicking it navigates the page and
@@ -751,6 +932,87 @@ describe('RailErrorBoundary', () => {
     }
   });
 
+  // Hiding the rail for the rest of the session is its own defect: the pending
+  // changes are still in the document and there is no longer any way to see
+  // them. A transient failure has to come back.
+  it('retries a transient failure and shows the rail again', async () => {
+    jest.useFakeTimers();
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      // An EFFECT throw, which is the case Anthony cited: the rail's mount
+      // effect reads the editor, and React does not retry an effect the way it
+      // retries a render.
+      let throwOnce = true;
+      const Flaky = () => {
+        React.useEffect(() => {
+          if (throwOnce) {
+            throwOnce = false;
+            throw new TypeError('read during teardown');
+          }
+        }, []);
+        return <div data-testid='rail-child' />;
+      };
+      render(
+        <RailErrorBoundary>
+          <Flaky />
+        </RailErrorBoundary>
+      );
+      expect(screen.queryByTestId('rail-child')).not.toBeInTheDocument();
+
+      await act(async () => {
+        jest.advanceTimersByTime(500);
+      });
+      expect(screen.getByTestId('rail-child')).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
+  it('stops retrying a fault that reproduces, and stays hidden', async () => {
+    jest.useFakeTimers();
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const consoleWarn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      let runs = 0;
+      const Bomb = () => {
+        React.useEffect(() => {
+          runs++;
+          throw new TypeError('a real fault, every time');
+        }, []);
+        return <div data-testid='rail-child' />;
+      };
+      const { container } = render(
+        <RailErrorBoundary>
+          <Bomb />
+        </RailErrorBoundary>
+      );
+      for (let i = 0; i < 5; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await act(async () => {
+          jest.advanceTimersByTime(500);
+        });
+      }
+      expect(container).toBeEmptyDOMElement();
+      // The first mount plus the bounded retries, and no more.
+      expect(runs).toBe(3);
+    } finally {
+      jest.useRealTimers();
+      consoleError.mockRestore();
+      consoleWarn.mockRestore();
+    }
+  });
+
   it('renders its child untouched when nothing fails', () => {
     render(
       <RailErrorBoundary>
@@ -758,5 +1020,169 @@ describe('RailErrorBoundary', () => {
       </RailErrorBoundary>
     );
     expect(screen.getByTestId('rail-child')).toBeInTheDocument();
+  });
+
+  it('real SDK: native grouped table can be accepted again after undo', () => {
+    const editor = makeRealEditor();
+    let unmount = () => {};
+    try {
+      const settings = (editor as any).documentEditorSettings.revisionSettings;
+      const withGroup = (group: string, run: () => void) => {
+        const previous = settings.customData;
+        settings.customData = tag('native-cs', group);
+        try {
+          run();
+        } finally {
+          settings.customData = previous;
+        }
+      };
+      editor.enableTrackChanges = true;
+      editor.selection.moveToDocumentEnd();
+      withGroup('add-premium-table', () => {
+        editor.editor.insertText('Premium schedule for review:');
+        editor.editor.insertTable(3, 3);
+        const cells = [
+          'Item',
+          'Current',
+          'Proposed',
+          'Premium',
+          '$5,200',
+          '$5,500',
+          'Deductible',
+          '$1,000',
+          '$1,200'
+        ];
+        cells.forEach((text, index) => {
+          editor.editor.insertText(text);
+          if (index < cells.length - 1)
+            editor.selection.handleTabKey(true, false);
+        });
+      });
+      editor.selection.moveToDocumentEnd();
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      expect(screen.getByText('Add premium table')).toBeInTheDocument();
+      acceptOnlyGroup();
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBeGreaterThan(0);
+      expect(
+        screen.getByRole('button', { name: /^Accept \d+$/ })
+      ).toBeEnabled();
+      acceptOnlyGroup();
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
+  });
+
+  it('real SDK: bridge-created group can be accepted again after undo', () => {
+    const editor = makeRealEditor('Premium: $5,200');
+    let unmount = () => {};
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'bridge-cs',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '$5,200',
+            replace: '$5,500',
+            group: 'update-premium'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      acceptAllGroups();
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBe(2);
+      expect(screen.getByRole('button', { name: 'Accept all' })).toBeEnabled();
+      acceptAllGroups();
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
+  });
+
+  it('real SDK: an individual chip accepts again from its button after undo', () => {
+    const editor = makeRealEditor('Premium: $5,200');
+    let unmount = () => {};
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'individual-button-cs',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '$5,200',
+            replace: '$5,500',
+            group: 'update-premium'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      );
+      fireEvent.click(screen.getByText('$5,500'));
+      fireEvent.click(screen.getByLabelText('Accept this edit'));
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBe(2);
+      fireEvent.click(screen.getByText('$5,500'));
+      fireEvent.click(screen.getByLabelText('Accept this edit'));
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
+  });
+
+  it('real SDK: an individual chip rejects again from the keyboard after undo', () => {
+    const editor = makeRealEditor('Premium: $5,200');
+    let unmount = () => {};
+    try {
+      const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: 'individual-keyboard-cs',
+        edits: [
+          {
+            op: 'replace_text',
+            anchor: '0;0',
+            find: '$5,200',
+            replace: '$5,500',
+            group: 'update-premium'
+          }
+        ]
+      });
+      expect(result.results[0]).toMatchObject({ ok: true });
+
+      ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
+      let panel = screen.getByLabelText('Assistant tracked changes');
+      fireEvent.keyDown(panel, { key: 'j' });
+      fireEvent.keyDown(panel, { key: 'r' });
+      expect(editor.revisions.length).toBe(0);
+
+      act(() => editor.editorHistory.undo());
+      expect(editor.revisions.length).toBe(2);
+      panel = screen.getByLabelText('Assistant tracked changes');
+      fireEvent.keyDown(panel, { key: 'j' });
+      fireEvent.keyDown(panel, { key: 'r' });
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toContain('$5,200');
+      expect(editor.serialize()).not.toContain('$5,500');
+    } finally {
+      unmount();
+      destroyRealEditor(editor);
+    }
   });
 });

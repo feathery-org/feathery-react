@@ -103,6 +103,9 @@ import {
 import { CAPABILITIES_DECLARATION } from './capabilities/declaration';
 import { runLogicRuleById } from '../Form/logic';
 import internalState from '../utils/internalState';
+import { createRoundSelectionRequestPreparer } from './messageHistory';
+import { coalesceAssistantMessages } from './messageRendering';
+import { scrollChatContainerToBottom } from './chatScroll';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -116,6 +119,15 @@ export type AssistantMode =
 
 const MODE_STORAGE_KEY = 'feathery.assistant.mode';
 const DEFAULT_MODE: AssistantMode = 'current';
+
+// Keep render-only message inference shallow. Letting the JSX map below carry
+// the AI SDK's full UIMessage union sends the UMD/rollup build compilers past
+// their type-instantiation depth (TS2589), while Jest's compiler is unaffected.
+type RenderMessage = {
+  id: string;
+  role: string;
+  parts: any[];
+};
 
 const isAssistantMode = (v: unknown): v is AssistantMode =>
   v === 'current' ||
@@ -479,7 +491,7 @@ const AssistantChat = ({
   const pinToBottom = useCallback(() => {
     const el = messagesContainerRef.current;
     if (!el || !atBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
+    scrollChatContainerToBottom(el);
   }, []);
 
   const colors = useMemo(
@@ -498,6 +510,7 @@ const AssistantChat = ({
     const sessionId = threadId ?? uuidv4();
     let resolvedThreadId = threadId;
     let titleGenerated = !!initialTitle;
+    const prepareRoundRequest = createRoundSelectionRequestPreparer();
 
     // Title the thread from its first user message, whether typed or a voice transcript
     const triggerTitle = (userText?: string) => {
@@ -538,6 +551,7 @@ const AssistantChat = ({
         ...buildChatBody(),
         thread_id: resolvedThreadId || sessionId
       }),
+      prepareSendMessagesRequest: prepareRoundRequest,
       fetch: async (url: any, init?: any) => {
         let res: Response;
         if (voiceActiveRef.current) {
@@ -714,25 +728,10 @@ const AssistantChat = ({
     : attachments;
   const showAttachmentBar = stagedAttachments.length > 0 || !!attachmentError;
 
-  const messages = useMemo(() => {
-    const combined: typeof rawMessages = [];
-    for (const m of rawMessages) {
-      const prev = combined[combined.length - 1] as any;
-      if (
-        prev &&
-        prev.role === 'assistant' &&
-        (m as any).role === 'assistant'
-      ) {
-        combined[combined.length - 1] = {
-          ...prev,
-          parts: [...(prev.parts ?? []), ...((m as any).parts ?? [])]
-        } as any;
-      } else {
-        combined.push(m);
-      }
-    }
-    return combined;
-  }, [rawMessages]);
+  const messages = useMemo<RenderMessage[]>(
+    () => coalesceAssistantMessages(rawMessages) as RenderMessage[],
+    [rawMessages]
+  );
 
   useEffect(() => {
     pinToBottom();

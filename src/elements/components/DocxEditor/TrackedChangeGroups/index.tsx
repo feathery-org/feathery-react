@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo,
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
-} from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+} from '../../../../utils/documentEditorPrimitives';
 import { setActiveInlineRevision } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
@@ -35,22 +36,32 @@ const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
 
-// Every swallowed editor error in this file goes through here: hidden at
-// default console levels (teardown noise stays out of production logs), but
-// inspectable via the browser's verbose/debug level so a RECURRING failure
-// that isn't teardown — a real regression — stays visible to developers.
-const debugSwallowed = (error: unknown) =>
-  console.debug('Feathery: tracked-changes rail editor call failed.', error);
-
-// Any raw call into the EJ2 instance can throw once the editor is mid-destroy
-// (step navigation tears the document down under a still-mounted rail; EJ2's
-// observer internals then hit `Object.keys(null)`). A dead editor must read as
-// a no-op, never as a crash that unmounts the form step.
-const quietly = (fn: () => void) => {
+// The single containment boundary for editor faults in this file: one guard
+// at each UI/EJ2 event entry (render/effect faults go to the host's
+// RailErrorBoundary instead). Everything beneath it - reads, refreshes,
+// resolution calls - throws normally, so a mid-operation failure surfaces
+// here rather than being swallowed at its call site. Contained errors log at
+// the browser's verbose/debug level: teardown noise stays out of production
+// logs, but a RECURRING failure - a real regression - stays visible.
+const handleEditorEvent = (fn: () => void) => {
   try {
     fn();
   } catch (error) {
-    debugSwallowed(error);
+    console.debug('Feathery: tracked-changes rail editor call failed.', error);
+  }
+};
+
+// An instance on its way out is an EXPECTED state, not a fault: EJ2 throws on
+// any touch of a destroyed editor, and the destroy can land between an
+// isDestroyed check and the read after it. Such a read means "no editor" and
+// nothing more. Anything else - a real fault in a read of a LIVE editor - is a
+// programming error and must still reach the boundary, which is why this asks
+// the instance rather than swallowing every failure here.
+const isTornDown = (editor: any): boolean => {
+  try {
+    return !editor || editor.isDestroyed === true || !editor.revisions;
+  } catch {
+    return true;
   }
 };
 
@@ -61,13 +72,20 @@ const humanizeGroupId = (id: string) => {
   return spaced ? spaced[0].toUpperCase() + spaced.slice(1) : id;
 };
 
-// A replace chip is one edit backed by two revisions; every resolve path
-// must settle both with the one decision.
-const chipRevisions = (chip: ChipView) =>
-  chip.partner ? [chip.revision, chip.partner] : [chip.revision];
+// A chip is one EDIT, and an edit is a paragraph's worth of change backed by
+// however many revisions SyncFusion authored for it - its runs, its paragraph
+// mark, and for a replace both halves. Every resolve path must settle all of
+// them with the one decision, or the chip's own paragraph boundary can be
+// resolved the opposite way from its text.
+const chipRevisions = (chip: ChipView) => [
+  ...(chip.revisions ?? [chip.revision]),
+  ...(chip.partnerRevisions ?? (chip.partner ? [chip.partner] : []))
+];
 
-const itemRevisions = (item: RevisionGroupItem) =>
-  item.partner ? [item.revision, item.partner] : [item.revision];
+const itemRevisions = (item: RevisionGroupItem) => [
+  ...item.revisions,
+  ...(item.partnerRevisions ?? [])
+];
 
 function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // Only live (pending) revisions render; a resolved edit disappears from
@@ -84,6 +102,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const ignoreSelectionRef = useRef(false);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
 
   // Syncfusion steals focus into its editable div on every selection change;
   // panel actions must take it back or the next J/K press moves the DOCUMENT
@@ -104,34 +123,27 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // Live revision count, for the new-edit fast path below.
   const lastRevisionCountRef = useRef(0);
   const revisionCount = useCallback(() => {
-    try {
-      const changes = editor?.revisions?.changes;
-      if (Array.isArray(changes)) return changes.length;
-      return editor?.revisions?.length ?? 0;
-    } catch (error) {
-      debugSwallowed(error);
-      return 0;
-    }
+    const changes = editor?.revisions?.changes;
+    if (Array.isArray(changes)) return changes.length;
+    return editor?.revisions?.length ?? 0;
   }, [editor]);
 
   const refresh = useCallback(() => {
-    let views: ReturnType<typeof listRevisionGroups> = [];
-    try {
-      views = listRevisionGroups(editor);
-    } catch (error) {
-      debugSwallowed(error);
-      views = [];
-    }
+    const views = listRevisionGroups(editor);
     lastRevisionCountRef.current = revisionCount();
     setGroups(
       views.map((view) => ({
         key: groupKeyOf(view.changeSetId, view.group),
+        changeSetId: view.changeSetId,
+        group: view.group,
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
         chips: view.items.map((item) => ({
           revision: item.revision,
+          revisions: item.revisions,
           partner: item.partner,
+          partnerRevisions: item.partnerRevisions,
           revisionType: item.revisionType,
           text: item.text,
           beforeText: item.beforeText,
@@ -149,21 +161,36 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // (a DIFFERENT document opened in place) also rebuilds immediately.
   useEffect(() => {
     if (!editor) return;
-    refresh();
+    // EJ2 teardown race: a destroyed instance throws on any touch, so read it as "no editor".
+    if (editor.isDestroyed) {
+      setGroups([]);
+      return;
+    }
+    // The read that reaches the host's boundary if it throws - and a destroy
+    // racing this effect is not what that boundary is for.
+    try {
+      refresh();
+    } catch (error) {
+      if (!isTornDown(editor)) throw error;
+      setGroups([]);
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const onContentChange = () => {
-      clearTimeout(timer);
-      if (revisionCount() !== lastRevisionCountRef.current) refresh();
-      else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
-    };
-    quietly(() => editor.addEventListener?.('contentChange', onContentChange));
-    quietly(() => editor.addEventListener?.('documentChange', refresh));
+    const onContentChange = () =>
+      handleEditorEvent(() => {
+        clearTimeout(timer);
+        if (revisionCount() !== lastRevisionCountRef.current) refresh();
+        else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
+      });
+    const onDocumentChange = () => handleEditorEvent(refresh);
+    editor.addEventListener?.('contentChange', onContentChange);
+    editor.addEventListener?.('documentChange', onDocumentChange);
     return () => {
       clearTimeout(timer);
-      quietly(() =>
-        editor.removeEventListener?.('contentChange', onContentChange)
-      );
-      quietly(() => editor.removeEventListener?.('documentChange', refresh));
+      // EJ2 teardown race: unsubscribing a destroyed instance throws.
+      if (editor.isDestroyed) return;
+      editor.removeEventListener?.('contentChange', onContentChange);
+      editor.removeEventListener?.('documentChange', onDocumentChange);
     };
   }, [editor, refresh, revisionCount]);
 
@@ -171,19 +198,18 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // Programmatic chip focus sets ignoreSelectionRef so its selectionChange
   // echo cannot re-land on a neighbouring edit.
   useEffect(() => {
-    if (!editor) return;
-    const onSelectionChange = () => {
-      if (ignoreSelectionRef.current) return;
-      let revisions: any[] = [];
-      try {
+    // EJ2 teardown race: subscribing on a destroyed instance throws.
+    if (!editor || editor.isDestroyed) return;
+    const onSelectionChange = () =>
+      handleEditorEvent(() => {
+        if (ignoreSelectionRef.current) return;
         const current = editor.selection?.getCurrentRevision?.();
-        revisions = Array.isArray(current) ? current : current ? [current] : [];
-      } catch (error) {
-        debugSwallowed(error);
-        revisions = [];
-      }
-      if (revisions.length) {
-        try {
+        const revisions: any[] = Array.isArray(current)
+          ? current
+          : current
+          ? [current]
+          : [];
+        if (revisions.length) {
           for (const view of listRevisionGroups(editor)) {
             for (const item of view.items) {
               // Either half of a replace counts as clicking that one edit.
@@ -199,62 +225,57 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
               return;
             }
           }
-        } catch (error) {
-          // A torn-down selection mid-teardown must not take the panel down.
-          debugSwallowed(error);
         }
-      }
-      // The cursor is not on an assistant edit: nothing is active.
-      commitActiveRevision(null);
-    };
-    quietly(() =>
-      editor.addEventListener?.('selectionChange', onSelectionChange)
-    );
+        // The cursor is not on an assistant edit: nothing is active.
+        commitActiveRevision(null);
+      });
+    editor.addEventListener?.('selectionChange', onSelectionChange);
     return () => {
-      quietly(() =>
-        editor.removeEventListener?.('selectionChange', onSelectionChange)
-      );
+      // EJ2 teardown race: unsubscribing a destroyed instance throws.
+      if (!editor.isDestroyed)
+        editor.removeEventListener?.('selectionChange', onSelectionChange);
       activeRevisionRef.current = null;
       setActiveInlineRevision(editor, null);
     };
   }, [editor, commitActiveRevision, onHiddenChange]);
 
   // Bring the newly active chip into view once it exists (its group may have
-  // been collapsed until this same update expanded it).
+  // been collapsed until this same update expanded it). Scroll ONLY the rail's
+  // own scrollbox: scrollIntoView walks every scrollable ancestor, so it can
+  // yank the whole form viewport when a new revision lands.
   useEffect(() => {
     if (!activeRevision) return;
-    rowRefs.current.get(activeRevision)?.scrollIntoView?.({
-      block: 'nearest'
-    });
+    const row = rowRefs.current.get(activeRevision);
+    const box = scrollBoxRef.current;
+    if (!row || !box || box.scrollHeight <= box.clientHeight) return;
+    const rowTop =
+      row.getBoundingClientRect().top -
+      box.getBoundingClientRect().top +
+      box.scrollTop;
+    const rowBottom = rowTop + row.offsetHeight;
+    if (rowTop < box.scrollTop) box.scrollTop = rowTop;
+    else if (rowBottom > box.scrollTop + box.clientHeight)
+      box.scrollTop = rowBottom - box.clientHeight;
   });
 
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
-  const settleRevisions = (revisions: any[], isAccept: boolean) => {
-    try {
-      resolveRevisionsAsOneUndo(editor, revisions, isAccept);
-    } catch (error) {
-      // A stale revision range must not take the panel down.
-      debugSwallowed(error);
-    }
-  };
-
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
     if (!chips.length) return;
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    settleRevisions(revisions, isAccept);
+    resolveRevisionsAsOneUndo(editor, revisions, isAccept);
     refresh();
     // Resolving the last edit unmounts the rail — focus would land on
     // <body>, where nobody sees the next ⌘Z.
-    let remaining = 0;
-    try {
-      remaining = listRevisionGroups(editor).length;
-    } catch (error) {
-      debugSwallowed(error);
-      remaining = 0;
-    }
-    if (remaining) refocusPanel();
-    else quietly(() => editor?.focusIn?.());
+    if (listRevisionGroups(editor).length) refocusPanel();
+    else editor?.focusIn?.();
+  };
+
+  const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
+    resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept);
+    refresh();
+    if (listRevisionGroups(editor).length) refocusPanel();
+    else editor?.focusIn?.();
   };
 
   const focusChip = (chip: ChipView) => {
@@ -285,10 +306,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       } else {
         chip.revision?.select?.();
       }
-    } catch (error) {
-      // Navigation is best-effort; a disposed range is simply not selectable.
-      debugSwallowed(error);
     } finally {
+      // Cleanup, not containment: the echo suppression must lift even when
+      // navigation throws to the event-entry guard.
       queueMicrotask(() => {
         ignoreSelectionRef.current = false;
       });
@@ -307,8 +327,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         event.preventDefault();
         event.stopPropagation();
         const history = editor?.editorHistory ?? editor?.editorHistoryModule;
-        if (key === 'y' || event.shiftKey) quietly(() => history?.redo?.());
-        else quietly(() => history?.undo?.());
+        if (key === 'y' || event.shiftKey) history?.redo?.();
+        else history?.undo?.();
       }
       return;
     }
@@ -368,7 +388,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           ref={panelRef}
           aria-label='Assistant tracked changes'
           tabIndex={0}
-          onKeyDown={onPanelKeyDown}
+          onKeyDown={(event) => handleEditorEvent(() => onPanelKeyDown(event))}
           css={{
             width: 340,
             flex: '0 0 auto',
@@ -388,9 +408,12 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           <RailHead
             pendingCount={allChips.length}
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
-            onResolveAll={(isAccept) => resolveChips(allChips, isAccept)}
+            onResolveAll={(isAccept) =>
+              handleEditorEvent(() => resolveGroups(groups, isAccept))
+            }
           />
           <div
+            ref={scrollBoxRef}
             css={{
               overflowY: 'auto',
               padding: '12px 12px 40px',
@@ -417,8 +440,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                   if (el) rowRefs.current.set(chip.revision, el);
                   else rowRefs.current.delete(chip.revision);
                 }}
-                onFocusChip={focusChip}
-                onResolveChips={resolveChips}
+                onFocusChip={(chip) => handleEditorEvent(() => focusChip(chip))}
+                onResolveGroup={(isAccept) =>
+                  handleEditorEvent(() => resolveGroups([mem], isAccept))
+                }
+                onResolveChips={(chips, isAccept) =>
+                  handleEditorEvent(() => resolveChips(chips, isAccept))
+                }
               />
             ))}
           </div>

@@ -46,7 +46,7 @@ export interface CellNumberFormat {
   minusAfterPrefix: boolean;
 }
 
-export interface ParsedNumericCell {
+interface ParsedNumericCell {
   value: NumericValue;
   format: CellNumberFormat;
   /**
@@ -270,7 +270,7 @@ export function parseNumericCell(rawText: string): ParsedNumericCell | null {
  * - a quantity: numeric AND carrying a unit, decimal places, or observed
  *   thousands grouping - `$36,803`, `984.00`, `12.5%`, `1,284,350`.
  */
-export interface NumericTextClass {
+interface NumericTextClass {
   numeric: boolean;
   quantity: boolean;
   /** Present when numeric: the unit token ('' for a bare number). */
@@ -280,6 +280,17 @@ export interface NumericTextClass {
 }
 
 const MAX_DECORATION_LETTERS = 3; // "USD", "EUR", "CAD"
+
+/**
+ * A zero-padded leading digit run is an identifier, never an amount: `0093` is
+ * a location number, and its leading zeros are part of what it says. Read by
+ * the classifier below and by the write path, which must never re-render such
+ * a value as a number (that would silently turn `0093` into `93`).
+ */
+export function isZeroPaddedInteger(rawText: string): boolean {
+  const firstRun = /\d+/.exec(String(rawText ?? ''))?.[0] ?? '';
+  return firstRun.length > 1 && firstRun.startsWith('0');
+}
 
 export function classifyNumericText(rawText: string): NumericTextClass {
   const text = String(rawText ?? '').trim();
@@ -298,10 +309,7 @@ export function classifyNumericText(rawText: string): NumericTextClass {
     unit: parsed.unit,
     decimals: format.decimals
   };
-  // A zero-padded leading digit run is an identifier, never an amount.
-  const firstRun = /\d+/.exec(text)?.[0] ?? '';
-  if (firstRun.length > 1 && firstRun.startsWith('0'))
-    return { ...base, quantity: false };
+  if (isZeroPaddedInteger(text)) return { ...base, quantity: false };
   const hasUnit = `${format.prefix}${format.suffix}`.trim() !== '';
   const hasDecimals = format.decimals > 0;
   const hasGrouping =
@@ -414,7 +422,7 @@ export interface SkippedCell {
   reason: 'blank' | 'non_numeric' | 'missing_cell';
 }
 
-export interface ColumnComputationFailure {
+interface ColumnComputationFailure {
   ok: false;
   error:
     | 'no_numeric_cells'
@@ -565,7 +573,7 @@ export function resolveRenderFormat(
   };
 }
 
-export interface CollectedNumericCells {
+interface CollectedNumericCells {
   ok: true;
   /** Cells whose values may enter arithmetic, in row order. */
   parsed: ParsedColumnCell[];

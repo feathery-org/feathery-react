@@ -141,6 +141,103 @@ function onePargraphDoc() {
   };
 }
 
+function formattedParagraphDoc() {
+  return {
+    sections: [
+      {
+        blocks: [
+          para('Our commitments to the client', 'Heading 2'),
+          {
+            paragraphFormat: {
+              styleName: 'Normal',
+              textAlignment: 'Justify',
+              leftIndent: 8,
+              rightIndent: 3,
+              firstLineIndent: 4,
+              beforeSpacing: 2,
+              afterSpacing: 7,
+              lineSpacing: 1.15,
+              lineSpacingType: 'Multiple',
+              keepWithNext: true,
+              keepLinesTogether: true,
+              widowControl: true
+            },
+            inlines: [
+              {
+                text: COMMITMENT,
+                characterFormat: {
+                  fontFamily: 'Arial',
+                  fontSize: 10,
+                  fontColor: '#4D525A',
+                  italic: true,
+                  underline: 'Single'
+                }
+              }
+            ]
+          },
+          para('Tail.')
+        ]
+      }
+    ]
+  };
+}
+
+const SPLIT_CHARACTER_FORMAT = [
+  'fontFamily',
+  'fontSize',
+  'fontColor',
+  'bold',
+  'italic',
+  'underline',
+  'strikethrough',
+  'baselineAlignment',
+  'highlightColor',
+  'bidi',
+  'allCaps'
+] as const;
+
+const SPLIT_PARAGRAPH_FORMAT = [
+  'styleName',
+  'textAlignment',
+  'leftIndent',
+  'rightIndent',
+  'firstLineIndent',
+  'beforeSpacing',
+  'afterSpacing',
+  'spaceBeforeAuto',
+  'spaceAfterAuto',
+  'lineSpacing',
+  'lineSpacingType',
+  'keepWithNext',
+  'keepLinesTogether',
+  'widowControl',
+  'contextualSpacing',
+  'bidi'
+] as const;
+
+function resolvedParagraphFormat(
+  editor: DocumentEditor,
+  anchor: string,
+  length: number
+) {
+  editor.selection.select(`${anchor};0`, `${anchor};${length}`);
+  const characterFormat = Object.fromEntries(
+    SPLIT_CHARACTER_FORMAT.map((prop) => [
+      prop,
+      (editor.selection.characterFormat as any)[prop]
+    ])
+  );
+  editor.selection.select(`${anchor};0`, `${anchor};${length + 1}`);
+  const paragraphFormat = Object.fromEntries(
+    SPLIT_PARAGRAPH_FORMAT.map((prop) => [
+      prop,
+      (editor.selection.paragraphFormat as any)[prop]?.name ??
+        (editor.selection.paragraphFormat as any)[prop]
+    ])
+  );
+  return { characterFormat, paragraphFormat };
+}
+
 // The shape "make this into one statement" actually implies: several sentences
 // living in several paragraphs, to be collapsed into one.
 const SENT_1 = 'We act as an advocate at every stage of the policy lifecycle.';
@@ -516,6 +613,45 @@ describe("readSelection reports the selection's full extent", () => {
 });
 
 describe('replace_selection: every selection shape lands in one attempt', () => {
+  it('real SDK: a ghosted UI selection relocates the sent range by its content', () => {
+    const shifted = onePargraphDoc();
+    shifted.sections[0].blocks.splice(
+      1,
+      0,
+      para('New context inserted before the selected paragraph.')
+    );
+    const ed = makeRealDocumentEditor(shifted);
+    try {
+      ed.enableTrackChanges = true;
+      // The round was sent while COMMITMENT lived at 0;1. By apply time the
+      // UI range is gone and a new paragraph has shifted that content to 0;2.
+      ed.selection.select('0;0;0', '0;0;0');
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'ghost-selection-relocation',
+        edits: [
+          {
+            op: 'replace_selection',
+            anchor: '0;1',
+            startOffset: '0;1;0',
+            endOffset: `0;1;${COMMITMENT.length}`,
+            replace: ONE_STATEMENT,
+            expect: COMMITMENT
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'replace_selection',
+        anchor: '0;2',
+        relocated: { from: '0;1', to: '0;2' }
+      });
+      expect(blockTexts(ed)[2]).toBe(ONE_STATEMENT);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: a single-run selection (a sub-range of one paragraph)', () => {
     const ed = makeRealDocumentEditor(onePargraphDoc());
     try {
@@ -569,6 +705,81 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
       destroyRealDocumentEditor(ed);
     }
   });
+
+  it.each([
+    [
+      'without the selected paragraph mark',
+      ['We guide clients before renewal.', 'We stay through claims.'],
+      false
+    ],
+    [
+      'with the selected paragraph mark',
+      ['We guide clients before renewal.', 'We stay through claims.'],
+      true
+    ],
+    [
+      'into three paragraphs',
+      [
+        'We plan before renewal.',
+        'We negotiate in the market.',
+        'We stay through claims.'
+      ],
+      true
+    ]
+  ])(
+    'real SDK: splits one selected paragraph %s and survives verification',
+    (_label, parts, includeParagraphMark) => {
+      const ed = makeRealDocumentEditor(formattedParagraphDoc());
+      try {
+        ed.enableTrackChanges = true;
+        const before = ed.serialize();
+        const sourceFormat = resolvedParagraphFormat(
+          ed,
+          '0;1',
+          COMMITMENT.length
+        );
+        const expectedSelection = `${COMMITMENT}${
+          includeParagraphMark ? '\r' : ''
+        }`;
+        const replacement = parts.join('\r');
+        const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+          changeSetId: `paragraph-split-${parts.length}-${
+            includeParagraphMark ? 'with-mark' : 'without-mark'
+          }`,
+          edits: [
+            {
+              op: 'replace_selection',
+              anchor: '0;1',
+              startOffset: '0;1;0',
+              endOffset: `0;1;${expectedSelection.length}`,
+              replace: replacement,
+              expect: expectedSelection
+            } as any
+          ]
+        });
+
+        expect(result.results[0]).toMatchObject({ ok: true });
+        expect(result.changeSet).toMatchObject({ status: 'applied' });
+        expect(blockTexts(ed).slice(1, 1 + parts.length)).toEqual(parts);
+        expect(blockTexts(ed)).not.toContain(COMMITMENT);
+        expect(realRevisions(ed).length).toBeGreaterThan(0);
+        parts.forEach((part, index) => {
+          const inherited = resolvedParagraphFormat(
+            ed,
+            `0;${index + 1}`,
+            part.length
+          );
+          expect(inherited).toEqual(sourceFormat);
+          expect(inherited.characterFormat.fontSize).toBe(10);
+        });
+
+        rejectEveryRealRevision(ed);
+        expect(ed.serialize()).toBe(before);
+      } finally {
+        destroyRealDocumentEditor(ed);
+      }
+    }
+  );
 
   it('real SDK: a multi-run selection (bold + plain + italic in one paragraph)', () => {
     const ed = makeRealDocumentEditor(multiRunDoc());

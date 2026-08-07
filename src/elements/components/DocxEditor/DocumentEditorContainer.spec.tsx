@@ -8,18 +8,14 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
-import {
-  installRevisionGroupIsolation,
-  rebindRevisionGroups
-} from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
 } from './docxDirtyRegistry';
 
-jest.mock('../../../assistant/tools/docx/syncfusionDocumentOps', () => ({
-  installRevisionGroupIsolation: jest.fn(),
+jest.mock('../../../utils/documentEditorPrimitives', () => ({
   rebindRevisionGroups: jest.fn()
 }));
 
@@ -38,13 +34,15 @@ jest.mock('./index', () => {
     openNonce,
     onEditorReady,
     onChange,
-    onReady
+    onReady,
+    reviewChanges
   }: {
     source?: { url?: string };
     openNonce?: number;
     onEditorReady?: (editor: any) => void;
     onReady?: () => void;
     onChange?: (dirty: boolean) => void;
+    reviewChanges?: boolean;
   }) {
     const editor = React.useMemo(
       () => ({
@@ -65,7 +63,10 @@ jest.mock('./index', () => {
     }, [editor, onReady, openNonce, source?.url]);
     return React.createElement(
       'div',
-      { 'data-testid': `editor:${source?.url ?? 'none'}` },
+      {
+        'data-testid': `editor:${source?.url ?? 'none'}`,
+        'data-review-changes': String(!!reviewChanges)
+      },
       onChange &&
         React.createElement('button', {
           'data-testid': `dirty:${source?.url}`,
@@ -351,13 +352,10 @@ describe('DocumentEditorContainer revision group binding', () => {
         containerId='document-container-a'
         formId='form-1'
         stepId='step-1'
+        assistantEnabled
       />
     );
 
-    // Isolation is document-independent, so it belongs at create time.
-    await waitFor(() => {
-      expect(installRevisionGroupIsolation).toHaveBeenCalled();
-    });
     await waitFor(() => {
       expect(seenRevisionCounts.length).toBeGreaterThan(0);
     });
@@ -378,6 +376,7 @@ describe('DocumentEditorContainer revision group binding', () => {
         containerId='document-container-a'
         formId='form-1'
         stepId='step-1'
+        assistantEnabled
       />
     );
     await waitFor(() => {
@@ -431,6 +430,7 @@ describe('DocumentEditorContainer revision group binding', () => {
         containerId='document-container-a'
         formId='form-1'
         stepId='step-1'
+        assistantEnabled
       />
     );
 
@@ -440,5 +440,41 @@ describe('DocumentEditorContainer revision group binding', () => {
       });
     });
     view.unmount();
+  });
+
+  it('leaves assistant-off and read-only hosts outside review behavior', async () => {
+    const assistantOff = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-1'
+        stepId='step-1'
+      />
+    );
+    const assistantOffEditor = await assistantOff.findByTestId(
+      'editor:https://example.com/document-container-a.docx'
+    );
+    expect(assistantOffEditor).toHaveAttribute('data-review-changes', 'false');
+    expect(rebindRevisionGroups).not.toHaveBeenCalled();
+    assistantOff.unmount();
+
+    jest.clearAllMocks();
+    OPEN_STATE.opened = false;
+    const action = (initState.formSchemas as any)['form-key'].steps[0]
+      .buttons[0].properties.actions[0];
+    action.view_draft_read_only = true;
+    const readOnly = render(
+      <DocumentEditorContainer
+        containerId='document-container-a'
+        formId='form-1'
+        stepId='step-1'
+        assistantEnabled
+      />
+    );
+    const readOnlyEditor = await readOnly.findByTestId(
+      'editor:https://example.com/document-container-a.docx'
+    );
+    expect(readOnlyEditor).toHaveAttribute('data-review-changes', 'false');
+    expect(rebindRevisionGroups).not.toHaveBeenCalled();
+    readOnly.unmount();
   });
 });

@@ -164,6 +164,140 @@ describe('formatting the paragraphs a structural insert created', () => {
     }
   });
 
+  it('real SDK: a created heading can inherit from an unchanged repeated-text source after the insert shifts other anchors', () => {
+    const repeatedCell = () => ({
+      cellFormat: {},
+      blocks: [
+        {
+          paragraphFormat: {},
+          inlines: [
+            {
+              text: 'Repeated donor',
+              characterFormat: { bold: true, fontSize: 15 }
+            }
+          ]
+        }
+      ]
+    });
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              tableFormat: {},
+              rows: [{ rowFormat: {}, cells: [repeatedCell()] }]
+            },
+            {
+              tableFormat: {},
+              rows: [{ rowFormat: {}, cells: [repeatedCell()] }]
+            },
+            {
+              paragraphFormat: { styleName: 'Title' },
+              inlines: [{ text: 'Next Section' }]
+            }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'insert-then-inherit-from-stable-repeated-source',
+        edits: [
+          {
+            op: 'insert_text',
+            group: 'g01-new-heading',
+            anchor: '0;2',
+            expect: 'Next Section',
+            position: 'before',
+            text: 'New Heading'
+          },
+          {
+            op: 'apply_style',
+            group: 'g01-new-heading',
+            anchor: '0;2',
+            expect: 'New Heading',
+            inheritFormatFrom: '0;1;0;0;0'
+          }
+        ]
+      });
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      const inserted = selectRealBlock(ed, '0;2', 'New Heading');
+      expect(inserted.characterFormat.bold).toBe(true);
+      expect(inserted.characterFormat.fontSize).toBe(15);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
+  it('real SDK: repeated-text formatting binds to the immediately preceding insert at a shared stable boundary', () => {
+    const ed = makeRealDocumentEditor({
+      sections: [
+        {
+          blocks: [
+            {
+              paragraphFormat: { styleName: 'Heading 2' },
+              inlines: [{ text: 'Policy Information' }]
+            },
+            {
+              paragraphFormat: { styleName: 'Heading 2' },
+              inlines: [{ text: 'Policy Information' }]
+            },
+            {
+              paragraphFormat: { styleName: 'Title' },
+              inlines: [{ text: 'Premium Summary' }]
+            }
+          ]
+        }
+      ]
+    });
+    try {
+      ed.enableTrackChanges = true;
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'stable-boundary-repeated-created-heading',
+        edits: [
+          {
+            op: 'insert_text',
+            group: 'g01-new-section',
+            anchor: '0;2',
+            expect: 'Premium Summary',
+            position: 'before',
+            text: 'Homeowners - Example Address'
+          },
+          {
+            op: 'insert_text',
+            group: 'g01-new-section',
+            anchor: '0;2',
+            expect: 'Premium Summary',
+            position: 'before',
+            text: 'Policy Information'
+          },
+          {
+            op: 'apply_style',
+            group: 'g01-new-section',
+            anchor: '0;2',
+            expect: 'Policy Information',
+            styleName: 'Heading 2'
+          }
+        ]
+      });
+
+      expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+      expect(anchoredTexts(ed)).toEqual(
+        expect.arrayContaining([
+          ['0;2', 'Homeowners - Example Address'],
+          ['0;3', 'Policy Information'],
+          ['0;4', 'Premium Summary']
+        ])
+      );
+      const inserted = selectRealBlock(ed, '0;3', 'Policy Information');
+      expect(inserted.paragraphFormat.styleName).toBe('Heading 2');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: follow-up formatting set with correct expect lands on the inserted paragraphs', () => {
     const ed = makeRealDocumentEditor(baseDoc());
     try {
@@ -265,7 +399,12 @@ describe('formatting the paragraphs a structural insert created', () => {
       const style = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'style-missing-anchor',
         edits: [
-          { op: 'apply_style', anchor: '0;9', styleName: 'Heading 2', expect: '' }
+          {
+            op: 'apply_style',
+            anchor: '0;9',
+            styleName: 'Heading 2',
+            expect: ''
+          }
         ]
       });
       expect(style.results[0]).toMatchObject({

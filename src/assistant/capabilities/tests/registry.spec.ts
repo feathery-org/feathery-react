@@ -82,9 +82,26 @@ describe('capabilities registry <-> dispatch parity', () => {
 });
 
 const PARAM_TYPE_LANGUAGE =
-  /^(string|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
+  /^(string|string\[\]\[\]|int>=0\[\]|sectionSpec|number|boolean|int>0|int>=0|enum\[[^\]]{1,200}\])\??$/;
 
 describe('capability entries expose only the live handler contract', () => {
+  it('pins structured table and section parameter declarations exactly', () => {
+    const paramsFor = (op: string) =>
+      DOCUMENT_EDITOR_CAPABILITIES.find((entry) => entry.op === op)?.params;
+
+    expect(paramsFor('insert_table')).toEqual({
+      rows: 'int>0?',
+      columns: 'int>0?',
+      initialCells: 'string[][]?',
+      position: 'enum[before,after]?'
+    });
+    expect(paramsFor('insert_section_break')).toEqual({
+      sectionBreakType: 'enum[NewPage,Continuous,EvenPage,OddPage]?'
+    });
+    for (const undeclaredType of ['string[]?', 'string[][][]?', 'object?'])
+      expect(undeclaredType).not.toMatch(PARAM_TYPE_LANGUAGE);
+  });
+
   it.each(
     DOCUMENT_EDITOR_CAPABILITIES.map((entry) => [entry.op, entry] as const)
   )('%s retains only op, params, and requiresAnchor', (_op, entry) => {
@@ -121,7 +138,19 @@ describe('live retrieval surface owns its own contract', () => {
     );
   });
 
-  it('does not restore a parallel read catalogue', () => {
-    expect('DOCUMENT_EDITOR_READS' in capabilityRegistry).toBe(false);
+  it('registers the standalone section-pattern read without advertising it as an edit op', () => {
+    expect(capabilityRegistry.DOCUMENT_EDITOR_READ_CAPABILITIES).toEqual([
+      {
+        tool: 'getSectionPattern',
+        params: { near: 'string?' },
+        requiresAnchor: false,
+        readOnly: true
+      }
+    ]);
+    expect(
+      DOCUMENT_EDITOR_CAPABILITIES.some(
+        (entry) => entry.op === ('getSectionPattern' as any)
+      )
+    ).toBe(false);
   });
 });
