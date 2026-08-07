@@ -80,9 +80,14 @@ describe('BoxFolderPicker', () => {
         folder_id: '0'
       })
     );
-    expect(onSaved).toHaveBeenCalledWith({
-      'feathery.connections.box.folder_path': 'All Files'
-    });
+    // onSaved fires a tick after saveAccountConfig resolves, so it needs its
+    // own waitFor. Asserting it synchronously here races the handler and
+    // tempts a "fix" in the component instead of the test.
+    await waitFor(() =>
+      expect(onSaved).toHaveBeenCalledWith({
+        'feathery.connections.box.folder_path': 'All Files'
+      })
+    );
   });
 
   it('disables Select when the folder is not writable', async () => {
