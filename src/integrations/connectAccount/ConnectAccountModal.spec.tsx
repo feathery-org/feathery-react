@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ConnectAccountModal from './ConnectAccountModal';
 
 // A fake config component that lets tests trigger `onError` directly, since
@@ -94,5 +94,26 @@ describe('ConnectAccountModal', () => {
     rerender(<ConnectAccountModal {...baseProps} show={false} />);
     rerender(<ConnectAccountModal {...baseProps} show />);
     expect(screen.queryByText('Something went wrong')).toBeNull();
+  });
+
+  // Regression test: onChangeAccount must never reject (Form's implementation
+  // resolves with an error message string instead), since this fires it from
+  // a plain onClick without awaiting or catching. A resolved error message
+  // still needs to reach the user.
+  it('surfaces the error message returned by onChangeAccount', async () => {
+    const onChangeAccount = jest
+      .fn()
+      .mockResolvedValue('Please allow pop-ups to connect your account.');
+    render(
+      <ConnectAccountModal {...baseProps} onChangeAccount={onChangeAccount} />
+    );
+
+    fireEvent.click(screen.getByText('Change account'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Please allow pop-ups to connect your account.')
+      ).toBeTruthy()
+    );
   });
 });

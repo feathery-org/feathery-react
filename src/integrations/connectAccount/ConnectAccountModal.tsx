@@ -11,7 +11,11 @@ export type ConnectAccountModalProps = {
   provider: string;
   client: any;
   accountEmail: string;
-  onChangeAccount: () => void;
+  // Resolves with an error message on failure (popup blocked, OAuth
+  // rejected, etc.) so handleChangeAccount can surface it, or undefined on
+  // success. Must never reject: this is called fire-and-forget from a click
+  // handler, so an unhandled rejection would fail silently.
+  onChangeAccount: () => Promise<string | void>;
   onSaved: (values: Record<string, string>) => void;
   onClose: () => void;
 };
@@ -51,9 +55,10 @@ function ConnectAccountModal({
     return () => win.removeEventListener('keydown', handleKeyDown);
   }, [show, onClose]);
 
-  const handleChangeAccount = () => {
+  const handleChangeAccount = async () => {
     setError('');
-    onChangeAccount();
+    const errorMessage = await onChangeAccount();
+    if (errorMessage) setError(errorMessage);
   };
 
   if (!show) return null;
