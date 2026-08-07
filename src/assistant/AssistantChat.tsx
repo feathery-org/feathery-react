@@ -51,6 +51,7 @@ import {
   GRAY_100,
   GRAY_200,
   GRAY_400,
+  GRAY_500,
   GRAY_800
 } from './colors';
 import {
@@ -1276,7 +1277,7 @@ const AssistantChat = ({
             <CollapseIcon />
           </button>
           {isModeMenuOpen && (
-            <>
+            <Fragment>
               <div
                 css={{ position: 'fixed', inset: 0, zIndex: 1000 }}
                 onClick={() => setIsModeMenuOpen(false)}
@@ -1357,13 +1358,13 @@ const AssistantChat = ({
                     </button>
                   ))}
               </div>
-            </>
+            </Fragment>
           )}
         </div>
 
         {/* Thread dropdown */}
         {isDropdownOpen && (
-          <>
+          <Fragment>
             <div
               css={{ position: 'fixed', inset: 0, zIndex: 1000 }}
               onClick={() => setIsDropdownOpen(false)}
@@ -1482,7 +1483,7 @@ const AssistantChat = ({
                 </div>
               ))}
             </div>
-          </>
+          </Fragment>
         )}
       </div>
 
@@ -1838,7 +1839,7 @@ const AssistantChat = ({
         }}
       >
         {!voiceActive && (
-          <>
+          <Fragment>
             <input
               ref={fileInputRef}
               type='file'
@@ -1873,7 +1874,7 @@ const AssistantChat = ({
             >
               <PaperclipIcon />
             </button>
-          </>
+          </Fragment>
         )}
         {voiceActive ? (
           <button
@@ -1912,6 +1913,21 @@ const AssistantChat = ({
             onKeyDown={handleKeyDown}
             onPaste={handleComposerPaste}
             placeholder='Type a message...'
+            // A running turn already refuses a new message everywhere else in
+            // the composer (attach, send, mic, workflow chips all take
+            // `isLoading`); the input was the one control that still invited
+            // typing into a send that could not happen.
+            //
+            // readOnly, not disabled, on purpose. `disabled` blurs the field
+            // the moment a turn starts and drops it out of the tab order, so
+            // the common path - type, Enter, wait - would end every send by
+            // throwing the caret away, and a keyboard or screen-reader user
+            // would lose the composer entirely for the length of the turn with
+            // nothing announcing why. readOnly is what actually refuses the
+            // keystrokes; aria-disabled is what announces the state while the
+            // field stays focusable and its draft stays selectable.
+            readOnly={isLoading}
+            aria-disabled={isLoading}
             css={{
               flex: 1,
               padding: '10px 14px',
@@ -1919,9 +1935,26 @@ const AssistantChat = ({
               borderRadius: '8px',
               fontSize: '14px',
               outline: 'none',
-              transition: 'border-color 0.2s',
+              transition:
+                'border-color 0.2s, background-color 0.2s, color 0.2s',
               ':focus': {
                 borderColor: colors.primary
+              },
+              '&[aria-disabled="true"]': {
+                backgroundColor: GRAY_100,
+                // Muted, but still the readable end of the gray ramp: the
+                // placeholder and any draft already typed have to stay legible
+                // while the turn runs.
+                color: GRAY_500,
+                cursor: 'not-allowed',
+                // The field keeps focus deliberately, and a blinking caret in a
+                // field that refuses input reads as "type here".
+                caretColor: 'transparent',
+                '::placeholder': { color: GRAY_500 },
+                // The live accent would claim the field is taking input; its
+                // disabled counterpart - the same one the composer's buttons
+                // use — says the field is still ours, just not right now.
+                ':focus': { borderColor: colors.disabled }
               }
             }}
           />
