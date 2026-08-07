@@ -4,6 +4,7 @@ import SignatureModal from './components/SignatureModal';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { defaultTranslations, SignatureTranslations } from './translation';
 import ErrorInput from '../../components/ErrorInput';
+import { loadGoogleFonts } from '../../../utils/fonts';
 
 function SignatureField({
   element,
@@ -31,19 +32,7 @@ function SignatureField({
   };
 
   useEffect(() => {
-    // globalThis, not `global`. `global` only exists in Node - browsers never
-    // had it. Vite/webpack fake it for us by injecting `global` as an alias
-    // for `globalThis`, so it works there by accident. The thumbnail
-    // renderer's esbuild bundle skips that step, so `global` is just
-    // undefined and the thumbnail comes back blank. globalThis is the real,
-    // always-available name, so use that instead of relying on the alias.
-    if (!globalThis.webfontloaderPromise)
-      globalThis.webfontloaderPromise = import(
-        /* webpackChunkName: "webfontloader" */ 'webfontloader'
-      );
-    globalThis.webfontloaderPromise.then((WebFont: any) => {
-      WebFont.load({ google: { families: ['La Belle Aurore'] } });
-    });
+    loadGoogleFonts(['La Belle Aurore']);
   }, []);
 
   return (
