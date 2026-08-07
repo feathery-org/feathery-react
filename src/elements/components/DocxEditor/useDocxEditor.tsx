@@ -8,6 +8,7 @@ import {
 } from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
+import { attachTokenOverlay } from '../../../documentTokens/tokenOverlay';
 
 // Replaced by Rollup/Webpack from SYNCFUSION_LICENSE_KEY at package build
 // time. The typeof guard keeps source-level test/dev transforms safe when they
@@ -674,6 +675,9 @@ export function useDocxEditor({
 }: Props): Result {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerInstRef = useRef<any>(null);
+  // Detach for the editor-only token overlay (translucent backgrounds behind
+  // each token). Torn down alongside the editor it was mounted into.
+  const overlayDetachRef = useRef<null | (() => void)>(null);
   // Ignore Syncfusion contentChange while we are programmatically opening a
   // document — those events fire during load/destroy and must not mark dirty
   // or kick off host re-renders mid-flight.
@@ -808,6 +812,15 @@ export function useDocxEditor({
         // Native right-click menu — insert/delete table rows & columns,
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
         ed.enableContextMenu = true;
+        // Without this, the context menu's Paste item is a no-op: pasting
+        // content copied within the editor goes through Syncfusion's own
+        // buffer, not the browser clipboard, and is gated by this flag.
+        // External-app paste (Ctrl/Cmd+V or the menu) additionally goes
+        // through navigator.clipboard.readText(), which Syncfusion wires in
+        // on its own when the page is a secure context and the user has
+        // granted clipboard-read permission — nothing else to configure here
+        // for that path.
+        ed.enableLocalPaste = true;
         try {
           configureTrackedChangeReview(ed, reviewGate);
           // Engine-level fixes to the editing surface itself, not review
@@ -821,6 +834,9 @@ export function useDocxEditor({
         } catch {
           // Review-pane/grouping/engine patches must never block the mount.
         }
+        // Paint the editor-only token overlay. Its own contentChange listener
+        // repaints once a document (and its tokens) finishes loading.
+        overlayDetachRef.current = attachTokenOverlay(ed);
         setEditor(ed);
         onEditorReady?.(ed);
 
@@ -863,6 +879,8 @@ export function useDocxEditor({
           carriedRef.current = null;
         }
       }
+      overlayDetachRef.current?.();
+      overlayDetachRef.current = null;
       try {
         instance?.destroy?.();
       } catch {

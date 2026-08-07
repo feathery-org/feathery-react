@@ -1,0 +1,615 @@
+/**
+ * The Syncfusion boundary. Every content-control call the token system makes
+ * lives here, so the rest of the code never touches the editor directly and a
+ * version bump has one place to break.
+ *
+ * Everything below was measured against ej2-documenteditor v34 with a real
+ * editor instance, not read off the typings — see the runtime-probe appendix
+ * of docs/superpowers/specs/2026-08-03-docx-linked-tokens-design.md.
+ */
+
+import { instanceKey, TokenSpec, valueKey } from './plan';
+
+/** Prefix that marks a content control as ours, so we never touch the rest. */
+export const TAG_PREFIX = 'ftk:';
+
+/**
+ * Syncfusion's ContentControlInfo.
+ *
+ * WARNING: `canEdit` and `canDelete` are LOCK flags whose names say the
+ * opposite of what they do. Measured: `canEdit: true` means the contents
+ * CANNOT be edited (a real keystroke into such a control is blocked), and
+ * `canDelete: true` means the control CANNOT be deleted. The typings' doc
+ * comments describe the inverse.
+ */
+export type ContentControlInfo = {
+  title: string;
+  tag: string;
+  value: string;
+  canEdit: boolean;
+  canDelete: boolean;
+  items?: string[];
+};
+
+/** Bookmark name that addresses a token's value. See `selectValue`. */
+export const bookmarkFor = (id: string): string => `ftk_${id}`;
+
+/** The slice of the editor this module needs. Keeps tests free of Syncfusion. */
+export type EditorLike = {
+  exportContentControlData: () => ContentControlInfo[];
+  getBookmarks: () => string[];
+  selection: {
+    getContentControlInfo?: () => ContentControlInfo | undefined;
+    selectBookmark: (name: string, excludeBookmarkStartEnd?: boolean) => void;
+    select?: (start: string, end: string) => void;
+    startOffset?: string;
+    endOffset?: string;
+    /** The selected text, used to prove a range was actually selected. */
+    text?: string;
+    isEmpty?: boolean;
+  };
+  editor: {
+    insertText: (text: string) => void;
+    /** Clears a selection. The only way to remove a control's placeholder. */
+    delete?: () => void;
+  };
+  editorHistory?: {
+    beginUndoAction: () => void;
+    endUndoAction: () => void;
+  };
+};
+
+/**
+ * Run `write`, leaving the caret and the scroll position where they were.
+ *
+ * Selecting a bookmark scrolls it into view, so writing several tokens drags
+ * the page around and dumps the user somewhere they did not ask to be.
+ * Propagation must be invisible except for the numbers that changed.
+ */
+const withViewportPreserved = <T>(editor: EditorLike, write: () => T): T => {
+  const container = (editor as any)?.documentHelper?.viewerContainer;
+  const scroll = container
+    ? { top: container.scrollTop, left: container.scrollLeft }
+    : null;
+  const caret =
+    editor.selection?.startOffset && editor.selection?.endOffset
+      ? { start: editor.selection.startOffset, end: editor.selection.endOffset }
+      : null;
+
+  try {
+    return write();
+  } finally {
+    if (caret) editor.selection.select?.(caret.start, caret.end);
+    if (container && scroll) {
+      container.scrollTop = scroll.top;
+      container.scrollLeft = scroll.left;
+    }
+  }
+};
+
+const isOurs = (info: ContentControlInfo): boolean =>
+  typeof info.tag === 'string' && info.tag.startsWith(TAG_PREFIX);
+
+export const encodeTag = (spec: TokenSpec): string =>
+  `${TAG_PREFIX}${JSON.stringify(spec)}`;
+
+export const decodeTag = (tag: string): TokenSpec | null => {
+  if (!tag?.startsWith(TAG_PREFIX)) return null;
+  try {
+    const spec = JSON.parse(tag.slice(TAG_PREFIX.length));
+    return typeof spec?.id === 'string' ? (spec as TokenSpec) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Every token in the document, in document order. Ignores foreign controls.
+ *
+ * Returns nothing when the editor does not expose the content-control API —
+ * an older SyncFusion, or an instance still initialising. Tokens are a feature
+ * of the document, never a requirement of the editor: failing to read them
+ * must not take the editor down with it.
+ */
+
+/**
+ * Where a control sits: its table, and the row widget holding it.
+ *
+ * A token outside a table has no placement, which is not the same as a deleted
+ * one — see `isDetached`.
+ */
+type Placement = { table: any; row: any };
+
+export const placementOf = (control: any): Placement | null => {
+  const paragraph = control?.line?.paragraph;
+  const cell = paragraph?.associatedCell ?? paragraph?.containerWidget;
+  const row = cell?.ownerRow ?? cell?.containerWidget;
+  const table = row?.ownerTable ?? row?.containerWidget;
+  if (!Array.isArray(table?.childWidgets) || !row) return null;
+  return { table, row };
+};
+
+/**
+ * Whether a control's row has been deleted from its table.
+ *
+ * By IDENTITY, not by stored row index: `deleteRow` leaves the control in
+ * `contentControlCollection` (measured) AND the index it remembers goes stale,
+ * so the only truthful test is whether the table still contains that row widget.
+ * Renumbering a survivor can give it the same ADDRESS as a deleted control, so
+ * anything that tells them apart by address loses both.
+ */
+export const isDetached = (control: any): boolean => {
+  const placement = placementOf(control);
+  // No placement at all means the token is not in a table — a scalar total, say.
+  if (placement === null) return false;
+  return placement.table.childWidgets.indexOf(placement.row) === -1;
+};
+
+export const controlCollection = (editor: EditorLike): any[] => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  return Array.isArray(collection) ? collection : [];
+};
+
+// ── Table rows ───────────────────────────────────────────────────────────────
+// The row-building calls rows.ts makes, kept here with every other Syncfusion
+// call so a version bump has one place to break. All private surface; the
+// behaviours relied on are measured in tests/rowMechanics.spec.ts.
+
+/** Put the selection in a paragraph, so a row edit lands where intended. */
+export const selectParagraph = (
+  editor: EditorLike,
+  paragraph: any
+): boolean => {
+  const select = (editor as any)?.selection?.selectParagraphInternal;
+  if (!paragraph || typeof select !== 'function') return false;
+  select.call((editor as any).selection, paragraph, true);
+  return true;
+};
+
+/**
+ * Insert one row below the selection, copying the selected row's shape.
+ * The copy does NOT clone content controls — a grown row arrives blank.
+ */
+export const insertRowBelow = (editor: EditorLike): void => {
+  (editor as any).editor?.insertRow?.(false, 1);
+};
+
+/**
+ * Delete the row the selection sits in. Its controls stay in
+ * `contentControlCollection`, so row counts must come from the widgets.
+ */
+export const deleteSelectedRow = (editor: EditorLike): void => {
+  (editor as any).editor?.deleteRow?.();
+};
+
+/**
+ * Create an untagged text content control at the selection.
+ *
+ * The STRING form creates; the object form no-ops — measured. The selected
+ * text is DISCARDED and Syncfusion's placeholder inserted in its place.
+ */
+export const insertUntaggedControl = (editor: EditorLike): void => {
+  (editor as any).editor?.insertContentControl?.('Text');
+};
+
+/**
+ * A control's own text, read from the control rather than by address.
+ *
+ * Returns undefined when the host cannot report it, so the caller can fall back
+ * rather than mistake "cannot read" for "empty".
+ */
+const textOf = (editor: EditorLike, control: any): string | undefined => {
+  const read = (editor as any)?.editor?.getResultContentControlText;
+  if (typeof read !== 'function') return undefined;
+  try {
+    const text = read.call((editor as any).editor, control);
+    return typeof text === 'string' ? text : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export const readTokens = (
+  editor: EditorLike
+): Array<{ spec: TokenSpec; value: string }> => {
+  // Walk the live controls when we can: it keeps each control's identity, which
+  // is the only way to drop one whose row was deleted without also dropping a
+  // renumbered survivor that now shares its address.
+  const collection = controlCollection(editor);
+  if (collection.length > 0) {
+    // Values by position among OUR controls, for a host that cannot read a
+    // control's text directly. The exported data lists them in the same order.
+    const exported =
+      typeof editor?.exportContentControlData === 'function'
+        ? editor.exportContentControlData().filter(isOurs)
+        : [];
+
+    const tokens: Array<{ spec: TokenSpec; value: string }> = [];
+    let ordinal = 0;
+    for (const control of collection) {
+      const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+      if (spec === null) continue;
+      const nth = ordinal;
+      ordinal += 1;
+      if (isDetached(control)) continue;
+      tokens.push({
+        spec,
+        value: textOf(editor, control) ?? exported[nth]?.value ?? ''
+      });
+    }
+    return tokens;
+  }
+
+  // No collection to walk (an older SyncFusion, or an instance still starting):
+  // fall back to the exported data, which carries no identity.
+  return typeof editor?.exportContentControlData !== 'function'
+    ? []
+    : editor
+        .exportContentControlData()
+        .filter(isOurs)
+        .map((info) => ({ spec: decodeTag(info.tag), value: info.value }))
+        .filter(
+          (entry): entry is { spec: TokenSpec; value: string } =>
+            entry.spec !== null
+        );
+};
+
+/** The token the caret sits in, or null when the caret is in ordinary prose. */
+export const tokenAtCaret = (editor: EditorLike): TokenSpec | null => {
+  const info = editor?.selection?.getContentControlInfo?.();
+  if (!info?.tag) return null;
+  return decodeTag(info.tag);
+};
+
+/**
+ * The content control carrying a token, found by its tag.
+ *
+ * `contentControlCollection` and `selectContentControlInternal` are private
+ * Syncfusion surface, accepted deliberately: the control is the only durable
+ * address a token has. Measured — **deleting a value destroys its bookmark**
+ * (the first backspace over a selected value takes the bookmark with it) while
+ * the control survives and still reports its contents. Addressing by bookmark
+ * therefore fails permanently for any token the reader has cleared, which is
+ * exactly the "formatting never comes back" symptom.
+ */
+const controlFor = (editor: EditorLike, instance: string): object | null => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  if (!Array.isArray(collection)) return null;
+  return (
+    collection.find((control: any) => {
+      const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+      return spec !== null && instanceKey(spec) === instance;
+    }) ?? null
+  );
+};
+
+/**
+ * Every control by instance key, decoded once. `controlFor` re-decodes the
+ * whole collection per lookup, which is fine for one token and quadratic for
+ * a batch — `writeValues` builds this once per pass instead.
+ */
+const controlIndex = (editor: EditorLike): Map<string, object> => {
+  const collection = (editor as any)?.documentHelper?.contentControlCollection;
+  const found = new Map<string, object>();
+  if (!Array.isArray(collection)) return found;
+  for (const control of collection) {
+    const spec = decodeTag(control?.contentControlProperties?.tag ?? '');
+    if (spec !== null && !found.has(instanceKey(spec))) {
+      found.set(instanceKey(spec), control);
+    }
+  }
+  return found;
+};
+
+/**
+ * Whether a control is showing Syncfusion's own placeholder text rather than a
+ * value — "Click here or tap to insert text", localised.
+ *
+ * A token's text must always be a field value or the empty rendering of its
+ * format, so a placeholder is never allowed to stand. The flag lives on the
+ * live element, so this reads the collection rather than the exported data.
+ */
+export const showsPlaceholder = (
+  editor: EditorLike,
+  instance: string,
+  lookup?: Map<string, object>
+): boolean =>
+  Boolean(
+    ((lookup?.get(instance) ?? controlFor(editor, instance)) as any)
+      ?.contentControlProperties?.hasPlaceHolderText
+  );
+
+/**
+ * Put the selection over a token's value, excluding the markers around it.
+ *
+ * The control comes first because it outlives the value. The bookmark is kept
+ * as a fallback for the case where this private API is gone after a version
+ * bump — it addresses an untouched token perfectly well, and
+ * `excludeBookmarkStartEnd` keeps its markers out of the replacement.
+ */
+const selectInner = (
+  editor: EditorLike,
+  instance: string,
+  lookup?: Map<string, object>
+): boolean => {
+  const control = lookup?.get(instance) ?? controlFor(editor, instance);
+  const selectControl = (editor as any)?.selection
+    ?.selectContentControlInternal;
+  if (control && typeof selectControl === 'function') {
+    selectControl.call(editor.selection, control);
+    return true;
+  }
+
+  if (typeof editor?.getBookmarks !== 'function') return false;
+  if (typeof editor?.selection?.selectBookmark !== 'function') return false;
+  const bookmark = bookmarkFor(instance);
+  if (!editor.getBookmarks().includes(bookmark)) return false;
+  editor.selection.selectBookmark(bookmark, true);
+  return true;
+};
+
+/**
+ * Select a token's value, ready to be replaced.
+ *
+ * Selecting by address is exact — searching for the rendered text would pick
+ * the wrong token the moment two of them read `$0.00`.
+ */
+const selectValue = (
+  editor: EditorLike,
+  instance: string,
+  currentText: string,
+  lookup?: Map<string, object>
+): boolean => {
+  if (!selectInner(editor, instance, lookup)) return false;
+
+  // A write REPLACES a selected range. If the selection came back collapsed,
+  // inserting would append instead — which silently compounds a value on
+  // every pass (`100` becoming `100,100100`). Refuse rather than corrupt: a
+  // token that fails to update is visible, a mangled number is not. An empty
+  // selection is correct when the value itself is empty; there is nothing to
+  // replace, so the insert lands inside the control as measured.
+  const selected = editor.selection.text;
+  if (selected === undefined) return true; // host cannot report; trust it
+  // An empty selection is correct when there is nothing to replace: the value
+  // is genuinely empty, or the control is showing Syncfusion's placeholder,
+  // which is not content. A freshly built control always shows one, and
+  // refusing it left a grown row reading "Click here or tap to insert text"
+  // forever — the token looked unlinked because nothing could ever write to it.
+  if (selected === '') {
+    return currentText === '' || showsPlaceholder(editor, instance, lookup);
+  }
+  return true;
+};
+
+/**
+ * Select a token's value — the text only, not the control around it.
+ *
+ * Exported so a double-click can replace SyncFusion's default, which selects
+ * the whole content control. That control is locked against deletion, so the
+ * selection cannot be typed over and the gesture appears to do nothing.
+ */
+export const selectTokenValue = (
+  editor: EditorLike,
+  spec: TokenSpec
+): boolean => {
+  const current = readTokens(editor).find(
+    (entry) => instanceKey(entry.spec) === instanceKey(spec)
+  );
+  return selectValue(editor, instanceKey(spec), current?.value ?? '');
+};
+
+/**
+ * The document's token STRUCTURE, as a fingerprint a write must not change.
+ *
+ * Every corruption this feature has produced showed up here first: a control
+ * whose markers were eaten (count drops), a token written twice over (an
+ * address appears twice), a value compounded onto itself rather than replacing
+ * it (text of an untargeted token changes). Comparing this before and after a
+ * write turns each of those from silent damage into a caught error.
+ *
+ * Text is included per address so an untargeted token changing can be spotted;
+ * the caller says which addresses it meant to touch.
+ */
+export type DocumentShape = {
+  addresses: string[];
+  text: Map<string, string>;
+};
+
+export const documentShape = (editor: EditorLike): DocumentShape => {
+  const addresses: string[] = [];
+  const text = new Map<string, string>();
+  for (const { spec, value } of readTokens(editor)) {
+    const instance = instanceKey(spec);
+    addresses.push(instance);
+    text.set(instance, value);
+  }
+  return { addresses, text };
+};
+
+/**
+ * What changed between two shapes that should not have.
+ *
+ * `intended` is the set of addresses the write aimed at; everything else must
+ * come back identical. Returns one message per violation, empty when the write
+ * was well behaved.
+ */
+export const shapeViolations = (
+  before: DocumentShape,
+  after: DocumentShape,
+  intended: Set<string>
+): string[] => {
+  const problems: string[] = [];
+
+  if (before.addresses.length !== after.addresses.length) {
+    problems.push(
+      `token count changed: ${before.addresses.length} to ${after.addresses.length}`
+    );
+  }
+
+  const counted = (list: string[]): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const item of list) counts.set(item, (counts.get(item) ?? 0) + 1);
+    return counts;
+  };
+  const beforeCounts = counted(before.addresses);
+  const afterCounts = counted(after.addresses);
+  for (const [address, count] of afterCounts) {
+    const was = beforeCounts.get(address) ?? 0;
+    if (count === was) continue;
+    problems.push(
+      was === 0
+        ? `token ${address} appeared`
+        : `token ${address} went from ${was} to ${count} appearances`
+    );
+  }
+  for (const address of beforeCounts.keys()) {
+    if (!afterCounts.has(address)) problems.push(`token ${address} vanished`);
+  }
+
+  for (const [address, was] of before.text) {
+    if (intended.has(address)) continue;
+    const now = after.text.get(address);
+    if (now !== undefined && now !== was) {
+      problems.push(
+        `token ${address} changed without being asked to: ${JSON.stringify(
+          was
+        )} to ${JSON.stringify(now)}`
+      );
+    }
+  }
+
+  return problems;
+};
+
+/**
+ * Write new rendered values into their controls.
+ *
+ * `resetContentControlData` is NOT a write API — measured, it resets a control
+ * to its placeholder text and discards the value. The working write is
+ * select-the-text-then-insert, which preserves the tag and the control.
+ *
+ * Programmatic writes bypass the content lock, so computed tokens stay
+ * read-only to the user while remaining writable here — no unlock dance.
+ *
+ * The whole batch is one undo step: a single edit that moves four dependents
+ * must revert as one, or Ctrl+Z leaves the document inconsistent with itself.
+ * Pass `group: false` when the caller already holds an undo action open — the
+ * typing that caused this write belongs in the same step as the write.
+ *
+ * Every write is checked against the document's structure. Driving a rich-text
+ * editor as a data store means a write can damage far more than the value it
+ * aimed at, and each time that has happened it went unnoticed until someone
+ * looked at a document. `onViolation` receives what broke, with the token names.
+ */
+export const writeValues = (
+  editor: EditorLike,
+  updates: Array<{ id: string; text: string }>,
+  options: {
+    skipId?: string;
+    group?: boolean;
+    onViolation?: (problems: string[]) => void;
+  } = {}
+): { written: string[]; missed: string[]; violations: string[] } => {
+  const group = options.group ?? true;
+  // A token may appear many times; every appearance shows the same value, so
+  // one update fans out to each control that carries it.
+  const appearances = new Map<
+    string,
+    Array<{ instance: string; text: string }>
+  >();
+  for (const { spec, value } of readTokens(editor)) {
+    const key = valueKey(spec);
+    const list = appearances.get(key) ?? [];
+    list.push({ instance: instanceKey(spec), text: value });
+    appearances.set(key, list);
+  }
+
+  const written: string[] = [];
+  const missed: string[] = [];
+
+  // Decode the collection ONCE for the whole batch — reused by the placeholder
+  // check below and by the write phase. `showsPlaceholder`/`selectValue` each
+  // re-scan the collection without it, which is quadratic across a big batch
+  // (e.g. a grow building hundreds of blank rows in one call).
+  const lookup = controlIndex(editor);
+
+  // Compare before writing — an unchanged appearance costs nothing, and the
+  // token being typed in is skipped so the caret is never yanked mid-word.
+  const pending: Array<{
+    id: string;
+    instance: string;
+    text: string;
+    was: string;
+  }> = [];
+  for (const { id, text } of updates) {
+    if (id === options.skipId) continue;
+    const found = appearances.get(id);
+    if (!found) {
+      missed.push(id);
+      continue;
+    }
+    for (const appearance of found) {
+      // A control still showing Syncfusion's placeholder reads as "" but is NOT
+      // blank on screen ("Click here or tap to insert text"). Writing "" over a
+      // value that already reads "" is normally skipped, which left a newly
+      // grown empty row displaying the placeholder forever. Force the write (a
+      // delete) so the placeholder is cleared.
+      const needsPlaceholderClear =
+        text === '' &&
+        appearance.text === '' &&
+        showsPlaceholder(editor, appearance.instance, lookup);
+      if (appearance.text !== text || needsPlaceholderClear) {
+        pending.push({
+          id,
+          instance: appearance.instance,
+          text,
+          was: appearance.text
+        });
+      }
+    }
+  }
+  if (pending.length === 0) return { written, missed, violations: [] };
+
+  if (typeof editor?.editor?.insertText !== 'function') {
+    return {
+      written,
+      missed: pending.map(({ id }) => id),
+      violations: []
+    };
+  }
+
+  const before = documentShape(editor);
+  const intended = new Set(pending.map(({ instance }) => instance));
+
+  withViewportPreserved(editor, () => {
+    if (group) editor.editorHistory?.beginUndoAction();
+    try {
+      for (const { id, instance, text, was } of pending) {
+        if (!selectValue(editor, instance, was, lookup)) {
+          missed.push(id);
+          continue;
+        }
+        if (text === '') {
+          // `insertText('')` leaves the control showing Syncfusion's
+          // placeholder, which is real content, not a rendering flag — clearing
+          // `hasPlaceHolderText` does not remove it (measured). Deleting the
+          // selection does, and the control stays usable afterwards. A host
+          // without `delete` falls back rather than silently doing nothing.
+          if (typeof editor.editor.delete === 'function')
+            editor.editor.delete();
+          else editor.editor.insertText(text);
+        } else {
+          editor.editor.insertText(text);
+        }
+        if (!written.includes(id)) written.push(id);
+      }
+    } finally {
+      if (group) editor.editorHistory?.endUndoAction();
+    }
+  });
+
+  const violations = shapeViolations(before, documentShape(editor), intended);
+  if (violations.length > 0) options.onViolation?.(violations);
+
+  return { written, missed, violations };
+};

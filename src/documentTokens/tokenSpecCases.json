@@ -1,0 +1,72 @@
+{
+  "_comment": "Shared contract for the token spec a document carries: wrap.py must emit exactly `ftk:` + this JSON (compact separators, key order as listed), and the react editor must decode those bytes back to this spec and derive this bookmark. A duplicate lives at feathery-backend/apps/document/utils/tokens/token_spec_cases.json — the two MUST stay identical; each test suite reads its own repo's copy. Keys follow declare._spec() emission order. ASCII values only: python json.dumps escapes non-ASCII, JSON.stringify does not.",
+  "cases": [
+    {
+      "why": "bare field token",
+      "spec": { "id": "company_name", "format": { "kind": "text" }, "source": "company_name" },
+      "bookmark": "ftk_company_name"
+    },
+    {
+      "why": "currency field with validation",
+      "spec": {
+        "id": "cost",
+        "format": { "kind": "currency", "decimals": 2 },
+        "source": "cost",
+        "validate": { "min": 1, "required": true }
+      },
+      "bookmark": "ftk_cost"
+    },
+    {
+      "why": "repeated row carries its instance and index",
+      "spec": {
+        "id": "qty",
+        "format": { "kind": "number" },
+        "instance": "qty__2",
+        "index": 2,
+        "source": "qty"
+      },
+      "bookmark": "ftk_qty__2"
+    },
+    {
+      "why": "second appearance of a derived scalar",
+      "spec": {
+        "id": "subtotal",
+        "format": { "kind": "currency" },
+        "instance": "subtotal#1",
+        "formula": "SUM(item_total)"
+      },
+      "bookmark": "ftk_subtotal#1"
+    },
+    {
+      "why": "derived value reading a field with no token of its own",
+      "spec": {
+        "id": "tax",
+        "format": { "kind": "currency" },
+        "formula": "ROUND(subtotal * tax_pct / 100, 2)",
+        "reads": ["tax_pct"]
+      },
+      "bookmark": "ftk_tax"
+    },
+    {
+      "why": "display transform stays field-backed",
+      "spec": {
+        "id": "note",
+        "format": { "kind": "text" },
+        "source": "note",
+        "display": "UPPER(note)",
+        "reads": ["note"]
+      },
+      "bookmark": "ftk_note"
+    },
+    {
+      "why": "field token carries an explicit default fallback",
+      "spec": {
+        "id": "company_name",
+        "format": { "kind": "text" },
+        "source": "company_name",
+        "default": "Hilb"
+      },
+      "bookmark": "ftk_company_name"
+    }
+  ]
+}
