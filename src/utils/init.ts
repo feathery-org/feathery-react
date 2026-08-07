@@ -150,9 +150,6 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     global.scriptjsLoadPromise = import(
       /* webpackChunkName: "scriptjs" */ 'scriptjs'
     );
-    global.webfontloaderPromise = import(
-      /* webpackChunkName: "webfontloader" */ 'webfontloader'
-    );
 
     // Client-side tracking logic
     if (initState.userTracking === 'cookie') {
