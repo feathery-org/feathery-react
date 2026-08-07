@@ -71,7 +71,30 @@ if (!(window.SVGElement.prototype as any).getBBox) {
     ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
 }
 
-function makeEditor(sfdt: any): DocumentEditor {
+// `layoutType: 'Continuous'` is a JSDOM accommodation, not a product setting,
+// and it belongs only on fixtures that carry a header or footer story.
+//
+// jest-canvas-mock cannot measure text, so a NON-EMPTY header widget gets a NaN
+// height. That NaN reaches `Math.max(headerDistance + page.headerWidget.height,
+// top)` in the SDK's `updateClientArea` (viewer.js:5770 - the footer arm at :5785
+// is the same), so `viewer.clientArea` goes NaN. Every fit test downstream
+// compares against NaN and every such comparison is false, so
+// `Layout.shiftWidgetsForPara` (layout.js:12812) can neither judge a paragraph to
+// fit nor take its escape hatch: it splits the SAME paragraph onto a fresh page
+// forever, about 11 pages a second, and the whole worker wedges - synchronously,
+// so jest's testTimeout cannot fire. It reproduces on `replace_text` with no
+// relocation in the picture, so it is not about these ops.
+//
+// In Chrome the header widget measures 16.83 and `clientArea` is finite, so the
+// runaway does not exist there: the same move over a 7-page header-bearing
+// document accepts in 116ms and rejects byte-exact in 169ms. Continuous layout
+// does not paginate, so the NaN never reaches a fit test. Header-free fixtures
+// keep the default `Pages` layout on purpose - the pagination-sensitive
+// assertions elsewhere in this file must keep testing what they test.
+function makeEditor(
+  sfdt: any,
+  options: { layoutType?: 'Pages' | 'Continuous' } = {}
+): DocumentEditor {
   const host = document.createElement('div');
   host.style.width = '900px';
   host.style.height = '700px';
@@ -83,7 +106,8 @@ function makeEditor(sfdt: any): DocumentEditor {
     enableImageResizer: true,
     enableSearch: true,
     enableSfdtExport: true,
-    enableEditorHistory: true
+    enableEditorHistory: true,
+    ...(options.layoutType ? { layoutType: options.layoutType } : {})
   });
   editor.appendTo(host);
   editor.open(JSON.stringify(sfdt));
@@ -1228,6 +1252,120 @@ describe('the rail card resolves a relocation as one unit', () => {
       ]);
     } finally {
       destroyEditor(editor);
+    }
+  });
+});
+
+// Every real proposal carries a header, and no fixture above has one - so every
+// relocation case in this file was being judged on a document shape the product
+// never sees. This covers that shape on both resolutions and both paths.
+//
+// It is also the case Anthony hit: under the default `Pages` layout these four
+// do not fail, they HANG, which is why nothing caught them. The cause is a JSDOM
+// text-measurement artefact and it is written out in full beside `makeEditor`.
+describe('a relocation on a document that carries a header', () => {
+  const headerFixture = () => {
+    const fixture: any = nestedFixture();
+    fixture.sections[0].headersFooters = {
+      header: { blocks: [{ inlines: [{ text: 'Hilb Group Proposal' }] }] }
+    };
+    return fixture;
+  };
+  const MOVED = ['Next Steps', 'How We Support Clients'];
+  const headerEditor = () =>
+    makeEditor(headerFixture(), { layoutType: 'Continuous' });
+
+  // Without this the whole describe could pass over a document whose header
+  // `open()` dropped, which is precisely the vacuous-fixture failure Anthony
+  // named on the Word-section case. The runaway needs a header story with a
+  // non-empty INLINE - an empty one short-circuits before the NaN arithmetic -
+  // so what is asserted is the inline text, not the presence of the story.
+  it('the fixture really carries a non-empty header story', () => {
+    const editor = headerEditor();
+    try {
+      const section = JSON.parse(editor.serialize()).sec?.[0];
+      const header = section?.hf?.h ?? section?.headersFooters?.header;
+      const text = (header?.b ?? header?.blocks ?? [])
+        .flatMap((block: any) => block.i ?? block.inlines ?? [])
+        .map((inline: any) => inline.tlp ?? inline.text);
+      expect(text).toEqual(['Hilb Group Proposal']);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('acceptAll completes the move', () => {
+    const editor = headerEditor();
+    try {
+      const result = apply(
+        editor,
+        [{ op: 'move_section', anchor: '0;6', targetAnchor: '0;0' }],
+        'header-accept'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(headings(editor).slice(0, 2)).toEqual(MOVED);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('rejectAll restores the document byte for byte', () => {
+    const editor = headerEditor();
+    try {
+      const before = editor.serialize();
+      const result = apply(
+        editor,
+        [{ op: 'move_section', anchor: '0;6', targetAnchor: '0;0' }],
+        'header-reject'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.rejectAll();
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('the rail card restores it byte for byte, and accepts as one unit', () => {
+    const rejectEditor = headerEditor();
+    try {
+      const before = rejectEditor.serialize();
+      apply(
+        rejectEditor,
+        [{ op: 'move_section', anchor: '0;6', targetAnchor: '0;0' }],
+        'header-rail-reject'
+      );
+      const groups = listRevisionGroups(rejectEditor as unknown as LiveEditor);
+      expect(groups).toHaveLength(1);
+      resolveLiveRevisionGroupsAsOneUndo(
+        rejectEditor as unknown as LiveEditor,
+        groups,
+        false
+      );
+      expect(rejectEditor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(rejectEditor);
+    }
+
+    const acceptEditor = headerEditor();
+    try {
+      apply(
+        acceptEditor,
+        [{ op: 'move_section', anchor: '0;6', targetAnchor: '0;0' }],
+        'header-rail-accept'
+      );
+      const groups = listRevisionGroups(acceptEditor as unknown as LiveEditor);
+      expect(groups).toHaveLength(1);
+      resolveLiveRevisionGroupsAsOneUndo(
+        acceptEditor as unknown as LiveEditor,
+        groups,
+        true
+      );
+      expect(acceptEditor.revisions.length).toBe(0);
+      expect(headings(acceptEditor).slice(0, 2)).toEqual(MOVED);
+    } finally {
+      destroyEditor(acceptEditor);
     }
   });
 });
