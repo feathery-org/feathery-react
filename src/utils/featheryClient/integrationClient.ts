@@ -236,6 +236,87 @@ export default class IntegrationClient {
     );
   }
 
+  async startAccountConnect(provider: string, parentOrigin: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      provider,
+      parent_origin: parentOrigin
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/start/?${params}`
+    );
+    if (!response) throw new Error('Unable to start authorization.');
+
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(parseAPIError(payload) || 'Unable to start authorization.');
+  }
+
+  async getAccountConnectStatus(state: string) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const params = encodeGetParams({
+      form_key: this.formKey,
+      fuser_key: userId,
+      state
+    });
+    const response = await this._fetch(
+      `${API_URL}account-connect/status/?${params}`
+    );
+    if (!response) return { status: 'pending' };
+
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(
+      parseAPIError(payload) || 'Unable to check authorization status.'
+    );
+  }
+
+  async browseAccountResources(
+    provider: string,
+    parent: string,
+    { marker = '', create = '' }: { marker?: string; create?: string } = {}
+  ) {
+    return this._accountConnectPost('browse', {
+      provider,
+      parent,
+      marker,
+      create
+    });
+  }
+
+  async saveAccountConfig(provider: string, selection: Record<string, any>) {
+    return this._accountConnectPost('config', { provider, selection });
+  }
+
+  async _accountConnectPost(path: string, body: Record<string, any>) {
+    await initFormsPromise;
+    const { userId } = initInfo();
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify({
+        form_key: this.formKey,
+        fuser_key: userId,
+        ...body
+      })
+    };
+    const response = await this._fetch(
+      `${API_URL}account-connect/${path}/`,
+      options
+    );
+    if (!response) throw new Error('Unable to reach the connected account.');
+
+    const payload = await response.json();
+    if (response.status === 200) return payload;
+    throw new Error(
+      parseAPIError(payload) || 'Unable to reach the connected account.'
+    );
+  }
+
   async triggerFlinksIframeAuthorization() {
     await initFormsPromise;
     const { userId } = initInfo();
