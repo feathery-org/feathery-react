@@ -2,6 +2,7 @@ import { ContextOnAction, ContextOnChange, ContextOnView } from '../types/Form';
 
 export const ACTION_ADD_REPEATED_ROW = 'add_repeated_row';
 export const ACTION_BACK = 'back';
+export const ACTION_TRIGGER_BOX_OAUTH = 'trigger_box_oauth';
 export const ACTION_PURCHASE_PRODUCTS = 'purchase_products';
 export const ACTION_SELECT_PRODUCT_TO_PURCHASE = 'select_product_to_purchase';
 export const ACTION_REMOVE_PRODUCT_FROM_PURCHASE =
@@ -44,6 +45,8 @@ export const REQUIRED_FLOW_ACTIONS = {
   [ACTION_TRIGGER_ARGYLE]: 'You must authorize Argyle before proceeding',
   [ACTION_TRIGGER_PLAID]: 'You must authorize Plaid before proceeding',
   [ACTION_TRIGGER_FLINKS]: 'You must authorize Flinks before proceeding',
+  [ACTION_TRIGGER_BOX_OAUTH]:
+    'You must connect your Box account before proceeding',
   [ACTION_ALLOY_VERIFY_ID]: 'You must verify your ID before proceeding',
   [ACTION_TRIGGER_PERSONA]: 'You must verify your ID before proceeding'
 };

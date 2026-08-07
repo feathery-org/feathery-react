@@ -36,6 +36,23 @@ describe('TextField - Base Functionality', () => {
 
       expect(input().hasAttribute('disabled')).toBe(true);
     });
+
+    it('displays a programmatically updated value', () => {
+      const element = createTextFieldElement('text_field');
+      const props = createTextFieldProps(element);
+      const { rerender } = render(<TextField {...props} rawValue='' />);
+
+      rerender(
+        <TextField
+          {...props}
+          rawValue='All Files / Client Files / Data Gathering'
+        />
+      );
+
+      expect(input().value).toBe(
+        'All Files / Client Files / Data Gathering'
+      );
+    });
   });
 
   describe('Text Field Processing', () => {
