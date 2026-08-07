@@ -9,6 +9,20 @@ const handlePaste = (e: ClipboardEvent) => {
   featheryDoc().execCommand('insertText', false, plainText);
 };
 
+// Browsers don't paint the native selection highlight over
+// contenteditable=false nodes (inline icon embeds), so mirror the selection
+// onto them with an attribute the icon span styles against.
+const syncIconSelection = (root: any, sel: any) => {
+  if (!root?.querySelectorAll) return;
+  const canCheck =
+    sel && !sel.isCollapsed && typeof sel.containsNode === 'function';
+  root.querySelectorAll('[data-feathery-icon]').forEach((node: any) => {
+    if (canCheck && sel.containsNode(node, true))
+      node.setAttribute('data-icon-selected', '');
+    else node.removeAttribute('data-icon-selected');
+  });
+};
+
 function useTextEdit({
   editable,
   focused,
@@ -58,7 +72,9 @@ function useTextEdit({
         },
         onSelect: (e: any) => {
           if (!focused) e.preventDefault();
-          onTextSelect && onTextSelect(featheryWindow().getSelection());
+          const selection = featheryWindow().getSelection();
+          syncIconSelection(spanRef.current, selection);
+          onTextSelect && onTextSelect(selection);
         },
         onKeyDown: (e: any) => {
           if (!focused) e.preventDefault();
@@ -66,6 +82,7 @@ function useTextEdit({
             onTextKeyDown(e, spanRef.current, featheryWindow().getSelection());
         },
         onBlur: (e: any) => {
+          syncIconSelection(spanRef.current, null);
           updateEditMode('hover');
           onTextBlur && onTextBlur(e);
         },
