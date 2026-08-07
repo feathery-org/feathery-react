@@ -770,6 +770,80 @@ describe('IntegrationClient', () => {
       });
     });
 
+    it('ignores the form signer field for a docusign sign, keeping the role mappings', async () => {
+      // The field names whoever signs inline, in the form. Nobody does on
+      // DocuSign - it mails every recipient itself, from the role mappings -
+      // so routing to that field on top of the roles would send the documents
+      // to someone the designer never listed as a signer.
+      const integrationClient = new IntegrationClient('test_form_key');
+      Object.assign(fieldValues, {
+        signer_field: 'filler@example.com',
+        buyer_field: 'buyer@example.com'
+      });
+      const base = {
+        documents: ['doc1', 'doc2'],
+        run_async: false,
+        sign_method: 'docusign',
+        envelope_signer_field_key: 'signer_field',
+        envelope_signers: [
+          { document_id: 'doc1', role_id: 'role-1', field_key: 'buyer_field' }
+        ]
+      };
+      // Both shapes reach DocuSign: the direct sign, and the editor whose
+      // envelope action carries no outcome of its own.
+      const actions = [
+        base,
+        {
+          ...base,
+          envelope_action: 'open_in_editor',
+          editor_toolbar_actions: ['draft']
+        }
+      ];
+
+      for (const action of actions) {
+        global.fetch.mockResolvedValue({
+          ok: true,
+          json: jest
+            .fn()
+            .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' })
+        });
+
+        await integrationClient.generateEnvelopes(action);
+
+        const calls = global.fetch.mock.calls;
+        const body = JSON.parse(calls[calls.length - 1][1].body);
+        // Only the mapped role, and doc2 - which has no mapping - picks up
+        // nobody rather than falling back to the form signer field.
+        expect(body.signers).toEqual([
+          {
+            document_id: 'doc1',
+            role_id: 'role-1',
+            email: 'buyer@example.com',
+            filler: false
+          }
+        ]);
+      }
+
+      // A caller naming an email outright still routes to them.
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest
+          .fn()
+          .mockResolvedValue({ docusign_envelope_id: 'ds-2', status: 'sent' })
+      });
+      await integrationClient.generateEnvelopes(base, 'override@example.com');
+      const calls = global.fetch.mock.calls;
+      const body = JSON.parse(calls[calls.length - 1][1].body);
+      expect(body.signers).toContainEqual({
+        document_id: 'doc2',
+        email: 'override@example.com',
+        filler: true
+      });
+
+      delete fieldValues.signer_field;
+      delete fieldValues.buyer_field;
+    });
+
     it('sends sign_method alongside the editor action when both are present', async () => {
       const formKey = 'test_form_key';
       const integrationClient = new IntegrationClient(formKey);

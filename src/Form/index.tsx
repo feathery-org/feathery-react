@@ -236,10 +236,7 @@ import {
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
-import {
-  ENVELOPE_LABELS,
-  useEnvelopeGenerationToast
-} from './components/ActionToast/useEnvelopeGenerationToast';
+import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
 import { AssistantChat } from '../assistant';
 import type {
@@ -259,6 +256,11 @@ const UNSAVED_DOCX_MESSAGE =
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
 );
+
+// The action flow keys its toast items by action index; the logic-rule and
+// container entry points have no index, so they announce under their own ids.
+const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
+const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -686,7 +688,8 @@ function Form({
   const {
     currentEnvelopeGeneration,
     initializeEnvelopeGeneration,
-    updateEnvelopeGeneration
+    updateEnvelopeGeneration,
+    showEnvelopeOutcome
   } = useEnvelopeGenerationToast();
 
   // Track ActionToast height for positioning WorkflowChat above it
@@ -1226,7 +1229,8 @@ function Form({
           // 'open_in_editor' and carries no outcome of its own.
           const runEnvelopeAction = async (
             data: any,
-            actingAction?: string
+            actingAction?: string,
+            draft = false
           ) => {
             const envAction = actingAction ?? action.envelope_action;
             if (envAction === 'download' && data.files) {
@@ -1240,25 +1244,37 @@ function Form({
               const newValues = { [action.save_document_field_key]: files };
               updateFieldValues(newValues);
               client.submitCustom(newValues);
-            } else if (
-              (!envAction || envAction === 'sign') &&
-              !isDocusignSignAction(action, envAction)
-            ) {
+            } else if (!envAction || envAction === 'sign') {
+              // `envAction` has to be passed: in the editor flow
+              // action.envelope_action is 'open_in_editor', and the outcome is
+              // the toolbar button the filler pressed.
+              if (isDocusignSignAction(action, envAction)) {
+                // DocuSign has no Feathery sign URL — its
+                // {docusign_envelope_id, status} response is itself the
+                // completion signal, so all that's left is telling the filler.
+                showEnvelopeOutcome(
+                  ENVELOPE_FLOW_TOAST_ID,
+                  draft ? 'Saved as Draft' : 'Sent for Signature',
+                  action.documents
+                );
+                return;
+              }
               // Feathery hosted eSign: open the signing page. The action-flow
               // redirect/registerEvent variant is step-specific, so it's not
-              // run for logic-rule invocations. DocuSign has no Feathery sign
-              // URL — its {docusign_envelope_id, status} response is itself the
-              // completion signal. `envAction` has to be passed: in the editor
-              // flow action.envelope_action is 'open_in_editor', and the outcome
-              // is the toolbar button the filler pressed.
+              // run for logic-rule invocations.
               //
               // Only ever opened as a signer: the batch returns the filler's
               // own token when they sign it, and there's nothing for them to
               // open when it doesn't.
-              const signerId = (data.signers ?? []).find(
-                (s: any) => s.signer_id
-              )?.signer_id;
+              const signers = data.signers ?? [];
+              const signerId = signers.find((s: any) => s.signer_id)?.signer_id;
               if (signerId) openTab(getSignUrl(signerId, action.redirect));
+              else if (signers.some((s: any) => s.invited))
+                showEnvelopeOutcome(
+                  ENVELOPE_FLOW_TOAST_ID,
+                  'Sent for Signature',
+                  action.documents
+                );
             }
           };
           const data = await client.generateEnvelopes(action, signerEmail);
@@ -1287,7 +1303,7 @@ function Form({
                     return { status: 'error', message: 'Finalize failed' };
                   }
                   if (result.status === 'error') return result;
-                  await runEnvelopeAction(result, envelopeAction);
+                  await runEnvelopeAction(result, envelopeAction, draft);
                   finalized = result;
                   return result;
                 },
@@ -1308,6 +1324,10 @@ function Form({
           await runEnvelopeAction(data);
           return data;
         },
+        // Lets a document-editor container, which runs its own signing action
+        // outside this flow, report the outcome through the same toast.
+        showEnvelopeOutcome: (label: string, documents?: string[]) =>
+          showEnvelopeOutcome(ENVELOPE_CONTAINER_TOAST_ID, label, documents),
         fields,
         products: Object.seal(
           getSimplifiedProducts(integrations?.stripe, updateFieldValues, client)
@@ -2901,7 +2921,11 @@ function Form({
         // envelope_action is 'open_in_editor' and carries no outcome itself).
         // Self-guards on a container editor, which hands the envelope to a
         // document-editor container instead of running the action.
-        const runEnvelopeAction = async (data: any, actingAction?: string) => {
+        const runEnvelopeAction = async (
+          data: any,
+          actingAction?: string,
+          draft = false
+        ) => {
           if (editorContainerId(action)) return;
           const envAction = actingAction ?? action.envelope_action;
           if (!envAction || envAction === 'sign') {
@@ -2912,6 +2936,17 @@ function Form({
               // continue the flow. `envAction` has to be passed: in the editor
               // flow action.envelope_action is 'open_in_editor', and the
               // outcome is the toolbar button the filler pressed.
+              //
+              // Create Draft finalizes as a sign too, so the label comes off
+              // the request — a draft is saved in the sender's DocuSign
+              // account, not delivered to anyone. Not off the response: the
+              // poll endpoint overwrites its status with "complete", so
+              // DocuSign's own "created" never reaches here.
+              showEnvelopeOutcome(
+                envelopeId,
+                draft ? 'Saved as Draft' : 'Sent for Signature',
+                action.documents
+              );
               return;
             }
             // One entry comes back per signable envelope, carrying an id only
@@ -2922,9 +2957,11 @@ function Form({
             if (!matchedSigner) {
               // Nothing in the batch for the filler to sign themselves.
               if (responseSigners.some((s: any) => s.invited))
-                updateEnvelopeGeneration(envelopeId, {
-                  labels: { ...ENVELOPE_LABELS, complete: 'Sent for Signature' }
-                });
+                showEnvelopeOutcome(
+                  envelopeId,
+                  'Sent for Signature',
+                  action.documents
+                );
               return;
             }
             // Sign files
@@ -3025,7 +3062,7 @@ function Form({
                     message: 'Failed to finalize documents. Please try again.'
                   };
                 if (result.status === 'error') return result;
-                await runEnvelopeAction(result, envelopeAction);
+                await runEnvelopeAction(result, envelopeAction, draft);
                 return result;
               },
               onComplete: () => {

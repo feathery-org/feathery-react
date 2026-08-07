@@ -9,12 +9,14 @@ import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
+import internalState from '../../../utils/internalState';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import {
   containerToolbarOutcomes,
   editorContainerId,
   getSignUrl,
-  isDocusignSignAction
+  isDocusignSignAction,
+  signsViaDocusign
 } from '../../../utils/document';
 import {
   registerDocxEditor,
@@ -313,7 +315,13 @@ export default function DocumentEditorContainer({
   const runSigningAction = useCallback(
     async (draft: boolean) => {
       if (!envelope) return;
-      const signerKey = targetAction?.envelope_signer_field_key;
+      const viaDocusign = signsViaDocusign(targetAction ?? {});
+      // The field names whoever signs inline. Nobody does on DocuSign - it
+      // mails every recipient itself, from the role mappings - so routing to
+      // that field would reach someone never listed as a signer.
+      const signerKey = viaDocusign
+        ? ''
+        : targetAction?.envelope_signer_field_key;
       const fillerEmail = signerKey
         ? fieldValues[signerKey]?.toString() ?? ''
         : '';
@@ -354,9 +362,17 @@ export default function DocumentEditorContainer({
                 }
               ]
         ).filter((entry: any) => entry.email);
-        finalized = await client.finalizeEnvelope(envelope.id, signers);
+        finalized = await client.finalizeEnvelope(
+          envelope.id,
+          signers,
+          targetAction?.sign_method
+        );
         setFinalizedId(envelope.id);
       }
+
+      // Nothing here navigates away, so the outcome is only visible if it's
+      // announced.
+      const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
 
       if (isDocusignSignAction(targetAction ?? {}, 'sign')) {
         // DocuSign has no Feathery sign page: the backend send (or draft) is
@@ -368,17 +384,25 @@ export default function DocumentEditorContainer({
         });
         if (!result) throw Error('Failed to send the document to DocuSign');
         if (result.status === 'error') throw Error(result.message);
+        announce?.(
+          draft ? 'Saved as Draft' : 'Sent for Signature',
+          targetAction?.documents
+        );
         return;
       }
 
       // A signer id comes back only when the filler signs first. Without one
       // the envelope is someone else's to sign, so there's nothing to open.
-      if (!finalized?.signer_id) return;
+      if (!finalized?.signer_id) {
+        if (finalized?.invited)
+          announce?.('Sent for Signature', targetAction?.documents);
+        return;
+      }
       const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
       if (targetAction?.redirect) featheryWindow().location.href = url;
       else openTab(url);
     },
-    [client, envelope, targetAction, activeDocumentId]
+    [client, envelope, targetAction, activeDocumentId, formId]
   );
 
   // 'draft' as the terminal action means Create Draft is the only signing

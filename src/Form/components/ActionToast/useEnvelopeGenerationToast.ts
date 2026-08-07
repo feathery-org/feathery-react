@@ -99,6 +99,36 @@ export const useEnvelopeGenerationToast = () => {
     []
   );
 
+  // Announce a finished outcome, e.g. once an editor's signing action returns.
+  // Unlike the update above it re-adds the item when it is gone, since that
+  // outcome usually lands long after generation's own toast has cleared.
+  const showEnvelopeOutcome = useCallback(
+    (id: string, label: string, documents?: string[]) => {
+      const item: EnvelopeDataItem = {
+        id,
+        variantId: '',
+        documents,
+        status: 'complete',
+        type: 'envelope-generation',
+        labels: { ...ENVELOPE_LABELS, complete: label }
+      };
+      setCurrentEnvelopeGeneration((prev) =>
+        prev.some((envelope) => envelope.id === id)
+          ? prev.map((envelope) =>
+              envelope.id === id
+                ? {
+                    ...envelope,
+                    ...item,
+                    documents: documents ?? envelope.documents
+                  }
+                : envelope
+            )
+          : [...prev, item]
+      );
+    },
+    []
+  );
+
   const clearEnvelopeGeneration = useCallback(() => {
     setCurrentEnvelopeGeneration([]);
   }, []);
@@ -107,6 +137,7 @@ export const useEnvelopeGenerationToast = () => {
     currentEnvelopeGeneration,
     initializeEnvelopeGeneration,
     updateEnvelopeGeneration,
+    showEnvelopeOutcome,
     clearEnvelopeGeneration
   };
 };

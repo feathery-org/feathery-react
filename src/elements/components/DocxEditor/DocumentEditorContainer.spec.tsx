@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import { initState } from '../../../utils/init';
+import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
 import {
@@ -8,6 +8,7 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
+import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 import {
@@ -509,6 +510,7 @@ describe('DocumentEditorContainer revision group binding', () => {
 
 describe('DocumentEditorContainer signing outcomes', () => {
   const CONTAINER = 'document-container-a';
+  const showEnvelopeOutcome = jest.fn();
 
   const seed = (action: Record<string, any>) => {
     initState.formSchemas = {
@@ -554,6 +556,8 @@ describe('DocumentEditorContainer signing outcomes', () => {
     mockFinalizeEnvelopeReview
       .mockReset()
       .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' });
+    showEnvelopeOutcome.mockReset();
+    setFormInternalState('form-1', { showEnvelopeOutcome });
   });
 
   afterEach(() => {
@@ -564,14 +568,45 @@ describe('DocumentEditorContainer signing outcomes', () => {
   });
 
   it('sends the reviewed docx to DocuSign instead of the Feathery sign page', async () => {
-    seed({ sign_method: 'docusign', editor_toolbar_actions: ['sign'] });
+    Object.assign(fieldValues, {
+      signer_field: 'filler@test.com',
+      buyer_field: 'buyer@test.com'
+    });
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['sign'],
+      envelope_signer_field_key: 'signer_field',
+      envelope_signers: [
+        {
+          document_id: `document-${CONTAINER}`,
+          role_id: 'role-1',
+          field_key: 'buyer_field'
+        }
+      ]
+    });
     const { getByTestId } = mount();
 
     await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
     getByTestId('terminal:sign').click();
 
-    // The docx must be converted to a signable PDF before it is sent.
+    // The docx must be converted to a signable PDF before it is sent, and the
+    // sign method goes with it so that conversion doesn't also mail a Feathery
+    // invite on top of the DocuSign one.
     await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
+    expect(mockFinalizeEnvelope.mock.calls[0]).toEqual([
+      `envelope-${CONTAINER}`,
+      // Only the mapped role. Nobody signs inline on DocuSign, so the form
+      // signer field routes to no one.
+      [
+        {
+          document_id: `document-${CONTAINER}`,
+          role_id: 'role-1',
+          email: 'buyer@test.com',
+          filler: false
+        }
+      ],
+      'docusign'
+    ]);
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
     const [action, params] = mockFinalizeEnvelopeReview.mock.calls[0];
     expect(action.sign_method).toBe('docusign');
@@ -580,6 +615,13 @@ describe('DocumentEditorContainer signing outcomes', () => {
       envelopeAction: 'sign',
       draft: false
     });
+    // Nothing here navigates away, so the toast is the only confirmation.
+    expect(showEnvelopeOutcome).toHaveBeenCalledWith('Sent for Signature', [
+      `document-${CONTAINER}`
+    ]);
+
+    delete fieldValues.signer_field;
+    delete fieldValues.buyer_field;
   });
 
   it('sends draft=true from the Save as Draft menu entry', async () => {
@@ -596,6 +638,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
     await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
     expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
+    expect(showEnvelopeOutcome).toHaveBeenCalledWith('Saved as Draft', [
+      `document-${CONTAINER}`
+    ]);
   });
 
   it('sends draft=true when Create Draft is the only signing outcome', async () => {
@@ -610,6 +655,9 @@ describe('DocumentEditorContainer signing outcomes', () => {
   });
 
   it('keeps the Feathery eSign path when sign_method is not docusign', async () => {
+    // Invited someone else, so the filler has no document to open and the
+    // toast is all they get.
+    mockFinalizeEnvelope.mockResolvedValue({ invited: true });
     seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
     const { getByTestId } = mount();
 
@@ -618,5 +666,10 @@ describe('DocumentEditorContainer signing outcomes', () => {
 
     await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
     expect(mockFinalizeEnvelopeReview).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(showEnvelopeOutcome).toHaveBeenCalledWith('Sent for Signature', [
+        `document-${CONTAINER}`
+      ])
+    );
   });
 });

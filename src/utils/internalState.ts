@@ -172,6 +172,9 @@ export interface FormInternalState {
     action: Record<string, any>,
     signerEmail?: string
   ) => Promise<any>;
+  // Registered by <Form /> so a document-editor container can report its
+  // signing outcome in the same toast the generate flow uses.
+  showEnvelopeOutcome?: (label: string, documents?: string[]) => void;
 }
 
 type InternalState = {

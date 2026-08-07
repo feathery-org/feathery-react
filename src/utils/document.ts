@@ -105,3 +105,19 @@ export function isDocusignSignAction(
     (!envelopeAction || envelopeAction === 'sign')
   );
 }
+
+/** Whether this action could reach DocuSign at all, mirroring the backend's own
+ * predicate. Unlike `isDocusignSignAction`, which answers what a *specific*
+ * outcome resolved to, this covers the editor before any button is pressed: its
+ * envelope action carries no outcome, so the toolbar is what says whether
+ * signing is on offer. */
+export function signsViaDocusign(action: Record<string, any>): boolean {
+  if (action?.sign_method !== 'docusign') return false;
+  const envelopeAction = action?.envelope_action;
+  if (!envelopeAction || envelopeAction === 'sign') return true;
+  const toolbar: string[] = action?.editor_toolbar_actions ?? [];
+  return (
+    envelopeAction === 'open_in_editor' &&
+    (toolbar.includes('sign') || toolbar.includes('draft'))
+  );
+}

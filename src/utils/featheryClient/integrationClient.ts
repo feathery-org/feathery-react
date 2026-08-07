@@ -27,7 +27,11 @@ import {
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
-import { editorContainerId, isDocusignSignAction } from '../document';
+import {
+  editorContainerId,
+  isDocusignSignAction,
+  signsViaDocusign
+} from '../document';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
@@ -469,11 +473,17 @@ export default class IntegrationClient {
     // (finalizeEnvelope), when that conversion is meant to happen.
     const isDraftView =
       !!editorContainerId(action) || !!action.view_draft_container;
+    // The configured field names whoever signs inline, in the form. Nobody does
+    // on a DocuSign action - every recipient is mailed by DocuSign, and the
+    // per-role mappings are what name them - so the field is ignored there
+    // rather than quietly routing to it on top of the roles. A caller passing
+    // an email outright still names a recipient either way.
+    const configuredFiller = signsViaDocusign(action)
+      ? undefined
+      : fieldValues[action.envelope_signer_field_key];
     const fillerEmail = isDraftView
       ? ''
-      : (
-          signerEmailOverride ?? fieldValues[action.envelope_signer_field_key]
-        )?.toString() ?? '';
+      : (signerEmailOverride ?? configuredFiller)?.toString() ?? '';
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
@@ -611,7 +621,13 @@ export default class IntegrationClient {
   // the backend convert the docx, so holding them back is what kept the draft
   // editable. Same list shape generation sends, where an omitted role_id means
   // the one email covers every role.
-  finalizeEnvelope(envelopeId: string, signers: Record<string, any>[] = []) {
+  // `signMethod` decides who does the sending: on DocuSign the rows are still
+  // built here (they become its recipients) but no Feathery invite goes out.
+  finalizeEnvelope(
+    envelopeId: string,
+    signers: Record<string, any>[] = [],
+    signMethod?: string
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
     const options = {
@@ -619,7 +635,8 @@ export default class IntegrationClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fuser_key: userId ?? '',
-        signers
+        signers,
+        ...(signMethod ? { sign_method: signMethod } : {})
       }),
       keepalive: false
     };
@@ -804,7 +821,11 @@ export default class IntegrationClient {
     // requested envelope_action (sign/fill/download/save) — completion is
     // only ever signaled by the poll endpoint's `status: 'complete'`, never
     // by guessing at the shape of this intermediate body.
-    if (!runAsync) return data;
+    //
+    // `incomplete` is neither: a concurrent duplicate was already in flight and
+    // this call did nothing, so poll for the owning call's outcome rather than
+    // reporting a send that never happened.
+    if (!runAsync && data?.status !== 'incomplete') return data;
 
     const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
     const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;
