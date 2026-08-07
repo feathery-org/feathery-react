@@ -528,6 +528,326 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
   });
 });
 
+// A table whose NEXT BLOCK is another table.
+//
+// `flattenSfdt` gives a table no block of its own - its CELLS are the blocks - so
+// the block after a table is a `table_cell` carrying the same Word section index.
+// The range end shared by every relocation resolver used to cross into any
+// following block of the same Word section, and ending at a cell's offset 0
+// selects the ENTIRE table that cell belongs to: the captured payload came back
+// holding two tables and the paragraphs past them, so the split pasted a copy of
+// its innocent neighbour alongside its own rows.
+//
+// This is not an exotic shape. A split is precisely how two tables come to sit
+// against each other, so the SECOND split of any table reached it - which is how
+// it was found live. Both entry points are pinned: adjacency the document was
+// authored with, and adjacency a previous split created.
+describe('split_table: a table sitting directly against another table', () => {
+  const ACME_ROWS = [1, 3, 5];
+  const NEIGHBOUR_ROWS = [
+    'Zone|Limit',
+    'NEIGHBOUR-ROW-1|X1',
+    'NEIGHBOUR-ROW-2|X2'
+  ];
+
+  /** Table A at 0;2 and table B at 0;3, with nothing at all between them. */
+  const adjacentTablesFixture = () => ({
+    sections: [
+      {
+        blocks: [
+          para('Coverage Schedule', 'Heading 1'), // 0;0
+          para('All lines are listed below.'), // 0;1
+          {
+            // 0;2 - the table being split
+            tableFormat: { allowAutoFit: true },
+            rows: [
+              {
+                rowFormat: { isHeader: true },
+                cells: [cell('Line', HEADER_FILL), cell('Carrier', HEADER_FILL)]
+              },
+              line('General Liability', 'Acme', BAND_FILL),
+              line('Auto', 'Beta'),
+              line('Property', 'Acme', BAND_FILL)
+            ]
+          },
+          {
+            // 0;3 - the neighbour, which this op must not touch
+            tableFormat: { allowAutoFit: true },
+            rows: [
+              {
+                rowFormat: { isHeader: true },
+                cells: [cell('Zone', HEADER_FILL), cell('Limit', HEADER_FILL)]
+              },
+              line('NEIGHBOUR-ROW-1', 'X1'),
+              line('NEIGHBOUR-ROW-2', 'X2')
+            ]
+          },
+          para('Next Steps', 'Heading 1'), // 0;4
+          para('Confirm by Friday.') // 0;5
+        ]
+      }
+    ],
+    styles: headingStyles()
+  });
+
+  it('splits the addressed table and leaves the neighbour untouched', () => {
+    const editor = makeEditor(adjacentTablesFixture());
+    try {
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [1, 3],
+            targetAnchor: '0;4',
+            position: 'before'
+          }
+        ],
+        'split-against-neighbour'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+
+      // THREE tables, never four: the source, the untouched neighbour, and the
+      // one the split made. The fourth was a partial copy of the neighbour.
+      const tables = tablesOf(editor);
+      expect(tables).toHaveLength(3);
+      expect(rowsOf(editor, 0)).toEqual(['Line|Carrier', 'Auto|Beta']);
+      expect(rowsOf(editor, 1)).toEqual(NEIGHBOUR_ROWS);
+      expect(rowsOf(editor, 2)).toEqual([
+        'Line|Carrier',
+        'General Liability|Acme',
+        'Property|Acme'
+      ]);
+      // Nothing the neighbour is made of may be duplicated anywhere either: a
+      // row count alone would pass a payload that carried the neighbour's text
+      // into some other table.
+      const texts = allTexts(editor);
+      for (const value of ['Zone', 'NEIGHBOUR-ROW-1', 'NEIGHBOUR-ROW-2', 'X2'])
+        expect(texts.filter((text) => text === value)).toHaveLength(1);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('rejecting the split of an adjacent table restores the document exactly', () => {
+    const editor = makeEditor(adjacentTablesFixture());
+    try {
+      const before = editor.serialize();
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [1, 3],
+            targetAnchor: '0;4',
+            position: 'before'
+          }
+        ],
+        'split-against-neighbour-reject'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      // One card, so the reviewer sees one thing to reject.
+      expect(listRevisionGroups(editor as any)).toHaveLength(1);
+      editor.revisions.rejectAll();
+      expect(editor.serialize()).toEqual(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('a second split of a table the first split left adjacent stays clean', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      // Turn one puts the new table immediately after the source, which is what
+      // `position: 'before'` the following heading means - so the two tables are
+      // now neighbours with nothing between them.
+      expect(
+        apply(
+          editor,
+          [
+            {
+              op: 'split_table',
+              anchor: '0;2;0;0;0',
+              rows: ACME_ROWS,
+              targetAnchor: '0;3',
+              position: 'before'
+            }
+          ],
+          'split-turn-one'
+        ).results[0]
+      ).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(tablesOf(editor)).toHaveLength(2);
+      expect(rowsOf(editor, 1)).toEqual([
+        'Line|Carrier',
+        'General Liability|Acme',
+        'Property|Acme',
+        'Umbrella|Acme'
+      ]);
+
+      // Turn two splits the source again. Its neighbour is the table turn one
+      // produced, and it must survive with every row it had.
+      expect(
+        apply(
+          editor,
+          [
+            {
+              op: 'split_table',
+              anchor: '0;2;0;0;0',
+              rows: [1],
+              targetAnchor: '0;4',
+              position: 'before'
+            }
+          ],
+          'split-turn-two'
+        ).results[0]
+      ).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+
+      expect(tablesOf(editor)).toHaveLength(3);
+      expect(rowsOf(editor, 0)).toEqual([
+        'Line|Carrier',
+        'Workers Comp|Gamma'
+      ]);
+      expect(rowsOf(editor, 1)).toEqual([
+        'Line|Carrier',
+        'General Liability|Acme',
+        'Property|Acme',
+        'Umbrella|Acme'
+      ]);
+      expect(rowsOf(editor, 2)).toEqual(['Line|Carrier', 'Auto|Beta']);
+      // Turn one's rows exist once each, not once per later split.
+      const texts = allTexts(editor);
+      for (const value of ['General Liability', 'Property', 'Umbrella'])
+        expect(texts.filter((text) => text === value)).toHaveLength(1);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The same defect reached WITHOUT accepting in between, which is the shape a
+  // reviewer meets: two turns, both cards pending, then Accept All. Turn one's
+  // copy makes the tables adjacent whether or not it has been accepted, so turn
+  // two captured the neighbour AND the paragraphs past it - and pasting that
+  // payload FUSED paragraphs ("Confirm by Friday.Next Steps") on top of adding a
+  // table nobody asked for. `detectBatchedSplits` cannot see this: it refuses two
+  // splits in ONE change set, and these are two.
+  //
+  // Every destination is covered because the paste point is what the fused text
+  // lands on, and each one fused a different pair.
+  for (const [name, targetAnchor, position] of [
+    ['before the following heading', '0;4', 'before'],
+    ['after the trailing paragraph', '0;5', 'after'],
+    ['before the intro paragraph', '0;1', 'before']
+  ] as Array<[string, string, string]>) {
+    it(`a second split while the first is still pending stays clean - target ${name}`, () => {
+      const editor = makeEditor(scheduleFixture());
+      try {
+        expect(
+          apply(
+            editor,
+            [
+              {
+                op: 'split_table',
+                anchor: '0;2;0;0;0',
+                rows: ACME_ROWS,
+                targetAnchor: '0;3',
+                position: 'before'
+              }
+            ],
+            'pending-turn-one'
+          ).results[0]
+        ).toMatchObject({ ok: true });
+        // Deliberately NOT accepted: turn one's card is still pending.
+        expect(
+          apply(
+            editor,
+            [
+              {
+                op: 'split_table',
+                anchor: '0;2;0;0;0',
+                rows: [2],
+                targetAnchor,
+                position
+              }
+            ],
+            'pending-turn-two'
+          ).results[0]
+        ).toMatchObject({ ok: true });
+        // Two turns, two independently reviewable cards.
+        expect(listRevisionGroups(editor as any)).toHaveLength(2);
+        editor.revisions.acceptAll();
+
+        // Three tables: the source, turn one's, turn two's. A fourth was a
+        // pruned copy of whichever table turn two's range ran into.
+        expect(tablesOf(editor)).toHaveLength(3);
+        // No paragraph may have absorbed another. Every body paragraph of the
+        // fixture still reads exactly what it read, and exactly once.
+        const texts = allTexts(editor);
+        for (const value of [
+          'Coverage Schedule',
+          'All lines are listed below.',
+          'Next Steps',
+          'Confirm by Friday.'
+        ])
+          expect(texts.filter((text) => text === value)).toHaveLength(1);
+        // Every data row of the original table survives exactly once, in one
+        // table or another - nothing duplicated into an extra one.
+        for (const value of [
+          'General Liability',
+          'Auto',
+          'Property',
+          'Workers Comp',
+          'Umbrella'
+        ])
+          expect(texts.filter((text) => text === value)).toHaveLength(1);
+      } finally {
+        destroyEditor(editor);
+      }
+    });
+  }
+
+  it('rejects both pending splits back to the original document', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const before = editor.serialize();
+      apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: ACME_ROWS,
+            targetAnchor: '0;3',
+            position: 'before'
+          }
+        ],
+        'reject-turn-one'
+      );
+      apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [2],
+            targetAnchor: '0;4',
+            position: 'before'
+          }
+        ],
+        'reject-turn-two'
+      );
+      editor.revisions.rejectAll();
+      expect(editor.serialize()).toEqual(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
 describe('split_table: the positional split', () => {
   it('splitAtRow extracts that row and everything below it', () => {
     const editor = makeEditor(scheduleFixture());

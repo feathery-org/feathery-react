@@ -3850,6 +3850,18 @@ function selectRange(
 const wordSectionOf = (anchor: string): string => anchor.split(';')[0];
 
 /**
+ * A TOP-LEVEL body paragraph: the only kind of block that can SHARE a paragraph
+ * mark with another one.
+ *
+ * Tested positively rather than as `!== 'table_cell'` so that every kind which
+ * is not a body paragraph - a table cell today, a header/footer/footnote story
+ * block if one ever reaches this path - is excluded by default rather than by
+ * enumeration.
+ */
+const isBodyParagraph = (block: FlatBlock): boolean =>
+  block.kind === 'paragraph' || block.kind === 'heading';
+
+/**
  * The end of a selection that must consume the trailing PARAGRAPH MARK of the
  * run it covers - the one rule `delete_paragraph` and the relocation primitive
  * share, owned here so they cannot drift apart.
@@ -3861,13 +3873,29 @@ const wordSectionOf = (anchor: string): string => anchor.split(';')[0];
  * it, and a relocated section's tail fuses with whatever it lands beside
  * ("g bodyAlpha") while accepting strands an empty paragraph behind.
  *
- * `next` is ignored when it belongs to a DIFFERENT Word section, and that
- * condition is the whole reason this lives in one place. Ending at the first
- * block of the next Word section puts the SECTION BREAK inside the range, and
- * SyncFusion authors no rejectable revision for deleting one - so the page setup
- * changes with no card to reject and a group rollback has nothing to put back.
- * Live, that surfaced as the relocation's own `untracked_write` refusal on the
- * captain's move, because the section being moved was a Word section of its own.
+ * Crossing into `next` is therefore allowed only when `next` is a BODY PARAGRAPH
+ * OF THE SAME WORD SECTION. Both halves of that condition exist because ending at
+ * the start of the wrong kind of block silently drags that block into the range,
+ * and they are the whole reason this lives in one place:
+ *
+ *   - a DIFFERENT Word section: ending at its first block puts the SECTION BREAK
+ *     inside the range, and SyncFusion authors no rejectable revision for
+ *     deleting one - so the page setup changes with no card to reject and a group
+ *     rollback has nothing to put back. Live, that surfaced as the relocation's
+ *     own `untracked_write` refusal on the captain's move, because the section
+ *     being moved was a Word section of its own.
+ *
+ *   - NOT A BODY PARAGRAPH: `flattenSfdt` gives a table no block of its own - its
+ *     CELLS are the blocks - so the block following a table is a `table_cell`
+ *     whose Word section matches, which the section test alone waves through.
+ *     Ending at a cell's offset 0 selects the ENTIRE neighbouring table (measured:
+ *     the captured payload came back holding two tables and the paragraphs past
+ *     them), so a split of a table that happens to sit directly against another
+ *     one pasted a copy of its neighbour alongside its own rows. A split is how
+ *     two tables come to be adjacent in the first place, so the second split of
+ *     any table reached it. `delete_paragraph` already screened its own `next`
+ *     through this same "body paragraph of this section" rule before calling; the
+ *     rule belongs here, where every caller passes through it.
  *
  * With no usable following block the range ends at `length + 1`, which SyncFusion
  * accepts and reports back verbatim as the live endOffset.
@@ -3876,11 +3904,13 @@ function markInclusiveRangeEnd(
   next: FlatBlock | undefined,
   last: FlatBlock
 ): string {
-  const sameSection =
-    !!next && wordSectionOf(next.anchor) === wordSectionOf(last.anchor);
-  return sameSection && next
-    ? `${next.anchor};0`
-    : `${last.anchor};${last.length + 1}`;
+  if (
+    next &&
+    isBodyParagraph(next) &&
+    wordSectionOf(next.anchor) === wordSectionOf(last.anchor)
+  )
+    return `${next.anchor};0`;
+  return `${last.anchor};${last.length + 1}`;
 }
 
 // What the whole document would read if every revision were rejected: pending
