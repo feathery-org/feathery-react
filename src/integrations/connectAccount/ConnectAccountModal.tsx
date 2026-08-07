@@ -30,6 +30,7 @@ function ConnectAccountModal({
   onClose
 }: ConnectAccountModalProps) {
   const [error, setError] = useState('');
+  const [changingAccount, setChangingAccount] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // Clears any stale error whenever the modal opens/closes or the provider
@@ -56,9 +57,19 @@ function ConnectAccountModal({
   }, [show, onClose]);
 
   const handleChangeAccount = async () => {
+    if (changingAccount) return;
     setError('');
-    const errorMessage = await onChangeAccount();
-    if (errorMessage) setError(errorMessage);
+    // window.open must stay the first statement in onChangeAccount's own
+    // body - setChangingAccount here is a synchronous state update, not an
+    // await, so it doesn't delay that call and doesn't break the
+    // user-gesture chain the popup relies on.
+    setChangingAccount(true);
+    try {
+      const errorMessage = await onChangeAccount();
+      if (errorMessage) setError(errorMessage);
+    } finally {
+      setChangingAccount(false);
+    }
   };
 
   if (!show) return null;
@@ -103,7 +114,9 @@ function ConnectAccountModal({
           backgroundColor: '#fff',
           borderRadius: '14px',
           width: '100%',
-          maxWidth: '600px'
+          maxWidth: '600px',
+          maxHeight: '90vh',
+          overflowY: 'auto'
         }}
       >
         <div
@@ -119,6 +132,7 @@ function ConnectAccountModal({
           </h3>
           <button
             ref={closeButtonRef}
+            type='button'
             aria-label='Close'
             onClick={onClose}
             css={{
@@ -148,14 +162,17 @@ function ConnectAccountModal({
           >
             <span>{accountEmail}</span>
             <button
+              type='button'
               onClick={handleChangeAccount}
+              disabled={changingAccount}
               css={{
                 background: 'none',
                 border: 'none',
                 padding: 0,
                 color: '#5e5e5e',
                 textDecoration: 'underline',
-                '&:hover': { cursor: 'pointer' }
+                '&:hover': { cursor: 'pointer' },
+                '&:disabled': { cursor: 'not-allowed', opacity: 0.6 }
               }}
             >
               Change account
@@ -163,6 +180,7 @@ function ConnectAccountModal({
           </div>
           {ConfigComponent ? (
             <ConfigComponent
+              key={accountEmail}
               client={client}
               provider={provider}
               onSaved={onSaved}

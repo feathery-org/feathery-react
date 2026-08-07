@@ -59,6 +59,15 @@ describe('BoxFolderPicker', () => {
         {}
       )
     );
+    // The call assertion above resolves as soon as loadFolder invokes
+    // browseAccountResources, before that promise resolves and the
+    // resulting setBreadcrumbs/setFolders/etc land. Wait for the resulting
+    // UI (the empty folder list) too, so those updates settle inside act().
+    await waitFor(() =>
+      expect(
+        screen.getByText('This folder does not contain any folders.')
+      ).toBeTruthy()
+    );
   });
 
   it('saves the current folder and reports the values back', async () => {
@@ -152,6 +161,14 @@ describe('BoxFolderPicker', () => {
 
     await waitFor(() =>
       expect(onError).toHaveBeenCalledWith('Unable to load Box folders')
+    );
+    // loadFolder's finally-block setLoading(false) settles a tick after the
+    // onError assertion resolves. Without asserting the resulting UI state
+    // too, that setState lands outside act() and warns.
+    await waitFor(() =>
+      expect(
+        screen.getByText('This folder does not contain any folders.')
+      ).toBeTruthy()
     );
   });
 });
