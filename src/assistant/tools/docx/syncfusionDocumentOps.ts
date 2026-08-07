@@ -10226,9 +10226,20 @@ const FORMAT_OPS = new Set([
 // the preflight retargets it to the table's first cell before resolving it -
 // naming the table the way the read names it must not be an error (see
 // retargetTableScopedAnchor).
-const TABLE_SCOPED_FORMAT_OPS = new Set([
+// `split_table` belongs here for exactly the same reason and it was missed:
+// `TableFacts.tableAnchor` IS the table's block address, so a model that reads a
+// table and names it sends `"0;7"` - and without the retarget that failed with
+// `anchor_not_found` plus a suggestion to "supply `expect` or `find`", which is
+// meaningless for a table (a table has no one text) and named a cause that was
+// not the problem. Live evidence: the model sent
+// `{"op":"split_table","anchor":"5;61","rows":[4,5,9],...}` - the right rows,
+// refused on the anchor form. A split acts on the whole table and takes its rows
+// from `rows`, so any cell of that table identifies the same work; the retarget
+// is lossless here in the way it is NOT for a row-scoped op.
+export const TABLE_SCOPED_OPS = new Set([
   'copy_table_format',
-  'restripe_table'
+  'restripe_table',
+  'split_table'
 ]);
 
 // The appearance ops manage their own exact restores (see AppearanceRestore), so
@@ -10530,7 +10541,7 @@ function retargetTableScopedAnchor(
   op: EditOp,
   byAnchor: Map<string, FlatBlock>
 ): EditOp {
-  if (!op?.op || !TABLE_SCOPED_FORMAT_OPS.has(op.op)) return op;
+  if (!op?.op || !TABLE_SCOPED_OPS.has(op.op)) return op;
   const anchor = String(op.anchor ?? '');
   if (!anchor || byAnchor.has(anchor)) return op;
   const tableAnchor = normalizeTableAnchor(anchor);
@@ -15907,7 +15918,7 @@ function applyDocumentEditsMeasured(
           } else if (
             !baselineTarget &&
             anchorsMayHaveShifted &&
-            !TABLE_SCOPED_FORMAT_OPS.has(op.op) &&
+            !TABLE_SCOPED_OPS.has(op.op) &&
             op.expect != null
           ) {
             // This format target did not exist at preflight: an earlier insert
@@ -15933,7 +15944,7 @@ function applyDocumentEditsMeasured(
               blocks,
               op.anchor,
               baselineTarget,
-              anchorsMayHaveShifted && !TABLE_SCOPED_FORMAT_OPS.has(op.op)
+              anchorsMayHaveShifted && !TABLE_SCOPED_OPS.has(op.op)
             );
           }
           appliedRelocation =

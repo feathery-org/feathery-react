@@ -1169,3 +1169,106 @@ describe('split_table: a title is separate content, not part of the split', () =
     }
   });
 });
+
+// A model that reads a table gets its address from `TableFacts.tableAnchor`, which
+// is the table's own BLOCK address ("5;61") - not one of its cell anchors. That
+// address is nothing's block anchor, so without a retarget it failed deep in the
+// executor's anchor relocation with `anchor_not_found` and a suggestion to
+// "supply `expect` or `find`" - advice that cannot be followed for a table, since
+// a table has no single text, and which named a cause that was not the problem.
+//
+// Live evidence, the model reaching for the op correctly and being refused on the
+// anchor FORM alone:
+//   {"op":"split_table","anchor":"5;61","rows":[4,5,9],"targetAnchor":"5;62",...}
+//
+// The fix is membership in the EXISTING owner of this rule, `TABLE_SCOPED_OPS`,
+// not a new mechanism and not a schema change: a split acts on the whole table and
+// takes its rows from `rows`, so any cell of that table identifies the same work.
+describe('split_table: the anchor may name the TABLE, the way a table read names it', () => {
+  const ROWS = [1, 3, 5];
+  const edits = (anchor: string): EditOp[] => [
+    {
+      op: 'split_table',
+      anchor,
+      rows: ROWS,
+      targetAnchor: '0;3',
+      position: 'before'
+    }
+  ];
+
+  it('accepts the table block anchor, and the cell anchor, identically', () => {
+    const viaTable = makeEditor(scheduleFixture());
+    const viaCell = makeEditor(scheduleFixture());
+    try {
+      // "0;2" is the TABLE's address - what a table_facts read reports.
+      const byTable = apply(viaTable, edits('0;2'), 'anchor-table');
+      // "0;2;0;0;0" is a cell inside it.
+      const byCell = apply(viaCell, edits('0;2;0;0;0'), 'anchor-cell');
+      expect(byTable.results[0]).toMatchObject({ ok: true, op: 'split_table' });
+      expect(byCell.results[0]).toMatchObject({ ok: true, op: 'split_table' });
+      viaTable.revisions.acceptAll();
+      viaCell.revisions.acceptAll();
+      // Not merely both accepted - the SAME split, or one of the two forms is a
+      // second path nobody is proving.
+      expect(rowsOf(viaTable, 0)).toEqual(rowsOf(viaCell, 0));
+      expect(rowsOf(viaTable, 1)).toEqual(rowsOf(viaCell, 1));
+      expect(tablesOf(viaTable)).toHaveLength(2);
+    } finally {
+      destroyEditor(viaTable);
+      destroyEditor(viaCell);
+    }
+  });
+
+  it('still refuses an anchor that names no table at all', () => {
+    // The retarget must not turn a genuinely wrong anchor into a silent guess:
+    // "0;0" is the heading paragraph, a real block that is not a table.
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const before = editor.serialize();
+      const result = apply(editor, edits('0;0'), 'anchor-not-a-table');
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'split_table_requires_cell_anchor'
+      });
+      expect(editor.serialize()).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The set is the owner of "this op's anchor may name a table". Enumerating it
+  // means a future table-level op joining the set has to actually work with a
+  // table anchor, rather than being added on the assumption that it does.
+  it('every op in TABLE_SCOPED_OPS accepts a table anchor', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { TABLE_SCOPED_OPS } = require('../syncfusionDocumentOps');
+    expect(Array.from(TABLE_SCOPED_OPS)).toContain('split_table');
+    for (const op of Array.from(TABLE_SCOPED_OPS) as string[]) {
+      const editor = makeEditor(scheduleFixture());
+      try {
+        const result = apply(
+          editor,
+          [
+            {
+              op,
+              anchor: '0;2',
+              ...(op === 'split_table'
+                ? { rows: ROWS, targetAnchor: '0;3', position: 'before' }
+                : {}),
+              ...(op === 'copy_table_format'
+                ? { inheritFormatFrom: '0;2;0;0;0' }
+                : {})
+            } as EditOp
+          ],
+          `scoped-${op}`
+        );
+        // The anchor FORM must never be what fails. An op may still refuse for
+        // its own reasons, but not with the executor's anchor-resolution error.
+        expect(result.results[0]?.error).not.toBe('anchor_not_found');
+        expect(result.results[0]?.error).not.toBe('anchor_relocation_ambiguous');
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  });
+});
