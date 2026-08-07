@@ -544,6 +544,208 @@ describe('move_section: a relocation writes no content', () => {
       destroyEditor(editor);
     }
   });
+
+  // The other end of the same range arithmetic, and the one nothing covered:
+  // moving a section TO the end of the document. "After the last block" is the
+  // one destination the document has no caret for - a block anchor addresses a
+  // paragraph's TEXT, so the furthest caret that exists is before the final
+  // paragraph mark, not after it - and pasting there merged the payload's first
+  // block into the document's last paragraph. Every paragraph tail shape fused,
+  // silently, over `ok: true`.
+  //
+  // Parameterised over the tail SHAPES rather than one document, because the
+  // fusion is a property of what the target unit ends with: whether its last
+  // block carries text, whether the target has a subsection under it, and
+  // whether the document ends with a table at all.
+  describe('a move whose destination is the end of the document', () => {
+    const tailShapes: Array<[string, () => any, string[]]> = [
+      [
+        'the target ends with a body paragraph',
+        () => ({
+          sections: [
+            {
+              blocks: [
+                para('Alpha', 'Heading 1'),
+                para('a body'),
+                para('Beta', 'Heading 1'),
+                para('b body'),
+                para('Gamma', 'Heading 1'),
+                para('g body')
+              ]
+            }
+          ],
+          styles: headingStyles()
+        }),
+        ['Beta', 'b body', 'Gamma', 'g body', 'Alpha', 'a body']
+      ],
+      [
+        'the target is a heading with no body under it',
+        () => ({
+          sections: [
+            {
+              blocks: [
+                para('Alpha', 'Heading 1'),
+                para('a body'),
+                para('Beta', 'Heading 1'),
+                para('b body'),
+                para('Gamma', 'Heading 1')
+              ]
+            }
+          ],
+          styles: headingStyles()
+        }),
+        ['Beta', 'b body', 'Gamma', 'Alpha', 'a body']
+      ],
+      [
+        'the target unit ends with a subsection',
+        () => ({
+          sections: [
+            {
+              blocks: [
+                para('Alpha', 'Heading 1'),
+                para('a body'),
+                para('Beta', 'Heading 1'),
+                para('b body'),
+                para('Gamma', 'Heading 1'),
+                para('g body'),
+                para('Gamma Sub', 'Heading 2'),
+                para('gs body')
+              ]
+            }
+          ],
+          styles: headingStyles()
+        }),
+        [
+          'Beta',
+          'b body',
+          'Gamma',
+          'g body',
+          'Gamma Sub',
+          'gs body',
+          'Alpha',
+          'a body'
+        ]
+      ]
+    ];
+
+    it.each(tailShapes)(
+      'accepting puts it at the end intact when %s',
+      (_label, fixture, expected) => {
+        const editor = makeEditor(fixture());
+        try {
+          expect(
+            apply(
+              editor,
+              [
+                {
+                  op: 'move_section',
+                  anchor: '0;0',
+                  targetAnchor: '0;4',
+                  position: 'after'
+                }
+              ],
+              'tail-target-accept'
+            ).results[0]
+          ).toMatchObject({ ok: true });
+          editor.revisions.acceptAll();
+          expect(bodyTexts(editor).slice(0, expected.length)).toEqual(expected);
+          // Nothing absorbed the moved heading. The fusion signature was the
+          // target's last paragraph reading its own text with the moved
+          // section's heading welded onto it, wearing the heading's style.
+          for (const text of bodyTexts(editor))
+            expect(text === 'Alpha' || !text.includes('Alpha')).toBe(true);
+        } finally {
+          destroyEditor(editor);
+        }
+      }
+    );
+
+    // The landing paragraph is created as a TRACKED insertion inside the same
+    // card, which is what keeps both reject routes byte-exact rather than
+    // leaving a paragraph mark nobody can take back.
+    it.each(tailShapes)(
+      'both reject routes restore it byte for byte when %s',
+      (_label, fixture) => {
+        for (const rail of [false, true]) {
+          const editor = makeEditor(fixture());
+          try {
+            const before = editor.serialize();
+            apply(
+              editor,
+              [
+                {
+                  op: 'move_section',
+                  anchor: '0;0',
+                  targetAnchor: '0;4',
+                  position: 'after'
+                }
+              ],
+              `tail-target-reject-${rail}`
+            );
+            if (rail)
+              resolveLiveRevisionGroupsAsOneUndo(
+                editor as unknown as LiveEditor,
+                listRevisionGroups(editor as unknown as LiveEditor),
+                false
+              );
+            else editor.revisions.rejectAll();
+            expect(editor.serialize()).toBe(before);
+          } finally {
+            destroyEditor(editor);
+          }
+        }
+      }
+    );
+
+    // The fourth tail shape, and the one that is REFUSED rather than handled:
+    // a document ending with a table has no body block after it to land at, and
+    // creating one there would be authoring content the move never asked for.
+    it('refuses when the document ends with a table', () => {
+      const editor = makeEditor({
+        sections: [
+          {
+            blocks: [
+              para('Alpha', 'Heading 1'),
+              para('a body'),
+              para('Gamma', 'Heading 1'),
+              {
+                rows: [
+                  {
+                    rowFormat: { isHeader: true },
+                    cells: [cell('Line'), cell('Carrier')]
+                  },
+                  { rowFormat: {}, cells: [cell('Auto'), cell('Acme')] }
+                ]
+              }
+            ]
+          }
+        ],
+        styles: headingStyles()
+      });
+      try {
+        const before = editor.serialize();
+        const result = apply(
+          editor,
+          [
+            {
+              op: 'move_section',
+              anchor: '0;0',
+              targetAnchor: '0;2',
+              position: 'after'
+            }
+          ],
+          'tail-target-table'
+        );
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'relocation_target_in_table'
+        });
+        expect(editor.serialize()).toBe(before);
+      } finally {
+        destroyEditor(editor);
+      }
+    });
+  });
 });
 
 // The captain's live document, reduced to the shape that actually broke.

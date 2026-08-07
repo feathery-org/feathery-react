@@ -6304,6 +6304,25 @@ interface PasteTarget {
   anchor: string;
   /** The top-level address the pasted blocks are inserted at. */
   address: { section: number; block: number };
+  /**
+   * The end-of-text caret a landing paragraph must be created at first, when
+   * the destination is past the document's last paragraph mark.
+   *
+   * "After the last block" is the one destination the document has no caret
+   * for: a block anchor addresses a paragraph's TEXT, so the furthest caret
+   * that exists is `${tail.anchor};${tail.length}` - before the final paragraph
+   * mark, not after it. Pasting there merges the payload's first block into the
+   * document's last paragraph, which is the fusion Anthony read as
+   * `...Friday.National Capabilities` wearing `Heading 2`.
+   *
+   * Consuming the mark by arithmetic is not available here the way it is for a
+   * selection END: `${tail.anchor};${tail.length + 1}` was measured to produce
+   * byte-identical output, because SyncFusion clamps a paste caret to the
+   * paragraph it sits in. The payload needs a real paragraph to land at, so one
+   * is created - as a TRACKED insertion inside the same card, which is what
+   * keeps reject byte-exact.
+   */
+  appendParagraphAt?: string;
 }
 
 /**
@@ -6787,6 +6806,14 @@ function relocateBlockRange(
         source.anchor
       )} is not addressable in the document as it stands, so nothing was moved.`
     );
+  // The destination past the document's last paragraph mark has no caret until
+  // one is made. Created AFTER the payload is captured, so the capture reads
+  // the document the caller resolved its anchors against, and as a tracked
+  // insertion inside this same card, so rejecting takes it away again.
+  if (target.appendParagraphAt) {
+    editor.selection.select(target.appendParagraphAt, target.appendParagraphAt);
+    callEditor(editor, 'insertText', '\n');
+  }
   editor.selection.select(target.anchor, target.anchor);
   callEditor(editor, 'paste', payload);
   const pastedSfdt = serializeSfdt(editor);
@@ -6869,14 +6896,18 @@ function resolveRelocationTarget(
   // `after` means after everything the target section covers, not after its
   // heading paragraph: both anchors name section UNITS, which is what makes
   // "move A below B" mean what the user said when B has subsections.
-  if (after && !following)
+  if (after && !following) {
+    // Past the document's last paragraph mark: there is no caret there, so the
+    // primitive creates the paragraph the payload lands at. See
+    // PasteTarget.appendParagraphAt for why arithmetic on the mark cannot do
+    // this and what the fusion looked like before.
+    const address = topLevelAddress(tail.anchor);
     return {
-      anchor: `${tail.anchor};${tail.length}`,
-      address: {
-        ...topLevelAddress(tail.anchor),
-        block: topLevelAddress(tail.anchor).block + 1
-      }
+      anchor: `${address.section};${address.block + 1};0`,
+      address: { ...address, block: address.block + 1 },
+      appendParagraphAt: `${tail.anchor};${tail.length}`
     };
+  }
   return {
     anchor: `${caretBlock.anchor};0`,
     address: topLevelAddress(caretBlock.anchor)
