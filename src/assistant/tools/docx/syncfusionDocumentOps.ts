@@ -6398,6 +6398,44 @@ function pasteAtRangeStart(range: BlockRange): PasteTarget {
   };
 }
 
+/**
+ * The caret directly AFTER a range, for a payload that has to land there.
+ *
+ * A table has no caret of its own at either end: `pasteAtRangeStart` on a table
+ * range resolves into its first CELL, and pasting a table there puts a table
+ * inside a cell - measured on the real proposal, where it left the document in
+ * a state whose relayout threw `Cannot read properties of undefined (reading
+ * 'bidi')`. The block that FOLLOWS a table does have one, at its own offset 0,
+ * and inserting there is what "immediately after this table" means.
+ *
+ * `split_table` is the caller: its first half is pasted here and the original
+ * table is then deleted whole, so after the accept the new table occupies
+ * exactly the position the original held.
+ *
+ * Refuses rather than guesses when the following block is a table cell, which
+ * is the authored document where two tables already sit welded together: there
+ * is no caret between them to paste at, which is the same fact
+ * `resolveRelocationTarget` refuses with `relocation_target_in_table`.
+ */
+function caretAfterRange(
+  blocks: FlatBlock[],
+  range: BlockRange,
+  refusal: (following: FlatBlock | undefined) => OpError
+): PasteTarget {
+  // By ANCHOR, never by object identity: `range` may have been resolved against
+  // a different flatten of the same document, and `indexOf` on a foreign object
+  // silently answers -1, which reads as "the block after the document's first"
+  // and pasted a split's first half at the very top of the document.
+  const last = range.blocks[range.blocks.length - 1];
+  const at = blocks.findIndex((block) => block.anchor === last.anchor);
+  const following = at < 0 ? undefined : blocks[at + 1];
+  if (!following || following.kind === 'table_cell') throw refusal(following);
+  return {
+    anchor: `${following.anchor};0`,
+    address: topLevelAddress(following.anchor)
+  };
+}
+
 /** Every raw block a range covers, for the reads flattening cannot answer. */
 function rawBlocksInRange(sfdt: any, range: BlockRange): any[] {
   const first = topLevelAddress(range.blocks[0].anchor);
@@ -6626,6 +6664,43 @@ function assertTableIsRemovable(
 }
 
 /**
+ * The refusal that is about SPLITTING a table - the same rule, fourth shape.
+ *
+ * A split deletes its source table WHOLE, so it covers the document's last row
+ * exactly when `delete_table` does. It is a separate entry point rather than a
+ * call to `assertTableIsRemovable` only because the remedy it can offer is its
+ * own: the user asked for two tables, and giving the document a paragraph after
+ * this one makes the split work, where "delete it in two steps" would not.
+ *
+ * The fact is still read from the one owner, and the SyncFusion half of the
+ * explanation is still the shared constant, so the four refusals cannot drift.
+ *
+ * This is narrower in effect than it looks. The split's first half is pasted
+ * directly AFTER the original, so by the time the deletion runs the original is
+ * no longer the document's last block - but the paste needs a caret after the
+ * table to land at, and a table that ends the document has none. Both facts are
+ * the same missing block, which is why one refusal covers them.
+ */
+function assertSplitSourceIsRemovable(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor) return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to split the table at ${JSON.stringify(
+      tableAnchor
+    )}: it is the last block of the document, and a split replaces the whole table, which removes its last row. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `table: ${tableAnchor}, last row: ${tail.row}`,
+      'a split deletes the original table and writes both halves as new tables',
+      'Give the document a paragraph after the table first, so the table is no longer what the document ends with, and the split then works as usual.'
+    ]
+  );
+}
+
+/**
  * The refusal that is about REJECTING the range: a pending change somebody else
  * authored inside it.
  *
@@ -6654,6 +6729,44 @@ function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
         `Ask for ${author}'s change to be accepted or rejected first, then relocate the section.`
       ]
     );
+}
+
+/**
+ * A split replaces its source table entirely, so the source has to be a table
+ * NOBODY is still reviewing - including us.
+ *
+ * The relocation refusal beside this one is about a FOREIGN author, because a
+ * move folds what it moves into its own card. A split needs the stronger rule,
+ * and it is the reject guarantee that forces it: splitting a table whose rows
+ * are themselves a pending INSERTION makes the new halves copies of unaccepted
+ * content, and rejecting the pair no longer restores the document literally -
+ * measured at +8 characters on the schedule fixture, from splitting the table a
+ * previous split had just produced. Splitting a table whose rows are a pending
+ * DELETION is meaningless in the other direction: the reviewer has already been
+ * asked to remove it.
+ *
+ * So the rule is the document's own: finish reviewing this table, then split it.
+ * The remedy is one press of a button the reviewer is already looking at, which
+ * is why this is a refusal rather than a mechanism.
+ */
+function assertSplitSourceIsSettled(sfdt: any, range: BlockRange): void {
+  const ids = new Set<string>();
+  for (const block of rawBlocksInRange(sfdt, range))
+    collectRevisionIds(block, ids);
+  if (!ids.size) return;
+  throw new OpError(
+    'split_table_source_has_pending_review',
+    `Refusing to split the table at ${JSON.stringify(
+      range.anchor
+    )}: it carries ${
+      ids.size
+    } pending tracked change(s) of its own. A split replaces the whole table with two copies of it, so copying content nobody has accepted yet would leave a card that cannot be rejected back to the document exactly. Nothing was written.`,
+    [
+      `anchor: ${range.anchor}`,
+      `pending revisions inside the table: ${ids.size}`,
+      'Accept or reject the change already on this table, then split it.'
+    ]
+  );
 }
 
 /**
@@ -6754,9 +6867,15 @@ function relocateBlockRange(
   target: PasteTarget,
   {
     removeSource,
-    transformPayload
+    transformPayload,
+    doomedAt
   }: {
     removeSource: boolean;
+    /**
+     * Top-level positions this op is about to delete, for the separator rule:
+     * a block on its way out is not a block the payload will land next to.
+     */
+    doomedAt?: ReadonlySet<number>;
     /**
      * Relocate only PART of the captured range, by returning a narrowed payload.
      *
@@ -6818,7 +6937,13 @@ function relocateBlockRange(
   callEditor(
     editor,
     'paste',
-    separatedFromPrecedingTable(payload, preSfdt, sequenceBefore, pasteAt)
+    separatedFromPrecedingTable(
+      payload,
+      preSfdt,
+      sequenceBefore,
+      pasteAt,
+      doomedAt
+    )
   );
   const pastedSfdt = serializeSfdt(editor);
   const paste: PasteEffect = {
@@ -6881,22 +7006,36 @@ function relocateBlockRange(
  * The document's own hidden paragraph is never touched, unhidden or removed: it
  * is the author's content and it stays exactly as written. Exactly one VISIBLE
  * empty paragraph is added, and only when there is not one there already.
+ *
+ * `doomedAt` names top-level positions this same op is about to DELETE, and the
+ * walk steps over them for the same reason it steps over a hidden paragraph:
+ * the question is what will really sit above this payload, and a block on its
+ * way out will not sit anywhere. `split_table` is the caller - it pastes its
+ * first half directly after the original table and then deletes that table
+ * whole, so without this the accepted document would carry a blank line where
+ * the original used to be. Skipping the doomed table then asks what is above
+ * IT, which is the right question: a split whose source was itself welded to
+ * the table above it still gets its separator.
  */
 function separatedFromPrecedingTable(
   payload: string,
   preSfdt: any,
   sequenceBefore: Array<{ section: number; block: number }>,
-  pasteAt: number
+  pasteAt: number,
+  doomedAt?: ReadonlySet<number>
 ): string {
   const sections: any[] = pick(preSfdt, 'sections', 'sec') ?? [];
   const blockAt = (entry: { section: number; block: number }) =>
     getBlocks(sections[entry.section] ?? {})[entry.block];
+  const steppedOver = (position: number): boolean => {
+    if (position < 0) return false;
+    if (doomedAt?.has(position)) return true;
+    const block = blockAt(sequenceBefore[position]);
+    return !!block && rendersNoLine(block);
+  };
   let index = pasteAt - 1;
-  let before = index >= 0 ? blockAt(sequenceBefore[index]) : undefined;
-  while (before && rendersNoLine(before)) {
-    index -= 1;
-    before = index >= 0 ? blockAt(sequenceBefore[index]) : undefined;
-  }
+  while (steppedOver(index)) index -= 1;
+  const before = index >= 0 ? blockAt(sequenceBefore[index]) : undefined;
   if (!before || !getRows(before)) return payload;
   const parsed = JSON.parse(payload);
   const payloadSections = pick(parsed, 'sections', 'sec');
@@ -7125,6 +7264,40 @@ function resolveTableRange(
 }
 
 /**
+ * There is no caret directly after the source table, so the first half has
+ * nowhere to land.
+ *
+ * Reachable in one authored shape: the source is followed immediately by
+ * another table, with no block between them, so the position after it resolves
+ * inside that table's first cell. The engine never CREATES that adjacency -
+ * `separatedFromPrecedingTable` is what stops it - but a .docx can arrive with
+ * one, and pasting a table into a cell is nonsense rather than a near miss.
+ *
+ * The tail case cannot reach here: `assertSplitSourceIsRemovable` refuses a
+ * table that ends the document before anything is written.
+ */
+function splitHasNoCaretAfterSource(
+  tableAnchor: string,
+  following: FlatBlock | undefined
+): OpError {
+  return new OpError(
+    'split_table_welded_to_next',
+    `Refusing to split the table at ${JSON.stringify(
+      tableAnchor
+    )}: the block directly after it is ${
+      following ? 'another table' : 'nothing at all'
+    }, so there is no position between them for the first half to be written at. Nothing was written.`,
+    [
+      `table: ${tableAnchor}`,
+      ...(following
+        ? [`the block after it is the cell ${following.anchor}`]
+        : []),
+      'Put a paragraph between the two tables first and the split then works as usual. The two are one table to the reader as they stand: there is no caret between them, so nothing can be placed there until the document has a block of its own in that position.'
+    ]
+  );
+}
+
+/**
  * Every vertically merged cell's span, as { row, span }.
  *
  * The key set must match the inventory's own cell-format read: `tcpr` is the
@@ -7306,17 +7479,6 @@ function resolveSplitRows(
   return { extract, keep, headerRows, rowCount };
 }
 
-/** Delete one row of one table, tracked, through the selection. */
-function deleteTableRow(
-  editor: LiveEditor,
-  tableAnchor: string,
-  row: number
-): void {
-  const caret = `${tableAnchor};${row};0;0;0`;
-  editor.selection.select(caret, caret);
-  callEditor(editor, 'deleteRow');
-}
-
 /**
  * The captured payload with only `keep`'s rows left in its table.
  *
@@ -7411,12 +7573,12 @@ function assertPastedTableMatches(
  * Re-lay the source table's own stripe over BOTH halves of a split.
  *
  * The captain: "we want to make sure the width of the columns, and all other
- * properties of the parent table is carried forward." The rows the copy arrives
+ * properties of the parent table is carried forward." The rows each copy arrives
  * with carry their own fills, faithfully - and that is exactly the problem. Rows
  * 4, 5 and 9 of a striped table are grey, white and white; lifted out of the
  * alternation that gave them meaning they read as a broken stripe, because they
- * are one. The SOURCE has the same problem from the other direction: taking rows
- * out of the middle of it changes the parity of every row below them.
+ * are one. The half that keeps the rest has the mirror problem: taking rows out
+ * of the middle of it changes the parity of everything below them.
  *
  * So this is not a new liberty, it is the rule the engine already follows for a
  * row insert - read the stripe BEFORE the write, when it is still unambiguous,
@@ -7426,17 +7588,23 @@ function assertPastedTableMatches(
  * second flag.
  *
  * Read from the PRE-SPLIT appearance the handler already collected: after the
- * write neither half can prove the stripe on its own - the copy is three rows of
- * whatever it inherited, and the source has pending deletions through it.
+ * write neither half can prove the stripe on its own - each is a few rows of
+ * whatever it inherited.
  *
  * STRICT detection, like the insert path and unlike `restripe_table`: this fires
  * without being asked, so a table with one highlighted row must not be mistaken
  * for a stripe and repainted.
  *
  * Both halves are laid from `headerRows` down, so a proven header band is never
- * restriped, and each half is phased from its own first data row - which is what
- * makes the copy's header + three rows read as the top of the stripe rather than
+ * restriped, and each is phased from its own first data row - which is what
+ * makes a half holding rows 4, 5 and 9 read as the top of the stripe rather than
  * as rows 4, 5 and 9 of something else.
+ *
+ * Both halves are content this op CREATED - two pending insertions, no cell of
+ * which existed before the card - so the fills written here are removed wholesale
+ * when the card is rejected, along with the tables that carry them. That is what
+ * lets the reject assertions demand a LITERAL byte-for-byte restore with no
+ * tolerance: nothing here can reach a cell the document already had.
  */
 function restripeSplitHalves(
   editor: LiveEditor,
@@ -7445,10 +7613,8 @@ function restripeSplitHalves(
     /** The source table as it looked BEFORE the split. */
     source: TableAppearance;
     headerRows: number;
-    plan: SplitRowPlan;
-    /** The source table's address after the paste shifted it. */
-    sourceAnchor: string;
-    copyAnchor: string;
+    /** The two new tables, in document order. */
+    halves: string[];
   }
 ): AppearanceWriteOutcome | undefined {
   if (op.preserveBanding === false) return undefined;
@@ -7458,35 +7624,17 @@ function restripeSplitHalves(
       report: { ...emptyAppearanceReport(), noBandingDetected: true },
       restores: []
     };
-  const { headerRows, plan } = split;
-  // The source's rows are deleted under track changes, so they are all still
-  // there. The stripe belongs to the rows that SURVIVE, at the positions they
-  // will occupy once the card is accepted; a row on its way out is left out of
-  // the cycle rather than consuming a slot in it.
-  const survivorPosition = (row: number): number | undefined => {
-    if (row < headerRows) return row;
-    const index = plan.keep.indexOf(row);
-    return index < 0 ? undefined : headerRows + index;
-  };
-  const outcomes = [
+  // Each half holds exactly its own rows, all of them pending INSERTIONS, so its
+  // live positions are already the ones the accepted document will show.
+  const outcomes = split.halves.map((anchor) =>
     applyBandingRows(
       editor,
-      split.sourceAnchor,
-      liveTableAppearance(editor, split.sourceAnchor),
+      anchor,
+      liveTableAppearance(editor, anchor),
       banding,
-      headerRows,
-      survivorPosition
-    ),
-    // The copy holds exactly its own rows, all of them pending INSERTIONS rather
-    // than deletions, so its live positions are already the accepted ones.
-    applyBandingRows(
-      editor,
-      split.copyAnchor,
-      liveTableAppearance(editor, split.copyAnchor),
-      banding,
-      headerRows
+      split.headerRows
     )
-  ];
+  );
   return {
     report: mergeAppearanceReports(outcomes),
     restores: outcomes.flatMap((outcome) => outcome.restores)
@@ -7799,8 +7947,17 @@ export const ANCHORED_OP_HANDLERS: {
         `No table answers to the anchor "${tableAnchor}". Re-read the structure and use a current anchor.`
       );
     const source = resolveTableRange(blocks, tableAnchor);
+    // Both source-side refusals FIRST, before anything reads the live editor:
+    // `effectiveHeaderRows` selects cells to see what the page renders, and a
+    // SyncFusion selection re-fragments the runs it touches, so a refusal
+    // decided after it leaves the document serializing differently while
+    // reading identically. Nothing was written either way; this makes "nothing
+    // was written" literally true of the bytes as well.
+    assertRangeHasNoForeignEdits(sfdt, source);
+    assertSplitSourceIsSettled(sfdt, source);
+    assertSplitSourceIsRemovable(blocks, tableAnchor);
     // Header-ness through its ONE owner, reading what the page shows rather than
-    // any single encoding of it - the refusal below depends on getting a
+    // any single encoding of it - the refusals below depend on getting a
     // style-only header right, and this document has one.
     const headerRows = effectiveHeaderRows({
       blocks,
@@ -7816,61 +7973,106 @@ export const ANCHORED_OP_HANDLERS: {
       headerRows,
       tableBlock
     );
-    // A split DELETES rows from the source, so both source-side refusals apply
-    // exactly as they do to a move: rejecting this card would fold away a third
-    // party's pending edit, and SyncFusion cannot accept a delete of the last
-    // row of a document-tail table.
-    assertRangeHasNoForeignEdits(sfdt, source);
-    assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
     const target = resolveRelocationTarget(blocks, op, source);
     const sourceIndex = sequenceIndexOf(
       topLevelSequence(sfdt),
       topLevelAddress(source.blocks[0].anchor)
     );
-    // The new table is the header band plus the extracted rows, in the source's
-    // own order - so "they should have same column names" is satisfied by the
-    // header rows travelling with the copy, not by anything authoring them.
+    // Each new table is the header band plus its own rows, in the source's own
+    // order - so "they should have same column names" is satisfied by the header
+    // rows travelling with each copy, not by anything authoring them.
     const header: number[] = [];
     for (let row = 0; row < plan.headerRows; row++) header.push(row);
-    const copied = [...header, ...plan.extract];
-    const { paste, pastedSfdt } = relocateBlockRange(
-      editor,
-      sfdt,
-      source,
-      target,
-      {
-        removeSource: false,
-        transformPayload: (payload) => prunePayloadRows(payload, copied)
-      }
-    );
+    const extracted = [...header, ...plan.extract];
+    const kept = [...header, ...plan.keep];
+    // 1. The EXTRACTED half, at the target the model named.
+    const second = relocateBlockRange(editor, sfdt, source, target, {
+      removeSource: false,
+      transformPayload: (payload) => prunePayloadRows(payload, extracted)
+    });
     // Read back and checked, because `ok: true` from a paste only means the paste
     // did not throw. If the new table is not there reading what it should, this
     // fails and the group rolls back. Its anchor is the copy's address, which the
     // restripe below needs.
-    const copyAnchor = assertPastedTableMatches(
-      pastedSfdt,
-      paste,
+    const secondAnchor = assertPastedTableMatches(
+      second.pastedSfdt,
+      second.paste,
       source,
-      rangeRowBlocks(source, copied)
+      rangeRowBlocks(source, extracted)
     );
-    const moved = shiftedRange(
-      pastedSfdt,
+    const original = shiftedRange(
+      second.pastedSfdt,
       source,
-      paste,
+      second.paste,
       sourceIndex,
       resolveTableRange
     );
-    // The copy needs no deletion at all - it arrived holding exactly its rows.
-    // The source's extracted rows go DESCENDING; a tracked delete shifts nothing,
-    // so the order is not load-bearing, but it keeps the invariant visible.
-    for (const row of [...plan.extract].reverse())
-      deleteTableRow(editor, moved.anchor, row);
+    // 2. The KEPT half, directly after the original - which the delete below
+    //    then removes, so this is the position the original held.
+    const originalIndex = sequenceIndexOf(
+      topLevelSequence(second.pastedSfdt),
+      topLevelAddress(original.blocks[0].anchor)
+    );
+    // ONE top-level position: a table is a single block of the sequence however
+    // many cells it flattens to.
+    const first = relocateBlockRange(
+      editor,
+      second.pastedSfdt,
+      original,
+      caretAfterRange(flattenSfdt(second.pastedSfdt), original, (following) =>
+        splitHasNoCaretAfterSource(tableAnchor, following)
+      ),
+      {
+        removeSource: false,
+        transformPayload: (payload) => prunePayloadRows(payload, kept),
+        // The original is about to go, so it is not a table this payload lands
+        // under - without this the accepted document keeps a blank line where
+        // the original used to be.
+        doomedAt: new Set([originalIndex])
+      }
+    );
+    const firstAnchor = assertPastedTableMatches(
+      first.pastedSfdt,
+      first.paste,
+      original,
+      rangeRowBlocks(original, kept)
+    );
+    // The second paste moved the first one's table down, so its address has to be
+    // re-derived through the same measured arithmetic - and through the same
+    // identity check, which refuses rather than restriping whatever is there now.
+    const secondRange = shiftedRange(
+      first.pastedSfdt,
+      resolveTableRange(flattenSfdt(second.pastedSfdt), secondAnchor),
+      first.paste,
+      sequenceIndexOf(
+        topLevelSequence(second.pastedSfdt),
+        topLevelAddress(secondAnchor)
+      ),
+      resolveTableRange
+    );
+    // 3. The ORIGINAL, deleted whole and tracked. Nothing was ever written into
+    //    one of its cells, which is what keeps rejecting this card LITERAL:
+    //    a deletion marks content, it does not modify it.
+    const doomed = shiftedRange(
+      first.pastedSfdt,
+      original,
+      first.paste,
+      originalIndex,
+      resolveTableRange
+    );
+    // Through `deleteTable`, the SAME primitive `delete_table` ships on, at a
+    // caret rather than a range: measured on the real proposal and on the
+    // fixtures, selecting the table's cell range and calling `delete()` instead
+    // marks only the cells' TEXT - accepting that leaves a table of empty cells
+    // standing where the table used to be. Deleting each row bottom-up produces
+    // the identical 30 revisions and the identical accepted document, so there
+    // is no reason to own a second way to say this.
+    editor.selection.select(doomed.startAnchor, doomed.startAnchor);
+    callEditor(editor, 'deleteTable');
     const restripe = restripeSplitHalves(editor, op, {
       source: appearance,
       headerRows,
-      plan,
-      sourceAnchor: moved.anchor,
-      copyAnchor
+      halves: [firstAnchor, secondRange.anchor]
     });
     return restripe ? { appearanceWrite: restripe } : undefined;
   },
@@ -9638,38 +9840,26 @@ const emptyAppearanceReport = (): AppearanceWriteReport => ({
  * DIFFERENT fills alone - a deliberate per-cell highlight is not a stripe error,
  * and the count of such rows is reported rather than quietly absorbed.
  *
- * `bandPositionOf` answers "which position in the stripe does this live row
- * occupy", and defaults to the live index. It exists because a TRACKED row
- * delete leaves the row in place until the revision is accepted, so the table
- * the reviewer will end up with is not the table the editor currently holds:
- * `split_table` deletes rows out of the middle of its source, and the stripe
- * has to be laid over the rows that SURVIVE, in their post-accept order.
- * Appearance carries no revision of its own, so what is written now is what the
- * accepted document shows - there is no second pass to get this right in.
- * Returning `undefined` for a row leaves it out of the stripe entirely and
- * consumes no cycle slot, which is what a row on its way out must do.
+ * Every row this writes is at the position the ACCEPTED document will show it
+ * at. Appearance carries no revision of its own, so what is written now is what
+ * the reviewer ends up with - there is no second pass to get it right in. Both
+ * callers hold to that: an insert writes rows that are staying, and a split
+ * writes only into the two tables it has just created.
  */
 function applyBandingRows(
   editor: LiveEditor,
   tableAnchor: string,
   current: TableAppearance,
   banding: TableBanding,
-  fromRow: number,
-  bandPositionOf?: (row: number) => number | undefined
+  fromRow: number
 ): AppearanceWriteOutcome {
   const report = emptyAppearanceReport();
   const shadings = rowShadings(current);
   const start = Math.max(fromRow, banding.headerRows);
   let skipped = 0;
-  let excluded = 0;
   const transaction = runAppearanceTransaction(editor, (record) => {
     for (let row = start; row < current.rows.length; row++) {
-      const position = bandPositionOf ? bandPositionOf(row) : row;
-      if (position === undefined) {
-        excluded++;
-        continue;
-      }
-      const wanted = bandedShadingForRow(banding, position);
+      const wanted = bandedShadingForRow(banding, row);
       if (wanted === undefined) continue;
       if (shadings[row] === undefined) {
         skipped++;
@@ -9690,7 +9880,6 @@ function applyBandingRows(
   });
   report.banding = banding;
   if (skipped) report.rowsSkippedMixed = skipped;
-  if (excluded) report.rowsExcludedFromStripe = excluded;
   return { report, restores: transaction.restores };
 }
 
@@ -9701,7 +9890,6 @@ function mergeAppearanceReports(
   const sum = (pick: (report: AppearanceWriteReport) => number | undefined) =>
     outcomes.reduce((total, outcome) => total + (pick(outcome.report) ?? 0), 0);
   const mixed = sum((report) => report.rowsSkippedMixed);
-  const excluded = sum((report) => report.rowsExcludedFromStripe);
   const last = <T>(pick: (report: AppearanceWriteReport) => T | undefined) =>
     outcomes.reduce<T | undefined>(
       (found, outcome) => pick(outcome.report) ?? found,
@@ -9714,7 +9902,6 @@ function mergeAppearanceReports(
     rowsWritten: sum((report) => report.rowsWritten),
     cellsUnchanged: sum((report) => report.cellsUnchanged),
     ...(mixed ? { rowsSkippedMixed: mixed } : {}),
-    ...(excluded ? { rowsExcludedFromStripe: excluded } : {}),
     ...(banding ? { banding } : {}),
     ...(styleName ? { sourceStyleName: styleName } : {})
   };

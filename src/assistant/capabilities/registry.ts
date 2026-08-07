@@ -233,12 +233,28 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // handler: ANCHORED_OP_HANDLERS.split_table
     //
     // One table becomes two, and no cell is retyped. The same relocation
-    // primitive as copy_section, applied to the whole table: the engine captures
-    // the table, narrows the captured payload to the header band plus the
-    // extracted rows, pastes that at the target, and deletes the extracted rows
-    // from the original. So the new table's formatting and its HEADER ROW are the
-    // source's own, by construction rather than by inheritance, and there is no
-    // content field for the model to fill.
+    // primitive as copy_section, applied twice to the whole table: the engine
+    // captures the table, narrows the captured payload to the header band plus
+    // the extracted rows and pastes that at the target, narrows a second copy to
+    // the header band plus the rows that stay and pastes that where the original
+    // sits, then deletes the ORIGINAL table whole. So each new table's formatting
+    // and its HEADER ROW are the source's own, by construction rather than by
+    // inheritance, and there is no content field for the model to fill.
+    //
+    // Replacing the table rather than editing it is what makes rejecting the card
+    // LITERAL - byte-for-byte, measured on the real 22-page proposal. A tracked
+    // deletion MARKS content, it never modifies it, so no cell the document
+    // already had is written to by a split at all; re-striping only ever reaches
+    // cells this op created. It also leaves each half the source's authored
+    // column grid, which deleting a table's last row and accepting does not.
+    //
+    // Two document shapes have no position for the first half to be written at,
+    // and both are refused with the remedy named rather than half-served: a table
+    // that is the document's last block (`document_tail_table_last_row`, the same
+    // fact `delete_table` and `delete_row` refuse), and a table welded directly
+    // to the table below it (`split_table_welded_to_next`). A table already under
+    // review is refused too (`split_table_source_has_pending_review`): copying
+    // rows nobody has accepted yet is what breaks the literal reject.
     //
     // No title, ever: a title is content, so it is a separate composed heading
     // through the section composer - which also makes "add a title later" an
@@ -254,12 +270,13 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // `preserveBanding` (default ON), the same flag and the same meaning as on
     // `insert_row`: a split changes which rows sit where, in BOTH halves, so the
     // executor reads the source's stripe before the write and re-lays it over
-    // each half from its header band down. Without it the copy shows the fills
+    // each half from its header band down. Without it each half shows the fills
     // its rows happened to carry in the original alternation - rows 4, 5 and 9 of
-    // a striped table are grey, white, white - and the source's parity is shifted
-    // by whatever was taken out of the middle of it. Costs no extra change cards,
-    // because appearance writes create no revisions. Send `false` for
-    // SyncFusion's raw behaviour.
+    // a striped table are grey, white, white - and the half that keeps the rest
+    // has its parity shifted by whatever came out of the middle of it. Costs no
+    // extra change cards, because appearance writes create no revisions, and it
+    // cannot cost the literal reject either, because both halves are content this
+    // op created. Send `false` for SyncFusion's raw behaviour.
     op: 'split_table',
     params: {
       rows: 'int>=0[]?',

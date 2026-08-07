@@ -22,11 +22,16 @@
 // of the middle of it. The split re-lays the source's stripe over both halves, the
 // same way `insert_row` already does and behind the same `preserveBanding` flag.
 //
-// `rejectedSerialization` is the one tolerance in the reject assertions, and it
-// names its exception byte for byte: once a cell's background has been written,
-// SyncFusion 34.1.31 cannot restore the ABSENT `shading` key - it comes back as an
-// explicit "no fill", which renders and exports identically. Probed on the SDK, not
-// assumed. Everything else, including every appearance fact, is compared exactly.
+// EVERY reject assertion below is LITERAL: `editor.serialize()` after the reject
+// must equal the same string taken before the write, with no normalization of any
+// kind. There used to be one tolerance here - a cell whose `shading` key was
+// ABSENT could not be restored to absent once written, so it came back as an
+// explicit "no fill" - and it existed because the split re-striped rows of the
+// SOURCE table. It does not any more: the split deletes the original whole and
+// writes both halves as new tables, so every fill the re-stripe writes goes into a
+// cell this op created, and rejecting removes the cells and the fills together.
+// The normalizer is deleted rather than kept as a crutch: if it were needed again,
+// the design would have failed.
 //
 // Nothing here asserts a literal colour. Every appearance assertion compares a
 // row against what the FIXTURE gave that row, matched by the row's own text - so
@@ -479,32 +484,20 @@ const bandingBreaks = (
 };
 
 /**
- * `sd:{"bgc":"empty",...}` written back to `sd:{}`, and how many times.
+ * How many cells carry an EXPLICIT "no fill" - `sd:{"bgc":"empty",...}` - which is
+ * what a cell whose `shading` key was ABSENT comes back as once anything has
+ * written to it. SyncFusion 34.1.31 has no route back to the absent key:
+ * `background = 'empty'`, `= undefined` and `delete cellFormat.shading` all leave
+ * `{"bgc":"empty","fgc":"empty","t":0}`, probed on a cell that started at `{}`.
  *
- * The ONE divergence a restripe's reject cannot avoid, measured from the SDK
- * rather than assumed: once a cell's background has been written, SyncFusion
- * 34.1.31 materialises its `shading` object and there is no route back to the
- * absent key. `background = 'empty'`, `= undefined` and `delete cellFormat.shading`
- * all leave `{"bgc":"empty","fgc":"empty","t":0}` - probed on a cell that started
- * at `{}`. That value IS "no fill": it renders the same, exports the same, and
- * reads the same through `collectTableAppearance`.
- *
- * So the reject assertions below normalize exactly that and then demand string
- * equality. This is not a loosened check - it is a stricter one. It names the only
- * tolerated difference, byte for byte, and counts it, so a restripe that left a
- * real fill behind still fails. A cell whose fill was CHANGED and restored comes
- * back exact and needs no tolerance at all.
+ * It is counted rather than normalized away. A split writes fills only into the
+ * two tables it created, so this number must come back from a reject UNCHANGED -
+ * a single extra one means the op reached a cell the document already had, and
+ * the literal reject assertions beside this would fail anyway.
  */
-const MATERIALIZED_EMPTY_FILL = /"sd":\{"bgc":"empty","fgc":"empty","t":0\}/g;
-const rejectedSerialization = (
-  editor: DocumentEditor
-): { sfdt: string; emptiedFills: number } => {
-  const raw = editor.serialize();
-  return {
-    sfdt: raw.replace(MATERIALIZED_EMPTY_FILL, '"sd":{}'),
-    emptiedFills: raw.match(MATERIALIZED_EMPTY_FILL)?.length ?? 0
-  };
-};
+const explicitEmptyFills = (editor: DocumentEditor): number =>
+  editor.serialize().match(/"sd":\{"bgc":"empty","fgc":"empty","t":0\}/g)
+    ?.length ?? 0;
 
 const allTexts = (editor: DocumentEditor): string[] =>
   flattenSfdt(JSON.parse(editor.serialize())).map((block) => block.text);
@@ -853,12 +846,11 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
         ],
         'split-report'
       );
-      expect(result.results[0].appearance).toMatchObject({
-        banding,
-        // One source row is skipped as pending-deleted for each row extracted,
-        // counted rather than quietly absorbed.
-        rowsExcludedFromStripe: ACME.length
-      });
+      // The stripe reported is the one the SOURCE proved, and it is laid over
+      // both halves. Nothing is excluded from the cycle any more: neither half
+      // holds a row on its way out, because the rows on their way out are in the
+      // original table and the original table is being deleted whole.
+      expect(result.results[0].appearance).toMatchObject({ banding });
       expect(result.results[0].appearance.rowsWritten).toBeGreaterThan(0);
     } finally {
       destroyEditor(editor);
@@ -903,6 +895,7 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
     const editor = makeEditor(scheduleFixture());
     try {
       const before = editor.serialize();
+      const emptyFillsBefore = explicitEmptyFills(editor);
       const factsBefore = factsByRowText(editor);
       const result = apply(
         editor,
@@ -931,14 +924,14 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
       // alone would leave the repainted fills behind: the restores journal is
       // what makes a card's reject exact, and this is the assertion that proves it.
       //
-      // Byte-exact but for the one difference SyncFusion makes unavoidable - a
-      // cell whose fill was ABSENT and is painted back to absent carries an
-      // explicit "no fill" afterwards. Counted, not waved past: the restripe
-      // painted over exactly the unfilled rows the stripe called for.
-      const rejected = rejectedSerialization(editor);
-      expect(rejected.emptiedFills).toBeGreaterThan(0);
-      expect(rejected.sfdt.length).toBe(before.length);
-      expect(rejected.sfdt).toBe(before);
+      // LITERAL, with no normalization at all. Every fill the restripe wrote went
+      // into a cell this op created, and rejecting takes the cells away with them,
+      // so not one cell of the original document was touched - which the unchanged
+      // count of explicit "no fill" cells says independently of the string.
+      const rejected = editor.serialize();
+      expect(rejected.length).toBe(before.length);
+      expect(rejected).toBe(before);
+      expect(explicitEmptyFills(editor)).toBe(emptyFillsBefore);
       // And the facts - what the page actually shows - are restored exactly, with
       // no tolerance of any kind.
       expect(Array.from(factsByRowText(editor))).toEqual(
@@ -1021,7 +1014,7 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
       // `rejectAll` resolves through each revision's own patched `reject`, so the
       // restripe's inverse rides along with the content's. Exact but for the
       // materialized empty fill the SDK cannot un-write.
-      expect(rejectedSerialization(editor).sfdt).toBe(before);
+      expect(editor.serialize()).toBe(before);
       expect(tablesOf(editor)).toHaveLength(1);
       expect(rowsOf(editor, 0)).toHaveLength(6);
     } finally {
@@ -1090,9 +1083,21 @@ describe('split_table: a table sitting directly against another table', () => {
     'NEIGHBOUR-ROW-2|X2'
   ];
 
-  it('splits the addressed table and leaves the neighbour untouched', () => {
+  // A split now writes its FIRST half at the position the original held, and
+  // that position is a caret at the start of the block after the table. A table
+  // welded to another table has no such caret - asking for it lands inside the
+  // next table's first cell, which is where a paste left the document in a state
+  // whose relayout threw `Cannot read properties of undefined (reading 'bidi')`.
+  //
+  // So this shape is refused rather than guessed at, and the message names the
+  // one thing that makes it work. Neither of the real documents this feature was
+  // built for contains the shape: 110 tables across the 22-page proposal and the
+  // 147-page template, and not one welded pair among them. The engine can never
+  // create one either - `separatedFromPrecedingTable` is what stops it.
+  it('refuses a source welded to the table below it, and says what to do', () => {
     const editor = makeEditor(adjacentTablesFixture());
     try {
+      const before = editor.serialize();
       const result = apply(
         editor,
         [
@@ -1106,13 +1111,52 @@ describe('split_table: a table sitting directly against another table', () => {
         ],
         'split-against-neighbour'
       );
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        error: 'split_table_welded_to_next'
+      });
+      expect(result.results[0].message).toContain(
+        'no position between them for the first half'
+      );
+      expect(result.results[0].details.join(' ')).toContain(
+        'Put a paragraph between the two tables first'
+      );
+      // Nothing was written, so nothing needs rejecting.
+      expect(editor.revisions.length).toBe(0);
+      expect(editor.serialize()).toBe(before);
+      // And the neighbour is untouched, which is what the refusal protects.
+      expect(rowsOf(editor, 1)).toEqual(NEIGHBOUR_ROWS);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The same document with the one thing the refusal asks for - a paragraph
+  // between the two tables - and the split is ordinary. This is what makes the
+  // refusal above a statement about the DOCUMENT rather than about the feature.
+  it('splits it once the document has a block between the two tables', () => {
+    const separated = adjacentTablesFixture();
+    separated.sections[0].blocks.splice(3, 0, para('') as any);
+    const editor = makeEditor(separated);
+    try {
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [1, 3],
+            targetAnchor: '0;5',
+            position: 'before'
+          }
+        ],
+        'split-with-room'
+      );
       expect(result.results[0]).toMatchObject({ ok: true });
       editor.revisions.acceptAll();
 
-      // THREE tables, never four: the source, the untouched neighbour, and the
-      // one the split made. The fourth was a partial copy of the neighbour.
-      const tables = tablesOf(editor);
-      expect(tables).toHaveLength(3);
+      // THREE tables, never four: the two halves and the untouched neighbour.
+      expect(tablesOf(editor)).toHaveLength(3);
       expect(rowsOf(editor, 0)).toEqual(['Line|Carrier', 'Auto|Beta']);
       expect(rowsOf(editor, 1)).toEqual(NEIGHBOUR_ROWS);
       expect(rowsOf(editor, 2)).toEqual([
@@ -1131,8 +1175,10 @@ describe('split_table: a table sitting directly against another table', () => {
     }
   });
 
-  it('rejecting the split of an adjacent table restores the document exactly', () => {
-    const editor = makeEditor(adjacentTablesFixture());
+  it('rejecting the split of a table beside another restores it exactly', () => {
+    const separated = adjacentTablesFixture();
+    separated.sections[0].blocks.splice(3, 0, para('') as any);
+    const editor = makeEditor(separated);
     try {
       const before = editor.serialize();
       const result = apply(
@@ -1142,7 +1188,7 @@ describe('split_table: a table sitting directly against another table', () => {
             op: 'split_table',
             anchor: '0;2;0;0;0',
             rows: [1, 3],
-            targetAnchor: '0;4',
+            targetAnchor: '0;5',
             position: 'before'
           }
         ],
@@ -1237,26 +1283,30 @@ describe('split_table: a table sitting directly against another table', () => {
     }
   });
 
-  // The same defect reached WITHOUT accepting in between, which is the shape a
-  // reviewer meets: two turns, both cards pending, then Accept All. Turn one's
+  // Two turns with NOTHING accepted in between, which is the shape a reviewer
+  // meets: turn one's card is still pending when turn two arrives. Turn one's
   // copy used to make the tables adjacent whether or not it had been accepted, so
   // turn two captured the neighbour AND the paragraphs past it - and pasting that
   // payload FUSED paragraphs ("Confirm by Friday.Next Steps") on top of adding a
   // table nobody asked for. `detectBatchedSplits` cannot see this: it refuses two
   // splits in ONE change set, and these are two.
   //
-  // Turn one now leaves its separator, so the pending sequence turn two reads is
-  // TABLE / P / TABLE / "Next Steps" / "Confirm by Friday." - every anchor below
-  // is one block later than it was, and none of them names a table.
+  // The split now replaces its whole source, so a second split of a table already
+  // under review is refused instead: whichever table turn two names, it is either
+  // the original that turn one is deleting or the half turn one has just
+  // inserted, and copying content nobody has accepted yet is exactly what stops
+  // the pair from rejecting back to the document literally - measured at +8
+  // characters when the half turn one produced was split again. The remedy is the
+  // button the reviewer is already looking at.
   //
-  // Every destination is covered because the paste point is what the fused text
-  // lands on, and each one fused a different pair.
+  // Every destination is still covered, because the refusal has to hold wherever
+  // turn two aims: each of these fused a different pair of paragraphs before.
   for (const [name, targetAnchor, position] of [
     ['before the following heading', '0;5', 'before'],
     ['after the trailing paragraph', '0;6', 'after'],
     ['before the intro paragraph', '0;1', 'before']
   ] as Array<[string, string, string]>) {
-    it(`a second split while the first is still pending stays clean - target ${name}`, () => {
+    it(`refuses a second split while the first is still pending - target ${name}`, () => {
       const editor = makeEditor(scheduleFixture());
       try {
         expect(
@@ -1274,31 +1324,36 @@ describe('split_table: a table sitting directly against another table', () => {
             'pending-turn-one'
           ).results[0]
         ).toMatchObject({ ok: true });
-        // Deliberately NOT accepted: turn one's card is still pending.
-        expect(
-          apply(
+        const afterTurnOne = topLevelKindsOf(editor);
+        const textsAfterTurnOne = allTexts(editor);
+        // Deliberately NOT accepted: turn one's card is still pending. Both
+        // tables turn two could name are under review - the original that is
+        // being deleted, and the half that has just been inserted.
+        for (const anchor of ['0;2;0;0;0', '0;3;0;0;0']) {
+          const second = apply(
             editor,
-            [
-              {
-                op: 'split_table',
-                anchor: '0;2;0;0;0',
-                rows: [2],
-                targetAnchor,
-                position
-              }
-            ],
-            'pending-turn-two'
-          ).results[0]
-        ).toMatchObject({ ok: true });
-        // Two turns, two independently reviewable cards.
-        expect(listRevisionGroups(editor as any)).toHaveLength(2);
+            [{ op: 'split_table', anchor, rows: [2], targetAnchor, position }],
+            `pending-turn-two-${anchor}`
+          ).results[0];
+          expect(second.ok).toBe(false);
+          expect(second.error).toBe('split_table_source_has_pending_review');
+          expect(second.details.join(' ')).toContain(
+            'Accept or reject the change already on this table'
+          );
+        }
+        // Turn one's card is the only one, and turn two left the document
+        // reading exactly as turn one had it - no half-written second split, no
+        // block added, no text moved. Compared as CONTENT rather than as bytes:
+        // a refused op still passes through the executor's own relayout, and
+        // SyncFusion re-fragments the runs it touches into equal text under a
+        // different split, which no op in this engine controls.
+        expect(listRevisionGroups(editor as any)).toHaveLength(1);
+        expect(topLevelKindsOf(editor)).toEqual(afterTurnOne);
+        expect(allTexts(editor)).toEqual(textsAfterTurnOne);
         editor.revisions.acceptAll();
 
-        // Three tables: the source, turn one's, turn two's. A fourth was a
-        // pruned copy of whichever table turn two's range ran into.
-        expect(tablesOf(editor)).toHaveLength(3);
-        // No paragraph may have absorbed another. Every body paragraph of the
-        // fixture still reads exactly what it read, and exactly once.
+        // Turn one alone, accepted: two tables, and every paragraph intact.
+        expect(tablesOf(editor)).toHaveLength(2);
         const texts = allTexts(editor);
         for (const value of [
           'Coverage Schedule',
@@ -1307,8 +1362,6 @@ describe('split_table: a table sitting directly against another table', () => {
           'Confirm by Friday.'
         ])
           expect(texts.filter((text) => text === value)).toHaveLength(1);
-        // Every data row of the original table survives exactly once, in one
-        // table or another - nothing duplicated into an extra one.
         for (const value of [
           'General Liability',
           'Auto',
@@ -1323,40 +1376,59 @@ describe('split_table: a table sitting directly against another table', () => {
     });
   }
 
-  it('rejects both pending splits back to the original document', () => {
-    const editor = makeEditor(scheduleFixture());
+  // Two splits of two DIFFERENT tables, both pending at once, both rejected. The
+  // refusal above is about splitting a table already under review; two tables
+  // under review side by side is ordinary, and it has to reject literally.
+  it('rejects two pending splits of two tables back to the original document', () => {
+    const separated = adjacentTablesFixture();
+    separated.sections[0].blocks.splice(3, 0, para('') as any);
+    const editor = makeEditor(separated);
     try {
       const before = editor.serialize();
-      apply(
-        editor,
-        [
-          {
-            op: 'split_table',
-            anchor: '0;2;0;0;0',
-            rows: ACME_ROWS,
-            targetAnchor: '0;3',
-            position: 'before'
-          }
-        ],
-        'reject-turn-one'
+      expect(
+        apply(
+          editor,
+          [
+            {
+              op: 'split_table',
+              anchor: '0;2;0;0;0',
+              rows: [1],
+              targetAnchor: '0;5',
+              position: 'before'
+            }
+          ],
+          'reject-turn-one'
+        ).results[0]
+      ).toMatchObject({ ok: true });
+      // The OTHER table, which turn one has not touched. Its own anchor moved
+      // down by what turn one pasted, so it is read from the document.
+      const neighbour = tablesOf(editor).find((table) =>
+        table.rows.some((row) => row.text.startsWith('NEIGHBOUR-ROW-1'))
       );
-      apply(
-        editor,
-        [
-          {
-            op: 'split_table',
-            anchor: '0;2;0;0;0',
-            rows: [2],
-            targetAnchor: '0;4',
-            position: 'before'
-          }
-        ],
-        'reject-turn-two'
-      );
+      expect(neighbour).toBeDefined();
+      expect(
+        apply(
+          editor,
+          [
+            {
+              op: 'split_table',
+              anchor: `${neighbour?.anchor};0;0;0`,
+              rows: [1],
+              // The blank paragraph turn one's first half now sits above, which
+              // is outside the neighbour and outside turn one's own range.
+              targetAnchor: '0;4',
+              position: 'before'
+            }
+          ],
+          'reject-turn-two'
+        ).results[0]
+      ).toMatchObject({ ok: true });
+      // Two cards, one per table, each independently rejectable.
+      expect(listRevisionGroups(editor as any)).toHaveLength(2);
       editor.revisions.rejectAll();
-      // Exact but for the materialized empty fill each restripe leaves behind on
-      // a cell that had none; see `rejectedSerialization`.
-      expect(rejectedSerialization(editor).sfdt).toEqual(before);
+      // LITERAL: two splits pending, both rejected, and not one byte of the
+      // original document moved.
+      expect(editor.serialize()).toEqual(before);
     } finally {
       destroyEditor(editor);
     }
@@ -1607,42 +1679,57 @@ describe('split_table: refusals derived from the document', () => {
     }
   });
 
-  it('refuses when the extraction would take the last row of a document-tail table', () => {
-    const editor = makeEditor(tailFixture());
-    try {
-      const before = editor.serialize();
-      // Row 3 is both an Acme line and the last row of a table that ends the
-      // document, which SyncFusion cannot accept the deletion of. The refusal is
-      // the shared one delete_row uses - not a second copy of the rule.
-      const result = apply(
-        editor,
-        [
-          {
-            op: 'split_table',
-            anchor: '0;2;0;0;0',
-            rows: [1, 3],
-            targetAnchor: '0;1',
-            position: 'before'
-          }
-        ],
-        'refuse-tail-row'
-      );
-      expect(result.results[0]).toMatchObject({
-        ok: false,
-        error: 'document_tail_table_last_row'
-      });
-      expect(editor.serialize()).toBe(before);
-      expect(editor.revisions.length).toBe(0);
-    } finally {
-      destroyEditor(editor);
-    }
-  });
+  // A split now replaces the WHOLE source table, so it covers the document's last
+  // row whenever the source ends the document - whichever rows were asked for.
+  // This is the same one fact `delete_row`, `delete_table` and a relocation each
+  // read from `documentTailTableLastRow`; the refusal is a fourth shape of it and
+  // takes the SyncFusion half of its message from the shared constant, so the four
+  // explanations cannot drift apart. Its own remedy differs from theirs: the user
+  // asked for two tables, and there is no "some other row" to offer.
+  //
+  // It is also the same missing block that leaves the first half nowhere to be
+  // written: the position after a table that ends the document does not exist.
+  for (const [name, rows] of [
+    ['the last row', [1, 3]],
+    ['no row near the end', [1]]
+  ] as Array<[string, number[]]>)
+    it(`refuses a document-tail table, extracting ${name}`, () => {
+      const editor = makeEditor(tailFixture());
+      try {
+        const before = editor.serialize();
+        const result = apply(
+          editor,
+          [
+            {
+              op: 'split_table',
+              anchor: '0;2;0;0;0',
+              rows,
+              targetAnchor: '0;1',
+              position: 'before'
+            }
+          ],
+          `refuse-tail-${rows.join('-')}`
+        );
+        expect(result.results[0]).toMatchObject({
+          ok: false,
+          error: 'document_tail_table_last_row'
+        });
+        // The remedy is named, and it is the one that makes a split work.
+        expect(result.results[0].details.join(' ')).toContain(
+          'Give the document a paragraph after the table first'
+        );
+        expect(editor.serialize()).toBe(before);
+        expect(editor.revisions.length).toBe(0);
+      } finally {
+        destroyEditor(editor);
+      }
+    });
 
-  it('still splits a document-tail table when the last row stays put', () => {
-    const editor = makeEditor(tailFixture());
+  it('splits the same table once the document does not end with it', () => {
+    const notTail = tailFixture();
+    notTail.sections[0].blocks.push(para('') as any);
+    const editor = makeEditor(notTail);
     try {
-      // The guard is precise, not a blanket ban on tail tables: extracting a row
-      // that is NOT the last one is an ordinary split and must keep working.
       const result = apply(
         editor,
         [
@@ -1915,16 +2002,26 @@ describe("split_table: the captain's acceptance criteria", () => {
       );
       expect(first.results[0]).toMatchObject({ ok: true });
       // A fresh read between calls is what a model actually does, and the second
-      // table's anchor has moved by the two blocks the first split added - its
-      // table and the separator that keeps that table separate.
+      // table's anchor has moved by everything the first split added. Read from
+      // the document by its own content rather than counted, which is exactly
+      // what a re-read gives the model.
+      const liability = tablesOf(editor).find((table) =>
+        table.rows.some((row) => row.text.startsWith('General Liability'))
+      );
+      expect(liability).toBeDefined();
+      const following = topLevelKindsOf(editor).findIndex(
+        (kind, index) =>
+          index > Number(liability?.anchor.split(';')[1]) &&
+          kind.startsWith('P:')
+      );
       const second = apply(
         editor,
         [
           {
             op: 'split_table',
-            anchor: '0;5;0;0;0',
+            anchor: `${liability?.anchor};0;0;0`,
             rows: [2],
-            targetAnchor: '0;6',
+            targetAnchor: `0;${following}`,
             position: 'before'
           }
         ],
@@ -2194,15 +2291,29 @@ describe('split_table: the two halves are two tables, not one', () => {
       expect(
         splitAfterSource(editor, 'separator-caret').results[0]
       ).toMatchObject({ ok: true });
-      // Pending: the separator is already a real block, so the reviewer can click
-      // between the two tables before deciding anything.
-      expect(weldedTablePairs(editor)).toEqual([]);
-      expect(caretAt(editor, '0;3;0')).toEqual({
-        offset: '0;3;0',
+      // PENDING there is exactly ONE welded pair, and it is the original table
+      // against the first half that replaces it. That pair is the before and the
+      // after of one decision, so there is nothing a reviewer would put between
+      // them - and it is gone the moment the card is resolved either way. The
+      // pair the reviewer WILL keep, the two halves, has its block.
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'P:All lines are listed below.',
+        'TABLE(6)', // the original, every row pending-deleted
+        'TABLE(3)', // the first half, replacing it in place
+        'P:', // the separator that keeps the two halves apart
+        'TABLE(4)', // the second half
+        'P:Next Steps',
+        'P:Confirm by Friday.'
+      ]);
+      expect(weldedTablePairs(editor)).toEqual([3]);
+      expect(caretAt(editor, '0;4;0')).toEqual({
+        offset: '0;4;0',
         insideTable: false
       });
       // Accepted, which is where the recurring failure has been: pending-correct
-      // and accept-wrong. The block is still there and still addressable.
+      // and accept-wrong. The original is gone, no pair is welded any more, and
+      // the block between the two halves is still there and still addressable.
       editor.revisions.acceptAll();
       expect(weldedTablePairs(editor)).toEqual([]);
       expect(caretAt(editor, '0;3;0')).toEqual({
@@ -2231,17 +2342,19 @@ describe('split_table: the two halves are two tables, not one', () => {
       expect(
         splitAfterSource(editor, 'separator-reject').results[0]
       ).toMatchObject({ ok: true });
-      // ONE card covering the table and its separator, so it is one accept and
-      // one reject rather than two things to notice.
+      // ONE card covering both halves and the separator, so it is one accept and
+      // one reject rather than three things to notice. Three blocks are added
+      // while it is pending - the two halves and the separator between them - on
+      // top of the original, which is still there because a deletion marks
+      // content rather than removing it.
       expect(listRevisionGroups(editor as any)).toHaveLength(1);
-      expect(topLevelKindsOf(editor)).toHaveLength(blocksBefore.length + 2);
+      expect(topLevelKindsOf(editor)).toHaveLength(blocksBefore.length + 3);
       editor.revisions.rejectAll();
-      // Byte-exact, on the same editor instance: the separator paragraph is a
-      // tracked insertion in that group, so rejecting removes it with the table.
-      // The one tolerated difference is the restripe's materialized empty fill.
-      const rejected = rejectedSerialization(editor);
-      expect(rejected.sfdt).toEqual(before);
-      expect(rejected.sfdt.length).toBe(before.length);
+      // LITERAL, on the same editor instance: the separator paragraph is a
+      // tracked insertion in that group, so rejecting removes it with the tables.
+      const rejected = editor.serialize();
+      expect(rejected).toEqual(before);
+      expect(rejected.length).toBe(before.length);
       expect(topLevelKindsOf(editor)).toEqual(blocksBefore);
       expect(editor.revisions.length).toBe(0);
     } finally {
@@ -2285,9 +2398,11 @@ describe('split_table: the two halves are two tables, not one', () => {
   });
 
   it('separates from a table the DOCUMENT put there, not just from the source', () => {
-    const editor = makeEditor(adjacentTablesFixture());
+    const separated = adjacentTablesFixture();
+    separated.sections[0].blocks.splice(3, 0, para('') as any);
+    const editor = makeEditor(separated);
     try {
-      // The paste point follows the neighbour table, so the table that would be
+      // The paste point follows the NEIGHBOUR table, so the table that would be
       // welded is one this op never touched. The rule is about the paste point,
       // which is why it holds for a target beside any table rather than only for
       // the table being split.
@@ -2298,7 +2413,7 @@ describe('split_table: the two halves are two tables, not one', () => {
             op: 'split_table',
             anchor: '0;2;0;0;0',
             rows: [1, 3],
-            targetAnchor: '0;4',
+            targetAnchor: '0;5',
             position: 'before'
           }
         ],
@@ -2306,20 +2421,21 @@ describe('split_table: the two halves are two tables, not one', () => {
       );
       expect(result.results[0]).toMatchObject({ ok: true });
       editor.revisions.acceptAll();
-      // The authored adjacency at 0;2/0;3 is the document's own and is left
-      // alone; the pair this op would have created is separated.
+      // The first half took the original's place, the neighbour is untouched, and
+      // the second half is separated from it by a block of its own.
       expect(topLevelKindsOf(editor)).toEqual([
         'P:Coverage Schedule',
         'P:All lines are listed below.',
         'TABLE(2)',
+        'P:',
         'TABLE(3)',
         'P:',
         'TABLE(3)',
         'P:Next Steps',
         'P:Confirm by Friday.'
       ]);
-      expect(caretAt(editor, '0;4;0')).toEqual({
-        offset: '0;4;0',
+      expect(caretAt(editor, '0;5;0')).toEqual({
+        offset: '0;5;0',
         insideTable: false
       });
     } finally {
@@ -2452,14 +2568,16 @@ describe('split_table: the two halves are two tables, not one', () => {
         expect(
           splitPastSpacer(editor, 'hidden-spacer-reject').results[0]
         ).toMatchObject({ ok: true });
-        expect(topLevelKindsOf(editor).length).toBe(blocksBefore.length + 2);
+        // Three blocks added while pending: the two halves and the separator
+        // between them. The hidden spacer the document brought is not one of them.
+        expect(topLevelKindsOf(editor).length).toBe(blocksBefore.length + 3);
         editor.revisions.rejectAll();
         // Byte-exact on the same editor instance, and the hidden spacer is still
         // the only hidden paragraph: the separator left with the table it came
         // in with, in the same card.
-        const rejected = rejectedSerialization(editor);
-        expect(rejected.sfdt.length).toBe(before.length);
-        expect(rejected.sfdt).toBe(before);
+        const rejected = editor.serialize();
+        expect(rejected.length).toBe(before.length);
+        expect(rejected).toBe(before);
         expect(topLevelKindsOf(editor)).toEqual(blocksBefore);
         expect(hiddenMarksOf(editor)).toEqual(marksBefore);
         expect(editor.revisions.length).toBe(0);
@@ -2469,8 +2587,14 @@ describe('split_table: the two halves are two tables, not one', () => {
     });
   });
 
-  it('holds for the document-tail table, where the target precedes the source', () => {
-    const editor = makeEditor(tailFixture());
+  it('holds where the target PRECEDES the source', () => {
+    // Not the document's tail - a split of that is refused outright now, because
+    // the position after such a table does not exist. One paragraph past the end
+    // is all it takes, and the interesting part of this case is the target being
+    // ABOVE the source, which is where the two pastes shift each other.
+    const notTail = tailFixture();
+    notTail.sections[0].blocks.push(para('') as any);
+    const editor = makeEditor(notTail);
     try {
       const result = apply(
         editor,
@@ -2492,7 +2616,8 @@ describe('split_table: the two halves are two tables, not one', () => {
         'P:Coverage Schedule',
         'TABLE(2)',
         'P:All lines are listed below.',
-        'TABLE(3)'
+        'TABLE(3)',
+        'P:'
       ]);
     } finally {
       destroyEditor(editor);
@@ -2661,12 +2786,43 @@ describe('split_table: the rail card resolves a split as one unit', () => {
           false
         );
         expect(editor.revisions.length).toBe(0);
-        // Exact but for the restripe's materialized empty fill; see
-        // `rejectedSerialization` for why the SDK gives no way back to `sd:{}`.
-        expect(rejectedSerialization(editor).sfdt).toBe(before);
+        // LITERAL through the rail, which is the button the reviewer presses.
+        expect(editor.serialize()).toBe(before);
       } finally {
         destroyEditor(editor);
       }
     }
   );
+
+  // The property the whole mechanism exists for, stated as a property rather than
+  // as a byte count: NOT ONE CELL the document already had is written to. Reject
+  // byte-equality proves it for the document as a whole; this proves the reason,
+  // which is the thing that would silently stop being true if a future change
+  // reached back into the source.
+  //
+  // A cell whose `shading` key is ABSENT is the one that cannot be restored: once
+  // anything writes to it, SyncFusion 34.1.31 materialises the key as an explicit
+  // "no fill" and there is no route back. So the count of those is the tell. It
+  // must be identical before the split and after the reject, on a fixture whose
+  // unfilled rows are exactly the ones a re-stripe wants to paint.
+  it.each(SPLITS)('%s writes into no pre-existing cell', (_label, edit) => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const before = explicitEmptyFills(editor);
+      const result = apply(editor, [edit], 'split-no-source-write');
+      expect(result.results[0]).toMatchObject({ ok: true });
+      // The selective split's re-stripe demonstrably writes cells - asserted
+      // where that is its subject, in "rejecting the split puts every fill the
+      // restripe wrote back exactly". The positional split of this fixture needs
+      // none, because each half already reads as its own stripe.
+      resolveLiveRevisionGroupsAsOneUndo(
+        editor as any,
+        listRevisionGroups(editor as any),
+        false
+      );
+      expect(explicitEmptyFills(editor)).toBe(before);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
 });
