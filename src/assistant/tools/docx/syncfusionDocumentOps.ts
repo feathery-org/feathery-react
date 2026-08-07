@@ -11790,6 +11790,81 @@ function creationGap(
 }
 
 /**
+ * The role the paragraph being styled plays in its family, and the subsection
+ * depth to look for when that role is a subsection heading.
+ *
+ * The composer picks a donor PER ROLE - `insert_section` uses
+ * `'section_heading'` for the title, `'subsection_heading'` for a heading and
+ * `'intro_paragraph'` / `'subsection_paragraph'` for body text - so a section
+ * hand-built out of `insert_text` + `apply_style` only comes out looking
+ * composed if the role is derived from the same two facts the composer uses:
+ * whether what is being written is a HEADING, and WHERE in the family it sits.
+ * Asking for one hardcoded role gave every created paragraph the family's
+ * heading donor, so `apply_style { styleName: 'Normal' }` came back as the
+ * family's heading banner.
+ *
+ * Whether the requested style is a heading style is read off the DOCUMENT
+ * rather than off a name pattern: it is a heading style here if the paragraphs
+ * already wearing it are headings. That is what makes the rule hold for the
+ * live document's `headingNoToc` and for any custom name nobody has thought
+ * of; a style no paragraph wears yet falls back to the same name test the
+ * reference resolver already uses.
+ */
+function composedParagraphRole(
+  blocks: FlatBlock[],
+  familyAnchor: string,
+  target: FlatBlock,
+  styleName: string
+): {
+  role: Exclude<SectionBlockRole, 'table' | 'table_header' | 'table_body'>;
+  level?: number;
+} {
+  const wearers = blocks.filter(
+    (block) =>
+      block.anchor !== target.anchor &&
+      !tableAnchorForBlock(block) &&
+      (block.format?.styleName ?? '').trim() === styleName
+  );
+  const headingWearers = wearers.filter(isHeadingLikeBlock);
+  const isHeading = wearers.length
+    ? headingWearers.length * 2 >= wearers.length
+    : HEADING_LIKE_STYLE.test(styleName);
+
+  const familyIndex = blocks.findIndex(
+    (block) => block.anchor === familyAnchor
+  );
+  const targetIndex = blocks.findIndex(
+    (block) => block.anchor === target.anchor
+  );
+  if (isHeading) {
+    // The family's own first block is its section heading; anything else
+    // wearing a heading style inside it is a subsection heading, at whatever
+    // depth the document already gives that style.
+    if (targetIndex === familyIndex || targetIndex < 0)
+      return { role: 'section_heading' };
+    const level = headingWearers.find(
+      (block) => Number.isFinite(block.level) && block.isHeading
+    )?.level;
+    return {
+      role: 'subsection_heading',
+      ...(level !== undefined ? { level } : {})
+    };
+  }
+  // Body text is intro text until a subsection heading has opened inside the
+  // family, exactly as roleBlocksForUnit classifies the blocks that are
+  // already there.
+  const opened =
+    familyIndex >= 0 &&
+    targetIndex > familyIndex &&
+    blocks
+      .slice(familyIndex + 1, targetIndex)
+      .some(
+        (block) => !tableAnchorForBlock(block) && isHeadingLikeBlock(block)
+      );
+  return { role: opened ? 'subsection_paragraph' : 'intro_paragraph' };
+}
+
+/**
  * The donor a paragraph created by this change set should wear, and whether
  * that disagrees with the style the model asked for.
  *
@@ -11798,11 +11873,19 @@ function creationGap(
  * wins - the same rule insert_section applies, which is the point: a section
  * hand-built out of insert_text + apply_style must come out looking like a
  * section composed by the single op.
+ *
+ * `requestedStyleName` is the style THIS OP asked for. Reading the block's
+ * current style instead made the disagreement report compare the resolver's
+ * answer against the style the paragraph already had, which is the style the
+ * resolver is about to replace - so the one mechanism that exists to say "you
+ * asked for X and composition gave you Y" agreed with itself and stayed
+ * silent on every override it made.
  */
 function composedParagraphDonor(
   blocks: FlatBlock[],
   byAnchor: Map<string, FlatBlock>,
-  target: FlatBlock
+  target: FlatBlock,
+  requestedStyleName?: string
 ): { donor?: FlatBlock; disagreement?: ComposedStyleDisagreement } | undefined {
   const familyAnchor =
     joinedSectionFamilyAnchor(blocks, target, 'before', {
@@ -11810,18 +11893,30 @@ function composedParagraphDonor(
       blocks: []
     }) ?? target.anchor;
   const family = deriveSectionFamilyEvidence(blocks, familyAnchor, true);
+  // An op that names no style is asking for the one the paragraph already
+  // wears, so the role it plays is the same question either way.
+  const requested = (
+    requestedStyleName ??
+    target.format?.styleName ??
+    ''
+  ).trim();
+  const { role, level } = composedParagraphRole(
+    blocks,
+    familyAnchor,
+    target,
+    requested
+  );
   // `role` reads only the flattened blocks; the SFDT is what the table and
   // row queries need, and serializing one per format op would cost a whole
   // document pass for an answer that does not use it.
   const outcome = creationAppearance(blocks, undefined, byAnchor).role(
     family,
-    'section_heading',
-    { at: familyAnchor }
+    role,
+    { at: familyAnchor, ...(level !== undefined ? { level } : {}) }
   );
   if (!outcome.resolved) return undefined;
   const donor = outcome.value;
   if (donor.anchor === target.anchor) return undefined;
-  const requested = target.format?.styleName;
   const resolved = donor.format?.styleName;
   return {
     donor,
@@ -16056,7 +16151,12 @@ function applyDocumentEditsMeasured(
           // The distinguishing fact is `createdTarget`, not a preference.
           const composedStyle =
             op.op === 'apply_style' && !!createdTarget && !source
-              ? composedParagraphDonor(blocks, byAnchor, target)
+              ? composedParagraphDonor(
+                  blocks,
+                  byAnchor,
+                  target,
+                  typeof op.styleName === 'string' ? op.styleName : undefined
+                )
               : undefined;
           if (composedStyle?.disagreement)
             composedDisagreements.set(index, composedStyle.disagreement);

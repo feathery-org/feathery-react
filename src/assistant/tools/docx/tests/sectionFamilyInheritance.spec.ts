@@ -949,6 +949,99 @@ describe('an inserted row is never a header it was not asked to be', () => {
       destroyEditor(editor);
     }
   });
+
+  // The resolver winning for created content is the rule; asking it for ONE
+  // hardcoded role was the defect. `insert_section` composes a section out of
+  // four roles - heading, subsection heading, intro paragraph, subsection
+  // paragraph - so a section hand-built out of insert_text + apply_style only
+  // reaches the same result if the role comes from what the op asked for.
+  // Before this, every created paragraph got the family's HEADING donor: a body
+  // line the model styled 'Body Text' came back as the 14pt bold banner.
+  //
+  // The parameters are the requested style and the format the family proves for
+  // it - never a literal - so the same cases hold for a document styled
+  // entirely differently.
+  describe('a created paragraph takes the donor for the role it asked for', () => {
+    const BODY_LINE = 'A created body line.';
+    const insertThenStyle = (editor: DocumentEditor, styleName: string) => {
+      const anchor = anchorOf(editor, prose('Alpha Motor Interests').inlines[0]
+        .text as string);
+      return applyDocumentEdits(editor as unknown as LiveEditor, {
+        changeSetId: `composed-${styleName}`,
+        edits: [
+          {
+            op: 'insert_text',
+            anchor,
+            position: 'after',
+            text: `\n${BODY_LINE}`
+          },
+          { op: 'apply_style', anchor, expect: BODY_LINE, styleName }
+        ]
+      });
+    };
+
+    it.each([
+      ['a body style', 'Body Text', 'body'],
+      ['a heading style', 'subsectionBanner', 'heading']
+    ] as Array<[string, string, 'body' | 'heading']>)(
+      '%s resolves to the family look for that role',
+      (_label, styleName, role) => {
+        const editor = makeEditor();
+        try {
+          // Read off the same document, so nothing here is a literal.
+          const familyHeading = formatOf(editor, 'Interests').format;
+          const familyBody = formatOf(
+            editor,
+            prose('Beta Motor Interests').inlines[0].text as string
+          ).format;
+          // The fixture really distinguishes the two looks, or nothing below
+          // can fail.
+          expect(familyHeading).not.toEqual(familyBody);
+
+          const result = insertThenStyle(editor, styleName);
+          expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+
+          const created = formatOf(editor, BODY_LINE).format;
+          expect(created).toEqual(
+            role === 'heading' ? familyHeading : familyBody
+          );
+          expect(created).not.toEqual(
+            role === 'heading' ? familyBody : familyHeading
+          );
+          // Composition agreed with the request, so there is nothing to report.
+          expect(result.results[1].styleResolved).toBeUndefined();
+        } finally {
+          destroyEditor(editor);
+        }
+      }
+    );
+
+    // The disagreement report is the mechanism that tells the model the engine
+    // overrode it. It compared the resolver's answer against the block's
+    // CURRENT style - the style composition is about to replace - so it agreed
+    // with itself and stayed silent on every override it made. Compared
+    // against the op, it speaks.
+    it('reports the disagreement against the style the op asked for', () => {
+      const editor = makeEditor();
+      try {
+        const familyBody = formatOf(
+          editor,
+          prose('Beta Motor Interests').inlines[0].text as string
+        ).format;
+        // 'Normal' is a body style the family does not use, so the resolver
+        // must override it with the one the family proves, and say so.
+        const result = insertThenStyle(editor, 'Normal');
+        expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
+        expect(formatOf(editor, BODY_LINE).format).toEqual(familyBody);
+        expect(result.results[1].styleResolved).toMatchObject({
+          requested: 'Normal',
+          resolved: familyBody.styleName
+        });
+      } finally {
+        destroyEditor(editor);
+      }
+    });
+  });
 });
 
 describe('every content-creating op consults the creation resolver', () => {
