@@ -273,6 +273,61 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
   });
 
+  it('clicking the group title navigates to the first edit without expanding', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+
+    // Navigated (same fallback .select() path a chip click uses)...
+    expect(editor.revisions.changes[0].select).toHaveBeenCalled();
+    // ...but the group never opened.
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    ).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('the group title targets the FIRST chip specifically, not just any member', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const editor = makeEditor([deletion, insertion]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+
+    expect(deletion.select).toHaveBeenCalled();
+    expect(insertion.select).not.toHaveBeenCalled();
+    // Still collapsed — the title button never toggles the caret's state.
+    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+  });
+
+  it('the caret still toggles expand/collapse independently of the title button', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // Navigate via the title first — must not leave the caret expanded.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+    expect(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    ).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
+  });
+
   it('focused-chip Accept resolves only that edit; the resolved chip disappears', () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',

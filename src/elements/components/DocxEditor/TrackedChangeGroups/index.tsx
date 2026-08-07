@@ -298,12 +298,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     else editor?.focusIn?.();
   };
 
-  const focusChip = (chip: ChipView) => {
-    const group = groups.find((mem) => mem.chips.includes(chip));
-    if (group) {
-      setExpanded((prev) =>
-        prev[group.key] ? prev : { ...prev, [group.key]: true }
-      );
+  const focusChip = (chip: ChipView, options?: { expand?: boolean }) => {
+    const expand = options?.expand ?? true;
+    if (expand) {
+      const group = groups.find((mem) => mem.chips.includes(chip));
+      if (group) {
+        setExpanded((prev) =>
+          prev[group.key] ? prev : { ...prev, [group.key]: true }
+        );
+      }
     }
     commitActiveRevision(chip.revision);
     // Suppress selectRevision's selectionChange echo (sync + trailing
@@ -454,6 +457,12 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                     ...prev,
                     [mem.key]: !prev[mem.key]
                   }))
+                }
+                onNavigateFirst={() =>
+                  handleEditorEvent(() => {
+                    if (mem.chips.length)
+                      focusChip(mem.chips[0], { expand: false });
+                  })
                 }
                 activeRevision={activeRevision}
                 chipRef={(chip) => (el) => {
