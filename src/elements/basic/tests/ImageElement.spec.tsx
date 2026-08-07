@@ -12,6 +12,7 @@ const mockResponsiveStyles = {
   addTargets: jest.fn(),
   applyCorners: jest.fn(),
   applyWidth: jest.fn(),
+  applyColor: jest.fn(),
   getTarget: jest.fn().mockReturnValue({})
 };
 
