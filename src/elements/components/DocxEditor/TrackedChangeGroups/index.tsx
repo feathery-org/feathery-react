@@ -6,7 +6,7 @@ import {
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
 import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
-import { isOpeningDocument, setActiveInlineRevision } from '../useDocxEditor';
+import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
 import GroupCard from './GroupCard';
@@ -93,9 +93,12 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // the rail and reappears if the resolution is undone.
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // The edit the document cursor sits inside (or the chip last clicked);
-  // its chip is expanded, ringed, scrolled to, and shows its own actions.
-  const [activeRevision, setActiveRevision] = useState<any>(null);
+  // The edit(s) currently ringed in the document: normally just the one
+  // chip the cursor sits inside or was last clicked, but a group-title
+  // click rings every chip in that group at once. The first entry is
+  // always the "primary" one — what keyboard stepping and scroll-into-view
+  // treat as current.
+  const [activeRevisions, setActiveRevisions] = useState<any[]>([]);
   // Keyboard stepping reads this ref, not state: selectRevision echoes a
   // synchronous selectionChange that can resolve to a NEIGHBOUR and make
   // every arrow press skip an edit.
@@ -112,13 +115,17 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     panelRef.current?.focus({ preventScroll: true });
   };
 
-  const commitActiveRevision = useCallback(
-    (revision: any) => {
-      activeRevisionRef.current = revision;
-      setActiveRevision(revision);
-      setActiveInlineRevision(editor, revision);
+  const commitActiveRevisions = useCallback(
+    (revisions: any[]) => {
+      activeRevisionRef.current = revisions[0] ?? null;
+      setActiveRevisions(revisions);
+      setActiveInlineRevisions(editor, revisions);
     },
     [editor]
+  );
+  const commitActiveRevision = useCallback(
+    (revision: any) => commitActiveRevisions(revision ? [revision] : []),
+    [commitActiveRevisions]
   );
 
   // Live revision count, for the new-edit fast path below.
@@ -262,17 +269,19 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         }
       }
       activeRevisionRef.current = null;
-      setActiveInlineRevision(editor, null);
+      setActiveInlineRevisions(editor, []);
     };
   }, [editor, commitActiveRevision, onHiddenChange]);
 
-  // Bring the newly active chip into view once it exists (its group may have
-  // been collapsed until this same update expanded it). Scroll ONLY the rail's
-  // own scrollbox: scrollIntoView walks every scrollable ancestor, so it can
-  // yank the whole form viewport when a new revision lands.
+  // Bring the newly active (primary/first) chip into view once it exists
+  // (its group may have been collapsed until this same update expanded it).
+  // Scroll ONLY the rail's own scrollbox: scrollIntoView walks every
+  // scrollable ancestor, so it can yank the whole form viewport when a new
+  // revision lands.
   useEffect(() => {
-    if (!activeRevision) return;
-    const row = rowRefs.current.get(activeRevision);
+    const primary = activeRevisions[0];
+    if (!primary) return;
+    const row = rowRefs.current.get(primary);
     const box = scrollBoxRef.current;
     if (!row || !box || box.scrollHeight <= box.clientHeight) return;
     const rowTop =
@@ -305,6 +314,37 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     else editor?.focusIn?.();
   };
 
+  // Suppresses selectRevision's selectionChange echo (sync + trailing
+  // microtask) so it cannot reassign activeRevisions, then moves the
+  // document's own selection/scroll position to the given revision.
+  const selectAndScrollToRevision = (revision: any) => {
+    ignoreSelectionRef.current = true;
+    try {
+      // skipGroupSelect keeps navigation on this exact revision — the public
+      // revision.select() may expand to the adjacent same-author/type group.
+      const selection = editor?.selectionModule;
+      if (typeof selection?.selectRevision === 'function') {
+        selection.selectRevision(revision, undefined, undefined, true);
+        // Explicit scroll too: some host/layout combos suppress the implicit
+        // one while focus stays in the rail.
+        if (selection.start && selection.end) {
+          editor.documentHelper?.scrollToPosition?.(
+            selection.start,
+            selection.end
+          );
+        }
+      } else {
+        revision?.select?.();
+      }
+    } finally {
+      // Cleanup, not containment: the echo suppression must lift even when
+      // navigation throws to the event-entry guard.
+      queueMicrotask(() => {
+        ignoreSelectionRef.current = false;
+      });
+    }
+  };
+
   const focusChip = (chip: ChipView, options?: { expand?: boolean }) => {
     const expand = options?.expand ?? true;
     if (expand) {
@@ -316,33 +356,17 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       }
     }
     commitActiveRevision(chip.revision);
-    // Suppress selectRevision's selectionChange echo (sync + trailing
-    // microtask) so it cannot reassign activeRevision.
-    ignoreSelectionRef.current = true;
-    try {
-      // skipGroupSelect keeps navigation on this exact chip — the public
-      // revision.select() may expand to the adjacent same-author/type group.
-      const selection = editor?.selectionModule;
-      if (typeof selection?.selectRevision === 'function') {
-        selection.selectRevision(chip.revision, undefined, undefined, true);
-        // Explicit scroll too: some host/layout combos suppress the implicit
-        // one while focus stays in the rail.
-        if (selection.start && selection.end) {
-          editor.documentHelper?.scrollToPosition?.(
-            selection.start,
-            selection.end
-          );
-        }
-      } else {
-        chip.revision?.select?.();
-      }
-    } finally {
-      // Cleanup, not containment: the echo suppression must lift even when
-      // navigation throws to the event-entry guard.
-      queueMicrotask(() => {
-        ignoreSelectionRef.current = false;
-      });
-    }
+    selectAndScrollToRevision(chip.revision);
+    refocusPanel();
+  };
+
+  // Group-title click: navigate to (select/scroll) the group's first edit,
+  // same as focusChip, but ring EVERY chip in the group rather than just
+  // the first — and never expand (that's the caret's job alone).
+  const focusGroupFirst = (group: GroupView) => {
+    if (!group.chips.length) return;
+    commitActiveRevisions(group.chips.flatMap(chipRevisions));
+    selectAndScrollToRevision(group.chips[0].revision);
     refocusPanel();
   };
 
@@ -466,12 +490,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                   }))
                 }
                 onNavigateFirst={() =>
-                  handleEditorEvent(() => {
-                    if (mem.chips.length)
-                      focusChip(mem.chips[0], { expand: false });
-                  })
+                  handleEditorEvent(() => focusGroupFirst(mem))
                 }
-                activeRevision={activeRevision}
+                activeRevisions={activeRevisions}
                 chipRef={(chip) => (el) => {
                   if (el) rowRefs.current.set(chip.revision, el);
                   else rowRefs.current.delete(chip.revision);

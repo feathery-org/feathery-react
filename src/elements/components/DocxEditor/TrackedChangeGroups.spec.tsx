@@ -310,6 +310,32 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
   });
 
+  it('the group title rings EVERY chip in the group, not just the first', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const editor = makeEditor([deletion, insertion]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+    // Navigation targets chips[0] only (asserted above); the ring, however,
+    // covers the whole group — expanding afterward shows both marked.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+  });
+
   it('the caret still toggles expand/collapse independently of the title button', () => {
     const editor = makeEditor([makeRevision()]);
     render(<TrackedChangeGroups editor={editor} />);

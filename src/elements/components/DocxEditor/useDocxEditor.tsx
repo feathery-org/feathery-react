@@ -101,18 +101,34 @@ export interface RevisionRect {
   bottom: number;
 }
 
-/** Mark ONE edit active: the renderer rings that revision's runs (and its
- *  replace counterpart's). Repaints only on change. */
-export function setActiveInlineRevision(ed: any, revision: any): void {
+const sameRevisionSet = (
+  a: Set<any> | null,
+  b: Set<any> | null
+): boolean => {
+  if (a === b) return true;
+  if (!a || !b || a.size !== b.size) return false;
+  for (const item of a) if (!b.has(item)) return false;
+  return true;
+};
+
+/** Mark a set of edits active: the renderer rings each one's runs (and each
+ *  one's replace counterpart's). Repaints only when the set actually
+ *  changes. */
+export function setActiveInlineRevisions(ed: any, revisions: any[]): void {
   if (!ed) return;
-  const next = revision ?? null;
-  if ((ed[ACTIVE_REVISION_KEY] ?? null) === next) return;
+  const next = revisions.length ? new Set(revisions) : null;
+  if (sameRevisionSet(ed[ACTIVE_REVISION_KEY] ?? null, next)) return;
   ed[ACTIVE_REVISION_KEY] = next;
   try {
     ed.viewer?.renderVisiblePages?.();
   } catch {
     // Repaint is best-effort; the next natural render picks the ring up.
   }
+}
+
+/** Mark ONE edit active. See setActiveInlineRevisions. */
+export function setActiveInlineRevision(ed: any, revision: any): void {
+  setActiveInlineRevisions(ed, revision ? [revision] : []);
 }
 
 /** The geometry recorded during the last render pass (see RevisionRect). */
@@ -240,10 +256,10 @@ export function installRevisionHighlightRendering(ed: any) {
       try {
         // Active-edit boxes (either replace half counts) are rung ONCE at
         // page end so touching runs share a merged ring; `line` scopes them.
-        const active = ed[ACTIVE_REVISION_KEY];
+        const active: Set<any> | null = ed[ACTIVE_REVISION_KEY];
         if (
           active &&
-          (info.revision === active || info.counterpart === active)
+          (active.has(info.revision) || active.has(info.counterpart))
         ) {
           (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
             ...box,

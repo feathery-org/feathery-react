@@ -30,8 +30,8 @@ interface Props {
   onToggle: () => void;
   /** Navigate the document to the group's first edit without expanding. */
   onNavigateFirst: () => void;
-  /** The document's active edit; the matching chip rings and shows actions. */
-  activeRevision: any;
+  /** The document's active edit(s); matching chips ring and show actions. */
+  activeRevisions: any[];
   /** Row-element registrar per chip (scroll-into-view bookkeeping). */
   chipRef: (chip: ChipView) => (el: HTMLDivElement | null) => void;
   onFocusChip: (chip: ChipView) => void;
@@ -41,16 +41,15 @@ interface Props {
 
 // One accept group: a header split into two independent controls — the
 // caret expands/collapses the chip list, the title/tally navigates the
-// document to the group's first edit WITHOUT expanding — group-wide
-// Accept/Reject (only when there is more than one edit — a lone edit
-// resolves through its chip's own actions), and — while open — the chip
-// list joined by a spine.
+// document to the group's first edit WITHOUT expanding — always-visible
+// group-wide Accept/Reject, and — while open — the chip list joined by a
+// spine.
 export default function GroupCard({
   group,
   isOpen,
   onToggle,
   onNavigateFirst,
-  activeRevision,
+  activeRevisions,
   chipRef,
   onFocusChip,
   onResolveGroup,
@@ -145,20 +144,18 @@ export default function GroupCard({
           </span>
         </button>
       </div>
-      {group.chips.length > 1 && (
-        <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
-          <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
-            Accept {group.chips.length}
-          </button>
-          <button
-            type='button'
-            css={rejectBtn}
-            onClick={() => onResolveGroup(false)}
-          >
-            Reject {group.chips.length}
-          </button>
-        </div>
-      )}
+      <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
+        <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
+          Accept {group.chips.length}
+        </button>
+        <button
+          type='button'
+          css={rejectBtn}
+          onClick={() => onResolveGroup(false)}
+        >
+          Reject {group.chips.length}
+        </button>
+      </div>
       {isOpen && (
         <div
           css={{
@@ -186,9 +183,8 @@ export default function GroupCard({
               key={index}
               chip={chip}
               isActive={
-                !!activeRevision &&
-                (chip.revision === activeRevision ||
-                  chip.partner === activeRevision)
+                activeRevisions.includes(chip.revision) ||
+                activeRevisions.includes(chip.partner)
               }
               rowRef={chipRef(chip)}
               onFocus={() => onFocusChip(chip)}
