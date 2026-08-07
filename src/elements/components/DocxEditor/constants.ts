@@ -43,4 +43,3 @@ export const FONTS = [
   'Comic Sans MS'
 ];
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 24, 28, 36, 48, 72];
-export const ZOOM_PRESETS = [50, 75, 90, 100, 125, 150, 175, 200];

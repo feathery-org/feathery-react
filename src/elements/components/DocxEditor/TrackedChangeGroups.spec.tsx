@@ -140,6 +140,13 @@ function acceptOnlyGroup(): void {
   fireEvent.click(screen.getByRole('button', { name: /^Accept \d+$/ }));
 }
 
+// Single-edit groups carry no group-wide card button, so the rail-wide action
+// is how they reach the same group resolve path (resolveGroups) that a card's
+// Accept N takes.
+function acceptAllGroups(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+}
+
 describe('TrackedChangeGroups', () => {
   it('renders nothing when the document has no tracked changes at all', () => {
     const editor = makeEditor([]);
@@ -510,13 +517,38 @@ describe('TrackedChangeGroups', () => {
     editor.focusIn = jest.fn();
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 1' }));
+    // Single-edit groups have no group-wide buttons; resolve via the chip.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    fireEvent.click(screen.getByLabelText('Accept this edit'));
 
     // The rail unmounted; focus on <body> would swallow the next ⌘Z, so it
     // goes back into the document instead.
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
     expect(editor.focusIn).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the group-wide Accept/Reject for single-edit groups', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // No "Accept 1"/"Reject 1" — a lone edit resolves through its chip.
+    expect(
+      screen.queryByRole('button', { name: 'Accept 1' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Reject 1' })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('$6,000'));
+    expect(screen.getByLabelText('Accept this edit')).toBeInTheDocument();
+    expect(screen.getByLabelText('Reject this edit')).toBeInTheDocument();
   });
 
   it('does not skip chips when selectRevision echoes a neighbouring selectionChange', () => {
@@ -1065,15 +1097,13 @@ describe('RailErrorBoundary', () => {
       expect(result.results[0]).toMatchObject({ ok: true });
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
-      acceptOnlyGroup();
+      acceptAllGroups();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBe(2);
-      expect(
-        screen.getByRole('button', { name: /^Accept \d+$/ })
-      ).toBeEnabled();
-      acceptOnlyGroup();
+      expect(screen.getByRole('button', { name: 'Accept all' })).toBeEnabled();
+      acceptAllGroups();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();

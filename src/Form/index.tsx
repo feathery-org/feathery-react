@@ -245,6 +245,10 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
+import { hasDirtyDocxEditors } from '../elements/components/DocxEditor/docxDirtyRegistry';
+
+const UNSAVED_DOCX_MESSAGE =
+  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -2278,6 +2282,16 @@ function Form({
 
     updateButtonActionState(elementType, element, triggerPayload);
 
+    // Prompted at the Next/Back action itself so validation and submission
+    // decide the step is really leaving first. Full-page exits use beforeunload.
+    let docxDiscardDeclined = false;
+    const confirmDocxDiscard = () => {
+      if (!hasDirtyDocxEditors(_internalId)) return true;
+      const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
+      docxDiscardDeclined = !proceed;
+      return proceed;
+    };
+
     const metadata = {
       elementType,
       elementIDs: [element.id],
@@ -2625,6 +2639,7 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
+        if (!confirmDocxDiscard()) break;
         await goToNewStep({
           redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
@@ -2633,8 +2648,10 @@ function Form({
           completionButton:
             elementType === 'button' ? (element as ClickActionElement) : null
         });
-      } else if (type === ACTION_BACK) await goToPreviousStep();
-      else if (type === ACTION_PURCHASE_PRODUCTS) {
+      } else if (type === ACTION_BACK) {
+        if (!confirmDocxDiscard()) break;
+        await goToPreviousStep();
+      } else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
         if (!actionSuccess) break;
       } else if (type === ACTION_SELECT_PRODUCT_TO_PURCHASE) {
@@ -3015,6 +3032,10 @@ function Form({
       elementClicks[id] = false;
       clearButtonActionState();
 
+      // The user chose to keep their unsaved docx changes, so nothing is
+      // pending. Return falsy so the caller clears the button loader.
+      if (docxDiscardDeclined) return;
+
       return true;
     }
 
@@ -3296,6 +3317,12 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
+  const confirmDocxPopNavigation = useCallback(
+    () =>
+      !hasDirtyDocxEditors(_internalId) ||
+      featheryWindow().confirm(UNSAVED_DOCX_MESSAGE),
+    [_internalId]
+  );
 
   useEffect(() => {
     initState.remountCallbacks[_internalId] = () =>
@@ -3309,7 +3336,7 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider>
+        <RouterProvider confirmPopNavigation={confirmDocxPopNavigation}>
           <Form
             {...props}
             formId={formId}
