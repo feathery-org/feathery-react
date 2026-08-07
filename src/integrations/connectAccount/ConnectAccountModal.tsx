@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CloseIcon from '../../elements/components/icons/Close';
+import { featheryWindow } from '../../utils/browser';
 import { MODAL_Z_INDEX } from '../../utils/styles';
 import { CONFIG_COMPONENTS, PROVIDER_LABELS } from './providers';
+
+const MODAL_TITLE_ID = 'feathery-connect-account-modal-title';
 
 export type ConnectAccountModalProps = {
   show: boolean;
@@ -23,6 +26,35 @@ function ConnectAccountModal({
   onClose
 }: ConnectAccountModalProps) {
   const [error, setError] = useState('');
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Clears any stale error whenever the modal opens/closes or the provider
+  // changes, so a message from a previous account/provider never reappears.
+  useEffect(() => {
+    setError('');
+  }, [show, provider]);
+
+  // Move focus into the dialog on open; there is otherwise no keyboard path
+  // into it.
+  useEffect(() => {
+    if (show) closeButtonRef.current?.focus();
+  }, [show]);
+
+  // Escape dismisses the dialog, matching native dialog expectations.
+  useEffect(() => {
+    if (!show) return undefined;
+    const win = featheryWindow();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    win.addEventListener('keydown', handleKeyDown);
+    return () => win.removeEventListener('keydown', handleKeyDown);
+  }, [show, onClose]);
+
+  const handleChangeAccount = () => {
+    setError('');
+    onChangeAccount();
+  };
 
   if (!show) return null;
 
@@ -58,6 +90,9 @@ function ConnectAccountModal({
       />
       <div
         className='feathery-modal'
+        role='dialog'
+        aria-modal='true'
+        aria-labelledby={MODAL_TITLE_ID}
         css={{
           position: 'relative',
           backgroundColor: '#fff',
@@ -74,10 +109,11 @@ function ConnectAccountModal({
             borderBottom: '1px solid #e9e9e9'
           }}
         >
-          <h3 css={{ padding: 0, margin: 0, flex: '1' }}>
+          <h3 id={MODAL_TITLE_ID} css={{ padding: 0, margin: 0, flex: '1' }}>
             Connect your {providerLabel} account
           </h3>
           <button
+            ref={closeButtonRef}
             aria-label='Close'
             onClick={onClose}
             css={{
@@ -107,7 +143,7 @@ function ConnectAccountModal({
           >
             <span>{accountEmail}</span>
             <button
-              onClick={onChangeAccount}
+              onClick={handleChangeAccount}
               css={{
                 background: 'none',
                 border: 'none',

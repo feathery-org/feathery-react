@@ -2,6 +2,24 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ConnectAccountModal from './ConnectAccountModal';
 
+// A fake config component that lets tests trigger `onError` directly, since
+// the real `box` stub (BoxFolderPicker) never calls it.
+jest.mock('./providers', () => {
+  const actual = jest.requireActual('./providers');
+  const react = jest.requireActual('react');
+  return {
+    ...actual,
+    CONFIG_COMPONENTS: {
+      box: ({ onError }: any) =>
+        react.createElement(
+          'button',
+          { onClick: () => onError('Something went wrong') },
+          'Trigger error'
+        )
+    }
+  };
+});
+
 describe('ConnectAccountModal', () => {
   const baseProps = {
     show: true,
@@ -55,5 +73,26 @@ describe('ConnectAccountModal', () => {
     fireEvent.click(screen.getByLabelText('Close'));
 
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('clears a config error on Change account and does not carry it across a reopen', () => {
+    const onChangeAccount = jest.fn();
+    const { rerender } = render(
+      <ConnectAccountModal {...baseProps} onChangeAccount={onChangeAccount} />
+    );
+
+    fireEvent.click(screen.getByText('Trigger error'));
+    expect(screen.getByText('Something went wrong')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Change account'));
+    expect(onChangeAccount).toHaveBeenCalled();
+    expect(screen.queryByText('Something went wrong')).toBeNull();
+
+    fireEvent.click(screen.getByText('Trigger error'));
+    expect(screen.getByText('Something went wrong')).toBeTruthy();
+
+    rerender(<ConnectAccountModal {...baseProps} show={false} />);
+    rerender(<ConnectAccountModal {...baseProps} show />);
+    expect(screen.queryByText('Something went wrong')).toBeNull();
   });
 });
