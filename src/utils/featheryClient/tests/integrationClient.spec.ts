@@ -36,12 +36,19 @@ describe('IntegrationClient account connect', () => {
       .fn()
       .mockResolvedValue(okResponse({ state: 's', authorization_url: 'u' }));
 
-    const result = await client.startAccountConnect('box', 'https://forms.test');
+    const result = await client.startAccountConnect(
+      'box',
+      'https://forms.test'
+    );
 
     expect(result.state).toBe('s');
-    const url = client._fetch.mock.calls[0][0];
+    const [url, , parseResponse] = client._fetch.mock.calls[0];
     expect(url).toContain('account-connect/start/');
     expect(url).toContain('provider=box');
+    // parseResponse must be false so a non-2xx status reaches our own
+    // response.status/parseAPIError handling instead of apiFetch's
+    // checkResponseSuccess throwing/swallowing first.
+    expect(parseResponse).toBe(false);
   });
 
   it('throws the parsed API error when start fails', async () => {
@@ -63,6 +70,7 @@ describe('IntegrationClient account connect', () => {
     await expect(client.getAccountConnectStatus('s')).resolves.toEqual({
       status: 'pending'
     });
+    expect(client._fetch.mock.calls[0][2]).toBe(false);
   });
 
   it('posts a selection when saving config', async () => {
@@ -73,9 +81,12 @@ describe('IntegrationClient account connect', () => {
 
     await client.saveAccountConfig('box', { folder_id: '42' });
 
-    const [url, options] = client._fetch.mock.calls[0];
+    const [url, options, parseResponse] = client._fetch.mock.calls[0];
     expect(url).toContain('account-connect/config/');
     expect(JSON.parse(options.body).selection).toEqual({ folder_id: '42' });
+    // Shared by browseAccountResources and saveAccountConfig via
+    // _accountConnectPost - must be false, see startAccountConnect test above.
+    expect(parseResponse).toBe(false);
   });
 
   it('passes a create name through browse', async () => {
