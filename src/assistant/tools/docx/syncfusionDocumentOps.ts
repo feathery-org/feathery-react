@@ -6815,7 +6815,11 @@ function relocateBlockRange(
     callEditor(editor, 'insertText', '\n');
   }
   editor.selection.select(target.anchor, target.anchor);
-  callEditor(editor, 'paste', payload);
+  callEditor(
+    editor,
+    'paste',
+    separatedFromPrecedingTable(payload, preSfdt, sequenceBefore, pasteAt)
+  );
   const pastedSfdt = serializeSfdt(editor);
   const paste: PasteEffect = {
     at: pasteAt,
@@ -6830,6 +6834,68 @@ function relocateBlockRange(
     editor.editor.delete();
   }
   return { paste, pastedSfdt };
+}
+
+/**
+ * A pasted table never lands welded to the table already sitting above it.
+ *
+ * Two tables with no block between them are two tables that behave as one: there
+ * is no caret between them, so the reviewer cannot put a break, a heading or a
+ * paragraph there - asking for the position between them lands INSIDE the second
+ * table's first cell. The captain: "both the tables are still connected and so we
+ * cannot add any break between them ... when it splits the table it creates a new
+ * table and not just start adding new rows into the existing table."
+ *
+ * `position: 'before'` the block that follows a table resolves to exactly that
+ * caret, so a split - whose source IS a table and whose payload IS a table -
+ * creates the adjacency whenever the model addresses the block after the source.
+ * Measured live on the 22-page proposal: the same request produced
+ * `targetAnchor: "5;62"` (welded) on one turn and `"5;63"` (separated by the
+ * paragraph that happened to be there) on another. The separator is what makes
+ * the outcome the model's intent rather than an accident of what followed.
+ *
+ * It rides on the PAYLOAD rather than being typed at the target for three
+ * reasons: the paste is one write, so the paragraph is in the same revision set,
+ * the same rail card, and rejecting takes it away with the table; splitting the
+ * target paragraph instead would hand the separator that paragraph's style, so
+ * pasting before a heading would author an empty HEADING between the tables; and
+ * `paste.blocks` is measured from the document, so the extra block needs no
+ * arithmetic anywhere else.
+ *
+ * Conditional on the block before the paste point actually being a table, so the
+ * ordinary case - a payload landing after a heading or a paragraph - is written
+ * exactly as it is today and no stray blank line appears. This is the only
+ * direction adjacency can be created from: a target resolving against a table's
+ * own blocks is already refused by `resolveRelocationTarget`
+ * (`relocation_target_in_table`), so a payload can never land immediately BEFORE
+ * a table.
+ */
+function separatedFromPrecedingTable(
+  payload: string,
+  preSfdt: any,
+  sequenceBefore: Array<{ section: number; block: number }>,
+  pasteAt: number
+): string {
+  const preceding = pasteAt > 0 ? sequenceBefore[pasteAt - 1] : undefined;
+  if (!preceding) return payload;
+  const sections: any[] = pick(preSfdt, 'sections', 'sec') ?? [];
+  const before = getBlocks(sections[preceding.section] ?? {})[preceding.block];
+  if (!getRows(before)) return payload;
+  const parsed = JSON.parse(payload);
+  const payloadSections = pick(parsed, 'sections', 'sec');
+  if (!Array.isArray(payloadSections) || !payloadSections.length)
+    return payload;
+  const first = payloadSections[0];
+  // Written back through the key the payload itself uses: the live editor
+  // serializes optimized SFDT ('b'/'i') and a fixture-opened document the full
+  // form, and a block stored under the other spelling is invisible to the parser.
+  const blocksKey = first?.blocks !== undefined ? 'blocks' : 'b';
+  const inlinesKey = blocksKey === 'blocks' ? 'inlines' : 'i';
+  const blocks = getBlocks(first);
+  // Nothing to weld to unless the payload LEADS with a table.
+  if (!blocks.length || !getRows(blocks[0])) return payload;
+  first[blocksKey] = [{ [inlinesKey]: [] }, ...blocks];
+  return JSON.stringify(parsed);
 }
 
 /** Resolves `targetAnchor` + `position` into the caret the payload lands at. */

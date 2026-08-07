@@ -189,6 +189,46 @@ const tailFixture = () => ({
   styles: headingStyles()
 });
 
+/** Table A at 0;2 and table B at 0;3, with nothing at all between them. */
+const adjacentTablesFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Coverage Schedule', 'Heading 1'), // 0;0
+        para('All lines are listed below.'), // 0;1
+        {
+          // 0;2 - the table being split
+          tableFormat: { allowAutoFit: true },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [cell('Line', HEADER_FILL), cell('Carrier', HEADER_FILL)]
+            },
+            line('General Liability', 'Acme', BAND_FILL),
+            line('Auto', 'Beta'),
+            line('Property', 'Acme', BAND_FILL)
+          ]
+        },
+        {
+          // 0;3 - the neighbour, which this op must not touch
+          tableFormat: { allowAutoFit: true },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [cell('Zone', HEADER_FILL), cell('Limit', HEADER_FILL)]
+            },
+            line('NEIGHBOUR-ROW-1', 'X1'),
+            line('NEIGHBOUR-ROW-2', 'X2')
+          ]
+        },
+        para('Next Steps', 'Heading 1'), // 0;4
+        para('Confirm by Friday.') // 0;5
+      ]
+    }
+  ],
+  styles: headingStyles()
+});
+
 /** A vertical merge spanning rows 1..2 in column 0. */
 const mergedFixture = () => ({
   sections: [
@@ -307,6 +347,50 @@ const revisionTally = (editor: DocumentEditor) => {
 /** Row texts of one table, in order. */
 const rowsOf = (editor: DocumentEditor, index: number): string[] =>
   tablesOf(editor)[index]?.rows.map((row) => row.text) ?? [];
+
+/**
+ * The top-level block sequence: `TABLE(rows)` for a table, `P:text` otherwise.
+ *
+ * Read from the block array rather than from `flattenSfdt`, because a table has
+ * no block of its own there - its cells do - so a flattened read cannot say
+ * whether anything sits BETWEEN two tables, which is the whole question here.
+ */
+const topLevelKindsOf = (editor: DocumentEditor): string[] => {
+  const sfdt = JSON.parse(editor.serialize());
+  const blocks: any[] = sfdt.sections?.[0]?.blocks ?? sfdt.sec?.[0]?.b ?? [];
+  return blocks.map((block) => {
+    const rows = block.rows ?? block.r ?? block.rw;
+    if (Array.isArray(rows)) return `TABLE(${rows.length})`;
+    const inlines = block.inlines ?? block.i ?? [];
+    return `P:${inlines.map((run: any) => run.text ?? run.tlp ?? '').join('')}`;
+  });
+};
+
+/** Every index where a table sits directly against the table before it. */
+const weldedTablePairs = (editor: DocumentEditor): number[] => {
+  const kinds = topLevelKindsOf(editor);
+  return kinds.reduce<number[]>(
+    (found, kind, index) =>
+      index > 0 && kind.startsWith('TABLE') && kinds[index - 1].startsWith('TABLE')
+        ? [...found, index]
+        : found,
+    []
+  );
+};
+
+/**
+ * Where SyncFusion actually puts the caret when the user clicks the position a
+ * block address names. Two tables with nothing between them have no caret there
+ * at all: the request lands inside the second table's first cell, which is the
+ * "cannot add any break between them" the captain reported.
+ */
+const caretAt = (editor: DocumentEditor, anchor: string) => {
+  editor.selection.select(anchor, anchor);
+  return {
+    offset: String(editor.selection.startOffset),
+    insideTable: Boolean((editor.selection.start as any)?.paragraph?.isInsideTable)
+  };
+};
 
 /** Each table's column grid beside the cell count its rows carry, counts not widths */
 const gridsOf = (editor: DocumentEditor) => {
@@ -572,46 +656,6 @@ describe('split_table: a table sitting directly against another table', () => {
     'NEIGHBOUR-ROW-2|X2'
   ];
 
-  /** Table A at 0;2 and table B at 0;3, with nothing at all between them. */
-  const adjacentTablesFixture = () => ({
-    sections: [
-      {
-        blocks: [
-          para('Coverage Schedule', 'Heading 1'), // 0;0
-          para('All lines are listed below.'), // 0;1
-          {
-            // 0;2 - the table being split
-            tableFormat: { allowAutoFit: true },
-            rows: [
-              {
-                rowFormat: { isHeader: true },
-                cells: [cell('Line', HEADER_FILL), cell('Carrier', HEADER_FILL)]
-              },
-              line('General Liability', 'Acme', BAND_FILL),
-              line('Auto', 'Beta'),
-              line('Property', 'Acme', BAND_FILL)
-            ]
-          },
-          {
-            // 0;3 - the neighbour, which this op must not touch
-            tableFormat: { allowAutoFit: true },
-            rows: [
-              {
-                rowFormat: { isHeader: true },
-                cells: [cell('Zone', HEADER_FILL), cell('Limit', HEADER_FILL)]
-              },
-              line('NEIGHBOUR-ROW-1', 'X1'),
-              line('NEIGHBOUR-ROW-2', 'X2')
-            ]
-          },
-          para('Next Steps', 'Heading 1'), // 0;4
-          para('Confirm by Friday.') // 0;5
-        ]
-      }
-    ],
-    styles: headingStyles()
-  });
-
   it('splits the addressed table and leaves the neighbour untouched', () => {
     const editor = makeEditor(adjacentTablesFixture());
     try {
@@ -680,12 +724,12 @@ describe('split_table: a table sitting directly against another table', () => {
     }
   });
 
-  it('a second split of a table the first split left adjacent stays clean', () => {
+  it('a second split of a table the first split put a table below stays clean', () => {
     const editor = makeEditor(scheduleFixture());
     try {
       // Turn one puts the new table immediately after the source, which is what
-      // `position: 'before'` the following heading means - so the two tables are
-      // now neighbours with nothing between them.
+      // `position: 'before'` the following heading means. The separator is what
+      // keeps them two tables rather than neighbours with nothing between them.
       expect(
         apply(
           editor,
@@ -709,8 +753,20 @@ describe('split_table: a table sitting directly against another table', () => {
         'Property|Acme',
         'Umbrella|Acme'
       ]);
+      // Turn one's separator sits between them, so turn two addresses the
+      // heading at 0;5 - the new table is at 0;4, and a target inside a table is
+      // refused. This is the shape a second turn actually meets.
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'P:All lines are listed below.',
+        'TABLE(3)',
+        'P:',
+        'TABLE(4)',
+        'P:Next Steps',
+        'P:Confirm by Friday.'
+      ]);
 
-      // Turn two splits the source again. Its neighbour is the table turn one
+      // Turn two splits the source again. Below it is the table turn one
       // produced, and it must survive with every row it had.
       expect(
         apply(
@@ -720,7 +776,7 @@ describe('split_table: a table sitting directly against another table', () => {
               op: 'split_table',
               anchor: '0;2;0;0;0',
               rows: [1],
-              targetAnchor: '0;4',
+              targetAnchor: '0;5',
               position: 'before'
             }
           ],
@@ -752,17 +808,21 @@ describe('split_table: a table sitting directly against another table', () => {
 
   // The same defect reached WITHOUT accepting in between, which is the shape a
   // reviewer meets: two turns, both cards pending, then Accept All. Turn one's
-  // copy makes the tables adjacent whether or not it has been accepted, so turn
-  // two captured the neighbour AND the paragraphs past it - and pasting that
+  // copy used to make the tables adjacent whether or not it had been accepted, so
+  // turn two captured the neighbour AND the paragraphs past it - and pasting that
   // payload FUSED paragraphs ("Confirm by Friday.Next Steps") on top of adding a
   // table nobody asked for. `detectBatchedSplits` cannot see this: it refuses two
   // splits in ONE change set, and these are two.
   //
+  // Turn one now leaves its separator, so the pending sequence turn two reads is
+  // TABLE / P / TABLE / "Next Steps" / "Confirm by Friday." - every anchor below
+  // is one block later than it was, and none of them names a table.
+  //
   // Every destination is covered because the paste point is what the fused text
   // lands on, and each one fused a different pair.
   for (const [name, targetAnchor, position] of [
-    ['before the following heading', '0;4', 'before'],
-    ['after the trailing paragraph', '0;5', 'after'],
+    ['before the following heading', '0;5', 'before'],
+    ['after the trailing paragraph', '0;6', 'after'],
     ['before the intro paragraph', '0;1', 'before']
   ] as Array<[string, string, string]>) {
     it(`a second split while the first is still pending stays clean - target ${name}`, () => {
@@ -1245,10 +1305,17 @@ describe("split_table: the captain's acceptance criteria", () => {
   const ACME = [1, 3, 5];
 
   // "Here it should NOT create a new subsection heading, just a new table."
-  it('adds a table and NOTHING else - no heading, no paragraph', () => {
+  //
+  // Refined by the report that made the separator necessary: "both the tables are
+  // still connected and so we cannot add any break between them so can we make
+  // this more deterministic where when it splits the table it creates a new table
+  // and not just start adding new rows into the existing table". So the split adds
+  // exactly two things - the table, and the EMPTY paragraph that makes it a second
+  // table the reviewer can get between - and still writes no text of any kind.
+  it('adds a table and an empty separator - no heading, no text, nothing else', () => {
     const editor = makeEditor(scheduleFixture());
     try {
-      const bodyBefore = flattenSfdt(JSON.parse(editor.serialize()))
+      const textsBefore = flattenSfdt(JSON.parse(editor.serialize()))
         .filter((block) => block.kind !== 'table_cell')
         .map((block) => `${block.isHeading ? 'H' : 'P'}:${block.text}`);
       apply(
@@ -1268,10 +1335,26 @@ describe("split_table: the captain's acceptance criteria", () => {
       const bodyAfter = flattenSfdt(JSON.parse(editor.serialize()))
         .filter((block) => block.kind !== 'table_cell')
         .map((block) => `${block.isHeading ? 'H' : 'P'}:${block.text}`);
-      // Every body paragraph and heading is exactly as it was: the split composes
-      // no title for the table it produces, and adds no paragraph beside it.
-      expect(bodyAfter).toEqual(bodyBefore);
+      // Exactly ONE block was added, it is a paragraph and not a heading, and it
+      // is empty: every heading and every word of text is as it was.
+      expect(bodyAfter.filter((entry) => entry !== 'P:')).toEqual(
+        textsBefore.filter((entry) => entry !== 'P:')
+      );
+      expect(bodyAfter).toHaveLength(textsBefore.length + 1);
+      expect(bodyAfter.filter((entry) => entry === 'P:')).toHaveLength(
+        textsBefore.filter((entry) => entry === 'P:').length + 1
+      );
       expect(tablesOf(editor)).toHaveLength(2);
+      // And it is between the two tables, which is the only place it helps.
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'P:All lines are listed below.',
+        'TABLE(3)',
+        'P:',
+        'TABLE(4)',
+        'P:Next Steps',
+        'P:Confirm by Friday.'
+      ]);
     } finally {
       destroyEditor(editor);
     }
@@ -1383,15 +1466,16 @@ describe("split_table: the captain's acceptance criteria", () => {
       );
       expect(first.results[0]).toMatchObject({ ok: true });
       // A fresh read between calls is what a model actually does, and the second
-      // table's anchor has moved by one block.
+      // table's anchor has moved by the two blocks the first split added - its
+      // table and the separator that keeps that table separate.
       const second = apply(
         editor,
         [
           {
             op: 'split_table',
-            anchor: '0;4;0;0;0',
+            anchor: '0;5;0;0;0',
             rows: [2],
-            targetAnchor: '0;5',
+            targetAnchor: '0;6',
             position: 'before'
           }
         ],
@@ -1466,9 +1550,10 @@ describe('split_table: a title is separate content, not part of the split', () =
     try {
       splitOff(editor, 'title-later-split');
       editor.revisions.acceptAll();
-      // The new table sits at 0;3, between the source table and "Next Steps".
+      // The new table sits at 0;4 - after the source table and the separator
+      // paragraph that keeps the two apart, and before "Next Steps".
       const [, newTable] = tablesOf(editor);
-      expect(newTable.anchor).toBe('0;3');
+      expect(newTable.anchor).toBe('0;4');
       // The ordinary follow-up: compose a heading before it. No redo of the
       // split, and no title field on the split op.
       const titled = apply(
@@ -1611,6 +1696,250 @@ describe('split_table: the anchor may name the TABLE, the way a table read names
       } finally {
         destroyEditor(editor);
       }
+    }
+  });
+});
+
+// A split produces two tables the reviewer can get BETWEEN.
+//
+// The captain: "whenever we ask it to split the tables it do split the tables but
+// then both the tables are still connected and so we cannot add any break between
+// them so can we make this more deterministic where when it splits the table it
+// creates a new table and not just start adding new rows into the existing table".
+//
+// Measured on his own 22-page proposal before the fix: the split DID produce two
+// table blocks (24 -> 25), but with zero blocks between them, and asking for the
+// caret at the position between them - `5;62;0` - came back `5;62;0;0;0;0`, inside
+// the new table's first cell. There is no caret between two adjacent tables, so
+// there is nowhere to put a break, a heading or a paragraph, and the pair reads
+// and behaves as one table. It survived accept and a full DOCX round trip.
+//
+// Which of the two happens was decided by the model's `targetAnchor`, not by us:
+// the same request produced `"5;62"` (the block right after the source, welded) on
+// one turn and `"5;63"` (past a paragraph that happened to be there, separated) on
+// another. That is the nondeterminism the separator removes.
+describe('split_table: the two halves are two tables, not one', () => {
+  const ACME_ROWS = [1, 3, 5];
+  const splitAfterSource = (editor: DocumentEditor, changeSetId: string) =>
+    apply(
+      editor,
+      [
+        {
+          op: 'split_table',
+          anchor: '0;2;0;0;0',
+          rows: ACME_ROWS,
+          targetAnchor: '0;3',
+          position: 'before'
+        }
+      ],
+      changeSetId
+    );
+
+  it('leaves a block the caret can reach between them, pending AND accepted', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      expect(splitAfterSource(editor, 'separator-caret').results[0]).toMatchObject(
+        { ok: true }
+      );
+      // Pending: the separator is already a real block, so the reviewer can click
+      // between the two tables before deciding anything.
+      expect(weldedTablePairs(editor)).toEqual([]);
+      expect(caretAt(editor, '0;3;0')).toEqual({
+        offset: '0;3;0',
+        insideTable: false
+      });
+      // Accepted, which is where the recurring failure has been: pending-correct
+      // and accept-wrong. The block is still there and still addressable.
+      editor.revisions.acceptAll();
+      expect(weldedTablePairs(editor)).toEqual([]);
+      expect(caretAt(editor, '0;3;0')).toEqual({
+        offset: '0;3;0',
+        insideTable: false
+      });
+      expect(tablesOf(editor)).toHaveLength(2);
+      // The separator is a body paragraph, not a heading, even though the block
+      // the paste targeted IS one - it rides on the payload rather than being cut
+      // out of the target paragraph, so it cannot inherit "Heading 1".
+      const separator = flattenSfdt(JSON.parse(editor.serialize())).find(
+        (candidate) => candidate.anchor === '0;3'
+      );
+      expect(separator?.text).toBe('');
+      expect(separator?.isHeading).toBeFalsy();
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('the separator belongs to the same card, and reject takes it away too', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      const before = editor.serialize();
+      const blocksBefore = topLevelKindsOf(editor);
+      expect(splitAfterSource(editor, 'separator-reject').results[0]).toMatchObject(
+        { ok: true }
+      );
+      // ONE card covering the table and its separator, so it is one accept and
+      // one reject rather than two things to notice.
+      expect(listRevisionGroups(editor as any)).toHaveLength(1);
+      expect(topLevelKindsOf(editor)).toHaveLength(blocksBefore.length + 2);
+      editor.revisions.rejectAll();
+      // Byte-exact, on the same editor instance: the separator paragraph is a
+      // tracked insertion in that group, so rejecting removes it with the table.
+      expect(editor.serialize()).toEqual(before);
+      expect(editor.serialize().length).toBe(before.length);
+      expect(topLevelKindsOf(editor)).toEqual(blocksBefore);
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('adds nothing when the new table does not land against a table', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      // Target the intro paragraph, so the block above the paste point is a
+      // paragraph. There is no adjacency to prevent and no blank line appears -
+      // the separator is a consequence of the shape, not a fixed extra block.
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: ACME_ROWS,
+            targetAnchor: '0;1',
+            position: 'before'
+          }
+        ],
+        'no-separator-needed'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'TABLE(4)',
+        'P:All lines are listed below.',
+        'TABLE(3)',
+        'P:Next Steps',
+        'P:Confirm by Friday.'
+      ]);
+      expect(weldedTablePairs(editor)).toEqual([]);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('separates from a table the DOCUMENT put there, not just from the source', () => {
+    const editor = makeEditor(adjacentTablesFixture());
+    try {
+      // The paste point follows the neighbour table, so the table that would be
+      // welded is one this op never touched. The rule is about the paste point,
+      // which is why it holds for a target beside any table rather than only for
+      // the table being split.
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [1, 3],
+            targetAnchor: '0;4',
+            position: 'before'
+          }
+        ],
+        'separate-from-neighbour'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      // The authored adjacency at 0;2/0;3 is the document's own and is left
+      // alone; the pair this op would have created is separated.
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'P:All lines are listed below.',
+        'TABLE(2)',
+        'TABLE(3)',
+        'P:',
+        'TABLE(3)',
+        'P:Next Steps',
+        'P:Confirm by Friday.'
+      ]);
+      expect(caretAt(editor, '0;4;0')).toEqual({
+        offset: '0;4;0',
+        insideTable: false
+      });
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('holds for the document-tail table, where the target precedes the source', () => {
+    const editor = makeEditor(tailFixture());
+    try {
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: [1],
+            targetAnchor: '0;1',
+            position: 'before'
+          }
+        ],
+        'tail-separator'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(weldedTablePairs(editor)).toEqual([]);
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'TABLE(2)',
+        'P:All lines are listed below.',
+        'TABLE(3)'
+      ]);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The invariant lives in `relocateBlockRange`, the one primitive `split_table`,
+  // `move_section` and `copy_section` all paste through, and it keys off the
+  // PAYLOAD leading with a table rather than off which op asked. Today only a
+  // split produces such a payload - `TABLE_SCOPED_OPS` holds `split_table` but
+  // not the two relocations, so they are always anchored at a heading and their
+  // payload leads with one. Placed at the primitive so a relocation joining that
+  // set inherits the rule instead of needing it remembered; asserted here from the
+  // other side, that a payload which is not a table is written exactly as before.
+  it('a relocation whose payload is not a table is written exactly as before', () => {
+    const editor = makeEditor(scheduleFixture());
+    try {
+      // "Next Steps" and its paragraph, moved above the intro. The trailing empty
+      // paragraph is what a move has always left where the section was - the whole
+      // of relocateSection.spec.ts pins that behaviour and it is untouched here.
+      const result = apply(
+        editor,
+        [
+          {
+            op: 'move_section',
+            anchor: '0;3',
+            targetAnchor: '0;1',
+            position: 'before'
+          } as EditOp
+        ],
+        'move-not-a-table'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+      expect(topLevelKindsOf(editor)).toEqual([
+        'P:Coverage Schedule',
+        'P:Next Steps',
+        'P:Confirm by Friday.',
+        'P:All lines are listed below.',
+        'TABLE(6)',
+        'P:'
+      ]);
+    } finally {
+      destroyEditor(editor);
     }
   });
 });
