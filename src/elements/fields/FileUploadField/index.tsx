@@ -6,6 +6,7 @@ import {
   DownloadIcon,
   FileUploadIcon
 } from '../../components/icons';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
@@ -193,7 +194,26 @@ function FileUploadField({
     ...imgMaxSizeStyles,
     ...responsiveStyles.getTarget('img')
   };
-  const icon = element.properties.icon ? (
+  const icon = hasIconGlyph(element.properties.icon_glyph) ? (
+    // Persisted glyph in the uploader icon slot — sized by the image width
+    // styles when set, colored via icon_color/currentColor from imgStyles
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        ...imgStyles,
+        maxWidth: '100%'
+      }}
+    >
+      <IconGlyph
+        glyph={element.properties.icon_glyph}
+        // applyWidth always writes a width string, so an unset image width
+        // arrives as a bare unit ('px'). Fill the slot when a real width is
+        // set, else fall back to the default 32px icon box.
+        size={Number.isFinite(parseFloat(imgStyles.width as any)) ? '100%' : 32}
+      />
+    </span>
+  ) : element.properties.icon ? (
     <img
       src={element.properties.icon}
       style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
