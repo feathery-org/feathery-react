@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 
 import TextNodes from '../components/TextNodes';
+import { hasIconGlyph, IconGlyph } from '../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import { isFit } from '../../utils/hydration';
@@ -60,6 +61,8 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   );
   responsiveStyles.applyWidth('img', 'image_');
   responsiveStyles.applyMargin('img', 'image_');
+  // Icon-in-image-slot: explicit icon_color overrides the label typography
+  responsiveStyles.applyColor('img', 'icon_color', 'color');
 
   if (element.styles.hover_background_color) {
     responsiveStyles.applyColor(
@@ -259,16 +262,53 @@ function ButtonElement({
         <div css={styles.getTarget('loader')}>{loader}</div>
       ) : (
         <>
-          {element.properties.image && (
-            <img
-              src={element.properties.image}
+          {/* The icon slot wins when both sources are somehow set, matching
+              ImageElement and the file upload icon slot. The builder clears one
+              when you pick the other, so this only decides API/AI-set states. */}
+          {hasIconGlyph(element.properties.icon_glyph) ? (
+            // Icon in the image slot: colored by the label's typography
+            // (first run's font styles) through currentColor, with the img
+            // target's icon_color spread last as an explicit override.
+            // Sized by the image width styles when set, else 1em to track
+            // the label font.
+            <span
+              data-feathery-button-icon={element.properties.icon_source}
               css={{
+                display: 'inline-flex',
+                alignItems: 'center',
                 ...imgMaxSizeStyles,
+                ...responsiveStyles.getRichFontStyles(
+                  element.properties.text_formatted?.[0]?.attributes ?? {}
+                ),
                 ...responsiveStyles.getTargets('img')
               }}
-            />
+            >
+              <IconGlyph
+                glyph={element.properties.icon_glyph}
+                size={element.styles.image_width ? '100%' : '1em'}
+              />
+            </span>
+          ) : (
+            element.properties.image && (
+              <img
+                src={element.properties.image}
+                css={{
+                  ...imgMaxSizeStyles,
+                  ...responsiveStyles.getTargets('img')
+                }}
+              />
+            )
           )}
-          {element.properties.text && (
+          {/* Icon embeds have no plain text, so properties.text alone can't
+              gate the label: an icon-only label must still render, and in
+              edit mode the label must stay mounted even when emptied —
+              otherwise the contenteditable disappears and text can never be
+              typed again. */}
+          {(element.properties.text ||
+            editMode ||
+            (element.properties.text_formatted ?? []).some(
+              (op: any) => typeof op.insert === 'object'
+            )) && (
             <TextNodes
               element={element}
               responsiveStyles={responsiveStyles}
@@ -278,7 +318,10 @@ function ButtonElement({
               focused={focused}
               textCallbacks={textCallbacks}
               featheryContext={featheryContext}
-              expand={!element.properties.image}
+              expand={
+                !element.properties.image &&
+                !hasIconGlyph(element.properties.icon_glyph)
+              }
             />
           )}
         </>
