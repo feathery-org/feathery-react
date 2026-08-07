@@ -179,7 +179,8 @@ describe('runOAuthPopup', () => {
     const resultPromise = runOAuthPopup(client, 'box', popup);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    messageHandler!({
+    if (!messageHandler) throw new Error('Message handler was not registered');
+    messageHandler({
       source: popup,
       origin: authorization.callback_origin,
       data: {
