@@ -106,10 +106,14 @@ import internalState from '../utils/internalState';
 import { createRoundSelectionRequestPreparer } from './messageHistory';
 import { coalesceAssistantMessages } from './messageRendering';
 import { scrollChatContainerToBottom } from './chatScroll';
+import { useWorkingPhrase } from './workingPhrases';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
+// One line of the 13px indicator plus breathing room. The strip holding it is
+// always in the layout, so this height is spent whether or not a turn is running
+const STATUS_STRIP_HEIGHT = 30;
 
 export type AssistantMode =
   | 'current'
@@ -973,6 +977,7 @@ const AssistantChat = ({
   const visibleThreads = threads.filter((t) => t.title);
 
   const isLoading = status === 'submitted' || status === 'streaming';
+  const workingPhrase = useWorkingPhrase(isLoading);
 
   const composerButtonCss = {
     padding: '10px',
@@ -1499,13 +1504,24 @@ const AssistantChat = ({
           gap: '12px'
         }}
       >
+        {/* Rests the conversation on the bottom of the panel so it grows
+            upward. Deliberately not justify-content: flex-end - that overflows
+            out of the start edge, which cannot be reached by scrolling
+            (scrollHeight stays equal to clientHeight), so older messages would
+            be lost. An auto margin is real box space: it absorbs the slack
+            while the conversation is short and collapses to nothing once it
+            overflows, leaving scrollTop/scrollHeight meaning what pinToBottom
+            already expects. */}
+        <div css={{ marginTop: 'auto' }} />
         {messages.length === 0 && (
           <div
             css={{
               textAlign: 'center',
               color: GRAY_400,
               fontSize: '14px',
-              marginTop: '40px'
+              // Bottom-aligned now, so it sits just above the composer rather
+              // than being nudged down from a top edge it no longer starts at
+              paddingBottom: '4px'
             }}
           >
             How can I help?
@@ -1680,6 +1696,34 @@ const AssistantChat = ({
           )
         )}
 
+        {error && (
+          <div
+            css={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              backgroundColor: '#fef2f2',
+              color: '#dc2626',
+              fontSize: '14px'
+            }}
+          >
+            Something went wrong. Please try again.
+          </div>
+        )}
+      </div>
+
+      {/* Status strip: always occupies its height, so the messages resting on
+          top of it never shift as the indicator appears, changes phrase, or
+          goes away. Sits outside the scroll container, so it stays put */}
+      <div
+        css={{
+          flexShrink: 0,
+          height: `${STATUS_STRIP_HEIGHT}px`,
+          padding: '0 16px',
+          display: 'flex',
+          alignItems: 'center',
+          overflow: 'hidden'
+        }}
+      >
         {(() => {
           if (!isLoading) return null;
           const last = messages[messages.length - 1] as
@@ -1704,23 +1748,16 @@ const AssistantChat = ({
               parts.find(isContent)?.type === 'text';
             if (hasContent && !held) return null;
           }
-          return <ToolChunkPlaceholder />;
+          return (
+            <ToolChunkPlaceholder
+              label={workingPhrase}
+              color={colors.primary}
+            />
+          );
         })()}
 
-        {pendingSubmit && <ToolChunkPlaceholder label='Uploading...' />}
-
-        {error && (
-          <div
-            css={{
-              padding: '10px 14px',
-              borderRadius: '8px',
-              backgroundColor: '#fef2f2',
-              color: '#dc2626',
-              fontSize: '14px'
-            }}
-          >
-            Something went wrong. Please try again.
-          </div>
+        {pendingSubmit && (
+          <ToolChunkPlaceholder label='Uploading...' color={colors.primary} />
         )}
       </div>
 

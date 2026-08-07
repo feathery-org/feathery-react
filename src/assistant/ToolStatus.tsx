@@ -8,6 +8,7 @@ import {
 } from './icons';
 import { UNHANDLED_TOOL_ERROR } from './tools/assistantToolDispatch';
 import {
+  blendToWhite,
   DEFAULT_CHAT_COLOR,
   GRAY_200,
   GRAY_400,
@@ -245,8 +246,13 @@ const labelFor = (row: ToolRow, pending = false): string => {
 };
 
 // background-clip:text so the gradient sweep only paints the glyphs
-const shimmerCss = {
-  backgroundImage: `linear-gradient(90deg, ${GRAY_500} 25%, #d1d5db 50%, ${GRAY_500} 75%)`,
+// The travelling highlight is derived from the base so any accent, not just the
+// default gray, shimmers with the same contrast
+const shimmerCss = (base: string = GRAY_500) => ({
+  backgroundImage: `linear-gradient(90deg, ${base} 25%, ${blendToWhite(
+    base,
+    70
+  )} 50%, ${base} 75%)`,
   backgroundSize: '220% 100%',
   backgroundClip: 'text',
   WebkitBackgroundClip: 'text',
@@ -256,7 +262,7 @@ const shimmerCss = {
     from: { backgroundPosition: '160% 0' },
     to: { backgroundPosition: '-60% 0' }
   }
-} as const;
+});
 
 interface ToolChunkProps {
   rows: ToolRow[];
@@ -389,7 +395,7 @@ export const ToolChunk = ({
           alignSelf: 'flex-start'
         }}
       >
-        <span css={chunkDone ? undefined : shimmerCss}>{headerLabel}</span>
+        <span css={chunkDone ? undefined : shimmerCss()}>{headerLabel}</span>
         {expandable && (
           <MinimizeIcon
             css={{
@@ -470,7 +476,7 @@ const ToolChunkRow = ({ row, pending, linkColor }: ToolChunkRowProps) => {
         ) : (
           <CheckIcon css={{ width: '12px', height: '12px' }} />
         )}
-        <span css={running ? shimmerCss : undefined}>
+        <span css={running ? shimmerCss() : undefined}>
           {labelFor(row, pending)}
         </span>
         {expandable && (
@@ -495,9 +501,11 @@ const ToolChunkRow = ({ row, pending, linkColor }: ToolChunkRowProps) => {
 
 // Mimics the chunk header so a real tool arriving doesn't reflow the layout
 export const ToolChunkPlaceholder = ({
-  label = 'Working on it...'
+  label = 'Working on it...',
+  color = GRAY_500
 }: {
   label?: string;
+  color?: string;
 }) => {
   return (
     <div
@@ -518,12 +526,40 @@ export const ToolChunkPlaceholder = ({
       <div
         css={{
           padding: '4px 0',
-          color: GRAY_500,
+          color,
           fontSize: '13px',
-          alignSelf: 'flex-start'
+          alignSelf: 'flex-start',
+          // The label can swap for a longer one while running, so hold it to a
+          // single line: nothing below the indicator may move when it changes
+          maxWidth: '100%',
+          lineHeight: '18px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
         }}
       >
-        <span css={shimmerCss}>{label}</span>
+        <span
+          // Remounting on a new label replays the fade, so phrases cross over.
+          // Opacity only - the wrapper's fade-in also shifts position, which
+          // would read as the phrase sliding rather than changing
+          key={label}
+          css={{
+            ...shimmerCss(color),
+            animation:
+              'feathery-phrase-fade 220ms ease-out both, feathery-tool-shimmer 1.6s linear infinite',
+            '@keyframes feathery-phrase-fade': {
+              from: { opacity: 0 },
+              to: { opacity: 1 }
+            },
+            '@media (prefers-reduced-motion: reduce)': {
+              animation: 'none',
+              backgroundImage: 'none',
+              color
+            }
+          }}
+        >
+          {label}
+        </span>
       </div>
     </div>
   );
