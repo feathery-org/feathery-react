@@ -564,10 +564,18 @@ describe('move_section: a relocation writes no content', () => {
 //
 // Both are fixed by measuring in the whole-document block sequence and asserting
 // the resolved source is not inside the pasted run.
+//
+// The MOVED section is deliberately the odd one out - landscape, and its own
+// margins. With every section declaring the same geometry the page-setup
+// assertion below could not fail: it would read 612 whether page setup had been
+// carried, dropped or ignored. The moved section is the only one whose geometry
+// a relocation could plausibly drag along, so it has to be the one that differs.
+const PORTRAIT = { pageWidth: 612, pageHeight: 792, leftMargin: 72 };
+const LANDSCAPE = { pageWidth: 792, pageHeight: 612, leftMargin: 36 };
 const wordSectionFixture = () => ({
   sections: [
     {
-      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      sectionFormat: { ...PORTRAIT },
       blocks: [
         para('About Hilb Group', 'Heading 1'), // 0;0
         para('Hilb Group is a national broker.'), // 0;1
@@ -576,7 +584,7 @@ const wordSectionFixture = () => ({
       ]
     },
     {
-      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      sectionFormat: { ...LANDSCAPE },
       blocks: [
         para('Your Client Services Team', 'Heading 1'), // 1;0
         para('Your dedicated team is listed below.'), // 1;1
@@ -587,7 +595,7 @@ const wordSectionFixture = () => ({
       ]
     },
     {
-      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      sectionFormat: { ...PORTRAIT },
       blocks: [
         para('Location Schedule', 'Heading 1'), // 2;0
         para('Schedule body.') // 2;1
@@ -596,6 +604,34 @@ const wordSectionFixture = () => ({
   ],
   styles: headingStyles()
 });
+
+/**
+ * The page geometry of the Word section holding `text`, or undefined when no
+ * section holds it.
+ *
+ * Sections are identified by content they KEEP rather than by index, because a
+ * relocation is free to renumber them - which is the whole point of asking
+ * whether a survivor kept its own geometry.
+ */
+const sectionGeometryHolding = (editor: DocumentEditor, text: string) => {
+  const sfdt = JSON.parse(editor.serialize());
+  for (const section of (sfdt.sec ?? sfdt.sections) as any[]) {
+    const holds = ((section.b ?? section.blocks) as any[]).some((block) =>
+      ((block?.i ?? block?.inlines ?? []) as any[])
+        .map((run) => run?.tlp ?? run?.text ?? '')
+        .join('')
+        .includes(text)
+    );
+    if (!holds) continue;
+    const format = section.secpr ?? section.sectionFormat;
+    return {
+      pw: format.pw ?? format.pageWidth,
+      ph: format.ph ?? format.pageHeight,
+      lm: format.lm ?? format.leftMargin
+    };
+  }
+  return undefined;
+};
 
 describe("the captain's move: a section that is its own Word section", () => {
   it('moves above an earlier section, one card, clean reject', () => {
@@ -671,10 +707,63 @@ describe("the captain's move: a section that is its own Word section", () => {
       expect(
         sections.map((section) => (section.b ?? section.blocks).length)
       ).not.toContain(0);
-      // Page setup is intact on what remains - a relocation carries content, not
-      // page geometry.
-      for (const section of sections)
-        expect((section.secpr ?? section.sectionFormat).pw).toBe(612);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // Page setup is intact on what remains - a relocation carries content, not
+  // page geometry. Asserted as each SURVIVOR keeping ITS OWN geometry, read off
+  // the same document before the move, rather than against a literal: the
+  // fixture's three sections no longer share one page size, so a move that
+  // dragged geometry along, or flattened every section to the moved one's, now
+  // has somewhere to show.
+  it('every surviving Word section keeps its own page geometry', () => {
+    const editor = makeEditor(wordSectionFixture());
+    try {
+      // The two sections that survive are identified by body text the move does
+      // not touch; the moved section is identified by text that goes with it.
+      const stays = ['We start with your risk.', 'Schedule body.'];
+      const before = stays.map((text) => sectionGeometryHolding(editor, text));
+      const movedBefore = sectionGeometryHolding(
+        editor,
+        'Your dedicated team is listed below.'
+      );
+
+      // The fixture really does distinguish them, or nothing below can fail.
+      expect(before).toEqual([
+        { pw: 612, ph: 792, lm: 72 },
+        { pw: 612, ph: 792, lm: 72 }
+      ]);
+      expect(movedBefore).toEqual({ pw: 792, ph: 612, lm: 36 });
+
+      expect(
+        apply(
+          editor,
+          [
+            {
+              op: 'move_section',
+              anchor: '1;0',
+              targetAnchor: '0;0',
+              position: 'before'
+            }
+          ],
+          'captain-move-geometry'
+        ).results[0]
+      ).toMatchObject({ ok: true });
+      editor.revisions.acceptAll();
+
+      expect(stays.map((text) => sectionGeometryHolding(editor, text))).toEqual(
+        before
+      );
+      // And the moved content is now governed by the geometry of the section it
+      // landed in, which is the documented behaviour: the section it used to
+      // have was its own and held only it, so accepting collapses that section
+      // rather than stranding a blank page. Read here rather than assumed, so
+      // the promise in the PR description is a measured one.
+      expect(
+        sectionGeometryHolding(editor, 'Your dedicated team is listed below.')
+      ).toEqual(before[0]);
     } finally {
       destroyEditor(editor);
     }
