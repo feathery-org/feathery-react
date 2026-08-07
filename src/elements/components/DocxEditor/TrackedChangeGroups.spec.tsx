@@ -865,6 +865,54 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
   });
 
+  it('collapses an expanded group while a new document is opening', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
+
+    // useDocxEditor sets this around openAsync/open; documentChange fires
+    // as part of that same window.
+    editor.__featheryOpeningDocument = true;
+    act(() => editor.emit('documentChange'));
+
+    // Collapsed, but the card itself is still there — the edit is still
+    // pending, it's just not a state the user asked to review right now.
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    ).toBeInTheDocument();
+  });
+
+  it('collapses an expanded group while the assistant is writing a batch', () => {
+    jest.useFakeTimers();
+    try {
+      const editor = makeEditor([makeRevision()]);
+      render(<TrackedChangeGroups editor={editor} />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      );
+      expect(screen.getByText('$6,000')).toBeInTheDocument();
+
+      // applyDocumentEdits sets this around the whole batch; contentChange
+      // fires once per op inside it.
+      editor.__featheryAssistantWriting = true;
+      act(() => editor.emit('contentChange'));
+      act(() => {
+        jest.advanceTimersByTime(150); // matches CONTENT_REFRESH_DEBOUNCE_MS
+      });
+
+      expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      ).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   // Step navigation destroys the Syncfusion instance under a still-mounted
   // rail: every raw EJ2 call then throws. The rail must treat a dead editor
   // as "no editor" across its whole lifecycle — mount, swap, and unmount —

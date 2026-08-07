@@ -84,6 +84,15 @@ const ACTIVE_REVISION_KEY = '__robinActiveRevision';
 const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 const REVISION_RECTS_KEY = '__robinRevisionRects';
 const AFTER_RENDER_KEY = '__robinAfterRender';
+// Opening a document plants Syncfusion's own default caret, which fires a
+// selectionChange indistinguishable from a real click. The review rail reads
+// this flag to ignore that one, without swallowing a real first click.
+const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
+
+/** True while a source document is being opened/reopened on this editor. */
+export function isOpeningDocument(ed: any): boolean {
+  return !!ed?.[OPENING_DOCUMENT_KEY];
+}
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
 export interface RevisionRect {
@@ -942,6 +951,7 @@ export function useDocxEditor({
           type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
+        liveEditor[OPENING_DOCUMENT_KEY] = true;
         if (typeof liveEditor.openAsync === 'function') {
           await liveEditor.openAsync(blob);
         } else {
@@ -954,6 +964,11 @@ export function useDocxEditor({
         ignoreContentChangeRef.current = false;
         setLoading(false);
         onReady?.();
+        // One extra frame of grace: Syncfusion's default-caret selectionChange
+        // sometimes lands a beat after openAsync resolves, not inside it.
+        featheryWindow().requestAnimationFrame(() => {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+        });
       } catch (err) {
         if (!cancelled) fail(err);
       }

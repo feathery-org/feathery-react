@@ -5,7 +5,8 @@ import {
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
-import { setActiveInlineRevision } from '../useDocxEditor';
+import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { isOpeningDocument, setActiveInlineRevision } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
 import GroupCard from './GroupCard';
@@ -131,6 +132,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const refresh = useCallback(() => {
     const views = listRevisionGroups(editor);
     lastRevisionCountRef.current = revisionCount();
+    // A document (re)load or an in-flight assistant batch is never a state
+    // the user asked to review — a card left expanded from before that
+    // window (or one that expanded from a stray click mid-batch) collapses
+    // back down rather than sitting open through it.
+    if (isOpeningDocument(editor) || isAssistantWriting(editor)) {
+      setExpanded({});
+    }
     setGroups(
       views.map((view) => ({
         key: groupKeyOf(view.changeSetId, view.group),

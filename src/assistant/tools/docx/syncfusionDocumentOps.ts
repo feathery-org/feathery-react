@@ -15019,6 +15019,20 @@ function collapseSectionComposerResult(
   };
 }
 
+// Every op below moves `editor.selection` to the anchor it's touching, which
+// fires the SAME selectionChange a real user click would. The review rail
+// (TrackedChangeGroups) reads this flag to tell the two apart, so a batch of
+// assistant writes never auto-activates or auto-expands whichever edit it
+// last landed on.
+const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
+
+/** True while `applyDocumentEdits` is mid-batch on this editor. */
+export function isAssistantWriting(
+  editor: LiveEditor | null | undefined
+): boolean {
+  return !!(editor as any)?.[ASSISTANT_WRITING_KEY];
+}
+
 // Applies a logical change set in deterministic phases. We preflight only the
 // relevant anchors, re-resolve them after structural writes, and verify only
 // each affected source/target pair; a large document never needs a full result
@@ -15028,17 +15042,22 @@ export function applyDocumentEdits(
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
-  return withSilentEditSelections(editor, () =>
-    withSerializationTiming(editor, serializationTiming, () => {
-      const expansion = expandSectionComposerEdits(editor, input);
-      const result = applyDocumentEditsMeasured(
-        editor,
-        { ...input, edits: expansion.edits },
-        serializationTiming
-      );
-      return collapseSectionComposerResult(result, expansion);
-    })
-  );
+  (editor as any)[ASSISTANT_WRITING_KEY] = true;
+  try {
+    return withSilentEditSelections(editor, () =>
+      withSerializationTiming(editor, serializationTiming, () => {
+        const expansion = expandSectionComposerEdits(editor, input);
+        const result = applyDocumentEditsMeasured(
+          editor,
+          { ...input, edits: expansion.edits },
+          serializationTiming
+        );
+        return collapseSectionComposerResult(result, expansion);
+      })
+    );
+  } finally {
+    (editor as any)[ASSISTANT_WRITING_KEY] = false;
+  }
 }
 
 function applyDocumentEditsMeasured(
