@@ -144,10 +144,7 @@ const scheduleFixture = () => ({
           rows: [
             {
               rowFormat: { isHeader: true },
-              cells: [
-                cell('Line', HEADER_FILL),
-                cell('Carrier', HEADER_FILL)
-              ]
+              cells: [cell('Line', HEADER_FILL), cell('Carrier', HEADER_FILL)]
             },
             line('General Liability', 'Acme', BAND_FILL), // 1
             line('Auto', 'Beta'), // 2
@@ -183,6 +180,52 @@ const tailFixture = () => ({
             line('Property', 'Acme', BAND_FILL)
           ]
         }
+      ]
+    }
+  ],
+  styles: headingStyles()
+});
+
+/**
+ * The shape the captain's own proposal is in: an empty paragraph sits after the
+ * table, and it is formatted HIDDEN.
+ *
+ * Measured on his 22-page document, where `5;62` reads
+ * `{cf:{hdn:true}, i:[{cf:{hdn:true}, tlp:""}]}` under the plain `Normal`
+ * style - ten such paragraphs in the file, every one empty. A hidden paragraph
+ * mark carries no line, so a table pasted past one is still flush against the
+ * table above it. His words on the result: "it still feels like there is no
+ * actual gap between both the tables and I actually want a line between both
+ * the tables. Blank line."
+ *
+ * The hiding is DIRECT formatting on the mark and on the run, not a style, so
+ * the fixture states it the same way the document does.
+ */
+const hiddenSpacerFixture = () => ({
+  sections: [
+    {
+      blocks: [
+        para('Coverage Schedule', 'Heading 1'), // 0;0
+        para('All lines are listed below.'), // 0;1
+        {
+          // 0;2 - the table being split
+          tableFormat: { allowAutoFit: true },
+          rows: [
+            {
+              rowFormat: { isHeader: true },
+              cells: [cell('Line', HEADER_FILL), cell('Carrier', HEADER_FILL)]
+            },
+            line('General Liability', 'Acme', BAND_FILL), // 1
+            line('Auto', 'Beta'), // 2
+            line('Property', 'Acme', BAND_FILL), // 3
+            line('Workers Comp', 'Gamma'), // 4
+            line('Umbrella', 'Acme', BAND_FILL) // 5
+          ]
+        },
+        // 0;3 - the document's own hidden spacer, which renders no line
+        { inlines: [], characterFormat: { hidden: true } },
+        para('Next Steps', 'Heading 1'), // 0;4
+        para('Confirm by Friday.') // 0;5
       ]
     }
   ],
@@ -245,7 +288,10 @@ const mergedFixture = () => ({
             {
               rowFormat: {},
               cells: [
-                { cellFormat: { rowSpan: 2 }, blocks: [{ inlines: [{ text: 'Package' }] }] },
+                {
+                  cellFormat: { rowSpan: 2 },
+                  blocks: [{ inlines: [{ text: 'Package' }] }]
+                },
                 cell('Acme')
               ]
             },
@@ -371,11 +417,31 @@ const weldedTablePairs = (editor: DocumentEditor): number[] => {
   const kinds = topLevelKindsOf(editor);
   return kinds.reduce<number[]>(
     (found, kind, index) =>
-      index > 0 && kind.startsWith('TABLE') && kinds[index - 1].startsWith('TABLE')
+      index > 0 &&
+      kind.startsWith('TABLE') &&
+      kinds[index - 1].startsWith('TABLE')
         ? [...found, index]
         : found,
     []
   );
+};
+
+/**
+ * Whether each top-level paragraph's MARK is hidden - `null` for a table.
+ *
+ * A hidden mark is the difference between a blank line and nothing at all, and
+ * it is invisible to `topLevelKindsOf`: both read `P:`. Asserting on the text
+ * alone would pass on a separator the reviewer cannot see, which is exactly the
+ * result being fixed.
+ */
+const hiddenMarksOf = (editor: DocumentEditor): Array<boolean | null> => {
+  const sfdt = JSON.parse(editor.serialize());
+  const blocks: any[] = sfdt.sections?.[0]?.blocks ?? sfdt.sec?.[0]?.b ?? [];
+  return blocks.map((block) => {
+    if (Array.isArray(block.rows ?? block.r ?? block.rw)) return null;
+    const format = block.characterFormat ?? block.cf ?? {};
+    return (format.hidden ?? format.hdn) === true;
+  });
 };
 
 /**
@@ -388,7 +454,9 @@ const caretAt = (editor: DocumentEditor, anchor: string) => {
   editor.selection.select(anchor, anchor);
   return {
     offset: String(editor.selection.startOffset),
-    insideTable: Boolean((editor.selection.start as any)?.paragraph?.isInsideTable)
+    insideTable: Boolean(
+      (editor.selection.start as any)?.paragraph?.isInsideTable
+    )
   };
 };
 
@@ -551,7 +619,9 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
         expect(table.layout?.preferredWidthType).toBe(
           source.layout?.preferredWidthType
         );
-        expect(table.layout?.tableAlignment).toBe(source.layout?.tableAlignment);
+        expect(table.layout?.tableAlignment).toBe(
+          source.layout?.tableAlignment
+        );
         // Header band reproduced, DERIVED - so a two-row band is covered too.
         expect(table.headerRows).toBe(source.headerRows);
       }
@@ -786,10 +856,7 @@ describe('split_table: a table sitting directly against another table', () => {
       editor.revisions.acceptAll();
 
       expect(tablesOf(editor)).toHaveLength(3);
-      expect(rowsOf(editor, 0)).toEqual([
-        'Line|Carrier',
-        'Workers Comp|Gamma'
-      ]);
+      expect(rowsOf(editor, 0)).toEqual(['Line|Carrier', 'Workers Comp|Gamma']);
       expect(rowsOf(editor, 1)).toEqual([
         'Line|Carrier',
         'General Liability|Acme',
@@ -1282,7 +1349,9 @@ describe('split_table: no content field exists to carry content', () => {
   // could retype through, which is the failure class this whole family removes.
   it('declares only row selectors and a destination', () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { DOCUMENT_EDITOR_CAPABILITIES } = require('../../../capabilities/registry');
+    const {
+      DOCUMENT_EDITOR_CAPABILITIES
+    } = require('../../../capabilities/registry');
     const entry = DOCUMENT_EDITOR_CAPABILITIES.find(
       (candidate: any) => candidate.op === 'split_table'
     );
@@ -1373,7 +1442,10 @@ describe("split_table: the captain's acceptance criteria", () => {
             rows: [
               {
                 rowFormat: { isHeader: true },
-                cells: [cell('Coverage', HEADER_FILL), cell('Limit', HEADER_FILL)]
+                cells: [
+                  cell('Coverage', HEADER_FILL),
+                  cell('Limit', HEADER_FILL)
+                ]
               },
               line('Building', '1,000,000', BAND_FILL),
               line('Other Coverage', '50,000'),
@@ -1387,7 +1459,10 @@ describe("split_table: the captain's acceptance criteria", () => {
             rows: [
               {
                 rowFormat: { isHeader: true },
-                cells: [cell('Coverage', HEADER_FILL), cell('Limit', HEADER_FILL)]
+                cells: [
+                  cell('Coverage', HEADER_FILL),
+                  cell('Limit', HEADER_FILL)
+                ]
               },
               line('General Liability', '2,000,000', BAND_FILL),
               line('Other Coverage', '25,000'),
@@ -1579,7 +1654,9 @@ describe('split_table: a title is separate content, not part of the split', () =
       // DERIVED, not asserted as a literal: the new title wears the same style
       // the document's own headings wear, because it went through the composed
       // heading path rather than being written raw by the split.
-      const existing = blocks.find((block) => block.text === 'Coverage Schedule');
+      const existing = blocks.find(
+        (block) => block.text === 'Coverage Schedule'
+      );
       expect(title?.format?.styleName).toBe(existing?.format?.styleName);
       expect(title?.level).toBe(existing?.level);
       // And the table it titles is still intact underneath it.
@@ -1692,7 +1769,9 @@ describe('split_table: the anchor may name the TABLE, the way a table read names
         // The anchor FORM must never be what fails. An op may still refuse for
         // its own reasons, but not with the executor's anchor-resolution error.
         expect(result.results[0]?.error).not.toBe('anchor_not_found');
-        expect(result.results[0]?.error).not.toBe('anchor_relocation_ambiguous');
+        expect(result.results[0]?.error).not.toBe(
+          'anchor_relocation_ambiguous'
+        );
       } finally {
         destroyEditor(editor);
       }
@@ -1738,9 +1817,9 @@ describe('split_table: the two halves are two tables, not one', () => {
   it('leaves a block the caret can reach between them, pending AND accepted', () => {
     const editor = makeEditor(scheduleFixture());
     try {
-      expect(splitAfterSource(editor, 'separator-caret').results[0]).toMatchObject(
-        { ok: true }
-      );
+      expect(
+        splitAfterSource(editor, 'separator-caret').results[0]
+      ).toMatchObject({ ok: true });
       // Pending: the separator is already a real block, so the reviewer can click
       // between the two tables before deciding anything.
       expect(weldedTablePairs(editor)).toEqual([]);
@@ -1775,9 +1854,9 @@ describe('split_table: the two halves are two tables, not one', () => {
     try {
       const before = editor.serialize();
       const blocksBefore = topLevelKindsOf(editor);
-      expect(splitAfterSource(editor, 'separator-reject').results[0]).toMatchObject(
-        { ok: true }
-      );
+      expect(
+        splitAfterSource(editor, 'separator-reject').results[0]
+      ).toMatchObject({ ok: true });
       // ONE card covering the table and its separator, so it is one accept and
       // one reject rather than two things to notice.
       expect(listRevisionGroups(editor as any)).toHaveLength(1);
@@ -1870,6 +1949,147 @@ describe('split_table: the two halves are two tables, not one', () => {
     } finally {
       destroyEditor(editor);
     }
+  });
+
+  // A hidden paragraph between the tables is not a gap. This is the captain's
+  // own document: he ran the split on the SERVED build with the separator fix in
+  // it, the fix correctly added nothing because a paragraph was already there,
+  // and the two tables still rendered flush - because that paragraph is hidden.
+  //
+  // Measured live on the 22-page proposal, on a freshly loaded page:
+  //
+  //   op        {"op":"split_table","anchor":"5;61","rows":[4,5,9],
+  //              "targetAnchor":"5;63","position":"before"}
+  //   result    5;61 TABLE(10) / 5;62 P "" / 5;63 TABLE(4) / 5;64 P "Deductibles"
+  //   5;62      {cf:{hdn:true}, i:[{cf:{hdn:true}, tlp:""}]}, style "Normal",
+  //             present at rev 0 before any operation - the document's own
+  //
+  // So the rule is about a VISIBLE block between the tables, and the hidden one
+  // is the author's content: it is never unhidden, moved or removed.
+  describe('a hidden paragraph is not a gap', () => {
+    const HIDDEN_SPACER_ROWS = [1, 3, 5];
+    const splitPastSpacer = (editor: DocumentEditor, changeSetId: string) =>
+      apply(
+        editor,
+        [
+          {
+            op: 'split_table',
+            anchor: '0;2;0;0;0',
+            rows: HIDDEN_SPACER_ROWS,
+            // The anchor the model actually sent: the heading AFTER the hidden
+            // spacer, so the block above the paste point is the spacer itself.
+            targetAnchor: '0;4',
+            position: 'before'
+          }
+        ],
+        changeSetId
+      );
+
+    it('adds a VISIBLE separator and leaves the hidden paragraph exactly as it is', () => {
+      const editor = makeEditor(hiddenSpacerFixture());
+      try {
+        expect(hiddenMarksOf(editor)).toEqual([
+          false,
+          false,
+          null,
+          true,
+          false,
+          false
+        ]);
+        expect(
+          splitPastSpacer(editor, 'hidden-spacer').results[0]
+        ).toMatchObject({ ok: true });
+        editor.revisions.acceptAll();
+        expect(topLevelKindsOf(editor)).toEqual([
+          'P:Coverage Schedule',
+          'P:All lines are listed below.',
+          'TABLE(3)',
+          'P:', // the document's hidden spacer, untouched
+          'P:', // the separator this op added
+          'TABLE(4)',
+          'P:Next Steps',
+          'P:Confirm by Friday.'
+        ]);
+        // THE ASSERTION THAT MATTERS: the paragraph we added renders a line.
+        // A new paragraph inherits its neighbour's mark formatting when the
+        // editor makes one in place - `insertText('\n')` at the live document's
+        // hidden paragraph comes back `{cf:{hdn:true}}` - so a separator that
+        // did not state its own visibility would be a second invisible one, and
+        // the split would look fixed while changing nothing the captain sees.
+        expect(hiddenMarksOf(editor)).toEqual([
+          false,
+          false,
+          null,
+          true, // the author's hidden spacer, still hidden
+          false, // ours, visible
+          null,
+          false,
+          false
+        ]);
+        expect(weldedTablePairs(editor)).toEqual([]);
+      } finally {
+        destroyEditor(editor);
+      }
+    });
+
+    it('adds nothing when the paragraph already between them is visible', () => {
+      const editor = makeEditor(scheduleFixture());
+      try {
+        // Same shape, same anchors, but `0;3` is an ordinary heading rather than
+        // a hidden spacer: there is a line there already and no second one is
+        // authored. Exactly one visible block between the tables, never two.
+        expect(
+          apply(
+            editor,
+            [
+              {
+                op: 'split_table',
+                anchor: '0;2;0;0;0',
+                rows: HIDDEN_SPACER_ROWS,
+                targetAnchor: '0;4',
+                position: 'before'
+              }
+            ],
+            'visible-block-already-there'
+          ).results[0]
+        ).toMatchObject({ ok: true });
+        editor.revisions.acceptAll();
+        expect(topLevelKindsOf(editor)).toEqual([
+          'P:Coverage Schedule',
+          'P:All lines are listed below.',
+          'TABLE(3)',
+          'P:Next Steps',
+          'TABLE(4)',
+          'P:Confirm by Friday.'
+        ]);
+      } finally {
+        destroyEditor(editor);
+      }
+    });
+
+    it('rejecting takes the separator away and restores the document exactly', () => {
+      const editor = makeEditor(hiddenSpacerFixture());
+      try {
+        const before = editor.serialize();
+        const blocksBefore = topLevelKindsOf(editor);
+        const marksBefore = hiddenMarksOf(editor);
+        expect(
+          splitPastSpacer(editor, 'hidden-spacer-reject').results[0]
+        ).toMatchObject({ ok: true });
+        expect(topLevelKindsOf(editor).length).toBe(blocksBefore.length + 2);
+        editor.revisions.rejectAll();
+        // Byte-exact on the same editor instance, and the hidden spacer is still
+        // the only hidden paragraph: the separator left with the table it came
+        // in with, in the same card.
+        expect(editor.serialize().length).toBe(before.length);
+        expect(editor.serialize()).toBe(before);
+        expect(topLevelKindsOf(editor)).toEqual(blocksBefore);
+        expect(hiddenMarksOf(editor)).toEqual(marksBefore);
+        expect(editor.revisions.length).toBe(0);
+      } finally {
+        destroyEditor(editor);
+      }
+    });
   });
 
   it('holds for the document-tail table, where the target precedes the source', () => {
@@ -1974,50 +2194,50 @@ describe('split_table: the rail card resolves a split as one unit', () => {
     ]
   ];
 
-  it.each(SPLITS)('accepting %s through the card matches acceptAll', (
-    _label,
-    edit
-  ) => {
-    const viaAll = makeEditor(scheduleFixture());
-    const viaRail = makeEditor(scheduleFixture());
-    try {
-      expect(apply(viaAll, [edit], 'split-accept-all').results[0]).toMatchObject(
-        { ok: true }
-      );
-      expect(
-        apply(viaRail, [edit], 'split-accept-rail').results[0]
-      ).toMatchObject({ ok: true });
-      // One split, one card - the property the card path depends on.
-      const groups = listRevisionGroups(viaRail as any);
-      expect(groups).toHaveLength(1);
+  it.each(SPLITS)(
+    'accepting %s through the card matches acceptAll',
+    (_label, edit) => {
+      const viaAll = makeEditor(scheduleFixture());
+      const viaRail = makeEditor(scheduleFixture());
+      try {
+        expect(
+          apply(viaAll, [edit], 'split-accept-all').results[0]
+        ).toMatchObject({ ok: true });
+        expect(
+          apply(viaRail, [edit], 'split-accept-rail').results[0]
+        ).toMatchObject({ ok: true });
+        // One split, one card - the property the card path depends on.
+        const groups = listRevisionGroups(viaRail as any);
+        expect(groups).toHaveLength(1);
 
-      viaAll.revisions.acceptAll();
-      resolveLiveRevisionGroupsAsOneUndo(viaRail as any, groups, true);
-      expect(viaRail.revisions.length).toBe(0);
-      // Two tables either way, reading the same rows in the same order, and
-      // every row wearing the same appearance facts: a user cannot tell which
-      // button they pressed.
-      //
-      // Compared on the document's facts rather than on its bytes on purpose.
-      // The fixture is `allowAutoFit`, so serialized column widths are whatever
-      // the last layout pass measured - and jsdom has no font metrics, so the
-      // two routes settle on different `cw` values (17.55 vs 13.8) for
-      // identical content. A byte comparison here would assert a layout
-      // artefact, which is exactly the kind of assertion that passes while the
-      // feature is broken for the next document.
-      expect(tablesOf(viaAll)).toHaveLength(2);
-      expect(allTexts(viaRail)).toEqual(allTexts(viaAll));
-      expect(tablesOf(viaRail).map((table) => table.rows)).toEqual(
-        tablesOf(viaAll).map((table) => table.rows)
-      );
-      expect(Array.from(factsByRowText(viaRail))).toEqual(
-        Array.from(factsByRowText(viaAll))
-      );
-    } finally {
-      destroyEditor(viaAll);
-      destroyEditor(viaRail);
+        viaAll.revisions.acceptAll();
+        resolveLiveRevisionGroupsAsOneUndo(viaRail as any, groups, true);
+        expect(viaRail.revisions.length).toBe(0);
+        // Two tables either way, reading the same rows in the same order, and
+        // every row wearing the same appearance facts: a user cannot tell which
+        // button they pressed.
+        //
+        // Compared on the document's facts rather than on its bytes on purpose.
+        // The fixture is `allowAutoFit`, so serialized column widths are whatever
+        // the last layout pass measured - and jsdom has no font metrics, so the
+        // two routes settle on different `cw` values (17.55 vs 13.8) for
+        // identical content. A byte comparison here would assert a layout
+        // artefact, which is exactly the kind of assertion that passes while the
+        // feature is broken for the next document.
+        expect(tablesOf(viaAll)).toHaveLength(2);
+        expect(allTexts(viaRail)).toEqual(allTexts(viaAll));
+        expect(tablesOf(viaRail).map((table) => table.rows)).toEqual(
+          tablesOf(viaAll).map((table) => table.rows)
+        );
+        expect(Array.from(factsByRowText(viaRail))).toEqual(
+          Array.from(factsByRowText(viaAll))
+        );
+      } finally {
+        destroyEditor(viaAll);
+        destroyEditor(viaRail);
+      }
     }
-  });
+  );
 
   // collectTableAppearance never reports the column grid, so a table left claiming
   // more columns than its rows have passes the comparison above and renders ragged
@@ -2051,23 +2271,23 @@ describe('split_table: the rail card resolves a split as one unit', () => {
     }
   });
 
-  it.each(SPLITS)('rejecting %s through the card restores it exactly', (
-    _label,
-    edit
-  ) => {
-    const editor = makeEditor(scheduleFixture());
-    try {
-      const before = editor.serialize();
-      apply(editor, [edit], 'split-reject-rail');
-      resolveLiveRevisionGroupsAsOneUndo(
-        editor as any,
-        listRevisionGroups(editor as any),
-        false
-      );
-      expect(editor.revisions.length).toBe(0);
-      expect(editor.serialize()).toBe(before);
-    } finally {
-      destroyEditor(editor);
+  it.each(SPLITS)(
+    'rejecting %s through the card restores it exactly',
+    (_label, edit) => {
+      const editor = makeEditor(scheduleFixture());
+      try {
+        const before = editor.serialize();
+        apply(editor, [edit], 'split-reject-rail');
+        resolveLiveRevisionGroupsAsOneUndo(
+          editor as any,
+          listRevisionGroups(editor as any),
+          false
+        );
+        expect(editor.revisions.length).toBe(0);
+        expect(editor.serialize()).toBe(before);
+      } finally {
+        destroyEditor(editor);
+      }
     }
-  });
+  );
 });

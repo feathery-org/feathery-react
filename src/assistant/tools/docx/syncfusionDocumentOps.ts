@@ -6862,13 +6862,25 @@ function relocateBlockRange(
  * `paste.blocks` is measured from the document, so the extra block needs no
  * arithmetic anywhere else.
  *
- * Conditional on the block before the paste point actually being a table, so the
+ * Conditional on what is ALREADY between the payload and that table, so the
  * ordinary case - a payload landing after a heading or a paragraph - is written
  * exactly as it is today and no stray blank line appears. This is the only
  * direction adjacency can be created from: a target resolving against a table's
  * own blocks is already refused by `resolveRelocationTarget`
  * (`relocation_target_in_table`), so a payload can never land immediately BEFORE
  * a table.
+ *
+ * "Already between" is a VISIBLE block, not any block. The captain's own
+ * proposal separates its tables with paragraphs that are formatted HIDDEN - ten
+ * of them in the 22-page document, every one empty - and a hidden paragraph
+ * occupies no line, so a table pasted past one still reads as welded to the
+ * table above it. Measured live: `targetAnchor: "5;63"` put the new table after
+ * the hidden paragraph at `5;62` and the two tables rendered flush. The walk
+ * therefore steps over blocks that render no line and asks what is really above.
+ *
+ * The document's own hidden paragraph is never touched, unhidden or removed: it
+ * is the author's content and it stays exactly as written. Exactly one VISIBLE
+ * empty paragraph is added, and only when there is not one there already.
  */
 function separatedFromPrecedingTable(
   payload: string,
@@ -6876,11 +6888,16 @@ function separatedFromPrecedingTable(
   sequenceBefore: Array<{ section: number; block: number }>,
   pasteAt: number
 ): string {
-  const preceding = pasteAt > 0 ? sequenceBefore[pasteAt - 1] : undefined;
-  if (!preceding) return payload;
   const sections: any[] = pick(preSfdt, 'sections', 'sec') ?? [];
-  const before = getBlocks(sections[preceding.section] ?? {})[preceding.block];
-  if (!getRows(before)) return payload;
+  const blockAt = (entry: { section: number; block: number }) =>
+    getBlocks(sections[entry.section] ?? {})[entry.block];
+  let index = pasteAt - 1;
+  let before = index >= 0 ? blockAt(sequenceBefore[index]) : undefined;
+  while (before && rendersNoLine(before)) {
+    index -= 1;
+    before = index >= 0 ? blockAt(sequenceBefore[index]) : undefined;
+  }
+  if (!before || !getRows(before)) return payload;
   const parsed = JSON.parse(payload);
   const payloadSections = pick(parsed, 'sections', 'sec');
   if (!Array.isArray(payloadSections) || !payloadSections.length)
@@ -6891,11 +6908,53 @@ function separatedFromPrecedingTable(
   // form, and a block stored under the other spelling is invisible to the parser.
   const blocksKey = first?.blocks !== undefined ? 'blocks' : 'b';
   const inlinesKey = blocksKey === 'blocks' ? 'inlines' : 'i';
+  const formatKey = blocksKey === 'blocks' ? 'characterFormat' : 'cf';
+  const hiddenKey = blocksKey === 'blocks' ? 'hidden' : 'hdn';
   const blocks = getBlocks(first);
   // Nothing to weld to unless the payload LEADS with a table.
   if (!blocks.length || !getRows(blocks[0])) return payload;
-  first[blocksKey] = [{ [inlinesKey]: [] }, ...blocks];
+  // Visible is STATED, never left to inheritance. The separator's whole job is
+  // to occupy a line, and the neighbour it is landing next to is - in the case
+  // that needs it most - a hidden paragraph. A paragraph inherits its
+  // neighbour's mark formatting when the editor makes one there:
+  // `insertText('\n')` at the hidden paragraph in the captain's proposal comes
+  // back `{cf:{hdn:true}}`, a second invisible separator that would read as
+  // fixed. Stated formatting is not inherited, so this one cannot go the same
+  // way whatever it lands beside.
+  first[blocksKey] = [
+    { [inlinesKey]: [], [formatKey]: { [hiddenKey]: false } },
+    ...blocks
+  ];
   return JSON.stringify(parsed);
+}
+
+/**
+ * A paragraph that takes up no line on the page.
+ *
+ * Word hides a paragraph by hiding its PARAGRAPH MARK: the mark carries the
+ * line, so a paragraph whose mark is hidden and whose runs say nothing visible
+ * collapses to nothing at all. An empty paragraph with a visible mark is the
+ * opposite - it IS the blank line, and finding one is the reason not to add
+ * another.
+ *
+ * Measured on the captain's proposal, where `5;62` reads
+ * `{cf:{hdn:true}, i:[{cf:{hdn:true}, tlp:""}]}` under the plain `Normal` style:
+ * the hiding is DIRECT formatting on the mark and on the run, not a style, so
+ * there is no style name to test for.
+ *
+ * A table is never one of these - it has rows, and rows take space - so the
+ * caller's walk stops at a table whether or not this is asked first.
+ */
+function rendersNoLine(block: any): boolean {
+  if (getRows(block)) return false;
+  const mark = pick(block, 'characterFormat', 'cf') ?? {};
+  if (pick(mark, 'hidden', 'hdn') !== true) return false;
+  return getInlines(block).every((inline) => {
+    const text = pick(inline, 'text', 'tlp') ?? '';
+    if (text === '') return true;
+    const format = pick(inline, 'characterFormat', 'cf') ?? {};
+    return pick(format, 'hidden', 'hdn') === true;
+  });
 }
 
 /** Resolves `targetAnchor` + `position` into the caret the payload lands at. */
