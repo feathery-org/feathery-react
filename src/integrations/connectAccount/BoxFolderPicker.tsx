@@ -91,16 +91,19 @@ function BoxFolderPicker({
     loadFolder(currentFolder.id, { marker: nextMarker }, true);
   };
 
-  const handleSelect = () => {
+  const handleSelect = async () => {
     if (!currentFolder) return;
     setSelecting(true);
-    client
-      .saveAccountConfig(provider, { folder_id: currentFolder.id })
-      .then((response: { values: Record<string, string> }) =>
-        onSaved(response.values)
-      )
-      .catch((error: unknown) => onError(getErrorMessage(error)))
-      .finally(() => setSelecting(false));
+    try {
+      const response = await client.saveAccountConfig(provider, {
+        folder_id: currentFolder.id
+      });
+      onSaved(response.values);
+    } catch (error: unknown) {
+      onError(getErrorMessage(error));
+    } finally {
+      setSelecting(false);
+    }
   };
 
   const canUpload = currentFolder?.can_upload ?? false;
