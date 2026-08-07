@@ -1,6 +1,12 @@
 import React from 'react';
 import BoxFolderPicker from './BoxFolderPicker';
 
+// The modal shell remounts the config component (via a `key` keyed on
+// accountEmail) whenever the connected account changes, so any state a
+// provider's config component holds - selections, pagination, fetched lists -
+// is always for the currently connected account. A provider component never
+// needs to detect an account change itself; don't add ad hoc handling for it
+// here, and don't remove the shell's key.
 export type ProviderConfigProps = {
   client: any;
   provider: string;

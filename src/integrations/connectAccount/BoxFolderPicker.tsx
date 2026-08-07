@@ -98,7 +98,12 @@ function BoxFolderPicker({
       const response = await client.saveAccountConfig(provider, {
         folder_id: currentFolder.id
       });
-      onSaved(response.values);
+      // onSaved is Form's async onSaved (which awaits onFlowSuccess) - if a
+      // later action in the chain throws, that rejection has nowhere to go
+      // unless caught here, and would otherwise leave the loader spinning.
+      Promise.resolve(onSaved(response.values)).catch((error: unknown) =>
+        onError(getErrorMessage(error))
+      );
     } catch (error: unknown) {
       onError(getErrorMessage(error));
     } finally {

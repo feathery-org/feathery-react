@@ -43,7 +43,7 @@ describe('ConnectAccountModal', () => {
     expect(screen.getByText('respondent@example.com')).toBeTruthy();
   });
 
-  it('calls onChangeAccount when Change account is clicked', () => {
+  it('calls onChangeAccount when Change account is clicked', async () => {
     const onChangeAccount = jest.fn();
     render(
       <ConnectAccountModal {...baseProps} onChangeAccount={onChangeAccount} />
@@ -52,6 +52,11 @@ describe('ConnectAccountModal', () => {
     fireEvent.click(screen.getByText('Change account'));
 
     expect(onChangeAccount).toHaveBeenCalled();
+    // handleChangeAccount's finally-block setChangingAccount(false) settles a
+    // tick later; wait for it so that update lands inside act().
+    await waitFor(() =>
+      expect(screen.getByText('Change account')).not.toBeDisabled()
+    );
   });
 
   it('renders nothing when show is false', () => {
@@ -75,7 +80,7 @@ describe('ConnectAccountModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('clears a config error on Change account and does not carry it across a reopen', () => {
+  it('clears a config error on Change account and does not carry it across a reopen', async () => {
     const onChangeAccount = jest.fn();
     const { rerender } = render(
       <ConnectAccountModal {...baseProps} onChangeAccount={onChangeAccount} />
@@ -87,6 +92,11 @@ describe('ConnectAccountModal', () => {
     fireEvent.click(screen.getByText('Change account'));
     expect(onChangeAccount).toHaveBeenCalled();
     expect(screen.queryByText('Something went wrong')).toBeNull();
+    // handleChangeAccount's finally-block setChangingAccount(false) settles a
+    // tick later; wait for it so that update lands inside act().
+    await waitFor(() =>
+      expect(screen.getByText('Change account')).not.toBeDisabled()
+    );
 
     fireEvent.click(screen.getByText('Trigger error'));
     expect(screen.getByText('Something went wrong')).toBeTruthy();
@@ -94,6 +104,43 @@ describe('ConnectAccountModal', () => {
     rerender(<ConnectAccountModal {...baseProps} show={false} />);
     rerender(<ConnectAccountModal {...baseProps} show />);
     expect(screen.queryByText('Something went wrong')).toBeNull();
+  });
+
+  // Regression test: the modal renders inside Form's <form> (see
+  // src/Form/index.tsx, between the <form> open tag and its close tag),
+  // which has no onSubmit handler. A chrome button without an explicit
+  // `type` defaults to type="submit" and would reload the respondent's form
+  // on click. Both buttons must render standalone, but wrapped in a real
+  // <form> here - unlike baseProps' bare render above - since that's the
+  // only setup that can catch this.
+  it('does not submit an enclosing form when Close is clicked', () => {
+    const handleSubmit = jest.fn((e) => e.preventDefault());
+    render(
+      <form onSubmit={handleSubmit}>
+        <ConnectAccountModal {...baseProps} />
+      </form>
+    );
+
+    fireEvent.click(screen.getByLabelText('Close'));
+
+    expect(handleSubmit).not.toHaveBeenCalled();
+  });
+
+  it('does not submit an enclosing form when Change account is clicked', async () => {
+    const handleSubmit = jest.fn((e) => e.preventDefault());
+    const onChangeAccount = jest.fn();
+    render(
+      <form onSubmit={handleSubmit}>
+        <ConnectAccountModal {...baseProps} onChangeAccount={onChangeAccount} />
+      </form>
+    );
+
+    fireEvent.click(screen.getByText('Change account'));
+
+    expect(handleSubmit).not.toHaveBeenCalled();
+    // handleChangeAccount's finally-block setChangingAccount(false) settles a
+    // tick later; wait for it so that update lands inside act().
+    await waitFor(() => expect(onChangeAccount).toHaveBeenCalled());
   });
 
   // Regression test: onChangeAccount must never reject (Form's implementation
