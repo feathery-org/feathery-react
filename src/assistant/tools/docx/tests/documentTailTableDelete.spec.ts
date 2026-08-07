@@ -28,6 +28,7 @@ import {
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
 
+import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
 import {
   applyDocumentEdits,
   flattenSfdt,
@@ -316,7 +317,131 @@ describe('delete_row refuses the deletion instead of applying it', () => {
   );
 });
 
-describe('one rule, two shapes', () => {
+describe('delete_table refuses the whole-table shape of the same deletion', () => {
+  // Principle 9 again, for the third shape: the crash it replaces, driven
+  // through the engine's own route before the guard is asserted. This is the
+  // defect Anthony named, and it is reachable on origin/master today - that
+  // branch carries no tail-table guard at all.
+  it('accepting a tail-table delete_table throws when nothing guards it', () => {
+    const editor = makeEditor(tailTableFixture());
+    try {
+      editor.enableTrackChanges = true;
+      editor.selection.select('0;2;0;0;0;0', '0;2;0;0;0;0');
+      (editor.editor as any).deleteTable();
+      expect(() => editor.revisions.acceptAll()).toThrow();
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  it('refuses, names the reason, and writes nothing', () => {
+    const editor = makeEditor(tailTableFixture());
+    try {
+      const before = editor.serialize();
+      const result = apply(
+        editor,
+        [{ op: 'delete_table', anchor: '0;2;0;0;0' }],
+        'tail-table-refusal'
+      );
+      expect(result.results[0]).toMatchObject({
+        ok: false,
+        op: 'delete_table',
+        error: 'document_tail_table_last_row'
+      });
+      expect(result.results[0].message).toContain('last block of the document');
+      expect(editor.serialize()).toBe(before);
+      expect(editor.revisions.length).toBe(0);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The control that keeps the guard from being "tables at the end are risky":
+  // the same table with a paragraph after it deletes and accepts as usual.
+  it('deletes the same table cleanly when a paragraph follows it', () => {
+    const editor = makeEditor(trailingParagraphFixture());
+    try {
+      const result = apply(
+        editor,
+        [{ op: 'delete_table', anchor: '0;2;0;0;0' }],
+        'tail-table-control'
+      );
+      expect(result.results[0]).toMatchObject({ ok: true, op: 'delete_table' });
+      expect(() => editor.revisions.acceptAll()).not.toThrow();
+      expect(rowTexts(editor)).toEqual([]);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The remedy has to name the whole-table way out, not the row-set one: there
+  // is no "some other row" to offer when the request was the entire table, and
+  // a refusal that offered one would send the model round the same loop.
+  it('offers the whole-table remedy rather than the row-set one', () => {
+    const editor = makeEditor(tailTableFixture());
+    try {
+      const details = String(
+        apply(
+          editor,
+          [{ op: 'delete_table', anchor: '0;2;0;0;0' }],
+          'tail-table-remedy'
+        ).results[0].details?.join(' ')
+      );
+      expect(details).toContain('paragraph after the table');
+      expect(details).not.toContain('Any other row');
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
+// The durable half of Anthony's 3733040645, and the reason the defect was
+// invisible: the invariant was wired per-op, so nothing failed when a FOURTH op
+// deleted the same content without asking. This enumerates the registry instead.
+//
+// The set is derived, never listed: every registered op that an anchor alone
+// completes (`params: {}` and `requiresAnchor`) is fully expressible at the tail
+// table's last row, so every one of them can be driven there and none of them
+// passes vacuously on a missing parameter. What is required of all of them is
+// the property, not the guard - refuse, or accept without throwing - so an op
+// registered next year is covered the day it is registered, whether it reaches
+// the tail row by deleting a table, a row, or something nobody has written yet.
+describe('no registered op reaches SyncFusion with an accept that throws', () => {
+  const anchorOnlyOps = DOCUMENT_EDITOR_CAPABILITIES.filter(
+    (entry) => entry.requiresAnchor && Object.keys(entry.params).length === 0
+  ).map((entry) => entry.op);
+
+  it('the enumeration is not empty and covers the two known deleters', () => {
+    expect(anchorOnlyOps).toEqual(
+      expect.arrayContaining(['delete_table', 'delete_row'])
+    );
+  });
+
+  it.each(anchorOnlyOps)(
+    '%s at the tail table last row: refuses, or accepts cleanly',
+    (op) => {
+      const editor = makeEditor(tailTableFixture());
+      try {
+        const row = lastRowOf(editor, '0;2');
+        const result = apply(
+          editor,
+          [{ op, anchor: `0;2;${row};0;0` } as EditOp],
+          `registry-${op}`
+        );
+        if (!result.results[0].ok) {
+          // Refused: the guard did its job, and nothing may have been written.
+          expect(editor.revisions.length).toBe(0);
+          return;
+        }
+        expect(() => editor.revisions.acceptAll()).not.toThrow();
+      } finally {
+        destroyEditor(editor);
+      }
+    }
+  );
+});
+
+describe('one rule, three shapes', () => {
   // The range-shaped instance, still refused - a relocation whose source range
   // ends the document at a table necessarily covers that table's last row, which
   // is why it is the same rule rather than a neighbouring one.

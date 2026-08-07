@@ -6475,12 +6475,17 @@ function foreignPendingAuthor(
 // Three messages, three stacks, one missing widget after the accept-side delete.
 // Matching on any of them would have produced three guards for one defect.
 //
-// Two ops delete content that can cover that row, and they are two SHAPES of one
-// rule rather than two rules: a relocation deletes a block RANGE, and
-// `delete_row` deletes a ROW SET. Both ask this module the same question, so the
-// FACT has one owner below and each caller only decides whether its own extent
-// covers it. Their refusal messages differ because their remedies differ; the
-// reason they share, so it cannot drift.
+// Three ops delete content that can cover that row, and they are three SHAPES of
+// one rule rather than three rules: a relocation deletes a block RANGE,
+// `delete_row` deletes a ROW SET, and `delete_table` deletes a WHOLE TABLE. All
+// three ask this module the same question, so the FACT has one owner below and
+// each caller only decides whether its own extent covers it. Their refusal
+// messages differ because their remedies differ; the reason they share, so it
+// cannot drift.
+//
+// `opContracts.spec.ts` enumerates the registry and fails when a registered op
+// that deletes table content reaches SyncFusion without one of these shapes -
+// `delete_table` bypassed the guard because nothing was checking the list.
 // ---------------------------------------------------------------------------
 
 /**
@@ -6562,6 +6567,41 @@ function assertRowsAreRemovable(
       `table: ${tableAnchor}, last row: ${tail.row}`,
       `rows this edit would remove: ${rows.join(', ')}`,
       'Any other row of this table can be removed as usual. To remove this one, give the document a paragraph after the table first, so the table is no longer what the document ends with.'
+    ]
+  );
+}
+
+/**
+ * The refusal that is about DELETING A WHOLE TABLE - the same rule, third shape.
+ *
+ * Deleting a table deletes every row it has, so a table that is the document's
+ * last block always covers the row above. `delete_table` shipped on
+ * `origin/master` with no guard at all, and it is reachable there today: it
+ * answers `ok: true` and then `acceptAll` throws
+ * `Cannot read properties of undefined (reading 'childWidgets')`, measured on a
+ * real DocumentEditor, with a paragraph after the table as the control that
+ * accepts cleanly.
+ *
+ * Its own remedy differs from the row-set one - there is no "some other row" to
+ * offer when the request was the whole table - so it names its own, and takes
+ * the SyncFusion half of the reason from the shared constant so the three
+ * explanations of one defect cannot drift apart.
+ */
+function assertTableIsRemovable(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor) return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to delete the table at ${JSON.stringify(
+      tableAnchor
+    )}: that table is the last block of the document, so deleting it removes its last row. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [
+      `table: ${tableAnchor}, last row: ${tail.row}`,
+      'this edit would remove every row of that table',
+      'Give the document a paragraph after the table first, so the table is no longer what the document ends with, and the table can then be deleted as usual.'
     ]
   );
 }
@@ -7800,7 +7840,14 @@ export const ANCHORED_OP_HANDLERS: {
   // reject-all - probed on a real DocumentEditor, S5). This engine applies
   // every change set tracked, so all three fall to the vocabulary refusal in
   // the dispatch wrapper instead of mutating without a reviewable card.
-  delete_table: ({ editor }) => {
+  delete_table: ({ editor, block, byAnchor }) => {
+    // The whole-table shape of the deletion SyncFusion cannot accept. Guarded
+    // only when the anchor really is a cell, exactly as delete_row below: a
+    // non-cell anchor is a different failure the structural tracked-op check
+    // already owns.
+    const tableAnchor = tableAnchorForBlock(block);
+    if (tableAnchor)
+      assertTableIsRemovable(Array.from(byAnchor.values()), tableAnchor);
     callEditor(editor, 'deleteTable');
   },
   delete_row: ({ editor, block, byAnchor }) => {
