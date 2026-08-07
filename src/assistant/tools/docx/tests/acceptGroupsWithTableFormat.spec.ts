@@ -1224,3 +1224,61 @@ describe('resolving one chip of a card and rejecting the rest', () => {
     }
   });
 });
+
+// The same stack, across TURNS. Two cards from two change sets can sit in the
+// rail at once and can have written the same cell, and rejecting both in the
+// order the rail lists them has to end at the value that predates both. The
+// snapshot stack belongs to the document, not to the change set that happened
+// to open it.
+describe('two cards from different turns that wrote one cell', () => {
+  it('leaves no fill behind when both are rejected in rail order', () => {
+    const ed = makeEditor(statedLayoutFixture());
+    try {
+      const before = appearanceSnapshot(ed, '0;2');
+
+      const first = apply(
+        ed,
+        [
+          { op: 'set_cell_text', group: 'a', anchor: '0;2;1;1;0', text: 'One' },
+          {
+            op: 'set_cell_format',
+            group: 'a',
+            anchor: '0;2;2;0;0',
+            shading: '#FF0000'
+          }
+        ],
+        'turn-one'
+      );
+      expect(first.results.every((entry) => entry.ok)).toBe(true);
+      const second = apply(
+        ed,
+        [
+          { op: 'set_cell_text', group: 'b', anchor: '0;2;2;1;0', text: 'Two' },
+          {
+            op: 'set_cell_format',
+            group: 'b',
+            anchor: '0;2;2;0;0',
+            shading: '#00FF00'
+          }
+        ],
+        'turn-two'
+      );
+      expect(second.results.every((entry) => entry.ok)).toBe(true);
+      expect(appearanceSnapshot(ed, '0;2')).not.toEqual(before);
+
+      const live = ed as unknown as LiveEditor;
+      for (const group of ['a', 'b']) {
+        const view = listRevisionGroups(live).find(
+          (entry) => entry.group === group
+        );
+        expect(view).toBeDefined();
+        resolveLiveRevisionGroupsAsOneUndo(live, [view as any], false);
+      }
+
+      expect(revisions(ed)).toHaveLength(0);
+      expect(appearanceSnapshot(ed, '0;2')).toEqual(before);
+    } finally {
+      destroyEditor(ed);
+    }
+  });
+});

@@ -713,8 +713,15 @@ export interface AppearanceTarget {
 }
 
 const APPEARANCE_LEDGER = '__robinAppearanceLedger';
+const APPEARANCE_LEDGER_BATCH = '__robinAppearanceLedgerBatch';
 
 type LedgerEntry = {
+  /**
+   * Which registration this snapshot arrived in. Cards land one change set at a
+   * time, so the batch orders snapshots ACROSS change sets and `seq` orders them
+   * within one - the pair is the write order the stack has to unwind.
+   */
+  batch: number;
   seq: number;
   /** The cell and kind of write this snapshot undoes. */
   key: string;
@@ -741,28 +748,33 @@ const restoreKey = (restore: AppearanceRestore): string => {
 };
 
 /**
- * Every still-unplayed appearance snapshot of one change set, in write order.
+ * Every still-unplayed appearance snapshot in the document, in write order.
  *
- * The change set - not the group - owns this, because the stack it forms spans
- * groups: the rail partitions a change set into cards, but the writes those
- * cards made went into the document one after another, and only the newest
- * snapshot of a given cell is the one that puts back a real value. Keeping the
- * ledger on the editor means a reload rebuilds it from the same tags the cards
- * are rebuilt from.
+ * The DOCUMENT owns this, not the card and not the change set. The rail
+ * partitions a change set into cards and shows several turns' cards at once,
+ * but the writes behind them went in one after another, and only the newest
+ * snapshot of a given cell puts back a real value. Two cards on one cell are
+ * the same defect whether they came from one turn or two.
+ *
+ * Write order is `(batch, seq)`: `seq` is exact, having been recorded when the
+ * change set wrote it, and the batch is the order the cards bound in. After a
+ * reload the batches follow document order rather than the order the turns
+ * happened, so cross-change-set ordering degrades to that; within a change set
+ * it stays exact, which is where the cards the rail groups together live.
  */
-const appearanceLedger = (
-  editor: LiveEditor,
-  changeSetId: string
-): LedgerEntry[] => {
-  const store: Map<string, LedgerEntry[]> =
-    (editor as any)[APPEARANCE_LEDGER] ??
-    ((editor as any)[APPEARANCE_LEDGER] = new Map());
-  const existing = store.get(changeSetId);
-  if (existing) return existing;
-  const created: LedgerEntry[] = [];
-  store.set(changeSetId, created);
-  return created;
-};
+const appearanceLedger = (editor: LiveEditor): LedgerEntry[] =>
+  ((editor as any)[APPEARANCE_LEDGER] ??= []);
+
+const nextLedgerBatch = (editor: LiveEditor): number =>
+  ((editor as any)[APPEARANCE_LEDGER_BATCH] =
+    ((editor as any)[APPEARANCE_LEDGER_BATCH] ?? 0) + 1);
+
+/** Write order across the whole document: the batch first, then the seq. */
+const inWriteOrder = (left: LedgerEntry, right: LedgerEntry): number =>
+  left.batch - right.batch || left.seq - right.seq;
+
+const isNewerThan = (left: LedgerEntry, right: LedgerEntry): boolean =>
+  inWriteOrder(left, right) > 0;
 
 export function groupRevisionsAtomic(
   editor: LiveEditor,
@@ -783,16 +795,16 @@ export function groupRevisionsAtomic(
   // resolve calls does not.
   const token = {};
   const groupKey = `${changeSetId ?? ''}\u0000${groupId ?? ''}`;
-  const ledger = changeSetId
-    ? appearanceLedger(editor, changeSetId)
-    : undefined;
+  const ledger = changeSetId ? appearanceLedger(editor) : undefined;
   if (ledger && appearanceRestores?.length) {
     // Re-binding the same card (a reload, an undo) replaces its entries rather
     // than stacking a second copy of the same snapshots.
     for (let index = ledger.length - 1; index >= 0; index--)
       if (ledger[index].groupKey === groupKey) ledger.splice(index, 1);
+    const batch = nextLedgerBatch(editor);
     appearanceRestores.forEach((restore, index) =>
       ledger.push({
+        batch,
         seq: restore.seq ?? index,
         key: restoreKey(restore),
         groupKey,
@@ -834,7 +846,7 @@ export function groupRevisionsAtomic(
     if (!ledger) return;
     const mine = ledger
       .filter((entry) => entry.groupKey === groupKey && entry.pending)
-      .sort((left, right) => right.seq - left.seq);
+      .sort((left, right) => inWriteOrder(right, left));
     const play: AppearanceTarget[] = [];
     for (const entry of mine) {
       entry.pending = false;
@@ -843,12 +855,12 @@ export function groupRevisionsAtomic(
       );
       if (accepted) {
         for (const older of siblings)
-          if (older.seq < entry.seq) older.pending = false;
+          if (isNewerThan(entry, older)) older.pending = false;
         continue;
       }
       const heir = siblings
-        .filter((other) => other.seq > entry.seq)
-        .sort((left, right) => left.seq - right.seq)[0];
+        .filter((other) => isNewerThan(other, entry))
+        .sort(inWriteOrder)[0];
       if (heir) heir.restore = entry.restore;
       // The bound target carries the cell; the payload is whatever this entry
       // holds now, which is not what it held when the target was bound if an
