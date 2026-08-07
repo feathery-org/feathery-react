@@ -217,6 +217,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const onSelectionChange = () =>
       handleEditorEvent(() => {
         if (ignoreSelectionRef.current) return;
+        // Same window refresh() collapses groups for: a document (re)load or
+        // an in-flight assistant batch fires this event once per touched
+        // anchor, and neither is the user asking to review or navigate
+        // anywhere — without this guard, every op alternately expands
+        // whichever group it lands on and then gets collapsed back by the
+        // next refresh(), flickering until the batch finishes.
+        if (isOpeningDocument(editor) || isAssistantWriting(editor)) return;
         const current = editor.selection?.getCurrentRevision?.();
         const revisions: any[] = Array.isArray(current)
           ? current

@@ -586,17 +586,18 @@ describe('TrackedChangeGroups', () => {
     expect(editor.focusIn).toHaveBeenCalledTimes(1);
   });
 
-  it('hides the group-wide Accept/Reject for single-edit groups', () => {
+  it('always shows group-wide Accept/Reject, even for single-edit groups', () => {
     const editor = makeEditor([makeRevision()]);
     render(<TrackedChangeGroups editor={editor} />);
 
-    // No "Accept 1"/"Reject 1" — a lone edit resolves through its chip.
+    // Group-wide actions are visible up front — no need to expand or focus a
+    // chip.
     expect(
-      screen.queryByRole('button', { name: 'Accept 1' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Accept 1' })
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Reject 1' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Reject 1' })
+    ).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
@@ -764,6 +765,48 @@ describe('TrackedChangeGroups', () => {
     expect(
       screen.getByText('$5,500').closest('[aria-current="true"]')
     ).toBeNull();
+  });
+
+  it('ignores a selectionChange fired while the assistant is writing (no expand flicker)', () => {
+    // Every op in a change set moves the caret to the anchor it's touching —
+    // the exact same selectionChange a real click fires. Without this guard,
+    // the group would expand on this op and only collapse again on the
+    // batch's NEXT refresh(), flickering across the whole batch.
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    editor.__featheryAssistantWriting = true;
+    render(<TrackedChangeGroups editor={editor} />);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+
+    // The guard doesn't leak past the batch — a real click still works.
+    editor.__featheryAssistantWriting = false;
+    act(() => editor.emit('selectionChange'));
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+  });
+
+  it('ignores a selectionChange fired while the document is opening', () => {
+    // Opening/reopening a document plants Syncfusion's own default caret,
+    // firing this same event — not a real click either.
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    editor.__featheryOpeningDocument = true;
+    render(<TrackedChangeGroups editor={editor} />);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+
+    editor.__featheryOpeningDocument = false;
+    act(() => editor.emit('selectionChange'));
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
   });
 
   it('never uses an editor ancestor as the rail chip scrollbox', () => {
