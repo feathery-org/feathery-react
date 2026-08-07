@@ -894,6 +894,20 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
     expect(() => unmount()).not.toThrow();
   });
+
+  // EJ2 tears its internal listener registry down before flipping the public
+  // isDestroyed flag, so a cleanup that only checks isDestroyed can still hit
+  // a real throw from removeEventListener itself. An uncaught throw here (a
+  // React passive-effect cleanup) isn't contained by the render-time
+  // RailErrorBoundary and was leaving the rail's buttons unresponsive.
+  it('survives removeEventListener throwing on unmount even though isDestroyed is still false', () => {
+    const editor = makeEditor([makeRevision()]);
+    editor.removeEventListener = () => {
+      throw new TypeError('Cannot convert undefined or null to object');
+    };
+    const { unmount } = render(<TrackedChangeGroups editor={editor} />);
+    expect(() => unmount()).not.toThrow();
+  });
 });
 
 describe('RailErrorBoundary', () => {

@@ -187,10 +187,16 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     editor.addEventListener?.('documentChange', onDocumentChange);
     return () => {
       clearTimeout(timer);
-      // EJ2 teardown race: unsubscribing a destroyed instance throws.
+      // EJ2 teardown race: the destroy can land between this check and the
+      // removeEventListener calls below, so isDestroyed alone isn't enough —
+      // the calls themselves must be guarded too.
       if (editor.isDestroyed) return;
-      editor.removeEventListener?.('contentChange', onContentChange);
-      editor.removeEventListener?.('documentChange', onDocumentChange);
+      try {
+        editor.removeEventListener?.('contentChange', onContentChange);
+        editor.removeEventListener?.('documentChange', onDocumentChange);
+      } catch {
+        // Torn down mid-unsubscribe: nothing left to detach from.
+      }
     };
   }, [editor, refresh, revisionCount]);
 
@@ -231,9 +237,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       });
     editor.addEventListener?.('selectionChange', onSelectionChange);
     return () => {
-      // EJ2 teardown race: unsubscribing a destroyed instance throws.
-      if (!editor.isDestroyed)
-        editor.removeEventListener?.('selectionChange', onSelectionChange);
+      // EJ2 teardown race: the destroy can land between this check and the
+      // removeEventListener call, so isDestroyed alone isn't enough.
+      if (!editor.isDestroyed) {
+        try {
+          editor.removeEventListener?.('selectionChange', onSelectionChange);
+        } catch {
+          // Torn down mid-unsubscribe: nothing left to detach from.
+        }
+      }
       activeRevisionRef.current = null;
       setActiveInlineRevision(editor, null);
     };
