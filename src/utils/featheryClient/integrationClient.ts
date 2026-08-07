@@ -246,7 +246,9 @@ export default class IntegrationClient {
       parent_origin: parentOrigin
     });
     const response = await this._fetch(
-      `${API_URL}account-connect/start/?${params}`
+      `${API_URL}account-connect/start/?${params}`,
+      undefined,
+      false
     );
     if (!response) throw new Error('Unable to start authorization.');
 
@@ -264,7 +266,9 @@ export default class IntegrationClient {
       state
     });
     const response = await this._fetch(
-      `${API_URL}account-connect/status/?${params}`
+      `${API_URL}account-connect/status/?${params}`,
+      undefined,
+      false
     );
     if (!response) return { status: 'pending' };
 
@@ -306,7 +310,8 @@ export default class IntegrationClient {
     };
     const response = await this._fetch(
       `${API_URL}account-connect/${path}/`,
-      options
+      options,
+      false
     );
     if (!response) throw new Error('Unable to reach the connected account.');
 
