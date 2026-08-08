@@ -20,6 +20,7 @@ import {
   applyDocumentEdits,
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
+  isAssistantWriting,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import {
@@ -513,6 +514,65 @@ describe('applyDocumentEdits', () => {
     });
     expect(seen).toEqual([true]); // track-changes was ON during the write
     expect(ed.enableTrackChanges).toBe(false); // restored afterwards
+  });
+
+  it('flags the editor as assistant-writing for the duration of a call, and briefly after', () => {
+    jest.useFakeTimers();
+    try {
+      const ed = make([para('Quote: $5,500')]);
+      expect(isAssistantWriting(ed)).toBe(false);
+      const seen: boolean[] = [];
+      const origInsert = ed.editor.insertText;
+      ed.editor.insertText = (t: string) => {
+        seen.push(isAssistantWriting(ed));
+        origInsert(t);
+      };
+      applyDocumentEdits(ed, {
+        edits: [
+          { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+        ]
+      });
+      expect(seen).toEqual([true]); // true during the write
+
+      // Still true right after the call returns — Robin often issues a
+      // SEPARATE tool call moments later in the same editing turn; the real
+      // async gap (an LLM round-trip) before it arrives must not read as
+      // "not writing" and let a stray selectionChange through unguarded.
+      expect(isAssistantWriting(ed)).toBe(true);
+      jest.advanceTimersByTime(2999);
+      expect(isAssistantWriting(ed)).toBe(true);
+      jest.advanceTimersByTime(1);
+      expect(isAssistantWriting(ed)).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('a second call inside the grace window re-arms it instead of letting it expire', () => {
+    jest.useFakeTimers();
+    try {
+      const ed = make([para('Quote: $5,500')]);
+      applyDocumentEdits(ed, {
+        edits: [
+          { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+        ]
+      });
+      jest.advanceTimersByTime(2500); // most of the way through the grace window
+      expect(isAssistantWriting(ed)).toBe(true);
+
+      // A second, separate call — exactly the gap the grace period bridges.
+      applyDocumentEdits(ed, {
+        edits: [
+          { op: 'replace_text', anchor: '0;0', find: '6,000', replace: '7,000' }
+        ]
+      });
+      jest.advanceTimersByTime(2500); // would have expired the FIRST call's timer
+      expect(isAssistantWriting(ed)).toBe(true); // re-armed by the second call
+      jest.advanceTimersByTime(500);
+      expect(isAssistantWriting(ed)).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('suppresses public layout updates for the mutation phases and restores them', () => {

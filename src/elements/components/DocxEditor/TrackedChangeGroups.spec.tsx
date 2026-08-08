@@ -1281,6 +1281,11 @@ describe('RailErrorBoundary', () => {
         ]
       });
       expect(result.results[0]).toMatchObject({ ok: true });
+      // This call is only a fixture (creating a tracked change to test
+      // resolve/undo on) — reset the writing-guard state it left behind so
+      // it doesn't grace-period-suppress the rail interactions below.
+      clearTimeout((editor as any).__featheryAssistantWritingTimer);
+      (editor as any).__featheryAssistantWriting = false;
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       acceptAllGroups();
@@ -1314,6 +1319,11 @@ describe('RailErrorBoundary', () => {
         ]
       });
       expect(result.results[0]).toMatchObject({ ok: true });
+      // This call is only a fixture (creating a tracked change to test
+      // resolve/undo on) — reset the writing-guard state it left behind so
+      // it doesn't grace-period-suppress the rail interactions below.
+      clearTimeout((editor as any).__featheryAssistantWritingTimer);
+      (editor as any).__featheryAssistantWriting = false;
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       fireEvent.click(
@@ -1351,6 +1361,11 @@ describe('RailErrorBoundary', () => {
         ]
       });
       expect(result.results[0]).toMatchObject({ ok: true });
+      // This call is only a fixture (creating a tracked change to test
+      // resolve/undo on) — reset the writing-guard state it left behind so
+      // it doesn't grace-period-suppress the rail interactions below.
+      clearTimeout((editor as any).__featheryAssistantWritingTimer);
+      (editor as any).__featheryAssistantWriting = false;
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       let panel = screen.getByLabelText('Assistant tracked changes');

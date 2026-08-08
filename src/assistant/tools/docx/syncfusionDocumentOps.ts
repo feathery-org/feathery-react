@@ -15025,8 +15025,22 @@ function collapseSectionComposerResult(
 // assistant writes never auto-activates or auto-expands whichever edit it
 // last landed on.
 const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
+// Robin often issues several SEPARATE applyDocumentEdits tool calls for one
+// editing turn (read state, decide, edit, read state, edit again...), each
+// its own synchronous call with a real async gap — an LLM round-trip —
+// between them. Clearing the flag the instant one call returns reopens that
+// gap: a selectionChange landing in it is unguarded, so the rail flickers
+// open on every call and settles on whichever edit landed in the LAST gap.
+// Instead of clearing immediately, arm a short "still might get another call
+// any moment" timer; a new call cancels it and re-arms on its own finally,
+// so the flag only actually goes false after a real quiet period with no
+// further edits.
+const ASSISTANT_WRITING_TIMER_KEY = '__featheryAssistantWritingTimer';
+const ASSISTANT_WRITING_GRACE_MS = 3000;
 
-/** True while `applyDocumentEdits` is mid-batch on this editor. */
+/** True while `applyDocumentEdits` is mid-batch on this editor, or was within
+ *  the last ASSISTANT_WRITING_GRACE_MS (bridging the gap between separate
+ *  tool calls in the same editing turn). */
 export function isAssistantWriting(
   editor: LiveEditor | null | undefined
 ): boolean {
@@ -15041,8 +15055,10 @@ export function applyDocumentEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
+  const ed = editor as any;
+  clearTimeout(ed[ASSISTANT_WRITING_TIMER_KEY]);
+  ed[ASSISTANT_WRITING_KEY] = true;
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
-  (editor as any)[ASSISTANT_WRITING_KEY] = true;
   try {
     return withSilentEditSelections(editor, () =>
       withSerializationTiming(editor, serializationTiming, () => {
@@ -15056,7 +15072,15 @@ export function applyDocumentEdits(
       })
     );
   } finally {
-    (editor as any)[ASSISTANT_WRITING_KEY] = false;
+    const timer = setTimeout(() => {
+      ed[ASSISTANT_WRITING_KEY] = false;
+    }, ASSISTANT_WRITING_GRACE_MS);
+    // Node's Timeout (tests, SSR) keeps the event loop alive until it fires;
+    // browsers return a plain number with no such method. This is a purely
+    // cosmetic grace window — it must never be the reason a process (or a
+    // test run) won't exit.
+    (timer as any)?.unref?.();
+    ed[ASSISTANT_WRITING_TIMER_KEY] = timer;
   }
 }
 
