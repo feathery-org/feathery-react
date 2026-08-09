@@ -194,7 +194,21 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const onContentChange = () =>
       handleEditorEvent(() => {
         clearTimeout(timer);
-        if (revisionCount() !== lastRevisionCountRef.current) refresh();
+        // During an assistant batch or a document (re)load, refresh()'s own
+        // guard immediately collapses every group anyway — nobody is
+        // looking at a per-op intermediate state. An immediate refresh
+        // here for EVERY op (each one changes the revision count) means
+        // listRevisionGroups — O(current revision count) — runs once per
+        // op, for however many ops land in the same batch: O(n^2) across
+        // it. Route through the same trailing debounce plain text growth
+        // already uses instead; because every op in one batch fires this
+        // synchronously with no real time between them, the many
+        // rescheduled timers collapse into exactly the one that survives,
+        // so refresh() runs once, after the whole batch (or load) settles,
+        // not once per op.
+        const suppressed = isOpeningDocument(editor) || isAssistantWriting(editor);
+        if (!suppressed && revisionCount() !== lastRevisionCountRef.current)
+          refresh();
         else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
       });
     const onDocumentChange = () => handleEditorEvent(refresh);

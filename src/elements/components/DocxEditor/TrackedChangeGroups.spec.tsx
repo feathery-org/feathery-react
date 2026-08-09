@@ -1012,6 +1012,39 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
   });
 
+  it('does not immediately refresh on a new edit while the assistant is writing (debounces instead)', () => {
+    // A revision-count change normally skips the debounce entirely (see the
+    // test above) — an immediate listRevisionGroups per op, for however many
+    // ops land in one batch, is O(n^2) across a big one. While the assistant
+    // is writing, nobody is looking at a per-op intermediate state anyway
+    // (the rail is suppressed/collapsed regardless) — route through the
+    // SAME trailing debounce instead, so a whole batch costs one refresh,
+    // not one per op.
+    jest.useFakeTimers();
+    try {
+      const revisions: any[] = [];
+      const editor = makeEditor(revisions);
+      const { container } = render(<TrackedChangeGroups editor={editor} />);
+      expect(container).toBeEmptyDOMElement();
+
+      editor.__featheryAssistantWriting = true;
+      revisions.push(makeRevision());
+      act(() => {
+        editor.emit('contentChange');
+      });
+      // Suppressed: no immediate refresh even though the count changed.
+      expect(container).toBeEmptyDOMElement();
+
+      act(() => {
+        jest.advanceTimersByTime(150); // matches CONTENT_REFRESH_DEBOUNCE_MS
+      });
+      // The debounced refresh still catches up once the batch settles.
+      expect(screen.getByText('Update premium')).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('text growth inside an existing edit refreshes on a trailing debounce', () => {
     jest.useFakeTimers();
     try {
