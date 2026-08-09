@@ -461,7 +461,7 @@ describe('DocumentEditorContainer revision group binding', () => {
     OPEN_STATE.opened = false;
     const action = (initState.formSchemas as any)['form-key'].steps[0]
       .buttons[0].properties.actions[0];
-    action.view_draft_read_only = true;
+    action.editor_read_only = true;
     const readOnly = render(
       <DocumentEditorContainer
         containerId='document-container-a'
