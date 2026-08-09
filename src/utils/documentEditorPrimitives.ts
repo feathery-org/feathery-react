@@ -984,19 +984,59 @@ const revisionMemberIdentity = (
   };
 };
 
-const liveRevisionMember = (
-  editor: LiveEditor,
-  identity: RevisionMemberIdentity
-): LiveRevision | undefined =>
-  liveRevisionsRaw(editor).find((revision) => {
-    if (identity.revisionID)
-      return (
-        String(revision.revisionID ?? '') === identity.revisionID &&
-        revisionTagKey(revision.customData) === identity.groupKey &&
-        String(revision.author ?? '') === identity.author
+type RevisionIndex = {
+  byRef: Set<LiveRevision>;
+  byKey: Map<string, LiveRevision>;
+};
+
+const revisionIdentityKey = (
+  revisionID: string,
+  groupKey: string,
+  author: string
+): string => `${revisionID} ${groupKey} ${author}`;
+
+// Built once per resolve call instead of once per REVISION being resolved —
+// O(n) total instead of the O(k*n) a fresh full-collection scan per lookup
+// used to cost. Safe: a miss here is never a false "temporarily stale, retry
+// later" negative. The only way a target goes missing between building this
+// index and looking it up is an EARLIER identity in the SAME call resolving
+// a sibling in its own atomic group — accept/reject on one member cascades
+// the whole group (see groupRevisionsAtomic/robinResolveSelf above) — and
+// that is a genuine, permanent removal. Nothing else runs between building
+// and using this index within one synchronous call that could reintroduce,
+// rename, or otherwise invalidate a still-pending revision (confirmed by
+// direct inspection: accepting one revision leaves every OTHER group's
+// revision objects reference-identical before and after).
+const buildRevisionIndex = (editor: LiveEditor): RevisionIndex => {
+  const byRef = new Set<LiveRevision>();
+  const byKey = new Map<string, LiveRevision>();
+  for (const revision of liveRevisionsRaw(editor)) {
+    byRef.add(revision);
+    const revisionID = String(revision.revisionID ?? '').trim();
+    if (revisionID) {
+      byKey.set(
+        revisionIdentityKey(
+          revisionID,
+          revisionTagKey(revision.customData),
+          String(revision.author ?? '')
+        ),
+        revision
       );
-    return revision === identity.original;
-  });
+    }
+  }
+  return { byRef, byKey };
+};
+
+const lookupRevision = (
+  index: RevisionIndex,
+  identity: RevisionMemberIdentity
+): LiveRevision | undefined => {
+  if (index.byRef.has(identity.original)) return identity.original;
+  if (!identity.revisionID) return undefined;
+  return index.byKey.get(
+    revisionIdentityKey(identity.revisionID, identity.groupKey, identity.author)
+  );
+};
 
 export function resolveRevisionsAsOneUndo(
   editor: LiveEditor,
@@ -1019,9 +1059,10 @@ export function resolveRevisionsAsOneUndo(
       complex = false;
     }
   }
+  const index = buildRevisionIndex(editor);
   try {
     for (const identity of [...identities].reverse()) {
-      const revision = liveRevisionMember(editor, identity);
+      const revision = lookupRevision(index, identity);
       if (!revision) continue;
       (revision as any).robinReviveSelf?.();
       try {

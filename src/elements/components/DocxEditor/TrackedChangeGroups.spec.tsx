@@ -17,6 +17,7 @@ import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocu
 import {
   installRevisionGroupIsolation,
   resolveLiveRevisionGroupsAsOneUndo,
+  resolveRevisionsAsOneUndo,
   LiveEditor
 } from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
@@ -1184,6 +1185,61 @@ describe('resolveLiveRevisionGroupsAsOneUndo', () => {
     expect(stuck.accept).toHaveBeenCalledTimes(1);
     expect(revisions).toEqual([stuck]);
     expect(resolved).toEqual([stuck, first, second]);
+  });
+});
+
+describe('resolveRevisionsAsOneUndo', () => {
+  // The identity index backing this is built ONCE per call, not once per
+  // revision — verify it still correctly resolves every distinct target in
+  // one pass (not just the first one it happens to look up).
+  it('resolves every distinct revision in one call via the identity index', () => {
+    const first = makeRevision({ getRange: () => [{ text: 'first' }] });
+    const second = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'second' }]
+    });
+    const third = makeRevision({
+      customData: tag('cs-3', 'add-signature'),
+      getRange: () => [{ text: 'third' }]
+    });
+    const editor = makeEditor([first, second, third]);
+
+    resolveRevisionsAsOneUndo(
+      editor as unknown as LiveEditor,
+      [first, second, third],
+      true
+    );
+
+    expect(first.accept).toHaveBeenCalledTimes(1);
+    expect(second.accept).toHaveBeenCalledTimes(1);
+    expect(third.accept).toHaveBeenCalledTimes(1);
+  });
+
+  // A revision already gone by the time this runs (resolved as a side
+  // effect of an earlier identity in the SAME call — accept/reject on one
+  // atomic-group member cascades the whole group, see
+  // groupRevisionsAtomic) must be safely skipped, not crash or block the
+  // rest of the batch. Simulated here directly: the revision instance
+  // exists (so revisionMemberIdentity can be computed from it) but was
+  // never added to the editor's live collection at all.
+  it('safely skips an identity that is not (or no longer) in the live collection', () => {
+    const alreadyGone = makeRevision({ getRange: () => [{ text: 'gone' }] });
+    const present = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'present' }]
+    });
+    const editor = makeEditor([present]); // alreadyGone is NOT in the collection
+
+    expect(() =>
+      resolveRevisionsAsOneUndo(
+        editor as unknown as LiveEditor,
+        [alreadyGone, present],
+        true
+      )
+    ).not.toThrow();
+
+    expect(alreadyGone.accept).not.toHaveBeenCalled();
+    expect(present.accept).toHaveBeenCalledTimes(1);
   });
 });
 
