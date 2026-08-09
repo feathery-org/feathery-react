@@ -42,3 +42,4 @@ export const createDocxEditorBridge = (getEditor: () => any): DocxBridge => ({
 });
 
 export { readSelection as readDocxSelection } from './syncfusionDocumentOps';
+export { setAssistantSessionActive } from './syncfusionDocumentOps';

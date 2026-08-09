@@ -92,7 +92,8 @@ import {
 import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
-  readDocxSelection
+  readDocxSelection,
+  setAssistantSessionActive
 } from './tools/docx/docxEditorBridge';
 import { getDocxEditor } from './tools/docx/docxEditorRegistry';
 import {
@@ -973,6 +974,18 @@ const AssistantChat = ({
   const visibleThreads = threads.filter((t) => t.title);
 
   const isLoading = status === 'submitted' || status === 'streaming';
+
+  // Suppress the tracked-changes rail's auto-activate/auto-expand for the
+  // WHOLE turn, not just the synchronous span of one applyDocumentEdits
+  // call — Robin often issues several separate tool calls per turn (read
+  // state, decide, edit, read state, edit again...), each with a real LLM
+  // round-trip gap in between that a per-call flag alone can't bridge, no
+  // matter how long a grace period it's given.
+  useEffect(() => {
+    const editor = getDocxEditor(instanceId);
+    setAssistantSessionActive(editor, isLoading);
+    return () => setAssistantSessionActive(editor, false);
+  }, [isLoading, instanceId]);
 
   const composerButtonCss = {
     padding: '10px',

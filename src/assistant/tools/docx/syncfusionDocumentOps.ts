@@ -15037,14 +15037,37 @@ const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
 // further edits.
 const ASSISTANT_WRITING_TIMER_KEY = '__featheryAssistantWritingTimer';
 const ASSISTANT_WRITING_GRACE_MS = 3000;
+// A 3s grace period only bridges a SHORT gap between calls — an LLM
+// round-trip that includes real thinking/reasoning time can run well past
+// that, reopening the exact same unguarded window once the timer expires
+// before the next call arrives. The chat layer knows the true boundary of
+// "Robin is still working on this turn" (it spans every tool call in that
+// turn, however long that takes) — AssistantChat stamps this flag from that
+// signal for as long as the turn is in flight. This is the primary guard;
+// the per-call flag + grace timer above is a secondary safety net for edits
+// applied outside a chat turn's tracked lifecycle.
+const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
 
-/** True while `applyDocumentEdits` is mid-batch on this editor, or was within
- *  the last ASSISTANT_WRITING_GRACE_MS (bridging the gap between separate
- *  tool calls in the same editing turn). */
+/** True while `applyDocumentEdits` is mid-batch (or within its grace period)
+ *  OR the chat turn driving it is still in flight (see ASSISTANT_SESSION_KEY
+ *  above) — either way, a batch of assistant writes never auto-activates or
+ *  auto-expands whichever edit it last landed on. */
 export function isAssistantWriting(
   editor: LiveEditor | null | undefined
 ): boolean {
-  return !!(editor as any)?.[ASSISTANT_WRITING_KEY];
+  const ed = editor as any;
+  return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
+}
+
+/** Mark the whole assistant chat turn driving this editor as in flight (or
+ *  not). Call with `true` from when the turn starts until it's fully done —
+ *  every tool call inside it, however many, however long each takes. */
+export function setAssistantSessionActive(
+  editor: LiveEditor | null | undefined,
+  active: boolean
+): void {
+  if (!editor) return;
+  (editor as any)[ASSISTANT_SESSION_KEY] = active;
 }
 
 // Applies a logical change set in deterministic phases. We preflight only the

@@ -21,6 +21,7 @@ import {
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
   isAssistantWriting,
+  setAssistantSessionActive,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import {
@@ -569,6 +570,41 @@ describe('applyDocumentEdits', () => {
       jest.advanceTimersByTime(2500); // would have expired the FIRST call's timer
       expect(isAssistantWriting(ed)).toBe(true); // re-armed by the second call
       jest.advanceTimersByTime(500);
+      expect(isAssistantWriting(ed)).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('setAssistantSessionActive holds the flag for as long as the chat turn runs, no matter how long that is', () => {
+    jest.useFakeTimers();
+    try {
+      const ed = make([para('Quote: $5,500')]);
+      expect(isAssistantWriting(ed)).toBe(false);
+
+      // The chat turn starts (AssistantChat's isLoading goes true) well
+      // before any tool call — and the flag must already be up by then.
+      setAssistantSessionActive(ed, true);
+      expect(isAssistantWriting(ed)).toBe(true);
+
+      // A round-trip far longer than the per-call grace period (3s) between
+      // two tool calls in the same turn — exactly what the session flag
+      // exists to cover, since the per-call flag alone would have expired.
+      jest.advanceTimersByTime(30_000);
+      expect(isAssistantWriting(ed)).toBe(true);
+      applyDocumentEdits(ed, {
+        edits: [
+          { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+        ]
+      });
+      expect(isAssistantWriting(ed)).toBe(true);
+
+      // The per-call grace timer expires, but the session is still active.
+      jest.advanceTimersByTime(3000);
+      expect(isAssistantWriting(ed)).toBe(true);
+
+      // The turn actually finishes.
+      setAssistantSessionActive(ed, false);
       expect(isAssistantWriting(ed)).toBe(false);
     } finally {
       jest.useRealTimers();
