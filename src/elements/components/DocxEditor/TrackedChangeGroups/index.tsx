@@ -294,12 +294,31 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       box.scrollTop = rowBottom - box.clientHeight;
   });
 
+  // Every native accept/reject inside the resolve loops below moves the
+  // document's selection as a side effect, firing a REAL selectionChange —
+  // with dozens/hundreds of revisions (Accept all on a big batch), that's
+  // dozens/hundreds of otherwise-unguarded rail re-scans-and-repaints
+  // stacking on top of the resolve loop itself. Same suppression
+  // selectAndScrollToRevision already uses for a single navigation.
+  const suppressingSelectionEcho = (fn: () => void) => {
+    ignoreSelectionRef.current = true;
+    try {
+      fn();
+    } finally {
+      queueMicrotask(() => {
+        ignoreSelectionRef.current = false;
+      });
+    }
+  };
+
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
     if (!chips.length) return;
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    resolveRevisionsAsOneUndo(editor, revisions, isAccept);
+    suppressingSelectionEcho(() =>
+      resolveRevisionsAsOneUndo(editor, revisions, isAccept)
+    );
     refresh();
     // Resolving the last edit unmounts the rail — focus would land on
     // <body>, where nobody sees the next ⌘Z.
@@ -308,7 +327,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   };
 
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept);
+    suppressingSelectionEcho(() =>
+      resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
+    );
     refresh();
     if (listRevisionGroups(editor).length) refocusPanel();
     else editor?.focusIn?.();

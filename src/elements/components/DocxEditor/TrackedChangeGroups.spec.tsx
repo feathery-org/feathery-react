@@ -16,6 +16,7 @@ import { RailErrorBoundary } from './index';
 import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import {
   installRevisionGroupIsolation,
+  resolveLiveRevisionGroupsAsOneUndo,
   LiveEditor
 } from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
@@ -449,6 +450,73 @@ describe('TrackedChangeGroups', () => {
     expect(premium.accept).toHaveBeenCalledTimes(1);
     expect(date.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {
+    // Every native accept() moves the document selection as a side effect,
+    // firing a REAL selectionChange — with many revisions (Accept all on a
+    // big batch), that's one unguarded rail scan+repaint per resolve unless
+    // suppressed, on top of the resolve loop itself.
+    const first = makeRevision({ getRange: () => [{ text: 'first' }] });
+    const second = makeRevision({ getRange: () => [{ text: 'second' }] });
+    const untouched = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'Untouched' }]
+    });
+    const revisions = [first, second, untouched];
+    for (const revision of [first, second]) {
+      revision.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(revision), 1);
+        // The echo: lands the cursor on some OTHER still-pending edit and
+        // fires the same event a real click would.
+        editor.selection.getCurrentRevision.mockReturnValue([untouched]);
+        editor.emit('selectionChange');
+      });
+    }
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+
+    // Without suppression, "untouched"'s group would now be force-expanded
+    // with its chip marked current, even though the user never touched it.
+    expect(
+      screen.getByRole('button', { name: 'Expand Fix effective date' })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Untouched')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the selectionChange echo native accept fires during a chip resolve', async () => {
+    const chip = makeRevision({ getRange: () => [{ text: 'chip' }] });
+    const untouched = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'Untouched' }]
+    });
+    const revisions = [chip, untouched];
+    chip.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(chip), 1);
+      editor.selection.getCurrentRevision.mockReturnValue([untouched]);
+      editor.emit('selectionChange');
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('chip'));
+    // Let focusChip's OWN echo-suppression (armed by the click above) clear
+    // first, so what's actually being exercised below is resolveChips' own
+    // suppression — not a residual one left over from focusing the chip.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByLabelText('Accept this edit'));
+
+    expect(
+      screen.getByRole('button', { name: 'Expand Fix effective date' })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Untouched')).not.toBeInTheDocument();
   });
 
   it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', () => {
@@ -1079,6 +1147,43 @@ describe('TrackedChangeGroups', () => {
     };
     const { unmount } = render(<TrackedChangeGroups editor={editor} />);
     expect(() => unmount()).not.toThrow();
+  });
+});
+
+describe('resolveLiveRevisionGroupsAsOneUndo', () => {
+  // A revision that fails to resolve (native accept/reject throws, or
+  // otherwise never actually leaves the live collection) must not be
+  // re-selected forever: current[0]/current[last] would otherwise be the
+  // SAME stuck member every iteration, burning the whole retry budget on
+  // repeats of the one failure and never reaching the rest of the group.
+  it('does not let one permanently-stuck revision block the rest of the group from resolving', () => {
+    const stuck = makeRevision({ getRange: () => [{ text: 'stuck' }] });
+    stuck.accept.mockImplementation(() => {
+      throw new Error('native accept failure');
+    });
+    const first = makeRevision({ getRange: () => [{ text: 'first' }] });
+    const second = makeRevision({ getRange: () => [{ text: 'second' }] });
+    const revisions = [stuck, first, second];
+    for (const revision of [first, second]) {
+      revision.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(revision), 1);
+      });
+    }
+    const editor = makeEditor(revisions);
+
+    const resolved = resolveLiveRevisionGroupsAsOneUndo(
+      editor as unknown as LiveEditor,
+      [{ changeSetId: 'cs-1', group: 'update-premium' }],
+      true
+    );
+
+    expect(first.accept).toHaveBeenCalledTimes(1);
+    expect(second.accept).toHaveBeenCalledTimes(1);
+    // Retried once (and only once) before being excluded, never blocking
+    // the other two.
+    expect(stuck.accept).toHaveBeenCalledTimes(1);
+    expect(revisions).toEqual([stuck]);
+    expect(resolved).toEqual([stuck, first, second]);
   });
 });
 

@@ -257,6 +257,21 @@ export function snapshotRevisions(editor: LiveEditor): LiveRevision[] {
   return [];
 }
 
+// Same live data as snapshotRevisions, but skips its `.slice()` copy when
+// the collection is already a plain array. That copy exists for callers who
+// retain the result past this synchronous call (mutation elsewhere could
+// then change what they're holding); a scan that reads and discards
+// immediately (.find()/.filter() inside the SAME synchronous call, never
+// stored) never needs it — nothing mutates the array mid-scan in
+// single-threaded JS. Bulk resolve loops call this once per revision/
+// iteration, so the copy was a real O(n) cost paid on top of the O(n) scan
+// itself, every single time.
+const liveRevisionsRaw = (editor: LiveEditor): LiveRevision[] => {
+  const collection = editor.revisions;
+  if (collection && Array.isArray(collection.changes)) return collection.changes;
+  return snapshotRevisions(editor);
+};
+
 export function createdRevisions(
   editor: LiveEditor,
   before: LiveRevision[]
@@ -973,7 +988,7 @@ const liveRevisionMember = (
   editor: LiveEditor,
   identity: RevisionMemberIdentity
 ): LiveRevision | undefined =>
-  snapshotRevisions(editor).find((revision) => {
+  liveRevisionsRaw(editor).find((revision) => {
     if (identity.revisionID)
       return (
         String(revision.revisionID ?? '') === identity.revisionID &&
@@ -1052,7 +1067,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
   };
-  const initial = snapshotRevisions(editor).filter(matchesGroup);
+  const initial = liveRevisionsRaw(editor).filter(matchesGroup);
   const resolved: LiveRevision[] = [];
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
@@ -1071,8 +1086,18 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   }
   try {
     let budget = Math.max(20, initial.length * 4);
+    // A revision that fails to resolve (native accept/reject throws, or
+    // otherwise doesn't actually leave the live collection) would otherwise
+    // be picked again on the NEXT iteration — current[0]/current[last] is
+    // still the same stuck member — burning the entire budget (up to 4x the
+    // group size) on repeats of the one failure instead of the other
+    // members. Exclude anything that's already failed once so the loop
+    // keeps making progress through the rest of the group.
+    const failed = new Set<LiveRevision>();
     while (budget-- > 0) {
-      const current = snapshotRevisions(editor).filter(matchesGroup);
+      const current = liveRevisionsRaw(editor).filter(
+        (revision) => matchesGroup(revision) && !failed.has(revision)
+      );
       if (!current.length) break;
       const revision = isAccept ? current[0] : current[current.length - 1];
       (revision as any).robinReviveSelf?.();
@@ -1080,6 +1105,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       try {
         resolveRevisionIndividually(revision, isAccept);
       } catch {
+        failed.add(revision);
         // The bounded loop can continue with the next current member.
       }
     }
