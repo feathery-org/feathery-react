@@ -993,7 +993,7 @@ const revisionIdentityKey = (
   revisionID: string,
   groupKey: string,
   author: string
-): string => `${revisionID} ${groupKey} ${author}`;
+): string => `${revisionID}\u0000${groupKey}\u0000${author}`;
 
 // Built once per resolve call instead of once per REVISION being resolved —
 // O(n) total instead of the O(k*n) a fresh full-collection scan per lookup
