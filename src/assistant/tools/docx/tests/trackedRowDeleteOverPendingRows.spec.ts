@@ -36,6 +36,8 @@ import {
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
 
+import { DOCUMENT_EDITOR_CAPABILITIES } from '../../../capabilities/registry';
+import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
 import {
   applyDocumentEdits,
   flattenSfdt,
@@ -490,6 +492,117 @@ describe('what the relaxation did NOT loosen', () => {
             !row.startsWith('[Line 4|')
         )
       );
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+});
+
+// A pending row somebody ELSE authored, inside the rows Robin is asked to remove.
+//
+// SyncFusion only WITHDRAWS content whose insertion revision belongs to the current
+// user, so a delete over another author's pending row authors a Deletion beside it:
+// her card survives and rejecting ours alone restores the document. That is what
+// makes `withdrewPendingInsertion` unambiguous - the count cannot include somebody
+// else's row - and why `relocation_source_has_pending_review` belongs on the ops
+// that FOLD what they move into their own card and not on a row or table delete.
+// Untested until now, which is how a review came to report it as data loss.
+const HUMAN = 'Dana Reviewer';
+
+/** A row inserted by a HUMAN, through the editor the way a reviewer would. */
+const withHumanRow = (): DocumentEditor => {
+  const editor = makeEditor(fixture(4));
+  editor.enableTrackChanges = true;
+  editor.currentUser = HUMAN;
+  // Six parts: a five-part cell anchor has no offset and SyncFusion throws
+  // reading `nextSplitWidget` rather than selecting.
+  editor.selection.select('0;2;2;0;0;0', '0;2;2;0;0;0');
+  (editor.editor as any).insertRow(false, 1);
+  editor.currentUser = 'Robin';
+  return editor;
+};
+
+/** How many pending revisions the document states are HERS. */
+const humanRevisions = (editor: DocumentEditor): number => {
+  const sfdt = JSON.parse(editor.serialize());
+  return (sfdt.revisions ?? sfdt.r ?? []).filter(
+    (entry: any) => String(entry.author ?? entry.a ?? '') === HUMAN
+  ).length;
+};
+
+describe("another author's pending row, inside the rows Robin is asked to remove", () => {
+  // `{rows: [2,3,4]}` over `[header][Line 0][Line 1][hers][Line 2][Line 3]` - an
+  // ordinary contiguous request, and rows 2..4 are what `table_facts` reports. Her
+  // row is row 3, in the middle of it.
+  it('survives the row set, and rejecting OUR card alone restores the document', () => {
+    const editor = withHumanRow();
+    try {
+      expect(humanRevisions(editor)).toBe(1);
+      const before = editor.serialize();
+      const result = apply(
+        editor,
+        [{ op: 'delete_row', anchor: '0;2;0;0;0', rows: [2, 3, 4] }],
+        'robin-row-set'
+      ).results[0];
+
+      expect(result).toMatchObject({ ok: true, op: 'delete_row' });
+      // Absent, not zero: nothing was physically taken out. A withdrawal is what
+      // the report expected, and it cannot happen to an insertion that is not ours.
+      expect(result.withdrewPendingInsertion).toBeUndefined();
+      expect(humanRevisions(editor)).toBe(1);
+
+      // Rejecting only our group - `rejectAll` would reject hers too, by
+      // definition, which is why it is not the discriminating read.
+      for (const group of listRevisionGroups(editor as unknown as LiveEditor))
+        if (!(group as any).items.some((item: any) => item.author === HUMAN))
+          (group as any).items[0].revision.reject();
+      expect(editor.serialize()).toBe(before);
+      expect(humanRevisions(editor)).toBe(1);
+      expect(rowTexts(editor)).toEqual([
+        '[Line|Carrier]',
+        '[Line 0|Carrier 0]',
+        '[Line 1|Carrier 1]',
+        '[|]',
+        '[Line 2|Carrier 2]',
+        '[Line 3|Carrier 3]'
+      ]);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // Enumerated over the registry, not over the two ops that were looked at: the
+  // tail-table guard was wired per op twice, so nothing failed when a third op
+  // reached the same content. Required is the PROPERTY - refuse, or leave her
+  // change to review - so an op registered next year is covered when it is
+  // registered. Her revision is read rather than the bytes: a refused op still
+  // passes through the executor's relayout, which re-fragments runs into equal text.
+  it.each(
+    DOCUMENT_EDITOR_CAPABILITIES.filter(
+      (entry) =>
+        entry.requiresAnchor &&
+        Object.values(entry.params).every((type) => type.endsWith('?'))
+    ).map((entry) => entry.op)
+  )('%s at her row leaves her change to review', (op) => {
+    const editor = withHumanRow();
+    try {
+      apply(editor, [{ op, anchor: '0;2;3;0;0' } as EditOp], `foreign-${op}`);
+      expect(humanRevisions(editor)).toBe(1);
+    } finally {
+      destroyEditor(editor);
+    }
+  });
+
+  // The control that stops the two above from being vacuous: a count that cannot
+  // go down proves nothing. Withdrawing her row is possible, just not through
+  // anything the engine does, because the engine applies every change tracked.
+  it('the measurement can see a loss, so a passing case means something', () => {
+    const editor = withHumanRow();
+    try {
+      editor.enableTrackChanges = false;
+      editor.selection.select('0;2;3;0;0;0', '0;2;3;0;0;0');
+      (editor.editor as any).deleteRow();
+      expect(humanRevisions(editor)).toBe(0);
     } finally {
       destroyEditor(editor);
     }
