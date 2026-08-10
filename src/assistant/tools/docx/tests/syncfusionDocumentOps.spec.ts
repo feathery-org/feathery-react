@@ -535,10 +535,8 @@ describe('applyDocumentEdits', () => {
       });
       expect(seen).toEqual([true]); // true during the write
 
-      // Still true right after the call returns — Robin often issues a
-      // SEPARATE tool call moments later in the same editing turn; the real
-      // async gap (an LLM round-trip) before it arrives must not read as
-      // "not writing" and let a stray selectionChange through unguarded.
+      // Still true after the call returns: the gap before the next tool call
+      // in the same turn must not read as "not writing".
       expect(isAssistantWriting(ed)).toBe(true);
       jest.advanceTimersByTime(2999);
       expect(isAssistantWriting(ed)).toBe(true);
@@ -582,14 +580,12 @@ describe('applyDocumentEdits', () => {
       const ed = make([para('Quote: $5,500')]);
       expect(isAssistantWriting(ed)).toBe(false);
 
-      // The chat turn starts (AssistantChat's isLoading goes true) well
-      // before any tool call — and the flag must already be up by then.
+      // The turn starts before any tool call; the flag must already be up.
       setAssistantSessionActive(ed, true);
       expect(isAssistantWriting(ed)).toBe(true);
 
-      // A round-trip far longer than the per-call grace period (3s) between
-      // two tool calls in the same turn — exactly what the session flag
-      // exists to cover, since the per-call flag alone would have expired.
+      // A round-trip well past the 3s grace period, where the per-call flag
+      // alone would have expired.
       jest.advanceTimersByTime(30_000);
       expect(isAssistantWriting(ed)).toBe(true);
       applyDocumentEdits(ed, {

@@ -84,9 +84,8 @@ const ACTIVE_REVISION_KEY = '__robinActiveRevision';
 const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 const REVISION_RECTS_KEY = '__robinRevisionRects';
 const AFTER_RENDER_KEY = '__robinAfterRender';
-// Opening a document plants Syncfusion's own default caret, which fires a
-// selectionChange indistinguishable from a real click. The review rail reads
-// this flag to ignore that one, without swallowing a real first click.
+// Opening a document plants Syncfusion's default caret, firing a
+// selectionChange indistinguishable from a real click; the rail ignores it.
 const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
 
 /** True while a source document is being opened/reopened on this editor. */
@@ -101,19 +100,15 @@ export interface RevisionRect {
   bottom: number;
 }
 
-const sameRevisionSet = (
-  a: Set<any> | null,
-  b: Set<any> | null
-): boolean => {
+const sameRevisionSet = (a: Set<any> | null, b: Set<any> | null): boolean => {
   if (a === b) return true;
   if (!a || !b || a.size !== b.size) return false;
   for (const item of a) if (!b.has(item)) return false;
   return true;
 };
 
-/** Mark a set of edits active: the renderer rings each one's runs (and each
- *  one's replace counterpart's). Repaints only when the set actually
- *  changes. */
+/** Mark a set of edits active: the renderer rings each one's runs and its
+ *  replace counterpart's. Repaints only when the set actually changes. */
 export function setActiveInlineRevisions(ed: any, revisions: any[]): void {
   if (!ed) return;
   const next = revisions.length ? new Set(revisions) : null;

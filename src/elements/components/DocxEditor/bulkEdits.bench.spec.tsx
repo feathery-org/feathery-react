@@ -1,11 +1,5 @@
-// A live performance measurement, not a pass/fail gate: CI hardware varies
-// enough that a hard millisecond assertion here would be flaky rather than
-// meaningful. This test's job is to (a) prove correctness at scale — every
-// edit actually lands, and the rail's own state settles to reflect all of
-// them — and (b) print real timing so a regression is visible in CI output
-// even though nothing here fails because of it. Override the batch size with
-// BENCH_N=<n> for ad-hoc runs; 500 matches the "assistant pushes a big batch
-// of edits" scenario this exists to characterize.
+// Asserts correctness at scale and prints timing; deliberately no millisecond
+// assertion, which would be flaky on varying CI hardware. Size via BENCH_N.
 import 'jest-canvas-mock';
 import { randomFillSync } from 'crypto';
 import {
@@ -68,8 +62,7 @@ function makeRealEditor(): DocumentEditor {
   return editor;
 }
 
-// A big batch legitimately takes real wall-clock time at this scale (tens
-// of seconds) — this is measuring exactly that, not something to rush.
+// A batch this size takes tens of seconds; that's the thing being measured.
 jest.setTimeout(180000);
 
 const N = Number(process.env.BENCH_N ?? 500);
@@ -86,10 +79,8 @@ function buildDoc(n: number) {
   };
 }
 
-// Each edit gets its own group so the rail renders N separate cards, not one
-// giant one — matching how the assistant actually tags a batch of unrelated
-// edits, and exercising the same per-group render/lookup paths a real
-// "assistant pushes a big batch" turn would.
+// One group per edit, so the rail renders N cards rather than one — how the
+// assistant tags a batch of unrelated edits.
 function buildEdits(n: number) {
   return Array.from({ length: n }, (_, i) => ({
     op: 'replace_text' as const,
@@ -106,10 +97,8 @@ describe(`bulk edits at scale (N=${N})`, () => {
     editor.open(JSON.stringify(buildDoc(N)));
     installRevisionGroupIsolation(editor as unknown as LiveEditor);
 
-    // Mounted BEFORE the batch runs — contentChange/selectionChange fire on
-    // a REAL editor as ops land, exercising the rail's own debounce/
-    // suppression logic exactly as a live chat turn would, not just the
-    // engine in isolation.
+    // Mounted before the batch so the rail's debounce/suppression logic runs
+    // against real events, not just the engine in isolation.
     const { unmount } = render(<TrackedChangeGroups editor={editor as any} />);
 
     const start = Date.now();
@@ -134,11 +123,8 @@ describe(`bulk edits at scale (N=${N})`, () => {
     }
     expect(failures).toEqual([]);
 
-    // The rail suppresses/collapses during the batch (isAssistantWriting)
-    // and only settles once quiet — wait out the trailing debounce on real
-    // timers (the batch itself ran on real timers, so faking them now
-    // wouldn't advance anything already scheduled) to observe the FINAL
-    // state, not a mid-batch snapshot.
+    // The rail only settles once quiet, so wait out the trailing debounce on
+    // real timers to observe the final state rather than a mid-batch one.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
     });

@@ -975,12 +975,8 @@ const AssistantChat = ({
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
-  // Suppress the tracked-changes rail's auto-activate/auto-expand for the
-  // WHOLE turn, not just the synchronous span of one applyDocumentEdits
-  // call — Robin often issues several separate tool calls per turn (read
-  // state, decide, edit, read state, edit again...), each with a real LLM
-  // round-trip gap in between that a per-call flag alone can't bridge, no
-  // matter how long a grace period it's given.
+  // Guards the rail across the whole turn: a per-call flag can't bridge the
+  // LLM round-trip gaps between separate applyDocumentEdits calls.
   useEffect(() => {
     const editor = getDocxEditor(instanceId);
     setAssistantSessionActive(editor, isLoading);

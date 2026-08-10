@@ -15019,39 +15019,19 @@ function collapseSectionComposerResult(
   };
 }
 
-// Every op below moves `editor.selection` to the anchor it's touching, which
-// fires the SAME selectionChange a real user click would. The review rail
-// (TrackedChangeGroups) reads this flag to tell the two apart, so a batch of
-// assistant writes never auto-activates or auto-expands whichever edit it
-// last landed on.
+// Every op moves `editor.selection`, firing the same selectionChange a real
+// user click would; the rail reads this flag to tell the two apart.
 const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
-// Robin often issues several SEPARATE applyDocumentEdits tool calls for one
-// editing turn (read state, decide, edit, read state, edit again...), each
-// its own synchronous call with a real async gap — an LLM round-trip —
-// between them. Clearing the flag the instant one call returns reopens that
-// gap: a selectionChange landing in it is unguarded, so the rail flickers
-// open on every call and settles on whichever edit landed in the LAST gap.
-// Instead of clearing immediately, arm a short "still might get another call
-// any moment" timer; a new call cancels it and re-arms on its own finally,
-// so the flag only actually goes false after a real quiet period with no
-// further edits.
+// Cleared on a grace timer, not synchronously, so the async gap between two
+// tool calls in one turn stays guarded.
 const ASSISTANT_WRITING_TIMER_KEY = '__featheryAssistantWritingTimer';
 const ASSISTANT_WRITING_GRACE_MS = 3000;
-// A 3s grace period only bridges a SHORT gap between calls — an LLM
-// round-trip that includes real thinking/reasoning time can run well past
-// that, reopening the exact same unguarded window once the timer expires
-// before the next call arrives. The chat layer knows the true boundary of
-// "Robin is still working on this turn" (it spans every tool call in that
-// turn, however long that takes) — AssistantChat stamps this flag from that
-// signal for as long as the turn is in flight. This is the primary guard;
-// the per-call flag + grace timer above is a secondary safety net for edits
-// applied outside a chat turn's tracked lifecycle.
+// Primary guard: spans the whole chat turn, which can outlast the grace
+// period above. Stamped by AssistantChat.
 const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
 
-/** True while `applyDocumentEdits` is mid-batch (or within its grace period)
- *  OR the chat turn driving it is still in flight (see ASSISTANT_SESSION_KEY
- *  above) — either way, a batch of assistant writes never auto-activates or
- *  auto-expands whichever edit it last landed on. */
+/** True while `applyDocumentEdits` is mid-batch (or in its grace period), or
+ *  the chat turn driving it is still in flight. */
 export function isAssistantWriting(
   editor: LiveEditor | null | undefined
 ): boolean {
@@ -15059,9 +15039,8 @@ export function isAssistantWriting(
   return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
 }
 
-/** Mark the whole assistant chat turn driving this editor as in flight (or
- *  not). Call with `true` from when the turn starts until it's fully done —
- *  every tool call inside it, however many, however long each takes. */
+/** Mark the assistant chat turn driving this editor as in flight. Call with
+ *  `true` from the turn's start until every tool call inside it is done. */
 export function setAssistantSessionActive(
   editor: LiveEditor | null | undefined,
   active: boolean
@@ -15098,10 +15077,8 @@ export function applyDocumentEdits(
     const timer = setTimeout(() => {
       ed[ASSISTANT_WRITING_KEY] = false;
     }, ASSISTANT_WRITING_GRACE_MS);
-    // Node's Timeout (tests, SSR) keeps the event loop alive until it fires;
-    // browsers return a plain number with no such method. This is a purely
-    // cosmetic grace window — it must never be the reason a process (or a
-    // test run) won't exit.
+    // Node's Timeout would keep a test run alive until it fires; this window
+    // is cosmetic and must never hold the process open.
     (timer as any)?.unref?.();
     ed[ASSISTANT_WRITING_TIMER_KEY] = timer;
   }

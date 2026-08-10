@@ -39,11 +39,8 @@ interface Props {
   onResolveChips: (chips: ChipView[], isAccept: boolean) => void;
 }
 
-// One accept group: a header split into two independent controls — the
-// caret expands/collapses the chip list, the title/tally navigates the
-// document to the group's first edit WITHOUT expanding — always-visible
-// group-wide Accept/Reject, and — while open — the chip list joined by a
-// spine.
+// One accept group. The header splits into two controls: the caret
+// expands/collapses the chip list, the title navigates without expanding.
 export default function GroupCard({
   group,
   isOpen,

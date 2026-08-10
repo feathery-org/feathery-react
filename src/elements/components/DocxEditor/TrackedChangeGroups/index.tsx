@@ -38,18 +38,9 @@ const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
 
-// Guarantees an actual paint happens between now and `fn` running - a single
-// setTimeout(0) does NOT: the browser is free to coalesce a state-update's
-// paint with whatever runs right after it if both land inside the same
-// frame, which a fast resolve does (confirmed live - the resolve ran fine,
-// the spinner just never reached the screen). The first rAF fires just
-// before the next frame, so the spinner's style/layout work is already
-// committed by the time it runs; queuing the second rAF FROM INSIDE that
-// callback means it can't run until the frame after, by which point the
-// browser has had to composite and present the spinner at least once.
-// jsdom (tests) has no requestAnimationFrame at all, so this falls back to
-// a plain timeout there - deferral without the paint guarantee, which is
-// fine for a headless test.
+// Forces a real paint before `fn` runs. A single setTimeout(0) doesn't: the
+// browser coalesces the state-update paint with whatever runs in the same
+// frame, so the spinner never reached the screen for a fast resolve.
 function afterNextPaint(fn: () => void): void {
   const win = featheryWindow() as any;
   if (typeof win.requestAnimationFrame !== 'function') {
@@ -115,19 +106,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // the rail and reappears if the resolution is undone.
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // Which bulk action (Accept all / Reject all) is running, for RailHead's
-  // spinner. A big batch's resolve loop is still synchronous, so the actual
-  // resolve is deferred one tick past the state update below - otherwise the
-  // spinner would never get a chance to paint before the call that blocks
-  // the thread for its duration.
+  // Which bulk action is running, for RailHead's spinner. The resolve loop
+  // is synchronous, so it's deferred past a paint (see afterNextPaint).
   const [resolvingAll, setResolvingAll] = useState<'accept' | 'reject' | null>(
     null
   );
-  // The edit(s) currently ringed in the document: normally just the one
-  // chip the cursor sits inside or was last clicked, but a group-title
-  // click rings every chip in that group at once. The first entry is
-  // always the "primary" one — what keyboard stepping and scroll-into-view
-  // treat as current.
+  // The edits ringed in the document — a group-title click rings the whole
+  // group. First entry is primary: what stepping and scroll-into-view use.
   const [activeRevisions, setActiveRevisions] = useState<any[]>([]);
   // Keyboard stepping reads this ref, not state: selectRevision echoes a
   // synchronous selectionChange that can resolve to a NEIGHBOUR and make
@@ -169,10 +154,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const refresh = useCallback(() => {
     const views = listRevisionGroups(editor);
     lastRevisionCountRef.current = revisionCount();
-    // A document (re)load or an in-flight assistant batch is never a state
-    // the user asked to review — a card left expanded from before that
-    // window (or one that expanded from a stray click mid-batch) collapses
-    // back down rather than sitting open through it.
+    // Neither a (re)load nor an assistant batch is something the user asked
+    // to review, so nothing stays expanded through one.
     if (isOpeningDocument(editor) || isAssistantWriting(editor)) {
       setExpanded({});
     }
@@ -224,19 +207,11 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const onContentChange = () =>
       handleEditorEvent(() => {
         clearTimeout(timer);
-        // During an assistant batch or a document (re)load, refresh()'s own
-        // guard immediately collapses every group anyway — nobody is
-        // looking at a per-op intermediate state. An immediate refresh
-        // here for EVERY op (each one changes the revision count) means
-        // listRevisionGroups — O(current revision count) — runs once per
-        // op, for however many ops land in the same batch: O(n^2) across
-        // it. Route through the same trailing debounce plain text growth
-        // already uses instead; because every op in one batch fires this
-        // synchronously with no real time between them, the many
-        // rescheduled timers collapse into exactly the one that survives,
-        // so refresh() runs once, after the whole batch (or load) settles,
-        // not once per op.
-        const suppressed = isOpeningDocument(editor) || isAssistantWriting(editor);
+        // Every op changes the revision count, so refreshing immediately on
+        // each one is O(n^2) across a batch whose intermediate state nobody
+        // sees. Debounce instead: one refresh once the batch settles.
+        const suppressed =
+          isOpeningDocument(editor) || isAssistantWriting(editor);
         if (!suppressed && revisionCount() !== lastRevisionCountRef.current)
           refresh();
         else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
@@ -246,9 +221,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     editor.addEventListener?.('documentChange', onDocumentChange);
     return () => {
       clearTimeout(timer);
-      // EJ2 teardown race: the destroy can land between this check and the
-      // removeEventListener calls below, so isDestroyed alone isn't enough —
-      // the calls themselves must be guarded too.
+      // EJ2 teardown race: destroy can land between this check and the
+      // removeEventListener calls, so those need their own guard too.
       if (editor.isDestroyed) return;
       try {
         editor.removeEventListener?.('contentChange', onContentChange);
@@ -268,12 +242,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const onSelectionChange = () =>
       handleEditorEvent(() => {
         if (ignoreSelectionRef.current) return;
-        // Same window refresh() collapses groups for: a document (re)load or
-        // an in-flight assistant batch fires this event once per touched
-        // anchor, and neither is the user asking to review or navigate
-        // anywhere — without this guard, every op alternately expands
-        // whichever group it lands on and then gets collapsed back by the
-        // next refresh(), flickering until the batch finishes.
+        // Same window refresh() collapses for. Without this, each op expands
+        // whichever group it lands on and refresh() collapses it right back.
         if (isOpeningDocument(editor) || isAssistantWriting(editor)) return;
         const current = editor.selection?.getCurrentRevision?.();
         const revisions: any[] = Array.isArray(current)
@@ -317,11 +287,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     };
   }, [editor, commitActiveRevision, onHiddenChange]);
 
-  // Bring the newly active (primary/first) chip into view once it exists
-  // (its group may have been collapsed until this same update expanded it).
-  // Scroll ONLY the rail's own scrollbox: scrollIntoView walks every
-  // scrollable ancestor, so it can yank the whole form viewport when a new
-  // revision lands.
+  // Scroll only the rail's own scrollbox: scrollIntoView walks every
+  // scrollable ancestor and would yank the whole form viewport.
   useEffect(() => {
     const primary = activeRevisions[0];
     if (!primary) return;
@@ -338,12 +305,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       box.scrollTop = rowBottom - box.clientHeight;
   });
 
-  // Every native accept/reject inside the resolve loops below moves the
-  // document's selection as a side effect, firing a REAL selectionChange —
-  // with dozens/hundreds of revisions (Accept all on a big batch), that's
-  // dozens/hundreds of otherwise-unguarded rail re-scans-and-repaints
-  // stacking on top of the resolve loop itself. Same suppression
-  // selectAndScrollToRevision already uses for a single navigation.
+  // Each native accept/reject moves the selection, firing a real
+  // selectionChange — one unguarded rail rescan per revision without this.
   const suppressingSelectionEcho = (fn: () => void) => {
     ignoreSelectionRef.current = true;
     try {
@@ -379,11 +342,12 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     else editor?.focusIn?.();
   };
 
-  // Accept all / Reject all: same resolve as above, but a big batch's loop
-  // still runs synchronously and can block the thread long enough to be
-  // worth a spinner. See afterNextPaint for why this isn't a plain
-  // setTimeout(0).
-  const resolveAllWithSpinner = (groupViews: GroupView[], isAccept: boolean) => {
+  // Accept all / Reject all: the same resolve, but a big batch blocks long
+  // enough to be worth a spinner. See afterNextPaint.
+  const resolveAllWithSpinner = (
+    groupViews: GroupView[],
+    isAccept: boolean
+  ) => {
     if (resolvingAll) return;
     setResolvingAll(isAccept ? 'accept' : 'reject');
     afterNextPaint(() => {
@@ -393,8 +357,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   };
 
   // Suppresses selectRevision's selectionChange echo (sync + trailing
-  // microtask) so it cannot reassign activeRevisions, then moves the
-  // document's own selection/scroll position to the given revision.
+  // microtask) so it can't reassign activeRevisions, then moves the cursor.
   const selectAndScrollToRevision = (revision: any) => {
     ignoreSelectionRef.current = true;
     try {
@@ -438,9 +401,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     refocusPanel();
   };
 
-  // Group-title click: navigate to (select/scroll) the group's first edit,
-  // same as focusChip, but ring EVERY chip in the group rather than just
-  // the first — and never expand (that's the caret's job alone).
+  // Group-title click: navigate to the group's first edit but ring every
+  // chip, and never expand — that's the caret's job alone.
   const focusGroupFirst = (group: GroupView) => {
     if (!group.chips.length) return;
     commitActiveRevisions(group.chips.flatMap(chipRevisions));

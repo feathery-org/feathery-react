@@ -257,18 +257,12 @@ export function snapshotRevisions(editor: LiveEditor): LiveRevision[] {
   return [];
 }
 
-// Same live data as snapshotRevisions, but skips its `.slice()` copy when
-// the collection is already a plain array. That copy exists for callers who
-// retain the result past this synchronous call (mutation elsewhere could
-// then change what they're holding); a scan that reads and discards
-// immediately (.find()/.filter() inside the SAME synchronous call, never
-// stored) never needs it — nothing mutates the array mid-scan in
-// single-threaded JS. Bulk resolve loops call this once per revision/
-// iteration, so the copy was a real O(n) cost paid on top of the O(n) scan
-// itself, every single time.
+// snapshotRevisions without its defensive `.slice()`. Only for scans that
+// read and discard within one synchronous call; never for a retained result.
 const liveRevisionsRaw = (editor: LiveEditor): LiveRevision[] => {
   const collection = editor.revisions;
-  if (collection && Array.isArray(collection.changes)) return collection.changes;
+  if (collection && Array.isArray(collection.changes))
+    return collection.changes;
   return snapshotRevisions(editor);
 };
 
@@ -995,18 +989,9 @@ const revisionIdentityKey = (
   author: string
 ): string => `${revisionID}\u0000${groupKey}\u0000${author}`;
 
-// Built once per resolve call instead of once per REVISION being resolved —
-// O(n) total instead of the O(k*n) a fresh full-collection scan per lookup
-// used to cost. Safe: a miss here is never a false "temporarily stale, retry
-// later" negative. The only way a target goes missing between building this
-// index and looking it up is an EARLIER identity in the SAME call resolving
-// a sibling in its own atomic group — accept/reject on one member cascades
-// the whole group (see groupRevisionsAtomic/robinResolveSelf above) — and
-// that is a genuine, permanent removal. Nothing else runs between building
-// and using this index within one synchronous call that could reintroduce,
-// rename, or otherwise invalidate a still-pending revision (confirmed by
-// direct inspection: accepting one revision leaves every OTHER group's
-// revision objects reference-identical before and after).
+// Built once per resolve call, not once per revision: O(n) instead of O(k*n).
+// A miss is always a permanent removal (an earlier identity cascaded its
+// atomic group), never a stale read worth re-scanning for.
 const buildRevisionIndex = (editor: LiveEditor): RevisionIndex => {
   const byRef = new Set<LiveRevision>();
   const byKey = new Map<string, LiveRevision>();
@@ -1127,13 +1112,8 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   }
   try {
     let budget = Math.max(20, initial.length * 4);
-    // A revision that fails to resolve (native accept/reject throws, or
-    // otherwise doesn't actually leave the live collection) would otherwise
-    // be picked again on the NEXT iteration — current[0]/current[last] is
-    // still the same stuck member — burning the entire budget (up to 4x the
-    // group size) on repeats of the one failure instead of the other
-    // members. Exclude anything that's already failed once so the loop
-    // keeps making progress through the rest of the group.
+    // Without this, a revision that throws stays at current[0]/current[last]
+    // and is retried until the budget is gone, starving the rest of the group.
     const failed = new Set<LiveRevision>();
     while (budget-- > 0) {
       const current = liveRevisionsRaw(editor).filter(

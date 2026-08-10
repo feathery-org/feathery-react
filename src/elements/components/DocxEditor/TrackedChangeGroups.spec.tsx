@@ -149,13 +149,8 @@ function acceptAllGroups(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
 }
 
-// Accept all/Reject all defer their (still-synchronous) resolve past two
-// real animation frames so RailHead's spinner is guaranteed to actually
-// paint before it runs — see afterNextPaint. jsdom's requestAnimationFrame
-// is a real, wall-clock-scheduled callback, NOT something Jest's fake
-// timers intercept, so this always runs on real timers regardless of
-// whether the calling test has fake timers active elsewhere; the trailing
-// setTimeout gives the resolve's own synchronous work a tick to flush.
+// Flushes the two animation frames afterNextPaint defers the resolve past.
+// Always real timers: jsdom's rAF is wall-clock and ignores Jest's fakes.
 function flushDeferredResolve(): Promise<void> {
   return act(
     () =>
@@ -450,9 +445,8 @@ describe('TrackedChangeGroups', () => {
   });
 
   it('Accept all resolves every pending edit across groups', async () => {
-    // Accept all/Reject all defer the actual (still-synchronous) resolve
-    // past two real animation frames so RailHead's spinner gets a chance to
-    // paint first — see afterNextPaint. Flush past that before asserting.
+    // The resolve is deferred past two animation frames (afterNextPaint), so
+    // flush before asserting.
     const premium = makeRevision();
     const date = makeRevision({
       customData: tag('cs-1', 'fix-effective-date'),
@@ -524,10 +518,8 @@ describe('TrackedChangeGroups', () => {
   });
 
   it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {
-    // Every native accept() moves the document selection as a side effect,
-    // firing a REAL selectionChange — with many revisions (Accept all on a
-    // big batch), that's one unguarded rail scan+repaint per resolve unless
-    // suppressed, on top of the resolve loop itself.
+    // Each native accept() moves the selection, firing a real
+    // selectionChange — one unguarded rail rescan per resolve if unsuppressed.
     const first = makeRevision({ getRange: () => [{ text: 'first' }] });
     const second = makeRevision({ getRange: () => [{ text: 'second' }] });
     const untouched = makeRevision({
@@ -933,10 +925,8 @@ describe('TrackedChangeGroups', () => {
   });
 
   it('ignores a selectionChange fired while the assistant is writing (no expand flicker)', () => {
-    // Every op in a change set moves the caret to the anchor it's touching —
-    // the exact same selectionChange a real click fires. Without this guard,
-    // the group would expand on this op and only collapse again on the
-    // batch's NEXT refresh(), flickering across the whole batch.
+    // Every op moves the caret, firing the same selectionChange a real click
+    // does; unguarded, each op expands a group the next refresh() collapses.
     const revision = makeRevision();
     const editor = makeEditor([revision]);
     editor.__featheryAssistantWriting = true;
@@ -1083,13 +1073,9 @@ describe('TrackedChangeGroups', () => {
   });
 
   it('does not immediately refresh on a new edit while the assistant is writing (debounces instead)', () => {
-    // A revision-count change normally skips the debounce entirely (see the
-    // test above) — an immediate listRevisionGroups per op, for however many
-    // ops land in one batch, is O(n^2) across a big one. While the assistant
-    // is writing, nobody is looking at a per-op intermediate state anyway
-    // (the rail is suppressed/collapsed regardless) — route through the
-    // SAME trailing debounce instead, so a whole batch costs one refresh,
-    // not one per op.
+    // A revision-count change normally skips the debounce (see the test
+    // above), which is O(n^2) across a batch. While the assistant writes,
+    // the debounce applies instead: one refresh per batch, not per op.
     jest.useFakeTimers();
     try {
       const revisions: any[] = [];
@@ -1239,11 +1225,9 @@ describe('TrackedChangeGroups', () => {
     expect(() => unmount()).not.toThrow();
   });
 
-  // EJ2 tears its internal listener registry down before flipping the public
-  // isDestroyed flag, so a cleanup that only checks isDestroyed can still hit
-  // a real throw from removeEventListener itself. An uncaught throw here (a
-  // React passive-effect cleanup) isn't contained by the render-time
-  // RailErrorBoundary and was leaving the rail's buttons unresponsive.
+  // EJ2 clears its listener registry before flipping isDestroyed, so
+  // removeEventListener can still throw — and a passive-effect cleanup throw
+  // escapes RailErrorBoundary, leaving the rail's buttons dead.
   it('survives removeEventListener throwing on unmount even though isDestroyed is still false', () => {
     const editor = makeEditor([makeRevision()]);
     editor.removeEventListener = () => {
@@ -1255,11 +1239,8 @@ describe('TrackedChangeGroups', () => {
 });
 
 describe('resolveLiveRevisionGroupsAsOneUndo', () => {
-  // A revision that fails to resolve (native accept/reject throws, or
-  // otherwise never actually leaves the live collection) must not be
-  // re-selected forever: current[0]/current[last] would otherwise be the
-  // SAME stuck member every iteration, burning the whole retry budget on
-  // repeats of the one failure and never reaching the rest of the group.
+  // A revision that throws stays at current[0]/current[last] and would be
+  // retried until the budget is gone, starving the rest of the group.
   it('does not let one permanently-stuck revision block the rest of the group from resolving', () => {
     const stuck = makeRevision({ getRange: () => [{ text: 'stuck' }] });
     stuck.accept.mockImplementation(() => {
@@ -1318,13 +1299,8 @@ describe('resolveRevisionsAsOneUndo', () => {
     expect(third.accept).toHaveBeenCalledTimes(1);
   });
 
-  // A revision already gone by the time this runs (resolved as a side
-  // effect of an earlier identity in the SAME call — accept/reject on one
-  // atomic-group member cascades the whole group, see
-  // groupRevisionsAtomic) must be safely skipped, not crash or block the
-  // rest of the batch. Simulated here directly: the revision instance
-  // exists (so revisionMemberIdentity can be computed from it) but was
-  // never added to the editor's live collection at all.
+  // A revision cascaded away by an earlier identity in the same call must be
+  // skipped, not crash. Simulated by never adding it to the live collection.
   it('safely skips an identity that is not (or no longer) in the live collection', () => {
     const alreadyGone = makeRevision({ getRange: () => [{ text: 'gone' }] });
     const present = makeRevision({
