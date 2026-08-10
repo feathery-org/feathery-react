@@ -149,6 +149,16 @@ function acceptAllGroups(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
 }
 
+// Accept all/Reject all defer their (still-synchronous) resolve one
+// macrotask out so RailHead's spinner can paint first — see
+// resolveAllWithSpinner. Callers on real timers await this after clicking;
+// callers on fake timers use `act(() => jest.runOnlyPendingTimers())` instead.
+function flushDeferredResolve(): Promise<void> {
+  return act(
+    () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+  );
+}
+
 describe('TrackedChangeGroups', () => {
   it('renders nothing when the document has no tracked changes at all', () => {
     const editor = makeEditor([]);
@@ -432,25 +442,98 @@ describe('TrackedChangeGroups', () => {
   });
 
   it('Accept all resolves every pending edit across groups', () => {
-    const premium = makeRevision();
-    const date = makeRevision({
-      customData: tag('cs-1', 'fix-effective-date'),
-      getRange: () => [{ text: '2026-02-01' }]
-    });
-    const revisions = [premium, date];
-    premium.accept.mockImplementation(() => {
-      revisions.splice(revisions.indexOf(premium), 1);
-    });
-    date.accept.mockImplementation(() => {
-      revisions.splice(revisions.indexOf(date), 1);
-    });
-    const editor = makeEditor(revisions);
-    const { container } = render(<TrackedChangeGroups editor={editor} />);
+    // Accept all/Reject all defer the actual (still-synchronous) resolve one
+    // macrotask out so RailHead's spinner gets a chance to paint first — see
+    // resolveAllWithSpinner. Advance past that tick before asserting.
+    jest.useFakeTimers();
+    try {
+      const premium = makeRevision();
+      const date = makeRevision({
+        customData: tag('cs-1', 'fix-effective-date'),
+        getRange: () => [{ text: '2026-02-01' }]
+      });
+      const revisions = [premium, date];
+      premium.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(premium), 1);
+      });
+      date.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(date), 1);
+      });
+      const editor = makeEditor(revisions);
+      const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
-    expect(premium.accept).toHaveBeenCalledTimes(1);
-    expect(date.accept).toHaveBeenCalledTimes(1);
-    expect(container).toBeEmptyDOMElement();
+      fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+      act(() => {
+        jest.runOnlyPendingTimers();
+      });
+      expect(premium.accept).toHaveBeenCalledTimes(1);
+      expect(date.accept).toHaveBeenCalledTimes(1);
+      expect(container).toBeEmptyDOMElement();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('shows a spinner on Accept all while its deferred resolve is pending', () => {
+    jest.useFakeTimers();
+    try {
+      const revisions: any[] = [];
+      const revision = makeRevision();
+      revision.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(revision), 1);
+      });
+      revisions.push(revision);
+      const editor = makeEditor(revisions);
+      render(<TrackedChangeGroups editor={editor} />);
+
+      const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
+      const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
+      expect(acceptAllBtn.querySelector('svg')).toBeNull();
+      fireEvent.click(acceptAllBtn);
+      // The resolve itself hasn't run yet (still queued) — the spinner is up
+      // and BOTH bulk buttons are disabled so the two can't race each other.
+      expect(revision.accept).not.toHaveBeenCalled();
+      expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
+      expect(acceptAllBtn).toBeDisabled();
+      expect(rejectAllBtn).toBeDisabled();
+
+      act(() => {
+        jest.runOnlyPendingTimers();
+      });
+      expect(revision.accept).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('shows a spinner on Reject all while its deferred resolve is pending', () => {
+    jest.useFakeTimers();
+    try {
+      const revisions: any[] = [];
+      const revision = makeRevision();
+      revision.reject.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(revision), 1);
+      });
+      revisions.push(revision);
+      const editor = makeEditor(revisions);
+      render(<TrackedChangeGroups editor={editor} />);
+
+      const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
+      const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
+      expect(rejectAllBtn.querySelector('svg')).toBeNull();
+      fireEvent.click(rejectAllBtn);
+      expect(revision.reject).not.toHaveBeenCalled();
+      expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
+      expect(rejectAllBtn).toBeDisabled();
+      expect(acceptAllBtn).toBeDisabled();
+
+      act(() => {
+        jest.runOnlyPendingTimers();
+      });
+      expect(revision.reject).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {
@@ -1458,7 +1541,7 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: bridge-created group can be accepted again after undo', () => {
+  it('real SDK: bridge-created group can be accepted again after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
@@ -1483,12 +1566,14 @@ describe('RailErrorBoundary', () => {
 
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       acceptAllGroups();
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBe(2);
       expect(screen.getByRole('button', { name: 'Accept all' })).toBeEnabled();
       acceptAllGroups();
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();

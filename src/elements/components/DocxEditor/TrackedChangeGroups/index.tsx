@@ -93,6 +93,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // the rail and reappears if the resolution is undone.
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // Which bulk action (Accept all / Reject all) is running, for RailHead's
+  // spinner. A big batch's resolve loop is still synchronous, so the actual
+  // resolve is deferred one tick past the state update below - otherwise the
+  // spinner would never get a chance to paint before the call that blocks
+  // the thread for its duration.
+  const [resolvingAll, setResolvingAll] = useState<'accept' | 'reject' | null>(
+    null
+  );
   // The edit(s) currently ringed in the document: normally just the one
   // chip the cursor sits inside or was last clicked, but a group-title
   // click rings every chip in that group at once. The first entry is
@@ -349,6 +357,22 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     else editor?.focusIn?.();
   };
 
+  // Accept all / Reject all: same resolve as above, but a big batch's loop
+  // still runs synchronously and can block the thread long enough to be
+  // worth a spinner. Setting state and running the (blocking) resolve in the
+  // same tick would never let the spinner paint, so the resolve itself is
+  // pushed one macrotask out - long enough for the browser to paint the
+  // spinner first, same technique applyDocumentEditsChunked uses to keep the
+  // tab responsive during a big write.
+  const resolveAllWithSpinner = (groupViews: GroupView[], isAccept: boolean) => {
+    if (resolvingAll) return;
+    setResolvingAll(isAccept ? 'accept' : 'reject');
+    setTimeout(() => {
+      handleEditorEvent(() => resolveGroups(groupViews, isAccept));
+      setResolvingAll(null);
+    }, 0);
+  };
+
   // Suppresses selectRevision's selectionChange echo (sync + trailing
   // microtask) so it cannot reassign activeRevisions, then moves the
   // document's own selection/scroll position to the given revision.
@@ -497,9 +521,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           <RailHead
             pendingCount={allChips.length}
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
-            onResolveAll={(isAccept) =>
-              handleEditorEvent(() => resolveGroups(groups, isAccept))
-            }
+            onResolveAll={(isAccept) => resolveAllWithSpinner(groups, isAccept)}
+            resolvingAll={resolvingAll}
           />
           <div
             ref={scrollBoxRef}
