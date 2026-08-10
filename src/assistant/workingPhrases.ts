@@ -51,7 +51,17 @@ export const useTurnRunning = (running: boolean): boolean => {
 // Cycles the phrases while `active`, holding on the first one otherwise. The
 // index resets whenever `active` changes so every turn reads from the top
 // rather than resuming wherever the previous turn stopped.
-export const useWorkingPhrase = (active: boolean): string => {
+//
+// `turnKey` identifies the turn, and resets the index on its own. The latch
+// above cannot tell the two cases apart by itself: a round-trip of the same
+// turn and a whole new user turn begun inside the grace window both leave
+// `active` true throughout. Anything that changes per user turn and stays
+// still across its round-trips works - the key is what makes a new turn read
+// from the top even when the latch never dropped.
+export const useWorkingPhrase = (
+  active: boolean,
+  turnKey: unknown = 0
+): string => {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -62,7 +72,7 @@ export const useWorkingPhrase = (active: boolean): string => {
       WORKING_PHRASE_INTERVAL_MS
     );
     return () => clearInterval(id);
-  }, [active]);
+  }, [active, turnKey]);
 
   return WORKING_PHRASES[index];
 };

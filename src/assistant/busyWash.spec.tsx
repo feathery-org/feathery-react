@@ -79,9 +79,15 @@ describe('assistant busy wash', () => {
     const { wash } = renderWash();
     const animation = prop(wash, 'animation');
 
+    // Read the slot, not the substring: in the shorthand the first time is the
+    // duration and the second is the delay, so one time means no delay at all
+    // - and `feathery-busy-wash-in 200ms ease-out both`, which holds nothing
+    // back, still contains "200ms"
+    const times = animation.match(/[\d.]+m?s/g) ?? [];
+    expect(times).toHaveLength(2);
+    expect(times[1]).toBe('200ms');
     // Fill mode `both` keeps it fully transparent for the whole delay, so a
     // sub-200ms turn shows nothing at all rather than a blink
-    expect(animation).toContain('200ms');
     expect(animation).toContain('both');
   });
 

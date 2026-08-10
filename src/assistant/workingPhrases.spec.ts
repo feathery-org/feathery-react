@@ -184,10 +184,13 @@ describe('working phrase driven by the turn latch', () => {
   beforeEach(() => jest.useFakeTimers());
   afterEach(() => jest.useRealTimers());
 
+  // `turn` is the user turn the request belongs to: it stays put across one
+  // turn's round-trips and changes when the user sends again
   const renderLatchedPhrase = () =>
-    renderHook(({ loading }) => useWorkingPhrase(useTurnRunning(loading)), {
-      initialProps: { loading: true }
-    });
+    renderHook(
+      ({ loading, turn }) => useWorkingPhrase(useTurnRunning(loading), turn),
+      { initialProps: { loading: true, turn: 1 } }
+    );
 
   it('keeps counting across the gap between round-trips', () => {
     const { result, rerender } = renderLatchedPhrase();
@@ -197,9 +200,9 @@ describe('working phrase driven by the turn latch', () => {
 
     // A round-trip boundary: request one ends, request two starts inside the
     // grace window. The phrase must not drop back to "Working on it..."
-    rerender({ loading: false });
+    rerender({ loading: false, turn: 1 });
     act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS - 1));
-    rerender({ loading: true });
+    rerender({ loading: true, turn: 1 });
     expect(result.current).toBe(WORKING_PHRASES[1]);
 
     act(() => jest.advanceTimersByTime(WORKING_PHRASE_INTERVAL_MS));
@@ -213,11 +216,27 @@ describe('working phrase driven by the turn latch', () => {
     expect(result.current).toBe(WORKING_PHRASES[2]);
 
     // The turn really ends, so the latch drops
-    rerender({ loading: false });
+    rerender({ loading: false, turn: 1 });
     act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS));
     expect(result.current).toBe(WORKING_PHRASES[0]);
 
-    rerender({ loading: true });
+    rerender({ loading: true, turn: 2 });
+    expect(result.current).toBe(WORKING_PHRASES[0]);
+  });
+
+  // The case the latch alone cannot see: a reply lands, the user asks again
+  // within 500ms, so the latch never drops and `active` never changes - but
+  // this is a new question, not another round-trip of the old one
+  it('restarts on a new user turn begun inside the grace window', () => {
+    const { result, rerender } = renderLatchedPhrase();
+
+    act(() => jest.advanceTimersByTime(WORKING_PHRASE_INTERVAL_MS * 2));
+    expect(result.current).toBe(WORKING_PHRASES[2]);
+
+    rerender({ loading: false, turn: 1 });
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS - 1));
+    rerender({ loading: true, turn: 2 });
+
     expect(result.current).toBe(WORKING_PHRASES[0]);
   });
 });

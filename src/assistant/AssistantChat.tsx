@@ -984,7 +984,15 @@ const AssistantChat = ({
   // Latched across the whole turn: what every visual busy signal wants, so a
   // turn made of several round-trips reads as one continuous turn
   const turnRunning = useTurnRunning(isLoading);
-  const workingPhrase = useWorkingPhrase(turnRunning);
+  // A new user message is a new turn even when it starts inside the grace
+  // window and the latch never dropped, so the phrase has to restart on it.
+  // Counting the messages rather than reading the last id keeps the key still
+  // while a turn's optimistic message is swapped for the real one
+  const userTurnCount = useMemo(
+    () => messages.filter((m: any) => m.role === 'user').length,
+    [messages]
+  );
+  const workingPhrase = useWorkingPhrase(turnRunning, userTurnCount);
 
   const composerButtonCss = {
     padding: '10px',
@@ -1745,6 +1753,20 @@ const AssistantChat = ({
           }}
         >
           {(() => {
+            // One label owns the strip: it is one line tall with overflow
+            // hidden, so a second placeholder beside this one does not stack -
+            // both are `flex: 0 1 auto` with a nowrap label, so they squeeze
+            // and both truncate. The upload wins: it is the newest thing the
+            // user did, and the only moment the two overlap is a send made
+            // inside the idle grace window, where the turn the phrase
+            // describes has already stopped
+            if (pendingSubmit)
+              return (
+                <ToolChunkPlaceholder
+                  label='Uploading...'
+                  color={colors.primary}
+                />
+              );
             if (!turnRunning) return null;
             const last = messages[messages.length - 1] as
               | { role?: string; parts?: any[] }
@@ -1770,10 +1792,6 @@ const AssistantChat = ({
               />
             );
           })()}
-
-          {pendingSubmit && (
-            <ToolChunkPlaceholder label='Uploading...' color={colors.primary} />
-          )}
         </div>
 
         {/* Last child of the region, so it washes over both the transcript and
