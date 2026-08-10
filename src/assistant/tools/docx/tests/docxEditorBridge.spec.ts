@@ -1,6 +1,6 @@
 import { createDocxEditorBridge, readDocxSelection } from '../docxEditorBridge';
 import {
-  applyDocumentEdits,
+  applyDocumentEditsChunked,
   buildIndexBlocks,
   deriveSectionPattern,
   findDocumentOccurrences,
@@ -9,13 +9,15 @@ import {
 
 jest.mock('../syncfusionDocumentOps', () => ({
   ...jest.requireActual('../syncfusionDocumentOps'),
-  applyDocumentEdits: jest.fn(),
+  // The bridge calls this wrapper (not applyDocumentEdits directly) so a big
+  // batch can be chunked/yielded without touching the hardened engine itself.
+  applyDocumentEditsChunked: jest.fn(),
   deriveSectionPattern: jest.fn(),
   findDocumentOccurrences: jest.fn(),
   getDocumentInventory: jest.fn()
 }));
 
-const applyDocumentEditsMock = applyDocumentEdits as jest.Mock;
+const applyDocumentEditsChunkedMock = applyDocumentEditsChunked as jest.Mock;
 const deriveSectionPatternMock = deriveSectionPattern as jest.Mock;
 const findDocumentOccurrencesMock = findDocumentOccurrences as jest.Mock;
 const getDocumentInventoryMock = getDocumentInventory as jest.Mock;
@@ -48,12 +50,12 @@ describe('createDocxEditorBridge', () => {
       ]
     };
     const output = { results: [{ ok: true, op: 'replace_text' }] };
-    applyDocumentEditsMock.mockReturnValue(output);
+    applyDocumentEditsChunkedMock.mockResolvedValue(output);
 
     const bridge = createDocxEditorBridge(() => editor);
 
     await expect(bridge.applyDocumentEdits!(input)).resolves.toBe(output);
-    expect(applyDocumentEditsMock).toHaveBeenCalledWith(editor, input);
+    expect(applyDocumentEditsChunkedMock).toHaveBeenCalledWith(editor, input);
   });
 
   it('forwards section-pattern reads to the live document engine', async () => {
@@ -93,7 +95,7 @@ describe('createDocxEditorBridge', () => {
 
     expect(getEditor).toHaveBeenCalledTimes(2);
     expect(getDocumentInventoryMock).toHaveBeenCalledWith(firstEditor, {});
-    expect(applyDocumentEditsMock).toHaveBeenCalledWith(secondEditor, {});
+    expect(applyDocumentEditsChunkedMock).toHaveBeenCalledWith(secondEditor, {});
   });
 
   it.each([
@@ -113,7 +115,7 @@ describe('createDocxEditorBridge', () => {
       });
       expect(getDocumentInventoryMock).not.toHaveBeenCalled();
       expect(deriveSectionPatternMock).not.toHaveBeenCalled();
-      expect(applyDocumentEditsMock).not.toHaveBeenCalled();
+      expect(applyDocumentEditsChunkedMock).not.toHaveBeenCalled();
       expect(findDocumentOccurrencesMock).not.toHaveBeenCalled();
     }
   );

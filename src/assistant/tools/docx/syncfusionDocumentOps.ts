@@ -15107,6 +15107,171 @@ export function applyDocumentEdits(
   }
 }
 
+// How many ops a chunk holds before `applyDocumentEditsChunked` looks for the
+// next safe place to cut - not a hard cap, since a cut can only land where no
+// group straddles it (see `groupSafeChunkRanges`).
+const DEFAULT_CHUNK_SIZE = 20;
+
+function defaultYieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, 0);
+    (timer as any)?.unref?.();
+  });
+}
+
+// Splits `edits` into the fewest chunks of roughly `targetSize` ops each,
+// never splitting a `group` across two chunks - every op sharing a group must
+// land in the same `applyDocumentEdits` call, or that group's accept/reject
+// atomicity breaks. Groups are not guaranteed contiguous in `edits` (group A,
+// then B, then A again is valid), so this tracks each group's LAST index and
+// only cuts once every group opened since the current chunk's start has also
+// closed by that point. Returns arrays of original indices into `edits`.
+function groupSafeChunkRanges(
+  edits: EditOp[],
+  changeSetId: string,
+  targetSize: number
+): number[][] {
+  if (edits.length <= targetSize) return edits.length ? [range(0, edits.length - 1)] : [];
+  const lastIndexOfGroup = new Map<string, number>();
+  edits.forEach((op, index) =>
+    lastIndexOfGroup.set(opGroupId(op, changeSetId), index)
+  );
+  const chunks: number[][] = [];
+  let chunkStart = 0;
+  let chunkEnd = 0;
+  for (let index = 0; index < edits.length; index++) {
+    const groupLast = lastIndexOfGroup.get(opGroupId(edits[index], changeSetId))!;
+    if (groupLast > chunkEnd) chunkEnd = groupLast;
+    const longEnough = index - chunkStart + 1 >= targetSize;
+    const safeToCut = index === chunkEnd;
+    if (longEnough && safeToCut) {
+      chunks.push(range(chunkStart, index));
+      chunkStart = index + 1;
+      chunkEnd = chunkStart;
+    }
+  }
+  if (chunkStart < edits.length) chunks.push(range(chunkStart, edits.length - 1));
+  return chunks;
+}
+
+function range(start: number, endInclusive: number): number[] {
+  return Array.from(
+    { length: endInclusive - start + 1 },
+    (_, offset) => start + offset
+  );
+}
+
+/**
+ * Same contract as `applyDocumentEdits`, but for a batch big enough to freeze
+ * the tab if applied in one uninterrupted synchronous burst. Splits the edits
+ * into group-safe chunks (see `groupSafeChunkRanges`) and calls the existing,
+ * unchanged `applyDocumentEdits` once per chunk, yielding to the browser
+ * between chunks so it can repaint and handle input. Total time is about the
+ * same as one big call; the tab just never locks up for the whole duration.
+ *
+ * `applyDocumentEdits` itself is untouched on purpose: it is called directly,
+ * synchronously, from hundreds of existing tests that expect an immediate
+ * result, not a Promise. This wrapper is additive and used only where a batch
+ * is actually driven from the live browser page.
+ */
+export async function applyDocumentEditsChunked(
+  editor: LiveEditor,
+  input: { edits: EditOp[]; changeSetId?: string; plan?: string },
+  options?: { chunkSize?: number; yieldToBrowser?: () => Promise<void> }
+): Promise<ApplyEditsResult> {
+  const edits = Array.isArray(input?.edits) ? input.edits : [];
+  const changeSetId =
+    typeof input?.changeSetId === 'string' && input.changeSetId.trim()
+      ? input.changeSetId.trim()
+      : 'document-edit-change-set';
+  const chunkRanges = groupSafeChunkRanges(
+    edits,
+    changeSetId,
+    options?.chunkSize ?? DEFAULT_CHUNK_SIZE
+  );
+  if (chunkRanges.length <= 1) return applyDocumentEdits(editor, input);
+
+  const yieldToBrowser = options?.yieldToBrowser ?? defaultYieldToBrowser;
+  const results: EditResult[] = new Array(edits.length);
+  const warnings: string[] = [];
+  const groups: Array<{
+    id: string;
+    opIndices: number[];
+    revisionCount: number;
+    restoresAppearance?: true;
+  }> = [];
+  const announcements: string[] = [];
+  let anyFailure = false;
+  let anyRevisions = false;
+  let formatTracking:
+    | 'grouped_with_revision_cards'
+    | 'untracked_immediate'
+    | undefined;
+  let inventory: ApplyEditsResult['inventory'];
+
+  for (const chunkRange of chunkRanges) {
+    const chunkResult = applyDocumentEdits(editor, {
+      ...input,
+      edits: chunkRange.map((originalIndex) => edits[originalIndex]),
+      changeSetId
+    });
+    chunkRange.forEach((originalIndex, chunkLocalIndex) => {
+      results[originalIndex] = chunkResult.results[chunkLocalIndex];
+    });
+    warnings.push(...chunkResult.warnings);
+    if (chunkResult.changeSet) {
+      if (chunkResult.changeSet.status === 'failed') anyFailure = true;
+      if (chunkResult.changeSet.revisionGrouping === 'bridge_bound_revision_cards')
+        anyRevisions = true;
+      for (const group of chunkResult.changeSet.groups)
+        groups.push({
+          ...group,
+          opIndices: group.opIndices.map(
+            (chunkLocalIndex) => chunkRange[chunkLocalIndex]
+          )
+        });
+      // 'untracked_immediate' means some group's appearance write already
+      // landed with nothing to reject - the more important thing to surface,
+      // so one chunk reporting it wins over another chunk's fully-reversible
+      // report.
+      if (chunkResult.changeSet.formatTracking === 'untracked_immediate')
+        formatTracking = 'untracked_immediate';
+      else if (
+        chunkResult.changeSet.formatTracking === 'grouped_with_revision_cards' &&
+        formatTracking !== 'untracked_immediate'
+      )
+        formatTracking = 'grouped_with_revision_cards';
+      if (chunkResult.changeSet.announcement)
+        announcements.push(chunkResult.changeSet.announcement);
+    }
+    // The final chunk's inventory reflects the whole document's post-batch
+    // state; an earlier chunk's is already-superseded intermediate state.
+    if (chunkResult.inventory) inventory = chunkResult.inventory;
+    await yieldToBrowser();
+  }
+
+  const response: ApplyEditsResult = {
+    results,
+    warnings,
+    changeSet: {
+      id: changeSetId,
+      status: anyFailure ? 'failed' : 'applied',
+      revisionGrouping: anyRevisions
+        ? 'bridge_bound_revision_cards'
+        : 'no_revisions',
+      uiGrouping: 'requires_cross_layer_group_card',
+      groups,
+      ...(formatTracking ? { formatTracking } : {}),
+      announcement: announcements.join(' '),
+      ...(typeof input?.plan === 'string' && input.plan.trim()
+        ? { plan: input.plan.trim() }
+        : {})
+    }
+  };
+  if (inventory) response.inventory = inventory;
+  return response;
+}
+
 function applyDocumentEditsMeasured(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string },
