@@ -798,6 +798,12 @@ export interface EditResult {
   // is already there, byte for byte. `ok` is still true - the requested state
   // is the state - but there is no revision and no change card. See writeNoOp.
   noOp?: NoOpWriteReport;
+  // Present on a successful `delete_row` that removed at least one row which was
+  // ITSELF an unaccepted insertion: how many. Those rows are gone outright, with
+  // no card to review and no reject that can restore them (see
+  // assertTrackedMutation); the rest of the set are ordinary tracked deletions.
+  // Absent means every row removed became a tracked deletion.
+  withdrewPendingInsertion?: number;
   // Present on a successful appearance op (set_cell_format / set_row_format /
   // copy_table_format / restripe_table): what it wrote, what it left alone, and
   // the stripe it detected. The engine's own account, so "did the restripe
@@ -5047,6 +5053,13 @@ interface OpSuccessExtras {
    */
   noOp?: NoOpWriteReport;
   /**
+   * How many of the rows a `delete_row` removed were themselves unaccepted
+   * insertions, and so were WITHDRAWN rather than marked deleted. Travels to the
+   * result because the two outcomes read differently to a user: a withdrawn row
+   * is simply gone with nothing left to review, and no reject can bring it back.
+   */
+  withdrewPendingInsertion?: number;
+  /**
    * Set by the table-appearance ops. Its `report` half becomes the result's
    * `appearance`; its `restores` half is engine-internal and is collected by the
    * executor, never returned to the model.
@@ -7181,14 +7194,80 @@ function resolveSplitRows(
   return { extract, keep, headerRows, rowCount };
 }
 
-/** Delete one row of one table, tracked, through the selection. */
-function deleteTableRow(
+/**
+ * Each row of one table paired with its HIGHEST column index, read off the
+ * flattened cells rather than counted - so a row that carries a grid offset or a
+ * horizontal merge still reports the cell a spanning selection has to end in,
+ * and a row the table does not have is simply absent instead of guessed at.
+ */
+function tableRowColumns(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): Map<number, number> {
+  const columns = new Map<number, number>();
+  for (const candidate of blocks) {
+    if (tableAnchorForBlock(candidate) !== tableAnchor) continue;
+    const parts = candidate.anchor.split(';');
+    const row = Number(parts[2]);
+    const column = Number(parts[3]);
+    if (!Number.isInteger(row) || !Number.isInteger(column)) continue;
+    columns.set(row, Math.max(columns.get(row) ?? 0, column));
+  }
+  return columns;
+}
+
+/**
+ * A row set as its MAXIMAL CONTIGUOUS RUNS, ascending.
+ *
+ * A row set is one write per run, not one write per row: a selection spanning a
+ * run covers every row in it, so the runs are exactly the coarsest safe
+ * decomposition of any request. The captain's "delete the mock coverage 3 to 7"
+ * is one run and therefore one write and one card; a scattered set (which
+ * `split_table` already accepts, so the model will send one here too) costs one
+ * write per run and no more.
+ */
+function contiguousRuns(
+  rows: number[]
+): Array<{ first: number; last: number }> {
+  const runs: Array<{ first: number; last: number }> = [];
+  for (const row of [...new Set(rows)].sort((a, b) => a - b)) {
+    const open = runs[runs.length - 1];
+    if (open && row === open.last + 1) open.last = row;
+    else runs.push({ first: row, last: row });
+  }
+  return runs;
+}
+
+/**
+ * Delete a CONTIGUOUS RUN of one table's rows, tracked, in ONE write.
+ *
+ * One `deleteRow` over a selection spanning the whole run, never one call per
+ * row, because the two are not equivalent under track changes: SyncFusion folds
+ * a spanning delete into a SINGLE revision - withdrawing whichever of those rows
+ * were themselves unaccepted insertions and marking the rest deleted - which is
+ * one card the reviewer resolves once, and rejecting it restores the pristine
+ * rows. Row by row, the first withdrawal physically removes its row, every row
+ * below it shifts, and the next call's anchor no longer identifies what it was
+ * resolved against.
+ *
+ * Defaults to the single row, which is what every caller before the row set
+ * wanted, so `delete_row` and `split_table` share one primitive rather than two
+ * spellings of one selection.
+ *
+ * The selection runs from the run's first cell to its last row's last cell; the
+ * caller supplies that column because it reads the table's shape already.
+ */
+function deleteTableRows(
   editor: LiveEditor,
   tableAnchor: string,
-  row: number
+  firstRow: number,
+  lastRow: number = firstRow,
+  lastColumn = 0
 ): void {
-  const caret = `${tableAnchor};${row};0;0;0`;
-  editor.selection.select(caret, caret);
+  editor.selection.select(
+    `${tableAnchor};${firstRow};0;0;0`,
+    `${tableAnchor};${lastRow};${lastColumn};0;0`
+  );
   callEditor(editor, 'deleteRow');
 }
 
@@ -7653,7 +7732,7 @@ export const ANCHORED_OP_HANDLERS: {
     // The source's extracted rows go DESCENDING; a tracked delete shifts nothing,
     // so the order is not load-bearing, but it keeps the invariant visible.
     for (const row of [...plan.extract].reverse())
-      deleteTableRow(editor, moved.anchor, row);
+      deleteTableRows(editor, moved.anchor, row);
   },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
@@ -7881,16 +7960,78 @@ export const ANCHORED_OP_HANDLERS: {
       assertTableIsRemovable(Array.from(byAnchor.values()), tableAnchor);
     callEditor(editor, 'deleteTable');
   },
-  delete_row: ({ editor, block, byAnchor }) => {
-    // The one deletion SyncFusion cannot accept. Guarded only when the anchor
-    // really is a cell: a non-cell anchor is a different failure and the
-    // structural tracked-op check already owns it.
+  // Deletes a ROW SET, in as few writes as the set allows - `rows` is the shape
+  // "remove mock coverage 3 to 7" needs. One op per row cannot express it: a
+  // withdrawal physically removes its row (see assertTrackedMutation), so every
+  // row below shifts, and the next op's anchor has to be re-resolved by text -
+  // which empty, freshly-inserted rows cannot be distinguished by, so the second
+  // op refused with `anchor_relocation_ambiguous` and four of the captain's five
+  // rows stayed behind. Here the whole run goes down in one `deleteRow`, which is
+  // also what makes it ONE card.
+  delete_row: ({ editor, op, block, byAnchor }) => {
     const tableAnchor = tableAnchorForBlock(block);
-    if (tableAnchor)
-      assertRowsAreRemovable(Array.from(byAnchor.values()), tableAnchor, [
-        Number(block.anchor.split(';')[2])
-      ]);
-    callEditor(editor, 'deleteRow');
+    const blocks = Array.from(byAnchor.values());
+    // Guarded only when the anchor really is a cell: a non-cell anchor is a
+    // different failure and the structural tracked-op check already owns it. A
+    // row set has no meaning without the table to read it against, so that one
+    // says so rather than deleting the anchored row and calling it done.
+    if (!tableAnchor) {
+      if (op.rows?.length)
+        throw new OpError(
+          'not_a_cell_anchor',
+          `delete_row was given a \`rows\` set, but its anchor ${JSON.stringify(
+            block.anchor
+          )} is not a table cell, so there is no table to read those row numbers against. Nothing was written. Copy a cell anchor for the table from a table_facts read.`,
+          [`rows: ${op.rows.join(', ')}`]
+        );
+      callEditor(editor, 'deleteRow');
+      return;
+    }
+    const columns = tableRowColumns(blocks, tableAnchor);
+    const requested = op.rows?.length
+      ? [...new Set(op.rows)]
+      : [Number(block.anchor.split(';')[2])];
+    const missing = requested.filter((row) => !columns.has(row));
+    if (missing.length)
+      throw new OpError(
+        'row_not_found',
+        `The table at ${JSON.stringify(tableAnchor)} has no row ${missing.join(
+          ', '
+        )}, so nothing was written. Read the table with table_facts and send the row indices it reports (\`TableRowFact.row\`) rather than counted ones.`,
+        [
+          `rows asked for: ${requested.join(', ')}`,
+          `rows this table has: 0..${Math.max(...columns.keys())}`
+        ]
+      );
+    // The whole set, so the tail-table refusal sees every row this op would
+    // remove rather than only the anchored one - it was written for a row set
+    // and was simply being handed one row at a time.
+    assertRowsAreRemovable(blocks, tableAnchor, requested);
+    // DESCENDING, so that a run whose rows are withdrawn - physically removed,
+    // unlike a tracked delete, which leaves them in place - cannot shift the rows
+    // a later run still has to address: every run left to do sits above it.
+    for (const run of contiguousRuns(requested).reverse())
+      deleteTableRows(
+        editor,
+        tableAnchor,
+        run.first,
+        run.last,
+        columns.get(run.last) ?? 0
+      );
+    // How many of those rows were WITHDRAWN rather than marked deleted, read as
+    // the observable it is: a tracked deletion leaves its row in the document
+    // until someone accepts it, a withdrawal takes it out now, so the rows that
+    // are physically gone are exactly the withdrawn ones. The executor reuses
+    // this snapshot for its own assertions, so measuring costs no extra
+    // serialize.
+    const postWriteSfdt = serializeSfdt(editor);
+    const withdrew =
+      columns.size -
+      tableRowColumns(flattenSfdt(postWriteSfdt), tableAnchor).size;
+    return {
+      postWriteSfdt,
+      ...(withdrew > 0 ? { withdrewPendingInsertion: withdrew } : {})
+    };
   },
   // --- Table appearance ------------------------------------------------------
   // Each returns the restore snapshots the executor binds to the change set's
@@ -10094,7 +10235,8 @@ function assertTrackedMutation(
   op: EditOp,
   priorRejectStream: string | undefined,
   postWriteSfdt: any,
-  targetText?: string
+  targetText?: string,
+  priorAcceptStream?: string
 ): void {
   const structural = TRACKED_STRUCTURAL_OPS.get(op.op);
   if (
@@ -10128,12 +10270,60 @@ function assertTrackedMutation(
     );
 
   if (structural) {
-    if (!revisions.length || !types.has(structural))
+    if (revisions.length && types.has(structural)) return;
+    // A WITHDRAWAL is a tracked outcome too, and this branch used to call it an
+    // untracked write. SyncFusion does not mark content that is ITSELF an
+    // unaccepted insertion as deleted - it removes it, because it was never in
+    // the document a reviewer had agreed to and there is nothing for a reject to
+    // put back. So no Deletion revision exists to find, and demanding one
+    // refused a delete_row over a row the assistant had just inserted - AFTER
+    // the row was already gone, with a rollback that rejects revisions and
+    // therefore had nothing to restore. The captain's decision: "we want to be
+    // able to delete the trackd changes and its fine if its gone from the
+    // tracked changes."
+    //
+    // Proven, not assumed, by the same two projections the text ops already use
+    // (this branch was simply the last user of the revision-type proxy, which
+    // the comment above records being replaced once already for set_cell_text):
+    // rejecting every revision still yields the pre-write document, which IS
+    // reversibility, and accepting them yields a different one, which is "the
+    // write did something". Together they are what a tracked, reviewable write
+    // means, and they are what separates a withdrawal from a write that did
+    // nothing at all.
+    //
+    // Inherent to these semantics, and deliberate rather than a defect: once a
+    // pending insertion is withdrawn NO LATER REJECT CAN RESTORE IT, because no
+    // revision is left to reject. That is why the row count travels back on the
+    // result as `withdrewPendingInsertion` - so the model tells the user those
+    // rows are simply gone with nothing left to review, instead of describing
+    // them as tracked deletions it could offer to undo.
+    const rejectsToPriorDocument =
+      priorRejectStream !== undefined &&
+      rejectProjectionStream(postWriteSfdt) === priorRejectStream;
+    if (rejectsToPriorDocument && priorAcceptStream !== undefined) {
+      if (acceptProjectionStream(postWriteSfdt) !== priorAcceptStream) return;
+      // Both projections unchanged: the write really did nothing. That is the
+      // only thing this refusal means now, so it says that rather than blaming
+      // SyncFusion for a rule we chose, and it names the read that fixes it.
       throw new OpError(
         'untracked_write',
-        `SyncFusion did not create a rejectable tracked ${structural} for ${op.op}.`
+        `${op.op} at ${JSON.stringify(
+          op.anchor ?? ''
+        )} changed nothing: there was no ${
+          structural === 'insertion'
+            ? 'place to insert at'
+            : 'row or paragraph to delete at'
+        } that anchor, so no ${structural} was recorded and the document reads exactly as it did before. Re-read the structure - table_facts for a table - and use a current anchor from that read.`,
+        [`anchor: ${op.anchor ?? '(none)'}`]
       );
-    return;
+    }
+    throw new OpError(
+      'untracked_write',
+      `${op.op} at ${JSON.stringify(
+        op.anchor ?? ''
+      )} produced no reviewable ${structural}: SyncFusion recorded no ${structural} revision, and the change it did make cannot be shown to reject back to the document as it was, so it was rolled back. Re-read the structure and retry against a current anchor.`,
+      [`anchor: ${op.anchor ?? '(none)'}`]
+    );
   }
 
   if (priorRejectStream !== undefined) {
@@ -15826,6 +16016,15 @@ function applyDocumentEditsMeasured(
               // its index by design, so the anchor's occupant after the write
               // is a different logical block.
               if (TRACKED_TEXT_OPS.has(op.op)) priorRejectStream = rejectStream;
+              // A structural op needs BOTH baselines, because for it they are
+              // the proof that a withdrawal (which authors no revision) is
+              // still a tracked write rather than an untracked one. Both are
+              // already computed by the last refresh, so this costs no extra
+              // serialize.
+              if (TRACKED_STRUCTURAL_OPS.has(op.op)) {
+                priorRejectStream = rejectStream;
+                priorAcceptStream = acceptStream;
+              }
               // Decide the inserted paragraphs' formatting BEFORE the write,
               // while the reference blocks and their formats are readable in
               // their pre-insert positions. An explicit inheritFormatFrom on
@@ -15929,7 +16128,8 @@ function applyDocumentEditsMeasured(
             writtenOp,
             priorRejectStream,
             postWriteSfdt,
-            trackedMutationTargetText
+            trackedMutationTargetText,
+            priorAcceptStream
           );
           refresh(postWriteSfdt);
           assertInsertedTableIsAddressable(
