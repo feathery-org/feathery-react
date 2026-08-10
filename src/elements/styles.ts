@@ -14,6 +14,11 @@ export const getViewport = (breakpoint = DEFAULT_MOBILE_BREAKPOINT) => {
   return featheryWindow().innerWidth > breakpoint ? 'desktop' : 'mobile';
 };
 
+// A text area's placeholder has always sat slightly below its padding edge
+// (top 0.6rem against 0.5rem of padding). Keep that gap when the placeholder
+// starts following the padding, so existing text areas don't shift.
+const TEXT_AREA_PLACEHOLDER_TOP_OFFSET = 1.6;
+
 export const borderWidthProps = [
   'border_top_width',
   'border_right_width',
@@ -514,6 +519,18 @@ export default class ResponsiveStyles {
       this.apply('placeholder', 'font_size', (a: any) => ({
         marginTop: `-${a / 2}px`
       }));
+    }
+    // The placeholder is positioned over the input rather than laid out inside
+    // it, so it has to track the input's padding itself or it detaches from the
+    // text it stands in for. Single-line inputs stay vertically centered, so
+    // only the inline start follows.
+    this.apply('placeholder', 'uploader_padding_left', (a: any) =>
+      isNum(a) ? { insetInlineStart: `${a}px` } : {}
+    );
+    if (type === 'text_area') {
+      this.apply('placeholder', 'uploader_padding_top', (a: any) =>
+        isNum(a) ? { top: `${a + TEXT_AREA_PLACEHOLDER_TOP_OFFSET}px` } : {}
+      );
     }
     if (styles.placeholder_transition === 'shrink_top') {
       this.apply('placeholderFocus', 'font_size', (a: any) => {

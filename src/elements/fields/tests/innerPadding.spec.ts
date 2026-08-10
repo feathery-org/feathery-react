@@ -11,7 +11,7 @@ const PADDING = {
 // Every theme carries these, and some field types read them unguarded.
 const BASE_STYLES = { background_color: 'FFFFFFFF', flex_direction: 'row' };
 
-function fieldTarget(type: string, styles: any = {}, properties: any = {}) {
+function targets(type: string, styles: any = {}, properties: any = {}) {
   const element = {
     servar: { type, metadata: {} },
     properties,
@@ -20,7 +20,18 @@ function fieldTarget(type: string, styles: any = {}, properties: any = {}) {
   };
   const responsiveStyles = new ResponsiveStyles(element, [], true);
   applyFieldStyles(element, responsiveStyles);
-  return responsiveStyles.getTarget('field', true);
+  return responsiveStyles;
+}
+
+function fieldTarget(type: string, styles: any = {}, properties: any = {}) {
+  return targets(type, styles, properties).getTarget('field', true);
+}
+
+function placeholderTarget(type: string, styles: any = {}) {
+  return targets(type, styles, { placeholder: 'Name' }).getTarget(
+    'placeholder',
+    true
+  );
 }
 
 describe('input box inner padding', () => {
@@ -86,6 +97,35 @@ describe('input box inner padding', () => {
         ]);
       }
     );
+  });
+
+  it('moves the placeholder in with the input text', () => {
+    expect(placeholderTarget('text_field', PADDING).insetInlineStart).toBe(
+      '23px'
+    );
+  });
+
+  it('keeps a single-line placeholder vertically centered', () => {
+    // Placeholder positions it at top 50%; only the inline start follows.
+    expect(placeholderTarget('text_field', PADDING)).not.toHaveProperty('top');
+  });
+
+  it('drops a text area placeholder to just below its top padding', () => {
+    // 8px of padding is what the text area rendered with before this was
+    // themeable, and its placeholder sat at 0.6rem -- 1.6px lower.
+    expect(
+      placeholderTarget('text_area', { uploader_padding_top: 8 }).top
+    ).toBe('9.6px');
+    expect(
+      placeholderTarget('text_area', { uploader_padding_top: 40 }).top
+    ).toBe('41.6px');
+  });
+
+  it('leaves the placeholder alone when the theme has no padding values', () => {
+    const target = placeholderTarget('text_field');
+
+    expect(target).not.toHaveProperty('insetInlineStart');
+    expect(target).not.toHaveProperty('top');
   });
 
   it('lets a shrink_top placeholder keep its computed top padding', () => {
