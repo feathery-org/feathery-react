@@ -680,6 +680,42 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
       originalCompare(left, right) &&
       revisionTagKey(left?.customData) === revisionTagKey(right?.customData);
   }
+  // The complementary invariant: a split must not fall OUT of its group. When
+  // untracked user typing lands inside a pending revision, SyncFusion splits
+  // it — but stock insertRevision stamps the new (split-off) revision with the
+  // CURRENT global revisionSettings.customData, which outside an assistant
+  // batch is the host's (usually none). The split half then surfaced in the
+  // rail as a brand-new untagged author card, reading as "the user's edit
+  // became a tracked change". Copy the source revision's tag onto any split
+  // product that lacks one; revisions that were never tagged stay untouched.
+  if (typeof module.updateRevisionForSpittedTextElement === 'function') {
+    const originalSplit =
+      module.updateRevisionForSpittedTextElement.bind(module);
+    module.updateRevisionForSpittedTextElement = (
+      inline: any,
+      splittedSpan: any,
+      currentItem: any
+    ): any => {
+      let sourceTag: unknown;
+      for (let index = 0; index < (inline?.revisionLength ?? 0); index++) {
+        const revision = inline.getRevision?.(index);
+        if (revision?.customData != null) {
+          sourceTag = revision.customData;
+          break;
+        }
+      }
+      const result = originalSplit(inline, splittedSpan, currentItem);
+      if (sourceTag != null) {
+        for (const half of [inline, splittedSpan]) {
+          const revisions: any[] = half?.getAllRevision?.() ?? [];
+          for (const revision of revisions)
+            if (revision && revision.customData == null)
+              revision.customData = sourceTag;
+        }
+      }
+      return result;
+    };
+  }
 }
 
 type NativeResolvers = {
