@@ -16,6 +16,15 @@ import {
   RED_500
 } from './colors';
 
+// The indicator the pinned status strip holds. Its metrics live with the
+// component that draws it so the strip's reserved height, exported below,
+// cannot drift from the line it has to fit
+const STATUS_LABEL_FONT_SIZE = 17;
+const STATUS_LABEL_LINE_HEIGHT = 24;
+const STATUS_LABEL_PADDING_Y = 4;
+export const STATUS_LABEL_BLOCK_HEIGHT =
+  STATUS_LABEL_LINE_HEIGHT + STATUS_LABEL_PADDING_Y * 2;
+
 export interface ToolLabel {
   running: string;
   done?: string;
@@ -368,9 +377,28 @@ export const ToolChunk = ({
     );
   }
 
-  // Header path: status label always shows; the list expands only when
+  // While the turn runs, the pinned status strip is the only place the
+  // "Working on it..." indicator belongs. A copy here scrolled away with the
+  // transcript, so show just the tools themselves until the chunk finishes -
+  // and nothing at all when none of them has a label to show.
+  if (!chunkDone) {
+    if (labeledRows.length === 0) return null;
+    return (
+      <div css={containerCss}>
+        {labeledRows.map((row) => (
+          <ToolChunkRow
+            key={row.key}
+            row={row}
+            pending={!turnFinished && isPlaceholder(row)}
+            linkColor={linkColor}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Header path: the summary always shows; the list expands only when
   // there are displayable tools behind it
-  const headerLabel = chunkDone ? 'Finished working' : 'Working on it...';
   const expandable = labeledRows.length > 0;
 
   return (
@@ -395,7 +423,7 @@ export const ToolChunk = ({
           alignSelf: 'flex-start'
         }}
       >
-        <span css={chunkDone ? undefined : shimmerCss()}>{headerLabel}</span>
+        <span>Finished working</span>
         {expandable && (
           <MinimizeIcon
             css={{
@@ -513,7 +541,11 @@ export const ToolChunkPlaceholder = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '2px',
-        fontSize: '13px',
+        fontSize: `${STATUS_LABEL_FONT_SIZE}px`,
+        // A flex item defaults to min-width:auto, which floors it at the
+        // label's full width - the nowrap label below would then overflow the
+        // panel instead of clipping. Both of these are load-bearing
+        flex: '0 1 auto',
         minWidth: 0,
         paddingLeft: '14px',
         animation: 'feathery-chunk-fade-in 220ms ease-out both',
@@ -525,14 +557,18 @@ export const ToolChunkPlaceholder = ({
     >
       <div
         css={{
-          padding: '4px 0',
+          padding: `${STATUS_LABEL_PADDING_Y}px 0`,
           color,
-          fontSize: '13px',
-          alignSelf: 'flex-start',
+          fontSize: `${STATUS_LABEL_FONT_SIZE}px`,
+          // Stretched rather than flex-start so the box is the strip's width,
+          // which is what the ellipsis clips against once the panel is narrow
+          alignSelf: 'stretch',
           // The label can swap for a longer one while running, so hold it to a
-          // single line: nothing below the indicator may move when it changes
+          // single line: nothing below the indicator may move when it changes,
+          // and a narrow panel truncates the phrase rather than wrapping it
           maxWidth: '100%',
-          lineHeight: '18px',
+          minWidth: 0,
+          lineHeight: `${STATUS_LABEL_LINE_HEIGHT}px`,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis'

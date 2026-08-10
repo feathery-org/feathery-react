@@ -54,6 +54,7 @@ import {
   GRAY_800
 } from './colors';
 import {
+  STATUS_LABEL_BLOCK_HEIGHT,
   ToolChunk,
   ToolChunkPlaceholder,
   readPartType,
@@ -111,9 +112,10 @@ import { useWorkingPhrase } from './workingPhrases';
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
-// One line of the 13px indicator plus breathing room. The strip holding it is
-// always in the layout, so this height is spent whether or not a turn is running
-const STATUS_STRIP_HEIGHT = 30;
+// One line of the indicator plus breathing room, derived from the indicator's
+// own metrics so a font change cannot clip it. The strip holding it is always
+// in the layout, so this height is spent whether or not a turn is running
+const STATUS_STRIP_HEIGHT = STATUS_LABEL_BLOCK_HEIGHT + 2;
 
 export type AssistantMode =
   | 'current'
@@ -1730,24 +1732,19 @@ const AssistantChat = ({
             | { role?: string; parts?: any[] }
             | undefined;
           if (!last) return null;
-          const parts = last.parts || [];
-          const isContent = (p: any) => {
-            if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
-            const t = typeof p?.type === 'string' ? p.type : '';
-            return t.startsWith('tool-') || t === 'dynamic-tool';
-          };
-          const hasContent = parts.some(isContent);
           if (last.role === 'user') {
             // Wait for the user's (transcribed) message to be visible before showing the indicator
+            const hasContent = (last.parts || []).some((p: any) => {
+              if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
+              const t = typeof p?.type === 'string' ? p.type : '';
+              return t.startsWith('tool-') || t === 'dynamic-tool';
+            });
             if (!hasContent) return null;
-          } else {
-            // Voice: keep the indicator up while a leading reply is held waiting for its audio
-            const held =
-              voiceActiveRef.current &&
-              spokenChars <= 0 &&
-              parts.find(isContent)?.type === 'text';
-            if (hasContent && !held) return null;
           }
+          // Otherwise the indicator stays up for the whole turn. It used to
+          // stand down as soon as the reply had any content, which handed the
+          // job to the chunk header inside the transcript - a second indicator
+          // that scrolled away, in gray, that never cycled its phrase
           return (
             <ToolChunkPlaceholder
               label={workingPhrase}
