@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
 import { isFit } from '../../utils/hydration';
+import { isNum } from '../../utils/primitives';
 import {
   LABEL_TEXT_ALIGN_DEFAULT,
   getLabelGapDefault
@@ -233,6 +234,29 @@ const justifyContentTextAlignMap = {
   'flex-end': 'right'
 };
 
+// Field types rendered as a single input box, whose inner padding comes from
+// uploader_padding_*. Excludes file_upload and button_group, which apply the
+// same keys to a different sub-target. Mirrors INPUT_BOX_FIELD_TYPES in
+// feathery-backend (apps/theme/element_styles.py).
+const INPUT_BOX_FIELDS = [
+  'text_field',
+  'text_area',
+  'integer_field',
+  'email',
+  'password',
+  'ssn',
+  'url',
+  'phone_number',
+  'date_selector',
+  'dropdown',
+  'gmap_line_1',
+  'gmap_line_2',
+  'gmap_city',
+  'gmap_state',
+  'gmap_country',
+  'gmap_zip'
+];
+
 const defaultBorderFields = [
   'slider',
   'checkbox',
@@ -253,7 +277,7 @@ function applyLabelFontStyles(styles: any) {
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
-function applyFieldStyles(field: any, styles: any) {
+export function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets(
     'fc',
@@ -317,6 +341,30 @@ function applyFieldStyles(field: any, styles: any) {
     width: `${a}px`
   }));
   styles.applyColor('tooltipIcon', 'font_color', 'fill');
+
+  // Applied before the switch so per-type rules still win -- notably
+  // applyPlaceholderStyles, which computes its own paddingTop to make room for
+  // a shrink_top placeholder. Guarded per side so a theme without these keys
+  // falls back to the padding in resetStyles.
+  if (INPUT_BOX_FIELDS.includes(type)) {
+    styles.apply(
+      'field',
+      [
+        'uploader_padding_top',
+        'uploader_padding_right',
+        'uploader_padding_bottom',
+        'uploader_padding_left'
+      ],
+      (a: any, b: any, c: any, d: any) => {
+        const padding: any = {};
+        if (isNum(a)) padding.paddingTop = `${a}px`;
+        if (isNum(b)) padding.paddingRight = `${b}px`;
+        if (isNum(c)) padding.paddingBottom = `${c}px`;
+        if (isNum(d)) padding.paddingLeft = `${d}px`;
+        return padding;
+      }
+    );
+  }
 
   switch (type) {
     case 'signature':
