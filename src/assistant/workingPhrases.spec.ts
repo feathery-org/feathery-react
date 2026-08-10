@@ -1,6 +1,8 @@
 import { act, renderHook } from '@testing-library/react';
 
 import {
+  TURN_IDLE_GRACE_MS,
+  useTurnRunning,
   useWorkingPhrase,
   WORKING_PHRASE_INTERVAL_MS,
   WORKING_PHRASES
@@ -99,5 +101,123 @@ describe('assistant working-on-it phrases', () => {
     expect(timers.clearedIds()).toContain(intervalId);
 
     timers.restore();
+  });
+});
+
+// One user turn is several HTTP round-trips, and the SDK's status dips through
+// 'ready' between them. These pin the latch that spans those dips.
+describe('assistant turn-running latch', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const renderLatch = (running: boolean) =>
+    renderHook(({ loading }) => useTurnRunning(loading), {
+      initialProps: { loading: running }
+    });
+
+  it('latches on immediately, with no entry delay', () => {
+    const { result, rerender } = renderLatch(false);
+
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS));
+    expect(result.current).toBe(false);
+
+    rerender({ loading: true });
+    expect(result.current).toBe(true);
+  });
+
+  it('holds across an idle gap shorter than the grace window', () => {
+    const { result, rerender } = renderLatch(true);
+
+    // The gap between two round-trips of the same turn
+    rerender({ loading: false });
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS - 1));
+    expect(result.current).toBe(true);
+
+    // The next request starts, so the latch never dropped
+    rerender({ loading: true });
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS * 4));
+    expect(result.current).toBe(true);
+  });
+
+  it('drops once the turn has been idle for the whole window', () => {
+    const { result, rerender } = renderLatch(true);
+
+    rerender({ loading: false });
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS - 1));
+    expect(result.current).toBe(true);
+
+    act(() => jest.advanceTimersByTime(1));
+    expect(result.current).toBe(false);
+  });
+
+  it('cancels a pending stand-down when the next round-trip starts', () => {
+    const { result, rerender } = renderLatch(true);
+
+    rerender({ loading: false });
+    rerender({ loading: true });
+
+    // The timeout armed by the gap must not survive to fire mid-turn
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS * 4));
+    expect(result.current).toBe(true);
+  });
+
+  it('clears the pending timeout on unmount', () => {
+    const cleared = jest.spyOn(global, 'clearTimeout');
+    const set = jest.spyOn(global, 'setTimeout');
+    const { rerender, unmount } = renderLatch(true);
+
+    rerender({ loading: false });
+    const timeoutId = set.mock.results[set.mock.results.length - 1].value;
+
+    expect(cleared.mock.calls.map((c) => c[0])).not.toContain(timeoutId);
+    unmount();
+    expect(cleared.mock.calls.map((c) => c[0])).toContain(timeoutId);
+
+    set.mockRestore();
+    cleared.mockRestore();
+  });
+});
+
+// The two symptoms share one cause, so this pins them together: the phrase is
+// driven by the latch, not by the raw per-request flag.
+describe('working phrase driven by the turn latch', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const renderLatchedPhrase = () =>
+    renderHook(({ loading }) => useWorkingPhrase(useTurnRunning(loading)), {
+      initialProps: { loading: true }
+    });
+
+  it('keeps counting across the gap between round-trips', () => {
+    const { result, rerender } = renderLatchedPhrase();
+
+    act(() => jest.advanceTimersByTime(WORKING_PHRASE_INTERVAL_MS));
+    expect(result.current).toBe(WORKING_PHRASES[1]);
+
+    // A round-trip boundary: request one ends, request two starts inside the
+    // grace window. The phrase must not drop back to "Working on it..."
+    rerender({ loading: false });
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS - 1));
+    rerender({ loading: true });
+    expect(result.current).toBe(WORKING_PHRASES[1]);
+
+    act(() => jest.advanceTimersByTime(WORKING_PHRASE_INTERVAL_MS));
+    expect(result.current).toBe(WORKING_PHRASES[2]);
+  });
+
+  it('restarts from the first phrase on the next user turn', () => {
+    const { result, rerender } = renderLatchedPhrase();
+
+    act(() => jest.advanceTimersByTime(WORKING_PHRASE_INTERVAL_MS * 2));
+    expect(result.current).toBe(WORKING_PHRASES[2]);
+
+    // The turn really ends, so the latch drops
+    rerender({ loading: false });
+    act(() => jest.advanceTimersByTime(TURN_IDLE_GRACE_MS));
+    expect(result.current).toBe(WORKING_PHRASES[0]);
+
+    rerender({ loading: true });
+    expect(result.current).toBe(WORKING_PHRASES[0]);
   });
 });

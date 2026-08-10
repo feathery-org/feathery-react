@@ -108,7 +108,7 @@ import internalState from '../utils/internalState';
 import { createRoundSelectionRequestPreparer } from './messageHistory';
 import { coalesceAssistantMessages } from './messageRendering';
 import { scrollChatContainerToBottom } from './chatScroll';
-import { useWorkingPhrase } from './workingPhrases';
+import { useTurnRunning, useWorkingPhrase } from './workingPhrases';
 
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
@@ -979,8 +979,12 @@ const AssistantChat = ({
   // Only show threads that have had at least one message sent
   const visibleThreads = threads.filter((t) => t.title);
 
+  // Raw, per-request: what the composer and the streaming-text gates want
   const isLoading = status === 'submitted' || status === 'streaming';
-  const workingPhrase = useWorkingPhrase(isLoading);
+  // Latched across the whole turn: what every visual busy signal wants, so a
+  // turn made of several round-trips reads as one continuous turn
+  const turnRunning = useTurnRunning(isLoading);
+  const workingPhrase = useWorkingPhrase(turnRunning);
 
   const composerButtonCss = {
     padding: '10px',
@@ -1741,7 +1745,7 @@ const AssistantChat = ({
           }}
         >
           {(() => {
-            if (!isLoading) return null;
+            if (!turnRunning) return null;
             const last = messages[messages.length - 1] as
               | { role?: string; parts?: any[] }
               | undefined;
@@ -1773,9 +1777,11 @@ const AssistantChat = ({
         </div>
 
         {/* Last child of the region, so it washes over both the transcript and
-            the strip. Driven by the same isLoading the composer already reads -
-            the panel has one notion of busy */}
-        {isLoading && <BusyWash />}
+            the strip. Driven by the latched turn rather than the raw per-request
+            flag: mounting once per turn is what keeps its entry delay from
+            replaying - and the panel from flashing undimmed - in the gap
+            between a turn's round-trips */}
+        {turnRunning && <BusyWash />}
       </div>
 
       {/* Workflow action buttons */}
