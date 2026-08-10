@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo,
@@ -47,7 +53,16 @@ function afterNextPaint(fn: () => void): void {
     setTimeout(fn, 0);
     return;
   }
-  win.requestAnimationFrame(() => win.requestAnimationFrame(fn));
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+  win.requestAnimationFrame(() => win.requestAnimationFrame(run));
+  // Hidden tabs suspend rAF entirely; the timeout guarantees the deferred
+  // work still runs (a hidden tab has no paint to wait for anyway).
+  setTimeout(run, 100);
 }
 
 // The single containment boundary for editor faults in this file: one guard
@@ -133,7 +148,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const commitActiveRevisions = useCallback(
     (revisions: any[]) => {
       activeRevisionRef.current = revisions[0] ?? null;
-      setActiveRevisions(revisions);
+      // Keep the previous state identity when nothing changed: every caret
+      // move fires this, and a fresh [] each time would re-render the whole
+      // rail per keystroke.
+      setActiveRevisions((prev) =>
+        prev.length === revisions.length &&
+        revisions.every((revision, index) => revision === prev[index])
+          ? prev
+          : revisions
+      );
       setActiveInlineRevisions(editor, revisions);
     },
     [editor]
@@ -358,9 +381,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
 
   // Suppresses selectRevision's selectionChange echo (sync + trailing
   // microtask) so it can't reassign activeRevisions, then moves the cursor.
-  const selectAndScrollToRevision = (revision: any) => {
-    ignoreSelectionRef.current = true;
-    try {
+  const selectAndScrollToRevision = (revision: any) =>
+    suppressingSelectionEcho(() => {
       // skipGroupSelect keeps navigation on this exact revision — the public
       // revision.select() may expand to the adjacent same-author/type group.
       const selection = editor?.selectionModule;
@@ -377,24 +399,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       } else {
         revision?.select?.();
       }
-    } finally {
-      // Cleanup, not containment: the echo suppression must lift even when
-      // navigation throws to the event-entry guard.
-      queueMicrotask(() => {
-        ignoreSelectionRef.current = false;
-      });
-    }
-  };
+    });
 
-  const focusChip = (chip: ChipView, options?: { expand?: boolean }) => {
-    const expand = options?.expand ?? true;
-    if (expand) {
-      const group = groups.find((mem) => mem.chips.includes(chip));
-      if (group) {
-        setExpanded((prev) =>
-          prev[group.key] ? prev : { ...prev, [group.key]: true }
-        );
-      }
+  const focusChip = (chip: ChipView) => {
+    const group = groups.find((mem) => mem.chips.includes(chip));
+    if (group) {
+      setExpanded((prev) =>
+        prev[group.key] ? prev : { ...prev, [group.key]: true }
+      );
     }
     commitActiveRevision(chip.revision);
     selectAndScrollToRevision(chip.revision);
@@ -411,6 +423,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   };
 
   const allChips = groups.flatMap((group) => group.chips);
+
+  // O(1) chip lookups: a group-title click puts a whole group's revisions in
+  // here, and every chip of every card checks membership per render.
+  const activeRevisionSet = useMemo(
+    () => new Set(activeRevisions),
+    [activeRevisions]
+  );
 
   const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
@@ -531,7 +550,7 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                 onNavigateFirst={() =>
                   handleEditorEvent(() => focusGroupFirst(mem))
                 }
-                activeRevisions={activeRevisions}
+                activeRevisions={activeRevisionSet}
                 chipRef={(chip) => (el) => {
                   if (el) rowRefs.current.set(chip.revision, el);
                   else rowRefs.current.delete(chip.revision);

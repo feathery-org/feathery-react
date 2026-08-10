@@ -121,11 +121,6 @@ export function setActiveInlineRevisions(ed: any, revisions: any[]): void {
   }
 }
 
-/** Mark ONE edit active. See setActiveInlineRevisions. */
-export function setActiveInlineRevision(ed: any, revision: any): void {
-  setActiveInlineRevisions(ed, revision ? [revision] : []);
-}
-
 /** The geometry recorded during the last render pass (see RevisionRect). */
 export function getRevisionRects(ed: any): Map<any, RevisionRect> {
   return ed?.[REVISION_RECTS_KEY] ?? new Map();
@@ -963,12 +958,22 @@ export function useDocxEditor({
         });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
         liveEditor[OPENING_DOCUMENT_KEY] = true;
-        if (typeof liveEditor.openAsync === 'function') {
-          await liveEditor.openAsync(blob);
-        } else {
-          liveEditor.open(blob);
+        try {
+          if (typeof liveEditor.openAsync === 'function') {
+            await liveEditor.openAsync(blob);
+          } else {
+            liveEditor.open(blob);
+          }
+        } catch (err) {
+          // A failed open must not leave the flag stuck true — that would
+          // mute the review rail for the editor's whole life.
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          throw err;
         }
-        if (cancelled) return;
+        if (cancelled) {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          return;
+        }
         openedKeyRef.current = openKey;
         // A freshly opened document has nothing unsaved in it yet.
         unsavedRef.current = false;

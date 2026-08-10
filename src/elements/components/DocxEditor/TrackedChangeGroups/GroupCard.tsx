@@ -31,7 +31,7 @@ interface Props {
   /** Navigate the document to the group's first edit without expanding. */
   onNavigateFirst: () => void;
   /** The document's active edit(s); matching chips ring and show actions. */
-  activeRevisions: any[];
+  activeRevisions: Set<any>;
   /** Row-element registrar per chip (scroll-into-view bookkeeping). */
   chipRef: (chip: ChipView) => (el: HTMLDivElement | null) => void;
   onFocusChip: (chip: ChipView) => void;
@@ -180,8 +180,8 @@ export default function GroupCard({
               key={index}
               chip={chip}
               isActive={
-                activeRevisions.includes(chip.revision) ||
-                activeRevisions.includes(chip.partner)
+                activeRevisions.has(chip.revision) ||
+                activeRevisions.has(chip.partner)
               }
               rowRef={chipRef(chip)}
               onFocus={() => onFocusChip(chip)}

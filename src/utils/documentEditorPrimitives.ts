@@ -622,9 +622,31 @@ export function parseRevisionGroupTag(
 
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 
+// The identity half of a tag, memoized by its exact customData string. The
+// bulk-resolve loop and the isolation hook re-read every revision's tag per
+// iteration; the appearance/style payloads they never need are the expensive
+// part of the parse, so only {changeSetId, group} is cached (the full parse
+// stays fresh for the binding paths that consume the payloads).
+type RevisionTagIdentity = { changeSetId: string; group: string };
+const TAG_IDENTITY_MEMO = new Map<string, RevisionTagIdentity | null>();
+const revisionTagIdentity = (
+  customData: unknown
+): RevisionTagIdentity | null => {
+  if (typeof customData !== 'string' || !customData.trim()) return null;
+  let identity = TAG_IDENTITY_MEMO.get(customData);
+  if (identity === undefined) {
+    const tag = parseRevisionGroupTag(customData);
+    identity = tag ? { changeSetId: tag.changeSetId, group: tag.group } : null;
+    // Bounded: tags accumulate across documents in one long editor session.
+    if (TAG_IDENTITY_MEMO.size > 10000) TAG_IDENTITY_MEMO.clear();
+    TAG_IDENTITY_MEMO.set(customData, identity);
+  }
+  return identity;
+};
+
 const revisionTagKey = (customData: unknown): string => {
-  const tag = parseRevisionGroupTag(customData);
-  return tag ? `${tag.changeSetId} ${tag.group}` : '';
+  const identity = revisionTagIdentity(customData);
+  return identity ? `${identity.changeSetId} ${identity.group}` : '';
 };
 
 export function installRevisionGroupIsolation(editor: LiveEditor): void {
@@ -1088,7 +1110,9 @@ export function resolveLiveRevisionGroupsAsOneUndo(
     groups.filter((group) => group.untagged).map((group) => group.group)
   );
   const matchesGroup = (revision: LiveRevision) => {
-    const tag = parseRevisionGroupTag(revision.customData);
+    // Memoized identity read: this runs once per revision per loop iteration
+    // below — a full tag parse here is O(n^2) JSON.parse across a bulk resolve.
+    const tag = revisionTagIdentity(revision.customData);
     return tag
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');

@@ -15022,16 +15022,12 @@ function collapseSectionComposerResult(
 // Every op moves `editor.selection`, firing the same selectionChange a real
 // user click would; the rail reads this flag to tell the two apart.
 const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
-// Cleared on a grace timer, not synchronously, so the async gap between two
-// tool calls in one turn stays guarded.
-const ASSISTANT_WRITING_TIMER_KEY = '__featheryAssistantWritingTimer';
-const ASSISTANT_WRITING_GRACE_MS = 3000;
-// Primary guard: spans the whole chat turn, which can outlast the grace
-// period above. Stamped by AssistantChat.
+// Guards the gaps BETWEEN tool calls in one editing turn: set by the docx
+// bridge on the first write of a turn, cleared by AssistantChat at turn end.
 const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
 
-/** True while `applyDocumentEdits` is mid-batch (or in its grace period), or
- *  the chat turn driving it is still in flight. */
+/** True while `applyDocumentEdits` is mid-batch, or the editing turn driving
+ *  it is still in flight. */
 export function isAssistantWriting(
   editor: LiveEditor | null | undefined
 ): boolean {
@@ -15039,8 +15035,9 @@ export function isAssistantWriting(
   return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
 }
 
-/** Mark the assistant chat turn driving this editor as in flight. Call with
- *  `true` from the turn's start until every tool call inside it is done. */
+/** Mark the assistant editing turn driving this editor as in flight. The docx
+ *  bridge sets it on the first document write of a turn; AssistantChat clears
+ *  it when the turn settles. */
 export function setAssistantSessionActive(
   editor: LiveEditor | null | undefined,
   active: boolean
@@ -15058,7 +15055,6 @@ export function applyDocumentEdits(
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
   const ed = editor as any;
-  clearTimeout(ed[ASSISTANT_WRITING_TIMER_KEY]);
   ed[ASSISTANT_WRITING_KEY] = true;
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
   try {
@@ -15074,13 +15070,8 @@ export function applyDocumentEdits(
       })
     );
   } finally {
-    const timer = setTimeout(() => {
-      ed[ASSISTANT_WRITING_KEY] = false;
-    }, ASSISTANT_WRITING_GRACE_MS);
-    // Node's Timeout would keep a test run alive until it fires; this window
-    // is cosmetic and must never hold the process open.
-    (timer as any)?.unref?.();
-    ed[ASSISTANT_WRITING_TIMER_KEY] = timer;
+    // Synchronous clear: the session flag owns the gaps between calls.
+    ed[ASSISTANT_WRITING_KEY] = false;
   }
 }
 

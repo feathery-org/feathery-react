@@ -975,12 +975,12 @@ const AssistantChat = ({
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
-  // Guards the rail across the whole turn: a per-call flag can't bridge the
-  // LLM round-trip gaps between separate applyDocumentEdits calls.
+  // The docx bridge raises the session flag on a turn's first document write;
+  // this owns the CLEAR, at turn end and unmount. Resolving the editor fresh
+  // each time (not captured) so a mid-turn recreation still gets cleared.
   useEffect(() => {
-    const editor = getDocxEditor(instanceId);
-    setAssistantSessionActive(editor, isLoading);
-    return () => setAssistantSessionActive(editor, false);
+    if (!isLoading) setAssistantSessionActive(getDocxEditor(instanceId), false);
+    return () => setAssistantSessionActive(getDocxEditor(instanceId), false);
   }, [isLoading, instanceId]);
 
   const composerButtonCss = {

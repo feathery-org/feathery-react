@@ -5,7 +5,8 @@ import {
   applyDocumentEdits,
   deriveSectionPattern,
   findDocumentOccurrences,
-  getDocumentInventory
+  getDocumentInventory,
+  setAssistantSessionActive
 } from './syncfusionDocumentOps';
 
 const unavailable = (message: string) => ({
@@ -29,9 +30,13 @@ export const createDocxEditorBridge = (getEditor: () => any): DocxBridge => ({
   },
   applyDocumentEdits: async (input) => {
     const editor = getEditor();
-    return editor
-      ? applyDocumentEdits(editor, input ?? {})
-      : unavailable('No in-form document editor is ready.');
+    if (!editor) return unavailable('No in-form document editor is ready.');
+    // First write of the turn: guard the rail through the turn's remaining
+    // span — the gap before the next tool call is an LLM round-trip no
+    // per-call flag can bridge. AssistantChat clears this at turn end, so
+    // text-only turns (which never reach here) don't suppress real clicks.
+    setAssistantSessionActive(editor, true);
+    return applyDocumentEdits(editor, input ?? {});
   },
   findDocumentOccurrences: async (input) => {
     const editor = getEditor();

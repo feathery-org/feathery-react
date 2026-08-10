@@ -517,94 +517,45 @@ describe('applyDocumentEdits', () => {
     expect(ed.enableTrackChanges).toBe(false); // restored afterwards
   });
 
-  it('flags the editor as assistant-writing for the duration of a call, and briefly after', () => {
-    jest.useFakeTimers();
-    try {
-      const ed = make([para('Quote: $5,500')]);
-      expect(isAssistantWriting(ed)).toBe(false);
-      const seen: boolean[] = [];
-      const origInsert = ed.editor.insertText;
-      ed.editor.insertText = (t: string) => {
-        seen.push(isAssistantWriting(ed));
-        origInsert(t);
-      };
-      applyDocumentEdits(ed, {
-        edits: [
-          { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
-        ]
-      });
-      expect(seen).toEqual([true]); // true during the write
-
-      // Still true after the call returns: the gap before the next tool call
-      // in the same turn must not read as "not writing".
-      expect(isAssistantWriting(ed)).toBe(true);
-      jest.advanceTimersByTime(2999);
-      expect(isAssistantWriting(ed)).toBe(true);
-      jest.advanceTimersByTime(1);
-      expect(isAssistantWriting(ed)).toBe(false);
-    } finally {
-      jest.useRealTimers();
-    }
+  it('flags the editor as assistant-writing for exactly the span of a call', () => {
+    const ed = make([para('Quote: $5,500')]);
+    expect(isAssistantWriting(ed)).toBe(false);
+    const seen: boolean[] = [];
+    const origInsert = ed.editor.insertText;
+    ed.editor.insertText = (t: string) => {
+      seen.push(isAssistantWriting(ed));
+      origInsert(t);
+    };
+    applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+    expect(seen).toEqual([true]); // true during the write
+    // Cleared synchronously: the session flag owns the gaps between calls.
+    expect(isAssistantWriting(ed)).toBe(false);
   });
 
-  it('a second call inside the grace window re-arms it instead of letting it expire', () => {
-    jest.useFakeTimers();
-    try {
-      const ed = make([para('Quote: $5,500')]);
-      applyDocumentEdits(ed, {
-        edits: [
-          { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
-        ]
-      });
-      jest.advanceTimersByTime(2500); // most of the way through the grace window
-      expect(isAssistantWriting(ed)).toBe(true);
+  it('setAssistantSessionActive holds the flag across the gaps between calls in one turn', () => {
+    const ed = make([para('Quote: $5,500')]);
+    expect(isAssistantWriting(ed)).toBe(false);
 
-      // A second, separate call — exactly the gap the grace period bridges.
-      applyDocumentEdits(ed, {
-        edits: [
-          { op: 'replace_text', anchor: '0;0', find: '6,000', replace: '7,000' }
-        ]
-      });
-      jest.advanceTimersByTime(2500); // would have expired the FIRST call's timer
-      expect(isAssistantWriting(ed)).toBe(true); // re-armed by the second call
-      jest.advanceTimersByTime(500);
-      expect(isAssistantWriting(ed)).toBe(false);
-    } finally {
-      jest.useRealTimers();
-    }
-  });
+    // The docx bridge raises this on the turn's first write.
+    setAssistantSessionActive(ed, true);
+    expect(isAssistantWriting(ed)).toBe(true);
 
-  it('setAssistantSessionActive holds the flag for as long as the chat turn runs, no matter how long that is', () => {
-    jest.useFakeTimers();
-    try {
-      const ed = make([para('Quote: $5,500')]);
-      expect(isAssistantWriting(ed)).toBe(false);
+    applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+    // The per-call flag cleared with the call; the session alone holds it
+    // through the LLM round-trip before the next tool call.
+    expect(isAssistantWriting(ed)).toBe(true);
 
-      // The turn starts before any tool call; the flag must already be up.
-      setAssistantSessionActive(ed, true);
-      expect(isAssistantWriting(ed)).toBe(true);
-
-      // A round-trip well past the 3s grace period, where the per-call flag
-      // alone would have expired.
-      jest.advanceTimersByTime(30_000);
-      expect(isAssistantWriting(ed)).toBe(true);
-      applyDocumentEdits(ed, {
-        edits: [
-          { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
-        ]
-      });
-      expect(isAssistantWriting(ed)).toBe(true);
-
-      // The per-call grace timer expires, but the session is still active.
-      jest.advanceTimersByTime(3000);
-      expect(isAssistantWriting(ed)).toBe(true);
-
-      // The turn actually finishes.
-      setAssistantSessionActive(ed, false);
-      expect(isAssistantWriting(ed)).toBe(false);
-    } finally {
-      jest.useRealTimers();
-    }
+    // The turn actually finishes.
+    setAssistantSessionActive(ed, false);
+    expect(isAssistantWriting(ed)).toBe(false);
   });
 
   it('suppresses public layout updates for the mutation phases and restores them', () => {
