@@ -131,7 +131,7 @@
     "@stripe/react-stripe-js": "3.7.0",
     "@stripe/stripe-js": "7.3.0",
     "@stytch/vanilla-js": "5.23.1",
-    "@tabler/icons-react": "^3.46.0",
+    "@tabler/icons-react": "3.46.0",
     "@uiw/react-color-sketch": "^2.5.4",
     "acorn": "^8.15.0",
     "acorn-loose": "^8.5.2",

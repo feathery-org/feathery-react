@@ -10,6 +10,7 @@ function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets('imageContainer', 'image', 'dimension');
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
+  responsiveStyles.applyColor('image', 'icon_color', 'color');
   responsiveStyles.applyWidth('dimension');
   return responsiveStyles;
 }
@@ -79,9 +80,11 @@ function ImageElement({
 
   const displayPDF = documentUrl && documentType === 'application/pdf';
   // Icon source mode: render a Tabler glyph instead of an <img>. The glyph
-  // inherits `color` (currentColor) from this element, so it follows the
-  // theme's / element's font color.
+  // uses currentColor, so the wrapper's resolved icon_color controls it while
+  // a blank icon color continues to inherit from its surrounding text.
   const iconSource = element.properties.icon_source;
+  const hasIconSource =
+    iconSource !== undefined && iconSource !== null && iconSource !== '';
 
   return (
     <div
@@ -96,7 +99,7 @@ function ImageElement({
       }}
     >
       {children}
-      {iconSource ? (
+      {hasIconSource ? (
         <span
           role='img'
           aria-label={element.properties.aria_label}
@@ -104,7 +107,6 @@ function ImageElement({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'currentColor',
             width: '100%',
             height: '100%',
             maxWidth: '100%',

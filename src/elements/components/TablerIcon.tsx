@@ -13,6 +13,15 @@ type IconComponent = React.ComponentType<any>;
 
 let iconModulePromise: Promise<Record<string, IconComponent>> | null = null;
 let loadedIcons: Record<string, IconComponent> = {};
+let iconModuleLoaded = false;
+
+function isRenderableIcon(value: unknown): value is IconComponent {
+  if (typeof value === 'function') return true;
+  if (!value || typeof value !== 'object') return false;
+
+  const component = value as { render?: unknown };
+  return typeof component.render === 'function';
+}
 
 function loadTablerIcons(): Promise<Record<string, IconComponent>> {
   if (!iconModulePromise) {
@@ -20,12 +29,19 @@ function loadTablerIcons(): Promise<Record<string, IconComponent>> {
       /* webpackChunkName: "tabler-icons" */ '@tabler/icons-react'
     )
       .then((mod) => {
-        loadedIcons = mod as unknown as Record<string, IconComponent>;
+        loadedIcons = Object.entries(mod).reduce((icons, [name, value]) => {
+          if (name.startsWith('Icon') && isRenderableIcon(value)) {
+            icons[name] = value;
+          }
+          return icons;
+        }, {} as Record<string, IconComponent>);
+        iconModuleLoaded = true;
         return loadedIcons;
       })
       .catch((err) => {
         // Allow a later retry rather than caching a rejected promise.
         iconModulePromise = null;
+        iconModuleLoaded = false;
         throw err;
       });
   }
@@ -33,7 +49,7 @@ function loadTablerIcons(): Promise<Record<string, IconComponent>> {
 }
 
 interface TablerIconProps {
-  name: string;
+  name: unknown;
   size?: number | string;
   stroke?: number;
   className?: string;
@@ -41,23 +57,17 @@ interface TablerIconProps {
 }
 
 function TablerIcon({ name, ...props }: TablerIconProps) {
-  const [Icon, setIcon] = useState<IconComponent | undefined>(
-    () => loadedIcons[name]
-  );
+  const [, forceUpdate] = useState(0);
+  const iconName = typeof name === 'string' && name.length > 0 ? name : null;
+  const Icon = iconName ? loadedIcons[iconName] : undefined;
 
   useEffect(() => {
-    if (!name) {
-      setIcon(undefined);
-      return;
-    }
-    if (loadedIcons[name]) {
-      setIcon(() => loadedIcons[name]);
-      return;
-    }
+    if (!iconName || loadedIcons[iconName] || iconModuleLoaded) return;
+
     let active = true;
     loadTablerIcons()
-      .then((icons) => {
-        if (active) setIcon(() => icons[name]);
+      .then(() => {
+        if (active) forceUpdate((value) => value + 1);
       })
       .catch(() => {
         /* icon stays unrendered if the chunk fails to load */
@@ -65,7 +75,7 @@ function TablerIcon({ name, ...props }: TablerIconProps) {
     return () => {
       active = false;
     };
-  }, [name]);
+  }, [forceUpdate, iconName]);
 
   if (!Icon) return null;
   // color defaults to currentColor in Tabler, so the glyph inherits the CSS

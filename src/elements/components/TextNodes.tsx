@@ -187,7 +187,7 @@ function TextNodes({
                 op.insert && typeof op.insert === 'object'
                   ? (op.insert as any).icon
                   : null;
-              if (insertIcon) {
+              if (typeof insertIcon === 'string' && insertIcon.length > 0) {
                 return (
                   <span
                     key={i}

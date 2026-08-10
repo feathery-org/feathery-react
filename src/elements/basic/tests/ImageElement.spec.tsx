@@ -2,7 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { getRenderData } from '../../../utils/image';
 import { fieldValues } from '../../../utils/init';
+import ResponsiveStyles from '../../styles';
 import { PLACEHOLDER_IMAGE } from '../ImageElement';
+
+jest.mock('../../components/TablerIcon', () => () => null);
 
 jest.mock('../../../utils/image', () => ({
   getRenderData: jest.fn()
@@ -11,6 +14,7 @@ jest.mock('../../../utils/image', () => ({
 const mockResponsiveStyles = {
   addTargets: jest.fn(),
   applyCorners: jest.fn(),
+  applyColor: jest.fn(),
   applyWidth: jest.fn(),
   getTarget: jest.fn().mockReturnValue({})
 };
@@ -438,5 +442,83 @@ describe('ImageElement', () => {
 
     const img = screen.getByRole('img');
     expect(img).toHaveAttribute('src', expect.stringContaining(sourceImg));
+  });
+
+  it('uses the standalone icon color on the image target', async () => {
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={{
+          properties: { icon_source: 'IconHeart' },
+          styles: { icon_color: 'FF0000FF' },
+          mobile_styles: {}
+        }}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    expect(mockResponsiveStyles.applyColor).toHaveBeenCalledWith(
+      'image',
+      'icon_color',
+      'color'
+    );
+  });
+
+  it('keeps mobile icon color overrides and inherits when color is blank', async () => {
+    const styles = new ResponsiveStyles(
+      {
+        styles: { icon_color: 'FF0000FF' },
+        mobile_styles: { icon_color: '00FF00FF' }
+      },
+      [],
+      true
+    );
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={{ properties: { icon_source: 'IconHeart' } }}
+        responsiveStyles={styles}
+      />
+    );
+
+    expect(styles.getTarget('image')).toEqual(
+      expect.objectContaining({
+        color: '#FF0000FF',
+        '@media (max-width: 478px)': { color: '#00FF00FF' }
+      })
+    );
+
+    const inheritedStyles = new ResponsiveStyles(
+      { styles: { icon_color: '' }, mobile_styles: {} },
+      [],
+      true
+    );
+    render(
+      <ImageElement
+        element={{ properties: { icon_source: 'IconHeart' } }}
+        responsiveStyles={inheritedStyles}
+      />
+    );
+    expect(inheritedStyles.getTarget('image')).not.toHaveProperty('color');
+  });
+
+  it('does not fall back to the source image for an unknown icon', async () => {
+    const ImageElement = (await import('../ImageElement')).default;
+
+    const { container } = render(
+      <ImageElement
+        element={{
+          properties: {
+            icon_source: 'MissingIcon',
+            source_image: 'https://example.com/stale.png'
+          }
+        }}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    expect(container.querySelector('img')).toBeNull();
   });
 });
