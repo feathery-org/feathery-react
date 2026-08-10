@@ -138,6 +138,44 @@ describe('TextNodes icon embeds', () => {
     expect(path.getAttribute('style')).toBeNull();
   });
 
+  it('keeps only valid Tabler path geometry and child colors', () => {
+    const { container } = renderNodes([
+      {
+        insert: {
+          icon: 'IconShape',
+          glyph: {
+            variant: 'outline',
+            nodes: [
+              ['circle', { cx: 12, cy: 12, r: 10 }],
+              ['path', { fill: 'red', stroke: 'blue', d: 'M0 0h24' }],
+              ['path', { d: 'M0 0h24', opacity: '0' }],
+              ['path', { d: 'M0 0 url(#external)' }],
+              ['path', { d: 'M0 0<script>' }],
+              [
+                'path',
+                {
+                  fill: 'currentColor',
+                  stroke: 'none',
+                  opacity: '.5',
+                  d: 'M1 1h22'
+                }
+              ],
+              ['path', { fill: 'currentColor' }]
+            ]
+          }
+        }
+      }
+    ]);
+    const paths = container.querySelectorAll('[data-feathery-icon] svg path');
+    expect(paths).toHaveLength(2);
+    expect(paths[0].getAttribute('d')).toBe('M0 0h24');
+    expect(paths[0].getAttribute('fill')).toBeNull();
+    expect(paths[0].getAttribute('stroke')).toBeNull();
+    expect(paths[1].getAttribute('fill')).toBe('currentColor');
+    expect(paths[1].getAttribute('stroke')).toBe('none');
+    expect(paths[1].getAttribute('opacity')).toBe('.5');
+  });
+
   it('renders nothing for an embed with no usable glyph data', () => {
     const { container } = renderNodes([
       { insert: 'before' },
