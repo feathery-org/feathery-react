@@ -104,6 +104,14 @@ describe('TextNodes icon embeds', () => {
                   d: 'M12 5l0 14',
                   onLoad: 'alert(1)',
                   'xlink:href': 'https://example.com',
+                  xlinkHref: 'https://example.com',
+                  href: 'https://example.com',
+                  src: 'https://example.com/x.png',
+                  id: 'external-target',
+                  className: 'external-class',
+                  filter: 'url(#external-filter)',
+                  mask: 'url(#external-mask)',
+                  fill: 'URL(#external-fill)',
                   style: 'color: red'
                 }
               ]
@@ -119,6 +127,14 @@ describe('TextNodes icon embeds', () => {
     expect(path.getAttribute('d')).toBe('M12 5l0 14');
     expect(path.getAttribute('onLoad')).toBeNull();
     expect(path.getAttribute('xlink:href')).toBeNull();
+    expect(path.getAttribute('xlinkHref')).toBeNull();
+    expect(path.getAttribute('href')).toBeNull();
+    expect(path.getAttribute('src')).toBeNull();
+    expect(path.getAttribute('id')).toBeNull();
+    expect(path.getAttribute('class')).toBeNull();
+    expect(path.getAttribute('filter')).toBeNull();
+    expect(path.getAttribute('mask')).toBeNull();
+    expect(path.getAttribute('fill')).toBeNull();
     expect(path.getAttribute('style')).toBeNull();
   });
 
