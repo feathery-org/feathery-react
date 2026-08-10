@@ -149,13 +149,21 @@ function acceptAllGroups(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
 }
 
-// Accept all/Reject all defer their (still-synchronous) resolve one
-// macrotask out so RailHead's spinner can paint first — see
-// resolveAllWithSpinner. Callers on real timers await this after clicking;
-// callers on fake timers use `act(() => jest.runOnlyPendingTimers())` instead.
+// Accept all/Reject all defer their (still-synchronous) resolve past two
+// real animation frames so RailHead's spinner is guaranteed to actually
+// paint before it runs — see afterNextPaint. jsdom's requestAnimationFrame
+// is a real, wall-clock-scheduled callback, NOT something Jest's fake
+// timers intercept, so this always runs on real timers regardless of
+// whether the calling test has fake timers active elsewhere; the trailing
+// setTimeout gives the resolve's own synchronous work a tick to flush.
 function flushDeferredResolve(): Promise<void> {
   return act(
-    () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => setTimeout(resolve, 0))
+        );
+      })
   );
 }
 
@@ -441,99 +449,78 @@ describe('TrackedChangeGroups', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('Accept all resolves every pending edit across groups', () => {
-    // Accept all/Reject all defer the actual (still-synchronous) resolve one
-    // macrotask out so RailHead's spinner gets a chance to paint first — see
-    // resolveAllWithSpinner. Advance past that tick before asserting.
-    jest.useFakeTimers();
-    try {
-      const premium = makeRevision();
-      const date = makeRevision({
-        customData: tag('cs-1', 'fix-effective-date'),
-        getRange: () => [{ text: '2026-02-01' }]
-      });
-      const revisions = [premium, date];
-      premium.accept.mockImplementation(() => {
-        revisions.splice(revisions.indexOf(premium), 1);
-      });
-      date.accept.mockImplementation(() => {
-        revisions.splice(revisions.indexOf(date), 1);
-      });
-      const editor = makeEditor(revisions);
-      const { container } = render(<TrackedChangeGroups editor={editor} />);
+  it('Accept all resolves every pending edit across groups', async () => {
+    // Accept all/Reject all defer the actual (still-synchronous) resolve
+    // past two real animation frames so RailHead's spinner gets a chance to
+    // paint first — see afterNextPaint. Flush past that before asserting.
+    const premium = makeRevision();
+    const date = makeRevision({
+      customData: tag('cs-1', 'fix-effective-date'),
+      getRange: () => [{ text: '2026-02-01' }]
+    });
+    const revisions = [premium, date];
+    premium.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(premium), 1);
+    });
+    date.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(date), 1);
+    });
+    const editor = makeEditor(revisions);
+    const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-      fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
-      act(() => {
-        jest.runOnlyPendingTimers();
-      });
-      expect(premium.accept).toHaveBeenCalledTimes(1);
-      expect(date.accept).toHaveBeenCalledTimes(1);
-      expect(container).toBeEmptyDOMElement();
-    } finally {
-      jest.useRealTimers();
-    }
+    fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+    await flushDeferredResolve();
+    expect(premium.accept).toHaveBeenCalledTimes(1);
+    expect(date.accept).toHaveBeenCalledTimes(1);
+    expect(container).toBeEmptyDOMElement();
   });
 
-  it('shows a spinner on Accept all while its deferred resolve is pending', () => {
-    jest.useFakeTimers();
-    try {
-      const revisions: any[] = [];
-      const revision = makeRevision();
-      revision.accept.mockImplementation(() => {
-        revisions.splice(revisions.indexOf(revision), 1);
-      });
-      revisions.push(revision);
-      const editor = makeEditor(revisions);
-      render(<TrackedChangeGroups editor={editor} />);
+  it('shows a spinner on Accept all while its deferred resolve is pending', async () => {
+    const revisions: any[] = [];
+    const revision = makeRevision();
+    revision.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(revision), 1);
+    });
+    revisions.push(revision);
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
 
-      const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
-      const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-      expect(acceptAllBtn.querySelector('svg')).toBeNull();
-      fireEvent.click(acceptAllBtn);
-      // The resolve itself hasn't run yet (still queued) — the spinner is up
-      // and BOTH bulk buttons are disabled so the two can't race each other.
-      expect(revision.accept).not.toHaveBeenCalled();
-      expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
-      expect(acceptAllBtn).toBeDisabled();
-      expect(rejectAllBtn).toBeDisabled();
+    const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
+    const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
+    expect(acceptAllBtn.querySelector('svg')).toBeNull();
+    fireEvent.click(acceptAllBtn);
+    // The resolve itself hasn't run yet (still queued) — the spinner is up
+    // and BOTH bulk buttons are disabled so the two can't race each other.
+    expect(revision.accept).not.toHaveBeenCalled();
+    expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
+    expect(acceptAllBtn).toBeDisabled();
+    expect(rejectAllBtn).toBeDisabled();
 
-      act(() => {
-        jest.runOnlyPendingTimers();
-      });
-      expect(revision.accept).toHaveBeenCalledTimes(1);
-    } finally {
-      jest.useRealTimers();
-    }
+    await flushDeferredResolve();
+    expect(revision.accept).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a spinner on Reject all while its deferred resolve is pending', () => {
-    jest.useFakeTimers();
-    try {
-      const revisions: any[] = [];
-      const revision = makeRevision();
-      revision.reject.mockImplementation(() => {
-        revisions.splice(revisions.indexOf(revision), 1);
-      });
-      revisions.push(revision);
-      const editor = makeEditor(revisions);
-      render(<TrackedChangeGroups editor={editor} />);
+  it('shows a spinner on Reject all while its deferred resolve is pending', async () => {
+    const revisions: any[] = [];
+    const revision = makeRevision();
+    revision.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(revision), 1);
+    });
+    revisions.push(revision);
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
 
-      const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
-      const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-      expect(rejectAllBtn.querySelector('svg')).toBeNull();
-      fireEvent.click(rejectAllBtn);
-      expect(revision.reject).not.toHaveBeenCalled();
-      expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
-      expect(rejectAllBtn).toBeDisabled();
-      expect(acceptAllBtn).toBeDisabled();
+    const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
+    const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
+    expect(rejectAllBtn.querySelector('svg')).toBeNull();
+    fireEvent.click(rejectAllBtn);
+    expect(revision.reject).not.toHaveBeenCalled();
+    expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
+    expect(rejectAllBtn).toBeDisabled();
+    expect(acceptAllBtn).toBeDisabled();
 
-      act(() => {
-        jest.runOnlyPendingTimers();
-      });
-      expect(revision.reject).toHaveBeenCalledTimes(1);
-    } finally {
-      jest.useRealTimers();
-    }
+    await flushDeferredResolve();
+    expect(revision.reject).toHaveBeenCalledTimes(1);
   });
 
   it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {

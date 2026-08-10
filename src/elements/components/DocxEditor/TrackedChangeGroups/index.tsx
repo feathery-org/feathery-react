@@ -6,6 +6,7 @@ import {
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
 import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { featheryWindow } from '../../../../utils/browser';
 import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
@@ -36,6 +37,27 @@ const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
+
+// Guarantees an actual paint happens between now and `fn` running - a single
+// setTimeout(0) does NOT: the browser is free to coalesce a state-update's
+// paint with whatever runs right after it if both land inside the same
+// frame, which a fast resolve does (confirmed live - the resolve ran fine,
+// the spinner just never reached the screen). The first rAF fires just
+// before the next frame, so the spinner's style/layout work is already
+// committed by the time it runs; queuing the second rAF FROM INSIDE that
+// callback means it can't run until the frame after, by which point the
+// browser has had to composite and present the spinner at least once.
+// jsdom (tests) has no requestAnimationFrame at all, so this falls back to
+// a plain timeout there - deferral without the paint guarantee, which is
+// fine for a headless test.
+function afterNextPaint(fn: () => void): void {
+  const win = featheryWindow() as any;
+  if (typeof win.requestAnimationFrame !== 'function') {
+    setTimeout(fn, 0);
+    return;
+  }
+  win.requestAnimationFrame(() => win.requestAnimationFrame(fn));
+}
 
 // The single containment boundary for editor faults in this file: one guard
 // at each UI/EJ2 event entry (render/effect faults go to the host's
@@ -359,18 +381,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
 
   // Accept all / Reject all: same resolve as above, but a big batch's loop
   // still runs synchronously and can block the thread long enough to be
-  // worth a spinner. Setting state and running the (blocking) resolve in the
-  // same tick would never let the spinner paint, so the resolve itself is
-  // pushed one macrotask out - long enough for the browser to paint the
-  // spinner first, same technique applyDocumentEditsChunked uses to keep the
-  // tab responsive during a big write.
+  // worth a spinner. See afterNextPaint for why this isn't a plain
+  // setTimeout(0).
   const resolveAllWithSpinner = (groupViews: GroupView[], isAccept: boolean) => {
     if (resolvingAll) return;
     setResolvingAll(isAccept ? 'accept' : 'reject');
-    setTimeout(() => {
+    afterNextPaint(() => {
       handleEditorEvent(() => resolveGroups(groupViews, isAccept));
       setResolvingAll(null);
-    }, 0);
+    });
   };
 
   // Suppresses selectRevision's selectionChange echo (sync + trailing
