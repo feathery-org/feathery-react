@@ -2,7 +2,7 @@
 // SyncFusion operation engine used by the in-form DocumentEditorContainer.
 import type { DocxBridge } from '../assistantToolDispatch';
 import {
-  applyDocumentEditsChunked,
+  applyDocumentEdits,
   deriveSectionPattern,
   findDocumentOccurrences,
   getDocumentInventory
@@ -30,7 +30,7 @@ export const createDocxEditorBridge = (getEditor: () => any): DocxBridge => ({
   applyDocumentEdits: async (input) => {
     const editor = getEditor();
     return editor
-      ? applyDocumentEditsChunked(editor, input ?? {})
+      ? applyDocumentEdits(editor, input ?? {})
       : unavailable('No in-form document editor is ready.');
   },
   findDocumentOccurrences: async (input) => {
