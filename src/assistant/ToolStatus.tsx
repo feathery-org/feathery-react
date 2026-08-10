@@ -273,6 +273,14 @@ const shimmerCss = (base: string = GRAY_500) => ({
   }
 });
 
+// One even wash across the whole region. A uniform multiply barely moves a
+// contrast ratio - measured off the rendered pixels, the live indicator's
+// default gray goes from 4.83:1 to 4.57:1 under this, still past AA - so it
+// stays legible and the strip needs no lighter treatment of its own. Washing
+// the strip more lightly was tried and read as a pale band with an edge across
+// the panel, which is worse to look at than the even dim
+const WASH = 'rgba(0, 0, 0, 0.1)';
+
 interface ToolChunkProps {
   rows: ToolRow[];
   followedByText: boolean;
@@ -600,5 +608,54 @@ export const ToolChunkPlaceholder = ({
     </div>
   );
 };
+
+// Dims the region a turn is happening in - the transcript plus the status
+// strip - so the panel as a whole reads as busy, not just the small live label
+// inside it. Purely a signal: it never takes pointer events, so the transcript
+// underneath stays scrollable, selectable and clickable throughout the turn.
+export const BusyWash = () => (
+  <div
+    aria-hidden
+    css={{
+      position: 'absolute',
+      inset: 0,
+      // Deliberately no z-index: the thread dropdown and the menu backdrops
+      // carry their own, so they keep painting above this
+      pointerEvents: 'none',
+      overflow: 'hidden',
+      backgroundColor: WASH,
+      // Held back so a turn that finishes inside a few hundred milliseconds
+      // never flashes a wash on and straight off again. Fill mode `both` keeps
+      // it fully transparent for the whole delay, not just faded
+      animation: 'feathery-busy-wash-in 160ms ease-out 200ms both',
+      '@keyframes feathery-busy-wash-in': {
+        from: { opacity: 0 },
+        to: { opacity: 1 }
+      }
+    }}
+  >
+    {/* A wide, low-contrast highlight crossing the region. Slow on purpose:
+        this sits beside a document being read, so it has to be noticeable
+        without competing for attention */}
+    <div
+      css={{
+        position: 'absolute',
+        inset: 0,
+        backgroundImage:
+          'linear-gradient(100deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 70%)',
+        animation: 'feathery-busy-shimmer 3.2s linear infinite',
+        // Off the left edge to off the right one, so the sweep enters and
+        // leaves rather than jumping back at the wrap
+        '@keyframes feathery-busy-shimmer': {
+          from: { transform: 'translateX(-100%)' },
+          to: { transform: 'translateX(100%)' }
+        },
+        // A travelling animation that runs for the whole turn is exactly what
+        // motion sensitivity suffers from. The static dim carries the signal
+        '@media (prefers-reduced-motion: reduce)': { display: 'none' }
+      }}
+    />
+  </div>
+);
 
 export default ToolChunk;

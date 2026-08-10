@@ -54,6 +54,7 @@ import {
   GRAY_800
 } from './colors';
 import {
+  BusyWash,
   STATUS_LABEL_BLOCK_HEIGHT,
   ToolChunk,
   ToolChunkPlaceholder,
@@ -1493,20 +1494,33 @@ const AssistantChat = ({
         )}
       </div>
 
-      {/* Messages */}
+      {/* The region a turn happens in: the transcript and the status strip
+          under it. Grouped so the busy wash can cover both as one block and
+          stay put while the transcript scrolls beneath it. The composer below
+          is deliberately outside, so it never dims and stays usable */}
       <div
-        ref={messagesContainerRef}
-        onScroll={handleMessagesScroll}
         css={{
+          position: 'relative',
           flex: 1,
-          overflowY: 'auto',
-          padding: '16px',
+          minHeight: 0,
           display: 'flex',
-          flexDirection: 'column',
-          gap: '12px'
+          flexDirection: 'column'
         }}
       >
-        {/* Rests the conversation on the bottom of the panel so it grows
+        {/* Messages */}
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleMessagesScroll}
+          css={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}
+        >
+          {/* Rests the conversation on the bottom of the panel so it grows
             upward. Deliberately not justify-content: flex-end - that overflows
             out of the start edge, which cannot be reached by scrolling
             (scrollHeight stays equal to clientHeight), so older messages would
@@ -1514,248 +1528,254 @@ const AssistantChat = ({
             while the conversation is short and collapses to nothing once it
             overflows, leaving scrollTop/scrollHeight meaning what pinToBottom
             already expects. */}
-        <div css={{ marginTop: 'auto' }} />
-        {messages.length === 0 && (
-          <div
-            css={{
-              textAlign: 'center',
-              color: GRAY_400,
-              fontSize: '14px',
-              // Bottom-aligned now, so it sits just above the composer rather
-              // than being nudged down from a top edge it no longer starts at
-              paddingBottom: '4px'
-            }}
-          >
-            How can I help?
-          </div>
-        )}
+          <div css={{ marginTop: 'auto' }} />
+          {messages.length === 0 && (
+            <div
+              css={{
+                textAlign: 'center',
+                color: GRAY_400,
+                fontSize: '14px',
+                // Bottom-aligned now, so it sits just above the composer rather
+                // than being nudged down from a top edge it no longer starts at
+                paddingBottom: '4px'
+              }}
+            >
+              How can I help?
+            </div>
+          )}
 
-        {messages.map((message, mIdx) =>
-          message.role === 'user' ? (
-            // Show the bubble only once its transcript or attachments land,
-            // not as an empty placeholder
-            (message.parts ?? []).some(
-              (p: any) =>
-                (p.type === 'text' && (p.text ?? '').trim()) ||
-                p.type === 'file'
-            ) ? (
-              <div
-                key={message.id}
-                css={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-end',
-                  gap: '6px'
-                }}
-              >
+          {messages.map((message, mIdx) =>
+            message.role === 'user' ? (
+              // Show the bubble only once its transcript or attachments land,
+              // not as an empty placeholder
+              (message.parts ?? []).some(
+                (p: any) =>
+                  (p.type === 'text' && (p.text ?? '').trim()) ||
+                  p.type === 'file'
+              ) ? (
                 <div
+                  key={message.id}
                   css={{
                     display: 'flex',
-                    flexWrap: 'wrap',
-                    justifyContent: 'flex-end',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
                     gap: '6px'
                   }}
                 >
-                  {(message.parts ?? [])
-                    .filter((part: any) => part.type === 'file')
-                    .map((part: any, index: number) => (
-                      <MessageAttachment
-                        key={`file-${index}`}
-                        mediaType={part.mediaType ?? ''}
-                        filename={part.filename}
-                        url={part.url}
-                        inFlight={pendingSubmit?.tempId === message.id}
-                        onOpen={() =>
-                          setAttachmentPreview({
-                            url: part.url,
-                            mediaType: part.mediaType ?? '',
-                            filename: part.filename
-                          })
-                        }
-                      />
-                    ))}
-                </div>
-                {(message.parts ?? []).some(
-                  (p: any) => p.type === 'text' && (p.text ?? '').trim()
-                ) && (
                   <div
                     css={{
-                      maxWidth: '80%',
-                      padding: '10px 14px',
-                      borderRadius: '12px',
-                      fontSize: '14px',
-                      lineHeight: '1.5',
-                      backgroundColor: colors.primary,
-                      color: 'white',
-                      overflowWrap: 'anywhere',
-                      wordBreak: 'break-word'
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      justifyContent: 'flex-end',
+                      gap: '6px'
                     }}
                   >
-                    {message.parts
-                      .filter((part: any) => !part.hidden)
-                      .map((part: any, index: number) =>
-                        part.type === 'text' ? (
-                          <span key={index}>{part.text}</span>
-                        ) : null
-                      )}
+                    {(message.parts ?? [])
+                      .filter((part: any) => part.type === 'file')
+                      .map((part: any, index: number) => (
+                        <MessageAttachment
+                          key={`file-${index}`}
+                          mediaType={part.mediaType ?? ''}
+                          filename={part.filename}
+                          url={part.url}
+                          inFlight={pendingSubmit?.tempId === message.id}
+                          onOpen={() =>
+                            setAttachmentPreview({
+                              url: part.url,
+                              mediaType: part.mediaType ?? '',
+                              filename: part.filename
+                            })
+                          }
+                        />
+                      ))}
                   </div>
-                )}
-              </div>
-            ) : null
-          ) : (
-            <Fragment key={message.id}>
-              {(() => {
-                const isLastMsg = mIdx === messages.length - 1;
-                const chunks = mergeAssistantParts(message.parts);
-                const lastPart = message.parts[message.parts.length - 1];
-                const turnFinished =
-                  !isLastMsg ||
-                  status === 'error' ||
-                  (status === 'ready' && lastPart?.type === 'text');
-                // Voice: reveal parts top-to-bottom, paced by how much audio has played
-                const paceByAudio =
-                  voiceActiveRef.current &&
-                  isLastMsg &&
-                  (isLoading || audioDraining);
-                let revealable = paceByAudio ? spokenChars : Infinity;
-                let blocked = false;
-                return chunks.map((chunk, chunkIdx) => {
-                  if (blocked) return null;
-                  if (chunk.kind === 'text') {
-                    // Reveal up to the spoken budget, whitespace is free so the trailing "?" isn't held back
-                    let revealLen = 0;
-                    while (
-                      revealLen < chunk.text.length &&
-                      (revealable > 0 || /\s/.test(chunk.text[revealLen]))
-                    ) {
-                      if (!/\s/.test(chunk.text[revealLen])) revealable -= 1;
-                      revealLen += 1;
+                  {(message.parts ?? []).some(
+                    (p: any) => p.type === 'text' && (p.text ?? '').trim()
+                  ) && (
+                    <div
+                      css={{
+                        maxWidth: '80%',
+                        padding: '10px 14px',
+                        borderRadius: '12px',
+                        fontSize: '14px',
+                        lineHeight: '1.5',
+                        backgroundColor: colors.primary,
+                        color: 'white',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word'
+                      }}
+                    >
+                      {message.parts
+                        .filter((part: any) => !part.hidden)
+                        .map((part: any, index: number) =>
+                          part.type === 'text' ? (
+                            <span key={index}>{part.text}</span>
+                          ) : null
+                        )}
+                    </div>
+                  )}
+                </div>
+              ) : null
+            ) : (
+              <Fragment key={message.id}>
+                {(() => {
+                  const isLastMsg = mIdx === messages.length - 1;
+                  const chunks = mergeAssistantParts(message.parts);
+                  const lastPart = message.parts[message.parts.length - 1];
+                  const turnFinished =
+                    !isLastMsg ||
+                    status === 'error' ||
+                    (status === 'ready' && lastPart?.type === 'text');
+                  // Voice: reveal parts top-to-bottom, paced by how much audio has played
+                  const paceByAudio =
+                    voiceActiveRef.current &&
+                    isLastMsg &&
+                    (isLoading || audioDraining);
+                  let revealable = paceByAudio ? spokenChars : Infinity;
+                  let blocked = false;
+                  return chunks.map((chunk, chunkIdx) => {
+                    if (blocked) return null;
+                    if (chunk.kind === 'text') {
+                      // Reveal up to the spoken budget, whitespace is free so the trailing "?" isn't held back
+                      let revealLen = 0;
+                      while (
+                        revealLen < chunk.text.length &&
+                        (revealable > 0 || /\s/.test(chunk.text[revealLen]))
+                      ) {
+                        if (!/\s/.test(chunk.text[revealLen])) revealable -= 1;
+                        revealLen += 1;
+                      }
+                      if (revealLen < chunk.text.length) blocked = true;
+                      if (revealLen <= 0) return null;
+                      return (
+                        <div
+                          key={chunk.key}
+                          css={{
+                            display: 'flex',
+                            justifyContent: 'flex-start'
+                          }}
+                        >
+                          <div
+                            css={{
+                              maxWidth: '80%',
+                              padding: '10px 14px',
+                              borderRadius: '12px',
+                              fontSize: '14px',
+                              lineHeight: '1.5',
+                              backgroundColor: colors.light,
+                              color: GRAY_800,
+                              overflowWrap: 'anywhere',
+                              wordBreak: 'break-word'
+                            }}
+                          >
+                            <MarkdownText
+                              text={chunk.text.slice(0, revealLen)}
+                              isStreaming={
+                                isLoading &&
+                                isLastMsg &&
+                                chunkIdx === chunks.length - 1
+                              }
+                            />
+                          </div>
+                        </div>
+                      );
                     }
-                    if (revealLen < chunk.text.length) blocked = true;
-                    if (revealLen <= 0) return null;
+                    const followedByText = chunks
+                      .slice(chunkIdx + 1)
+                      .some((c) => c.kind === 'text');
+                    // Hold the tool's working state until the followup reply's audio begins
+                    const audioPending =
+                      paceByAudio && followedByText && revealable <= 0;
                     return (
                       <div
                         key={chunk.key}
                         css={{
                           display: 'flex',
-                          justifyContent: 'flex-start'
+                          justifyContent: 'flex-start',
+                          maxWidth: '80%',
+                          minWidth: 0
                         }}
                       >
-                        <div
-                          css={{
-                            maxWidth: '80%',
-                            padding: '10px 14px',
-                            borderRadius: '12px',
-                            fontSize: '14px',
-                            lineHeight: '1.5',
-                            backgroundColor: colors.light,
-                            color: GRAY_800,
-                            overflowWrap: 'anywhere',
-                            wordBreak: 'break-word'
-                          }}
-                        >
-                          <MarkdownText
-                            text={chunk.text.slice(0, revealLen)}
-                            isStreaming={
-                              isLoading &&
-                              isLastMsg &&
-                              chunkIdx === chunks.length - 1
-                            }
-                          />
-                        </div>
+                        <ToolChunk
+                          rows={chunk.rows}
+                          turnFinished={turnFinished}
+                          followedByText={followedByText}
+                          audioPending={audioPending}
+                          linkColor={colors.primary}
+                          isFirstChunk={chunkIdx === 0}
+                        />
                       </div>
                     );
-                  }
-                  const followedByText = chunks
-                    .slice(chunkIdx + 1)
-                    .some((c) => c.kind === 'text');
-                  // Hold the tool's working state until the followup reply's audio begins
-                  const audioPending =
-                    paceByAudio && followedByText && revealable <= 0;
-                  return (
-                    <div
-                      key={chunk.key}
-                      css={{
-                        display: 'flex',
-                        justifyContent: 'flex-start',
-                        maxWidth: '80%',
-                        minWidth: 0
-                      }}
-                    >
-                      <ToolChunk
-                        rows={chunk.rows}
-                        turnFinished={turnFinished}
-                        followedByText={followedByText}
-                        audioPending={audioPending}
-                        linkColor={colors.primary}
-                        isFirstChunk={chunkIdx === 0}
-                      />
-                    </div>
-                  );
-                });
-              })()}
-            </Fragment>
-          )
-        )}
+                  });
+                })()}
+              </Fragment>
+            )
+          )}
 
-        {error && (
-          <div
-            css={{
-              padding: '10px 14px',
-              borderRadius: '8px',
-              backgroundColor: '#fef2f2',
-              color: '#dc2626',
-              fontSize: '14px'
-            }}
-          >
-            Something went wrong. Please try again.
-          </div>
-        )}
-      </div>
+          {error && (
+            <div
+              css={{
+                padding: '10px 14px',
+                borderRadius: '8px',
+                backgroundColor: '#fef2f2',
+                color: '#dc2626',
+                fontSize: '14px'
+              }}
+            >
+              Something went wrong. Please try again.
+            </div>
+          )}
+        </div>
 
-      {/* Status strip: always occupies its height, so the messages resting on
+        {/* Status strip: always occupies its height, so the messages resting on
           top of it never shift as the indicator appears, changes phrase, or
           goes away. Sits outside the scroll container, so it stays put */}
-      <div
-        css={{
-          flexShrink: 0,
-          height: `${STATUS_STRIP_HEIGHT}px`,
-          padding: '0 16px',
-          display: 'flex',
-          alignItems: 'center',
-          overflow: 'hidden'
-        }}
-      >
-        {(() => {
-          if (!isLoading) return null;
-          const last = messages[messages.length - 1] as
-            | { role?: string; parts?: any[] }
-            | undefined;
-          if (!last) return null;
-          if (last.role === 'user') {
-            // Wait for the user's (transcribed) message to be visible before showing the indicator
-            const hasContent = (last.parts || []).some((p: any) => {
-              if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
-              const t = typeof p?.type === 'string' ? p.type : '';
-              return t.startsWith('tool-') || t === 'dynamic-tool';
-            });
-            if (!hasContent) return null;
-          }
-          // Otherwise the indicator stays up for the whole turn. It used to
-          // stand down as soon as the reply had any content, which handed the
-          // job to the chunk header inside the transcript - a second indicator
-          // that scrolled away, in gray, that never cycled its phrase
-          return (
-            <ToolChunkPlaceholder
-              label={workingPhrase}
-              color={colors.primary}
-            />
-          );
-        })()}
+        <div
+          css={{
+            flexShrink: 0,
+            height: `${STATUS_STRIP_HEIGHT}px`,
+            padding: '0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            overflow: 'hidden'
+          }}
+        >
+          {(() => {
+            if (!isLoading) return null;
+            const last = messages[messages.length - 1] as
+              | { role?: string; parts?: any[] }
+              | undefined;
+            if (!last) return null;
+            if (last.role === 'user') {
+              // Wait for the user's (transcribed) message to be visible before showing the indicator
+              const hasContent = (last.parts || []).some((p: any) => {
+                if (p?.type === 'text') return (p.text ?? '').trim().length > 0;
+                const t = typeof p?.type === 'string' ? p.type : '';
+                return t.startsWith('tool-') || t === 'dynamic-tool';
+              });
+              if (!hasContent) return null;
+            }
+            // Otherwise the indicator stays up for the whole turn. It used to
+            // stand down as soon as the reply had any content, which handed the
+            // job to the chunk header inside the transcript - a second indicator
+            // that scrolled away, in gray, that never cycled its phrase
+            return (
+              <ToolChunkPlaceholder
+                label={workingPhrase}
+                color={colors.primary}
+              />
+            );
+          })()}
 
-        {pendingSubmit && (
-          <ToolChunkPlaceholder label='Uploading...' color={colors.primary} />
-        )}
+          {pendingSubmit && (
+            <ToolChunkPlaceholder label='Uploading...' color={colors.primary} />
+          )}
+        </div>
+
+        {/* Last child of the region, so it washes over both the transcript and
+            the strip. Driven by the same isLoading the composer already reads -
+            the panel has one notion of busy */}
+        {isLoading && <BusyWash />}
       </div>
 
       {/* Workflow action buttons */}
