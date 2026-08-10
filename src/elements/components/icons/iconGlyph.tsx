@@ -1,4 +1,5 @@
 import React, { createElement } from 'react';
+import { objectFromEntries } from '../../../utils/primitives';
 
 // Icons chosen in the dashboard are persisted as shape data, not as a reference
 // to an icon package, so a form renders the glyph it was authored with forever —
@@ -34,23 +35,16 @@ const SAFE_TAGS = new Set([
   'rect'
 ]);
 
-// Plain attribute names only: letters and dashes. That rejects `xlink:href` and
-// friends (no external references), and the deny list covers React props that
-// would mean something dangerous or throw.
-const ATTRIBUTE_NAME = /^[a-zA-Z][a-zA-Z-]*$/;
-const DENIED_ATTRIBUTES = new Set([
-  'dangerouslySetInnerHTML',
-  'href',
-  'key',
-  'ref',
-  'style'
-]);
+// These are the only attributes emitted by the pinned Tabler node inventory.
+// Keeping this an allowlist also excludes references, React event props, and
+// arbitrary DOM attributes without relying on a deny list staying complete.
+const SAFE_ATTRIBUTES = new Set(['d', 'fill', 'opacity', 'stroke']);
+const URL_VALUE = /(?:url\s*\(|\b[a-z][a-z\d+.-]*:)/i;
 
 const isSafeAttribute = (name: string, value: unknown) =>
-  ATTRIBUTE_NAME.test(name) &&
-  !DENIED_ATTRIBUTES.has(name) &&
-  !name.toLowerCase().startsWith('on') &&
-  (typeof value === 'string' || typeof value === 'number');
+  SAFE_ATTRIBUTES.has(name) &&
+  (typeof value === 'number' ||
+    (typeof value === 'string' && !URL_VALUE.test(value)));
 
 function safeNodes(glyph?: IconGlyphData | null) {
   if (!Array.isArray(glyph?.nodes)) return [];
@@ -58,7 +52,7 @@ function safeNodes(glyph?: IconGlyphData | null) {
     if (!Array.isArray(node)) return [];
     const [tag, attrs] = node;
     if (!SAFE_TAGS.has(tag) || !attrs || typeof attrs !== 'object') return [];
-    const safeAttrs = Object.fromEntries(
+    const safeAttrs = objectFromEntries(
       Object.entries(attrs).filter(([name, value]) =>
         isSafeAttribute(name, value)
       )
