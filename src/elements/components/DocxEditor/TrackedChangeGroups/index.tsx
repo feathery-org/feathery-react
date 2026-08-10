@@ -488,8 +488,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     <div
       css={{
         position: 'relative',
-        display: 'flex',
         flex: '0 0 auto',
+        // Both children are absolutely anchored, so the rail contributes no
+        // height of its own to the shared flex row: the document pane alone
+        // sets the row height, and the stretched rail matches it exactly —
+        // it can never hang below the editor and scroll past it.
+        alignSelf: 'stretch',
+        width: hidden ? 0 : 341,
         minHeight: 0
       }}
     >
@@ -503,8 +508,11 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           tabIndex={0}
           onKeyDown={(event) => handleEditorEvent(() => onPanelKeyDown(event))}
           css={{
-            width: 340,
-            flex: '0 0 auto',
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
             borderLeft: `1px solid ${LINE}`,
             background: PANEL,
             display: 'flex',
