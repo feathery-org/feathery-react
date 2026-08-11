@@ -824,7 +824,24 @@ function Form({
       autoscroll === 'top_of_form'
         ? () => formRef.current?.scrollIntoView({ behavior: 'smooth' })
         : () => win.scrollTo({ top: 0, behavior: 'smooth' });
-    win.requestAnimationFrame(scroll);
+
+    const isAtTarget = () => {
+      if (autoscroll !== 'top_of_form') return win.scrollY === 0;
+      const top = formRef.current?.getBoundingClientRect().top;
+      return top === undefined || Math.abs(top) < 2;
+    };
+
+    const raf = win.requestAnimationFrame(scroll);
+    // Fonts, images, or lazily-mounted fields can shift layout after the
+    // smooth scroll settles; re-issue once if the target drifted.
+    const recheck = win.setTimeout(() => {
+      if (!isAtTarget()) scroll();
+    }, 400);
+
+    return () => {
+      win.cancelAnimationFrame(raf);
+      win.clearTimeout(recheck);
+    };
   }, [stepKey, shouldScrollToTop, formSettings.autoscroll]);
 
   function updateRepeatValues(
