@@ -8,6 +8,11 @@ import {
 } from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { DocxSource } from './types';
+import {
+  DocxBindingsState,
+  useDocxBindings,
+  UseDocxBindingsOptions
+} from './bindings/useDocxBindings';
 
 // Replaced by Rollup/Webpack from SYNCFUSION_LICENSE_KEY at package build
 // time. The typeof guard keeps source-level test/dev transforms safe when they
@@ -643,6 +648,11 @@ function waitForEj(timeoutMs = 15000): Promise<any> {
   });
 }
 
+export interface DocxBindingsConfig
+  extends Omit<UseDocxBindingsOptions, 'editor' | 'loading' | 'readOnly'> {
+  enabled?: boolean;
+}
+
 interface Props {
   source?: DocxSource;
   licenseKey?: string;
@@ -660,6 +670,12 @@ interface Props {
   onEditorReady?: (editor: any) => void;
   onDirty?: () => void;
   onError?: (error: string) => void;
+  /**
+   * Opt-in document bindings: [[...]] tokens become live fields and formulas that
+   * recalculate as the document is edited. Absent or disabled means not one line
+   * of binding code runs, and the editor behaves exactly as it always has.
+   */
+  bindings?: DocxBindingsConfig;
 }
 
 interface Result {
@@ -669,6 +685,7 @@ interface Result {
   error: string | null;
   exportDoc: () => Promise<Blob>;
   resize: () => void;
+  bindings: DocxBindingsState;
 }
 
 // Loads Syncfusion from the CDN at runtime and mounts the DocumentEditorContainer
@@ -685,7 +702,8 @@ export function useDocxEditor({
   onReady,
   onEditorReady,
   onDirty,
-  onError
+  onError,
+  bindings
 }: Props): Result {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerInstRef = useRef<any>(null);
@@ -699,6 +717,7 @@ export function useDocxEditor({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isReadOnly = !!readOnly;
+  const bindingsEnabled = !!bindings?.enabled;
 
   const fail = useCallback(
     (err: unknown) => {
@@ -782,7 +801,15 @@ export function useDocxEditor({
           showPropertiesPane: false,
           serviceUrl: serviceUrl || '',
           headers: headers || [],
-          height: '100%'
+          height: '100%',
+          // Syncfusion minifies serialized SFDT by default, renaming every key
+          // the binding engine reads - a bound document would come back looking
+          // like it had no bindings at all. Construction is the only place this
+          // reliably takes effect, and it is scoped to bound editors so nothing
+          // else pays for the larger payload.
+          ...(bindingsEnabled
+            ? { documentEditorSettings: { optimizeSfdt: false } }
+            : {})
         });
         // Wait until Syncfusion finishes creating the inner DocumentEditor —
         // opening a doc before `created` leaves a blank default document.
@@ -889,7 +916,9 @@ export function useDocxEditor({
     // handled by sibling effects so we never tear down mid-fetch.
     // `reviewGate` (not `reviewChanges`) so a gate flip waits out any
     // in-flight load before recreating - see its declaration above.
-  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewGate]);
+    // `bindingsEnabled` because the SFDT verbosity it needs is a construction
+    // option; toggling it has to build a new instance to take effect.
+  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewGate, bindingsEnabled]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
@@ -995,6 +1024,24 @@ export function useDocxEditor({
       ignoreContentChangeRef.current = true;
     };
   }, [editor, sourceUrl, sourceBuffer, serviceUrl, openNonce]);
+
+  // Bindings attach only once a document is actually open, and never to a
+  // read-only one: reconciliation writes to the document, and a finalized or
+  // signed envelope is not ours to rewrite.
+  const bindingsState = useDocxBindings({
+    ...bindings,
+    enabled: bindingsEnabled,
+    editor,
+    loading,
+    readOnly: isReadOnly,
+    // Engine writes echo back as contentChange. The initial reconcile is the one
+    // that must not count as the user dirtying anything - computing a template's
+    // formulas is the editor doing its job, not an edit.
+    onSuppressContentChange: (suppressed) => {
+      ignoreContentChangeRef.current = suppressed;
+    }
+  });
+
   const exportDoc = useCallback((): Promise<Blob> => {
     if (!editor) return Promise.reject(new Error('Editor is not ready'));
     return editor.saveAsBlob('Docx');
@@ -1051,5 +1098,13 @@ export function useDocxEditor({
     };
   }, [editor, resizeEditor]);
 
-  return { containerRef, editor, loading, error, exportDoc, resize };
+  return {
+    containerRef,
+    editor,
+    loading,
+    error,
+    exportDoc,
+    resize,
+    bindings: bindingsState
+  };
 }
