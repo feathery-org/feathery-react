@@ -1,7 +1,9 @@
 import {
   validateElement,
   ResolvedCustomValidation,
-  getStandardFieldError
+  getStandardFieldError,
+  loadPhoneValidator,
+  phoneLibPromise
 } from '../validation';
 import { fieldValues } from '../init';
 
@@ -198,6 +200,88 @@ describe('validation', () => {
 
         // Assert
         expect(actual).toEqual('');
+      });
+    });
+
+    describe('phone_number validation', () => {
+      const phoneKey = 'phone-1';
+      const phoneServar = (repeated = false) => ({
+        required: true,
+        type: 'phone_number',
+        key: phoneKey,
+        repeated,
+        metadata: {}
+      });
+
+      beforeAll(async () => {
+        loadPhoneValidator();
+        await phoneLibPromise;
+      });
+
+      it('allows a valid number', () => {
+        // Arrange
+        const val = '12025550123';
+        Object.assign(fieldValues, { [phoneKey]: val });
+
+        // Act
+        const actual = getStandardFieldError(val, phoneServar(), null);
+
+        // Assert
+        expect(actual).toEqual('');
+      });
+
+      it('errors for an invalid number', () => {
+        // Arrange
+        const val = '1555123';
+        Object.assign(fieldValues, { [phoneKey]: val });
+
+        // Act
+        const actual = getStandardFieldError(val, phoneServar(), null);
+
+        // Assert
+        expect(actual).toEqual('Invalid phone number');
+      });
+
+      it('allows a valid number with a leading + and strips it', () => {
+        // Arrange: a custom logic rule may erroneously store a leading +
+        const val = '+12025550123';
+        Object.assign(fieldValues, { [phoneKey]: val });
+
+        // Act
+        const actual = getStandardFieldError(val, phoneServar(), null);
+
+        // Assert
+        expect(actual).toEqual('');
+        expect((fieldValues as any)[phoneKey]).toEqual('12025550123');
+      });
+
+      it('strips a leading + for repeated phone values', () => {
+        // Arrange
+        const val = '+12025550123';
+        Object.assign(fieldValues, { [phoneKey]: ['12025550188', val] });
+
+        // Act
+        const actual = getStandardFieldError(val, phoneServar(true), 1);
+
+        // Assert
+        expect(actual).toEqual('');
+        expect((fieldValues as any)[phoneKey]).toEqual([
+          '12025550188',
+          '12025550123'
+        ]);
+      });
+
+      it('still errors for an invalid number with a leading +', () => {
+        // Arrange
+        const val = '+1555123';
+        Object.assign(fieldValues, { [phoneKey]: val });
+
+        // Act
+        const actual = getStandardFieldError(val, phoneServar(), null);
+
+        // Assert
+        expect(actual).toEqual('Invalid phone number');
+        expect((fieldValues as any)[phoneKey]).toEqual(val);
       });
     });
   });
