@@ -1219,10 +1219,7 @@ function Form({
         // ACTION_GENERATE_ENVELOPES handler (generate → optional review modal →
         // envelope action) but resolving a promise instead of advancing the
         // action flow.
-        generateEnvelopeFlow: async (
-          action: Record<string, any>,
-          signerEmail?: string
-        ) => {
+        generateEnvelopeFlow: async (action: Record<string, any>) => {
           // `actingAction` is the outcome to apply — the configured
           // envelope_action on the direct path, or the toolbar button the
           // filler pressed in the editor, where envelope_action is
@@ -1277,7 +1274,7 @@ function Form({
                 );
             }
           };
-          const data = await client.generateEnvelopes(action, signerEmail);
+          const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
           if (action.envelope_action === 'open_in_editor') {

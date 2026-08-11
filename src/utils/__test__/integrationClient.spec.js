@@ -824,22 +824,6 @@ describe('IntegrationClient', () => {
         ]);
       }
 
-      // A caller naming an email outright still routes to them.
-      global.fetch.mockResolvedValue({
-        ok: true,
-        json: jest
-          .fn()
-          .mockResolvedValue({ docusign_envelope_id: 'ds-2', status: 'sent' })
-      });
-      await integrationClient.generateEnvelopes(base, 'override@example.com');
-      const calls = global.fetch.mock.calls;
-      const body = JSON.parse(calls[calls.length - 1][1].body);
-      expect(body.signers).toContainEqual({
-        document_id: 'doc2',
-        email: 'override@example.com',
-        filler: true
-      });
-
       delete fieldValues.signer_field;
       delete fieldValues.buyer_field;
     });

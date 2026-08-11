@@ -458,14 +458,8 @@ export default class IntegrationClient {
   ENVELOPE_CHECK_INTERVAL = 2000;
   ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
-  async generateEnvelopes(
-    action: Record<string, any>,
-    signerEmailOverride?: string
-  ) {
+  async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
-    // The action UI resolves the filler from a form field; the
-    // `feathery.generateDocuments` logic-rule method passes the email directly.
-    //
     // Editor flow: the backend converts a docx envelope to PDF at generation
     // whenever a signer is present, which would make the draft uneditable in
     // the targeted document-editor container. Hold every signer back there —
@@ -476,14 +470,11 @@ export default class IntegrationClient {
     // The configured field names whoever signs inline, in the form. Nobody does
     // on a DocuSign action - every recipient is mailed by DocuSign, and the
     // per-role mappings are what name them - so the field is ignored there
-    // rather than quietly routing to it on top of the roles. A caller passing
-    // an email outright still names a recipient either way.
+    // rather than quietly routing to it on top of the roles.
     const configuredFiller = signsViaDocusign(action)
       ? undefined
       : fieldValues[action.envelope_signer_field_key];
-    const fillerEmail = isDraftView
-      ? ''
-      : (signerEmailOverride ?? configuredFiller)?.toString() ?? '';
+    const fillerEmail = isDraftView ? '' : configuredFiller?.toString() ?? '';
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
@@ -503,7 +494,11 @@ export default class IntegrationClient {
       !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase();
     const roleSigners = envelopeSigners
       .map((entry: any) => {
-        const email = fieldValues[entry.field_key]?.toString() ?? '';
+        // The action config only ever maps a field, and names the filler by
+        // matching the shared signer field; the logic-rule method supplies
+        // both the email and the flag outright.
+        const email =
+          (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
         return {
           document_id: entry.document_id,
           // Omitted rather than nulled: the backend's role_id rejects an
@@ -511,7 +506,7 @@ export default class IntegrationClient {
           // every role.
           ...(entry.role_id ? { role_id: entry.role_id } : {}),
           email,
-          filler: isFiller(email)
+          filler: entry.filler ?? isFiller(email)
         };
       })
       .filter((entry: any) => entry.email);
