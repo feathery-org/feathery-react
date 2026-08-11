@@ -192,4 +192,26 @@ describe('responsiveStyles', () => {
       expect(actual.textAlign).toBe('center');
     });
   });
+
+  describe('transformFontFamilies', () => {
+    const transform = (families) =>
+      new ResponsiveStyles(
+        mockElement,
+        [],
+        false,
+        DEFAULT_MOBILE_BREAKPOINT
+      ).transformFontFamilies(families);
+
+    it('passes single unspaced families through unquoted', () => {
+      expect(transform('Arial')).toBe('Arial');
+    });
+
+    it('quotes only the spaced family in a stack, not the whole value', () => {
+      expect(transform('My Font, sans-serif')).toBe("'My Font', sans-serif");
+    });
+
+    it('leaves already-quoted families alone, normalizing to single quotes', () => {
+      expect(transform('"Open Sans", serif')).toBe("'Open Sans', serif");
+    });
+  });
 });

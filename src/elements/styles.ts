@@ -446,7 +446,7 @@ export default class ResponsiveStyles {
         family = family.trim();
         if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
           // Font families with spaces must be quoted
-          return `'${families}'`;
+          return `'${family}'`;
         }
         return family;
       })
