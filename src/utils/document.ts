@@ -9,7 +9,9 @@ function isValidUrl(urlString: string): boolean {
   }
 }
 
-export function getSignUrl(redirect?: boolean | string) {
+// Everyone who can sign has a signer row, so an envelope is always opened as
+// that one signer rather than left for the server to guess.
+export function getSignUrl(token: string, redirect?: boolean | string) {
   const regionPart =
     initState.region && initState.region !== 'us' ? `${initState.region}.` : '';
 
@@ -33,7 +35,7 @@ export function getSignUrl(redirect?: boolean | string) {
     }
   }
 
-  return `https://${regionPart}document.feathery.io/to/${initState._internalUserId}${query}`;
+  return `https://${regionPart}document.feathery.io/to/${token}${query}`;
 }
 
 /** The Document Editor container this action targets, or '' when it doesn't
@@ -101,5 +103,21 @@ export function isDocusignSignAction(
   return (
     action?.sign_method === 'docusign' &&
     (!envelopeAction || envelopeAction === 'sign')
+  );
+}
+
+/** Whether this action could reach DocuSign at all, mirroring the backend's own
+ * predicate. Unlike `isDocusignSignAction`, which answers what a *specific*
+ * outcome resolved to, this covers the editor before any button is pressed: its
+ * envelope action carries no outcome, so the toolbar is what says whether
+ * signing is on offer. */
+export function signsViaDocusign(action: Record<string, any>): boolean {
+  if (action?.sign_method !== 'docusign') return false;
+  const envelopeAction = action?.envelope_action;
+  if (!envelopeAction || envelopeAction === 'sign') return true;
+  const toolbar: string[] = action?.editor_toolbar_actions ?? [];
+  return (
+    envelopeAction === 'open_in_editor' &&
+    (toolbar.includes('sign') || toolbar.includes('draft'))
   );
 }

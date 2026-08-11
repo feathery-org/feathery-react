@@ -168,10 +168,10 @@ export interface FormInternalState {
   // modal → envelope action), reaching component-only state like the review
   // viewer. Absent in headless/vanillajs contexts, where the method falls back
   // to the simpler client path.
-  generateEnvelopeFlow?: (
-    action: Record<string, any>,
-    signerEmail?: string
-  ) => Promise<any>;
+  generateEnvelopeFlow?: (action: Record<string, any>) => Promise<any>;
+  // Registered by <Form /> so a document-editor container can report its
+  // signing outcome in the same toast the generate flow uses.
+  showEnvelopeOutcome?: (label: string, documents?: string[]) => void;
 }
 
 type InternalState = {

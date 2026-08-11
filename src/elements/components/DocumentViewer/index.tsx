@@ -88,6 +88,8 @@ export interface ViewerDocument {
   pdf_url: string;
   // The id finalize acts on.
   envelope_id?: string;
+  // The filler's own signing token, present only when they sign this one.
+  signer_id?: string | null;
   name?: string;
 }
 
@@ -104,7 +106,7 @@ interface DocumentViewerProps {
   // The toolbar exposes a single Continue action (label varies by
   // `envelope_action`) that calls this to finalize the reviewed envelopes.
   onFinalize?: (params: {
-    envelopes: { envelopeId: string }[];
+    envelopes: { envelopeId: string; signerId?: string }[];
     envelopeAction: ReviewEnvelopeAction;
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
@@ -250,7 +252,13 @@ export default function DocumentViewer({
     () =>
       payload.documents
         .filter((doc) => doc.envelope_id)
-        .map((doc) => ({ envelopeId: doc.envelope_id as string })),
+        // The signer id comes back only for a document the filler signs
+        // themselves. Finalize needs it to open that one inline instead of
+        // emailing them an invite to it.
+        .map((doc) => ({
+          envelopeId: doc.envelope_id as string,
+          signerId: doc.signer_id ?? undefined
+        })),
     [payload.documents]
   );
 

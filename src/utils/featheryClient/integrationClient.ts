@@ -27,7 +27,11 @@ import {
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
-import { editorContainerId, isDocusignSignAction } from '../document';
+import {
+  editorContainerId,
+  isDocusignSignAction,
+  signsViaDocusign
+} from '../document';
 
 // A configured Generate Documents entry in the ordered `documents` array: a
 // template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
@@ -454,30 +458,75 @@ export default class IntegrationClient {
   ENVELOPE_CHECK_INTERVAL = 2000;
   ENVELOPE_MAX_TIME = 8 * 60 * 1000;
 
-  async generateEnvelopes(
-    action: Record<string, any>,
-    signerEmailOverride?: string
-  ) {
+  async generateEnvelopes(action: Record<string, any>) {
     const { userId, sdkKey } = initInfo();
-    // The action UI resolves the signer from a form field; the
-    // `feathery.generateDocuments` logic-rule method passes the email directly.
-    //
     // Editor flow: the backend converts a docx envelope to PDF at generation
     // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold the signer back there — the
-    // editor's Sign action forwards it at finalize time (finalizeEnvelope),
-    // when that conversion is meant to happen.
-    const signer = editorContainerId(action)
+    // the targeted document-editor container. Hold every signer back there —
+    // the editor's Sign action forwards them at finalize time
+    // (finalizeEnvelope), when that conversion is meant to happen.
+    const isDraftView =
+      !!editorContainerId(action) || !!action.view_draft_container;
+    // The configured field names whoever signs inline, in the form. Nobody does
+    // on a DocuSign action - every recipient is mailed by DocuSign, and the
+    // per-role mappings are what name them - so the field is ignored there
+    // rather than quietly routing to it on top of the roles.
+    const configuredFiller = signsViaDocusign(action)
       ? undefined
-      : signerEmailOverride ?? fieldValues[action.envelope_signer_field_key];
+      : fieldValues[action.envelope_signer_field_key];
+    const fillerEmail = isDraftView ? '' : configuredFiller?.toString() ?? '';
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
     const documentIds = action.documents ?? [];
-    const signerEmail = signer?.toString() ?? '';
     const repeatable = action.repeatable ?? false;
     const runAsync = action.run_async ?? true;
+    // One list: the configured per-role signers, plus the shared signer field
+    // for any document without a role. `filler` marks the entries the form
+    // filler signs themselves, which are opened inline rather than emailed —
+    // only those signing tokens come back.
+    const envelopeSigners = isDraftView ? [] : action.envelope_signers ?? [];
+    // Whichever entries are the filler's own are flagged, so the backend
+    // opens those inline instead of emailing a link, and hands back only
+    // their signing token.
+    const isFiller = (email: string) =>
+      !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase();
+    const roleSigners = envelopeSigners
+      .map((entry: any) => {
+        // The action config only ever maps a field, and names the filler by
+        // matching the shared signer field; the logic-rule method supplies
+        // both the email and the flag outright.
+        const email =
+          (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
+        return {
+          document_id: entry.document_id,
+          // Omitted rather than nulled: the backend's role_id rejects an
+          // explicit null, and leaving it off spreads the email across
+          // every role.
+          ...(entry.role_id ? { role_id: entry.role_id } : {}),
+          email,
+          filler: entry.filler ?? isFiller(email)
+        };
+      })
+      .filter((entry: any) => entry.email);
+    // Only a document whose roles actually resolved to someone opts out of the
+    // shared signer field. A mapping whose field came back empty routes to
+    // nobody, so the field covers every role there instead.
+    const roleDocumentIds = new Set(
+      roleSigners.map((entry: any) => entry.document_id)
+    );
+    const signers = [
+      ...roleSigners,
+      ...documentIds
+        .filter((documentId: any) => !roleDocumentIds.has(documentId))
+        .map((documentId: any) => ({
+          document_id: documentId,
+          email: fillerEmail,
+          filler: true
+        }))
+    ].filter((entry: any) => entry.email);
+
     const openInEditor = action.envelope_action === 'open_in_editor';
 
     // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
@@ -509,7 +558,7 @@ export default class IntegrationClient {
     ) {
       return await this.generateEnvelopesForEditor({
         documentIds,
-        signerEmail,
+        signers,
         repeatable,
         runAsync,
         toolbarActions: action.editor_toolbar_actions ?? [],
@@ -525,7 +574,7 @@ export default class IntegrationClient {
       formId: this.formKey,
       documentIds,
       userId,
-      signerEmail,
+      signers,
       repeatable,
       runAsync,
       envelopeAction,
@@ -563,7 +612,17 @@ export default class IntegrationClient {
   // Finalize an edited docx envelope for signing: the backend converts it to
   // PDF and injects signature fields (the same pipeline generation runs when
   // a signer is known up front). One-way — the envelope stops being editable.
-  finalizeEnvelope(envelopeId: string, signerEmail = '') {
+  // Signers are supplied here rather than at generation: they're what makes
+  // the backend convert the docx, so holding them back is what kept the draft
+  // editable. Same list shape generation sends, where an omitted role_id means
+  // the one email covers every role.
+  // `signMethod` decides who does the sending: on DocuSign the rows are still
+  // built here (they become its recipients) but no Feathery invite goes out.
+  finalizeEnvelope(
+    envelopeId: string,
+    signers: Record<string, any>[] = [],
+    signMethod?: string
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
     const options = {
@@ -571,7 +630,8 @@ export default class IntegrationClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fuser_key: userId ?? '',
-        signer_email: signerEmail
+        signers,
+        ...(signMethod ? { sign_method: signMethod } : {})
       }),
       keepalive: false
     };
@@ -622,7 +682,7 @@ export default class IntegrationClient {
 
   private async generateEnvelopesForEditor({
     documentIds,
-    signerEmail,
+    signers,
     repeatable,
     runAsync,
     toolbarActions,
@@ -632,7 +692,7 @@ export default class IntegrationClient {
     signMethod
   }: {
     documentIds: GenerateDocumentRef[];
-    signerEmail: string;
+    signers: Record<string, any>[];
     repeatable: boolean;
     runAsync: boolean;
     toolbarActions: string[];
@@ -662,7 +722,7 @@ export default class IntegrationClient {
       payload.editor_toolbar_actions = toolbarActions;
     }
     if (signMethod) payload.sign_method = signMethod;
-    if (signerEmail) payload.signer_email = signerEmail;
+    if (signers.length) payload.signers = signers;
     if (repeatable) payload.repeatable = repeatable;
 
     const url = `${getApiUrl()}document/form/generate/`;
@@ -709,7 +769,10 @@ export default class IntegrationClient {
       envelopeAction,
       draft = false
     }: {
-      envelopes: { envelopeId: string }[];
+      // signerId: the filler's own signing token for that envelope, as handed
+      // back by generate. Keeps finalize from emailing them an invite to a
+      // document they open and sign inline.
+      envelopes: { envelopeId: string; signerId?: string }[];
       envelopeAction: 'sign' | 'fill' | 'download' | 'save';
       // DocuSign sign only: create the envelope as a draft instead of sending.
       draft?: boolean;
@@ -725,7 +788,9 @@ export default class IntegrationClient {
       form_key: this.formKey,
       fuser_key: userId,
       envelopes: envelopes.map((envelope) => ({
-        envelope_id: envelope.envelopeId
+        envelope_id: envelope.envelopeId,
+        // Omitted rather than nulled: the backend rejects an explicit null.
+        ...(envelope.signerId ? { signer_id: envelope.signerId } : {})
       })),
       envelope_action: envelopeAction,
       merge_docs: action.merge_docs ?? false,
@@ -751,7 +816,11 @@ export default class IntegrationClient {
     // requested envelope_action (sign/fill/download/save) — completion is
     // only ever signaled by the poll endpoint's `status: 'complete'`, never
     // by guessing at the shape of this intermediate body.
-    if (!runAsync) return data;
+    //
+    // `incomplete` is neither: a concurrent duplicate was already in flight and
+    // this call did nothing, so poll for the owning call's outcome rather than
+    // reporting a send that never happened.
+    if (!runAsync && data?.status !== 'incomplete') return data;
 
     const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
     const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;

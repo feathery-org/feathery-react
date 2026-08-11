@@ -226,7 +226,7 @@ export const getFormContext = (formUuid: string) => {
       }),
     generateDocuments: ({
       documentIds,
-      signerEmail,
+      signers,
       envelopeAction,
       signMethod,
       toolbarActions,
@@ -235,12 +235,23 @@ export const getFormContext = (formUuid: string) => {
       merge,
       mergedFileName,
       zipName,
-      saveDocumentFieldKey
+      saveDocumentFieldKey,
+      redirect
     }: {
       // A plain template UUID string, or a source object such as the Quik item
       // `{ kind: 'quik' }` — mirroring the action config's `documents` array.
       documentIds: (string | { kind: string; [key: string]: any })[];
-      signerEmail?: string;
+      // Per-document, per-role signer emails; a document with no entry here
+      // gets no signer. `roleId` targets one of the document's signer roles,
+      // or is left off to cover every role of that document. `filler` marks
+      // whoever signs inline in the form rather than being emailed a link —
+      // only their signing token comes back.
+      signers?: {
+        documentId: string;
+        roleId?: string;
+        email: string;
+        filler?: boolean;
+      }[];
       envelopeAction?: 'sign' | 'fill' | 'download' | 'save' | 'open_in_editor';
       signMethod?: 'feathery' | 'docusign';
       // Only for envelopeAction 'open_in_editor': which buttons the editor
@@ -253,43 +264,56 @@ export const getFormContext = (formUuid: string) => {
       mergedFileName?: string;
       zipName?: string;
       saveDocumentFieldKey?: string;
+      // Where the signing page sends the filler when they finish.
+      redirect?: boolean | string;
     }) => {
       const usesRichOptions =
         !!signMethod ||
-        !!signerEmail ||
+        !!signers?.length ||
         !!envelopeAction ||
         !!toolbarActions?.length ||
         !!repeatable ||
         documentIds.some(
           (doc) => typeof doc === 'object' && doc.kind === 'quik'
         );
-      // Quik sources, DocuSign, a signer email, the editor, and the sign/save
+      // Quik sources, DocuSign, signers, the editor, and the sign/save
       // envelope actions all need the same endpoint + editor flow the Generate
       // Documents action uses, so route through the <Form />-registered flow
       // when any are requested. Otherwise keep the simple, backward-compatible
       // client path (template fill / merge / download).
       if (formState.generateEnvelopeFlow && usesRichOptions) {
-        return formState.generateEnvelopeFlow(
-          {
-            type: 'open_fuser_envelopes',
-            documents: documentIds,
-            envelope_action: envelopeAction,
-            sign_method: signMethod,
-            editor_toolbar_actions: toolbarActions,
-            repeatable,
-            merge_docs: merge,
-            merged_file_name: mergedFileName,
-            envelope_zip_name: zipName,
-            save_document_field_key: saveDocumentFieldKey,
-            run_async: true
-          },
-          signerEmail
-        );
+        return formState.generateEnvelopeFlow({
+          type: 'open_fuser_envelopes',
+          documents: documentIds,
+          envelope_action: envelopeAction,
+          sign_method: signMethod,
+          // Omitted rather than nulled: the backend's role_id rejects an
+          // explicit null, and leaving it off spreads the email across
+          // every role of that document.
+          envelope_signers: signers?.map(
+            ({ documentId, roleId, email, filler }) => ({
+              document_id: documentId,
+              ...(roleId ? { role_id: roleId } : {}),
+              email,
+              filler: !!filler
+            })
+          ),
+          editor_toolbar_actions: toolbarActions,
+          repeatable,
+          merge_docs: merge,
+          merged_file_name: mergedFileName,
+          envelope_zip_name: zipName,
+          save_document_field_key: saveDocumentFieldKey,
+          redirect,
+          run_async: true
+        });
       }
       // Reached only when no <Form /> flow is registered (headless/vanillajs).
       // The simple client path interpolates documentIds straight into its poll
       // URL, so a source object would stringify to "[object Object]" and poll
-      // against a key the backend never wrote — until it timed out. Say so.
+      // against a key the backend never wrote — until it timed out. Per-role
+      // signers have no home on that path either, and dropping them silently
+      // would generate an envelope nobody is ever asked to sign. Say so.
       if (documentIds.some((doc) => typeof doc !== 'string')) {
         return Promise.reject(
           new Error(
@@ -298,12 +322,20 @@ export const getFormContext = (formUuid: string) => {
           )
         );
       }
+      if (signers?.length) {
+        return Promise.reject(
+          new Error(
+            'generateDocuments: per-role signers require a mounted <Form />.'
+          )
+        );
+      }
       return formState.client.generateDocuments({
         documentIds: documentIds as string[],
         download,
         merge,
         repeatable,
-        mergedFileName
+        mergedFileName,
+        zipName
       });
     },
     getQuikForms: (props: { dealerNames: string[] }) =>
