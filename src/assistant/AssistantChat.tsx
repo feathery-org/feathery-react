@@ -94,7 +94,8 @@ import {
 import { handleAssistantToolCall } from './tools/handleAssistantToolCall';
 import {
   createDocxEditorBridge,
-  readDocxSelection
+  readDocxSelection,
+  setAssistantSessionActive
 } from './tools/docx/docxEditorBridge';
 import { getDocxEditor } from './tools/docx/docxEditorRegistry';
 import {
@@ -993,6 +994,14 @@ const AssistantChat = ({
     [messages]
   );
   const workingPhrase = useWorkingPhrase(turnRunning, userTurnCount);
+
+  // The docx bridge raises the session flag on a turn's first document write;
+  // this owns the CLEAR, at turn end and unmount. Resolving the editor fresh
+  // each time (not captured) so a mid-turn recreation still gets cleared.
+  useEffect(() => {
+    if (!isLoading) setAssistantSessionActive(getDocxEditor(instanceId), false);
+    return () => setAssistantSessionActive(getDocxEditor(instanceId), false);
+  }, [isLoading, instanceId]);
 
   const composerButtonCss = {
     padding: '10px',

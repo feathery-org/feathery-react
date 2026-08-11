@@ -84,6 +84,14 @@ const ACTIVE_REVISION_KEY = '__robinActiveRevision';
 const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 const REVISION_RECTS_KEY = '__robinRevisionRects';
 const AFTER_RENDER_KEY = '__robinAfterRender';
+// Opening a document plants Syncfusion's default caret, firing a
+// selectionChange indistinguishable from a real click; the rail ignores it.
+const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
+
+/** True while a source document is being opened/reopened on this editor. */
+export function isOpeningDocument(ed: any): boolean {
+  return !!ed?.[OPENING_DOCUMENT_KEY];
+}
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
 export interface RevisionRect {
@@ -92,12 +100,19 @@ export interface RevisionRect {
   bottom: number;
 }
 
-/** Mark ONE edit active: the renderer rings that revision's runs (and its
- *  replace counterpart's). Repaints only on change. */
-export function setActiveInlineRevision(ed: any, revision: any): void {
+const sameRevisionSet = (a: Set<any> | null, b: Set<any> | null): boolean => {
+  if (a === b) return true;
+  if (!a || !b || a.size !== b.size) return false;
+  for (const item of a) if (!b.has(item)) return false;
+  return true;
+};
+
+/** Mark a set of edits active: the renderer rings each one's runs and its
+ *  replace counterpart's. Repaints only when the set actually changes. */
+export function setActiveInlineRevisions(ed: any, revisions: any[]): void {
   if (!ed) return;
-  const next = revision ?? null;
-  if ((ed[ACTIVE_REVISION_KEY] ?? null) === next) return;
+  const next = revisions.length ? new Set(revisions) : null;
+  if (sameRevisionSet(ed[ACTIVE_REVISION_KEY] ?? null, next)) return;
   ed[ACTIVE_REVISION_KEY] = next;
   try {
     ed.viewer?.renderVisiblePages?.();
@@ -231,10 +246,10 @@ export function installRevisionHighlightRendering(ed: any) {
       try {
         // Active-edit boxes (either replace half counts) are rung ONCE at
         // page end so touching runs share a merged ring; `line` scopes them.
-        const active = ed[ACTIVE_REVISION_KEY];
+        const active: Set<any> | null = ed[ACTIVE_REVISION_KEY];
         if (
           active &&
-          (info.revision === active || info.counterpart === active)
+          (active.has(info.revision) || active.has(info.counterpart))
         ) {
           (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
             ...box,
@@ -942,18 +957,34 @@ export function useDocxEditor({
           type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
-        if (typeof liveEditor.openAsync === 'function') {
-          await liveEditor.openAsync(blob);
-        } else {
-          liveEditor.open(blob);
+        liveEditor[OPENING_DOCUMENT_KEY] = true;
+        try {
+          if (typeof liveEditor.openAsync === 'function') {
+            await liveEditor.openAsync(blob);
+          } else {
+            liveEditor.open(blob);
+          }
+        } catch (err) {
+          // A failed open must not leave the flag stuck true — that would
+          // mute the review rail for the editor's whole life.
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          throw err;
         }
-        if (cancelled) return;
+        if (cancelled) {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          return;
+        }
         openedKeyRef.current = openKey;
         // A freshly opened document has nothing unsaved in it yet.
         unsavedRef.current = false;
         ignoreContentChangeRef.current = false;
         setLoading(false);
         onReady?.();
+        // One extra frame of grace: Syncfusion's default-caret selectionChange
+        // sometimes lands a beat after openAsync resolves, not inside it.
+        featheryWindow().requestAnimationFrame(() => {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+        });
       } catch (err) {
         if (!cancelled) fail(err);
       }
