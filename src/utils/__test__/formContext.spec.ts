@@ -54,6 +54,16 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 
+  it('routes a quik-only document list through the flow even with no other options', () => {
+    getFormContext(uuid).generateDocuments({ documentIds: [{ kind: 'quik' }] });
+
+    expect(flow).toHaveBeenCalledTimes(1);
+    expect(flow.mock.calls[0][0]).toMatchObject({
+      documents: [{ kind: 'quik' }]
+    });
+    expect(client.generateDocuments).not.toHaveBeenCalled();
+  });
+
   it('keeps the simple client path for plain template fill/merge (no rich options)', () => {
     getFormContext(uuid).generateDocuments({
       documentIds: ['tpl-1'],
@@ -82,5 +92,20 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     });
 
     expect(client.generateDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a source object on the headless path instead of polling forever', async () => {
+    // The client path interpolates documentIds into its poll URL, so a source
+    // object stringifies to "[object Object]" and never matches the cache key
+    // the backend wrote — the poll just spun until it timed out.
+    const headlessUuid = 'formContext-test-headless-quik';
+    setFormInternalState(headlessUuid, { fields: {}, client } as any);
+
+    await expect(
+      getFormContext(headlessUuid).generateDocuments({
+        documentIds: [{ kind: 'quik' }]
+      })
+    ).rejects.toThrow(/require a mounted <Form \/>/);
+    expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 });
