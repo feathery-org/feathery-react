@@ -20,6 +20,8 @@ import {
   applyDocumentEdits,
   getDocumentInventory,
   FULL_INVENTORY_BLOCK_LIMIT,
+  isAssistantWriting,
+  setAssistantSessionActive,
   LiveEditor
 } from '../syncfusionDocumentOps';
 import {
@@ -513,6 +515,47 @@ describe('applyDocumentEdits', () => {
     });
     expect(seen).toEqual([true]); // track-changes was ON during the write
     expect(ed.enableTrackChanges).toBe(false); // restored afterwards
+  });
+
+  it('flags the editor as assistant-writing for exactly the span of a call', () => {
+    const ed = make([para('Quote: $5,500')]);
+    expect(isAssistantWriting(ed)).toBe(false);
+    const seen: boolean[] = [];
+    const origInsert = ed.editor.insertText;
+    ed.editor.insertText = (t: string) => {
+      seen.push(isAssistantWriting(ed));
+      origInsert(t);
+    };
+    applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+    expect(seen).toEqual([true]); // true during the write
+    // Cleared synchronously: the session flag owns the gaps between calls.
+    expect(isAssistantWriting(ed)).toBe(false);
+  });
+
+  it('setAssistantSessionActive holds the flag across the gaps between calls in one turn', () => {
+    const ed = make([para('Quote: $5,500')]);
+    expect(isAssistantWriting(ed)).toBe(false);
+
+    // The docx bridge raises this on the turn's first write.
+    setAssistantSessionActive(ed, true);
+    expect(isAssistantWriting(ed)).toBe(true);
+
+    applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+    // The per-call flag cleared with the call; the session alone holds it
+    // through the LLM round-trip before the next tool call.
+    expect(isAssistantWriting(ed)).toBe(true);
+
+    // The turn actually finishes.
+    setAssistantSessionActive(ed, false);
+    expect(isAssistantWriting(ed)).toBe(false);
   });
 
   it('suppresses public layout updates for the mutation phases and restores them', () => {

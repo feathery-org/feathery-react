@@ -15019,6 +15019,33 @@ function collapseSectionComposerResult(
   };
 }
 
+// Every op moves `editor.selection`, firing the same selectionChange a real
+// user click would; the rail reads this flag to tell the two apart.
+const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
+// Guards the gaps BETWEEN tool calls in one editing turn: set by the docx
+// bridge on the first write of a turn, cleared by AssistantChat at turn end.
+const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
+
+/** True while `applyDocumentEdits` is mid-batch, or the editing turn driving
+ *  it is still in flight. */
+export function isAssistantWriting(
+  editor: LiveEditor | null | undefined
+): boolean {
+  const ed = editor as any;
+  return !!ed?.[ASSISTANT_WRITING_KEY] || !!ed?.[ASSISTANT_SESSION_KEY];
+}
+
+/** Mark the assistant editing turn driving this editor as in flight. The docx
+ *  bridge sets it on the first document write of a turn; AssistantChat clears
+ *  it when the turn settles. */
+export function setAssistantSessionActive(
+  editor: LiveEditor | null | undefined,
+  active: boolean
+): void {
+  if (!editor) return;
+  (editor as any)[ASSISTANT_SESSION_KEY] = active;
+}
+
 // Applies a logical change set in deterministic phases. We preflight only the
 // relevant anchors, re-resolve them after structural writes, and verify only
 // each affected source/target pair; a large document never needs a full result
@@ -15027,18 +15054,25 @@ export function applyDocumentEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
 ): ApplyEditsResult {
+  const ed = editor as any;
+  ed[ASSISTANT_WRITING_KEY] = true;
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
-  return withSilentEditSelections(editor, () =>
-    withSerializationTiming(editor, serializationTiming, () => {
-      const expansion = expandSectionComposerEdits(editor, input);
-      const result = applyDocumentEditsMeasured(
-        editor,
-        { ...input, edits: expansion.edits },
-        serializationTiming
-      );
-      return collapseSectionComposerResult(result, expansion);
-    })
-  );
+  try {
+    return withSilentEditSelections(editor, () =>
+      withSerializationTiming(editor, serializationTiming, () => {
+        const expansion = expandSectionComposerEdits(editor, input);
+        const result = applyDocumentEditsMeasured(
+          editor,
+          { ...input, edits: expansion.edits },
+          serializationTiming
+        );
+        return collapseSectionComposerResult(result, expansion);
+      })
+    );
+  } finally {
+    // Synchronous clear: the session flag owns the gaps between calls.
+    ed[ASSISTANT_WRITING_KEY] = false;
+  }
 }
 
 function applyDocumentEditsMeasured(

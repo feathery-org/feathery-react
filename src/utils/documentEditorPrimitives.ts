@@ -257,6 +257,15 @@ export function snapshotRevisions(editor: LiveEditor): LiveRevision[] {
   return [];
 }
 
+// snapshotRevisions without its defensive `.slice()`. Only for scans that
+// read and discard within one synchronous call; never for a retained result.
+const liveRevisionsRaw = (editor: LiveEditor): LiveRevision[] => {
+  const collection = editor.revisions;
+  if (collection && Array.isArray(collection.changes))
+    return collection.changes;
+  return snapshotRevisions(editor);
+};
+
 export function createdRevisions(
   editor: LiveEditor,
   before: LiveRevision[]
@@ -613,9 +622,31 @@ export function parseRevisionGroupTag(
 
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 
+// The identity half of a tag, memoized by its exact customData string. The
+// bulk-resolve loop and the isolation hook re-read every revision's tag per
+// iteration; the appearance/style payloads they never need are the expensive
+// part of the parse, so only {changeSetId, group} is cached (the full parse
+// stays fresh for the binding paths that consume the payloads).
+type RevisionTagIdentity = { changeSetId: string; group: string };
+const TAG_IDENTITY_MEMO = new Map<string, RevisionTagIdentity | null>();
+const revisionTagIdentity = (
+  customData: unknown
+): RevisionTagIdentity | null => {
+  if (typeof customData !== 'string' || !customData.trim()) return null;
+  let identity = TAG_IDENTITY_MEMO.get(customData);
+  if (identity === undefined) {
+    const tag = parseRevisionGroupTag(customData);
+    identity = tag ? { changeSetId: tag.changeSetId, group: tag.group } : null;
+    // Bounded: tags accumulate across documents in one long editor session.
+    if (TAG_IDENTITY_MEMO.size > 10000) TAG_IDENTITY_MEMO.clear();
+    TAG_IDENTITY_MEMO.set(customData, identity);
+  }
+  return identity;
+};
+
 const revisionTagKey = (customData: unknown): string => {
-  const tag = parseRevisionGroupTag(customData);
-  return tag ? `${tag.changeSetId} ${tag.group}` : '';
+  const identity = revisionTagIdentity(customData);
+  return identity ? `${identity.changeSetId} ${identity.group}` : '';
 };
 
 export function installRevisionGroupIsolation(editor: LiveEditor): void {
@@ -648,6 +679,42 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
     module.compareTwoRevisions = (left: any, right: any): boolean =>
       originalCompare(left, right) &&
       revisionTagKey(left?.customData) === revisionTagKey(right?.customData);
+  }
+  // The complementary invariant: a split must not fall OUT of its group. When
+  // untracked user typing lands inside a pending revision, SyncFusion splits
+  // it — but stock insertRevision stamps the new (split-off) revision with the
+  // CURRENT global revisionSettings.customData, which outside an assistant
+  // batch is the host's (usually none). The split half then surfaced in the
+  // rail as a brand-new untagged author card, reading as "the user's edit
+  // became a tracked change". Copy the source revision's tag onto any split
+  // product that lacks one; revisions that were never tagged stay untouched.
+  if (typeof module.updateRevisionForSpittedTextElement === 'function') {
+    const originalSplit =
+      module.updateRevisionForSpittedTextElement.bind(module);
+    module.updateRevisionForSpittedTextElement = (
+      inline: any,
+      splittedSpan: any,
+      currentItem: any
+    ): any => {
+      let sourceTag: unknown;
+      for (let index = 0; index < (inline?.revisionLength ?? 0); index++) {
+        const revision = inline.getRevision?.(index);
+        if (revision?.customData != null) {
+          sourceTag = revision.customData;
+          break;
+        }
+      }
+      const result = originalSplit(inline, splittedSpan, currentItem);
+      if (sourceTag != null) {
+        for (const half of [inline, splittedSpan]) {
+          const revisions: any[] = half?.getAllRevision?.() ?? [];
+          for (const revision of revisions)
+            if (revision && revision.customData == null)
+              revision.customData = sourceTag;
+        }
+      }
+      return result;
+    };
   }
 }
 
@@ -969,19 +1036,50 @@ const revisionMemberIdentity = (
   };
 };
 
-const liveRevisionMember = (
-  editor: LiveEditor,
-  identity: RevisionMemberIdentity
-): LiveRevision | undefined =>
-  snapshotRevisions(editor).find((revision) => {
-    if (identity.revisionID)
-      return (
-        String(revision.revisionID ?? '') === identity.revisionID &&
-        revisionTagKey(revision.customData) === identity.groupKey &&
-        String(revision.author ?? '') === identity.author
+type RevisionIndex = {
+  byRef: Set<LiveRevision>;
+  byKey: Map<string, LiveRevision>;
+};
+
+const revisionIdentityKey = (
+  revisionID: string,
+  groupKey: string,
+  author: string
+): string => `${revisionID}\u0000${groupKey}\u0000${author}`;
+
+// Built once per resolve call, not once per revision: O(n) instead of O(k*n).
+// A miss is always a permanent removal (an earlier identity cascaded its
+// atomic group), never a stale read worth re-scanning for.
+const buildRevisionIndex = (editor: LiveEditor): RevisionIndex => {
+  const byRef = new Set<LiveRevision>();
+  const byKey = new Map<string, LiveRevision>();
+  for (const revision of liveRevisionsRaw(editor)) {
+    byRef.add(revision);
+    const revisionID = String(revision.revisionID ?? '').trim();
+    if (revisionID) {
+      byKey.set(
+        revisionIdentityKey(
+          revisionID,
+          revisionTagKey(revision.customData),
+          String(revision.author ?? '')
+        ),
+        revision
       );
-    return revision === identity.original;
-  });
+    }
+  }
+  return { byRef, byKey };
+};
+
+const lookupRevision = (
+  index: RevisionIndex,
+  identity: RevisionMemberIdentity
+): LiveRevision | undefined => {
+  if (index.byRef.has(identity.original)) return identity.original;
+  if (!identity.revisionID) return undefined;
+  return index.byKey.get(
+    revisionIdentityKey(identity.revisionID, identity.groupKey, identity.author)
+  );
+};
 
 export function resolveRevisionsAsOneUndo(
   editor: LiveEditor,
@@ -1004,9 +1102,10 @@ export function resolveRevisionsAsOneUndo(
       complex = false;
     }
   }
+  const index = buildRevisionIndex(editor);
   try {
     for (const identity of [...identities].reverse()) {
-      const revision = liveRevisionMember(editor, identity);
+      const revision = lookupRevision(index, identity);
       if (!revision) continue;
       (revision as any).robinReviveSelf?.();
       try {
@@ -1047,12 +1146,14 @@ export function resolveLiveRevisionGroupsAsOneUndo(
     groups.filter((group) => group.untagged).map((group) => group.group)
   );
   const matchesGroup = (revision: LiveRevision) => {
-    const tag = parseRevisionGroupTag(revision.customData);
+    // Memoized identity read: this runs once per revision per loop iteration
+    // below — a full tag parse here is O(n^2) JSON.parse across a bulk resolve.
+    const tag = revisionTagIdentity(revision.customData);
     return tag
       ? tagged.has(`${tag.changeSetId}\u0000${tag.group}`)
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
   };
-  const initial = snapshotRevisions(editor).filter(matchesGroup);
+  const initial = liveRevisionsRaw(editor).filter(matchesGroup);
   const resolved: LiveRevision[] = [];
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
@@ -1071,8 +1172,13 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   }
   try {
     let budget = Math.max(20, initial.length * 4);
+    // Without this, a revision that throws stays at current[0]/current[last]
+    // and is retried until the budget is gone, starving the rest of the group.
+    const failed = new Set<LiveRevision>();
     while (budget-- > 0) {
-      const current = snapshotRevisions(editor).filter(matchesGroup);
+      const current = liveRevisionsRaw(editor).filter(
+        (revision) => matchesGroup(revision) && !failed.has(revision)
+      );
       if (!current.length) break;
       const revision = isAccept ? current[0] : current[current.length - 1];
       (revision as any).robinReviveSelf?.();
@@ -1080,6 +1186,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       try {
         resolveRevisionIndividually(revision, isAccept);
       } catch {
+        failed.add(revision);
         // The bounded loop can continue with the next current member.
       }
     }
