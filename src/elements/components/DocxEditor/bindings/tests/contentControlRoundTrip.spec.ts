@@ -12,6 +12,7 @@
 // If (1) or (2) fails, the tag-in-content-control representation cannot carry
 // bindings and the port needs a different anchor before any code is written.
 import JSZip from 'jszip';
+import { getApiUrl, setEnvironment, URL_ENUM } from '@feathery/client-utils';
 import {
   cellTagged,
   cellText,
@@ -56,6 +57,75 @@ async function blobToArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
     reader.onload = () => resolve(reader.result as ArrayBuffer);
     reader.onerror = () => reject(reader.error);
     reader.readAsArrayBuffer(blob);
+  });
+}
+
+const DOCX_MIME =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/**
+ * POST the .docx to the Import endpoint as multipart/form-data.
+ *
+ * Deliberately Node's http module rather than fetch: this spec has to run in
+ * jsdom for the DocumentEditor, and jsdom provides no fetch while Node's own is
+ * not requireable. Hand-rolling the multipart body keeps the spike free of a new
+ * dependency for one developer-run test.
+ */
+function postDocx(
+  url: string,
+  docx: Buffer,
+  token: string | undefined
+): Promise<{ status: number; body: string }> {
+  const target = new URL(url);
+  const secure = target.protocol === 'https:';
+  // Plain module names, not the `node:` prefix - jest 26's resolver does not
+  // understand the prefix in a require().
+  const transport = secure ? require('https') : require('http');
+  const boundary = `----feathery${'x'.repeat(16)}`;
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      'Content-Disposition: form-data; name="files"; filename="bound.docx"\r\n' +
+      `Content-Type: ${DOCX_MIME}\r\n\r\n`
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([head, docx, tail]);
+
+  return new Promise((resolve, reject) => {
+    const request = transport.request(
+      {
+        method: 'POST',
+        hostname: target.hostname,
+        port: target.port || (secure ? 443 : 80),
+        path: target.pathname + target.search,
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+          ...(token ? { Authorization: `Token ${token}` } : {})
+        }
+      },
+      (response: any) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode,
+            body: Buffer.concat(chunks).toString('utf8')
+          })
+        );
+      }
+    );
+    // Node reports a refused connection as a bare AggregateError, which says
+    // nothing about what was being reached. Name the target instead.
+    request.on('error', (error: Error) =>
+      reject(
+        new Error(
+          `could not reach the document service at ${url} (${
+            (error as any).code ?? error.message
+          }). Is the backend running, and does BACKEND_ENV point at it?`
+        )
+      )
+    );
+    request.end(body);
   });
 }
 
@@ -185,14 +255,22 @@ describe('S1 content control tags survive DOCX export', () => {
   });
 });
 
-// The one leg that needs the gated backend. feathery-react converts .docx via
-// `${serviceUrl}Import` behind Feathery's own proxy (default
-// `${API_URL}document/editor/`), so this runs only when a reachable service is
-// supplied:
-//   FEATHERY_DOCX_SERVICE_URL=http://localhost:8000/api/document/editor/ \
-//   FEATHERY_SDK_TOKEN=<token> yarn test contentControlRoundTrip
-const SERVICE_URL = process.env.FEATHERY_DOCX_SERVICE_URL;
-const serviceIt = SERVICE_URL ? it : it.skip;
+// The one leg that needs the gated backend: .docx -> SFDT happens server side,
+// behind Feathery's own proxy in front of the self-hosted Word Processor.
+//
+// The URL resolves exactly the way DocumentEditorContainer resolves it, so
+// BACKEND_ENV selects the environment with no test-specific wiring - the same
+// switch the dev/dev-local/dev-staging scripts already use. Only the opt-in and
+// the token are test-specific, and the opt-in is required so a jest run never
+// makes outbound calls by accident:
+//   BACKEND_ENV=local FEATHERY_DOCX_SERVICE_TEST=1 \
+//     yarn test contentControlRoundTrip
+// FEATHERY_DOCX_SERVICE_URL overrides the resolved URL, mirroring the
+// window.featherySyncfusion.serviceUrl escape hatch the component honours.
+setEnvironment((process.env.BACKEND_ENV || 'production') as URL_ENUM);
+const SERVICE_URL =
+  process.env.FEATHERY_DOCX_SERVICE_URL || `${getApiUrl()}document/editor/`;
+const serviceIt = process.env.FEATHERY_DOCX_SERVICE_TEST === '1' ? it : it.skip;
 
 describe('S1 tags survive .docx -> SFDT through the gated proxy', () => {
   serviceIt(
@@ -208,18 +286,16 @@ describe('S1 tags survive .docx -> SFDT through the gated proxy', () => {
         destroyRealDocumentEditor(editor);
       }
 
-      const form = new FormData();
-      form.append('files', docx, 'bound.docx');
-      const token = process.env.FEATHERY_SDK_TOKEN;
-      const response = await fetch(`${SERVICE_URL}Import`, {
-        method: 'POST',
-        body: form,
-        headers: token ? { Authorization: `Token ${token}` } : undefined
-      });
-      expect(response.ok).toBe(true);
+      const response = await postDocx(
+        `${SERVICE_URL}Import`,
+        Buffer.from(await blobToArrayBuffer(docx)),
+        process.env.FEATHERY_SDK_TOKEN
+      );
+      expect(response.status).toBe(200);
 
-      const sfdt = await response.text();
-      const tags = new Set(collectTags(JSON.parse(sfdt)));
+      // The service may answer with optimized SFDT, so read tags through the
+      // both-keywords collector rather than assuming the verbose form.
+      const tags = new Set(collectTags(JSON.parse(response.body)));
       expect(tags.has(FIELD_TAG)).toBe(true);
       expect(tags.has(FORMULA_TAG)).toBe(true);
     },
