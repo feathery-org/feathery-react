@@ -1,5 +1,13 @@
 import FeatheryClient, { API_URL, STATIC_URL } from '../featheryClient';
 import { initInfo } from '../init';
+import { featheryDoc } from '../browser';
+import ResponsiveStyles, {
+  DEFAULT_MOBILE_BREAKPOINT
+} from '../../elements/styles';
+import {
+  resetUploadedFonts,
+  rewriteWholeUploadedFamily
+} from '../uploadedFonts';
 
 /**
  * Tests for FeatheryClient._getFileValue method and resolveFile logic
@@ -797,5 +805,80 @@ describe('FeatheryClient - using api helpers', () => {
         })
       );
     });
+  });
+});
+
+describe('FeatheryClient - _loadFormPackages fonts', () => {
+  beforeEach(() => {
+    (global as any).FontFace = jest.fn(() => ({
+      load: () => Promise.resolve({})
+    }));
+    Object.defineProperty(featheryDoc(), 'fonts', {
+      value: { add: jest.fn() },
+      configurable: true
+    });
+  });
+
+  afterEach(() => {
+    resetUploadedFonts();
+    delete (global as any).FontFace;
+  });
+
+  it('registers uploaded faces under aliased families and fills the rewrite registry', () => {
+    const client = new FeatheryClient('font-test-form');
+
+    client._loadFormPackages({
+      fonts: [],
+      uploaded_fonts: {
+        Arial: [
+          {
+            source: 'https://cdn.example.com/arial.woff2',
+            style: 'normal',
+            weight: '400'
+          }
+        ]
+      },
+      steps: []
+    });
+
+    expect((global as any).FontFace).toHaveBeenCalledWith(
+      'Uploaded--Arial',
+      expect.stringContaining('arial.woff2'),
+      expect.anything()
+    );
+    expect(rewriteWholeUploadedFamily('Arial')).toBe("'Uploaded--Arial'");
+  });
+
+  it('emits the registered family in element CSS, leaving catalog stacks alone', () => {
+    const client = new FeatheryClient('font-test-form');
+    client._loadFormPackages({
+      fonts: [],
+      uploaded_fonts: {
+        Arial: [
+          {
+            source: 'https://cdn.example.com/arial.woff2',
+            style: 'normal',
+            weight: '400'
+          }
+        ]
+      },
+      steps: []
+    });
+
+    const cssFor = (fontFamily: string) => {
+      const styles = new ResponsiveStyles(
+        { styles: { font_family: fontFamily } },
+        ['fc'],
+        false,
+        DEFAULT_MOBILE_BREAKPOINT
+      );
+      styles.applyFontFamily('fc');
+      return (styles.getTarget('fc') as any).fontFamily;
+    };
+
+    // What a published form renders for text that selected the upload...
+    expect(cssFor('Arial')).toBe("'Uploaded--Arial'");
+    // ...versus text on the bundled Arial, which the upload must not capture.
+    expect(cssFor('Arial, sans-serif')).toBe('Arial, sans-serif');
   });
 });

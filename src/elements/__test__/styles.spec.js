@@ -1,5 +1,9 @@
 import ResponsiveStyles, { DEFAULT_MOBILE_BREAKPOINT } from '../styles';
 import { LABEL_TEXT_ALIGN_DEFAULT } from '../utils/labelStyleResolver';
+import {
+  registerUploadedFonts,
+  resetUploadedFonts
+} from '../../utils/uploadedFonts';
 
 const TEST_COLOR_BACKGROUND = 'dddddd';
 const mockElement = {
@@ -202,6 +206,8 @@ describe('responsiveStyles', () => {
         DEFAULT_MOBILE_BREAKPOINT
       ).transformFontFamilies(families);
 
+    afterEach(() => resetUploadedFonts());
+
     it('passes single unspaced families through unquoted', () => {
       expect(transform('Arial')).toBe('Arial');
     });
@@ -212,6 +218,37 @@ describe('responsiveStyles', () => {
 
     it('leaves already-quoted families alone, normalizing to single quotes', () => {
       expect(transform('"Open Sans", serif')).toBe("'Open Sans', serif");
+    });
+
+    it('rewrites a bare uploaded family to its aliased render family', () => {
+      registerUploadedFonts(['Arial']);
+      expect(transform('Arial')).toBe("'Uploaded--Arial'");
+    });
+
+    it('leaves catalog stacks that merely mention a collided name alone', () => {
+      registerUploadedFonts(['Arial']);
+      expect(transform('Arial, sans-serif')).toBe('Arial, sans-serif');
+    });
+
+    it('matches uploaded families case-insensitively, like CSS', () => {
+      registerUploadedFonts(['Arial']);
+      expect(transform('aRIAL')).toBe("'Uploaded--Arial'");
+    });
+
+    it('is idempotent on already-aliased values', () => {
+      registerUploadedFonts(['Arial']);
+      const once = transform('Arial');
+      expect(transform(once)).toBe(once);
+    });
+
+    it('matches an uploaded name containing a comma as a whole value', () => {
+      registerUploadedFonts(['Weird, Name']);
+      expect(transform('Weird, Name')).toBe("'Uploaded--Weird, Name'");
+    });
+
+    it('never aliases names that cannot be safely quoted into CSS', () => {
+      registerUploadedFonts(['Bad"Name']);
+      expect(transform('Bad"Name')).toBe("Bad'Name");
     });
   });
 });
