@@ -29,7 +29,7 @@ function StepperBar({
   stepConfigs: StepConfig[];
   stepKey?: string;
   textPlacement?: string;
-  onStepClick?: (stepKey: string) => void;
+  onStepClick?: (config: StepConfig) => void;
   allowAllNavigation?: boolean;
   vertical?: boolean;
   style?: React.CSSProperties;
@@ -117,7 +117,9 @@ function StepperBar({
           '&:hover': isClickable ? { opacity: 0.7 } : {},
           ...circleStyleFor(isCompleted, isActive)
         }}
-        onClick={isClickable ? () => onStepClick(sKey) : undefined}
+        onClick={
+          isClickable ? () => onStepClick(visibleStepConfigs[index]) : undefined
+        }
       >
         {circleContent(isCompleted && !isActive, index)}
       </div>

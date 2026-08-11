@@ -1,18 +1,34 @@
 import React from 'react';
+import { SpinnerIcon } from '../icons';
 import { INK, INK_3, LINE, MONO, PANEL_3, btn, rejectBtn } from './styles';
+
+// Shared by both bulk buttons: fixed icon slot so the spinner swap doesn't
+// resize them.
+const bulkBtn = {
+  height: 29,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 5
+} as const;
 
 interface Props {
   pendingCount: number;
   /** Collapses the rail; omitted when the host owns no drawer state. */
   onHide?: () => void;
   onResolveAll: (isAccept: boolean) => void;
+  /** Which bulk action is running, if any - disables both buttons and swaps
+   *  the running one's label icon for a spinner, same as the toolbar's Save
+   *  button while autosaving. */
+  resolvingAll?: 'accept' | 'reject' | null;
 }
 
 // Rail head: title, pending counter, bulk actions.
 export default function RailHead({
   pendingCount,
   onHide,
-  onResolveAll
+  onResolveAll,
+  resolvingAll
 }: Props) {
   return (
     <div
@@ -63,16 +79,20 @@ export default function RailHead({
       <div css={{ display: 'flex', gap: 6 }}>
         <button
           type='button'
-          css={{ ...btn, height: 29 }}
+          css={{ ...btn, ...bulkBtn }}
+          disabled={!!resolvingAll}
           onClick={() => onResolveAll(true)}
         >
+          {resolvingAll === 'accept' && <SpinnerIcon width={11} height={11} />}
           Accept all
         </button>
         <button
           type='button'
-          css={{ ...rejectBtn, height: 29 }}
+          css={{ ...rejectBtn, ...bulkBtn }}
+          disabled={!!resolvingAll}
           onClick={() => onResolveAll(false)}
         >
+          {resolvingAll === 'reject' && <SpinnerIcon width={11} height={11} />}
           Reject all
         </button>
       </div>

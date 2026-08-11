@@ -423,8 +423,19 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // marks the row deleted and leaves it IN PLACE until the revision is
     // accepted, so no row below it has changed parity yet. `restripe_table` is
     // the repair after acceptance.
+    //
+    // `rows` is the SET shape, the same established shape `split_table` carries
+    // and read off the same `table_facts` field, and it is how a request for
+    // several rows must be sent: the engine takes each contiguous run down in ONE
+    // `deleteRow`, which is one change card the reviewer resolves once. Several
+    // `delete_row` ops instead cannot work, and not merely less well - a row that
+    // was itself an unaccepted insertion is WITHDRAWN rather than marked, so it
+    // leaves the document immediately, every row below it shifts, and the next
+    // op's anchor no longer identifies the row it was resolved against.
     op: 'delete_row',
-    params: {},
+    params: {
+      rows: 'int>=0[]?'
+    },
     requiresAnchor: true
   },
   {

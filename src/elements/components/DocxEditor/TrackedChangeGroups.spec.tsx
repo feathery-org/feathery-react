@@ -16,6 +16,8 @@ import { RailErrorBoundary } from './index';
 import { applyDocumentEdits } from '../../../assistant/tools/docx/syncfusionDocumentOps';
 import {
   installRevisionGroupIsolation,
+  resolveLiveRevisionGroupsAsOneUndo,
+  resolveRevisionsAsOneUndo,
   LiveEditor
 } from '../../../utils/documentEditorPrimitives';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
@@ -147,6 +149,19 @@ function acceptAllGroups(): void {
   fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
 }
 
+// Flushes the two animation frames afterNextPaint defers the resolve past.
+// Always real timers: jsdom's rAF is wall-clock and ignores Jest's fakes.
+function flushDeferredResolve(): Promise<void> {
+  return act(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => setTimeout(resolve, 0))
+        );
+      })
+  );
+}
+
 describe('TrackedChangeGroups', () => {
   it('renders nothing when the document has no tracked changes at all', () => {
     const editor = makeEditor([]);
@@ -273,6 +288,87 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
   });
 
+  it('clicking the group title navigates to the first edit without expanding', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+
+    // Navigated (same fallback .select() path a chip click uses)...
+    expect(editor.revisions.changes[0].select).toHaveBeenCalled();
+    // ...but the group never opened.
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    ).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('the group title targets the FIRST chip specifically, not just any member', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const editor = makeEditor([deletion, insertion]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+
+    expect(deletion.select).toHaveBeenCalled();
+    expect(insertion.select).not.toHaveBeenCalled();
+    // Still collapsed — the title button never toggles the caret's state.
+    expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+  });
+
+  it('the group title rings EVERY chip in the group, not just the first', () => {
+    const deletion = makeRevision({
+      revisionType: 'Deletion',
+      getRange: () => [{ text: '$5,500' }]
+    });
+    const insertion = makeRevision();
+    const editor = makeEditor([deletion, insertion]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+    // Navigation targets chips[0] only (asserted above); the ring, however,
+    // covers the whole group — expanding afterward shows both marked.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+
+    expect(
+      screen.getByText('$5,500').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+  });
+
+  it('the caret still toggles expand/collapse independently of the title button', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    // Navigate via the title first — must not leave the caret expanded.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to Update premium' })
+    );
+    expect(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    ).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
+  });
+
   it('focused-chip Accept resolves only that edit; the resolved chip disappears', () => {
     const deletion = makeRevision({
       revisionType: 'Deletion',
@@ -348,7 +444,9 @@ describe('TrackedChangeGroups', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('Accept all resolves every pending edit across groups', () => {
+  it('Accept all resolves every pending edit across groups', async () => {
+    // The resolve is deferred past two animation frames (afterNextPaint), so
+    // flush before asserting.
     const premium = makeRevision();
     const date = makeRevision({
       customData: tag('cs-1', 'fix-effective-date'),
@@ -365,9 +463,123 @@ describe('TrackedChangeGroups', () => {
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Accept all' }));
+    await flushDeferredResolve();
     expect(premium.accept).toHaveBeenCalledTimes(1);
     expect(date.accept).toHaveBeenCalledTimes(1);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows a spinner on Accept all while its deferred resolve is pending', async () => {
+    const revisions: any[] = [];
+    const revision = makeRevision();
+    revision.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(revision), 1);
+    });
+    revisions.push(revision);
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
+    const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
+    expect(acceptAllBtn.querySelector('svg')).toBeNull();
+    fireEvent.click(acceptAllBtn);
+    // The resolve itself hasn't run yet (still queued) — the spinner is up
+    // and BOTH bulk buttons are disabled so the two can't race each other.
+    expect(revision.accept).not.toHaveBeenCalled();
+    expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
+    expect(acceptAllBtn).toBeDisabled();
+    expect(rejectAllBtn).toBeDisabled();
+
+    await flushDeferredResolve();
+    expect(revision.accept).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a spinner on Reject all while its deferred resolve is pending', async () => {
+    const revisions: any[] = [];
+    const revision = makeRevision();
+    revision.reject.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(revision), 1);
+    });
+    revisions.push(revision);
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
+    const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
+    expect(rejectAllBtn.querySelector('svg')).toBeNull();
+    fireEvent.click(rejectAllBtn);
+    expect(revision.reject).not.toHaveBeenCalled();
+    expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
+    expect(rejectAllBtn).toBeDisabled();
+    expect(acceptAllBtn).toBeDisabled();
+
+    await flushDeferredResolve();
+    expect(revision.reject).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses the selectionChange echo native accept fires during a group-wide resolve', () => {
+    // Each native accept() moves the selection, firing a real
+    // selectionChange — one unguarded rail rescan per resolve if unsuppressed.
+    const first = makeRevision({ getRange: () => [{ text: 'first' }] });
+    const second = makeRevision({ getRange: () => [{ text: 'second' }] });
+    const untouched = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'Untouched' }]
+    });
+    const revisions = [first, second, untouched];
+    for (const revision of [first, second]) {
+      revision.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(revision), 1);
+        // The echo: lands the cursor on some OTHER still-pending edit and
+        // fires the same event a real click would.
+        editor.selection.getCurrentRevision.mockReturnValue([untouched]);
+        editor.emit('selectionChange');
+      });
+    }
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+
+    // Without suppression, "untouched"'s group would now be force-expanded
+    // with its chip marked current, even though the user never touched it.
+    expect(
+      screen.getByRole('button', { name: 'Expand Fix effective date' })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Untouched')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the selectionChange echo native accept fires during a chip resolve', async () => {
+    const chip = makeRevision({ getRange: () => [{ text: 'chip' }] });
+    const untouched = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'Untouched' }]
+    });
+    const revisions = [chip, untouched];
+    chip.accept.mockImplementation(() => {
+      revisions.splice(revisions.indexOf(chip), 1);
+      editor.selection.getCurrentRevision.mockReturnValue([untouched]);
+      editor.emit('selectionChange');
+    });
+    const editor = makeEditor(revisions);
+    render(<TrackedChangeGroups editor={editor} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    fireEvent.click(screen.getByText('chip'));
+    // Let focusChip's OWN echo-suppression (armed by the click above) clear
+    // first, so what's actually being exercised below is resolveChips' own
+    // suppression — not a residual one left over from focusing the chip.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByLabelText('Accept this edit'));
+
+    expect(
+      screen.getByRole('button', { name: 'Expand Fix effective date' })
+    ).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Untouched')).not.toBeInTheDocument();
   });
 
   it('uses panel-scoped J/K and arrow keys to focus, then A/R to resolve', () => {
@@ -531,17 +743,18 @@ describe('TrackedChangeGroups', () => {
     expect(editor.focusIn).toHaveBeenCalledTimes(1);
   });
 
-  it('hides the group-wide Accept/Reject for single-edit groups', () => {
+  it('always shows group-wide Accept/Reject, even for single-edit groups', () => {
     const editor = makeEditor([makeRevision()]);
     render(<TrackedChangeGroups editor={editor} />);
 
-    // No "Accept 1"/"Reject 1" — a lone edit resolves through its chip.
+    // Group-wide actions are visible up front — no need to expand or focus a
+    // chip.
     expect(
-      screen.queryByRole('button', { name: 'Accept 1' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Accept 1' })
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Reject 1' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Reject 1' })
+    ).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
@@ -711,6 +924,46 @@ describe('TrackedChangeGroups', () => {
     ).toBeNull();
   });
 
+  it('ignores a selectionChange fired while the assistant is writing (no expand flicker)', () => {
+    // Every op moves the caret, firing the same selectionChange a real click
+    // does; unguarded, each op expands a group the next refresh() collapses.
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    editor.__featheryAssistantWriting = true;
+    render(<TrackedChangeGroups editor={editor} />);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+
+    // The guard doesn't leak past the batch — a real click still works.
+    editor.__featheryAssistantWriting = false;
+    act(() => editor.emit('selectionChange'));
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+  });
+
+  it('ignores a selectionChange fired while the document is opening', () => {
+    // Opening/reopening a document plants Syncfusion's own default caret,
+    // firing this same event — not a real click either.
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    editor.__featheryOpeningDocument = true;
+    render(<TrackedChangeGroups editor={editor} />);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+
+    editor.__featheryOpeningDocument = false;
+    act(() => editor.emit('selectionChange'));
+    expect(
+      screen.getByText('$6,000').closest('[aria-current="true"]')
+    ).toBeInTheDocument();
+  });
+
   it('never uses an editor ancestor as the rail chip scrollbox', () => {
     const revision = makeRevision();
     const editor = makeEditor([revision]);
@@ -819,6 +1072,35 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
   });
 
+  it('does not immediately refresh on a new edit while the assistant is writing (debounces instead)', () => {
+    // A revision-count change normally skips the debounce (see the test
+    // above), which is O(n^2) across a batch. While the assistant writes,
+    // the debounce applies instead: one refresh per batch, not per op.
+    jest.useFakeTimers();
+    try {
+      const revisions: any[] = [];
+      const editor = makeEditor(revisions);
+      const { container } = render(<TrackedChangeGroups editor={editor} />);
+      expect(container).toBeEmptyDOMElement();
+
+      editor.__featheryAssistantWriting = true;
+      revisions.push(makeRevision());
+      act(() => {
+        editor.emit('contentChange');
+      });
+      // Suppressed: no immediate refresh even though the count changed.
+      expect(container).toBeEmptyDOMElement();
+
+      act(() => {
+        jest.advanceTimersByTime(150); // matches CONTENT_REFRESH_DEBOUNCE_MS
+      });
+      // The debounced refresh still catches up once the batch settles.
+      expect(screen.getByText('Update premium')).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('text growth inside an existing edit refreshes on a trailing debounce', () => {
     jest.useFakeTimers();
     try {
@@ -865,6 +1147,54 @@ describe('TrackedChangeGroups', () => {
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
   });
 
+  it('collapses an expanded group while a new document is opening', () => {
+    const editor = makeEditor([makeRevision()]);
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(screen.getByText('$6,000')).toBeInTheDocument();
+
+    // useDocxEditor sets this around openAsync/open; documentChange fires
+    // as part of that same window.
+    editor.__featheryOpeningDocument = true;
+    act(() => editor.emit('documentChange'));
+
+    // Collapsed, but the card itself is still there — the edit is still
+    // pending, it's just not a state the user asked to review right now.
+    expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    ).toBeInTheDocument();
+  });
+
+  it('collapses an expanded group while the assistant is writing a batch', () => {
+    jest.useFakeTimers();
+    try {
+      const editor = makeEditor([makeRevision()]);
+      render(<TrackedChangeGroups editor={editor} />);
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      );
+      expect(screen.getByText('$6,000')).toBeInTheDocument();
+
+      // applyDocumentEdits sets this around the whole batch; contentChange
+      // fires once per op inside it.
+      editor.__featheryAssistantWriting = true;
+      act(() => editor.emit('contentChange'));
+      act(() => {
+        jest.advanceTimersByTime(150); // matches CONTENT_REFRESH_DEBOUNCE_MS
+      });
+
+      expect(screen.queryByText('$6,000')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Expand Update premium' })
+      ).toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   // Step navigation destroys the Syncfusion instance under a still-mounted
   // rail: every raw EJ2 call then throws. The rail must treat a dead editor
   // as "no editor" across its whole lifecycle — mount, swap, and unmount —
@@ -893,6 +1223,102 @@ describe('TrackedChangeGroups', () => {
     }).not.toThrow();
     expect(screen.queryByText('Update premium')).not.toBeInTheDocument();
     expect(() => unmount()).not.toThrow();
+  });
+
+  // EJ2 clears its listener registry before flipping isDestroyed, so
+  // removeEventListener can still throw — and a passive-effect cleanup throw
+  // escapes RailErrorBoundary, leaving the rail's buttons dead.
+  it('survives removeEventListener throwing on unmount even though isDestroyed is still false', () => {
+    const editor = makeEditor([makeRevision()]);
+    editor.removeEventListener = () => {
+      throw new TypeError('Cannot convert undefined or null to object');
+    };
+    const { unmount } = render(<TrackedChangeGroups editor={editor} />);
+    expect(() => unmount()).not.toThrow();
+  });
+});
+
+describe('resolveLiveRevisionGroupsAsOneUndo', () => {
+  // A revision that throws stays at current[0]/current[last] and would be
+  // retried until the budget is gone, starving the rest of the group.
+  it('does not let one permanently-stuck revision block the rest of the group from resolving', () => {
+    const stuck = makeRevision({ getRange: () => [{ text: 'stuck' }] });
+    stuck.accept.mockImplementation(() => {
+      throw new Error('native accept failure');
+    });
+    const first = makeRevision({ getRange: () => [{ text: 'first' }] });
+    const second = makeRevision({ getRange: () => [{ text: 'second' }] });
+    const revisions = [stuck, first, second];
+    for (const revision of [first, second]) {
+      revision.accept.mockImplementation(() => {
+        revisions.splice(revisions.indexOf(revision), 1);
+      });
+    }
+    const editor = makeEditor(revisions);
+
+    const resolved = resolveLiveRevisionGroupsAsOneUndo(
+      editor as unknown as LiveEditor,
+      [{ changeSetId: 'cs-1', group: 'update-premium' }],
+      true
+    );
+
+    expect(first.accept).toHaveBeenCalledTimes(1);
+    expect(second.accept).toHaveBeenCalledTimes(1);
+    // Retried once (and only once) before being excluded, never blocking
+    // the other two.
+    expect(stuck.accept).toHaveBeenCalledTimes(1);
+    expect(revisions).toEqual([stuck]);
+    expect(resolved).toEqual([stuck, first, second]);
+  });
+});
+
+describe('resolveRevisionsAsOneUndo', () => {
+  // The identity index backing this is built ONCE per call, not once per
+  // revision — verify it still correctly resolves every distinct target in
+  // one pass (not just the first one it happens to look up).
+  it('resolves every distinct revision in one call via the identity index', () => {
+    const first = makeRevision({ getRange: () => [{ text: 'first' }] });
+    const second = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'second' }]
+    });
+    const third = makeRevision({
+      customData: tag('cs-3', 'add-signature'),
+      getRange: () => [{ text: 'third' }]
+    });
+    const editor = makeEditor([first, second, third]);
+
+    resolveRevisionsAsOneUndo(
+      editor as unknown as LiveEditor,
+      [first, second, third],
+      true
+    );
+
+    expect(first.accept).toHaveBeenCalledTimes(1);
+    expect(second.accept).toHaveBeenCalledTimes(1);
+    expect(third.accept).toHaveBeenCalledTimes(1);
+  });
+
+  // A revision cascaded away by an earlier identity in the same call must be
+  // skipped, not crash. Simulated by never adding it to the live collection.
+  it('safely skips an identity that is not (or no longer) in the live collection', () => {
+    const alreadyGone = makeRevision({ getRange: () => [{ text: 'gone' }] });
+    const present = makeRevision({
+      customData: tag('cs-2', 'fix-effective-date'),
+      getRange: () => [{ text: 'present' }]
+    });
+    const editor = makeEditor([present]); // alreadyGone is NOT in the collection
+
+    expect(() =>
+      resolveRevisionsAsOneUndo(
+        editor as unknown as LiveEditor,
+        [alreadyGone, present],
+        true
+      )
+    ).not.toThrow();
+
+    expect(alreadyGone.accept).not.toHaveBeenCalled();
+    expect(present.accept).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1078,7 +1504,7 @@ describe('RailErrorBoundary', () => {
     }
   });
 
-  it('real SDK: bridge-created group can be accepted again after undo', () => {
+  it('real SDK: bridge-created group can be accepted again after undo', async () => {
     const editor = makeRealEditor('Premium: $5,200');
     let unmount = () => {};
     try {
@@ -1095,15 +1521,16 @@ describe('RailErrorBoundary', () => {
         ]
       });
       expect(result.results[0]).toMatchObject({ ok: true });
-
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       acceptAllGroups();
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBe(2);
       expect(screen.getByRole('button', { name: 'Accept all' })).toBeEnabled();
       acceptAllGroups();
+      await flushDeferredResolve();
       expect(editor.revisions.length).toBe(0);
     } finally {
       unmount();
@@ -1128,7 +1555,6 @@ describe('RailErrorBoundary', () => {
         ]
       });
       expect(result.results[0]).toMatchObject({ ok: true });
-
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       fireEvent.click(
         screen.getByRole('button', { name: 'Expand Update premium' })
@@ -1165,7 +1591,6 @@ describe('RailErrorBoundary', () => {
         ]
       });
       expect(result.results[0]).toMatchObject({ ok: true });
-
       ({ unmount } = render(<TrackedChangeGroups editor={editor} />));
       let panel = screen.getByLabelText('Assistant tracked changes');
       fireEvent.keyDown(panel, { key: 'j' });

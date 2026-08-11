@@ -4,7 +4,8 @@ import {
   buildIndexBlocks,
   deriveSectionPattern,
   findDocumentOccurrences,
-  getDocumentInventory
+  getDocumentInventory,
+  isAssistantWriting
 } from '../syncfusionDocumentOps';
 
 jest.mock('../syncfusionDocumentOps', () => ({
@@ -78,6 +79,28 @@ describe('createDocxEditorBridge', () => {
 
     await expect(bridge.findDocumentOccurrences!(input)).resolves.toBe(output);
     expect(findDocumentOccurrencesMock).toHaveBeenCalledWith(editor, input);
+  });
+
+  it('marks the editing session active on the live editor before a write', async () => {
+    const editor: any = { id: 'editor' };
+    applyDocumentEditsMock.mockReturnValue({ results: [] });
+    const bridge = createDocxEditorBridge(() => editor);
+
+    expect(isAssistantWriting(editor)).toBe(false);
+    await bridge.applyDocumentEdits!({ edits: [] });
+    // Raised for the turn's remaining span; AssistantChat clears it at
+    // turn end, so the gaps between tool calls stay guarded.
+    expect(isAssistantWriting(editor)).toBe(true);
+  });
+
+  it('does not mark the session active for reads', async () => {
+    const editor: any = { id: 'editor' };
+    getDocumentInventoryMock.mockReturnValue({ inventory: [] });
+    const bridge = createDocxEditorBridge(() => editor);
+
+    await bridge.getDocumentInventory!({});
+    // A read-only (or text-only) turn never suppresses the review rail.
+    expect(isAssistantWriting(editor)).toBe(false);
   });
 
   it('resolves the live editor for every call and normalizes missing input', async () => {

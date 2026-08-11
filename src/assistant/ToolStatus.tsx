@@ -8,12 +8,22 @@ import {
 } from './icons';
 import { UNHANDLED_TOOL_ERROR } from './tools/assistantToolDispatch';
 import {
+  blendToWhite,
   DEFAULT_CHAT_COLOR,
   GRAY_200,
   GRAY_400,
   GRAY_500,
   RED_500
 } from './colors';
+
+// The indicator the pinned status strip holds. Its metrics live with the
+// component that draws it so the strip's reserved height, exported below,
+// cannot drift from the line it has to fit
+const STATUS_LABEL_FONT_SIZE = 17;
+const STATUS_LABEL_LINE_HEIGHT = 24;
+const STATUS_LABEL_PADDING_Y = 4;
+export const STATUS_LABEL_BLOCK_HEIGHT =
+  STATUS_LABEL_LINE_HEIGHT + STATUS_LABEL_PADDING_Y * 2;
 
 export interface ToolLabel {
   running: string;
@@ -245,8 +255,13 @@ const labelFor = (row: ToolRow, pending = false): string => {
 };
 
 // background-clip:text so the gradient sweep only paints the glyphs
-const shimmerCss = {
-  backgroundImage: `linear-gradient(90deg, ${GRAY_500} 25%, #d1d5db 50%, ${GRAY_500} 75%)`,
+// The travelling highlight is derived from the base so any accent, not just the
+// default gray, shimmers with the same contrast
+const shimmerCss = (base: string = GRAY_500) => ({
+  backgroundImage: `linear-gradient(90deg, ${base} 25%, ${blendToWhite(
+    base,
+    70
+  )} 50%, ${base} 75%)`,
   backgroundSize: '220% 100%',
   backgroundClip: 'text',
   WebkitBackgroundClip: 'text',
@@ -256,7 +271,15 @@ const shimmerCss = {
     from: { backgroundPosition: '160% 0' },
     to: { backgroundPosition: '-60% 0' }
   }
-} as const;
+});
+
+// One even wash across the whole region. A uniform multiply barely moves a
+// contrast ratio - measured off the rendered pixels, the live indicator's
+// default gray goes from 4.83:1 to 4.57:1 under this, still past AA - so it
+// stays legible and the strip needs no lighter treatment of its own. Washing
+// the strip more lightly was tried and read as a pale band with an edge across
+// the panel, which is worse to look at than the even dim
+const WASH = 'rgba(0, 0, 0, 0.1)';
 
 interface ToolChunkProps {
   rows: ToolRow[];
@@ -362,9 +385,28 @@ export const ToolChunk = ({
     );
   }
 
-  // Header path: status label always shows; the list expands only when
+  // While the turn runs, the pinned status strip is the only place the
+  // "Working on it..." indicator belongs. A copy here scrolled away with the
+  // transcript, so show just the tools themselves until the chunk finishes -
+  // and nothing at all when none of them has a label to show.
+  if (!chunkDone) {
+    if (labeledRows.length === 0) return null;
+    return (
+      <div css={containerCss}>
+        {labeledRows.map((row) => (
+          <ToolChunkRow
+            key={row.key}
+            row={row}
+            pending={!turnFinished && isPlaceholder(row)}
+            linkColor={linkColor}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Header path: the summary always shows; the list expands only when
   // there are displayable tools behind it
-  const headerLabel = chunkDone ? 'Finished working' : 'Working on it...';
   const expandable = labeledRows.length > 0;
 
   return (
@@ -389,7 +431,7 @@ export const ToolChunk = ({
           alignSelf: 'flex-start'
         }}
       >
-        <span css={chunkDone ? undefined : shimmerCss}>{headerLabel}</span>
+        <span>Finished working</span>
         {expandable && (
           <MinimizeIcon
             css={{
@@ -470,7 +512,7 @@ const ToolChunkRow = ({ row, pending, linkColor }: ToolChunkRowProps) => {
         ) : (
           <CheckIcon css={{ width: '12px', height: '12px' }} />
         )}
-        <span css={running ? shimmerCss : undefined}>
+        <span css={running ? shimmerCss() : undefined}>
           {labelFor(row, pending)}
         </span>
         {expandable && (
@@ -495,9 +537,11 @@ const ToolChunkRow = ({ row, pending, linkColor }: ToolChunkRowProps) => {
 
 // Mimics the chunk header so a real tool arriving doesn't reflow the layout
 export const ToolChunkPlaceholder = ({
-  label = 'Working on it...'
+  label = 'Working on it...',
+  color = GRAY_500
 }: {
   label?: string;
+  color?: string;
 }) => {
   return (
     <div
@@ -505,7 +549,11 @@ export const ToolChunkPlaceholder = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '2px',
-        fontSize: '13px',
+        fontSize: `${STATUS_LABEL_FONT_SIZE}px`,
+        // A flex item defaults to min-width:auto, which floors it at the
+        // label's full width - the nowrap label below would then overflow the
+        // panel instead of clipping. Both of these are load-bearing
+        flex: '0 1 auto',
         minWidth: 0,
         paddingLeft: '14px',
         animation: 'feathery-chunk-fade-in 220ms ease-out both',
@@ -517,16 +565,97 @@ export const ToolChunkPlaceholder = ({
     >
       <div
         css={{
-          padding: '4px 0',
-          color: GRAY_500,
-          fontSize: '13px',
-          alignSelf: 'flex-start'
+          padding: `${STATUS_LABEL_PADDING_Y}px 0`,
+          color,
+          fontSize: `${STATUS_LABEL_FONT_SIZE}px`,
+          // Stretched rather than flex-start so the box is the strip's width,
+          // which is what the ellipsis clips against once the panel is narrow
+          alignSelf: 'stretch',
+          // The label can swap for a longer one while running, so hold it to a
+          // single line: nothing below the indicator may move when it changes,
+          // and a narrow panel truncates the phrase rather than wrapping it
+          maxWidth: '100%',
+          minWidth: 0,
+          lineHeight: `${STATUS_LABEL_LINE_HEIGHT}px`,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
         }}
       >
-        <span css={shimmerCss}>{label}</span>
+        <span
+          // Remounting on a new label replays the fade, so phrases cross over.
+          // Opacity only - the wrapper's fade-in also shifts position, which
+          // would read as the phrase sliding rather than changing
+          key={label}
+          css={{
+            ...shimmerCss(color),
+            animation:
+              'feathery-phrase-fade 220ms ease-out both, feathery-tool-shimmer 1.6s linear infinite',
+            '@keyframes feathery-phrase-fade': {
+              from: { opacity: 0 },
+              to: { opacity: 1 }
+            },
+            '@media (prefers-reduced-motion: reduce)': {
+              animation: 'none',
+              backgroundImage: 'none',
+              color
+            }
+          }}
+        >
+          {label}
+        </span>
       </div>
     </div>
   );
 };
+
+// Dims the region a turn is happening in - the transcript plus the status
+// strip - so the panel as a whole reads as busy, not just the small live label
+// inside it. Purely a signal: it never takes pointer events, so the transcript
+// underneath stays scrollable, selectable and clickable throughout the turn.
+export const BusyWash = () => (
+  <div
+    aria-hidden
+    css={{
+      position: 'absolute',
+      inset: 0,
+      // Deliberately no z-index: the thread dropdown and the menu backdrops
+      // carry their own, so they keep painting above this
+      pointerEvents: 'none',
+      overflow: 'hidden',
+      backgroundColor: WASH,
+      // Held back so a turn that finishes inside a few hundred milliseconds
+      // never flashes a wash on and straight off again. Fill mode `both` keeps
+      // it fully transparent for the whole delay, not just faded
+      animation: 'feathery-busy-wash-in 160ms ease-out 200ms both',
+      '@keyframes feathery-busy-wash-in': {
+        from: { opacity: 0 },
+        to: { opacity: 1 }
+      }
+    }}
+  >
+    {/* A wide, low-contrast highlight crossing the region. Slow on purpose:
+        this sits beside a document being read, so it has to be noticeable
+        without competing for attention */}
+    <div
+      css={{
+        position: 'absolute',
+        inset: 0,
+        backgroundImage:
+          'linear-gradient(100deg, rgba(255,255,255,0) 30%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 70%)',
+        animation: 'feathery-busy-shimmer 3.2s linear infinite',
+        // Off the left edge to off the right one, so the sweep enters and
+        // leaves rather than jumping back at the wrap
+        '@keyframes feathery-busy-shimmer': {
+          from: { transform: 'translateX(-100%)' },
+          to: { transform: 'translateX(100%)' }
+        },
+        // A travelling animation that runs for the whole turn is exactly what
+        // motion sensitivity suffers from. The static dim carries the signal
+        '@media (prefers-reduced-motion: reduce)': { display: 'none' }
+      }}
+    />
+  </div>
+);
 
 export default ToolChunk;
