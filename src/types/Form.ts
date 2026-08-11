@@ -16,7 +16,14 @@ export type Trigger = {
   id: string;
   _servarId?: string;
   text?: string;
-  type: 'button' | 'text' | 'field' | 'addressSelect' | 'table';
+  type:
+    | 'button'
+    | 'text'
+    | 'field'
+    | 'addressSelect'
+    | 'table'
+    | 'tab'
+    | 'progress_bar';
   repeatIndex: number;
   // Table-specific fields
   rowIndex?: number;
@@ -26,6 +33,8 @@ export type Trigger = {
   columnIndex?: number;
   columnKey?: string;
   columnName?: string;
+  // Tab/stepper-specific fields
+  entryIndex?: number;
 };
 
 export type FieldData = {
