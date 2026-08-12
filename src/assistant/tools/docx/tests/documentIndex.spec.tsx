@@ -254,6 +254,12 @@ describe('document-index delta protocol', () => {
     });
   });
   afterEach(() => {
+    // Drop any debounce this test left pending BEFORE handing the clock back.
+    // Without this a reindex timer armed by one test could still fire, and it
+    // fires into the NEXT test's fetch mock - which the outer beforeEach has
+    // already replaced - so that test's "first" POST was the previous test's
+    // delta and `initial.mode` read 'delta' where a full sync was expected.
+    jest.clearAllTimers();
     jest.useRealTimers();
     if (originalCrypto)
       Object.defineProperty(globalThis, 'crypto', originalCrypto);
@@ -302,8 +308,19 @@ describe('document-index delta protocol', () => {
       jest.advanceTimersByTime(ms);
       // Wait for native Web Crypto work as well as the promise chain that
       // sends and confirms the request it unlocks.
-      await _hashDocumentIndexBlockText('flush');
-      await Promise.resolve();
+      //
+      // Iterated to a FIXED POINT rather than once, because one turn is not a
+      // property of the code - it is a guess about how many links the chain
+      // has. Real `crypto.subtle.digest` resolves off the microtask queue and
+      // each hash it unlocks can start another, so under load the assertion
+      // could run before the POST had been issued at all: that is the
+      // `indexPosts()[1] is undefined` face of this spec's flake. Draining a
+      // bounded number of turns is deterministic - no sleeps, no timing
+      // assumption - and settles in the first turn or two when idle.
+      for (let turn = 0; turn < 10; turn++) {
+        await _hashDocumentIndexBlockText('flush');
+        await Promise.resolve();
+      }
     });
   };
 

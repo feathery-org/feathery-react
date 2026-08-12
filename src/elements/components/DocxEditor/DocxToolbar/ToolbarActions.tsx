@@ -24,11 +24,14 @@ export interface ToolbarActionsProps {
   onDownloadPdf?: () => void;
   /** True while a download/export is running (disables the control). */
   downloadBusy?: boolean;
-  terminalAction?: 'download' | 'sign';
+  terminalAction?: 'download' | 'sign' | 'draft';
   onTerminalAction?: () => void;
   /** PDF variant of the 'download' terminal action. When provided, the red
    *  terminal Download button becomes a DOCX / PDF menu. */
   onTerminalActionPdf?: () => void;
+  /** Draft variant of the 'sign' terminal action (DocuSign only). When
+   *  provided, the terminal Sign button becomes a Sign / Save as Draft menu. */
+  onTerminalActionDraft?: () => void;
   terminalActionDisabled?: boolean;
   terminalActionLoading?: boolean;
   saving?: boolean;
@@ -52,6 +55,7 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
       terminalAction,
       onTerminalAction,
       onTerminalActionPdf,
+      onTerminalActionDraft,
       terminalActionDisabled,
       terminalActionLoading,
       saving,
@@ -211,6 +215,54 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
                 </div>
               )}
             </Menu>
+          ) : terminalAction === 'sign' && onTerminalActionDraft ? (
+            // Both signing outcomes configured: draft-then-send is a real
+            // sequence, so Sign must not hide Save as Draft.
+            <Menu
+              align='end'
+              trigger={({ toggle }) => (
+                <button
+                  type='button'
+                  css={terminalBtn(terminalDisabled)}
+                  disabled={terminalDisabled}
+                  onClick={toggle}
+                  title='Saves changes before continuing'
+                >
+                  {terminalActionLoading ? (
+                    <SpinnerIcon width={16} height={16} />
+                  ) : (
+                    <SignatureIcon width={16} height={16} />
+                  )}
+                  Sign
+                  <ChevronDownIcon width={14} height={14} />
+                </button>
+              )}
+            >
+              {(close) => (
+                <div css={{ width: 200 }}>
+                  <button
+                    type='button'
+                    css={menuItem()}
+                    onClick={() => {
+                      onTerminalAction();
+                      close();
+                    }}
+                  >
+                    Send for signature
+                  </button>
+                  <button
+                    type='button'
+                    css={menuItem()}
+                    onClick={() => {
+                      onTerminalActionDraft();
+                      close();
+                    }}
+                  >
+                    Save as Draft
+                  </button>
+                </div>
+              )}
+            </Menu>
           ) : (
             <button
               type='button'
@@ -226,7 +278,11 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
               ) : (
                 <SignatureIcon width={16} height={16} />
               )}
-              {terminalAction === 'download' ? 'Download' : 'Sign'}
+              {terminalAction === 'download'
+                ? 'Download'
+                : terminalAction === 'draft'
+                ? 'Create Draft'
+                : 'Sign'}
             </button>
           ))}
         {onSave && (

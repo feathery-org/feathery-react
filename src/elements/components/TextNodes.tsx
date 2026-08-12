@@ -3,7 +3,7 @@ import { isNum, stringifyWithNull } from '../../utils/primitives';
 import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
 import { hasIconGlyph, IconGlyph } from './icons/iconGlyph';
-import { fieldValues, initInfo } from '../../utils/init';
+import { fieldValues, initInfo, initState } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
@@ -18,7 +18,7 @@ export function replaceTextVariables(text: string, repeat?: any) {
       const pVal = fieldValues[pStr];
       if (Array.isArray(pVal)) {
         if (pVal.length === 0) {
-          return pattern;
+          return '';
         } else if (isNaN(repeat)) {
           return pVal.join(', ');
         } else if (repeat >= pVal.length) {
@@ -27,7 +27,10 @@ export function replaceTextVariables(text: string, repeat?: any) {
           return stringifyWithNull(pVal[repeat]);
         }
       } else return stringifyWithNull(pVal);
-    } else return pattern;
+    }
+    // A real field the user hasn't filled renders empty, while a name that
+    // matches no field stays literal so authors see what they typed.
+    return initState.knownFieldKeys.has(pStr) ? '' : pattern;
   });
 }
 

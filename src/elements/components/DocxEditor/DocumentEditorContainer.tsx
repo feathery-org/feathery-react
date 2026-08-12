@@ -9,8 +9,15 @@ import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
+import internalState from '../../../utils/internalState';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
-import { getSignUrl } from '../../../utils/document';
+import {
+  containerToolbarOutcomes,
+  editorContainerId,
+  getSignUrl,
+  isDocusignSignAction,
+  signsViaDocusign
+} from '../../../utils/document';
 import {
   registerDocxEditor,
   unregisterDocxEditor
@@ -19,13 +26,15 @@ import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
 
 // The container carries no document. Its document is owned by the Generate
-// Documents button that targets it: find the action whose view_draft_container
-// matches this container and use its first document. Scans loaded form schemas
-// (container ids are unique, so no need to know the form key).
-function resolveTargetAction(
-  containerId?: string
-): Record<string, any> | undefined {
-  if (!containerId) return undefined;
+// Documents button that targets it: find the action whose editor_mode matches
+// this container and use its first document. The schema key it was found under
+// is the form key, which the DocuSign finalize needs — the `formId` prop is a
+// form *instance* id and can't stand in for it.
+function resolveTargetAction(containerId?: string): {
+  action?: Record<string, any>;
+  formKey?: string;
+} {
+  if (!containerId) return {};
   const schemas = (initState as any).formSchemas ?? {};
   for (const key of Object.keys(schemas)) {
     const rawSteps = schemas[key]?.steps;
@@ -38,15 +47,15 @@ function resolveTargetAction(
         for (const action of button?.properties?.actions ?? []) {
           if (
             action?.type === ACTION_GENERATE_ENVELOPES &&
-            action?.view_draft_container === containerId
+            editorContainerId(action ?? {}) === containerId
           ) {
-            return action;
+            return { action, formKey: key };
           }
         }
       }
     }
   }
-  return undefined;
+  return {};
 }
 
 interface Envelope {
@@ -125,17 +134,17 @@ export default function DocumentEditorContainer({
   editMode?: boolean;
   assistantEnabled?: boolean;
 }) {
-  // saveEnvelopeFile/getCurrentEnvelope only use initInfo(), not the form key,
-  // so a lightweight client instance is sufficient here.
-  const client = useMemo(() => new FeatheryClient(), []);
   const pendingDraft = useMemo(
     () => getPendingDraft(containerId),
     [containerId]
   );
-  const targetAction = useMemo(
+  const { action: targetAction, formKey } = useMemo(
     () => resolveTargetAction(containerId),
     [containerId]
   );
+  // Carries the form key because the DocuSign sign path posts form_key; the
+  // other envelope calls only need initInfo().
+  const client = useMemo(() => new FeatheryClient(formKey ?? ''), [formKey]);
   // Document is owned by the button that targets this container.
   const documentId = useMemo(
     () =>
@@ -255,21 +264,18 @@ export default function DocumentEditorContainer({
   const activeDocumentId = envelope?.document ?? documentId;
   // Signed envelopes are always read-only. Otherwise the Generate Documents
   // action that targets this container owns editability via
-  // `view_draft_read_only` (default: editable).
+  // `editor_read_only` (default: editable).
   const actionReadOnly =
-    typeof targetAction?.view_draft_read_only === 'boolean'
-      ? targetAction.view_draft_read_only
+    typeof targetAction?.editor_read_only === 'boolean'
+      ? targetAction.editor_read_only
       : false;
   const finalized = !!envelope && envelope.id === finalizedId;
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
+  // The outcomes this container offers, read from `editor_toolbar_actions` —
+  // the same key the overlay editor uses. See containerToolbarOutcomes.
+  const { terminalAction, offersDraft, savesToField } =
+    containerToolbarOutcomes(targetAction ?? {});
   const reviewChanges = !!assistantEnabled && !readOnly;
-  const terminalAction = targetAction
-    ? !targetAction.envelope_action || targetAction.envelope_action === 'sign'
-      ? 'sign'
-      : targetAction.envelope_action === 'download'
-      ? 'download'
-      : undefined
-    : undefined;
 
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
@@ -288,8 +294,8 @@ export default function DocumentEditorContainer({
         );
       }
       if (
-        targetAction?.envelope_action === 'save' &&
-        targetAction.save_document_field_key &&
+        savesToField &&
+        targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
         const newValues = {
@@ -300,30 +306,115 @@ export default function DocumentEditorContainer({
       }
       return updated;
     },
-    [client, envelope, targetAction]
+    [client, envelope, targetAction, savesToField]
   );
 
-  // Only the sign action is handled here — the download action downloads the
-  // freshly-saved bytes directly in DocxEditor, so it never re-fetches a
-  // (possibly cache-stale) envelope file URL.
-  const runTerminalAction = useCallback(async () => {
-    if (terminalAction !== 'sign') return;
-    // The sign ceremony expects a PDF with signature fields. Generation
-    // skipped that conversion so the docx stayed editable — run it now,
-    // against the just-saved edits (DocxEditor saves before this fires).
-    // One-way: this draft stops being editable; regenerating produces a
-    // fresh editable one. Throws on failure so the sign page never opens
-    // against an unfinalized envelope.
-    if (envelope && envelope.type === 'docx' && !envelope.signed) {
-      const signerKey = targetAction?.envelope_signer_field_key;
-      const signer = signerKey ? fieldValues[signerKey] : undefined;
-      await client.finalizeEnvelope(envelope.id, signer?.toString() ?? '');
-      setFinalizedId(envelope.id);
-    }
-    const url = getSignUrl(targetAction?.redirect);
-    if (targetAction?.redirect) featheryWindow().location.href = url;
-    else openTab(url);
-  }, [client, envelope, targetAction, terminalAction]);
+  // Only the signing actions run here; 'download' is handled inside DocxEditor,
+  // which downloads the just-saved bytes rather than re-fetching a cache-stale
+  // envelope URL.
+  const runSigningAction = useCallback(
+    async (draft: boolean) => {
+      if (!envelope) return;
+      const viaDocusign = signsViaDocusign(targetAction ?? {});
+      // The field names whoever signs inline. Nobody does on DocuSign - it
+      // mails every recipient itself, from the role mappings - so routing to
+      // that field would reach someone never listed as a signer.
+      const signerKey = viaDocusign
+        ? ''
+        : targetAction?.envelope_signer_field_key;
+      const fillerEmail = signerKey
+        ? fieldValues[signerKey]?.toString() ?? ''
+        : '';
+      let finalized: Record<string, any> | undefined;
+      // Both backends need a PDF carrying signature fields, and generation
+      // skipped that conversion to keep the docx editable. One-way: this draft
+      // stops being editable. Throws so nothing is sent unfinalized. It's also
+      // what hands back the signer to open as.
+      if (envelope.type === 'docx' && !envelope.signed) {
+        // Per-role signers were held back at generation for the same reason, so
+        // they go up now, scoped to the document actually on screen. Without
+        // any, the shared signer field covers every role instead.
+        const roleSigners = (targetAction?.envelope_signers ?? [])
+          .filter((entry: any) => entry.document_id === activeDocumentId)
+          .map((entry: any) => {
+            const email = fieldValues[entry.field_key]?.toString() ?? '';
+            return {
+              document_id: entry.document_id,
+              role_id: entry.role_id,
+              email,
+              // Flagged entries are the ones this filler opens and signs
+              // inline.
+              filler:
+                !!fillerEmail &&
+                email.toLowerCase() === fillerEmail.toLowerCase()
+            };
+          });
+        const signers = (
+          roleSigners.length || !activeDocumentId
+            ? roleSigners
+            : // role_id left off rather than nulled - the backend rejects an
+              // explicit null, and omitting it covers every role.
+              [
+                {
+                  document_id: activeDocumentId,
+                  email: fillerEmail,
+                  filler: true
+                }
+              ]
+        ).filter((entry: any) => entry.email);
+        finalized = await client.finalizeEnvelope(
+          envelope.id,
+          signers,
+          targetAction?.sign_method
+        );
+        setFinalizedId(envelope.id);
+      }
+
+      // Nothing here navigates away, so the outcome is only visible if it's
+      // announced.
+      const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
+
+      if (isDocusignSignAction(targetAction ?? {}, 'sign')) {
+        // DocuSign has no Feathery sign page: the backend send (or draft) is
+        // itself the completion signal.
+        const result = await client.finalizeEnvelopeReview(targetAction ?? {}, {
+          envelopes: [{ envelopeId: envelope.id }],
+          envelopeAction: 'sign',
+          draft
+        });
+        if (!result) throw Error('Failed to send the document to DocuSign');
+        if (result.status === 'error') throw Error(result.message);
+        announce?.(
+          draft ? 'Saved as Draft' : 'Sent for Signature',
+          targetAction?.documents
+        );
+        return;
+      }
+
+      // A signer id comes back only when the filler signs first. Without one
+      // the envelope is someone else's to sign, so there's nothing to open.
+      if (!finalized?.signer_id) {
+        if (finalized?.invited)
+          announce?.('Sent for Signature', targetAction?.documents);
+        return;
+      }
+      const url = getSignUrl(finalized.signer_id, targetAction?.redirect);
+      if (targetAction?.redirect) featheryWindow().location.href = url;
+      else openTab(url);
+    },
+    [client, envelope, targetAction, activeDocumentId, formId]
+  );
+
+  // 'draft' as the terminal action means Create Draft is the only signing
+  // outcome configured; offersDraft puts it in a menu beside Sign instead.
+  const runTerminalAction = useCallback(
+    () => runSigningAction(terminalAction === 'draft'),
+    [runSigningAction, terminalAction]
+  );
+  const runTerminalActionDraft = useCallback(
+    () => runSigningAction(true),
+    [runSigningAction]
+  );
 
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
   // point. The schema container id is stable for this editor across renders;
@@ -428,10 +519,16 @@ export default function DocumentEditorContainer({
       fileName='document'
       terminalAction={terminalAction}
       onTerminalAction={terminalAction ? runTerminalAction : undefined}
-      terminalActionDisabled={!envelope.file}
+      onTerminalActionDraft={offersDraft ? runTerminalActionDraft : undefined}
+      // Signing needs a signer to open as, which only finalizing an unsigned
+      // envelope hands back - so there's nothing behind the button once signed.
+      terminalActionDisabled={!envelope.file || envelope.signed}
+      // Without this a failed send is swallowed: DocxEditor routes terminal
+      // errors here and there is nothing else listening.
+      onError={setError}
       // Save-to-field flow: the document's destination is a form field (set
       // on every save), not the user's machine — no Download button.
-      hideDownload={targetAction?.envelope_action === 'save'}
+      hideDownload={savesToField}
       onSave={saveEnvelope}
       // readOnly editors never dirty, so skip registering them entirely
       onChange={

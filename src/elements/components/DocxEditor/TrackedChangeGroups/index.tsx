@@ -1,11 +1,19 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import {
   listRevisionGroups,
   resolveLiveRevisionGroupsAsOneUndo,
   resolveRevisionsAsOneUndo,
   RevisionGroupItem
 } from '../../../../utils/documentEditorPrimitives';
-import { setActiveInlineRevision } from '../useDocxEditor';
+import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
+import { featheryWindow } from '../../../../utils/browser';
+import { isOpeningDocument, setActiveInlineRevisions } from '../useDocxEditor';
 import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
 import GroupCard from './GroupCard';
@@ -35,6 +43,27 @@ const CONTENT_REFRESH_DEBOUNCE_MS = 150;
 
 const groupKeyOf = (changeSetId: string, group: string) =>
   `${changeSetId} ${group}`;
+
+// Forces a real paint before `fn` runs. A single setTimeout(0) doesn't: the
+// browser coalesces the state-update paint with whatever runs in the same
+// frame, so the spinner never reached the screen for a fast resolve.
+function afterNextPaint(fn: () => void): void {
+  const win = featheryWindow() as any;
+  if (typeof win.requestAnimationFrame !== 'function') {
+    setTimeout(fn, 0);
+    return;
+  }
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+  win.requestAnimationFrame(() => win.requestAnimationFrame(run));
+  // Hidden tabs suspend rAF entirely; the timeout guarantees the deferred
+  // work still runs (a hidden tab has no paint to wait for anyway).
+  setTimeout(run, 100);
+}
 
 // The single containment boundary for editor faults in this file: one guard
 // at each UI/EJ2 event entry (render/effect faults go to the host's
@@ -92,9 +121,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // the rail and reappears if the resolution is undone.
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  // The edit the document cursor sits inside (or the chip last clicked);
-  // its chip is expanded, ringed, scrolled to, and shows its own actions.
-  const [activeRevision, setActiveRevision] = useState<any>(null);
+  // Which bulk action is running, for RailHead's spinner. The resolve loop
+  // is synchronous, so it's deferred past a paint (see afterNextPaint).
+  const [resolvingAll, setResolvingAll] = useState<'accept' | 'reject' | null>(
+    null
+  );
+  // The edits ringed in the document — a group-title click rings the whole
+  // group. First entry is primary: what stepping and scroll-into-view use.
+  const [activeRevisions, setActiveRevisions] = useState<any[]>([]);
   // Keyboard stepping reads this ref, not state: selectRevision echoes a
   // synchronous selectionChange that can resolve to a NEIGHBOUR and make
   // every arrow press skip an edit.
@@ -111,13 +145,25 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     panelRef.current?.focus({ preventScroll: true });
   };
 
-  const commitActiveRevision = useCallback(
-    (revision: any) => {
-      activeRevisionRef.current = revision;
-      setActiveRevision(revision);
-      setActiveInlineRevision(editor, revision);
+  const commitActiveRevisions = useCallback(
+    (revisions: any[]) => {
+      activeRevisionRef.current = revisions[0] ?? null;
+      // Keep the previous state identity when nothing changed: every caret
+      // move fires this, and a fresh [] each time would re-render the whole
+      // rail per keystroke.
+      setActiveRevisions((prev) =>
+        prev.length === revisions.length &&
+        revisions.every((revision, index) => revision === prev[index])
+          ? prev
+          : revisions
+      );
+      setActiveInlineRevisions(editor, revisions);
     },
     [editor]
+  );
+  const commitActiveRevision = useCallback(
+    (revision: any) => commitActiveRevisions(revision ? [revision] : []),
+    [commitActiveRevisions]
   );
 
   // Live revision count, for the new-edit fast path below.
@@ -131,6 +177,11 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const refresh = useCallback(() => {
     const views = listRevisionGroups(editor);
     lastRevisionCountRef.current = revisionCount();
+    // Neither a (re)load nor an assistant batch is something the user asked
+    // to review, so nothing stays expanded through one.
+    if (isOpeningDocument(editor) || isAssistantWriting(editor)) {
+      setExpanded({});
+    }
     setGroups(
       views.map((view) => ({
         key: groupKeyOf(view.changeSetId, view.group),
@@ -179,7 +230,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const onContentChange = () =>
       handleEditorEvent(() => {
         clearTimeout(timer);
-        if (revisionCount() !== lastRevisionCountRef.current) refresh();
+        // Every op changes the revision count, so refreshing immediately on
+        // each one is O(n^2) across a batch whose intermediate state nobody
+        // sees. Debounce instead: one refresh once the batch settles.
+        const suppressed =
+          isOpeningDocument(editor) || isAssistantWriting(editor);
+        if (!suppressed && revisionCount() !== lastRevisionCountRef.current)
+          refresh();
         else timer = setTimeout(refresh, CONTENT_REFRESH_DEBOUNCE_MS);
       });
     const onDocumentChange = () => handleEditorEvent(refresh);
@@ -187,10 +244,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     editor.addEventListener?.('documentChange', onDocumentChange);
     return () => {
       clearTimeout(timer);
-      // EJ2 teardown race: unsubscribing a destroyed instance throws.
+      // EJ2 teardown race: destroy can land between this check and the
+      // removeEventListener calls, so those need their own guard too.
       if (editor.isDestroyed) return;
-      editor.removeEventListener?.('contentChange', onContentChange);
-      editor.removeEventListener?.('documentChange', onDocumentChange);
+      try {
+        editor.removeEventListener?.('contentChange', onContentChange);
+        editor.removeEventListener?.('documentChange', onDocumentChange);
+      } catch {
+        // Torn down mid-unsubscribe: nothing left to detach from.
+      }
     };
   }, [editor, refresh, revisionCount]);
 
@@ -203,6 +265,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const onSelectionChange = () =>
       handleEditorEvent(() => {
         if (ignoreSelectionRef.current) return;
+        // Same window refresh() collapses for. Without this, each op expands
+        // whichever group it lands on and refresh() collapses it right back.
+        if (isOpeningDocument(editor) || isAssistantWriting(editor)) return;
         const current = editor.selection?.getCurrentRevision?.();
         const revisions: any[] = Array.isArray(current)
           ? current
@@ -231,21 +296,26 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       });
     editor.addEventListener?.('selectionChange', onSelectionChange);
     return () => {
-      // EJ2 teardown race: unsubscribing a destroyed instance throws.
-      if (!editor.isDestroyed)
-        editor.removeEventListener?.('selectionChange', onSelectionChange);
+      // EJ2 teardown race: the destroy can land between this check and the
+      // removeEventListener call, so isDestroyed alone isn't enough.
+      if (!editor.isDestroyed) {
+        try {
+          editor.removeEventListener?.('selectionChange', onSelectionChange);
+        } catch {
+          // Torn down mid-unsubscribe: nothing left to detach from.
+        }
+      }
       activeRevisionRef.current = null;
-      setActiveInlineRevision(editor, null);
+      setActiveInlineRevisions(editor, []);
     };
   }, [editor, commitActiveRevision, onHiddenChange]);
 
-  // Bring the newly active chip into view once it exists (its group may have
-  // been collapsed until this same update expanded it). Scroll ONLY the rail's
-  // own scrollbox: scrollIntoView walks every scrollable ancestor, so it can
-  // yank the whole form viewport when a new revision lands.
+  // Scroll only the rail's own scrollbox: scrollIntoView walks every
+  // scrollable ancestor and would yank the whole form viewport.
   useEffect(() => {
-    if (!activeRevision) return;
-    const row = rowRefs.current.get(activeRevision);
+    const primary = activeRevisions[0];
+    if (!primary) return;
+    const row = rowRefs.current.get(primary);
     const box = scrollBoxRef.current;
     if (!row || !box || box.scrollHeight <= box.clientHeight) return;
     const rowTop =
@@ -258,12 +328,27 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       box.scrollTop = rowBottom - box.clientHeight;
   });
 
+  // Each native accept/reject moves the selection, firing a real
+  // selectionChange — one unguarded rail rescan per revision without this.
+  const suppressingSelectionEcho = (fn: () => void) => {
+    ignoreSelectionRef.current = true;
+    try {
+      fn();
+    } finally {
+      queueMicrotask(() => {
+        ignoreSelectionRef.current = false;
+      });
+    }
+  };
+
   // Non-cascading resolve (native accept/reject settles whatever is
   // CONTIGUOUS, not the group), wrapped as ONE undo step.
   const resolveChips = (chips: ChipView[], isAccept: boolean) => {
     if (!chips.length) return;
     const revisions = chips.flatMap(chipRevisions).filter(Boolean);
-    resolveRevisionsAsOneUndo(editor, revisions, isAccept);
+    suppressingSelectionEcho(() =>
+      resolveRevisionsAsOneUndo(editor, revisions, isAccept)
+    );
     refresh();
     // Resolving the last edit unmounts the rail — focus would land on
     // <body>, where nobody sees the next ⌘Z.
@@ -272,29 +357,37 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   };
 
   const resolveGroups = (groupViews: GroupView[], isAccept: boolean) => {
-    resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept);
+    suppressingSelectionEcho(() =>
+      resolveLiveRevisionGroupsAsOneUndo(editor, groupViews, isAccept)
+    );
     refresh();
     if (listRevisionGroups(editor).length) refocusPanel();
     else editor?.focusIn?.();
   };
 
-  const focusChip = (chip: ChipView) => {
-    const group = groups.find((mem) => mem.chips.includes(chip));
-    if (group) {
-      setExpanded((prev) =>
-        prev[group.key] ? prev : { ...prev, [group.key]: true }
-      );
-    }
-    commitActiveRevision(chip.revision);
-    // Suppress selectRevision's selectionChange echo (sync + trailing
-    // microtask) so it cannot reassign activeRevision.
-    ignoreSelectionRef.current = true;
-    try {
-      // skipGroupSelect keeps navigation on this exact chip — the public
+  // Accept all / Reject all: the same resolve, but a big batch blocks long
+  // enough to be worth a spinner. See afterNextPaint.
+  const resolveAllWithSpinner = (
+    groupViews: GroupView[],
+    isAccept: boolean
+  ) => {
+    if (resolvingAll) return;
+    setResolvingAll(isAccept ? 'accept' : 'reject');
+    afterNextPaint(() => {
+      handleEditorEvent(() => resolveGroups(groupViews, isAccept));
+      setResolvingAll(null);
+    });
+  };
+
+  // Suppresses selectRevision's selectionChange echo (sync + trailing
+  // microtask) so it can't reassign activeRevisions, then moves the cursor.
+  const selectAndScrollToRevision = (revision: any) =>
+    suppressingSelectionEcho(() => {
+      // skipGroupSelect keeps navigation on this exact revision — the public
       // revision.select() may expand to the adjacent same-author/type group.
       const selection = editor?.selectionModule;
       if (typeof selection?.selectRevision === 'function') {
-        selection.selectRevision(chip.revision, undefined, undefined, true);
+        selection.selectRevision(revision, undefined, undefined, true);
         // Explicit scroll too: some host/layout combos suppress the implicit
         // one while focus stays in the rail.
         if (selection.start && selection.end) {
@@ -304,19 +397,39 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           );
         }
       } else {
-        chip.revision?.select?.();
+        revision?.select?.();
       }
-    } finally {
-      // Cleanup, not containment: the echo suppression must lift even when
-      // navigation throws to the event-entry guard.
-      queueMicrotask(() => {
-        ignoreSelectionRef.current = false;
-      });
+    });
+
+  const focusChip = (chip: ChipView) => {
+    const group = groups.find((mem) => mem.chips.includes(chip));
+    if (group) {
+      setExpanded((prev) =>
+        prev[group.key] ? prev : { ...prev, [group.key]: true }
+      );
     }
+    commitActiveRevision(chip.revision);
+    selectAndScrollToRevision(chip.revision);
+    refocusPanel();
+  };
+
+  // Group-title click: navigate to the group's first edit but ring every
+  // chip, and never expand — that's the caret's job alone.
+  const focusGroupFirst = (group: GroupView) => {
+    if (!group.chips.length) return;
+    commitActiveRevisions(group.chips.flatMap(chipRevisions));
+    selectAndScrollToRevision(group.chips[0].revision);
     refocusPanel();
   };
 
   const allChips = groups.flatMap((group) => group.chips);
+
+  // O(1) chip lookups: a group-title click puts a whole group's revisions in
+  // here, and every chip of every card checks membership per render.
+  const activeRevisionSet = useMemo(
+    () => new Set(activeRevisions),
+    [activeRevisions]
+  );
 
   const onPanelKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const key = event.key.toLowerCase();
@@ -375,8 +488,13 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     <div
       css={{
         position: 'relative',
-        display: 'flex',
         flex: '0 0 auto',
+        // Both children are absolutely anchored, so the rail contributes no
+        // height of its own to the shared flex row: the document pane alone
+        // sets the row height, and the stretched rail matches it exactly —
+        // it can never hang below the editor and scroll past it.
+        alignSelf: 'stretch',
+        width: hidden ? 0 : 341,
         minHeight: 0
       }}
     >
@@ -390,8 +508,11 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           tabIndex={0}
           onKeyDown={(event) => handleEditorEvent(() => onPanelKeyDown(event))}
           css={{
-            width: 340,
-            flex: '0 0 auto',
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
             borderLeft: `1px solid ${LINE}`,
             background: PANEL,
             display: 'flex',
@@ -408,9 +529,8 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
           <RailHead
             pendingCount={allChips.length}
             onHide={onHiddenChange ? () => onHiddenChange(true) : undefined}
-            onResolveAll={(isAccept) =>
-              handleEditorEvent(() => resolveGroups(groups, isAccept))
-            }
+            onResolveAll={(isAccept) => resolveAllWithSpinner(groups, isAccept)}
+            resolvingAll={resolvingAll}
           />
           <div
             ref={scrollBoxRef}
@@ -435,7 +555,10 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
                     [mem.key]: !prev[mem.key]
                   }))
                 }
-                activeRevision={activeRevision}
+                onNavigateFirst={() =>
+                  handleEditorEvent(() => focusGroupFirst(mem))
+                }
+                activeRevisions={activeRevisionSet}
                 chipRef={(chip) => (el) => {
                   if (el) rowRefs.current.set(chip.revision, el);
                   else rowRefs.current.delete(chip.revision);

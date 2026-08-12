@@ -1,6 +1,6 @@
 {
   "name": "@feathery/react",
-  "version": "2.67.0",
+  "version": "2.72.0",
   "description": "React library for Feathery",
   "author": "Boyang Dun",
   "license": "MIT",
@@ -123,7 +123,7 @@
     "@emotion/babel-preset-css-prop": "11.12.0",
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "11.14.0",
-    "@feathery/client-utils": "0.19.0",
+    "@feathery/client-utils": "0.21.1",
     "@fingerprintjs/fingerprintjs": "5.1.0",
     "@rc-component/slider": "^1.0.0",
     "@ricky0123/vad-web": "^0.0.30",

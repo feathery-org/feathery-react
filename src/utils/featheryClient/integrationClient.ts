@@ -17,6 +17,7 @@ import {
   FormConflictError,
   generateFormDocuments as apiGenerateFormDocuments,
   generateQuikEnvelopes as apiGenerateQuikEnvelopes,
+  getApiUrl,
   getQuikAccountForms as apiGetQuikAccountForms,
   getQuikFormRoles as apiGetQuikFormRoles,
   getQuikForms as apiGetQuikForms,
@@ -26,6 +27,16 @@ import {
   sendEmail as apiSendEmail
 } from '@feathery/client-utils';
 import { handleFormAuthenticationError, handleFormConflict } from './utils';
+import {
+  editorContainerId,
+  isDocusignSignAction,
+  signsViaDocusign
+} from '../document';
+
+// A configured Generate Documents entry in the ordered `documents` array: a
+// template UUID string, or the single polymorphic `{kind:'quik'}` source dict.
+// The SDK forwards these verbatim (action config -> request field).
+export type GenerateDocumentRef = string | { kind: string; [key: string]: any };
 
 export const TYPE_MESSAGES_TO_IGNORE = [
   // e.g. https://sentry.io/organizations/feathery-forms/issues/3571287943/
@@ -451,25 +462,120 @@ export default class IntegrationClient {
     const { userId, sdkKey } = initInfo();
     // Editor flow: the backend converts a docx envelope to PDF at generation
     // whenever a signer is present, which would make the draft uneditable in
-    // the targeted document-editor container. Hold the signer back here — the
-    // editor's Sign action forwards it at finalize time (finalizeEnvelope),
-    // when that conversion is meant to happen.
-    const signer = action.view_draft_container
+    // the targeted document-editor container. Hold every signer back there —
+    // the editor's Sign action forwards them at finalize time
+    // (finalizeEnvelope), when that conversion is meant to happen.
+    const isDraftView =
+      !!editorContainerId(action) || !!action.view_draft_container;
+    // The configured field names whoever signs inline, in the form. Nobody does
+    // on a DocuSign action - every recipient is mailed by DocuSign, and the
+    // per-role mappings are what name them - so the field is ignored there
+    // rather than quietly routing to it on top of the roles.
+    const configuredFiller = signsViaDocusign(action)
       ? undefined
       : fieldValues[action.envelope_signer_field_key];
+    const fillerEmail = isDraftView ? '' : configuredFiller?.toString() ?? '';
     const envelopeAction =
       !action.envelope_action || action.envelope_action === 'sign'
         ? 'sign'
         : 'fill';
+    const documentIds = action.documents ?? [];
+    const repeatable = action.repeatable ?? false;
     const runAsync = action.run_async ?? true;
+    // One list: the configured per-role signers, plus the shared signer field
+    // for any document without a role. `filler` marks the entries the form
+    // filler signs themselves, which are opened inline rather than emailed —
+    // only those signing tokens come back.
+    const envelopeSigners = isDraftView ? [] : action.envelope_signers ?? [];
+    // Whichever entries are the filler's own are flagged, so the backend
+    // opens those inline instead of emailing a link, and hands back only
+    // their signing token.
+    const isFiller = (email: string) =>
+      !!fillerEmail && email.toLowerCase() === fillerEmail.toLowerCase();
+    const roleSigners = envelopeSigners
+      .map((entry: any) => {
+        // The action config only ever maps a field, and names the filler by
+        // matching the shared signer field; the logic-rule method supplies
+        // both the email and the flag outright.
+        const email =
+          (entry.email ?? fieldValues[entry.field_key])?.toString() ?? '';
+        return {
+          document_id: entry.document_id,
+          // Omitted rather than nulled: the backend's role_id rejects an
+          // explicit null, and leaving it off spreads the email across
+          // every role.
+          ...(entry.role_id ? { role_id: entry.role_id } : {}),
+          email,
+          filler: entry.filler ?? isFiller(email)
+        };
+      })
+      .filter((entry: any) => entry.email);
+    // Only a document whose roles actually resolved to someone opts out of the
+    // shared signer field. A mapping whose field came back empty routes to
+    // nobody, so the field covers every role there instead.
+    const roleDocumentIds = new Set(
+      roleSigners.map((entry: any) => entry.document_id)
+    );
+    const signers = [
+      ...roleSigners,
+      ...documentIds
+        .filter((documentId: any) => !roleDocumentIds.has(documentId))
+        .map((documentId: any) => ({
+          document_id: documentId,
+          email: fillerEmail,
+          filler: true
+        }))
+    ].filter((entry: any) => entry.email);
+
+    const openInEditor = action.envelope_action === 'open_in_editor';
+
+    // `@feathery/client-utils`'s generateFormDocuments only forwards a fixed
+    // set of known fields, so it can't carry the review-step flag or
+    // DocuSign's sign_method through to the endpoint. Call the endpoint
+    // directly (reusing this client's own fetch/poll handling) whenever
+    // either is requested; other sign_method values (e.g. Feathery's own
+    // hosted eSign) still go through the maintained library path below.
+    //
+    // The draft-editor container is deliberately excluded: it consumes the
+    // generate response's `envelopes` metadata, which the review payload
+    // replaces, and it presents its own editing surface instead of the review
+    // viewer. Targeting a container therefore keeps the plain generate flow.
+    // A polymorphic entry has to take the direct call too. client-utils'
+    // generateFormDocuments interpolates `documentIds` straight into its poll
+    // URL, so a {kind:'quik'} entry stringifies to "[object Object]" and never
+    // matches the backend's document_cache_keys ("quik" for that item). The
+    // documents generate fine and then the first poll 400s "No document
+    // generation". generateEnvelopesForEditor maps the keys correctly.
+    const hasPolymorphicDocument = documentIds.some(
+      (doc: GenerateDocumentRef) => typeof doc !== 'string'
+    );
+
+    if (
+      (openInEditor ||
+        isDocusignSignAction(action) ||
+        hasPolymorphicDocument) &&
+      !editorContainerId(action)
+    ) {
+      return await this.generateEnvelopesForEditor({
+        documentIds,
+        signers,
+        repeatable,
+        runAsync,
+        toolbarActions: action.editor_toolbar_actions ?? [],
+        mergeDocs: action.merge_docs ?? false,
+        openInEditor,
+        envelopeAction,
+        signMethod: action.sign_method
+      });
+    }
 
     return await apiGenerateFormDocuments({
       sdkKey,
       formId: this.formKey,
-      documentIds: action.documents ?? [],
+      documentIds,
       userId,
-      signerEmail: signer?.toString() ?? '',
-      repeatable: action.repeatable ?? false,
+      signers,
+      repeatable,
       runAsync,
       envelopeAction,
       checkInterval: this.ENVELOPE_CHECK_INTERVAL,
@@ -506,7 +612,17 @@ export default class IntegrationClient {
   // Finalize an edited docx envelope for signing: the backend converts it to
   // PDF and injects signature fields (the same pipeline generation runs when
   // a signer is known up front). One-way — the envelope stops being editable.
-  finalizeEnvelope(envelopeId: string, signerEmail = '') {
+  // Signers are supplied here rather than at generation: they're what makes
+  // the backend convert the docx, so holding them back is what kept the draft
+  // editable. Same list shape generation sends, where an omitted role_id means
+  // the one email covers every role.
+  // `signMethod` decides who does the sending: on DocuSign the rows are still
+  // built here (they become its recipients) but no Feathery invite goes out.
+  finalizeEnvelope(
+    envelopeId: string,
+    signers: Record<string, any>[] = [],
+    signMethod?: string
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}document/envelope/${envelopeId}/finalize/`;
     const options = {
@@ -514,7 +630,8 @@ export default class IntegrationClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fuser_key: userId ?? '',
-        signer_email: signerEmail
+        signers,
+        ...(signMethod ? { sign_method: signMethod } : {})
       }),
       keepalive: false
     };
@@ -560,6 +677,225 @@ export default class IntegrationClient {
         if (response.ok) return await response.json();
         else throw Error(parseAPIError(await response.json()));
       }
+    });
+  }
+
+  private async generateEnvelopesForEditor({
+    documentIds,
+    signers,
+    repeatable,
+    runAsync,
+    toolbarActions,
+    mergeDocs,
+    openInEditor,
+    envelopeAction,
+    signMethod
+  }: {
+    documentIds: GenerateDocumentRef[];
+    signers: Record<string, any>[];
+    repeatable: boolean;
+    runAsync: boolean;
+    toolbarActions: string[];
+    mergeDocs: boolean;
+    // False for a direct DocuSign sign, which also needs this call because
+    // client-utils can't forward sign_method.
+    openInEditor: boolean;
+    envelopeAction: 'sign' | 'fill';
+    signMethod?: string;
+  }) {
+    const { userId } = initInfo();
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      documents: documentIds,
+      run_async: runAsync,
+      envelope_action: openInEditor ? 'open_in_editor' : envelopeAction,
+      // Forwarded even though neither path merges at generate time: it lets the
+      // backend reject an unsupported merge combination (merge_docs with a
+      // DocuSign send) now, instead of after the filler has reviewed every
+      // document and pressed a button that finalize would then refuse.
+      merge_docs: mergeDocs
+    };
+    if (openInEditor) {
+      // Generate reads the toolbar only to decide whether default field values
+      // are baked in; the pressed action is sent to finalize separately.
+      payload.editor_toolbar_actions = toolbarActions;
+    }
+    if (signMethod) payload.sign_method = signMethod;
+    if (signers.length) payload.signers = signers;
+    if (repeatable) payload.repeatable = repeatable;
+
+    const url = `${getApiUrl()}document/form/generate/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    const response = await this._fetch(url, options, false);
+    if (!response) return;
+    const data = await response.json();
+    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    if (!runAsync || data.documents) return data;
+
+    // Poll `dids` must match the backend's document_cache_keys: a template's
+    // UUID string, or the literal "quik" for the quik item. Interpolating the
+    // raw array would stringify a {kind:'quik'} entry to "[object Object]" and
+    // never match the cache.
+    const dids = documentIds
+      .map((doc) =>
+        typeof doc === 'string'
+          ? doc
+          : doc.kind === 'quik'
+          ? 'quik'
+          : String(doc.document_id)
+      )
+      .join(',');
+    const pollUrl = `${getApiUrl()}document/form/generate/poll/?fid=${userId}&dids=${dids}`;
+    return await this.pollUntilComplete(
+      pollUrl,
+      this.ENVELOPE_CHECK_INTERVAL,
+      this.ENVELOPE_MAX_TIME,
+      'Document generation'
+    );
+  }
+
+  FINALIZE_CHECK_INTERVAL = 2000;
+  FINALIZE_MAX_TIME = 3 * 60 * 1000;
+
+  async finalizeEnvelopeReview(
+    action: Record<string, any>,
+    {
+      envelopes,
+      envelopeAction,
+      draft = false
+    }: {
+      // signerId: the filler's own signing token for that envelope, as handed
+      // back by generate. Keeps finalize from emailing them an invite to a
+      // document they open and sign inline.
+      envelopes: { envelopeId: string; signerId?: string }[];
+      envelopeAction: 'sign' | 'fill' | 'download' | 'save';
+      // DocuSign sign only: create the envelope as a draft instead of sending.
+      draft?: boolean;
+    }
+  ) {
+    if (!envelopes.length) {
+      return { status: 'error', message: 'No envelopes to finalize' };
+    }
+
+    const { userId } = initInfo();
+    const runAsync = action.run_async ?? true;
+    const payload: Record<string, any> = {
+      form_key: this.formKey,
+      fuser_key: userId,
+      envelopes: envelopes.map((envelope) => ({
+        envelope_id: envelope.envelopeId,
+        // Omitted rather than nulled: the backend rejects an explicit null.
+        ...(envelope.signerId ? { signer_id: envelope.signerId } : {})
+      })),
+      envelope_action: envelopeAction,
+      merge_docs: action.merge_docs ?? false,
+      draft,
+      run_async: runAsync
+    };
+    if (action.merged_file_name)
+      payload.merged_file_name = action.merged_file_name;
+    if (action.sign_method) payload.sign_method = action.sign_method;
+
+    const url = `${getApiUrl()}document/form/finalize/`;
+    const options = {
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      body: JSON.stringify(payload)
+    };
+    const response = await this._fetch(url, options, false);
+    if (!response) return;
+    const data = await response.json();
+    if (!response.ok) return { status: 'error', message: parseAPIError(data) };
+    // The sync response is already the final `{ files: [...] }` payload.
+    // The async response is always `{}` immediately, regardless of the
+    // requested envelope_action (sign/fill/download/save) — completion is
+    // only ever signaled by the poll endpoint's `status: 'complete'`, never
+    // by guessing at the shape of this intermediate body.
+    //
+    // `incomplete` is neither: a concurrent duplicate was already in flight and
+    // this call did nothing, so poll for the owning call's outcome rather than
+    // reporting a send that never happened.
+    if (!runAsync && data?.status !== 'incomplete') return data;
+
+    const envelopeIds = envelopes.map((envelope) => envelope.envelopeId);
+    const pollUrl = `${getApiUrl()}document/form/finalize/poll/?fid=${userId}&eids=${envelopeIds}`;
+    return await this.pollUntilComplete(
+      pollUrl,
+      this.FINALIZE_CHECK_INTERVAL,
+      this.FINALIZE_MAX_TIME,
+      'Document finalize'
+    );
+  }
+
+  // Shared GET-poll loop for endpoints whose async path reports completion
+  // via `{ status: 'complete', ... }` (mirrors the poll pattern used by
+  // client-utils' generateFormDocuments / generateQuikEnvelopes, but routed
+  // through this._fetch so auth/conflict handling stays consistent).
+  // TODO (tyler): migrate the other polling endpoints (Quik envelope
+  // generation, AI document extraction, persona) onto this helper instead of
+  // each hand-rolling its own retry loop — the persona loop below still has
+  // the parseResponse bug this one was just fixed for. Once it is shared,
+  // move it out of the middle of the document methods.
+  private pollUntilComplete(
+    pollUrl: string,
+    checkInterval: number,
+    maxTime: number,
+    operationName: string
+  ): Promise<Record<string, any>> {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const maxAttempts = maxTime / checkInterval;
+
+      const retryOrTimeout = () => {
+        if (attempts < maxAttempts) {
+          setTimeout(checkCompletion, checkInterval);
+        } else {
+          const message = `${operationName} took too long...`;
+          console.warn(message);
+          resolve({ status: 'error', message });
+        }
+      };
+
+      const checkCompletion = async (): Promise<void> => {
+        attempts += 1;
+        let response;
+        try {
+          // parseResponse=false is load-bearing: with the default `true`,
+          // client-utils' checkResponseSuccess throws on every non-2xx poll,
+          // which turns a hard 500 into a silent retry until timeout and
+          // routes a 403 through handleFormAuthenticationError (poisoning
+          // every later _fetch). Matches client-utils' own pollForCompletion.
+          response = await this._fetch(pollUrl, { method: 'GET' }, false);
+        } catch {
+          // transient network error - retry on next interval
+        }
+        if (!response) return retryOrTimeout();
+
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          // A non-JSON body (a gateway's HTML 502 page, a truncated
+          // response) must not escape as an unhandled rejection: this runs
+          // from a setTimeout inside the promise executor, so a throw here
+          // would leave the outer promise permanently unsettled and the
+          // caller's spinner running forever. Treat it as a bad poll and
+          // retry until the timeout resolves the promise.
+          return retryOrTimeout();
+        }
+        if (response.ok) {
+          if (data.status === 'complete') return resolve(data);
+          return retryOrTimeout();
+        }
+        return resolve({ status: 'error', message: parseAPIError(data) });
+      };
+
+      setTimeout(checkCompletion, checkInterval);
     });
   }
 

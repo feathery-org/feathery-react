@@ -400,15 +400,23 @@ describe('delete_table refuses the whole-table shape of the same deletion', () =
 // deleted the same content without asking. This enumerates the registry instead.
 //
 // The set is derived, never listed: every registered op that an anchor alone
-// completes (`params: {}` and `requiresAnchor`) is fully expressible at the tail
-// table's last row, so every one of them can be driven there and none of them
-// passes vacuously on a missing parameter. What is required of all of them is
-// the property, not the guard - refuse, or accept without throwing - so an op
-// registered next year is covered the day it is registered, whether it reaches
-// the tail row by deleting a table, a row, or something nobody has written yet.
+// completes - `requiresAnchor`, and every declared param OPTIONAL - is fully
+// expressible at the tail table's last row, so every one of them can be driven
+// there and none of them passes vacuously on a missing parameter. What is
+// required of all of them is the property, not the guard - refuse, or accept
+// without throwing - so an op registered next year is covered the day it is
+// registered, whether it reaches the tail row by deleting a table, a row, or
+// something nobody has written yet.
+//
+// "Every param optional", not "no params at all": those two agreed only by
+// accident until `delete_row` gained its optional `rows` set, at which point the
+// stricter spelling silently dropped the very op this enumeration was written
+// for. An optional param does not make an op less anchor-completable.
 describe('no registered op reaches SyncFusion with an accept that throws', () => {
   const anchorOnlyOps = DOCUMENT_EDITOR_CAPABILITIES.filter(
-    (entry) => entry.requiresAnchor && Object.keys(entry.params).length === 0
+    (entry) =>
+      entry.requiresAnchor &&
+      Object.values(entry.params).every((type) => type.endsWith('?'))
   ).map((entry) => entry.op);
 
   it('the enumeration is not empty and covers the two known deleters', () => {

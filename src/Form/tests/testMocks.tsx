@@ -323,7 +323,10 @@ jest.mock('../../utils/offlineRequestHandler', () => ({
 
 // Document util
 jest.mock('../../utils/document', () => ({
-  getSignUrl: () => 'https://example.com/sign'
+  getSignUrl: () => 'https://example.com/sign',
+  // Form/index.tsx imports this too; without a stub, any test that reaches the
+  // Generate Documents action branch dies on "is not a function".
+  editorContainerId: () => ''
 }));
 
 // Poll hook

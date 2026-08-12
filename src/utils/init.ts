@@ -66,6 +66,10 @@ type InitState = {
   // Form keys whose completed steps have already been fetched, so a stepper
   // only triggers the request once per form.
   completedStepsLoaded: Set<string>;
+  // Every field key defined on the loaded forms and the org, whether or not the
+  // user has a value for it. Lets text variables tell an unfilled field apart
+  // from a name that doesn't resolve to any field.
+  knownFieldKeys: Set<string>;
 } & InitOptions;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -94,7 +98,8 @@ const initState: InitState = {
   theme: '',
   region: '',
   completedSteps: new Set(),
-  completedStepsLoaded: new Set()
+  completedStepsLoaded: new Set(),
+  knownFieldKeys: new Set()
 };
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
@@ -285,6 +290,20 @@ function getFieldValues() {
   return { ...fieldValues };
 }
 
+/**
+ * Record the field keys a session declares. Servars are scoped to the form (plus
+ * its draft and AB variant), hidden fields are org-wide. Not reset with the user
+ * ID since field definitions don't belong to a submitter.
+ */
+function registerKnownFieldKeys(session: any) {
+  const hidden = session?.hidden_fields;
+  [
+    ...(session?.servars ?? []),
+    // v3 sessions key hidden fields by type; older ones send a flat list
+    ...(Array.isArray(hidden) ? hidden : Object.keys(hidden ?? {}))
+  ].forEach((key: string) => initState.knownFieldKeys.add(key));
+}
+
 function getCompletedStepKeys() {
   // Make a copy so callers can't mutate the set directly
   return new Set(initState.completedSteps);
@@ -329,6 +348,7 @@ export {
   updateTheme,
   setFieldValues,
   getFieldValues,
+  registerKnownFieldKeys,
   getCompletedStepKeys,
   markStepCompleted,
   loadCompletedSteps,

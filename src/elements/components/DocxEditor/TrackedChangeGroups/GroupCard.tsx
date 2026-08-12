@@ -28,8 +28,10 @@ interface Props {
   group: GroupView;
   isOpen: boolean;
   onToggle: () => void;
-  /** The document's active edit; the matching chip rings and shows actions. */
-  activeRevision: any;
+  /** Navigate the document to the group's first edit without expanding. */
+  onNavigateFirst: () => void;
+  /** The document's active edit(s); matching chips ring and show actions. */
+  activeRevisions: Set<any>;
   /** Row-element registrar per chip (scroll-into-view bookkeeping). */
   chipRef: (chip: ChipView) => (el: HTMLDivElement | null) => void;
   onFocusChip: (chip: ChipView) => void;
@@ -37,14 +39,14 @@ interface Props {
   onResolveChips: (chips: ChipView[], isAccept: boolean) => void;
 }
 
-// One accept group: expandable header with tally, group-wide Accept/Reject
-// (only when there is more than one edit — a lone edit resolves through its
-// chip's own actions), and — while open — the chip list joined by a spine.
+// One accept group. The header splits into two controls: the caret
+// expands/collapses the chip list, the title navigates without expanding.
 export default function GroupCard({
   group,
   isOpen,
   onToggle,
-  activeRevision,
+  onNavigateFirst,
+  activeRevisions,
   chipRef,
   onFocusChip,
   onResolveGroup,
@@ -62,46 +64,59 @@ export default function GroupCard({
         overflow: 'hidden'
       }}
     >
-      <button
-        type='button'
-        aria-expanded={isOpen}
-        aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
-        onClick={onToggle}
+      <div
         css={{
           display: 'flex',
           alignItems: 'flex-start',
-          gap: 10,
-          padding: '11px 11px 11px 10px',
-          width: '100%',
-          border: 'none',
-          background: 'none',
-          textAlign: 'left',
-          font: 'inherit',
-          color: 'inherit',
-          cursor: 'pointer',
           '&:hover': { background: PANEL_2 }
         }}
       >
-        <span
-          aria-hidden
+        <button
+          type='button'
+          aria-expanded={isOpen}
+          aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
+          onClick={onToggle}
           css={{
             flex: 'none',
-            marginTop: 2,
-            color: INK_3,
-            display: 'inline-flex',
-            transform: isOpen ? 'rotate(90deg)' : 'none',
-            transition: 'transform 0.18s ease'
+            display: 'flex',
+            alignItems: 'flex-start',
+            padding: '11px 4px 11px 10px',
+            border: 'none',
+            background: 'none',
+            color: 'inherit',
+            cursor: 'pointer'
           }}
         >
-          {caretSvg}
-        </span>
-        <span
+          <span
+            aria-hidden
+            css={{
+              marginTop: 2,
+              color: INK_3,
+              display: 'inline-flex',
+              transform: isOpen ? 'rotate(90deg)' : 'none',
+              transition: 'transform 0.18s ease'
+            }}
+          >
+            {caretSvg}
+          </span>
+        </button>
+        <button
+          type='button'
+          aria-label={`Go to ${group.title}`}
+          onClick={onNavigateFirst}
           css={{
             flex: 1,
             minWidth: 0,
             display: 'flex',
             alignItems: 'baseline',
-            gap: 7
+            gap: 7,
+            padding: '11px 11px 11px 0',
+            border: 'none',
+            background: 'none',
+            textAlign: 'left',
+            font: 'inherit',
+            color: 'inherit',
+            cursor: 'pointer'
           }}
         >
           <b css={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35 }}>
@@ -124,22 +139,20 @@ export default function GroupCard({
               group.chips.length === 1 ? 'edit' : 'edits'
             }`}
           </span>
-        </span>
-      </button>
-      {group.chips.length > 1 && (
-        <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
-          <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
-            Accept {group.chips.length}
-          </button>
-          <button
-            type='button'
-            css={rejectBtn}
-            onClick={() => onResolveGroup(false)}
-          >
-            Reject {group.chips.length}
-          </button>
-        </div>
-      )}
+        </button>
+      </div>
+      <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
+        <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
+          Accept {group.chips.length}
+        </button>
+        <button
+          type='button'
+          css={rejectBtn}
+          onClick={() => onResolveGroup(false)}
+        >
+          Reject {group.chips.length}
+        </button>
+      </div>
       {isOpen && (
         <div
           css={{
@@ -167,9 +180,8 @@ export default function GroupCard({
               key={index}
               chip={chip}
               isActive={
-                !!activeRevision &&
-                (chip.revision === activeRevision ||
-                  chip.partner === activeRevision)
+                activeRevisions.has(chip.revision) ||
+                activeRevisions.has(chip.partner)
               }
               rowRef={chipRef(chip)}
               onFocus={() => onFocusChip(chip)}

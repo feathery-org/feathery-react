@@ -11,7 +11,6 @@ export const ACTION_NEXT = 'next';
 export const ACTION_NEW_SUBMISSION = 'new_submission';
 export const ACTION_OAUTH_LOGIN = 'trigger_oauth_login';
 export const ACTION_GENERATE_ENVELOPES = 'open_fuser_envelopes';
-export const ACTION_SIGN_DOCUMENTS = 'sign_documents';
 export const ACTION_REMOVE_REPEATED_ROW = 'remove_repeated_row';
 export const ACTION_GENERATE_QUIK_DOCUMENTS = 'generate_quik_documents';
 export const ACTION_SEND_MAGIC_LINK = 'send_magic_link';
@@ -31,6 +30,7 @@ export const ACTION_VERIFY_SMS = 'verify_sms';
 export const ACTION_VERIFY_COLLABORATOR = 'verify_collaborator';
 export const ACTION_INVITE_COLLABORATOR = 'invite_collaborator';
 export const ACTION_REWIND_COLLABORATION = 'rewind_collaboration';
+export const ACTION_SET_TASK_STATUS = 'set_task_status';
 export const ACTION_AI_EXTRACTION = 'ai_document_extract';
 export const ACTION_TELESIGN_SILENT_VERIFICATION =
   'telesign_silent_verification';
@@ -70,7 +70,8 @@ export function canRunAction(
   logicRule: any,
   currentStepId: string,
   props: any,
-  containerId: string | undefined
+  // Container id for container clicks; tab group link_id for tab clicks
+  altMatchId: string | undefined
 ) {
   const event = logicRule.trigger_event;
   if (![...stepEvents, ...elementEvents].includes(event)) return true;
@@ -108,7 +109,7 @@ export function canRunAction(
     (logicRule.elements.includes(
       (props as ContextOnChange | ContextOnAction).trigger.id
     ) ||
-      logicRule.elements.includes(containerId ?? ''))
+      logicRule.elements.includes(altMatchId ?? ''))
   );
 }
 
