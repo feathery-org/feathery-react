@@ -718,19 +718,66 @@ export function adoptUnboundRows(
   const adopted: string[] = [];
   const skipped: Array<{ rowIndex: number; reason: string }> = [];
 
-  (tableNode.rows || []).forEach((row, r) => {
-    if (!row || (row.rowFormat && row.rowFormat.isHeader)) return;
-    // Any content control (bound row, total row, foreign control) is not ours.
-    if (JSON.stringify(row).includes('contentControlProperties')) return;
+  // Adoption REPLACES a row with a clone of the bound template row, so it has to
+  // be certain the row is one the user added to the data block. Scanning the
+  // whole table was not: a totals row that has lost its content control - which a
+  // .docx round trip or a selection that swallowed a control boundary can cause -
+  // looks identical to an appended row, and gets silently overwritten with a
+  // fabricated data row. That is the "duplicate rows" report.
+  //
+  // So the scan is bounded to the data block: it starts at the first bound row,
+  // walks down, and stops at the first content control found AFTER the last bound
+  // row - which is the totals region. A row inserted BETWEEN two bound rows is
+  // still adopted, so inserting mid-table keeps working.
+  const rowIndexOf = (row: { path?: SfdtPath | null } | undefined): number => {
+    const path = row && row.path;
+    if (!path || !path.length) return -1;
+    const last = Number(path[path.length - 1]);
+    return Number.isFinite(last) ? last : -1;
+  };
+  const boundIndices = table.rows.map(rowIndexOf).filter((value) => value >= 0);
+  if (!boundIndices.length) return { sfdt, adopted: [], skipped: [] };
+  const firstBoundIndex = Math.min(...boundIndices);
+  const lastBoundIndex = Math.max(...boundIndices);
+  const allRows = tableNode.rows || [];
+  const templateCells = templateRow.cells || [];
+
+  for (let r = firstBoundIndex; r < allRows.length; r++) {
+    const row = allRows[r];
+    if (!row) break;
+    if (row.rowFormat && row.rowFormat.isHeader) continue;
+    if (JSON.stringify(row).includes('contentControlProperties')) {
+      // Inside the data block this is just another bound row; past it, this is
+      // the totals region and nothing below is ours to touch.
+      if (r > lastBoundIndex) break;
+      continue;
+    }
     const cells = row.cells || [];
-    if (!cells.length) return;
-    const templateCells = templateRow.cells || [];
+    if (!cells.length) continue;
     if (cells.length !== templateCells.length) {
       skipped.push({
         rowIndex: r,
         reason: `has ${cells.length} cells, template has ${templateCells.length}`
       });
-      return;
+      continue;
+    }
+    // A formula column holds engine output, never anything the user typed. Text
+    // sitting there means this is a totals row or a damaged one, not a new line
+    // item - adopting would overwrite it with a pending placeholder.
+    const occupiedFormula = templateCells.findIndex((templateCell, c) => {
+      const binding = findCellBinding(templateCell);
+      return (
+        !!binding &&
+        binding.def.kind === 'formula' &&
+        cellPlainText(cells[c]).trim() !== ''
+      );
+    });
+    if (occupiedFormula !== -1) {
+      skipped.push({
+        rowIndex: r,
+        reason: `cell ${occupiedFormula} holds text where the template has a formula`
+      });
+      continue;
     }
 
     const rowId = rowIdGen();
@@ -782,7 +829,7 @@ export function adoptUnboundRows(
     });
     next = setAt(next, [...(table.tablePath as SfdtPath), 'rows', r], newRow);
     adopted.push(rowId);
-  });
+  }
 
   return { sfdt: next, adopted, skipped };
 }
