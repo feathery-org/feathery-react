@@ -25,10 +25,23 @@
 
 import { EngineWrite } from './core/engine';
 import { EditorPort } from './controller';
+import { anchorCaret, CaretAnchor, resolveAnchor } from './controlGeometry';
 
 export interface ContentControlLike {
   contentControlProperties?: { tag?: string; [key: string]: unknown };
   [key: string]: unknown;
+}
+
+/**
+ * The scroll container. BOTH axes matter: every write selects its target, and
+ * selectRange scrolls that target into view, which sets scrollLeft as readily as
+ * scrollTop (viewer.js scrollToPosition). Putting only scrollTop back leaves the
+ * page horizontally offset - the document visibly shifts sideways after a value
+ * updates.
+ */
+interface ScrollHost {
+  scrollTop: number;
+  scrollLeft: number;
 }
 
 /** The Syncfusion surface this module touches, including engine internals. */
@@ -37,7 +50,7 @@ export interface SyncfusionEditorLike {
   open(sfdt: string): void;
   documentHelper?: {
     contentControlCollection?: ContentControlLike[];
-    viewerContainer?: { scrollTop: number } | null;
+    viewerContainer?: ScrollHost | null;
     /** The hidden contenteditable the editor takes keystrokes through. */
     editableDiv?: HTMLElement;
     [key: string]: unknown;
@@ -57,6 +70,10 @@ export interface SyncfusionEditorLike {
     endOffset?: string;
     currentContentControl?: ContentControlLike | null;
     select?: (start: string, end: string) => void;
+    /** Paragraph + offset -> the "0;2;1;1;0;3" form select() takes. */
+    getHierarchicalIndex?: (paragraph: unknown, offset: string) => string;
+    /** The caret's start position; read for its paragraph identity. */
+    start?: { paragraph?: unknown; [key: string]: unknown };
     [key: string]: unknown;
   };
   enableEditorHistory?: boolean;
@@ -67,8 +84,9 @@ export interface SyncfusionEditorLike {
 
 interface ViewSnapshot {
   caret?: string;
-  host?: { scrollTop: number } | null;
+  host?: ScrollHost | null;
   scrollTop?: number;
+  scrollLeft?: number;
 }
 
 /**
@@ -120,8 +138,12 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       const previousHistory = editor.enableEditorHistory;
       const previousTracking = editor.enableTrackChanges;
       let selection: { start: string; end: string } | null = null;
-      let scrollHost: { scrollTop: number } | null = null;
+      // Where the caret sits WITHIN its control, which survives the control
+      // changing length; the absolute offset below does not.
+      let anchor: CaretAnchor | null = null;
+      let scrollHost: ScrollHost | null = null;
       let scrollTop: number | null = null;
+      let scrollLeft: number | null = null;
       try {
         if (editor.selection?.startOffset) {
           selection = {
@@ -129,12 +151,16 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
             end: editor.selection.endOffset || editor.selection.startOffset
           };
         }
+        anchor = anchorCaret(editor);
       } catch {
         selection = null;
       }
       try {
         scrollHost = helper.viewerContainer || null;
-        if (scrollHost) scrollTop = scrollHost.scrollTop;
+        if (scrollHost) {
+          scrollTop = scrollHost.scrollTop;
+          scrollLeft = scrollHost.scrollLeft;
+        }
       } catch {
         scrollHost = null;
       }
@@ -172,13 +198,23 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         editor.enableEditorHistory = previousHistory;
         editor.enableTrackChanges = previousTracking;
         try {
-          if (selection && editor.selection?.select)
+          // Prefer the anchored position. Normalizing "0012" to "12" shrinks the
+          // control's interior by two offsets, so the saved absolute offset -
+          // unchanged, and therefore looking correct - now points at the closing
+          // boundary, OUTSIDE the binding. The caret appears not to have moved
+          // while the next character silently lands outside the field.
+          const anchored = anchor ? resolveAnchor(editor, anchor) : null;
+          if (anchored && editor.selection?.select)
+            editor.selection.select(anchored, anchored);
+          else if (selection && editor.selection?.select)
             editor.selection.select(selection.start, selection.end);
         } catch {
           /* a failed restore must not fail the write */
         }
         try {
           if (scrollHost && scrollTop != null) scrollHost.scrollTop = scrollTop;
+          if (scrollHost && scrollLeft != null)
+            scrollHost.scrollLeft = scrollLeft;
         } catch {
           /* same */
         }
@@ -197,6 +233,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         if (host) {
           view.host = host;
           view.scrollTop = host.scrollTop;
+          view.scrollLeft = host.scrollLeft;
         }
       } catch {
         /* nothing to capture */
@@ -209,9 +246,25 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       // Deferred on purpose, and only here: this path follows a full open(),
       // which has already rebuilt the document and moved the caret, so there is
       // no in-flight typing to fight. The patch path restores synchronously.
+      //
+      // "No in-flight typing" holds only until the user does something in the
+      // 60ms. Read where open() left the caret now, and defer to whoever moved
+      // it since - a click into a cell during the gap must not be undone by a
+      // stale offset from before the reload.
+      let caretAfterOpen: string | undefined;
+      try {
+        caretAfterOpen = editor.selection?.startOffset;
+      } catch {
+        caretAfterOpen = undefined;
+      }
       setTimeout(() => {
         try {
-          if (snapshot.caret && editor.selection?.select)
+          const caretNow = editor.selection?.startOffset;
+          if (
+            snapshot.caret &&
+            caretNow === caretAfterOpen &&
+            editor.selection?.select
+          )
             editor.selection.select(snapshot.caret, snapshot.caret);
         } catch {
           /* best effort */
@@ -219,6 +272,8 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         try {
           if (snapshot.host && snapshot.scrollTop != null)
             snapshot.host.scrollTop = snapshot.scrollTop;
+          if (snapshot.host && snapshot.scrollLeft != null)
+            snapshot.host.scrollLeft = snapshot.scrollLeft;
         } catch {
           /* best effort */
         }
