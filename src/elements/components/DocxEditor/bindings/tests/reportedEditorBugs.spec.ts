@@ -203,7 +203,7 @@ describe('row adoption stays inside the data block', () => {
     expect(rowTexts(result.sfdt)[2]).toEqual(['', '', 'Subtotal', '$1,800.00']);
   });
 
-  it('still adopts a row appended below the data block', () => {
+  it('still adopts a row inserted below the data row', () => {
     // The feature this guard must not break: the user adds a row and types.
     const doc = boundDoc();
     const table = firstTable(doc);
@@ -221,6 +221,55 @@ describe('row adoption stays inside the data block', () => {
     expect(adoptedRow[2]).toBe('$50.00');
     // The formula cell is left pending for the engine in the same transaction.
     expect(adoptedRow[3]).toBe('…');
+  });
+
+  // Every position a user can actually add a row from. An earlier version of the
+  // guard bounded the scan to the data block, which silently stopped adoption
+  // working from two of these - inserting a row appeared to do nothing at all.
+  it('adopts an empty row inserted ABOVE the data row', () => {
+    const doc = boundDoc();
+    firstTable(doc).rows.splice(1, 0, {
+      rowFormat: {},
+      cells: [cell(''), cell(''), cell(''), cell('')]
+    });
+
+    const result = adoptUnboundRows(doc, 'costs');
+
+    expect(result.adopted).toHaveLength(1);
+    // Defaults from the template's own tags.
+    expect(rowTexts(result.sfdt)[1]).toEqual([
+      'Design work',
+      '12',
+      '$150.00',
+      '…'
+    ]);
+  });
+
+  it('adopts an empty row appended at the very BOTTOM, below the totals', () => {
+    // Tab out of the last cell, or "insert row below" on the Total row.
+    const doc = boundDoc();
+    firstTable(doc).rows.push({
+      rowFormat: {},
+      cells: [cell(''), cell(''), cell(''), cell('')]
+    });
+
+    const result = adoptUnboundRows(doc, 'costs');
+
+    expect(result.adopted).toHaveLength(1);
+    expect(rowTexts(result.sfdt)[5][3]).toBe('…');
+  });
+
+  it('counts a bottom-appended row in the totals', () => {
+    const doc = boundDoc();
+    firstTable(doc).rows.push({
+      rowFormat: {},
+      cells: [cell(''), cell('2'), cell('100'), cell('')]
+    });
+
+    const rows = rowTexts(applyRules(doc, {}).sfdt);
+
+    expect(rows[5][3]).toBe('$200.00'); // 2 x 100
+    expect(rows[2][3]).toBe('$2,000.00'); // subtotal now includes it
   });
 
   it('computes the appended row through the engine, totals included', () => {
@@ -242,12 +291,11 @@ describe('row adoption stays inside the data block', () => {
     ).toBe(true);
   });
 
-  it('does not adopt past the totals block, however many rows follow', () => {
-    // Every totals row keeps its control, so none of them is a candidate; a
-    // trailing row with no control sits below them and must be left alone.
+  it('leaves a trailing prose row alone, because its formula cell has text', () => {
+    // Not positional: this row is refused because something already occupies the
+    // cell the engine would own, which is what tells a note row from a new one.
     const doc = boundDoc();
-    const table = firstTable(doc);
-    table.rows.push({
+    firstTable(doc).rows.push({
       rowFormat: {},
       cells: [cell(''), cell(''), cell('Notes'), cell('anything')]
     });

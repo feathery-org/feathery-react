@@ -719,39 +719,31 @@ export function adoptUnboundRows(
   const skipped: Array<{ rowIndex: number; reason: string }> = [];
 
   // Adoption REPLACES a row with a clone of the bound template row, so it has to
-  // be certain the row is one the user added to the data block. Scanning the
-  // whole table was not: a totals row that has lost its content control - which a
-  // .docx round trip or a selection that swallowed a control boundary can cause -
-  // looks identical to an appended row, and gets silently overwritten with a
-  // fabricated data row. That is the "duplicate rows" report.
+  // be certain the row is one the user added. The dangerous case is a totals row
+  // that has lost its content control - a .docx round trip, or a selection that
+  // swallowed a control boundary, can do that - because it then looks like a new
+  // row and gets silently overwritten with a fabricated line item. That is the
+  // "duplicate rows" report.
   //
-  // So the scan is bounded to the data block: it starts at the first bound row,
-  // walks down, and stops at the first content control found AFTER the last bound
-  // row - which is the totals region. A row inserted BETWEEN two bound rows is
-  // still adopted, so inserting mid-table keeps working.
-  const rowIndexOf = (row: { path?: SfdtPath | null } | undefined): number => {
-    const path = row && row.path;
-    if (!path || !path.length) return -1;
-    const last = Number(path[path.length - 1]);
-    return Number.isFinite(last) ? last : -1;
-  };
-  const boundIndices = table.rows.map(rowIndexOf).filter((value) => value >= 0);
-  if (!boundIndices.length) return { sfdt, adopted: [], skipped: [] };
-  const firstBoundIndex = Math.min(...boundIndices);
-  const lastBoundIndex = Math.max(...boundIndices);
+  // What separates the two is CONTENT, not position. A row the user just inserted
+  // is empty where the engine's own output would go; a totals row is not, because
+  // its computed value is still sitting there as plain text. So the guard below
+  // reads the row rather than its index.
+  //
+  // Position deliberately is NOT used. Bounding the scan to the data block also
+  // excluded a row inserted above the first bound row and a row appended below
+  // the totals, both of which are ordinary ways to add a line item, and it broke
+  // inserting rows entirely.
   const allRows = tableNode.rows || [];
   const templateCells = templateRow.cells || [];
 
-  for (let r = firstBoundIndex; r < allRows.length; r++) {
+  for (let r = 0; r < allRows.length; r++) {
     const row = allRows[r];
-    if (!row) break;
+    if (!row) continue;
     if (row.rowFormat && row.rowFormat.isHeader) continue;
-    if (JSON.stringify(row).includes('contentControlProperties')) {
-      // Inside the data block this is just another bound row; past it, this is
-      // the totals region and nothing below is ours to touch.
-      if (r > lastBoundIndex) break;
-      continue;
-    }
+    // Any content control (bound row, intact totals row, foreign control) is not
+    // ours to touch.
+    if (JSON.stringify(row).includes('contentControlProperties')) continue;
     const cells = row.cells || [];
     if (!cells.length) continue;
     if (cells.length !== templateCells.length) {
