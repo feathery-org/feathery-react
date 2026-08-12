@@ -114,7 +114,7 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   prioritizeActions: (a: any) => a,
   registerRenderCallback: () => {},
   rerenderAllForms: () => {},
-  setFormElementError: () => {},
+  setFormElementError: jest.fn(),
   updateCustomCSS: () => {},
   updateCustomHead: () => {}
 }));
@@ -229,6 +229,7 @@ jest.mock('../../utils/browser', () => {
   });
   const state = {
     confirm: jest.fn(),
+    open: jest.fn(),
     history,
     location: { href: 'https://example.com/', pathname: '/', search: '' }
   };
@@ -240,6 +241,7 @@ jest.mock('../../utils/browser', () => {
       removeEventListener: jest.fn(),
       scrollTo: jest.fn(),
       confirm: state.confirm,
+      open: state.open,
       history: state.history,
       location: state.location
     }),
@@ -376,6 +378,8 @@ jest.mock('../../utils/featheryClient', () => {
     runAIExtraction = jest.fn();
     forwardInboxEmail = jest.fn();
     flushCustomFields = jest.fn();
+    startAccountConnect = jest.fn();
+    getAccountConnectStatus = jest.fn();
     offlineRequestHandler = { dbHasRequest: async () => false };
   }
 
@@ -485,3 +489,10 @@ export const BrowserMod: any = jest.requireMock('../../utils/browser');
 // Lets tests force step validation to fail.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ValidationMod: any = jest.requireMock('../../utils/validation');
+
+// Exposes the mocked setFormElementError spy for assertions on surfaced
+// element errors (e.g. a connect_account popup-blocked/OAuth failure).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const FormHelperMod: any = jest.requireMock(
+  '../../utils/formHelperFunctions'
+);
