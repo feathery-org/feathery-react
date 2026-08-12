@@ -5,6 +5,7 @@ import {
   LABEL_TEXT_ALIGN_DEFAULT,
   getLabelGapDefault
 } from '../utils/labelStyleResolver';
+import EditableFieldLabel from '../components/EditableFieldLabel';
 
 type VisiblePositions = Record<string, boolean[]>;
 
@@ -651,46 +652,59 @@ function applyFieldStyles(field: any, styles: any) {
 
 Object.entries(Fields).map(([key, Field]: any) => {
   // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-  Fields[key] = memo(({ element, responsiveStyles, ...props }) => {
-    const servar = element.servar;
-    const styles = useMemo(
-      () => applyFieldStyles(element, responsiveStyles),
-      [element]
-    );
-    const markRequired =
-      servar?.required && element.styles?.mark_required_asterisk;
-    const fieldLabel = servar?.name ? (
-      <label
-        // Doesn't work for repeats currently since repeating field IDs aren't unique
-        htmlFor={servar.repeated ? undefined : servar.key}
-        style={{
-          marginBottom: `${getLabelGapDefault(servar.type)}px`,
-          display: 'inline-block',
-          whiteSpace: 'pre-wrap',
-          overflowWrap: 'anywhere',
-          ...styles.getTarget('fieldLabel')
-        }}
-      >
-        {servar.name}
-        {markRequired && (
-          <span
-            aria-hidden='true'
-            style={{ color: '#e11900', marginLeft: '2px' }}
-          >
-            *
-          </span>
-        )}
-      </label>
-    ) : null;
-    return (
-      <Field
-        element={element}
-        fieldLabel={fieldLabel}
-        responsiveStyles={styles}
-        {...props}
-      />
-    );
-  });
+  Fields[key] = memo(
+    ({ element, responsiveStyles, labelCallbacks, ...props }: any) => {
+      const servar = element.servar;
+      const styles = useMemo(
+        () => applyFieldStyles(element, responsiveStyles),
+        [element]
+      );
+      const markRequired =
+        servar?.required && element.styles?.mark_required_asterisk;
+      // Label editing is only enabled in the form builder canvas
+      const labelEditable =
+        props.editMode === 'editable' && !!labelCallbacks?.setLabel;
+      const fieldLabel = servar?.name ? (
+        <label
+          // Doesn't work for repeats currently since repeating field IDs aren't unique
+          htmlFor={servar.repeated || labelEditable ? undefined : servar.key}
+          style={{
+            marginBottom: `${getLabelGapDefault(servar.type)}px`,
+            display: 'inline-block',
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            ...styles.getTarget('fieldLabel')
+          }}
+        >
+          {labelEditable ? (
+            <EditableFieldLabel
+              elementId={element.id}
+              label={servar.name}
+              setLabel={labelCallbacks.setLabel}
+            />
+          ) : (
+            servar.name
+          )}
+          {markRequired && (
+            <span
+              aria-hidden='true'
+              style={{ color: '#e11900', marginLeft: '2px' }}
+            >
+              *
+            </span>
+          )}
+        </label>
+      ) : null;
+      return (
+        <Field
+          element={element}
+          fieldLabel={fieldLabel}
+          responsiveStyles={styles}
+          {...props}
+        />
+      );
+    }
+  );
 });
 
 export default Fields;
