@@ -253,7 +253,7 @@ describe('TextNodes icon embeds', () => {
   });
 
   it('drops whitespace-only text runs in icon-only labels', () => {
-    const { container } = renderNodes([iconOp('IconTrash'), { insert: '\n' }]);
+    const { container } = renderNodes([iconOp('IconTrash'), { insert: ' ' }]);
     expect(
       container.querySelector('[data-feathery-icon="IconTrash"]')
     ).not.toBeNull();
@@ -263,7 +263,7 @@ describe('TextNodes icon embeds', () => {
 
   it('keeps whitespace runs while focused for editing (caret targets)', () => {
     const { container } = renderNodes(
-      [iconOp('IconTrash'), { insert: '\n' }],
+      [iconOp('IconTrash'), { insert: ' ' }],
       'editable',
       true
     );
@@ -301,5 +301,13 @@ describe('TextNodes icon embeds', () => {
     expect(container.textContent).toContain('before');
     expect(container.textContent).toContain('after');
     expect(container.querySelector('[data-feathery-icon]')).toBeNull();
+  });
+
+  it('does not treat unknown object embeds as icon-only labels', () => {
+    const { container } = renderNodes([
+      { insert: { video: 'clip.mp4' } },
+      { insert: ' ' }
+    ]);
+    expect(container.querySelectorAll('span[data-index]')).toHaveLength(1);
   });
 });
