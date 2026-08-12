@@ -365,6 +365,32 @@ describe('ImageElement', () => {
     });
   });
 
+  it('exposes a standalone icon glyph as a labelled image', async () => {
+    const mockElement = {
+      properties: {
+        uploaded_image_file_field_key: '',
+        aria_label: 'Heart icon',
+        icon_glyph: {
+          variant: 'outline',
+          nodes: [['path', { d: 'M12 5l0 14' }]]
+        }
+      },
+      repeat: 0
+    };
+
+    const ImageElement = (await import('../ImageElement')).default;
+
+    render(
+      <ImageElement
+        element={mockElement}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+
+    const icon = screen.getByRole('img', { name: 'Heart icon' });
+    expect(icon.tagName.toLowerCase()).toBe('svg');
+  });
+
   // SOURCE IMAGE
   it('renders source image src before effects run', async () => {
     const sourceImg = 'https://example.com/image.png';

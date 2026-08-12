@@ -12,7 +12,6 @@ function applyImageStyles(element: any, responsiveStyles: any) {
   responsiveStyles.applyCorners('imageContainer');
   responsiveStyles.applyCorners('image');
   responsiveStyles.applyWidth('dimension');
-  // Icon source mode: icon_color -> CSS color, glyph follows via currentColor
   responsiveStyles.applyColor('image', 'icon_color', 'color');
   return responsiveStyles;
 }
@@ -83,9 +82,6 @@ function ImageElement({
   const displayPDF = documentUrl && documentType === 'application/pdf';
 
   const altText = getImageAltText(element.properties);
-  // Icon source mode: render the persisted glyph instead of an image.
-  // Color: the 'image' target carries icon_color as CSS color (inherits when
-  // unset) and the glyph follows via currentColor. Sized by width styles.
   const iconGlyph = element.properties.icon_glyph;
   if (hasIconGlyph(iconGlyph)) {
     return (
@@ -106,6 +102,7 @@ function ImageElement({
         <IconGlyph
           glyph={iconGlyph}
           size='100%'
+          role='img'
           aria-label={element.properties.aria_label}
           style={{ maxWidth: '100%', maxHeight: '100%' }}
           {...elementProps}
