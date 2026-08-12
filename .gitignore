@@ -53,3 +53,6 @@ amplifytools.xcconfig
 .secret-*
 **.sample
 #amplify-do-not-edit-end
+
+# Generated harness bundle (rebuild with harness/bindings/webpack.config.js)
+harness/bindings/bundle.js
