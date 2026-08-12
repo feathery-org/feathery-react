@@ -69,6 +69,9 @@ function ProgressBarElement({
     // Navigation to all steps makes any step clickable, otherwise only
     // already-visited steps are
     const allowAllNavigation = !!element.properties?.navigate_to_all_steps;
+    // Display only; doesn't change the stored completion set.
+    const resetCompletionOnBack =
+      !!element.properties?.reset_completion_on_back;
     const stepConfigs = element.properties?.entries ?? [];
     const onStepClick = (config: any) =>
       runElementActions({
@@ -90,6 +93,7 @@ function ProgressBarElement({
           textPlacement={element.styles.percent_text_layout}
           onStepClick={onStepClick}
           allowAllNavigation={allowAllNavigation}
+          resetCompletionOnBack={resetCompletionOnBack}
           vertical={vertical}
           style={vertical ? { flex: 1 } : undefined}
         />
