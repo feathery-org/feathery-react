@@ -15,6 +15,19 @@ import { managedConnectAccountElement } from '../../integrations/connectAccount/
 // back to the content box, which is what collapsed it on an empty label.
 const LOADER_BORDER_GAP = 2;
 
+const BUTTON_IMAGE_SELECTOR = 'img, [data-feathery-button-icon]';
+
+const getButtonImageFilterStyles = (color: string) => {
+  if (!color) return {};
+  const level = color === 'black' ? 0 : 100;
+  return {
+    [BUTTON_IMAGE_SELECTOR]: {
+      webkitFilter: `brightness(${level}%)`,
+      filter: `brightness(${level}%)`
+    }
+  };
+};
+
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
     'button',
@@ -67,7 +80,6 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   );
   responsiveStyles.applyWidth('img', 'image_');
   responsiveStyles.applyMargin('img', 'image_');
-  // Icon-in-image-slot: explicit icon_color overrides the label typography
   responsiveStyles.applyColor('img', 'icon_color', 'color');
 
   if (element.styles.hover_background_color) {
@@ -85,16 +97,11 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     });
   }
   responsiveStyles.applySpanSelectorStyles('buttonHover', 'hover_');
-  responsiveStyles.apply('buttonHover', 'hover_image_color', (a: string) => {
-    if (!a) return {};
-    const level = a === 'black' ? 0 : 100;
-    return {
-      img: {
-        webkitFilter: `brightness(${level}%)`,
-        filter: `brightness(${level}%)`
-      }
-    };
-  });
+  responsiveStyles.apply(
+    'buttonHover',
+    'hover_image_color',
+    getButtonImageFilterStyles
+  );
 
   responsiveStyles.applyColor(
     'buttonActive',
@@ -106,16 +113,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply(
     'buttonActive',
     'selected_image_color',
-    (a: string) => {
-      if (!a) return {};
-      const level = a === 'black' ? 0 : 100;
-      return {
-        img: {
-          webkitFilter: `brightness(${level}%)`,
-          filter: `brightness(${level}%)`
-        }
-      };
-    }
+    getButtonImageFilterStyles
   );
 
   responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
@@ -128,16 +126,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply(
     'buttonDisabled',
     'disabled_image_color',
-    (a: string) => {
-      if (!a) return {};
-      const level = a === 'black' ? 0 : 100;
-      return {
-        img: {
-          webkitFilter: `brightness(${level}%)`,
-          filter: `brightness(${level}%)`
-        }
-      };
-    }
+    getButtonImageFilterStyles
   );
   responsiveStyles.applySpanSelectorStyles('buttonDisabled', 'disabled_');
   responsiveStyles.applyColor(

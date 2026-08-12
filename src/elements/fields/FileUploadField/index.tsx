@@ -195,8 +195,6 @@ function FileUploadField({
     ...responsiveStyles.getTarget('img')
   };
   const icon = hasIconGlyph(element.properties.icon_glyph) ? (
-    // Persisted glyph in the uploader icon slot — sized by the image width
-    // styles when set, colored via icon_color/currentColor from imgStyles
     <span
       style={{
         display: 'inline-flex',
@@ -207,9 +205,7 @@ function FileUploadField({
     >
       <IconGlyph
         glyph={element.properties.icon_glyph}
-        // applyWidth always writes a width string, so an unset image width
-        // arrives as a bare unit ('px'). Fill the slot when a real width is
-        // set, else fall back to the default 32px icon box.
+        // Unset widths are emitted as a bare unit, so use the default icon size.
         size={Number.isFinite(parseFloat(imgStyles.width as any)) ? '100%' : 32}
       />
     </span>
