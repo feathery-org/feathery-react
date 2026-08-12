@@ -25,6 +25,10 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { DocumentPersistence } from './persistence';
+import {
+  registerBindingReconciler,
+  unregisterBindingReconciler
+} from './reconcileRegistry';
 
 export interface BindingsOptions {
   /**
@@ -132,6 +136,10 @@ export function attachBindings(
     onSuppressContentChange?.(false);
   }
 
+  // The assistant writes through its own engine and knows nothing about
+  // bindings; this is how its batches get reconciled.
+  registerBindingReconciler(editor, () => controller.flush());
+
   const triggers = createCommitTriggers(editor, controller, {
     ...(setTimeoutFn ? { setTimeoutFn } : {}),
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
@@ -163,6 +171,7 @@ export function attachBindings(
     fieldValues: () => collectFieldValues(controller),
     importDiagnostics,
     dispose(): void {
+      unregisterBindingReconciler(editor);
       eventful.removeEventListener?.('contentChange', onContentChange);
       eventful.removeEventListener?.('selectionChange', onSelectionChange);
       eventful.removeEventListener?.('keyDown', onKeyDown);

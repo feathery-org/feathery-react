@@ -62,6 +62,10 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+// One pure function from the binding engine: the tag grammar. Imported rather
+// than re-implemented so a content control this engine did not author is never
+// mistaken for a binding.
+import { parseTag } from '../../../elements/components/DocxEditor/bindings/core/tagDsl';
 import {
   AppearanceFacts,
   appearanceEquals,
@@ -965,6 +969,20 @@ interface FlatBlock {
   isHeading: boolean;
   level: number;
   length: number;
+  /**
+   * The binding tag of a document field or formula living in this block, when it
+   * has one. Present only in documents that use bindings, and only on the blocks
+   * that are bound; ops consult it to refuse writes that would destroy a binding.
+   */
+  boundTag?: string;
+  /**
+   * Set when this block shares a paragraph with a content control, or sits inside
+   * one. SyncFusion's live offsets count a control's boundary markers as
+   * positions while this walker counts only characters, so an anchored write here
+   * lands off by however many markers precede it. Ops refuse rather than write
+   * into a range they cannot address exactly. Only bound documents have these.
+   */
+  offsetsUntrusted?: true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,10 +1071,87 @@ function inlineText(
       continue;
     const text = pick(inline, 'text', 'tlp');
     if (typeof text === 'string') out += text;
+    // A content control wraps its runs in a nested inline list, so its text is
+    // one level down. Without descending, every value held by a bound field or
+    // formula is invisible here - the document reads as though those cells were
+    // empty, and so does everything built on this: the inventory, table facts,
+    // and the search index.
+    else if (getInlines(inline).length)
+      out += inlineText(getInlines(inline), deletedIds);
     // Tabs render as whitespace in the offset stream.
     else if (inline.name === 'Tab' || inline.tlp === undefined) continue;
   }
   return out;
+}
+
+/**
+ * The binding tag of the first document field or formula in a block's runs.
+ *
+ * A bound value is not editable text: it is owned by the binding engine, which
+ * rewrites it on every reconcile. Worse, the write primitive these ops use -
+ * select a range, then insertText - DELETES a content control outright rather
+ * than replacing its contents, so a write aimed at a bound cell destroys the
+ * author's binding instead of changing its value. Ops refuse instead.
+ *
+ * Foreign content controls return undefined: parseTag only claims tags in the
+ * binding grammar, so a control this engine did not author is ordinary text.
+ */
+function boundTagOf(inlines: any[]): string | undefined {
+  if (!Array.isArray(inlines)) return undefined;
+  for (const inline of inlines) {
+    const properties = pick(inline, 'contentControlProperties', 'ccp');
+    const tag = properties && pick(properties, 'tag', 'tg');
+    if (typeof tag === 'string') {
+      try {
+        const def = parseTag(tag);
+        if (def && (def.kind === 'field' || def.kind === 'formula')) return tag;
+      } catch {
+        // A malformed binding tag is the engine's diagnostic to raise, not ours.
+      }
+    }
+    const nested = getInlines(inline);
+    if (nested.length) {
+      const found = boundTagOf(nested);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+// A content control that wraps BLOCKS rather than runs - how a table marker is
+// expressed - is transparent to the walker: the blocks inside it are the ones the
+// document addresses. SyncFusion agrees; with the costs table wrapped in a
+// marker, its own selection offsets still report the table as block 2, not the
+// wrapper. Leaving the wrapper opaque made every configured table flatten to an
+// empty paragraph, i.e. invisible.
+function expandBlockContentControls(
+  blocks: any[],
+  insideControl = false
+): Array<{ block: any; insideControl: boolean }> {
+  const out: Array<{ block: any; insideControl: boolean }> = [];
+  for (const block of blocks) {
+    const isWrapper =
+      block &&
+      pick(block, 'contentControlProperties', 'ccp') !== undefined &&
+      Array.isArray(pick(block, 'blocks', 'b')) &&
+      !getRows(block) &&
+      !pick(block, 'inlines', 'i');
+    if (isWrapper)
+      out.push(...expandBlockContentControls(getBlocks(block), true));
+    else out.push({ block, insideControl });
+  }
+  return out;
+}
+
+/** Whether a paragraph's runs contain any content control, ours or foreign. */
+function hasContentControl(inlines: any[]): boolean {
+  if (!Array.isArray(inlines)) return false;
+  for (const inline of inlines) {
+    if (pick(inline, 'contentControlProperties', 'ccp') !== undefined)
+      return true;
+    if (hasContentControl(getInlines(inline))) return true;
+  }
+  return false;
 }
 
 function allRevisionIdsIn(rids: unknown, ids: Set<string>): boolean {
@@ -1523,34 +1618,45 @@ export function flattenSfdt(
   const deletedIds = dropRevisionIds ?? deletedRevisionIds(sfdt);
 
   sections.forEach((section, si) => {
-    getBlocks(section).forEach((block, bi) => {
+    expandBlockContentControls(getBlocks(section)).forEach((entry, bi) => {
+      const { block, insideControl } = entry;
       const rows = getRows(block);
       if (rows) {
         // Table: descend into each cell's blocks.
         rows.forEach((row: any, ri: number) => {
           const cells: any[] = pick(row, 'cells', 'c') ?? [];
           cells.forEach((cell, ci) => {
-            getBlocks(cell).forEach((cb, cbi) => {
-              const text = inlineText(getInlines(cb), deletedIds);
-              const format = readFormat(cb);
-              out.push({
-                anchor: `${si};${bi};${ri};${ci};${cbi}`,
-                kind: 'table_cell',
-                text,
-                format,
-                ...readBlockFormats(cb),
-                isHeading: false,
-                level: -1,
-                length: text.length
-              });
-              paragraphs.push({
-                styleName: format?.styleName ?? '',
-                text,
-                ...(format?.fontSize !== undefined
-                  ? { fontSize: format.fontSize }
-                  : {})
-              });
-            });
+            expandBlockContentControls(getBlocks(cell)).forEach(
+              (cellEntry, cbi) => {
+                const cb = cellEntry.block;
+                const text = inlineText(getInlines(cb), deletedIds);
+                const format = readFormat(cb);
+                const cellBoundTag = boundTagOf(getInlines(cb));
+                const cellOffsetsUntrusted =
+                  insideControl ||
+                  cellEntry.insideControl ||
+                  hasContentControl(getInlines(cb));
+                out.push({
+                  anchor: `${si};${bi};${ri};${ci};${cbi}`,
+                  kind: 'table_cell',
+                  text,
+                  format,
+                  ...readBlockFormats(cb),
+                  isHeading: false,
+                  level: -1,
+                  length: text.length,
+                  ...(cellBoundTag ? { boundTag: cellBoundTag } : {}),
+                  ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
+                });
+                paragraphs.push({
+                  styleName: format?.styleName ?? '',
+                  text,
+                  ...(format?.fontSize !== undefined
+                    ? { fontSize: format.fontSize }
+                    : {})
+                });
+              }
+            );
           });
         });
       } else {
@@ -1561,6 +1667,9 @@ export function flattenSfdt(
         )
           return;
         const format = readFormat(block);
+        const blockBoundTag = boundTagOf(getInlines(block));
+        const blockOffsetsUntrusted =
+          insideControl || hasContentControl(getInlines(block));
         const flat: FlatBlock = {
           anchor: `${si};${bi}`,
           kind: 'paragraph',
@@ -1569,7 +1678,9 @@ export function flattenSfdt(
           ...readBlockFormats(block),
           isHeading: false,
           level: -1,
-          length: text.length
+          length: text.length,
+          ...(blockBoundTag ? { boundTag: blockBoundTag } : {}),
+          ...(blockOffsetsUntrusted ? { offsetsUntrusted: true } : {})
         };
         out.push(flat);
         paragraphs.push({
@@ -5445,6 +5556,7 @@ function runFormulaCellWrite(
       'set_cell_formula must anchor the target table cell (section;block;row;cell;paragraph).'
     );
   }
+  refuseBoundWrite('set_cell_formula', block);
   const formulaText = String(op.formula ?? '').trim();
   const round = op.round != null ? String(op.round) : '';
   if (round && ROUNDING_MODES.indexOf(round as RoundingMode) < 0) {
@@ -5673,6 +5785,7 @@ function runColumnFormulaWrite(
       'set_column_formula must anchor ANY cell of the column to recompute (section;block;row;cell;paragraph); the table and the column are read from that anchor.'
     );
   }
+  refuseBoundWrite('set_column_formula', block);
   const tableAnchor = `${parts[0]};${parts[1]}`;
   const column = Number(parts[3]);
   const cellParagraph = parts[4];
@@ -6065,6 +6178,52 @@ function modelAuthoredCellText(op: EditOp): string | undefined {
   }
 }
 
+/**
+ * Refuse a write that would land on a bound field or formula.
+ *
+ * Two independent reasons, either sufficient. A bound value is OWNED by the
+ * document's binding engine, which recomputes it on the next reconcile, so a
+ * value written here would be overwritten anyway. And the write primitive these
+ * ops use - select a range, then insertText - DELETES a content control rather
+ * than replacing its contents, so the attempt destroys the author's binding
+ * instead of changing its value.
+ *
+ * `retry: 'never'` because no rewording of the same request can succeed: the
+ * value moves by editing the inputs it is computed from, or the form field it is
+ * bound to, not by writing the cell.
+ */
+function refuseBoundWrite(op: string, block: FlatBlock): void {
+  if (block.offsetsUntrusted && !block.boundTag) {
+    // Not a binding itself, but sharing a paragraph or a container with one.
+    // SyncFusion counts a control's boundary markers as offset positions while
+    // this walker counts characters, so the range this op would select is off by
+    // however many markers precede it - measured: a write to a header cell of a
+    // bound table replaced three of its four characters. Refuse until the offset
+    // model accounts for markers exactly; reading these blocks is unaffected.
+    throw new OpError(
+      'unaddressable_in_bound_document',
+      `${op} cannot write ${block.anchor}: it sits alongside a document binding, and this engine cannot yet address that text exactly. Reading it is reliable; writing it is not.`,
+      [`anchor: ${block.anchor}`],
+      'never'
+    );
+  }
+  if (!block.boundTag) return;
+  let name = '';
+  try {
+    const def = parseTag(block.boundTag);
+    if (def && def.kind !== 'table') name = def.name;
+  } catch {
+    name = '';
+  }
+  const described = name ? `the bound value "${name}"` : 'a bound value';
+  throw new OpError(
+    'target_is_bound',
+    `${op} cannot write ${block.anchor}: it holds ${described}, which this document computes from its own bindings. Change what it is computed from, or the form field it is bound to.`,
+    [`anchor: ${block.anchor}`, `binding: ${block.boundTag}`],
+    'never'
+  );
+}
+
 function guardModelAuthoredNumber(
   op: EditOp,
   block: FlatBlock,
@@ -6073,6 +6232,9 @@ function guardModelAuthoredNumber(
 ): LiteralNumberWrite | undefined {
   const text = modelAuthoredCellText(op);
   if (text === undefined) return undefined;
+  // Before the numeric-provenance gate, and before the table-cell narrowing:
+  // prose bindings are just as destroyable as cell ones.
+  refuseBoundWrite(op.op, block);
   if (block.kind !== 'table_cell') return undefined;
   const { record, citationFailure } =
     op.op === 'set_cell_text'
