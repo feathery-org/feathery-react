@@ -98,6 +98,37 @@ export function isOpeningDocument(ed: any): boolean {
   return !!ed?.[OPENING_DOCUMENT_KEY];
 }
 
+// A conversion that never completes must not strand the editor in `loading`.
+const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
+
+/**
+ * Resolves when Syncfusion finishes laying the document out. `documentChange`
+ * fires exactly once per open, after open()/openAsync() has already resolved,
+ * and is the only signal that the document is really on screen.
+ */
+function waitForDocumentLoad(ed: any): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        ed.removeEventListener?.('documentChange', finish);
+      } catch {
+        /* instance already torn down */
+      }
+      resolve();
+    };
+    try {
+      ed.addEventListener?.('documentChange', finish);
+    } catch {
+      finish();
+      return;
+    }
+    setTimeout(finish, DOCUMENT_LOAD_TIMEOUT_MS);
+  });
+}
+
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
 export interface RevisionRect {
   kind: 'add' | 'del' | 'mod';
@@ -987,6 +1018,10 @@ export function useDocxEditor({
         });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
         liveEditor[OPENING_DOCUMENT_KEY] = true;
+        // open() resolves before the converted document is laid out, so anything
+        // reading the document here sees the previous (often blank) one.
+        // Registered before the open so a fast load cannot outrun the listener.
+        const documentLoaded = waitForDocumentLoad(liveEditor);
         try {
           if (typeof liveEditor.openAsync === 'function') {
             await liveEditor.openAsync(blob);
@@ -999,6 +1034,11 @@ export function useDocxEditor({
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           throw err;
         }
+        if (cancelled) {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          return;
+        }
+        await documentLoaded;
         if (cancelled) {
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
