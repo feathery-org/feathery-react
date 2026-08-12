@@ -1,28 +1,43 @@
-// Stop characters a typed field can never hold from entering it at all, so a
-// letter cannot land in a number cell and wait to be diagnosed.
+// Make a typed character land in the right place, and stop it if the field
+// cannot hold it.
+//
+// Two jobs, in this order, both on the way to editorModule.handleTextInput:
+//
+//   1. ROUTE. A content control's boundary markers occupy caret offsets, and a
+//      caret parked on one is OUTSIDE the control even though it looks like it is
+//      in the cell. Typing there appends a sibling inline after the control:
+//      visible to the reader, invisible to the engine, so the value never
+//      changes and no total recalculates. Reachable by clicking past the text,
+//      by arrowing one step too far, and - before the adapter's anchored restore
+//      - by a normalization that shrank the control under a stationary caret.
+//      The character is worth more than the caret position, so pull the caret
+//      inside first. See controlGeometry for the offset model this relies on.
+//   2. GUARD. Characters a value can never contain (a letter in a currency
+//      field) are swallowed before they reach the document.
+//
+// Routing before guarding is what makes the guard reach: on a boundary offset
+// the editor reports the enclosing [[table=...]] marker rather than the field,
+// so the old order let a letter into a number cell whenever the caret sat one
+// step outside.
 //
 // Printable text does not travel through keyDown - that event's isHandled only
-// covers shortcuts. It arrives at editorModule.handleTextInput from the hidden
-// editable div's textInput event, so that method is wrapped. Free-text fields and
-// ordinary prose are never restricted.
+// covers shortcuts. It arrives from the hidden editable div's textInput event, so
+// handleTextInput is what gets wrapped. Free-text fields and ordinary prose are
+// never restricted.
 //
 // This is a convenience, not the enforcement mechanism: paste and every other
-// input path the guard cannot see are still caught by the engine's invalid-input
-// diagnostic on the next reconcile. The guard failing open is therefore always
-// preferable to the guard breaking typing, which is why every step is guarded.
+// input path this cannot see are still caught by the engine's invalid-input
+// diagnostic on the next reconcile. Failing open is therefore always preferable
+// to breaking typing, which is why every step is guarded and every failure
+// simply passes the keystroke through.
 //
-// KNOWN LIMIT on Syncfusion 34.1.31, measured rather than assumed:
-// selection.currentContentControl reports the ENCLOSING content control, so a
-// caret inside a table wrapped by a [[table=...]] marker reports that wrapper,
-// and a caret in a prose field reports nothing at all. Where the engine does not
-// name an inline field, the guard cannot identify a type and lets the keystroke
-// through - so today it restricts typed fields in UNWRAPPED tables and is inert
-// elsewhere. That is why the reconcile diagnostic, not this, is what actually
-// keeps a letter out of a number. Narrowing it further needs a caret-to-binding
-// lookup built from the document index; see the commit-trigger module, which
-// solves the sibling problem with selection.startOffset instead.
+// Correcting an earlier note in this file: selection.currentContentControl does
+// report the inline field when the caret is genuinely inside it. It reports the
+// enclosing wrapper only on the boundary offsets - which is precisely the case
+// step 1 now removes.
 
 import { parseTag } from './core/tagDsl';
+import { snapOffsetForCaret } from './controlGeometry';
 import { SyncfusionEditorLike } from './editorAdapter';
 
 /** Characters each typed kind can legitimately contain while being typed. */
@@ -34,6 +49,22 @@ const TYPE_KEY_GUARD: Record<string, RegExp> = {
   // The dash sits last so it is a literal, not a range, and needs no escape.
   date: /^[0-9-]+$/
 };
+
+/**
+ * Move a caret resting on a bound control's boundary to just inside it. Returns
+ * whether it moved. Safe to call on every keystroke: it does nothing unless the
+ * caret is collapsed and sitting exactly one offset outside a binding.
+ */
+export function snapCaretIntoControl(editor: SyncfusionEditorLike): boolean {
+  try {
+    const target = snapOffsetForCaret(editor);
+    if (!target || !editor.selection?.select) return false;
+    editor.selection.select(target, target);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function isBlockedInField(
   editor: SyncfusionEditorLike,
@@ -67,14 +98,14 @@ export function installKeystrokeGuard(
   const bound = original.bind(editorModule);
   editorModule.handleTextInput = (text: string) => {
     try {
-      if (
-        typeof text === 'string' &&
-        text.length &&
-        isBlockedInField(editor, text)
-      )
-        return undefined;
+      if (typeof text === 'string' && text.length) {
+        // Route first, so the guard below sees the field rather than whatever
+        // encloses the boundary the caret was resting on.
+        snapCaretIntoControl(editor);
+        if (isBlockedInField(editor, text)) return undefined;
+      }
     } catch {
-      // Never let the guard break typing.
+      // Never let this break typing.
     }
     return bound(text);
   };
