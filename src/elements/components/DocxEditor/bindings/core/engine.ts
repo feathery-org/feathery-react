@@ -17,12 +17,12 @@ import {
   setCalculatedValue,
   setOccurrenceText
 } from './sfdtAdapter';
-import { Ast, FormulaError, parseExpression } from './formula';
+import { Ast, FormulaError, isFormulaError, parseExpression } from './formula';
 import {
   isNumericType,
+  isValueError,
   parseDisplay,
-  renderDisplay,
-  ValueError
+  renderDisplay
 } from './valueTypes';
 import * as D from './decimal';
 import {
@@ -107,7 +107,7 @@ function readValues(
         parseDisplay(occurrence.def.fieldType, occurrence.text)
       );
     } catch (thrown) {
-      if (!(thrown instanceof ValueError)) throw thrown;
+      if (!isValueError(thrown)) throw thrown;
       errors.add(occurrence.key);
       if (occurrence.def.kind === 'field') {
         diag(
@@ -144,7 +144,9 @@ type RefTarget =
   | { kind: 'occurrence'; key: string }
   | {
       kind: 'aggregate';
-      items: Array<{ kind: 'formula'; id: string } | { kind: 'occurrence'; key: string }>;
+      items: Array<
+        { kind: 'formula'; id: string } | { kind: 'occurrence'; key: string }
+      >;
       tableId: string;
       col: string;
     };
@@ -328,7 +330,7 @@ export function applyRules(
         occurrence.def.kind === 'formula' ? occurrence.def.expression : ''
       );
     } catch (thrown) {
-      if (!(thrown instanceof FormulaError)) throw thrown;
+      if (!isFormulaError(thrown)) throw thrown;
       diag(
         diagnostics,
         'error',
@@ -435,12 +437,11 @@ export function applyRules(
     if ('lit' in ast) return ast.lit;
     if ('ref' in ast) {
       const target = refTargets(ast.ref, node.occ);
-      if (!target)
-        throw new FormulaError(`unresolved reference "${ast.ref}"`);
+      if (!target) throw new FormulaError(`unresolved reference "${ast.ref}"`);
       if (target.kind === 'field') {
-        const occurrences = (index.fields.get(target.name) as Occurrence[]).filter(
-          (occurrence) => values.has(occurrence.key)
-        );
+        const occurrences = (
+          index.fields.get(target.name) as Occurrence[]
+        ).filter((occurrence) => values.has(occurrence.key));
         if (!occurrences.length)
           throw new FormulaError(`"${ast.ref}" has no valid value`);
         if (!isNumericType(occurrences[0].def.fieldType))
@@ -505,7 +506,7 @@ export function applyRules(
       // already-rounded values rather than compounding fractions.
       results.set(id, D.roundTo(raw, fieldType.scale ?? 0));
     } catch (thrown) {
-      if (!(thrown instanceof FormulaError)) throw thrown;
+      if (!isFormulaError(thrown)) throw thrown;
       diag(
         diagnostics,
         'error',

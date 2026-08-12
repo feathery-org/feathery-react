@@ -18,14 +18,14 @@ import {
   BoundDefinition,
   Definition,
   formatTag,
-  parseTag,
-  TagError
+  isTagError,
+  parseTag
 } from './tagDsl';
 import {
   defaultValue,
+  isValueError,
   parseDisplay,
-  renderDisplay,
-  ValueError
+  renderDisplay
 } from './valueTypes';
 import {
   Diagnostic,
@@ -220,8 +220,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
         );
       }
       row.bindings.set(def.name, occurrence);
-      if (!table.columnDefs.has(def.name))
-        table.columnDefs.set(def.name, def);
+      if (!table.columnDefs.has(def.name)) table.columnDefs.set(def.name, def);
     } else {
       const bucket = def.kind === 'field' ? index.fields : index.formulas;
       if (!bucket.has(def.name)) bucket.set(def.name, []);
@@ -236,7 +235,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
     try {
       return parseTag(rawTag);
     } catch (error) {
-      if (error instanceof TagError) {
+      if (isTagError(error)) {
         diag(index.diagnostics, 'error', 'malformed-tag', error.message, path);
         return null;
       }
@@ -428,7 +427,7 @@ export function readLineItems(
       try {
         canonical = parseDisplay(occurrence.def.fieldType, occurrence.text);
       } catch (thrown) {
-        if (thrown instanceof ValueError) error = thrown.message;
+        if (isValueError(thrown)) error = thrown.message;
         else throw thrown;
       }
       values[column] = {
@@ -453,7 +452,8 @@ function withCcText(node: SfdtInline, text: string): SfdtInline {
     (inline) => inline && typeof inline.text === 'string'
   );
   const run: SfdtInline = { text: String(text) };
-  if (first && first.characterFormat) run.characterFormat = first.characterFormat;
+  if (first && first.characterFormat)
+    run.characterFormat = first.characterFormat;
   return { ...node, inlines: [run] };
 }
 
@@ -769,7 +769,7 @@ export function adoptUnboundRows(
               parseDisplay(def.fieldType, typed)
             );
           } catch (thrown) {
-            if (!(thrown instanceof ValueError)) throw thrown;
+            if (!isValueError(thrown)) throw thrown;
             // Invalid: keep it visible and let the engine diagnose it.
             text = typed;
           }
@@ -810,7 +810,7 @@ export function validateSfdt(sfdt: SfdtDocument): Diagnostic[] {
       try {
         parseDisplay(occurrence.def.fieldType, occurrence.text);
       } catch (thrown) {
-        if (!(thrown instanceof ValueError)) throw thrown;
+        if (!isValueError(thrown)) throw thrown;
         diagnostics.push({
           severity: 'error',
           code: 'invalid-input',
