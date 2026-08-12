@@ -235,6 +235,15 @@ describe('responsiveStyles', () => {
       expect(transform('aRIAL')).toBe("'Uploaded--Arial'");
     });
 
+    it('aliases to the org spelling, which is what got registered', () => {
+      // The form saved `Gelasio`; the org uploaded `gelasio`. CSS matching
+      // ignores case, so the upload owns that name — and the alias has to use
+      // the org's spelling, since that is the family _loadFormPackages
+      // registered the face under.
+      registerUploadedFonts(['gelasio']);
+      expect(transform('Gelasio')).toBe("'Uploaded--gelasio'");
+    });
+
     it('is idempotent on already-aliased values', () => {
       registerUploadedFonts(['Arial']);
       const once = transform('Arial');
