@@ -8,6 +8,7 @@ import {
   initInfo,
   initState,
   markStepCompleted,
+  registerKnownFieldKeys,
   setFieldValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
@@ -377,6 +378,7 @@ export default class FeatheryClient extends IntegrationClient {
         values[servar.key] = getDefaultFormFieldValue(field);
       });
     });
+    registerKnownFieldKeys({ servars: Object.keys(values) });
     Object.assign(fieldValues, {
       ...values,
       ...additionalValues,
@@ -581,6 +583,9 @@ export default class FeatheryClient extends IntegrationClient {
     );
 
     const trueSession = { ...session, ...authSession };
+    // Registered even when the session carries no data, since the field keys are
+    // returned regardless and text variables need them to resolve empty fields
+    registerKnownFieldKeys(trueSession);
     if (!noData) updateSessionValues(trueSession);
 
     // submitAuthInfo can set formCompleted before the session is set, so we don't want to override completed flags
