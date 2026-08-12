@@ -2,6 +2,19 @@ import { featheryDoc, runningInClient } from './browser';
 
 const loadedGoogleFonts = new Set<string>();
 
+// Set via init({ disableFonts: true }) by hosts that self-host the same
+// families under their real names — skips all SDK font downloads. Lives here
+// rather than on initState so this module doesn't import init's graph.
+let fontLoadingDisabled = false;
+
+export function setFontLoadingDisabled(disabled: boolean) {
+  fontLoadingDisabled = disabled;
+}
+
+export function isFontLoadingDisabled() {
+  return fontLoadingDisabled;
+}
+
 /**
  * Loads Google fonts via a stylesheet link rather than webfontloader, which
  * has no way to pass `display` through to the CSS API. Without it Google's
@@ -11,7 +24,7 @@ const loadedGoogleFonts = new Set<string>();
  * @param families webfontloader-style specs, e.g. 'Inter:400,400italic,700'
  */
 export function loadGoogleFonts(families: string[]) {
-  if (!runningInClient()) return;
+  if (!runningInClient() || fontLoadingDisabled) return;
 
   const newFamilies = families.filter(
     (family) => family && !loadedGoogleFonts.has(family)

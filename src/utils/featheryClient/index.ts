@@ -20,7 +20,7 @@ import {
 } from '../formHelperFunctions';
 import { getDefaultFormFieldValue } from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
-import { loadGoogleFonts } from '../fonts';
+import { isFontLoadingDisabled, loadGoogleFonts } from '../fonts';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
 import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
@@ -391,8 +391,10 @@ export default class FeatheryClient extends IntegrationClient {
   _loadFormPackages(res: any) {
     // Load default fonts
     loadGoogleFonts(res.fonts);
-    // Load user-uploaded fonts
-    Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
+    // Load user-uploaded fonts (skipped, like Google fonts, when the host
+    // opted out via init({ disableFonts: true }))
+    const uploadedFonts = isFontLoadingDisabled() ? {} : res.uploaded_fonts;
+    Object.entries(uploadedFonts).forEach(([family, fontStyles]) => {
       (fontStyles as any).forEach(({ source, style, weight }: any) => {
         const loadFont = (url: string) =>
           new FontFace(family, `url(${url})`, { style, weight })

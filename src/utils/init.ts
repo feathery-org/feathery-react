@@ -10,6 +10,7 @@ import {
   setCookie
 } from './browser';
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
+import { setFontLoadingDisabled } from './fonts';
 import { parseUserVal } from './entities/Field';
 import { authState } from '../auth/LoginForm';
 
@@ -38,6 +39,9 @@ type InitOptions = {
   language?: string;
   theme?: string;
   noSave?: boolean;
+  // Skip all SDK font downloads (Google + uploaded fonts). For hosts that
+  // self-host the form's font families under the same family names.
+  disableFonts?: boolean;
   _enterpriseRegion?: string;
 };
 
@@ -139,6 +143,7 @@ function init(sdkKey: string, options: InitOptions = {}): Promise<string> {
     initState.overrideUserId = true;
   }
   if (options.noSave) initState.initNoSave = true;
+  if (options.disableFonts) setFontLoadingDisabled(true);
   if (options.userTracking) initState.userTracking = options.userTracking;
   if (options.theme) initState.theme = options.theme;
   if (options.collaboratorId) initState.collaboratorId = options.collaboratorId;
