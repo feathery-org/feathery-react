@@ -1,13 +1,27 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import EditableFieldLabel from './EditableFieldLabel';
 
-const setup = (label = 'Address (legal or civic)') => {
+const setup = (label = 'Address (legal or civic)', focused = false) => {
   const setLabel = jest.fn();
-  render(
-    <EditableFieldLabel elementId='el-1' label={label} setLabel={setLabel} />
+  const { rerender } = render(
+    <EditableFieldLabel
+      elementId='el-1'
+      label={label}
+      focused={focused}
+      setLabel={setLabel}
+    />
   );
   const span = screen.getByText(label);
-  return { span, setLabel };
+  const setFocused = (nextFocused: boolean) =>
+    rerender(
+      <EditableFieldLabel
+        elementId='el-1'
+        label={label}
+        focused={nextFocused}
+        setLabel={setLabel}
+      />
+    );
+  return { span, setLabel, setFocused };
 };
 
 describe('EditableFieldLabel', () => {
@@ -15,6 +29,38 @@ describe('EditableFieldLabel', () => {
     const { span } = setup();
     expect(span).toHaveAttribute('contenteditable', 'true');
     expect(span).toHaveAttribute('id', 'span-el-1');
+  });
+
+  it('prevents caret placement until the element is selected', () => {
+    const { span } = setup();
+    const unfocusedMouseDown = fireEvent.mouseDown(span);
+    // preventDefault called → fireEvent returns false
+    expect(unfocusedMouseDown).toBe(false);
+  });
+
+  it('allows caret placement and enters editing on click once selected', () => {
+    const { span, setLabel } = setup('Address (legal or civic)', true);
+    const focusedMouseDown = fireEvent.mouseDown(span);
+    expect(focusedMouseDown).toBe(true);
+
+    fireEvent.click(span);
+    span.textContent = 'Renamed by click';
+    fireEvent.blur(span);
+
+    expect(setLabel).toHaveBeenCalledWith('Renamed by click');
+  });
+
+  it('ends editing when the element is deselected', () => {
+    const { span, setLabel, setFocused } = setup(
+      'Address (legal or civic)',
+      true
+    );
+    fireEvent.click(span);
+    setFocused(false);
+
+    span.textContent = 'Should not commit';
+    fireEvent.blur(span);
+    expect(setLabel).not.toHaveBeenCalled();
   });
 
   it('commits the new label on blur after focus', () => {
