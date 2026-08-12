@@ -77,6 +77,22 @@ interface RefreshEventDetail {
 const REFRESH_EVENT = 'feathery-docx-editor-refresh';
 const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
 
+/**
+ * FLIP THIS TO TEST DOCUMENT BINDINGS. Ships false.
+ *
+ * Turns on the [[...]] binding engine for every DocxEditor in the bundle:
+ * template tokens become content controls, formulas compute, and edits
+ * reconcile on Enter or blur. The per-host switch is
+ * window.featherySyncfusion.bindings; this is the blunt version, for when
+ * rebuilding the package is easier than arranging for that global to be set
+ * before the editor mounts.
+ *
+ * Two things follow from it being a compile-time constant:
+ *   - flipping it needs a `yarn build` and a re-link into the consuming app;
+ *   - it applies globally, so leave it false on anything shared.
+ */
+const FORCE_DOCUMENT_BINDINGS = false;
+
 function getPendingDraft(containerId?: string): RefreshEventDetail | undefined {
   if (!containerId) return undefined;
   return (featheryWindow() as any)[PENDING_DRAFTS_KEY]?.[containerId];
@@ -278,8 +294,10 @@ export default function DocumentEditorContainer({
   const reviewChanges = !!assistantEnabled && !readOnly;
 
   // Opt-in, and off unless a host asks for it: window.featherySyncfusion.bindings
-  // rides the same config object that already carries serviceUrl and licenseKey.
-  const bindingsEnabled = syncfusion.bindings === true;
+  // rides the same config object that already carries serviceUrl and licenseKey,
+  // or FORCE_DOCUMENT_BINDINGS is flipped for local testing.
+  const bindingsEnabled =
+    FORCE_DOCUMENT_BINDINGS || syncfusion.bindings === true;
   // The most recent committed document-field values, read at save time.
   const bindingValuesRef = useRef<Record<string, string>>({});
 
