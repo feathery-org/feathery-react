@@ -44,6 +44,19 @@ describe('EditableFieldLabel', () => {
     expect(setLabel).toHaveBeenCalledWith('Enter Label');
   });
 
+  it('does not commit on Shift+Enter (inserts a newline instead)', () => {
+    const { span, setLabel } = setup();
+    fireEvent.focus(span);
+    span.textContent = 'Line one';
+    fireEvent.keyDown(span, { key: 'Enter', shiftKey: true });
+
+    // Still editing — no commit happened
+    expect(setLabel).not.toHaveBeenCalled();
+
+    fireEvent.blur(span);
+    expect(setLabel).toHaveBeenCalledWith('Line one');
+  });
+
   it('reverts on Escape without committing', () => {
     const { span, setLabel } = setup();
     fireEvent.focus(span);

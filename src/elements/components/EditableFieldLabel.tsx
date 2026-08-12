@@ -64,7 +64,14 @@ export default function EditableFieldLabel({
         e.stopPropagation();
         if (e.key === 'Enter') {
           e.preventDefault();
-          spanRef.current?.blur();
+          if (e.shiftKey) {
+            // Shift+Enter inserts a plain newline (labels render pre-wrap);
+            // insertText keeps the browser from adding <div>/<br> nodes
+            featheryDoc().execCommand?.('insertText', false, '\n');
+          } else {
+            // Enter confirms, identical to clicking outside
+            spanRef.current?.blur();
+          }
         } else if (e.key === 'Escape') cancel();
       }}
       onBlur={() => {
