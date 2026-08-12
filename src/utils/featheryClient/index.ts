@@ -71,7 +71,8 @@ export const updateRegionApiUrls = (region: string) => {
   const environmentMap: Record<string, URL_ENUM> = {
     au: 'productionAU',
     ca: 'productionCA',
-    eu: 'productionEU'
+    eu: 'productionEU',
+    jp: 'productionJP'
   };
   if (!environmentMap[region]) return;
 
