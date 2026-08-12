@@ -9,18 +9,6 @@ const handlePaste = (e: ClipboardEvent) => {
   featheryDoc().execCommand('insertText', false, plainText);
 };
 
-// Browsers do not highlight contenteditable=false icon embeds.
-const syncIconSelection = (root: any, sel: any) => {
-  if (!root?.querySelectorAll) return;
-  const canCheck =
-    sel && !sel.isCollapsed && typeof sel.containsNode === 'function';
-  root.querySelectorAll('[data-feathery-icon]').forEach((node: any) => {
-    if (canCheck && sel.containsNode(node, true))
-      node.setAttribute('data-icon-selected', '');
-    else node.removeAttribute('data-icon-selected');
-  });
-};
-
 function useTextEdit({
   editable,
   focused,
@@ -70,9 +58,7 @@ function useTextEdit({
         },
         onSelect: (e: any) => {
           if (!focused) e.preventDefault();
-          const selection = featheryWindow().getSelection();
-          syncIconSelection(spanRef.current, selection);
-          onTextSelect && onTextSelect(selection);
+          onTextSelect && onTextSelect(featheryWindow().getSelection());
         },
         onKeyDown: (e: any) => {
           if (!focused) e.preventDefault();
@@ -80,7 +66,6 @@ function useTextEdit({
             onTextKeyDown(e, spanRef.current, featheryWindow().getSelection());
         },
         onBlur: (e: any) => {
-          syncIconSelection(spanRef.current, null);
           updateEditMode('hover');
           onTextBlur && onTextBlur(e);
         },

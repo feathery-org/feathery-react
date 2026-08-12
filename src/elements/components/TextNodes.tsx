@@ -8,8 +8,6 @@ import { ACTION_NEXT } from '../../utils/elementActions';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
 
-const SELECTION_BACKGROUND = '#b4d5fe';
-
 export function replaceTextVariables(text: string, repeat?: any) {
   if (!text) return '';
 
@@ -112,15 +110,6 @@ function TextNodes({
     ...(iconEmbedNames ? { paddingBottom: 0 } : {})
   };
 
-  if (editMode === 'editable') {
-    editableProps.css = {
-      ...editableProps.css,
-      '&::selection, & *::selection': {
-        backgroundColor: SELECTION_BACKGROUND
-      }
-    };
-  }
-
   // Not using jsonpath because of issues with NextJS
   const extractProperty = (obj: any, path: string[]): any => {
     if (path.length === 0) return obj;
@@ -156,6 +145,17 @@ function TextNodes({
     }
     const textIsFromData =
       element.properties.text_mode === 'data' && textFromData !== null;
+    const ops = delta.filter((op) => !!op.insert);
+    const isIconOp = (op: any) =>
+      typeof op.insert === 'object' && hasIconGlyph(op.insert?.glyph);
+    const editingNow = editMode === 'editable' && focused;
+    const iconOnly =
+      !editingNow &&
+      ops.some(isIconOp) &&
+      ops.every(
+        (op) =>
+          isIconOp(op) || (typeof op.insert === 'string' && !op.insert.trim())
+      );
 
     return (
       <span
@@ -176,93 +176,79 @@ function TextNodes({
             editMode={editMode}
           />
         ) : (
-          delta
-            .filter((op) => !!op.insert)
-            .map((op, i, ops) => {
-              // Keep whitespace as a caret target only while editing icon-only labels.
-              const editingNow = editMode === 'editable' && focused;
-              const iconOnly =
-                !editingNow &&
-                ops.some((o) => typeof o.insert === 'object') &&
-                ops.every(
-                  (o) =>
-                    typeof o.insert === 'object' || !(o.insert as string).trim()
-                );
-              if (iconOnly && typeof op.insert === 'string') return null;
-              const attrs = op.attributes || {};
-              let onClick = () => {};
-              let cursor = 'inherit';
-              let link = '';
-              if (!editMode && !disabled) {
-                if (attrs.font_link) {
-                  link = replaceTextVariables(attrs.font_link, element.repeat);
-                  cursor = 'pointer';
-                } else if (
-                  attrs.fullSpan ||
-                  (isNum(attrs.start) && isNum(attrs.end))
-                ) {
-                  onClick = () => textSpanOnClick(attrs.start, attrs.end);
-                  cursor = 'pointer';
-                }
+          ops.map((op, i) => {
+            if (iconOnly && typeof op.insert === 'string') return null;
+            const attrs = op.attributes || {};
+            let onClick = () => {};
+            let cursor = 'inherit';
+            let link = '';
+            if (!editMode && !disabled) {
+              if (attrs.font_link) {
+                link = replaceTextVariables(attrs.font_link, element.repeat);
+                cursor = 'pointer';
+              } else if (
+                attrs.fullSpan ||
+                (isNum(attrs.start) && isNum(attrs.end))
+              ) {
+                onClick = () => textSpanOnClick(attrs.start, attrs.end);
+                cursor = 'pointer';
               }
+            }
 
-              // data-feathery-icon lets the builder restore embeds after editing.
-              if (typeof op.insert === 'object') {
-                const iconName = (op.insert as any)?.icon;
-                const glyph = (op.insert as any)?.glyph;
-                if (!hasIconGlyph(glyph)) return null;
-                const iconStyles = {
-                  display: 'inline-flex',
-                  verticalAlign: '-0.125em',
-                  cursor,
-                  '&[data-icon-selected]': {
-                    backgroundColor: SELECTION_BACKGROUND
-                  },
-                  ...responsiveStyles.getRichFontStyles(attrs)
-                };
-                return link && !editMode ? (
-                  <a
-                    key={i}
-                    data-index={i}
-                    data-feathery-icon={iconName}
-                    css={iconStyles}
-                    href={link}
-                    target='_blank'
-                    rel='noreferrer'
-                  >
-                    <IconGlyph glyph={glyph} />
-                  </a>
-                ) : (
-                  <span
-                    key={i}
-                    data-index={i}
-                    data-feathery-icon={iconName}
-                    contentEditable={editMode ? false : undefined}
-                    onClick={onClick}
-                    css={iconStyles}
-                  >
-                    <IconGlyph glyph={glyph} />
-                  </span>
-                );
-              }
-
-              const text = editMode
-                ? (op.insert as string)
-                : replaceTextVariables(op.insert as string, element.repeat);
-
-              return (
-                <TextNode
+            // data-feathery-icon lets the builder restore embeds after editing.
+            if (typeof op.insert === 'object') {
+              const iconName = (op.insert as any)?.icon;
+              const glyph = (op.insert as any)?.glyph;
+              if (!hasIconGlyph(glyph)) return null;
+              const iconStyles = {
+                display: 'inline-flex',
+                verticalAlign: '-0.125em',
+                cursor,
+                ...responsiveStyles.getRichFontStyles(attrs)
+              };
+              return link && !editMode ? (
+                <a
                   key={i}
-                  index={i}
-                  cursor={cursor}
-                  fontStyles={responsiveStyles.getRichFontStyles(attrs)}
+                  data-index={i}
+                  data-feathery-icon={iconName}
+                  css={iconStyles}
+                  href={link}
+                  target='_blank'
+                  rel='noreferrer'
+                >
+                  <IconGlyph glyph={glyph} />
+                </a>
+              ) : (
+                <span
+                  key={i}
+                  data-index={i}
+                  data-feathery-icon={iconName}
+                  contentEditable={editMode ? false : undefined}
                   onClick={onClick}
-                  text={text}
-                  link={link}
-                  editMode={editMode}
-                />
+                  css={iconStyles}
+                >
+                  <IconGlyph glyph={glyph} />
+                </span>
               );
-            })
+            }
+
+            const text = editMode
+              ? (op.insert as string)
+              : replaceTextVariables(op.insert as string, element.repeat);
+
+            return (
+              <TextNode
+                key={i}
+                index={i}
+                cursor={cursor}
+                fontStyles={responsiveStyles.getRichFontStyles(attrs)}
+                onClick={onClick}
+                text={text}
+                link={link}
+                editMode={editMode}
+              />
+            );
+          })
         )}
       </span>
     );
