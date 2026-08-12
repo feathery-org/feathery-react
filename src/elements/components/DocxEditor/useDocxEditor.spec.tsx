@@ -97,34 +97,68 @@ describe('useDocxEditor across a review-gate flip', () => {
     isReadOnly: boolean;
     enableContextMenu: boolean;
     addEventListener: jest.Mock;
+    removeEventListener: jest.Mock;
     documentHelper: { viewerContainer: { style: Record<string, string> } };
+    /** Fire documentChange by hand, for the deferred-load cases. */
+    fireDocumentChange: () => void;
   };
 
   const editors: FakeEditor[] = [];
   let fetchCalls = 0;
+  /** Set false before rendering to hold every document mid-load. */
+  let autoLoadDocuments = true;
 
-  const makeEditor = (): FakeEditor => ({
-    open: jest.fn(),
-    openAsync: jest.fn().mockResolvedValue(undefined),
-    serialize: jest.fn(() => CARRIED),
-    // Pending assistant edits: work in the document that is not on the server.
-    revisions: { length: 1 },
-    isReadOnly: false,
-    enableContextMenu: false,
-    addEventListener: jest.fn(),
-    documentHelper: { viewerContainer: { style: {} } }
-  });
+  /**
+   * `autoLoad: false` opens WITHOUT announcing documentChange, so a test can
+   * hold the document mid-load and release it later.
+   */
+  const makeEditor = ({ autoLoad = true } = {}): FakeEditor => {
+    const listeners: Record<string, Array<() => void>> = {};
+    // Real EJ2 raises documentChange once per open, after open()/openAsync() has
+    // resolved, and the hook will not settle until it hears it. A fake that
+    // never raised it left the open path waiting on its 20s fallback, so the
+    // tests below saw an editor that had begun loading and never finished.
+    const fireDocumentChange = () => {
+      (listeners.documentChange ?? []).slice().forEach((cb) => cb());
+    };
+    const announce = () => {
+      if (autoLoad) fireDocumentChange();
+    };
+    return {
+      open: jest.fn(() => announce()),
+      openAsync: jest.fn(async () => {
+        announce();
+      }),
+      serialize: jest.fn(() => CARRIED),
+      // Pending assistant edits: work in the document that is not on the server.
+      revisions: { length: 1 },
+      isReadOnly: false,
+      enableContextMenu: false,
+      addEventListener: jest.fn((name: string, cb: () => void) => {
+        listeners[name] = listeners[name] ?? [];
+        listeners[name].push(cb);
+      }),
+      removeEventListener: jest.fn((name: string, cb: () => void) => {
+        listeners[name] = (listeners[name] ?? []).filter(
+          (entry) => entry !== cb
+        );
+      }),
+      documentHelper: { viewerContainer: { style: {} } },
+      fireDocumentChange
+    };
+  };
 
   beforeEach(() => {
     editors.length = 0;
     fetchCalls = 0;
+    autoLoadDocuments = true;
     (dynamicImport as jest.Mock).mockResolvedValue(undefined);
     class FakeContainer {
       static Inject = jest.fn();
       documentEditor: FakeEditor;
       private created: (() => void) | undefined;
       constructor() {
-        this.documentEditor = makeEditor();
+        this.documentEditor = makeEditor({ autoLoad: autoLoadDocuments });
         editors.push(this.documentEditor);
       }
 
@@ -206,6 +240,49 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(editors[0].serialize).toHaveBeenCalled();
     expect(editors[1].open).toHaveBeenCalledWith(CARRIED);
     expect(editors[1].openAsync).not.toHaveBeenCalled();
+  });
+
+  it('waits for documentChange before reporting the document ready', async () => {
+    // openAsync resolves BEFORE the converted document is laid out, so settling
+    // on it alone hands callers the previous (usually blank) document. This is
+    // what the documentChange wait exists for, and it is invisible unless a fake
+    // can resolve the open without announcing the load.
+    autoLoadDocuments = false;
+    const ready = jest.fn();
+    const Waiting = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/slow.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onReady: ready
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Waiting />);
+    await settle();
+
+    expect(editors).toHaveLength(1);
+    expect(editors[0].openAsync).toHaveBeenCalled();
+    // Opened, but not yet on screen.
+    expect(ready).not.toHaveBeenCalled();
+
+    await act(async () => {
+      editors[0].fireDocumentChange();
+    });
+    await settle();
+
+    expect(ready).toHaveBeenCalled();
+  });
+
+  it('stops listening for documentChange once it has heard it', async () => {
+    render(<Harness reviewChanges={false} />);
+    await settle();
+    expect(editors[0].removeEventListener).toHaveBeenCalledWith(
+      'documentChange',
+      expect.any(Function)
+    );
   });
 
   it('lets a regenerate win over the carried document', async () => {
