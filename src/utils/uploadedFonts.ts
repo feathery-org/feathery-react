@@ -17,6 +17,8 @@
  * on customer forms, so it says what it is without naming us. The doubled dash
  * keeps it clear of anything an org would plausibly name a real font.
  */
+import { featheryDoc } from './browser';
+
 export const UPLOADED_FONT_FAMILY_PREFIX = 'Uploaded--';
 
 // CSS family matching is ASCII case-insensitive, so lookups must be too.
@@ -56,6 +58,41 @@ const stripQuotes = (segment: string) => {
     ? trimmed.slice(1, -1).trim()
     : trimmed;
 };
+
+/**
+ * Registers an org's uploaded faces under their aliased families and fills the
+ * registry transformFontFamilies reads, so style values naming an upload
+ * resolve to the face actually registered.
+ *
+ * `s3Url` is passed in rather than imported: featheryClient owns the
+ * region-aware value, and importing it here would close an import cycle.
+ */
+export function loadUploadedFonts(
+  uploadedFonts: Record<string, any[]>,
+  s3Url: string
+) {
+  registerUploadedFonts(Object.keys(uploadedFonts));
+  Object.entries(uploadedFonts).forEach(([family, fontStyles]) => {
+    const renderFamily = isAliasableUploadName(family)
+      ? uploadedFontRenderFamily(family)
+      : family;
+    fontStyles.forEach(({ source, style, weight }: any) => {
+      const loadFont = (url: string) =>
+        new FontFace(renderFamily, `url(${url})`, { style, weight })
+          .load()
+          .then((font) => featheryDoc().fonts.add(font));
+      loadFont(source).catch(() => {
+        // Cloudfront might run into CORS issues so fall back to
+        // S3 directly if needed
+        const fallback = new URL(source);
+        fallback.hostname = s3Url;
+        loadFont(fallback.toString()).catch((e) =>
+          console.warn(`Font load issue: ${e}`)
+        );
+      });
+    });
+  });
+}
 
 /**
  * Rewrites a whole font_family value to its quoted render family, or returns
