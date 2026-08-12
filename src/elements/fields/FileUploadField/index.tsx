@@ -196,7 +196,7 @@ function FileUploadField({
   };
   const icon = hasIconGlyph(element.properties.icon_glyph) ? (
     <span
-      style={{
+      css={{
         display: 'inline-flex',
         alignItems: 'center',
         ...imgStyles,
