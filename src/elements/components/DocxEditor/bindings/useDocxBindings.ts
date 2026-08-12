@@ -94,9 +94,15 @@ export function useDocxBindings({
     }
 
     attachedRef.current = attached;
+    // Token conversion reports only on the attach result, so an unparseable
+    // [[...]] token is invisible to the host unless it is merged in here.
+    const initial = [...attached.importDiagnostics, ...attached.diagnostics()];
+    onDiagnosticsRef.current?.(initial);
     setState({
       ready: true,
-      diagnostics: attached.diagnostics(),
+      diagnostics: initial,
+      // Import problems are reported but never block saving: a template with
+      // foreign [[...]] prose is not a document the user may not save.
       blocked: attached
         .diagnostics()
         .some((entry) => entry.severity === 'error'),
