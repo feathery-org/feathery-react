@@ -7,7 +7,31 @@
 // Args are references (bare column/field names or table.column), numeric
 // literals, or nested calls. Anything else is a parse error.
 
-export class FormulaError extends Error {}
+export class FormulaError extends Error {
+  constructor(message?: string) {
+    super(message);
+    // The package compiles to es5, where the emit runs `Error.call(this, message)
+    // || this` and Error-as-a-function returns a FRESH plain Error - so the
+    // constructed object is not a FormulaError at runtime and `instanceof` is false.
+    // Every catch site here distinguishes an expected value/parse failure from a
+    // real bug, so losing that check turns a diagnostic into a thrown reconcile.
+    // Restoring the prototype and stamping the name keeps both routes working.
+    Object.setPrototypeOf(this, FormulaError.prototype);
+    this.name = 'FormulaError';
+  }
+}
+
+/**
+ * True for a FormulaError, whether or not `instanceof` survived compilation. Catch
+ * sites use this rather than `instanceof` so a downlevelled build cannot silently
+ * reclassify an expected failure as a crash.
+ */
+export function isFormulaError(error: unknown): error is FormulaError {
+  return (
+    error instanceof FormulaError ||
+    (!!error && (error as Error).name === 'FormulaError')
+  );
+}
 
 export type FormulaOperator = 'multiply' | 'sum' | 'subtract';
 
@@ -82,9 +106,7 @@ export function parseExpression(src: string): Ast {
       const op = FUNCTIONS[token.v as string];
       if (!op)
         throw new FormulaError(
-          `unknown function ${JSON.stringify(
-            token.v
-          )} (allowed: mul, sum, sub)`
+          `unknown function ${JSON.stringify(token.v)} (allowed: mul, sum, sub)`
         );
       eat('(');
       const args: Ast[] = [term()];

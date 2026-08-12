@@ -17,7 +17,31 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   GBP: '£'
 };
 
-export class ValueError extends Error {}
+export class ValueError extends Error {
+  constructor(message?: string) {
+    super(message);
+    // The package compiles to es5, where the emit runs `Error.call(this, message)
+    // || this` and Error-as-a-function returns a FRESH plain Error - so the
+    // constructed object is not a ValueError at runtime and `instanceof` is false.
+    // Every catch site here distinguishes an expected value/parse failure from a
+    // real bug, so losing that check turns a diagnostic into a thrown reconcile.
+    // Restoring the prototype and stamping the name keeps both routes working.
+    Object.setPrototypeOf(this, ValueError.prototype);
+    this.name = 'ValueError';
+  }
+}
+
+/**
+ * True for a ValueError, whether or not `instanceof` survived compilation. Catch
+ * sites use this rather than `instanceof` so a downlevelled build cannot silently
+ * reclassify an expected failure as a crash.
+ */
+export function isValueError(error: unknown): error is ValueError {
+  return (
+    error instanceof ValueError ||
+    (!!error && (error as Error).name === 'ValueError')
+  );
+}
 
 function stripNumeric(text: string): { neg: boolean; body: string } {
   let body = String(text).trim();

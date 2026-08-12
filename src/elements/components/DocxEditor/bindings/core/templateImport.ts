@@ -22,11 +22,11 @@ import {
   BoundDefinition,
   Definition,
   formatTag,
+  isTagError,
   parseTag,
-  TableDefinition,
-  TagError
+  TableDefinition
 } from './tagDsl';
-import { defaultValue, renderDisplay, ValueError } from './valueTypes';
+import { defaultValue, isValueError, renderDisplay } from './valueTypes';
 import { freshRowId } from './sfdtAdapter';
 import {
   ContentControlProperties,
@@ -89,7 +89,7 @@ function tokenToCc(
   try {
     text = renderDisplay(def.fieldType, defaultValue(def));
   } catch (thrown) {
-    if (!(thrown instanceof ValueError)) throw thrown;
+    if (!isValueError(thrown)) throw thrown;
     diag(
       diagnostics,
       'error',
@@ -141,7 +141,7 @@ function replaceTokensInParagraph(
     try {
       def = parseTag(trimmed);
     } catch (thrown) {
-      if (!(thrown instanceof TagError)) throw thrown;
+      if (!isTagError(thrown)) throw thrown;
       diag(diagnostics, 'error', 'malformed-token', thrown.message);
       return false;
     }
@@ -185,7 +185,7 @@ function replaceTokensInParagraph(
     try {
       def = parseTag(match[0]);
     } catch (thrown) {
-      if (!(thrown instanceof TagError)) throw thrown;
+      if (!isTagError(thrown)) throw thrown;
       diag(diagnostics, 'error', 'malformed-token', thrown.message);
       continue; // Leave the bad token visible; handled as plain text below.
     }

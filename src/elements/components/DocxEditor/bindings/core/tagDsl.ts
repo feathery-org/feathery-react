@@ -155,7 +155,31 @@ export const KEY_REFERENCE: KeyReferenceEntry[] = [
   }
 ];
 
-export class TagError extends Error {}
+export class TagError extends Error {
+  constructor(message?: string) {
+    super(message);
+    // The package compiles to es5, where the emit runs `Error.call(this, message)
+    // || this` and Error-as-a-function returns a FRESH plain Error - so the
+    // constructed object is not a TagError at runtime and `instanceof` is false.
+    // Every catch site here distinguishes an expected value/parse failure from a
+    // real bug, so losing that check turns a diagnostic into a thrown reconcile.
+    // Restoring the prototype and stamping the name keeps both routes working.
+    Object.setPrototypeOf(this, TagError.prototype);
+    this.name = 'TagError';
+  }
+}
+
+/**
+ * True for a TagError, whether or not `instanceof` survived compilation. Catch
+ * sites use this rather than `instanceof` so a downlevelled build cannot silently
+ * reclassify an expected failure as a crash.
+ */
+export function isTagError(error: unknown): error is TagError {
+  return (
+    error instanceof TagError ||
+    (!!error && (error as Error).name === 'TagError')
+  );
+}
 
 function fail(message: string, tag: string): never {
   throw new TagError(`${message} in tag ${JSON.stringify(tag)}`);
@@ -280,7 +304,8 @@ function parseLegacyV1(fields: string[], tag: string): Definition {
     return { version: 1, kind: 'table', tableId: fields[2] };
   }
   if (kind === 'field') {
-    if (fields.length < 6) fail('field tag needs name|type|rw|delete_policy', tag);
+    if (fields.length < 6)
+      fail('field tag needs name|type|rw|delete_policy', tag);
     const [, , name, type, policy, del, ...rest] = fields;
     if (!NAME_RE.test(name)) fail(`invalid name ${JSON.stringify(name)}`, tag);
     if (policy !== 'rw') fail('field edit policy must be rw', tag);
@@ -326,11 +351,7 @@ function parseLegacyV1(fields: string[], tag: string): Definition {
  * content controls are skipped rather than treated as errors.
  */
 export function parseTag(tag: unknown): Definition | null {
-  if (
-    typeof tag !== 'string' ||
-    !tag.startsWith('[[') ||
-    !tag.endsWith(']]')
-  )
+  if (typeof tag !== 'string' || !tag.startsWith('[[') || !tag.endsWith(']]'))
     return null;
   const body = tag.slice(2, -2);
   const parts = body.split('|');

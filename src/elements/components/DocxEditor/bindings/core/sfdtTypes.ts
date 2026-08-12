@@ -45,6 +45,8 @@ export interface SfdtInline {
 
 export interface SfdtCell {
   cellFormat?: Record<string, unknown>;
+  // Forward reference to the interface below; fine for a type.
+  // eslint-disable-next-line no-use-before-define
   blocks?: SfdtBlock[];
   [key: string]: unknown;
 }

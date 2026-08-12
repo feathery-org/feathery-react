@@ -45,8 +45,7 @@ function parse(value: string): Decimal {
   const neg = value[0] === '-';
   const body = neg ? value.slice(1) : value;
   const dot = body.indexOf('.');
-  const digits =
-    dot === -1 ? body : body.slice(0, dot) + body.slice(dot + 1);
+  const digits = dot === -1 ? body : body.slice(0, dot) + body.slice(dot + 1);
   const scale = dot === -1 ? 0 : body.length - dot - 1;
   return { neg, units: BigInt(digits), scale };
 }
