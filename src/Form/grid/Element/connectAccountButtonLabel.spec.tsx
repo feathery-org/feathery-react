@@ -28,7 +28,8 @@ const baseForm = {
   inlineErrors: {},
   formSettings: {},
   visiblePositions: {},
-  featheryContext: {}
+  featheryContext: {},
+  onViewElements: []
 };
 
 const buildButtonNode = (manageButtonLabel: boolean | undefined) => ({
