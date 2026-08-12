@@ -9,9 +9,7 @@ const handlePaste = (e: ClipboardEvent) => {
   featheryDoc().execCommand('insertText', false, plainText);
 };
 
-// Browsers don't paint the native selection highlight over
-// contenteditable=false nodes (inline icon embeds), so mirror the selection
-// onto them with an attribute the icon span styles against.
+// Browsers do not highlight contenteditable=false icon embeds.
 const syncIconSelection = (root: any, sel: any) => {
   if (!root?.querySelectorAll) return;
   const canCheck =

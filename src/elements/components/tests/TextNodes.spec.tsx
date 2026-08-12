@@ -16,7 +16,6 @@ beforeAll(() => {
   });
 });
 
-// Icon embeds carry the glyph's shape data; the name only labels it.
 const iconOp = (icon: string, attributes?: any) => ({
   insert: {
     icon,
@@ -87,8 +86,6 @@ describe('TextNodes icon embeds', () => {
   });
 
   it('drops unsafe tags and attributes from glyph data', () => {
-    // Glyph data is writable through the API, so only geometry with plain SVG
-    // attributes may render.
     const { container } = renderNodes([
       {
         insert: {
@@ -194,13 +191,73 @@ describe('TextNodes icon embeds', () => {
     expect(icon!.getAttribute('contenteditable')).toBe('false');
   });
 
+  it('renders linked icons with the same external-link contract as text', () => {
+    const { container } = renderNodes([
+      iconOp('IconExternalLink', {
+        font_link: 'https://example.com/icon'
+      })
+    ]);
+    const icon = container.querySelector(
+      '[data-feathery-icon="IconExternalLink"]'
+    );
+
+    expect(icon?.tagName.toLowerCase()).toBe('a');
+    expect(icon).toHaveAttribute('href', 'https://example.com/icon');
+    expect(icon).toHaveAttribute('target', '_blank');
+    expect(icon).toHaveAttribute('rel', 'noreferrer');
+    expect(icon?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('keeps linked icons as atomic spans while editing', () => {
+    const { container } = renderNodes(
+      [
+        iconOp('IconExternalLink', {
+          font_link: 'https://example.com/icon'
+        })
+      ],
+      'editable',
+      true
+    );
+    const icon = container.querySelector(
+      '[data-feathery-icon="IconExternalLink"]'
+    );
+
+    expect(icon?.tagName.toLowerCase()).toBe('span');
+    expect(icon).toHaveAttribute('data-index', '0');
+    expect(icon).toHaveAttribute('contenteditable', 'false');
+    expect(icon).not.toHaveAttribute('href');
+  });
+
+  it('does not leak the final run styles onto earlier runs while editing', () => {
+    const { container } = renderNodes(
+      [
+        { insert: 'Plain' },
+        {
+          insert: 'Styled',
+          attributes: {
+            font_color: 'FF0000FF',
+            font_size: 27,
+            font_weight: 700
+          }
+        }
+      ],
+      'editable',
+      true
+    );
+    const runs = container.querySelectorAll('span[data-index]');
+
+    expect(getComputedStyle(runs[0]).color).not.toBe('rgba(255, 0, 0, 1)');
+    expect(getComputedStyle(runs[0]).fontSize).not.toBe('27px');
+    expect(getComputedStyle(runs[1]).color).toBe('rgba(255, 0, 0, 1)');
+    expect(getComputedStyle(runs[1]).fontSize).toBe('27px');
+  });
+
   it('drops whitespace-only text runs in icon-only labels', () => {
     const { container } = renderNodes([iconOp('IconTrash'), { insert: '\n' }]);
     expect(
       container.querySelector('[data-feathery-icon="IconTrash"]')
     ).not.toBeNull();
     expect((container.textContent ?? '').trim()).toBe('');
-    // The whitespace op must not render a span at all
     expect(container.querySelectorAll('span[data-index]').length).toBe(1);
   });
 
@@ -210,8 +267,11 @@ describe('TextNodes icon embeds', () => {
       'editable',
       true
     );
-    // Icon node + whitespace span both render so the caret has a target
     expect(container.querySelectorAll('span[data-index]').length).toBe(2);
+    expect(container.querySelector('#span-text-1')).toHaveAttribute(
+      'contenteditable',
+      'true'
+    );
   });
 
   it('keeps whitespace runs when real text accompanies an icon', () => {
@@ -223,8 +283,6 @@ describe('TextNodes icon embeds', () => {
   });
 
   it('keeps the label bottom padding for plain text, drops it for icons', () => {
-    // The 2px nudge ships in every published form, so it may only come off for
-    // labels that actually contain a glyph.
     const plain = renderNodes([{ insert: 'Just text' }]);
     const plainSpan = plain.container.querySelector('#span-text-1')!;
     expect(getComputedStyle(plainSpan).paddingBottom).toBe('2px');
