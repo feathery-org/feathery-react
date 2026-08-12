@@ -43,6 +43,7 @@ import {
   getStaticUrl,
   HubActionOptions,
   inviteFormCollaborator as apiInviteFormCollaborator,
+  setTaskStatus as apiSetTaskStatus,
   PageSelectionInput,
   parseAPIError,
   setEnvironment,
@@ -1107,6 +1108,22 @@ export default class FeatheryClient extends IntegrationClient {
         else throw Error(parseAPIError(await response.json()));
       }
     });
+  }
+
+  async setTaskStatus(templateId: string, taskStatusId: string) {
+    const { userId, collaboratorId, sdkKey } = initInfo();
+    const res = await apiSetTaskStatus(
+      sdkKey,
+      this.formKey,
+      templateId,
+      taskStatusId,
+      userId,
+      collaboratorId
+    );
+
+    if (res && res.ok) {
+      return res.payload;
+    } else throw Error(parseAPIError(res));
   }
 
   async setCollaboratorAsCompleted(templateId: string) {

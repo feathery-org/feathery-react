@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
-import { initState } from '../../../utils/init';
+import { fieldValues, initState } from '../../../utils/init';
 import { ACTION_GENERATE_ENVELOPES } from '../../../utils/elementActions';
 import { featheryWindow } from '../../../utils/browser';
 import {
@@ -8,6 +8,7 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getDocxEditor
 } from '../../../assistant/tools/docx/docxEditorRegistry';
+import { setFormInternalState } from '../../../utils/internalState';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import DocumentEditorContainer from './DocumentEditorContainer';
 import {
@@ -26,6 +27,8 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 // a rebind at create time observes an empty document and is detectably wrong.
 const OPEN_STATE = { opened: false };
 
+// Exposes the terminal handlers as buttons so the container's outcome routing
+// can be driven the way the real toolbar drives it.
 jest.mock('./index', () => {
   const React = jest.requireActual('react');
 
@@ -35,15 +38,11 @@ jest.mock('./index', () => {
     onEditorReady,
     onChange,
     onReady,
-    reviewChanges
-  }: {
-    source?: { url?: string };
-    openNonce?: number;
-    onEditorReady?: (editor: any) => void;
-    onReady?: () => void;
-    onChange?: (dirty: boolean) => void;
-    reviewChanges?: boolean;
-  }) {
+    reviewChanges,
+    terminalAction,
+    onTerminalAction,
+    onTerminalActionDraft
+  }: any) {
     const editor = React.useMemo(
       () => ({
         sourceUrl: source?.url,
@@ -67,19 +66,49 @@ jest.mock('./index', () => {
         'data-testid': `editor:${source?.url ?? 'none'}`,
         'data-review-changes': String(!!reviewChanges)
       },
+      onTerminalAction &&
+        React.createElement('button', {
+          key: 'terminal',
+          'data-testid': `terminal:${terminalAction}`,
+          onClick: () => onTerminalAction()
+        }),
+      onTerminalActionDraft &&
+        React.createElement('button', {
+          key: 'draft',
+          'data-testid': 'terminal:draft-menu',
+          onClick: () => onTerminalActionDraft()
+        }),
       onChange &&
         React.createElement('button', {
+          key: 'dirty',
           'data-testid': `dirty:${source?.url}`,
           onClick: () => onChange(true)
         }),
       onChange &&
         React.createElement('button', {
+          key: 'clean',
           'data-testid': `clean:${source?.url}`,
           onClick: () => onChange(false)
         })
     );
   };
 });
+
+const mockFinalizeEnvelope = jest.fn();
+const mockFinalizeEnvelopeReview = jest.fn();
+jest.mock('../../../utils/featheryClient', () => ({
+  __esModule: true,
+  API_URL: 'https://api.test/',
+  default: jest.fn().mockImplementation(function (this: any, formKey: string) {
+    this.formKey = formKey;
+    this.finalizeEnvelope = (...args: any[]) => mockFinalizeEnvelope(...args);
+    this.finalizeEnvelopeReview = (...args: any[]) =>
+      mockFinalizeEnvelopeReview(...args);
+    this.getCurrentEnvelope = jest.fn().mockResolvedValue({});
+    this.saveEnvelopeFile = jest.fn().mockResolvedValue({});
+    this.downloadEnvelopePdf = jest.fn().mockResolvedValue(new Blob());
+  })
+}));
 
 const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
 
@@ -92,7 +121,7 @@ const schemaFor = (containerIds: string[]) => ({
           actions: [
             {
               type: ACTION_GENERATE_ENVELOPES,
-              view_draft_container: containerId,
+              editor_mode: containerId,
               documents: [`document-${containerId}`]
             }
           ]
@@ -461,7 +490,7 @@ describe('DocumentEditorContainer revision group binding', () => {
     OPEN_STATE.opened = false;
     const action = (initState.formSchemas as any)['form-key'].steps[0]
       .buttons[0].properties.actions[0];
-    action.view_draft_read_only = true;
+    action.editor_read_only = true;
     const readOnly = render(
       <DocumentEditorContainer
         containerId='document-container-a'
@@ -476,5 +505,171 @@ describe('DocumentEditorContainer revision group binding', () => {
     expect(readOnlyEditor).toHaveAttribute('data-review-changes', 'false');
     expect(rebindRevisionGroups).not.toHaveBeenCalled();
     readOnly.unmount();
+  });
+});
+
+describe('DocumentEditorContainer signing outcomes', () => {
+  const CONTAINER = 'document-container-a';
+  const showEnvelopeOutcome = jest.fn();
+
+  const seed = (action: Record<string, any>) => {
+    initState.formSchemas = {
+      'form-key': {
+        steps: [
+          {
+            id: 'step-0',
+            buttons: [
+              {
+                properties: {
+                  actions: [
+                    {
+                      type: ACTION_GENERATE_ENVELOPES,
+                      editor_mode: CONTAINER,
+                      documents: [`document-${CONTAINER}`],
+                      ...action
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    };
+    (featheryWindow() as any)[PENDING_DRAFTS_KEY] = {
+      [CONTAINER]: draftFor(CONTAINER)
+    };
+  };
+
+  const mount = () =>
+    render(
+      <DocumentEditorContainer
+        containerId={CONTAINER}
+        formId='form-1'
+        stepId='step-0'
+      />
+    );
+
+  beforeEach(() => {
+    _clearDocxEditors();
+    mockFinalizeEnvelope.mockReset().mockResolvedValue({});
+    mockFinalizeEnvelopeReview
+      .mockReset()
+      .mockResolvedValue({ docusign_envelope_id: 'ds-1', status: 'sent' });
+    showEnvelopeOutcome.mockReset();
+    setFormInternalState('form-1', { showEnvelopeOutcome });
+  });
+
+  afterEach(() => {
+    _clearDocxEditors();
+    initState.formSchemas = {};
+    delete (featheryWindow() as any)[PENDING_DRAFTS_KEY];
+    jest.restoreAllMocks();
+  });
+
+  it('sends the reviewed docx to DocuSign instead of the Feathery sign page', async () => {
+    Object.assign(fieldValues, {
+      signer_field: 'filler@test.com',
+      buyer_field: 'buyer@test.com'
+    });
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['sign'],
+      envelope_signer_field_key: 'signer_field',
+      envelope_signers: [
+        {
+          document_id: `document-${CONTAINER}`,
+          role_id: 'role-1',
+          field_key: 'buyer_field'
+        }
+      ]
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    // The docx must be converted to a signable PDF before it is sent, and the
+    // sign method goes with it so that conversion doesn't also mail a Feathery
+    // invite on top of the DocuSign one.
+    await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
+    expect(mockFinalizeEnvelope.mock.calls[0]).toEqual([
+      `envelope-${CONTAINER}`,
+      // Only the mapped role. Nobody signs inline on DocuSign, so the form
+      // signer field routes to no one.
+      [
+        {
+          document_id: `document-${CONTAINER}`,
+          role_id: 'role-1',
+          email: 'buyer@test.com',
+          filler: false
+        }
+      ],
+      'docusign'
+    ]);
+    await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
+    const [action, params] = mockFinalizeEnvelopeReview.mock.calls[0];
+    expect(action.sign_method).toBe('docusign');
+    expect(params).toEqual({
+      envelopes: [{ envelopeId: `envelope-${CONTAINER}` }],
+      envelopeAction: 'sign',
+      draft: false
+    });
+    // Nothing here navigates away, so the toast is the only confirmation.
+    expect(showEnvelopeOutcome).toHaveBeenCalledWith('Sent for Signature', [
+      `document-${CONTAINER}`
+    ]);
+
+    delete fieldValues.signer_field;
+    delete fieldValues.buyer_field;
+  });
+
+  it('sends draft=true from the Save as Draft menu entry', async () => {
+    seed({
+      sign_method: 'docusign',
+      editor_toolbar_actions: ['sign', 'draft']
+    });
+    const { getByTestId } = mount();
+
+    await waitFor(() =>
+      expect(getByTestId('terminal:draft-menu')).toBeTruthy()
+    );
+    getByTestId('terminal:draft-menu').click();
+
+    await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
+    expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
+    expect(showEnvelopeOutcome).toHaveBeenCalledWith('Saved as Draft', [
+      `document-${CONTAINER}`
+    ]);
+  });
+
+  it('sends draft=true when Create Draft is the only signing outcome', async () => {
+    seed({ sign_method: 'docusign', editor_toolbar_actions: ['draft'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:draft')).toBeTruthy());
+    getByTestId('terminal:draft').click();
+
+    await waitFor(() => expect(mockFinalizeEnvelopeReview).toHaveBeenCalled());
+    expect(mockFinalizeEnvelopeReview.mock.calls[0][1].draft).toBe(true);
+  });
+
+  it('keeps the Feathery eSign path when sign_method is not docusign', async () => {
+    // Invited someone else, so the filler has no document to open and the
+    // toast is all they get.
+    mockFinalizeEnvelope.mockResolvedValue({ invited: true });
+    seed({ sign_method: 'feathery', editor_toolbar_actions: ['sign'] });
+    const { getByTestId } = mount();
+
+    await waitFor(() => expect(getByTestId('terminal:sign')).toBeTruthy());
+    getByTestId('terminal:sign').click();
+
+    await waitFor(() => expect(mockFinalizeEnvelope).toHaveBeenCalled());
+    expect(mockFinalizeEnvelopeReview).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(showEnvelopeOutcome).toHaveBeenCalledWith('Sent for Signature', [
+        `document-${CONTAINER}`
+      ])
+    );
   });
 });
