@@ -201,13 +201,13 @@ describe('controller over a real DocumentEditor', () => {
     ).toBe(false);
   });
 
-  it('restores the track-changes flag it borrowed', () => {
-    // Engine writes must never author revisions, but the user's setting has to
-    // survive the reconcile.
+  it('leaves track-changes off after a reconcile, even if it was on', () => {
+    // Restoring a leftover true re-arms tracking for the next keystroke inside
+    // the control the user just edited.
     (editor as any).enableTrackChanges = true;
     writeIntoControl(editor, QUANTITY_R1, '13');
     controller.flush();
-    expect((editor as any).enableTrackChanges).toBe(true);
+    expect((editor as any).enableTrackChanges).toBe(false);
   });
 
   it('records no tracked-change revisions for engine writes', () => {
