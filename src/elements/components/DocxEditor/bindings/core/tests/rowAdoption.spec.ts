@@ -53,10 +53,7 @@ function withNativeRow(texts: string[], at = 3): SfdtDocument {
 
 describe('row adoption', () => {
   it('infers bindings and formulas from the row above', () => {
-    const result = applyRules(
-      withNativeRow(['QA testing', '4', '250', '']),
-      {}
-    );
+    const result = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
 
     expect(
       result.diagnostics.some(
@@ -164,9 +161,9 @@ describe('row adoption', () => {
     const first = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
     const second = applyRules(first.sfdt, { prevValues: first.values });
     expect(second.sfdt).toBe(first.sfdt); // identity: nothing rewritten
-    expect(
-      second.diagnostics.some((entry) => entry.code === 'row-adopted')
-    ).toBe(false);
+    expect(second.diagnostics.some((entry) => entry.code === 'row-adopted')).toBe(
+      false
+    );
   });
 
   it('skips a row that does not match the template shape, with a warning', () => {

@@ -44,9 +44,9 @@ describe('tag DSL', () => {
       '[[name=line_total|expr=mul(quantity,unit_cost)|row=r-1]]'
     );
     expect(formula.kind).toBe('formula');
-    expect(formula.kind === 'formula' ? formula.expression : undefined).toBe(
-      'mul(quantity,unit_cost)'
-    );
+    expect(
+      formula.kind === 'formula' ? formula.expression : undefined
+    ).toBe('mul(quantity,unit_cost)');
     expect(formula.isEditable).toBe(false);
     expect(formula.isDeletable).toBe(false);
 
@@ -118,9 +118,7 @@ describe('tag DSL', () => {
   });
 
   it('still parses legacy positional v1 tags and canonicalizes them to v2', () => {
-    const field = bound(
-      '[[v1|field|unit_cost|currency:USD:2|rw|delete|row=r-1]]'
-    );
+    const field = bound('[[v1|field|unit_cost|currency:USD:2|rw|delete|row=r-1]]');
     expect(field.version).toBe(1);
     expect(field.fieldType).toEqual({
       kind: 'currency',
@@ -132,9 +130,9 @@ describe('tag DSL', () => {
     const formula = bound(
       '[[v1|formula|grand_total|currency:USD:2|sum(costs.line_total)|ro|keep]]'
     );
-    expect(formula.kind === 'formula' ? formula.expression : undefined).toBe(
-      'sum(costs.line_total)'
-    );
+    expect(
+      formula.kind === 'formula' ? formula.expression : undefined
+    ).toBe('sum(costs.line_total)');
     expect(formatTag(formula)).toBe(
       '[[name=grand_total|expr=sum(costs.line_total)]]'
     );

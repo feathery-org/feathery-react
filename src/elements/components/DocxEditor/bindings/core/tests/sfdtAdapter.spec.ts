@@ -193,8 +193,7 @@ describe('validateSfdt', () => {
     const diagnostics = validateSfdt(doc);
     expect(
       diagnostics.some(
-        (entry) =>
-          entry.code === 'invalid-input' && /quantity/.test(entry.message)
+        (entry) => entry.code === 'invalid-input' && /quantity/.test(entry.message)
       )
     ).toBe(true);
     expect(diagnostics.some((entry) => entry.code === 'malformed-tag')).toBe(

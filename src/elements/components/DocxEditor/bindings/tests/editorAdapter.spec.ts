@@ -95,7 +95,8 @@ function writeIntoControl(
 ): void {
   const collection = (editor as any).documentHelper.contentControlCollection;
   const control = collection.find(
-    (candidate: any) => candidate?.contentControlProperties?.tag === tag
+    (candidate: any) =>
+      candidate?.contentControlProperties?.tag === tag
   );
   if (!control) throw new Error(`no control for ${tag}`);
   (editor as any).editorModule.updateContentControl(control, text);

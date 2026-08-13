@@ -15,7 +15,10 @@
 // These tests pin the property that survives compilation: identity by NAME, not
 // by prototype chain. A prototype-stripped error stands in for what the es5 emit
 // produces.
-import { applyRules, hasBlockingErrors } from '../engine';
+import {
+  applyRules,
+  hasBlockingErrors
+} from '../engine';
 import { isFormulaError } from '../formula';
 import { isTagError } from '../tagDsl';
 import { isValueError, ValueError } from '../valueTypes';
@@ -92,8 +95,8 @@ describe('an unparseable value reports rather than throws', () => {
     const result = applyRules(pending, {});
 
     // Recomputed, not thrown.
-    expect(getAt(result.sfdt, lineTotal.path).inlines[0].text).toBe(
-      '$1,800.00'
-    );
+    expect(
+      getAt(result.sfdt, lineTotal.path).inlines[0].text
+    ).toBe('$1,800.00');
   });
 });

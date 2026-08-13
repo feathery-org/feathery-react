@@ -1,375 +1,259 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Document bindings harness</title>
-    <link
-      href="https://cdn.syncfusion.com/ej2/34.1.31/tailwind3.css"
-      rel="stylesheet"
-    />
-    <style>
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        font: 13px/1.45 system-ui, sans-serif;
-      }
-      body {
-        display: flex;
-        flex-direction: column;
-      }
-      header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        padding: 8px 10px;
-        border-bottom: 1px solid #d8d8dc;
-        background: #fafafb;
-      }
-      header strong {
-        margin-right: 4px;
-      }
-      button {
-        font: inherit;
-        padding: 4px 9px;
-        border: 1px solid #c8c8ce;
-        border-radius: 5px;
-        background: #fff;
-        cursor: pointer;
-      }
-      button:hover {
-        background: #f1f1f4;
-      }
-      button:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
-      .sep {
-        width: 1px;
-        align-self: stretch;
-        background: #d8d8dc;
-        margin: 0 4px;
-      }
-      main {
-        flex: 1;
-        display: flex;
-        min-height: 0;
-      }
-      #editor {
-        flex: 1;
-        min-width: 0;
-      }
-      aside {
-        width: 340px;
-        border-left: 1px solid #d8d8dc;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        background: #fcfcfd;
-      }
-      aside section {
-        border-bottom: 1px solid #e6e6ea;
-        padding: 8px 10px;
-        overflow: auto;
-      }
-      aside h2 {
-        margin: 0 0 6px;
-        font-size: 11px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #6b6b76;
-      }
-      pre {
-        margin: 0;
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 12px;
-      }
-      .ok {
-        color: #0e7a4d;
-      }
-      .bad {
-        color: #b0302b;
-      }
-      .warn {
-        color: #8a6100;
-      }
-      .muted {
-        color: #6b6b76;
-      }
-      #status {
-        font-variant-numeric: tabular-nums;
-      }
-    </style>
-  </head>
-  <body>
-    <header>
-      <strong>Load</strong>
-      <button onclick="load('bound')">Bound document</button>
-      <button onclick="load('template')">[[token]] template</button>
-      <div class="sep"></div>
-      <strong>Rows</strong>
-      <button onclick="addRow()">Add costs row</button>
-      <button onclick="removeLastRow()">Remove last</button>
-      <div class="sep"></div>
-      <strong>Undo</strong>
-      <button onclick="ed && ed.editorHistory.undo()">Native undo</button>
-      <button onclick="ed && ed.editorHistory.redo()">Native redo</button>
-      <button onclick="snapshotUndo()">Snapshot undo</button>
-      <div class="sep"></div>
-      <button onclick="checkSave()">Check save</button>
-      <button onclick="setName()">Set project.name</button>
-    </header>
+<head>
+  <meta charset="utf-8" />
+  <title>Document bindings harness</title>
+  <link
+    href="https://cdn.syncfusion.com/ej2/34.1.31/tailwind3.css"
+    rel="stylesheet"
+  />
+  <style>
+    html, body { height: 100%; margin: 0; font: 13px/1.45 system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 10px; border-bottom: 1px solid #d8d8dc; background: #fafafb;
+    }
+    header strong { margin-right: 4px; }
+    button {
+      font: inherit; padding: 4px 9px; border: 1px solid #c8c8ce; border-radius: 5px;
+      background: #fff; cursor: pointer;
+    }
+    button:hover { background: #f1f1f4; }
+    button:disabled { opacity: .5; cursor: default; }
+    .sep { width: 1px; align-self: stretch; background: #d8d8dc; margin: 0 4px; }
+    main { flex: 1; display: flex; min-height: 0; }
+    #editor { flex: 1; min-width: 0; }
+    aside {
+      width: 340px; border-left: 1px solid #d8d8dc; display: flex;
+      flex-direction: column; overflow: hidden; background: #fcfcfd;
+    }
+    aside section { border-bottom: 1px solid #e6e6ea; padding: 8px 10px; overflow: auto; }
+    aside h2 {
+      margin: 0 0 6px; font-size: 11px; letter-spacing: .06em;
+      text-transform: uppercase; color: #6b6b76;
+    }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+    .ok { color: #0e7a4d; }
+    .bad { color: #b0302b; }
+    .warn { color: #8a6100; }
+    .muted { color: #6b6b76; }
+    #status { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Load</strong>
+    <button onclick="load('bound')">Bound document</button>
+    <button onclick="load('template')">[[token]] template</button>
+    <div class="sep"></div>
+    <strong>Rows</strong>
+    <button onclick="addRow()">Add costs row</button>
+    <button onclick="removeLastRow()">Remove last</button>
+    <div class="sep"></div>
+    <strong>Undo</strong>
+    <button onclick="ed && ed.editorHistory.undo()">Native undo</button>
+    <button onclick="ed && ed.editorHistory.redo()">Native redo</button>
+    <button onclick="snapshotUndo()">Snapshot undo</button>
+    <div class="sep"></div>
+    <button onclick="checkSave()">Check save</button>
+    <button onclick="setName()">Set project.name</button>
+  </header>
 
-    <main>
-      <div id="editor"></div>
-      <aside>
-        <section>
-          <h2>Status</h2>
-          <pre id="status" class="muted">loading Syncfusion…</pre>
-        </section>
-        <section>
-          <h2>Diagnostics</h2>
-          <pre id="diagnostics" class="muted">—</pre>
-        </section>
-        <section>
-          <h2>Document field values</h2>
-          <pre id="fields" class="muted">—</pre>
-        </section>
-        <section style="flex: 1">
-          <h2>Event log</h2>
-          <pre id="log" class="muted">—</pre>
-        </section>
-      </aside>
-    </main>
+  <main>
+    <div id="editor"></div>
+    <aside>
+      <section>
+        <h2>Status</h2>
+        <pre id="status" class="muted">loading Syncfusion…</pre>
+      </section>
+      <section>
+        <h2>Diagnostics</h2>
+        <pre id="diagnostics" class="muted">—</pre>
+      </section>
+      <section>
+        <h2>Document field values</h2>
+        <pre id="fields" class="muted">—</pre>
+      </section>
+      <section style="flex:1">
+        <h2>Event log</h2>
+        <pre id="log" class="muted">—</pre>
+      </section>
+    </aside>
+  </main>
 
-    <script src="https://cdn.syncfusion.com/ej2/34.1.31/dist/ej2.min.js"></script>
-    <script>
-      // Cache-bust the harness bundle: a plain reload otherwise serves a stale
-      // copy after a rebuild.
-      document.write(
-        '<scr' +
-          'ipt src="/harness/bindings/bundle.js?t=' +
-          Date.now() +
-          '"></scr' +
-          'ipt>'
+  <script src="https://cdn.syncfusion.com/ej2/34.1.31/dist/ej2.min.js"></script>
+  <script>
+    // Cache-bust the harness bundle: a plain reload otherwise serves a stale
+    // copy after a rebuild.
+    document.write(
+      '<scr' + 'ipt src="/harness/bindings/bundle.js?t=' + Date.now() + '"></scr' + 'ipt>'
+    );
+  </script>
+  <script>
+    var container = null;   // DocumentEditorContainer
+    var ed = null;          // the live DocumentEditor
+    var attached = null;    // AttachedBindings
+    var lines = [];
+
+    function log(message) {
+      lines.unshift(new Date().toLocaleTimeString() + '  ' + message);
+      lines = lines.slice(0, 60);
+      document.getElementById('log').textContent = lines.join('\n');
+    }
+
+    function show(id, text, cls) {
+      var el = document.getElementById(id);
+      el.textContent = text;
+      el.className = cls || '';
+    }
+
+    function refreshStatus() {
+      if (!attached) return show('status', 'no bindings attached', 'muted');
+      var c = attached.controller;
+      var t = c.timings || {};
+      show(
+        'status',
+        'phase        ' + c.phase + '\n' +
+        'dirty        ' + c.dirty + '\n' +
+        'undo/redo    ' + c.undoStack.length + ' / ' + c.redoStack.length + '\n' +
+        'serialize    ' + (t.serializeMs != null ? t.serializeMs + ' ms' : '—') + '\n' +
+        'reconcile    ' + (t.reconcileMs != null ? t.reconcileMs + ' ms' : '—') + '\n' +
+        'patch        ' + (t.patchMs != null ? t.patchMs + ' ms' : '—') + '\n' +
+        'open         ' + (t.openMs != null ? t.openMs + ' ms' : '—')
       );
-    </script>
-    <script>
-      var container = null; // DocumentEditorContainer
-      var ed = null; // the live DocumentEditor
-      var attached = null; // AttachedBindings
-      var lines = [];
 
-      function log(message) {
-        lines.unshift(new Date().toLocaleTimeString() + '  ' + message);
-        lines = lines.slice(0, 60);
-        document.getElementById('log').textContent = lines.join('\n');
-      }
-
-      function show(id, text, cls) {
-        var el = document.getElementById(id);
-        el.textContent = text;
-        el.className = cls || '';
-      }
-
-      function refreshStatus() {
-        if (!attached) return show('status', 'no bindings attached', 'muted');
-        var c = attached.controller;
-        var t = c.timings || {};
+      var diagnostics = attached.diagnostics();
+      if (!diagnostics.length) show('diagnostics', 'none', 'ok');
+      else {
+        var blocking = diagnostics.some(function (d) { return d.severity === 'error'; });
         show(
-          'status',
-          'phase        ' +
-            c.phase +
-            '\n' +
-            'dirty        ' +
-            c.dirty +
-            '\n' +
-            'undo/redo    ' +
-            c.undoStack.length +
-            ' / ' +
-            c.redoStack.length +
-            '\n' +
-            'serialize    ' +
-            (t.serializeMs != null ? t.serializeMs + ' ms' : '—') +
-            '\n' +
-            'reconcile    ' +
-            (t.reconcileMs != null ? t.reconcileMs + ' ms' : '—') +
-            '\n' +
-            'patch        ' +
-            (t.patchMs != null ? t.patchMs + ' ms' : '—') +
-            '\n' +
-            'open         ' +
-            (t.openMs != null ? t.openMs + ' ms' : '—')
+          'diagnostics',
+          diagnostics.map(function (d) {
+            return '[' + d.severity + '] ' + d.code + '\n  ' + d.message;
+          }).join('\n'),
+          blocking ? 'bad' : 'warn'
         );
+      }
 
-        var diagnostics = attached.diagnostics();
-        if (!diagnostics.length) show('diagnostics', 'none', 'ok');
-        else {
-          var blocking = diagnostics.some(function (d) {
-            return d.severity === 'error';
-          });
-          show(
-            'diagnostics',
-            diagnostics
-              .map(function (d) {
-                return '[' + d.severity + '] ' + d.code + '\n  ' + d.message;
-              })
-              .join('\n'),
-            blocking ? 'bad' : 'warn'
-          );
+      var values = attached.fieldValues();
+      var keys = Object.keys(values);
+      show(
+        'fields',
+        keys.length
+          ? keys.map(function (k) { return k + ' = ' + values[k]; }).join('\n')
+          : 'none',
+        keys.length ? '' : 'muted'
+      );
+    }
+
+    function detach() {
+      if (attached) { attached.dispose(); attached = null; }
+    }
+
+    function load(which) {
+      if (!container) return;
+      detach();
+      var doc = which === 'template'
+        ? Bindings.buildTemplateTokenDocument()
+        : Bindings.buildCostsFixture();
+      ed.open(JSON.stringify(doc));
+      log('opened the ' + (which === 'template' ? '[[token]] template' : 'bound document'));
+
+      // Exactly what the product calls, with the product's own defaults.
+      attached = Bindings.attachBindings(ed, {
+        onDiagnostics: refreshStatus,
+        onFieldValues: refreshStatus,
+        onSuppressContentChange: function (on) {
+          log(on ? 'suppressing contentChange (engine write)' : 'contentChange live');
         }
+      });
+      if (attached.importDiagnostics.length)
+        log('import diagnostics: ' + JSON.stringify(attached.importDiagnostics));
+      log('bindings attached — ' +
+        Bindings.scanBindings(JSON.parse(ed.serialize())).occurrences.length +
+        ' bound occurrences');
+      refreshStatus();
+    }
 
-        var values = attached.fieldValues();
-        var keys = Object.keys(values);
-        show(
-          'fields',
-          keys.length
-            ? keys
-                .map(function (k) {
-                  return k + ' = ' + values[k];
-                })
-                .join('\n')
-            : 'none',
-          keys.length ? '' : 'muted'
-        );
+    function addRow() {
+      if (!attached) return;
+      attached.controller.runCommand(function (sfdt, index) {
+        return Bindings.addLineItem(sfdt, 'costs', null, index).sfdt;
+      });
+      log('added a costs row (reload path — native undo is destroyed here by design)');
+      refreshStatus();
+    }
+
+    function removeLastRow() {
+      if (!attached) return;
+      var index = attached.controller.index;
+      var rows = index && index.tables.get('costs') && index.tables.get('costs').rows;
+      if (!rows || !rows.length) return log('no rows to remove');
+      var rowId = rows[rows.length - 1].rowId;
+      try {
+        attached.controller.runCommand(function (sfdt, idx) {
+          return Bindings.removeLineItem(sfdt, 'costs', rowId, idx);
+        });
+        log('removed row ' + rowId);
+      } catch (e) {
+        log('remove refused: ' + e.message);
       }
+      refreshStatus();
+    }
 
-      function detach() {
-        if (attached) {
-          attached.dispose();
-          attached = null;
+    function snapshotUndo() {
+      if (!attached) return;
+      log(attached.controller.undo()
+        ? 'snapshot undo applied (whole engine transaction)'
+        : 'snapshot undo stack empty');
+      refreshStatus();
+    }
+
+    function checkSave() {
+      if (!attached) return;
+      var ready = attached.commitForSave();
+      log(ready
+        ? 'commitForSave() → true: the document would be written'
+        : 'commitForSave() → FALSE: export is refused while errors remain');
+      refreshStatus();
+    }
+
+    function setName() {
+      if (!attached) return;
+      var value = prompt('project.name', 'Rebrand 2027');
+      if (value == null) return;
+      attached.controller.runCommand(function (sfdt, index) {
+        return Bindings.setTaggedValue(sfdt, 'project.name', value, index);
+      });
+      log('set project.name — watch both occurrences change');
+      refreshStatus();
+    }
+
+    (function start() {
+      container = new ej.documenteditor.DocumentEditorContainer({
+        enableToolbar: true,
+        height: '100%',
+        // The setting the port depends on: minified SFDT renames every key the
+        // engine reads, and construction is the only place this reliably takes.
+        documentEditorSettings: { optimizeSfdt: false },
+        toolbarItems: ['Undo', 'Redo', 'Table', 'Find'],
+        created: function () {
+          ed = container.documentEditor;
+          // No service is wired here, so nothing may call out. Any attempt is a
+          // bug in the harness, not a document conversion.
+          container.beforeXmlHttpRequestSend = function (args) {
+            args.cancel = true;
+            log('BLOCKED a network call — the engine should need none');
+          };
+          ed.addEventListener('contentChange', function () { refreshStatus(); });
+          ed.addEventListener('selectionChange', function () { refreshStatus(); });
+          log('editor created (optimizeSfdt: false)');
+          load('bound');
         }
-      }
-
-      function load(which) {
-        if (!container) return;
-        detach();
-        var doc =
-          which === 'template'
-            ? Bindings.buildTemplateTokenDocument()
-            : Bindings.buildCostsFixture();
-        ed.open(JSON.stringify(doc));
-        log(
-          'opened the ' +
-            (which === 'template' ? '[[token]] template' : 'bound document')
-        );
-
-        // Exactly what the product calls, with the product's own defaults.
-        attached = Bindings.attachBindings(ed, {
-          onDiagnostics: refreshStatus,
-          onFieldValues: refreshStatus,
-          onSuppressContentChange: function (on) {
-            log(
-              on
-                ? 'suppressing contentChange (engine write)'
-                : 'contentChange live'
-            );
-          }
-        });
-        if (attached.importDiagnostics.length)
-          log(
-            'import diagnostics: ' + JSON.stringify(attached.importDiagnostics)
-          );
-        log(
-          'bindings attached — ' +
-            Bindings.scanBindings(JSON.parse(ed.serialize())).occurrences
-              .length +
-            ' bound occurrences'
-        );
-        refreshStatus();
-      }
-
-      function addRow() {
-        if (!attached) return;
-        attached.controller.runCommand(function (sfdt, index) {
-          return Bindings.addLineItem(sfdt, 'costs', null, index).sfdt;
-        });
-        log(
-          'added a costs row (reload path — native undo is destroyed here by design)'
-        );
-        refreshStatus();
-      }
-
-      function removeLastRow() {
-        if (!attached) return;
-        var index = attached.controller.index;
-        var rows =
-          index && index.tables.get('costs') && index.tables.get('costs').rows;
-        if (!rows || !rows.length) return log('no rows to remove');
-        var rowId = rows[rows.length - 1].rowId;
-        try {
-          attached.controller.runCommand(function (sfdt, idx) {
-            return Bindings.removeLineItem(sfdt, 'costs', rowId, idx);
-          });
-          log('removed row ' + rowId);
-        } catch (e) {
-          log('remove refused: ' + e.message);
-        }
-        refreshStatus();
-      }
-
-      function snapshotUndo() {
-        if (!attached) return;
-        log(
-          attached.controller.undo()
-            ? 'snapshot undo applied (whole engine transaction)'
-            : 'snapshot undo stack empty'
-        );
-        refreshStatus();
-      }
-
-      function checkSave() {
-        if (!attached) return;
-        var ready = attached.commitForSave();
-        log(
-          ready
-            ? 'commitForSave() → true: the document would be written'
-            : 'commitForSave() → FALSE: export is refused while errors remain'
-        );
-        refreshStatus();
-      }
-
-      function setName() {
-        if (!attached) return;
-        var value = prompt('project.name', 'Rebrand 2027');
-        if (value == null) return;
-        attached.controller.runCommand(function (sfdt, index) {
-          return Bindings.setTaggedValue(sfdt, 'project.name', value, index);
-        });
-        log('set project.name — watch both occurrences change');
-        refreshStatus();
-      }
-
-      (function start() {
-        container = new ej.documenteditor.DocumentEditorContainer({
-          enableToolbar: true,
-          height: '100%',
-          // The setting the port depends on: minified SFDT renames every key the
-          // engine reads, and construction is the only place this reliably takes.
-          documentEditorSettings: { optimizeSfdt: false },
-          toolbarItems: ['Undo', 'Redo', 'Table', 'Find'],
-          created: function () {
-            ed = container.documentEditor;
-            // No service is wired here, so nothing may call out. Any attempt is a
-            // bug in the harness, not a document conversion.
-            container.beforeXmlHttpRequestSend = function (args) {
-              args.cancel = true;
-              log('BLOCKED a network call — the engine should need none');
-            };
-            ed.addEventListener('contentChange', function () {
-              refreshStatus();
-            });
-            ed.addEventListener('selectionChange', function () {
-              refreshStatus();
-            });
-            log('editor created (optimizeSfdt: false)');
-            load('bound');
-          }
-        });
-        container.appendTo('#editor');
-      })();
-    </script>
-  </body>
+      });
+      container.appendTo('#editor');
+    })();
+  </script>
+</body>
 </html>
