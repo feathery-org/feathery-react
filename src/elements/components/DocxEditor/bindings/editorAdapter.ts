@@ -144,7 +144,6 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       if (writes.some((write) => !write.text)) return false;
 
       const previousHistory = editor.enableEditorHistory;
-      const previousTracking = editor.enableTrackChanges;
       let selection: { start: string; end: string } | null = null;
       // Where the caret sits WITHIN its control, which survives the control
       // changing length; the absolute offset below does not.
@@ -191,8 +190,10 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
 
       try {
         // Reconciliation is mechanical normalization, not an authored edit, so
-        // it must never author tracked-change revisions - those belong to the
-        // user and to the assistant.
+        // it must never author tracked-change revisions. Leave tracking off
+        // afterwards too: restoring a leftover `true` (Assist batch, document
+        // flag, container drift) would make the user's next keystroke inside
+        // this control a tracked insertion.
         editor.enableTrackChanges = false;
         if (!apply(writes.filter((write) => write.kind === 'field')))
           return false;
@@ -204,7 +205,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         return false;
       } finally {
         editor.enableEditorHistory = previousHistory;
-        editor.enableTrackChanges = previousTracking;
+        editor.enableTrackChanges = false;
         try {
           // Prefer the anchored position. Normalizing "0012" to "12" shrinks the
           // control's interior by two offsets, so the saved absolute offset -
