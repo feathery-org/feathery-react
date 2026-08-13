@@ -100,6 +100,47 @@ describe('row adoption', () => {
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
   });
 
+  it('still adopts after every bound row has been deleted', () => {
+    // Deleting the last bound row removes the document's only copy of the row
+    // shape. Without a remembered template, every row inserted afterwards stayed
+    // plain text - permanently, and with no diagnostic to explain it.
+    const doc = buildCostsFixture();
+    const tablePath = scanBindings(doc).tables.get('costs')!.tablePath!;
+    const table = getAt(doc, tablePath) as { rows: SfdtRow[] };
+
+    // A first pass while bound rows exist is what captures the template.
+    const seen = applyRules(doc, {});
+    expect(seen.rowTemplates.get('costs')).toBeDefined();
+
+    // Now delete both data rows and add one of the user's own.
+    const emptied = JSON.parse(JSON.stringify(seen.sfdt)) as SfdtDocument;
+    const emptiedTable = getAt(emptied, tablePath) as { rows: SfdtRow[] };
+    emptiedTable.rows.splice(1, 2, nativeRow(['QA testing', '4', '250', '']));
+    expect(scanBindings(emptied).tables.get('costs')!.rows).toHaveLength(0);
+
+    const result = applyRules(emptied, {
+      rowTemplates: seen.rowTemplates
+    });
+    const rows = result.index.tables.get('costs')!.rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].bindings.get('quantity')!.text).toBe('4');
+    expect(rows[0].bindings.get('line_total')!.text).toBe('$1,000.00');
+    expect(table.rows.length).toBeGreaterThan(0); // fixture untouched
+  });
+
+  it('reports rows it cannot adopt for want of any template', () => {
+    // The silent case: no bound row left and nothing remembered either.
+    const doc = buildCostsFixture();
+    const tablePath = scanBindings(doc).tables.get('costs')!.tablePath!;
+    const table = getAt(doc, tablePath) as { rows: SfdtRow[] };
+    table.rows.splice(1, 2, nativeRow(['QA testing', '4', '250', '']));
+
+    const result = applyRules(doc, {});
+    expect(
+      result.diagnostics.some((entry) => entry.code === 'row-not-adopted')
+    ).toBe(true);
+  });
+
   it('seeds a new row from default and never inherits value', () => {
     // value belongs to the row it was authored on - carrying it into a new row
     // would clone stale data.
