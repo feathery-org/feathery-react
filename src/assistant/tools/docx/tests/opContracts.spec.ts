@@ -1057,9 +1057,9 @@ const CONTRACTS: Record<string, ContractCase> = {
     edits: [{ op: 'set_track_changes', enabled: false }],
     verify: (ed, result) => {
       expect(result.results[0].ok).toBe(true);
-      // The executor restores its own forced track-changes state around the
-      // batch, so the observable proof the handler ran is the recorded write
-      // sequence: force-on, the op's write (false), the restore.
+      // The executor forces tracking off when the batch ends so user typing
+      // is never tracked. Proof the handler ran: force-on, the op's write
+      // (false), then the post-batch force-off.
       expect((ed as any).__trackChangesWrites).toEqual([true, false, false]);
     },
     setup: (ed) => {

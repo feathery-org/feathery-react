@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
+  disableUserTrackChanges,
   findReplaceCounterpart,
   installRevisionGroupIsolation,
   preserveDocumentViewDuring
@@ -496,6 +497,9 @@ export function installRevisionHighlightRendering(ed: any) {
 export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
   if (!enabled) return;
   ed.showRevisions = false;
+  // Assist is the only author that may turn tracking on, and only inside a
+  // synchronous write batch. User typing in a review host starts untracked.
+  disableUserTrackChanges(ed);
   if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
   installRevisionGroupIsolation(ed);
   installRevisionHighlightRendering(ed);
@@ -775,6 +779,8 @@ export function useDocxEditor({
   // object". Hold a gate flip until the load settles (`loading` covers both
   // the create and the open; an open failure also settles it via fail()).
   const [reviewGate, setReviewGate] = useState(reviewChanges);
+  const reviewGateRef = useRef(reviewGate);
+  reviewGateRef.current = reviewGate;
   useEffect(() => {
     if (reviewChanges !== reviewGate && !loading) setReviewGate(reviewChanges);
   }, [reviewChanges, reviewGate, loading]);
@@ -884,6 +890,7 @@ export function useDocxEditor({
         ed.enableContextMenu = true;
         try {
           configureTrackedChangeReview(ed, reviewGate);
+          if (reviewGate) disableUserTrackChanges(ed, instance);
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
@@ -911,6 +918,7 @@ export function useDocxEditor({
               // A blank document is the fallback, as it was before the carry.
             }
           }
+          if (reviewGate) disableUserTrackChanges(ed, instance);
           openedKeyRef.current = openKeyRef.current;
           ignoreContentChangeRef.current = false;
           setLoading(false);
@@ -1050,6 +1058,11 @@ export function useDocxEditor({
         // for every document, not just bound ones: a template authored in Word
         // hits it too. See contentControlSafety.
         stampMissingContentControlColors(liveEditor);
+        // Opening SFDT can copy trackChanges=true onto the editor (and the
+        // container, via documentChange). Put the review host back in user
+        // mode before keystrokes can land.
+        if (reviewGateRef.current)
+          disableUserTrackChanges(liveEditor, containerInstRef.current);
         openedKeyRef.current = openKey;
         // A freshly opened document has nothing unsaved in it yet.
         unsavedRef.current = false;

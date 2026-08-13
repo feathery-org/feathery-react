@@ -620,6 +620,22 @@ export function parseRevisionGroupTag(
   return undefined;
 }
 
+/**
+ * User typing is never tracked. Assist turns SyncFusion's global
+ * `enableTrackChanges` on only inside a synchronous `applyDocumentEdits`
+ * batch; this is the steady state the host starts from and the batch must
+ * leave behind. Pass the wrapping DocumentEditorContainer when you have it:
+ * its flag can drift from the inner editor on `documentChange` and would
+ * otherwise push tracking back on.
+ */
+export function disableUserTrackChanges(
+  editor: LiveEditor,
+  container?: { enableTrackChanges?: boolean } | null
+): void {
+  editor.enableTrackChanges = false;
+  if (container && container !== editor) container.enableTrackChanges = false;
+}
+
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 
 // The identity half of a tag, memoized by its exact customData string. The

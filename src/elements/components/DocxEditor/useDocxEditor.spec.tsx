@@ -1,6 +1,9 @@
 import React from 'react';
 import { act, render } from '@testing-library/react';
-import { installRevisionGroupIsolation } from '../../../utils/documentEditorPrimitives';
+import {
+  disableUserTrackChanges,
+  installRevisionGroupIsolation
+} from '../../../utils/documentEditorPrimitives';
 import { dynamicImport } from '../../../integrations/utils';
 import {
   configureTrackedChangeReview,
@@ -11,7 +14,10 @@ import {
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
   findReplaceCounterpart: jest.fn(),
   installRevisionGroupIsolation: jest.fn(),
-  preserveDocumentViewDuring: jest.fn((_editor, run) => run())
+  preserveDocumentViewDuring: jest.fn((_editor, run) => run()),
+  disableUserTrackChanges: jest.fn((editor) => {
+    if (editor) editor.enableTrackChanges = false;
+  })
 }));
 jest.mock('../../../integrations/utils', () => ({
   dynamicImport: jest.fn()
@@ -23,27 +29,33 @@ describe('configureTrackedChangeReview', () => {
   it('leaves a gated-off editor fully native', () => {
     const editor = {
       showRevisions: true,
+      enableTrackChanges: true,
       commentReviewPane: { isUserClosed: false }
     };
 
     configureTrackedChangeReview(editor, false);
 
     expect(editor.showRevisions).toBe(true);
+    expect(editor.enableTrackChanges).toBe(true);
     expect(editor.commentReviewPane.isUserClosed).toBe(false);
     expect(installRevisionGroupIsolation).not.toHaveBeenCalled();
+    expect(disableUserTrackChanges).not.toHaveBeenCalled();
   });
 
   it('installs review behavior only when the rail is enabled', () => {
     const editor = {
       showRevisions: true,
+      enableTrackChanges: true,
       commentReviewPane: { isUserClosed: false }
     };
 
     configureTrackedChangeReview(editor, true);
 
     expect(editor.showRevisions).toBe(false);
+    expect(editor.enableTrackChanges).toBe(false);
     expect(editor.commentReviewPane.isUserClosed).toBe(true);
     expect(installRevisionGroupIsolation).toHaveBeenCalledWith(editor);
+    expect(disableUserTrackChanges).toHaveBeenCalledWith(editor);
   });
 });
 
