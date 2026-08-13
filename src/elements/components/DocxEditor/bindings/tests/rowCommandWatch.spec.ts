@@ -80,6 +80,41 @@ describe('watchRowCommands', () => {
     expect((editor as any).editorModule.deleteRow).toBe(original);
   });
 
+  it('drops detached content controls after a native delete', () => {
+    const detached = {
+      contentControlProperties: { tag: 'gone' },
+      line: { paragraph: { indexInOwner: -1, containerWidget: null } }
+    };
+    const live = {
+      contentControlProperties: { tag: 'live' },
+      line: {
+        paragraph: { indexInOwner: 0, containerWidget: { indexInOwner: 0 } }
+      }
+    };
+    const editor = fakeEditor(undefined);
+    (editor as any).editorModule = { deleteRow: () => 'deleted' };
+    (editor as any).documentHelper = {
+      contentControlCollection: [detached, live]
+    };
+    watchRowCommands(editor, () => undefined);
+    (editor as any).editorModule.deleteRow();
+    expect((editor as any).documentHelper.contentControlCollection).toEqual([
+      live
+    ]);
+  });
+
+  it('does not reconcile while undo or redo is replaying the command', () => {
+    let changes = 0;
+    const original = jest.fn(() => 'deleted');
+    const editor = fakeEditor(undefined);
+    (editor as any).editorModule = { deleteRow: original };
+    (editor as any).editorHistoryModule = { isRedoing: true };
+    watchRowCommands(editor, () => (changes += 1));
+
+    expect((editor as any).editorModule.deleteRow()).toBe('deleted');
+    expect(changes).toBe(0);
+  });
+
   it('never lets a failing watcher break the insert', () => {
     const editor = fakeEditor(() => 'ok');
     watchRowCommands(editor, () => {
@@ -95,6 +130,33 @@ describe('watchRowCommands', () => {
     expect(typeof restore).toBe('function');
     expect(() => restore()).not.toThrow();
     expect(called).toBe(0);
+  });
+
+  it('adopts immediately after the native command, in the same turn', () => {
+    const original = jest.fn(() => 'ok');
+    const editor = fakeEditor(original);
+    const order: string[] = [];
+    original.mockImplementation(() => {
+      order.push('command');
+      return 'ok';
+    });
+
+    watchRowCommands(editor, () => order.push('adopt'));
+    expect((editor as any).editorModule.insertRow(false, 1)).toBe('ok');
+    expect(order).toEqual(['command', 'adopt']);
+  });
+
+  it('does not re-enter when follow-up work itself inserts a row', () => {
+    const original = jest.fn(() => 'ok');
+    const editor = fakeEditor(original);
+    let calls = 0;
+    watchRowCommands(editor, () => {
+      calls += 1;
+      (editor as any).editorModule.insertRow(true, 1);
+    });
+    (editor as any).editorModule.insertRow(false, 1);
+    expect(calls).toBe(1);
+    expect(original).toHaveBeenCalledTimes(2);
   });
 });
 

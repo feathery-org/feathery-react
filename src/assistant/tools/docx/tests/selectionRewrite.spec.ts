@@ -318,7 +318,7 @@ describe('the root failure: a model-counted offset must not invalidate a resolve
   it("real SDK: the captain's exact live payload (end: 0, the schema default) now lands in one attempt", () => {
     const ed = makeRealDocumentEditor(onePargraphDoc());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
 
       // Byte-for-byte the first applyDocumentEdits input from the live turn.
@@ -655,7 +655,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
   it('real SDK: a single-run selection (a sub-range of one paragraph)', () => {
     const ed = makeRealDocumentEditor(onePargraphDoc());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const sentence =
         'At Hilb Group, our commitment to clients extends well beyond the placement of coverage.';
@@ -731,7 +731,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
     (_label, parts, includeParagraphMark) => {
       const ed = makeRealDocumentEditor(formattedParagraphDoc());
       try {
-        ed.enableTrackChanges = true;
+        ed.enableTrackChanges = false;
         const before = ed.serialize();
         const sourceFormat = resolvedParagraphFormat(
           ed,
@@ -784,7 +784,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
   it('real SDK: a multi-run selection (bold + plain + italic in one paragraph)', () => {
     const ed = makeRealDocumentEditor(multiRunDoc());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       ed.selection.select('0;1;0', `0;1;${MULTI_RUN_TEXT.length}`);
       const selection = readSelection(ed as unknown as LiveEditor)!;
@@ -819,7 +819,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
   it("THE CAPTAIN'S CASE, real SDK: several sentences spanning paragraph boundaries collapse to one statement in one attempt, rejectably", () => {
     const ed = makeRealDocumentEditor(multiParagraphDoc());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
 
       // The user drags across three paragraphs and says "make this into one
@@ -891,7 +891,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
   it('real SDK: a table-cell selection', () => {
     const ed = makeRealDocumentEditor(tableDoc());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const cellText = '99 Old Rd, Toronto, Ontario';
       ed.selection.select('0;1;1;1;0;0', `0;1;1;1;0;${cellText.length}`);
@@ -930,7 +930,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
   it('real SDK: with no offsets supplied it rewrites the whole anchored block', () => {
     const ed = makeRealDocumentEditor(onePargraphDoc());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'no-offsets',
@@ -961,7 +961,7 @@ describe('replace_selection: every selection shape lands in one attempt', () => 
       sections: [{ blocks: [para(long)] }]
     });
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       ed.selection.select('0;0;0', `0;0;${long.length}`);
       const selection = readSelection(ed as unknown as LiveEditor)!;

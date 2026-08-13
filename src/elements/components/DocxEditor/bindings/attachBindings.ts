@@ -25,7 +25,6 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
-import { installHistoryBridge } from './historyBridge';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
@@ -142,7 +141,8 @@ export function attachBindings(
   // bindings; this is how its batches get reconciled.
   registerBindingReconciler(editor, {
     flush: () => controller.flush(),
-    runCommand: (fn) => controller.runCommand(fn)
+    runCommands: (commands, options) =>
+      controller.runCommands(commands, options)
   });
 
   const triggers = createCommitTriggers(editor, controller, {
@@ -150,16 +150,15 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
-  // Native row commands bypass runCommand, so this is the only signal that the
-  // set of rows changed at all.
-  const unwatchRowCommands = watchRowCommands(editor, () =>
-    triggers.onRowsChanged()
-  );
-  // Adopting that row reloads the document, which wipes native history; without
-  // this, undo has nothing left and the insert cannot be taken back.
-  const uninstallHistoryBridge = installHistoryBridge(editor, {
-    undo: () => controller.undo(),
-    redo: () => controller.redo()
+  // Native insertRow/deleteRow bypass runCommands. After the user's command
+  // the interceptor adopts and recomputes in the same turn. Replay during
+  // undo/redo must not flush: that inserts content controls mid-history and
+  // leaves redo unable to delete the row.
+  const unwatchRowCommands = watchRowCommands(editor, () => {
+    if (controller.phase !== 'idle') return;
+    const history = editor.editorHistoryModule;
+    if (history?.isUndoing || history?.isRedoing) return;
+    controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;
@@ -194,7 +193,6 @@ export function attachBindings(
       editableDiv?.removeEventListener?.('blur', onBlur);
       uninstallGuard();
       unwatchRowCommands();
-      uninstallHistoryBridge();
       triggers.dispose();
     }
   };

@@ -24,8 +24,10 @@
 // already typing in the next field when a commit trigger fired.
 
 import { EngineWrite } from './core/engine';
+import type { NativeStructuralMutation } from './core/sfdtAdapter';
 import { EditorPort } from './controller';
 import { anchorCaret, CaretAnchor, resolveAnchor } from './controlGeometry';
+import { applyNativeStructuralMutations } from './nativeStructuralAdapter';
 
 export interface ContentControlLike {
   contentControlProperties?: { tag?: string; [key: string]: unknown };
@@ -98,6 +100,43 @@ interface ViewSnapshot {
 }
 
 /**
+ * True when the control is still in the live document tree. deleteRow does
+ * not drop widgets from contentControlCollection, so a deleted row's tags
+ * stay findable and steal later writes.
+ */
+export function isContentControlAttached(control: ContentControlLike): boolean {
+  const line = control.line as
+    | { paragraph?: Record<string, unknown> }
+    | undefined;
+  let widget: Record<string, unknown> | undefined = line?.paragraph;
+  // Stubs and controls we have not laid out have no widget tree; keep them.
+  if (!widget) return true;
+  const seen = new Set<Record<string, unknown>>();
+  while (widget) {
+    if (seen.has(widget)) return false;
+    seen.add(widget);
+    if (widget.indexInOwner === -1) return false;
+    const parent = widget.containerWidget as
+      | Record<string, unknown>
+      | undefined;
+    if (!parent) return true;
+    widget = parent;
+  }
+  return true;
+}
+
+/** Drop content controls whose widgets were removed by a table-clone command. */
+export function pruneDetachedContentControls(
+  editor: SyncfusionEditorLike
+): void {
+  const collection = editor.documentHelper?.contentControlCollection;
+  if (!Array.isArray(collection)) return;
+  for (let i = collection.length - 1; i >= 0; i--) {
+    if (!isContentControlAttached(collection[i])) collection.splice(i, 1);
+  }
+}
+
+/**
  * Ask the editor for verbose SFDT.
  *
  * Syncfusion defaults optimizeSfdt to true, and minified SFDT renames every key
@@ -125,6 +164,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
   ): ContentControlLike[] =>
     collection.filter(
       (control) =>
+        isContentControlAttached(control) &&
         control.contentControlProperties &&
         String(control.contentControlProperties.tag) === tag
     );
@@ -132,19 +172,24 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
   return {
     serialize: () => editor.serialize(),
     open: (sfdt: string) => editor.open(sfdt),
+    applyStructuralMutations: (mutations: NativeStructuralMutation[]) =>
+      applyNativeStructuralMutations(editor, mutations),
 
     updateValues(writes: EngineWrite[]): boolean {
       const helper = editor.documentHelper;
       const editorModule = editor.editorModule;
       if (!helper || !editorModule || !editorModule.updateContentControl)
         return false;
+      pruneDetachedContentControls(editor);
       const collection = helper.contentControlCollection;
       if (!Array.isArray(collection)) return false;
       // Empty text would be replaced by the editor's placeholder string.
       if (writes.some((write) => !write.text)) return false;
 
       const previousHistory = editor.enableEditorHistory;
-      const previousTracking = editor.enableTrackChanges;
+      const history = editor.editorHistoryModule as any;
+      const fieldWrites = writes.filter((write) => write.kind === 'field');
+      let complex = false;
       let selection: { start: string; end: string } | null = null;
       // Where the caret sits WITHIN its control, which survives the control
       // changing length; the absolute offset below does not.
@@ -191,11 +236,19 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
 
       try {
         // Reconciliation is mechanical normalization, not an authored edit, so
-        // it must never author tracked-change revisions - those belong to the
-        // user and to the assistant.
+        // it must never author tracked-change revisions. Leave tracking off
+        // afterwards too: restoring a leftover `true` (Assist batch, document
+        // flag, container drift) would make the user's next keystroke inside
+        // this control a tracked insertion.
         editor.enableTrackChanges = false;
-        if (!apply(writes.filter((write) => write.kind === 'field')))
-          return false;
+        if (
+          fieldWrites.length > 1 &&
+          typeof (editorModule as any).initComplexHistory === 'function'
+        ) {
+          (editorModule as any).initComplexHistory('BindingValues');
+          complex = true;
+        }
+        if (!apply(fieldWrites)) return false;
         editor.enableEditorHistory = false;
         if (!apply(writes.filter((write) => write.kind !== 'field')))
           return false;
@@ -203,8 +256,9 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       } catch {
         return false;
       } finally {
+        if (complex) history?.updateComplexHistory?.();
         editor.enableEditorHistory = previousHistory;
-        editor.enableTrackChanges = previousTracking;
+        editor.enableTrackChanges = false;
         try {
           // Prefer the anchored position. Normalizing "0012" to "12" shrinks the
           // control's interior by two offsets, so the saved absolute offset -

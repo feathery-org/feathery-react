@@ -31,6 +31,7 @@ import {
   Diagnostic,
   DiagnosticSeverity,
   isOptimizedSfdt,
+  SfdtBlock,
   SfdtCell,
   SfdtDocument,
   SfdtInline,
@@ -145,9 +146,12 @@ function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
   );
 }
 
-function ccText(node: SfdtInline, deletedRevisionIds: Set<string>): string {
+function ccText(node: any, deletedRevisionIds: Set<string>): string {
   let out = '';
-  for (const inline of node.inlines || []) {
+  const inlines =
+    node.inlines ||
+    (node.blocks || []).flatMap((block: any) => block?.inlines || []);
+  for (const inline of inlines) {
     if (hasOnlyRevisionIds(inline, deletedRevisionIds)) continue;
     if (typeof inline.text === 'string' && !inline.contentControlProperties)
       out += inline.text;
@@ -203,7 +207,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
     def: BoundDefinition,
     tag: string,
     path: SfdtPath,
-    ccNode: SfdtInline,
+    ccNode: any,
     tableCtx: TableContext | null,
     rowPath: SfdtPath | null
   ): void {
@@ -371,6 +375,15 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           if (hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)) return;
           const currentRowPath = [...path, 'rows', r];
           (row.cells || []).forEach((cell, c) => {
+            if ((cell as any).contentControlProperties) {
+              const cellPath = [...currentRowPath, 'cells', c];
+              const rawTag = String(
+                (cell as any).contentControlProperties.tag || ''
+              );
+              const def = parseTagOrDiagnose(rawTag, cellPath);
+              if (def && (def.kind === 'field' || def.kind === 'formula'))
+                record(def, rawTag, cellPath, cell, tableCtx, currentRowPath);
+            }
             walkBlocks(
               cell.blocks,
               [...currentRowPath, 'cells', c, 'blocks'],
@@ -484,9 +497,20 @@ export function readLineItems(
  * Replace a content control's displayed text with one run, keeping the first
  * run's characterFormat so styling survives the rewrite.
  */
-function withCcText(node: SfdtInline, text: string): SfdtInline {
+function withCcText(node: any, text: string): any {
+  if (Array.isArray(node.blocks) && node.blocks.length) {
+    const blocks = [...node.blocks];
+    const paragraph = blocks[0] || {};
+    const first = (paragraph.inlines || []).find(
+      (inline: SfdtInline) => inline && typeof inline.text === 'string'
+    );
+    const run: SfdtInline = { text: String(text) };
+    if (first?.characterFormat) run.characterFormat = first.characterFormat;
+    blocks[0] = { ...paragraph, inlines: [run] };
+    return { ...node, blocks };
+  }
   const first = (node.inlines || []).find(
-    (inline) => inline && typeof inline.text === 'string'
+    (inline: SfdtInline) => inline && typeof inline.text === 'string'
   );
   const run: SfdtInline = { text: String(text) };
   if (first && first.characterFormat)
@@ -735,8 +759,43 @@ function findCellBinding(cell: SfdtCell): CellBinding | null {
 export interface AdoptionResult {
   sfdt: SfdtDocument;
   adopted: string[];
+  mutations: AdoptedRowMutation[];
   skipped: Array<{ rowIndex: number; reason: string }>;
 }
+
+export interface AdoptedRowMutation {
+  kind: 'adopt-row';
+  tableId: string;
+  tablePath: SfdtPath;
+  rowIndex: number;
+  rowId: string;
+  row: SfdtRow;
+}
+export interface InsertRowMutation extends Omit<AdoptedRowMutation, 'kind'> {
+  kind: 'insert-row';
+  afterRowId: string | null;
+}
+export interface DeleteRowMutation {
+  kind: 'delete-row';
+  tableId: string;
+  rowId: string;
+  tag: string;
+}
+export interface InsertTableMutation {
+  kind: 'insert-table';
+  afterTag: string;
+  blocks: SfdtBlock[];
+}
+export interface DeleteTableMutation {
+  kind: 'delete-table';
+  tag: string;
+}
+export type NativeStructuralMutation =
+  | AdoptedRowMutation
+  | InsertRowMutation
+  | DeleteRowMutation
+  | InsertTableMutation
+  | DeleteTableMutation;
 
 /**
  * Indexes of rows that look like the user's own additions: not a header, and
@@ -769,7 +828,8 @@ export function adoptUnboundRows(
   fallbackTemplate?: SfdtRow
 ): AdoptionResult {
   const table = index.tables.get(tableId);
-  if (!table || !table.tablePath) return { sfdt, adopted: [], skipped: [] };
+  if (!table || !table.tablePath)
+    return { sfdt, adopted: [], mutations: [], skipped: [] };
   const lastBoundRow = table.rows.length
     ? table.rows[table.rows.length - 1]
     : undefined;
@@ -783,6 +843,7 @@ export function adoptUnboundRows(
     return {
       sfdt,
       adopted: [],
+      mutations: [],
       skipped: unbound.map((rowIndex) => ({
         rowIndex,
         reason: 'the table has no bound row to copy, and none was remembered'
@@ -792,6 +853,7 @@ export function adoptUnboundRows(
   const tableNode = getAt(sfdt, table.tablePath) as { rows?: SfdtRow[] };
   let next = sfdt;
   const adopted: string[] = [];
+  const mutations: AdoptedRowMutation[] = [];
   const skipped: Array<{ rowIndex: number; reason: string }> = [];
 
   // Adoption REPLACES a row with a clone of the bound template row, so it has to
@@ -900,9 +962,17 @@ export function adoptUnboundRows(
     });
     next = setAt(next, [...(table.tablePath as SfdtPath), 'rows', r], newRow);
     adopted.push(rowId);
+    mutations.push({
+      kind: 'adopt-row',
+      tableId,
+      tablePath: [...table.tablePath],
+      rowIndex: r,
+      rowId,
+      row: deepClone(newRow)
+    });
   }
 
-  return { sfdt: next, adopted, skipped };
+  return { sfdt: next, adopted, mutations, skipped };
 }
 
 /* ---------------- validation ---------------- */

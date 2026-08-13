@@ -519,6 +519,7 @@ const withHumanRow = (): DocumentEditor => {
   editor.selection.select('0;2;2;0;0;0', '0;2;2;0;0;0');
   (editor.editor as any).insertRow(false, 1);
   editor.currentUser = 'Robin';
+  editor.enableTrackChanges = false;
   return editor;
 };
 

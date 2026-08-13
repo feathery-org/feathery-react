@@ -1,7 +1,7 @@
 // Make a typed character land in the right place, and stop it if the field
 // cannot hold it.
 //
-// Two jobs, in this order, both on the way to editorModule.handleTextInput:
+// Three jobs, in this order, on the way to editorModule.handleTextInput:
 //
 //   1. ROUTE. A content control's boundary markers occupy caret offsets, and a
 //      caret parked on one is OUTSIDE the control even though it looks like it is
@@ -14,6 +14,11 @@
 //      inside first. See controlGeometry for the offset model this relies on.
 //   2. GUARD. Characters a value can never contain (a letter in a currency
 //      field) are swallowed before they reach the document.
+//   3. UNTRACK. User typing is never a tracked change. SyncFusion has one
+//      global enableTrackChanges switch; Assist turns it on for a synchronous
+//      batch and the host forces it off afterwards, but a leftover true still
+//      authors content-control keystrokes as revisions. Disable it here, on
+//      the only path printable characters take into a bound field.
 //
 // Routing before guarding is what makes the guard reach: on a boundary offset
 // the editor reports the enclosing [[table=...]] marker rather than the field,
@@ -36,6 +41,7 @@
 // enclosing wrapper only on the boundary offsets - which is precisely the case
 // step 1 now removes.
 
+import { disableUserTrackChanges } from '../../../../utils/documentEditorPrimitives';
 import { parseTag } from './core/tagDsl';
 import { snapOffsetForCaret } from './controlGeometry';
 import { SyncfusionEditorLike } from './editorAdapter';
@@ -107,6 +113,10 @@ export function installKeystrokeGuard(
     } catch {
       // Never let this break typing.
     }
+    // Assist never types through handleTextInput; it uses insertText /
+    // updateContentControl inside a batch that sets tracking itself. A leftover
+    // true here is always a leak, so do not restore it.
+    disableUserTrackChanges(editor as { enableTrackChanges: boolean });
     return bound(text);
   };
 

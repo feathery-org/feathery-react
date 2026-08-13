@@ -152,7 +152,7 @@ describe("the captain's case: 13% tax, then re-total", () => {
   it('real SDK: one change set multiplies a premium by 1.13 and re-totals the column that now contains it; both values engine-computed, both cells keep $x,xxx.xx, and the whole set rejects byte-for-byte', () => {
     const ed = makeRealDocumentEditor(proposalSfdt());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
 
       // The user's premium edit landed first (dictated verbatim, so it takes

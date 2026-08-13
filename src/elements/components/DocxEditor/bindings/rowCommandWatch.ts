@@ -8,8 +8,20 @@
 //
 // Wrapping those two methods covers every entry point, and costs nothing per
 // keystroke: the alternative was probing the document on every contentChange.
+// The wrap is an around-command interceptor: the native command runs, then
+// adoption and formula writes are applied in the same turn. insertRow already
+// records one table-clone history entry; grouping adoption on top of that
+// clone crashes Syncfusion undo, so adoption stays history-invisible.
+// Undo/redo replay those same methods with isUndoing/isRedoing set. Flushing
+// then would insert content controls or record writes mid-replay, which
+// leaves redo a no-op and strips remaining bindings. Let the native history
+// finish; commitTriggers schedules a formulas-only self-heal afterwards.
 
-import { SyncfusionEditorLike } from './editorAdapter';
+import {
+  pruneDetachedContentControls,
+  SyncfusionEditorLike
+} from './editorAdapter';
+import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
 type RowCommand = (...args: unknown[]) => unknown;
 
@@ -19,9 +31,46 @@ const WATCHED: ReadonlyArray<'insertRow' | 'deleteRow'> = [
 ];
 
 /**
- * Call `onRowChange` after every native row insert or delete. Returns a function
- * that puts the original methods back, so a detached instance is left as we
- * found it.
+ * Redo of DeleteRow re-invokes deleteRow after restoring the history
+ * selection, which often lands inside a locked formula control. Syncfusion
+ * then returns immediately, consumes the redo entry, and leaves the row in
+ * place — later undo/redo of that ghost entry corrupts remaining bindings.
+ * History replay is not a user edit, so the lock must not block it.
+ */
+function allowRowCommandDuringReplay(
+  editor: SyncfusionEditorLike,
+  run: () => unknown
+): unknown {
+  const history = editor.editorHistoryModule;
+  const module = editor.editorModule as object | undefined;
+  if (!module || (!history?.isUndoing && !history?.isRedoing)) return run();
+  const hadOwn = Object.prototype.hasOwnProperty.call(
+    module,
+    'canEditContentControl'
+  );
+  const previous = hadOwn
+    ? Object.getOwnPropertyDescriptor(module, 'canEditContentControl')
+    : undefined;
+  Object.defineProperty(module, 'canEditContentControl', {
+    configurable: true,
+    enumerable: true,
+    get: () => true
+  });
+  try {
+    return run();
+  } finally {
+    if (hadOwn && previous)
+      Object.defineProperty(module, 'canEditContentControl', previous);
+    else
+      delete (module as { canEditContentControl?: unknown })
+        .canEditContentControl;
+  }
+}
+
+/**
+ * Run `onRowChange` immediately after each native insert or delete. Returns a
+ * function that puts the original methods back, so a detached instance is left
+ * as we found it.
  */
 export function watchRowCommands(
   editor: SyncfusionEditorLike,
@@ -33,6 +82,7 @@ export function watchRowCommands(
   if (!editorModule) return () => undefined;
 
   const restores: Array<() => void> = [];
+  let running = false;
   for (const name of WATCHED) {
     const original = editorModule[name];
     if (typeof original !== 'function') continue;
@@ -40,13 +90,28 @@ export function watchRowCommands(
       this: unknown,
       ...args: unknown[]
     ) {
-      const result = original.apply(this, args);
-      try {
-        onRowChange();
-      } catch {
-        // A failure here must never break the user's row command.
+      if (running || isApplyingNativeStructuralMutations()) {
+        const result = original.apply(this, args);
+        pruneDetachedContentControls(editor);
+        return result;
       }
-      return result;
+      running = true;
+      try {
+        const result = allowRowCommandDuringReplay(editor, () =>
+          original.apply(this, args)
+        );
+        pruneDetachedContentControls(editor);
+        const history = editor.editorHistoryModule;
+        if (history?.isUndoing || history?.isRedoing) return result;
+        try {
+          onRowChange();
+        } catch {
+          // A failure here must never break the user's row command.
+        }
+        return result;
+      } finally {
+        running = false;
+      }
     };
     editorModule[name] = patched;
     restores.push(() => {

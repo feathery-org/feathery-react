@@ -128,7 +128,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
   it('real SDK: insert BELOW row 93 of a 112-row table fills the NEW row, leaves the shifted rows intact, and rejects byte-for-byte', () => {
     const ed = makeRealDocumentEditor(bigTableSfdt(112));
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
 
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
@@ -174,7 +174,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
   it('real SDK: insert ABOVE row 93 fills the new row at the anchored index and shifts the anchored row down intact', () => {
     const ed = makeRealDocumentEditor(bigTableSfdt(112));
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
 
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {

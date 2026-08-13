@@ -4,13 +4,13 @@
 //
 // The editor is injected as a small interface, so the controller runs against a
 // fake in unit tests and against Syncfusion in the product. It never imports the
-// adapter directly - callers hand it adapter operations through runCommand.
+// adapter directly - callers hand it adapter operations through EditorPort.
 //
-// Value-only engine output (writes, and not structural) is patched into the live
-// editor via updateValues so the editor's own undo/redo stacks survive
-// reconciliation. Only structural transactions - row adoption, row commands,
-// snapshot restores - reload via open(), which unavoidably destroys editor
-// history; those are covered by this controller's snapshot undo instead.
+// Syncfusion owns undo/redo. Value-only engine output is patched in place via
+// updateValues. Structural work (row adoption, insert/delete) is applied as
+// native editor mutations so the same history module records them. open() is
+// only for the initial document load or an explicit document replacement; a
+// failed live patch never reloads, because open() destroys editorHistoryModule.
 //
 // Three invariants keep the loop from eating itself: events fired while the
 // controller is loading its own output are ignored, an older serialization can
@@ -26,9 +26,25 @@ import {
   ReconcileMode,
   RowTemplates
 } from './core/engine';
-import { BindingIndex } from './core/sfdtAdapter';
-import { Diagnostic, SfdtDocument } from './core/sfdtTypes';
+import {
+  addLineItem,
+  BindingIndex,
+  getAt,
+  NativeStructuralMutation,
+  removeLineItem,
+  scanBindings,
+  setAt,
+  setOccurrenceText,
+  setTaggedValue
+} from './core/sfdtAdapter';
+import { Diagnostic, SfdtBlock, SfdtDocument, SfdtRow } from './core/sfdtTypes';
+import { renderDisplay } from './core/valueTypes';
+import { authorCommandRevisions } from './core/commandRevisions';
 import { DocumentPersistence, SaveResult } from './persistence';
+import type {
+  BindingCommand,
+  BindingCommandOptions
+} from './reconcileRegistry';
 
 /** What the controller needs from an editor. */
 export interface EditorPort {
@@ -39,9 +55,10 @@ export interface EditorPort {
   /**
    * Patch content-control display texts in place, preserving native history for
    * 'field' writes and suppressing it for the rest. Returns false when it could
-   * not, so the controller falls back to open().
+   * not; the controller surfaces a diagnostic and leaves native history intact.
    */
   updateValues?(writes: EngineWrite[]): boolean;
+  applyStructuralMutations?(mutations: NativeStructuralMutation[]): boolean;
   /** Selection/scroll snapshot, for the open() path only. */
   captureView?(): unknown;
   restoreView?(view: unknown): void;
@@ -91,13 +108,10 @@ export type ControllerSaveResult =
   | { ok: false; reason: 'blocked-by-diagnostics' | 'no-persistence' };
 
 interface CommitOptions {
-  apply: 'none' | 'patch' | 'open';
+  apply: 'none' | 'patch' | 'structural' | 'open';
   markDirty: boolean;
   event: ControllerEventName;
-  skipUndo?: boolean;
 }
-
-const UNDO_DEPTH = 50;
 
 export class ReconciliationController {
   readonly editor: EditorPort;
@@ -129,10 +143,6 @@ export class ReconciliationController {
   rowTemplates: RowTemplates = new Map();
 
   persistedRevision = 0;
-
-  undoStack: string[] = [];
-
-  redoStack: string[] = [];
 
   timings: Record<string, number> = {};
 
@@ -188,9 +198,13 @@ export class ReconciliationController {
   /**
    * Serialize -> reconcile -> apply. Used on Enter, blur, commands, and before
    * saving. Pass mode 'self-heal' for undo/redo-originated reconciles: formulas
-   * recompute, fields are left exactly as history restored them.
+   * recompute, fields are left exactly as history restored them. Pass
+   * adoptRows: false after undo/redo so a restored row is never re-wrapped.
    */
-  flush({ mode = 'commit' }: { mode?: ReconcileMode } = {}): void {
+  flush({
+    mode = 'commit',
+    adoptRows
+  }: { mode?: ReconcileMode; adoptRows?: boolean } = {}): void {
     this.clearTimeoutFn(this.debounceTimer);
     if (this.phase !== 'idle') {
       this.pendingFlush = true;
@@ -218,7 +232,8 @@ export class ReconciliationController {
       result = applyRules(parsed, {
         prevValues: this.values,
         mode,
-        rowTemplates: this.rowTemplates
+        rowTemplates: this.rowTemplates,
+        ...(adoptRows === false ? { adoptRows: false } : {})
       });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {
@@ -235,9 +250,11 @@ export class ReconciliationController {
     const apply: CommitOptions['apply'] =
       result.sfdt === parsed
         ? 'none'
-        : !result.structural && result.writes.length && this.editor.updateValues
+        : result.structural && adoptRows !== false
+        ? 'structural'
+        : result.writes.length && this.editor.updateValues
         ? 'patch'
-        : 'open';
+        : 'none';
     this.commit(result, { apply, markDirty: true, event: 'reconcile' });
 
     if (this.pendingFlush) {
@@ -246,55 +263,180 @@ export class ReconciliationController {
     }
   }
 
-  /**
-   * Engine-side command: fn(workingSfdt, index) -> sfdt. This is how the app
-   * performs setTaggedValue / addLineItem / removeLineItem without the
-   * controller depending on the adapter.
-   */
-  runCommand(
-    fn: (sfdt: SfdtDocument, index: BindingIndex | null) => SfdtDocument
+  runCommands(
+    commands: BindingCommand[],
+    options: BindingCommandOptions = {}
   ): ApplyRulesResult {
     if (!this.workingSfdt) throw new Error('no document loaded');
-    // Fold in any user edit not committed yet - a pending debounce, or an
-    // uncommitted edit in manual mode.
     this.flush();
-    const mutated = fn(this.workingSfdt as SfdtDocument, this.index);
-    const result = applyRules(mutated, {
+    let mutated = this.workingSfdt as SfdtDocument;
+    let index = this.index ?? scanBindings(mutated);
+    const beforeCommands = index;
+    const structuralMutations: NativeStructuralMutation[] = [];
+    for (const command of commands) {
+      if (command.type === 'set-value') {
+        if (command.tableId && command.rowId) {
+          const occurrence = index.tables
+            .get(command.tableId)
+            ?.rows.find((row) => row.rowId === command.rowId)
+            ?.bindings.get(command.name);
+          if (!occurrence || occurrence.def.kind !== 'field')
+            throw new Error(
+              `no field ${command.name} in ${command.tableId}/${command.rowId}`
+            );
+          mutated = setOccurrenceText(
+            mutated,
+            occurrence,
+            renderDisplay(occurrence.def.fieldType, command.value)
+          );
+        } else {
+          mutated = setTaggedValue(mutated, command.name, command.value, index);
+        }
+      } else if (command.type === 'add-row') {
+        const added = addLineItem(
+          mutated,
+          command.tableId,
+          command.afterRowId,
+          index,
+          command.rowId
+        );
+        mutated = added.sfdt;
+        const nextIndex = scanBindings(mutated);
+        const table = nextIndex.tables.get(command.tableId);
+        const row = table?.rows.find((entry) => entry.rowId === added.rowId);
+        if (!table?.tablePath || !row?.path)
+          throw new Error(`added row ${added.rowId} could not be planned`);
+        structuralMutations.push({
+          kind: 'insert-row',
+          tableId: command.tableId,
+          tablePath: table.tablePath,
+          rowIndex: Number(row.path[row.path.length - 1]),
+          rowId: added.rowId,
+          row: getAt(mutated, row.path) as SfdtRow,
+          afterRowId: command.afterRowId
+        });
+      } else if (command.type === 'remove-row') {
+        const row = index.tables
+          .get(command.tableId)
+          ?.rows.find((entry) => entry.rowId === command.rowId);
+        const tag = row && [...row.bindings.values()][0]?.tag;
+        if (!tag) throw new Error(`row ${command.rowId} could not be located`);
+        structuralMutations.push({
+          kind: 'delete-row',
+          tableId: command.tableId,
+          rowId: command.rowId,
+          tag
+        });
+        mutated = removeLineItem(
+          mutated,
+          command.tableId,
+          command.rowId,
+          index
+        );
+      } else if (command.type === 'add-table') {
+        const anchor = index.tables.get(command.afterTableId);
+        if (!anchor) throw new Error(`table ${command.afterTableId} not found`);
+        const blocksPath = anchor.markerPath.slice(0, -1);
+        const at = Number(anchor.markerPath[anchor.markerPath.length - 1]);
+        const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
+        const hasTable = (block: SfdtBlock | undefined): boolean => {
+          if (!block) return false;
+          if (Array.isArray(block.rows)) return true;
+          return (block.blocks ?? []).some(hasTable);
+        };
+        // Word coalesces adjacent top-level tables into one grid. A paragraph
+        // is a storage-topology separator, so add-table owns that invariant for
+        // every caller rather than requiring each caller to remember it.
+        const insertedBlocks: SfdtBlock[] = [
+          { inlines: [] },
+          command.block,
+          ...(hasTable(blocks[at + 1]) ? [{ inlines: [] }] : [])
+        ];
+        mutated = setAt(mutated, blocksPath, [
+          ...blocks.slice(0, at + 1),
+          ...insertedBlocks,
+          ...blocks.slice(at + 1)
+        ]);
+        structuralMutations.push({
+          kind: 'insert-table',
+          afterTag: command.afterTag,
+          blocks: insertedBlocks
+        });
+      } else {
+        const table = index.tables.get(command.tableId);
+        if (!table) throw new Error(`table ${command.tableId} not found`);
+        const blocksPath = table.markerPath.slice(0, -1);
+        const at = Number(table.markerPath[table.markerPath.length - 1]);
+        const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
+        mutated = setAt(mutated, blocksPath, [
+          ...blocks.slice(0, at),
+          ...blocks.slice(at + 1)
+        ]);
+        structuralMutations.push({ kind: 'delete-table', tag: command.tag });
+      }
+      index = scanBindings(mutated);
+    }
+    let result = applyRules(mutated, {
       prevValues: this.values,
       rowTemplates: this.rowTemplates
     });
-    // Commands mutate JSON the editor has never seen (rows added or removed),
-    // so they always repaint via open().
-    this.commit(result, { apply: 'open', markDirty: true, event: 'command' });
-    return result;
-  }
-
-  /* ---- snapshot undo/redo, for transactions that reloaded ---- */
-
-  undo(): boolean {
-    if (!this.undoStack.length) return false;
-    this.redoStack.push(JSON.stringify(this.workingSfdt));
-    this.restore(this.undoStack.pop() as string);
-    return true;
-  }
-
-  redo(): boolean {
-    if (!this.redoStack.length) return false;
-    this.undoStack.push(JSON.stringify(this.workingSfdt));
-    this.restore(this.redoStack.pop() as string);
-    return true;
-  }
-
-  private restore(json: string): void {
-    const result = applyRules(JSON.parse(json), {
-      rowTemplates: this.rowTemplates
+    const finalizedMutations = structuralMutations.map((mutation) => {
+      if (mutation.kind !== 'insert-row') return mutation;
+      const row = result.index.tables
+        .get(mutation.tableId)
+        ?.rows.find((entry) => entry.rowId === mutation.rowId);
+      return row?.path
+        ? {
+            ...mutation,
+            row: getAt(result.sfdt, row.path) as SfdtRow,
+            rowIndex: Number(row.path[row.path.length - 1])
+          }
+        : mutation;
     });
+    result.structuralMutations = [
+      ...finalizedMutations,
+      ...result.structuralMutations
+    ];
+    const authoredWrites: EngineWrite[] = [];
+    for (const occurrence of result.index.occurrences) {
+      const previous = beforeCommands.occurrences.find(
+        (candidate) => candidate.tag === occurrence.tag
+      );
+      // New controls are created by the structural mutation with their display
+      // text already set. Recording them as field writes would add extra native
+      // history entries on top of the insert/adopt group.
+      if (!previous || previous.text === occurrence.text) continue;
+      authoredWrites.push({
+        tag: occurrence.tag,
+        text: occurrence.text,
+        kind: occurrence.def.kind === 'formula' ? 'formula' : 'field'
+      });
+    }
+    result.writes = [
+      ...new Map(
+        [...authoredWrites, ...result.writes].map((write) => [write.tag, write])
+      ).values()
+    ];
+    if (options.provenance) {
+      const sfdt = authorCommandRevisions(
+        this.workingSfdt as SfdtDocument,
+        result.sfdt,
+        options.provenance
+      );
+      result = { ...result, sfdt, index: scanBindings(sfdt) };
+    }
     this.commit(result, {
-      apply: 'open',
+      apply: options.provenance
+        ? 'open'
+        : result.structuralMutations.length
+        ? 'structural'
+        : result.writes.length
+        ? 'patch'
+        : 'none',
       markDirty: true,
-      event: 'restore',
-      skipUndo: true
+      event: 'command'
     });
+    return result;
   }
 
   /* ---- persistence ---- */
@@ -338,14 +480,8 @@ export class ReconciliationController {
 
   private commit(
     result: ApplyRulesResult,
-    { apply, markDirty, event, skipUndo = false }: CommitOptions
+    { apply, markDirty, event }: CommitOptions
   ): void {
-    if (!skipUndo && this.workingSfdt && event !== 'load') {
-      this.undoStack.push(JSON.stringify(this.workingSfdt));
-      if (this.undoStack.length > UNDO_DEPTH) this.undoStack.shift();
-      // A restore walks the stacks itself; anything else invalidates redo.
-      if (event !== 'restore') this.redoStack = [];
-    }
     this.workingSfdt = result.sfdt;
     this.values = result.values;
     this.index = result.index;
@@ -353,7 +489,7 @@ export class ReconciliationController {
     this.diagnostics = result.diagnostics;
     if (markDirty) this.dirty = true;
 
-    if (apply === 'patch' || apply === 'open') {
+    if (apply === 'patch' || apply === 'structural' || apply === 'open') {
       this.phase = 'loading';
       let patched = false;
       if (apply === 'patch') {
@@ -369,14 +505,38 @@ export class ReconciliationController {
           patched = false;
         }
         this.timings.patchMs = Date.now() - started;
+      } else if (apply === 'structural') {
+        const started = Date.now();
+        try {
+          patched =
+            this.editor.applyStructuralMutations?.(
+              result.structuralMutations
+            ) === true;
+          if (patched && result.writes.length && this.editor.updateValues)
+            patched = this.editor.updateValues(result.writes) === true;
+        } catch {
+          patched = false;
+        }
+        this.timings.patchMs = Date.now() - started;
       }
-      if (!patched) {
+      if (!patched && apply === 'open') {
         const view = this.editor.captureView ? this.editor.captureView() : null;
         const started = Date.now();
         this.editor.open(JSON.stringify(result.sfdt));
         this.timings.openMs = Date.now() - started;
         if (view != null && this.editor.restoreView)
           this.editor.restoreView(view);
+      } else if (!patched) {
+        this.diagnostics = [
+          ...this.diagnostics,
+          {
+            severity: 'error',
+            code: 'native-mutation-failed',
+            message:
+              'The binding update could not be applied without replacing the live document.',
+            path: []
+          }
+        ];
       }
     }
     this.phase = 'idle';

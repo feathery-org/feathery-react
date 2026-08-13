@@ -13,13 +13,14 @@ import {
 import { LocalStoragePersistence } from '../persistence';
 import { EngineWrite } from '../core/engine';
 import {
-  addLineItem,
+  getAt,
+  NativeStructuralMutation,
   Occurrence,
   scanBindings,
-  setOccurrenceText,
-  setTaggedValue
+  setAt,
+  setOccurrenceText
 } from '../core/sfdtAdapter';
-import { SfdtDocument } from '../core/sfdtTypes';
+import { SfdtDocument, SfdtRow } from '../core/sfdtTypes';
 import { buildCostsFixture } from '../core/tests/fixtures/costsFixture';
 
 /** A fake Syncfusion: holds a document and echoes contentChange like the real one. */
@@ -46,6 +47,43 @@ class FakeEditor implements EditorPort {
     this.opens += 1;
     // The real editor fires contentChange when a document loads.
     this.controller?.notifyContentChange();
+  }
+
+  applyStructuralMutations(mutations: NativeStructuralMutation[]): boolean {
+    if (!this.supportsPatching) return false;
+    try {
+      for (const mutation of mutations) {
+        if (mutation.kind === 'insert-row') {
+          const rowsPath = [...mutation.tablePath, 'rows'];
+          const rows = [...(getAt(this.doc, rowsPath) as SfdtRow[])];
+          rows.splice(mutation.rowIndex, 0, mutation.row);
+          this.doc = setAt(this.doc as SfdtDocument, rowsPath, rows);
+        } else if (mutation.kind === 'adopt-row') {
+          this.doc = setAt(
+            this.doc as SfdtDocument,
+            [...mutation.tablePath, 'rows', mutation.rowIndex],
+            mutation.row
+          );
+        } else if (mutation.kind === 'delete-row') {
+          const index = scanBindings(this.doc as SfdtDocument);
+          const row = index.tables
+            .get(mutation.tableId)
+            ?.rows.find((entry) => entry.rowId === mutation.rowId);
+          if (!row?.path) return false;
+          const rowsPath = row.path.slice(0, -1);
+          const rows = getAt(this.doc, rowsPath) as SfdtRow[];
+          const at = Number(row.path[row.path.length - 1]);
+          this.doc = setAt(this.doc as SfdtDocument, rowsPath, [
+            ...rows.slice(0, at),
+            ...rows.slice(at + 1)
+          ]);
+        }
+      }
+      this.controller?.notifyContentChange();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   updateValues(writes: EngineWrite[]): boolean {
@@ -188,7 +226,7 @@ describe('reconciling a user edit', () => {
     expect(grandTotals(editor)).toEqual(['$7,950.00', '$7,950.00']);
   });
 
-  it('falls back to a full open when the editor cannot patch', () => {
+  it('preserves native history when the editor cannot patch', () => {
     const { editor, clock, controller } = setup();
     editor.supportsPatching = false;
     controller.loadInitial(buildCostsFixture());
@@ -196,8 +234,12 @@ describe('reconciling a user edit', () => {
 
     editor.userEdit(isQuantityRow1, '13');
     clock.fire();
-    expect(editor.opens).toBe(opensAfterLoad + 1);
-    expect(costsRow(editor, 'line_total')).toBe('$1,950.00');
+    expect(editor.opens).toBe(opensAfterLoad);
+    expect(controller.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'native-mutation-failed' })
+      ])
+    );
   });
 
   it('does not touch the editor when reconciliation changes nothing', () => {
@@ -234,27 +276,32 @@ describe('reconciling a user edit', () => {
   });
 });
 
-describe('runCommand', () => {
+describe('runCommands', () => {
   it('fans out a field write and recalculates an added row', () => {
     const { editor, clock, controller } = setup();
     controller.loadInitial(buildCostsFixture());
 
-    controller.runCommand((sfdt, index) =>
-      setTaggedValue(sfdt, 'project.name', 'Rebrand', index ?? undefined)
-    );
+    controller.runCommands([
+      { type: 'set-value', name: 'project.name', value: 'Rebrand' }
+    ]);
     for (const occurrence of scanBindings(editor.doc as SfdtDocument).fields.get(
       'project.name'
     )!) {
       expect(occurrence.text).toBe('Rebrand');
     }
 
-    controller.runCommand(
-      (sfdt, index) =>
-        addLineItem(sfdt, 'costs', null, index ?? undefined, 'r-9').sfdt
-    );
-    const table = scanBindings(editor.doc as SfdtDocument).tables.get('costs')!;
+    controller.runCommands([
+      {
+        type: 'add-row',
+        tableId: 'costs',
+        afterRowId: null,
+        rowId: 'r-9'
+      }
+    ]);
+    const table = controller.index!.tables.get('costs')!;
     expect(table.rows).toHaveLength(3);
     expect(table.rows[2].bindings.get('line_total')!.text).toBe('$0.00');
+    expect(editor.opens).toBe(1);
     clock.fire();
   });
 });
@@ -298,32 +345,6 @@ describe('saving', () => {
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.conflict).toBe(true);
     expect(result.ok === false && result.currentRevision).toBe(1);
-  });
-});
-
-describe('snapshot undo/redo', () => {
-  it('restores whole engine transactions', () => {
-    const { editor, clock, controller } = setup();
-    controller.loadInitial(buildCostsFixture());
-
-    editor.userEdit(isQuantityRow1, '13');
-    clock.fire();
-    expect(costsRow(editor, 'quantity')).toBe('13');
-
-    expect(controller.undo()).toBe(true);
-    expect(costsRow(editor, 'quantity')).toBe('12');
-    expect(grandTotals(editor)).toEqual(['$7,800.00', '$7,800.00']);
-
-    expect(controller.redo()).toBe(true);
-    expect(costsRow(editor, 'quantity')).toBe('13');
-    clock.fire();
-  });
-
-  it('reports an empty stack rather than throwing', () => {
-    const { controller } = setup();
-    controller.loadInitial(buildCostsFixture());
-    expect(controller.undo()).toBe(false);
-    expect(controller.redo()).toBe(false);
   });
 });
 

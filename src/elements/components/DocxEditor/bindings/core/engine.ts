@@ -13,6 +13,7 @@ import {
   adoptUnboundRows,
   BindingIndex,
   getAt,
+  NativeStructuralMutation,
   Occurrence,
   scanBindings,
   setCalculatedValue,
@@ -74,6 +75,12 @@ export interface ApplyRulesOptions {
   mode?: ReconcileMode;
   /** Templates from earlier reconciles; used only when no bound row survives. */
   rowTemplates?: RowTemplates | null;
+  /**
+   * When false, skip adopting unbound rows. Undo/redo already restored
+   * structure; inserting content controls on top of live ones hides the
+   * original bindings.
+   */
+  adoptRows?: boolean;
 }
 
 export interface ApplyRulesResult {
@@ -83,6 +90,7 @@ export interface ApplyRulesResult {
   changed: ChangeRecord[];
   diagnostics: Diagnostic[];
   writes: EngineWrite[];
+  structuralMutations: NativeStructuralMutation[];
   /** True when the transaction changed more than content-control text. */
   structural: boolean;
   /** Carry these into the next reconcile. */
@@ -242,7 +250,8 @@ export function applyRules(
   {
     prevValues = null,
     mode = 'commit',
-    rowTemplates = null
+    rowTemplates = null,
+    adoptRows = true
   }: ApplyRulesOptions = {}
 ): ApplyRulesResult {
   const diagnostics: Diagnostic[] = [];
@@ -253,6 +262,7 @@ export function applyRules(
   let index = scanBindings(next);
   const groupedRevisions = groupedRevisionIds(sfdt);
   const revisions = allRevisionIds(sfdt);
+  const structuralMutations: NativeStructuralMutation[] = [];
 
   /* ---- 0. adopt rows the user inserted with native editor tools ----
      A data row without any bindings gets its column bindings and formulas
@@ -260,7 +270,7 @@ export function applyRules(
      field values. Rows that do not match the template shape are left alone
      with a warning instead of guessing. */
   const nextTemplates: RowTemplates = new Map(rowTemplates || []);
-  for (const tableId of [...index.tables.keys()]) {
+  for (const tableId of adoptRows ? [...index.tables.keys()] : []) {
     const result = adoptUnboundRows(
       next,
       tableId,
@@ -279,6 +289,7 @@ export function applyRules(
     if (result.adopted.length) {
       next = result.sfdt;
       structural = true;
+      structuralMutations.push(...result.mutations);
       for (const rowId of result.adopted) {
         changed.push({ type: 'row-adopted', tableId, rowId });
         diag(
@@ -685,6 +696,7 @@ export function applyRules(
       changed,
       diagnostics,
       writes: writeList,
+      structuralMutations,
       structural,
       rowTemplates: rememberTemplates(index)
     };
@@ -696,6 +708,7 @@ export function applyRules(
     changed,
     diagnostics,
     writes: writeList,
+    structuralMutations,
     structural,
     rowTemplates: rememberTemplates(index)
   };
