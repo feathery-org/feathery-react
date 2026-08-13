@@ -143,6 +143,21 @@ const liveRevisions = (editor: DocumentEditor) =>
     editor.revisions.get(index)
   );
 
+const referencedRevisionIds = (sfdt: any): Set<string> => {
+  const ids = new Set<string>();
+  const visit = (node: any): void => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node.revisionIds))
+      node.revisionIds.forEach((id: unknown) => ids.add(String(id)));
+    Object.values(node).forEach(visit);
+  };
+  for (const [key, value] of Object.entries(sfdt)) {
+    if (key !== 'revisions') visit(value);
+  }
+  return ids;
+};
+
 describe('writes aimed at a bound cell', () => {
   let editor: DocumentEditor;
   let attached: AttachedBindings;
@@ -274,6 +289,85 @@ describe('writes aimed at a bound cell', () => {
     expect(textAt(editor, QUANTITY_CELL)).toBe('12');
     expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$1,800.00');
     expect(editor.serialize()).toBe(before);
+  });
+
+  it('leaves native tracking off when control returns to the user', () => {
+    expect(editor.enableTrackChanges).toBe(false);
+    const trackingDuringOpen: boolean[] = [];
+    const open = editor.open.bind(editor);
+    editor.open = ((sfdt: string) => {
+      trackingDuringOpen.push(editor.enableTrackChanges);
+      open(sfdt);
+    }) as typeof editor.open;
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'assistant-then-user',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '20',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(trackingDuringOpen).toEqual([false]);
+    expect(editor.enableTrackChanges).toBe(false);
+    const assistantRevisionCount = editor.revisions.length;
+
+    editor.selection.select('0;0;0', '0;0;7');
+    editor.editor.insertText('Updated');
+
+    expect(editor.enableTrackChanges).toBe(false);
+    expect(editor.revisions.length).toBe(assistantRevisionCount);
+    expect(
+      liveRevisions(editor).every((revision) => revision.author === 'Robin')
+    ).toBe(true);
+  });
+
+  it('removes revision records after their document references are consumed', () => {
+    applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'orphan-cleanup',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '20',
+          literal: true
+        }
+      ]
+    });
+
+    const withOrphan = JSON.parse(editor.serialize());
+    withOrphan.revisions.push({
+      author: 'Robin',
+      date: new Date().toISOString(),
+      revisionType: 'Insertion',
+      revisionId: 'orphaned-robin-revision',
+      customData: {
+        v: 1,
+        source: 'robin',
+        changeSetId: 'orphan-cleanup',
+        group: 'orphan-cleanup'
+      }
+    });
+    editor.open(JSON.stringify(withOrphan));
+
+    attached.controller.flush();
+
+    const settled = JSON.parse(editor.serialize());
+    const referenced = referencedRevisionIds(settled);
+    expect(
+      settled.revisions.map((revision: any) => String(revision.revisionId))
+    ).toEqual(expect.arrayContaining([...referenced]));
+    expect(
+      settled.revisions.every((revision: any) =>
+        referenced.has(String(revision.revisionId))
+      )
+    ).toBe(true);
+    expect(JSON.stringify(settled)).not.toContain('orphaned-robin-revision');
   });
 
   it('collapses a superseded pending value to one pair that still rejects to the original', () => {

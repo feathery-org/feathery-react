@@ -19297,6 +19297,12 @@ function applyDocumentEditsMeasured(
       }
 
       if (enginePlans.length) {
+        // Binding writes already carry assistant-authored revisions in their
+        // SFDT. Never let the whole-document open/reconcile borrow native
+        // tracking: Syncfusion can finish an open after this synchronous call
+        // returns and otherwise restore the temporary `true` into the editor,
+        // causing the user's next keystroke to become a Guest revision.
+        editor.enableTrackChanges = false;
         // Judged here, not in the post-write pass: a licence violation must stop
         // the all-or-nothing transaction rather than be reported over a write
         // that already landed.

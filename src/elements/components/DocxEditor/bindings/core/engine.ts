@@ -172,6 +172,36 @@ function referencesRevisionId(node: any, ids: Set<string>): boolean {
   return Object.values(node).some((value) => referencesRevisionId(value, ids));
 }
 
+function referencedRevisionIds(sfdt: SfdtDocument): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: any): void => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node.revisionIds))
+      node.revisionIds.forEach((id: unknown) => ids.add(String(id)));
+    Object.values(node).forEach(visit);
+  };
+  for (const [key, value] of Object.entries(sfdt)) {
+    if (key !== 'revisions') visit(value);
+  }
+  return ids;
+}
+
+function pruneOrphanedRevisions(sfdt: SfdtDocument): SfdtDocument {
+  if (!Array.isArray(sfdt.revisions) || !sfdt.revisions.length) return sfdt;
+  const referenced = referencedRevisionIds(sfdt);
+  const revisions = sfdt.revisions.filter((revision: any) => {
+    const id = revision?.revisionId ?? revision?.revisionID;
+    return id == null || referenced.has(String(id));
+  });
+  return revisions.length === sfdt.revisions.length
+    ? sfdt
+    : { ...sfdt, revisions };
+}
+
 /** Formula node id: doc-level formulas by name, row formulas by row scope. */
 function nodeId(occurrence: Occurrence): string {
   return occurrence.tableId
@@ -617,6 +647,12 @@ export function applyRules(
       });
     }
   }
+
+  // Syncfusion can consume a run while retaining its top-level revision entry.
+  // Such an entry has no accept/reject target and renders as a phantom review
+  // card. Reconciliation is the authoritative SFDT transaction boundary, so
+  // retain exactly the revision records still referenced by document content.
+  next = pruneOrphanedRevisions(next);
 
   /* ---- 6. final index/values reflect the returned document ---- */
   const writeList: EngineWrite[] = [...writes].map(([tag, write]) => ({
