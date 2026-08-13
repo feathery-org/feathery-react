@@ -54,10 +54,70 @@ describe('reading a bound document', () => {
       serialize: () => JSON.stringify(buildCostsFixture()),
       documentHelper: {}
     };
-    const inventory: any = getDocumentInventory(editor as any, {});
+    const inventory: any = getDocumentInventory(editor as any, {
+      scope: 'full'
+    });
     const text = JSON.stringify(inventory);
     expect(text).toContain('Design work');
     expect(text).toContain('$1,800.00');
+  });
+
+  it('enriches bound blocks with friendly binding facts', () => {
+    const editor = {
+      serialize: () => JSON.stringify(buildCostsFixture()),
+      documentHelper: {}
+    };
+    const inventory: any = getDocumentInventory(editor as any, {
+      scope: 'full'
+    });
+    const quantity = inventory.inventory.find(
+      (block: any) => block.anchor === '0;2;1;1;0'
+    );
+    expect(quantity.binding).toEqual({
+      field: 'quantity',
+      kind: 'input',
+      table: 'costs',
+      row: 'r-1'
+    });
+    const formula = inventory.inventory.find(
+      (block: any) => block.anchor === '0;2;1;3;0'
+    );
+    expect(formula.binding).toEqual({
+      field: 'line_total',
+      kind: 'formula',
+      expr: 'mul(quantity,unit_cost)',
+      table: 'costs',
+      row: 'r-1'
+    });
+  });
+
+  it('enriches structure and table_facts reads for bound tables', () => {
+    const editor = {
+      serialize: () => JSON.stringify(buildCostsFixture()),
+      documentHelper: {}
+    };
+    const structure: any = getDocumentInventory(editor as any, {
+      scope: 'structure'
+    });
+    expect(structure.structure.tables[0].binding).toEqual({
+      kind: 'bound',
+      tableId: 'costs',
+      rowIds: ['r-1', 'r-2'],
+      columns: ['item', 'quantity', 'unit_cost', 'line_total']
+    });
+
+    const facts: any = getDocumentInventory(editor as any, {
+      scope: 'table_facts',
+      tableAnchor: '0;2'
+    });
+    expect(facts.table.binding).toEqual(structure.structure.tables[0].binding);
+    expect(facts.table.rows[1].binding).toEqual({ rowId: 'r-1' });
+    expect(facts.table.rows[1].cells[1].binding).toEqual({
+      field: 'quantity',
+      kind: 'input',
+      table: 'costs',
+      row: 'r-1'
+    });
   });
 
   it('leaves documents without content controls byte-identical', () => {
@@ -83,6 +143,12 @@ describe('reading a bound document', () => {
       ['0;0', 'Hello'],
       ['0;1;0;0;0', 'Cell']
     ]);
+    const editor = {
+      serialize: () => JSON.stringify(plain),
+      documentHelper: {}
+    };
+    const inventory = getDocumentInventory(editor as any, { scope: 'full' });
+    expect(JSON.stringify(inventory)).not.toContain('"binding"');
   });
 });
 

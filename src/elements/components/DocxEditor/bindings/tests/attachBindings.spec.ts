@@ -17,10 +17,11 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import { attachBindings, AttachedBindings } from '../attachBindings';
 import { SyncfusionEditorLike } from '../editorAdapter';
-import { scanBindings } from '../core/sfdtAdapter';
+import { scanBindings, setTaggedValue } from '../core/sfdtAdapter';
 import { SfdtDocument } from '../core/sfdtTypes';
 import { buildTemplateTokenDocument } from '../core/tests/fixtures/templateTokenFixture';
 import { buildCostsFixture } from '../core/tests/fixtures/costsFixture';
+import { bindingCommandSurfaceFor } from '../reconcileRegistry';
 
 DocumentEditor.Inject(
   Editor,
@@ -205,6 +206,21 @@ describe('save gating', () => {
     expect(attached.commitForSave()).toBe(true);
 
     expect(costsCell(editor, 'line_total')).toBe('$1,950.00');
+  });
+
+  it('registers the assistant command surface on the editor instance', () => {
+    const surface = bindingCommandSurfaceFor(editor);
+    expect(surface).toBeTruthy();
+    surface!.runCommand((sfdt, index) =>
+      setTaggedValue(sfdt, 'project.name', 'Bridge run', index)
+    );
+
+    expect(attached.fieldValues()).toEqual(
+      expect.objectContaining({ 'project.name': 'Bridge run' })
+    );
+    expect(liveIndex(editor).fields.get('project.name')?.[0].text).toBe(
+      'Bridge run'
+    );
   });
 });
 

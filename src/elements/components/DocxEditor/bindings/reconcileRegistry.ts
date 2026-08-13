@@ -11,13 +11,24 @@
 // Keyed by the editor instance in a WeakMap, so a torn-down editor takes its
 // registration with it even if dispose never runs.
 
-const reconcilers = new WeakMap<object, () => void>();
+import type { ApplyRulesResult } from './core/engine';
+import type { BindingIndex } from './core/sfdtAdapter';
+import type { SfdtDocument } from './core/sfdtTypes';
+
+export interface BindingCommandSurface {
+  flush(): void;
+  runCommand(
+    fn: (sfdt: SfdtDocument, index: BindingIndex | null) => SfdtDocument
+  ): ApplyRulesResult;
+}
+
+const reconcilers = new WeakMap<object, BindingCommandSurface>();
 
 export function registerBindingReconciler(
   editor: object,
-  reconcile: () => void
+  surface: BindingCommandSurface
 ): void {
-  reconcilers.set(editor, reconcile);
+  reconcilers.set(editor, surface);
 }
 
 export function unregisterBindingReconciler(editor: object): void {
@@ -30,13 +41,20 @@ export function unregisterBindingReconciler(editor: object): void {
  */
 export function reconcileBoundDocument(editor: unknown): boolean {
   if (!editor || typeof editor !== 'object') return false;
-  const reconcile = reconcilers.get(editor as object);
-  if (!reconcile) return false;
+  const surface = reconcilers.get(editor as object);
+  if (!surface) return false;
   try {
-    reconcile();
+    surface.flush();
     return true;
   } catch (error) {
     console.error('Feathery: reconciling document bindings failed', error);
     return false;
   }
+}
+
+export function bindingCommandSurfaceFor(
+  editor: unknown
+): BindingCommandSurface | null {
+  if (!editor || typeof editor !== 'object') return null;
+  return reconcilers.get(editor as object) ?? null;
 }

@@ -138,7 +138,10 @@ export function attachBindings(
 
   // The assistant writes through its own engine and knows nothing about
   // bindings; this is how its batches get reconciled.
-  registerBindingReconciler(editor, () => controller.flush());
+  registerBindingReconciler(editor, {
+    flush: () => controller.flush(),
+    runCommand: (fn) => controller.runCommand(fn)
+  });
 
   const triggers = createCommitTriggers(editor, controller, {
     ...(setTimeoutFn ? { setTimeoutFn } : {}),

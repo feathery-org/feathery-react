@@ -18,7 +18,7 @@
 /**
  * Param types use a small fixed language (m5 C3: no arbitrary schema
  * language): `string`, `string[][]`, `int>=0[]`, `number`, `int>0`, `int>=0`, `boolean`,
- * `enum[a,b,...]` - each optionally suffixed `?` when the param may be
+ * `duplicateRows`, `enum[a,b,...]` - each optionally suffixed `?` when the param may be
  * omitted. Cross-op fields (`anchor`, `expect`, `start`, `end`,
  * `inheritFormatFrom`, `changeSetId`, `group`) are reserved keys with one
  * canonical meaning and are not repeated per entry; `requiresAnchor` declares
@@ -86,6 +86,10 @@ export interface SectionComposerSpec {
   title: string;
   blocks: SectionComposerBlock[];
 }
+
+export type DuplicateTableRows =
+  | 'copy'
+  | Array<Record<string, string | number | boolean | null>>;
 
 // Entries are ordered exactly like ai-services' DOCUMENT_EDIT_OPS so a
 // name-by-name comparison of the two lists reads as a clean diff.
@@ -256,6 +260,32 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       splitAtRow: 'int>=0?',
       targetAnchor: 'string',
       position: 'enum[before,after]?'
+    },
+    requiresAnchor: true
+  },
+  {
+    // handler: applyDocumentEdits preflight route + ANCHORED_OP_HANDLERS backstop
+    //
+    // SFDT-level table clone, so table styling and widths are copied as the
+    // table's own bytes rather than rebuilt by model-authored cell operations.
+    // Bound tables are additionally cloned into a fresh binding namespace:
+    // table id, row ids, table-local document bindings, and formulas inside the
+    // table are rewritten so editing the copy does not leak into the source.
+    //
+    // `rows: 'copy'` copies the data rows and their current displayed values.
+    // `rows: [{...}]` keeps the table skeleton and materializes exactly those
+    // data rows from the prototype row, setting editable bound input columns
+    // through the binding engine in the same transaction. Any numeric
+    // replacement value in that row payload must carry the same provenance as
+    // set_cell_text on the op itself: `literal: true`, or `quotedFrom` +
+    // `quotedText` containing the exact displayed figure.
+    op: 'duplicate_table',
+    params: {
+      rows: 'duplicateRows?',
+      placeAfter: 'string?',
+      literal: 'boolean?',
+      quotedFrom: 'string?',
+      quotedText: 'string?'
     },
     requiresAnchor: true
   },
@@ -717,6 +747,8 @@ type ParamBase<S extends string> = S extends 'string'
   ? string
   : S extends 'sectionSpec'
   ? SectionComposerSpec
+  : S extends 'duplicateRows'
+  ? DuplicateTableRows
   : S extends 'string[][]'
   ? string[][]
   : S extends 'int>=0[]'
