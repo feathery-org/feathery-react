@@ -12,63 +12,12 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
 import { IMaskInput } from 'react-imask';
-
-const DEFAULT_LENGTH = 1024; // Default limit on backend
-const MAX_FIELD_LENGTHS: Record<string, number> = {
-  text_area: 16384, // Max storage limit on backend column
-  url: 256,
-  gmap_zip: 10
-};
-
-const maxFieldLength = (type: string) =>
-  MAX_FIELD_LENGTHS[type] ?? DEFAULT_LENGTH;
-
-function escapeDefinitionChars(str: string | undefined) {
-  return (str ?? '')
-    .replaceAll('0', '\\0')
-    .replaceAll('a', '\\a')
-    .replaceAll('b', '\\b')
-    .replaceAll('*', '\\*');
-}
-
-function constraintChar(allowed: any) {
-  switch (allowed) {
-    case 'letters':
-      return 'a';
-    case 'alphanumeric':
-      return 'b';
-    case 'alphaspace':
-      return 'c';
-    case 'digits':
-      return '0';
-    default:
-      return '*';
-  }
-}
-
-function getTextFieldMask(servar: any) {
-  const data = servar.metadata;
-  const prefix = escapeDefinitionChars(data.prefix);
-  const suffix = escapeDefinitionChars(data.suffix);
-
-  let mask = '';
-  if (data.mask) mask = data.mask;
-  else {
-    let allowed = data.allowed_characters;
-    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphaspace';
-    const definitionChar = constraintChar(allowed);
-
-    let numOptional =
-      maxFieldLength(servar.type) - prefix.length - suffix.length;
-    if (servar.max_length)
-      numOptional = Math.min(servar.max_length, numOptional);
-
-    mask = `[${definitionChar.repeat(numOptional)}]`;
-  }
-
-  // Approximate dynamic input by making each character optional
-  return `${prefix}${mask}${suffix}`;
-}
+import {
+  getDecimalPlaces,
+  getNumberMaskProps,
+  getTextFieldMask,
+  maxFieldLength
+} from './mask';
 
 function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maskProps;
@@ -76,24 +25,7 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
-      maskProps = {
-        mask: 'num',
-        blocks: {
-          num: {
-            mask: Number,
-            radix: '.',
-            thousandsSeparator: ',',
-            scale: 2,
-            // Larger numbers get converted to scientific notation when sent to backend
-            max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
-            min: Math.max(0, servar.min_length ?? 0)
-          }
-        },
-        value: value.toString()
-      };
-      if (servar.format === 'currency') {
-        maskProps.mask = '$num';
-      }
+      maskProps = getNumberMaskProps(servar, value);
       break;
     case 'ssn':
       maskProps = {
@@ -125,11 +57,10 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
       };
       break;
   }
-  return {
-    lazy: false,
-    unmask: !servar.metadata.save_mask,
-    ...maskProps
-  };
+  // Spread the defaults rather than inlining them so a per-type maskProps can
+  // override them (the number mask forces unmask).
+  const defaults = { lazy: false, unmask: !servar.metadata.save_mask };
+  return { ...defaults, ...maskProps };
 }
 
 function getInputProps(servar: any, options: any[], autoComplete: boolean) {
@@ -145,7 +76,13 @@ function getInputProps(servar: any, options: any[], autoComplete: boolean) {
   const meta = servar.metadata;
   switch (servar.type) {
     case 'integer_field':
-      return { inputMode: 'decimal' as any };
+      // Offering a decimal point on a whole-number field is the main way users
+      // hit imask's scale-0 behavior, where "12.5" resolves to 125.
+      return {
+        inputMode: (getDecimalPlaces(servar) === 0
+          ? 'numeric'
+          : 'decimal') as any
+      };
     case 'email':
       if (autoComplete && !constraints.autoComplete) {
         constraints.autoComplete = 'email';

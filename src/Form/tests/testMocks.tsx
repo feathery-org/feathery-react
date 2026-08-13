@@ -59,6 +59,7 @@ jest.mock('../../utils/repeat', () => ({
 // Hide and repeats
 jest.mock('../../utils/hideAndRepeats', () => ({
   getHideIfReferences: () => new Set(),
+  getTextVariableReferences: () => new Set(),
   getPositionKey: () => 'k',
   getVisiblePositions: () => ({})
 }));
