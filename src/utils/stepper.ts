@@ -13,6 +13,18 @@ export function isStepperStepVisible(stepConfig: any): boolean {
   return cond === 'show' ? truthy : !truthy;
 }
 
+// Whether a step shows a checkmark. Only submitted steps count. When
+// resetCompletionOnBack is on, steps ahead of the current one don't, so looping
+// back doesn't leave stale checkmarks.
+export function isStepperStepCompleted(
+  isSubmitted: boolean,
+  index: number,
+  activeStep: number,
+  resetCompletionOnBack: boolean
+): boolean {
+  return isSubmitted && !(resetCompletionOnBack && index > activeStep);
+}
+
 // A stepper step is reachable when it isn't the current step and either all-step navigation is on or it was already completed
 export function isStepperStepReachable(
   isActive: boolean,
