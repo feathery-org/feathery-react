@@ -51,6 +51,23 @@ The status panel shows the controller phase, dirty state, both undo stacks and
 per-phase timings. Any network call is blocked and logged - the engine should
 need none, so a `BLOCKED` line means a harness bug.
 
+## The assistant's half: `harness/robin-bound-ops.html`
+
+Same bundle, same fixture, but driven through `createDocxEditorBridge` - the
+entry point the assistant's tool dispatch uses - instead of by hand.
+Each button is one `applyDocumentEdits` call against the open bound document,
+and the panel reports the route each op took.
+
+| Action | What should happen |
+| --- | --- |
+| **insert_row + fill** | All four ops report `route=engine`. A new bound line item appears, its line total computes, and the subtotal, total and both prose totals follow. |
+| **set_cell_text (Qty 12 → 20)** | `route=engine`. The whole dependent chain moves; no revision is authored. |
+| **duplicate_table** | `route=engine`. The Expenses table is cloned with its own styling into a fresh `expenses_copy` namespace, so editing the copy cannot leak into the source. |
+| **delete_row** | `route=engine`. The row and its bindings go together and the aggregates shrink. |
+| **replace_text (unbound heading)** | `route=editor`. Nothing bound is involved, so this stays an ordinary tracked write - two revisions in the review pane. This is the gate: bindings do not lock the document down wholesale. |
+| **write a locked total** | Refused with `target_is_bound_formula`, and the message names the inputs that *can* be changed. |
+| **unsourced number** | Refused with `model_authored_number`: a figure the engine did not compute has to say where it came from. |
+
 ## Not part of the build
 
 `bundle.js` is a local artifact and the entry lives outside `src/`, so nothing

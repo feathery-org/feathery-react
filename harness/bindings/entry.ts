@@ -31,6 +31,8 @@ import { isOptimizedSfdt } from '../../src/elements/components/DocxEditor/bindin
 import { parseTag } from '../../src/elements/components/DocxEditor/bindings/core/tagDsl';
 import { buildCostsFixture } from '../../src/elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
 import { buildTemplateTokenDocument } from '../../src/elements/components/DocxEditor/bindings/core/tests/fixtures/templateTokenFixture';
+import { createDocxEditorBridge } from '../../src/assistant/tools/docx/docxEditorBridge';
+import { flattenSfdt } from '../../src/assistant/tools/docx/syncfusionDocumentOps';
 
 (window as any).Bindings = {
   attachBindings,
@@ -54,5 +56,10 @@ import { buildTemplateTokenDocument } from '../../src/elements/components/DocxEd
   // Two documents: one already bound, one still carrying [[...]] tokens so the
   // import path is visible too.
   buildCostsFixture,
-  buildTemplateTokenDocument
+  buildTemplateTokenDocument,
+  // The assistant's own bridge, unchanged: robin-bound-ops.html drives a bound
+  // document through exactly the entry point Robin's tool dispatch uses, so the
+  // routing decision (engine vs tracked write) is the shipped one.
+  createDocxEditorBridge,
+  flattenSfdt
 };

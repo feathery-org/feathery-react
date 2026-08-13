@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Robin editing a bound document</title>
+  <link
+    href="https://cdn.syncfusion.com/ej2/34.1.31/tailwind3.css"
+    rel="stylesheet"
+  />
+  <style>
+    html, body { height: 100%; margin: 0; font: 13px/1.45 system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 10px; border-bottom: 1px solid #d8d8dc; background: #fafafb;
+    }
+    header strong { margin-right: 4px; }
+    button {
+      font: inherit; padding: 4px 9px; border: 1px solid #c8c8ce; border-radius: 5px;
+      background: #fff; cursor: pointer;
+    }
+    button:hover { background: #f1f1f4; }
+    .sep { width: 1px; align-self: stretch; background: #d8d8dc; margin: 0 4px; }
+    main { flex: 1; display: flex; min-height: 0; }
+    #editor { flex: 1; min-width: 0; }
+    aside {
+      width: 380px; border-left: 1px solid #d8d8dc; display: flex;
+      flex-direction: column; overflow: hidden; background: #fcfcfd;
+    }
+    aside section { border-bottom: 1px solid #e6e6ea; padding: 8px 10px; overflow: auto; }
+    aside h2 {
+      margin: 0 0 6px; font-size: 11px; letter-spacing: .06em;
+      text-transform: uppercase; color: #6b6b76;
+    }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+    .ok { color: #0e7a4d; }
+    .bad { color: #b0302b; }
+    .muted { color: #6b6b76; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Robin ops</strong>
+    <button onclick="run('insertRow')">insert_row + fill</button>
+    <button onclick="run('setQty')">set_cell_text (Qty 12 → 20)</button>
+    <button onclick="run('duplicate')">duplicate_table</button>
+    <button onclick="run('deleteRow')">delete_row</button>
+    <button onclick="run('heading')">replace_text (unbound heading)</button>
+    <div class="sep"></div>
+    <strong>Refusals</strong>
+    <button onclick="run('writeFormula')">write a locked total</button>
+    <button onclick="run('unsourced')">unsourced number</button>
+    <div class="sep"></div>
+    <button onclick="load()">Reload document</button>
+  </header>
+
+  <main>
+    <div id="editor"></div>
+    <aside>
+      <section style="flex:1">
+        <h2>Robin tool call → result</h2>
+        <pre id="call" class="muted">—</pre>
+      </section>
+      <section>
+        <h2>Bound values after the call</h2>
+        <pre id="values" class="muted">—</pre>
+      </section>
+      <section>
+        <h2>Diagnostics</h2>
+        <pre id="diagnostics" class="muted">—</pre>
+      </section>
+    </aside>
+  </main>
+
+  <script src="https://cdn.syncfusion.com/ej2/34.1.31/dist/ej2.min.js"></script>
+  <script>
+    document.write(
+      '<scr' + 'ipt src="/harness/bindings/bundle.js?t=' + Date.now() + '"></scr' + 'ipt>'
+    );
+  </script>
+  <script>
+    var container = null;
+    var ed = null;
+    var attached = null;
+    var bridge = null;
+
+    // Anchors into the costs fixture. Rows 1-2 are data; 3-5 are the summary band.
+    var QTY_CELL       = '0;2;1;1;0';
+    var LINE_TOTAL     = '0;2;1;3;0';
+    var LAST_DATA_CELL = '0;2;2;0;0';
+
+    function show(id, text, cls) {
+      var el = document.getElementById(id);
+      el.textContent = text;
+      el.className = cls || '';
+    }
+
+    // Every value the engine owns, read straight out of the live document, so
+    // what the panel says and what the page renders cannot disagree.
+    function refreshPanels() {
+      if (!attached) return;
+      // Anchors shift as rows come and go, so nothing here is hard-coded to a
+      // position: the costs table is read out cell by cell, and the two prose
+      // totals are found by the sentence they are embedded in.
+      var blocks = Bindings.flattenSfdt(JSON.parse(ed.serialize()));
+      var prose = blocks.filter(function (b) {
+        return /^(Amount due|Combined total)/.test(b.text || '');
+      });
+      var index = Bindings.scanBindings(JSON.parse(ed.serialize()));
+      var rowIds = (index.tables.get('costs') || { rows: [] }).rows.map(function (r) {
+        return r.rowId;
+      });
+      show('values',
+        'bound tables    ' + Array.from(index.tables.keys()).join(', ') + '\n' +
+        'costs row ids   ' + (rowIds.join(', ') || '—') + '\n' +
+        'live revisions  ' + (ed.revisions ? ed.revisions.length : 0) + '\n\n' +
+        prose.map(function (b) { return b.text; }).join('\n'));
+
+      var diagnostics = attached.diagnostics();
+      if (!diagnostics.length) show('diagnostics', 'none', 'ok');
+      else show('diagnostics', diagnostics.map(function (d) {
+        return '[' + d.severity + '] ' + d.code + '\n  ' + d.message;
+      }).join('\n'), 'bad');
+    }
+
+    var OPS = {
+      insertRow: [
+        { op: 'insert_row', anchor: LAST_DATA_CELL },
+        { op: 'set_cell_text', anchor: '0;2;3;0;0', text: 'Hosting' },
+        { op: 'set_cell_text', anchor: '0;2;3;1;0', text: '4', literal: true },
+        { op: 'set_cell_text', anchor: '0;2;3;2;0', text: '$25.00', literal: true }
+      ],
+      setQty: [
+        { op: 'set_cell_text', anchor: QTY_CELL, text: '20', literal: true }
+      ],
+      duplicate: [
+        { op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }
+      ],
+      deleteRow: [
+        { op: 'delete_row', anchor: '0;2;1;0;0' }
+      ],
+      writeFormula: [
+        { op: 'set_cell_formula', anchor: LINE_TOTAL, formula: '[' + QTY_CELL + '] * 2' }
+      ],
+      unsourced: [
+        { op: 'set_cell_text', anchor: QTY_CELL, text: '99' }
+      ],
+      // Nothing bound is involved, so this must NOT be diverted to the engine:
+      // it takes the ordinary tracked-write route, revision and all.
+      heading: [
+        {
+          op: 'replace_text',
+          anchor: '0;0',
+          find: 'Project cost estimate',
+          replace: 'Cost estimate v2'
+        }
+      ]
+    };
+
+    function run(which) {
+      if (!bridge) return;
+      var edits = OPS[which];
+      // The assistant's own bridge - the same call assistantToolDispatch makes.
+      bridge.applyDocumentEdits({ edits: edits }).then(function (result) {
+        var routes = (result.results || []).map(function (r) {
+          return (r.ok ? 'ok  ' : 'REFUSED  ') + r.op + '  route=' + r.route +
+            (r.error ? '  error=' + r.error : '');
+        }).join('\n');
+        show('call',
+          'applyDocumentEdits(' + JSON.stringify({ edits: edits }, null, 2) + ')\n\n' +
+          routes + '\n\n' +
+          JSON.stringify(result, null, 2).slice(0, 1400),
+          (result.results || []).every(function (r) { return r.ok; }) ? 'ok' : 'bad');
+        refreshPanels();
+      });
+    }
+
+    function load() {
+      if (attached) { attached.dispose(); attached = null; }
+      ed.open(JSON.stringify(Bindings.buildCostsFixture()));
+      // As the in-form host runs it: assistant edits that are not the engine's
+      // are tracked changes the user reviews.
+      ed.enableTrackChanges = true;
+      attached = Bindings.attachBindings(ed, { onDiagnostics: refreshPanels });
+      bridge = Bindings.createDocxEditorBridge(function () { return ed; });
+      show('call', 'bound document loaded — pick an op above', 'muted');
+      refreshPanels();
+    }
+
+    (function start() {
+      container = new ej.documenteditor.DocumentEditorContainer({
+        enableToolbar: false,
+        showPropertiesPane: false,
+        height: '100%',
+        documentEditorSettings: { optimizeSfdt: false },
+        created: function () {
+          ed = container.documentEditor;
+          container.beforeXmlHttpRequestSend = function (args) { args.cancel = true; };
+          // The trial banner is an overlay that sits on top of this page's own
+          // controls. No license key here, so drop it rather than work around it.
+          setTimeout(function () {
+            [].slice.call(document.body.children).forEach(function (el) {
+              if (el.tagName === 'DIV' && !el.className &&
+                  /trial version of Syncfusion/.test(el.textContent || '')) el.remove();
+            });
+          }, 400);
+          load();
+        }
+      });
+      container.appendTo('#editor');
+    })();
+  </script>
+</body>
+</html>
