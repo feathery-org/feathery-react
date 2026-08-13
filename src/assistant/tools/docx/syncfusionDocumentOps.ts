@@ -9,7 +9,8 @@
 //      These are side-effect free and unit tested with fixture SFDT.
 //   2. A live apply engine that resolves anchors to SyncFusion hierarchical
 //      selection indices and mutates the editor, with track-changes forced on
-//      around the batch and an `expect` compare-and-swap guard.
+//      around the batch (then forced off so user typing stays untracked) and
+//      an `expect` compare-and-swap guard.
 //
 // Anchor scheme: an anchor IS the SyncFusion hierarchical index prefix of a
 // block, with the trailing character offset omitted. A top-level paragraph is
@@ -96,6 +97,7 @@ import {
 } from './tableAppearance';
 import {
   createdRevisions,
+  disableUserTrackChanges,
   groupRevisionsAtomic,
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
@@ -15444,11 +15446,11 @@ function applyDocumentEditsMeasured(
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSet(edits, columnTouches);
-  const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
   // enableTrackChanges flips to true only inside the protected try below
-  // (which restores it in `finally`) - preflight here is read-only, and a
-  // serialization failure before that point must leave it exactly as found.
+  // (which forces it off in `finally` so later user typing is never tracked).
+  // Preflight here is read-only, and a serialization failure before that
+  // point must leave tracking exactly as found.
   // The group tag rides on SyncFusion's revision customData for the duration
   // of this change set; whatever the host set there before is restored after.
   const revisionSettings = editor.documentEditorSettings?.revisionSettings;
@@ -16657,7 +16659,10 @@ function applyDocumentEditsMeasured(
       }
     }
   } finally {
-    editor.enableTrackChanges = priorTrackChanges;
+    // Always off, not "restore prior": a leftover true would author the
+    // user's next keystrokes as tracked changes. Assist is the only writer
+    // that may turn this on, and only for the synchronous batch above.
+    disableUserTrackChanges(editor);
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
     if (suspendLayout) {
