@@ -100,6 +100,43 @@ interface ViewSnapshot {
 }
 
 /**
+ * True when the control is still in the live document tree. deleteRow does
+ * not drop widgets from contentControlCollection, so a deleted row's tags
+ * stay findable and steal later writes.
+ */
+export function isContentControlAttached(control: ContentControlLike): boolean {
+  const line = control.line as
+    | { paragraph?: Record<string, unknown> }
+    | undefined;
+  let widget: Record<string, unknown> | undefined = line?.paragraph;
+  // Stubs and controls we have not laid out have no widget tree; keep them.
+  if (!widget) return true;
+  const seen = new Set<Record<string, unknown>>();
+  while (widget) {
+    if (seen.has(widget)) return false;
+    seen.add(widget);
+    if (widget.indexInOwner === -1) return false;
+    const parent = widget.containerWidget as
+      | Record<string, unknown>
+      | undefined;
+    if (!parent) return true;
+    widget = parent;
+  }
+  return true;
+}
+
+/** Drop content controls whose widgets were removed by a table-clone command. */
+export function pruneDetachedContentControls(
+  editor: SyncfusionEditorLike
+): void {
+  const collection = editor.documentHelper?.contentControlCollection;
+  if (!Array.isArray(collection)) return;
+  for (let i = collection.length - 1; i >= 0; i--) {
+    if (!isContentControlAttached(collection[i])) collection.splice(i, 1);
+  }
+}
+
+/**
  * Ask the editor for verbose SFDT.
  *
  * Syncfusion defaults optimizeSfdt to true, and minified SFDT renames every key
@@ -127,6 +164,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
   ): ContentControlLike[] =>
     collection.filter(
       (control) =>
+        isContentControlAttached(control) &&
         control.contentControlProperties &&
         String(control.contentControlProperties.tag) === tag
     );
@@ -142,6 +180,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       const editorModule = editor.editorModule;
       if (!helper || !editorModule || !editorModule.updateContentControl)
         return false;
+      pruneDetachedContentControls(editor);
       const collection = helper.contentControlCollection;
       if (!Array.isArray(collection)) return false;
       // Empty text would be replaced by the editor's placeholder string.

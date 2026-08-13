@@ -80,6 +80,41 @@ describe('watchRowCommands', () => {
     expect((editor as any).editorModule.deleteRow).toBe(original);
   });
 
+  it('drops detached content controls after a native delete', () => {
+    const detached = {
+      contentControlProperties: { tag: 'gone' },
+      line: { paragraph: { indexInOwner: -1, containerWidget: null } }
+    };
+    const live = {
+      contentControlProperties: { tag: 'live' },
+      line: {
+        paragraph: { indexInOwner: 0, containerWidget: { indexInOwner: 0 } }
+      }
+    };
+    const editor = fakeEditor(undefined);
+    (editor as any).editorModule = { deleteRow: () => 'deleted' };
+    (editor as any).documentHelper = {
+      contentControlCollection: [detached, live]
+    };
+    watchRowCommands(editor, () => undefined);
+    (editor as any).editorModule.deleteRow();
+    expect((editor as any).documentHelper.contentControlCollection).toEqual([
+      live
+    ]);
+  });
+
+  it('does not reconcile while undo or redo is replaying the command', () => {
+    let changes = 0;
+    const original = jest.fn(() => 'deleted');
+    const editor = fakeEditor(undefined);
+    (editor as any).editorModule = { deleteRow: original };
+    (editor as any).editorHistoryModule = { isRedoing: true };
+    watchRowCommands(editor, () => (changes += 1));
+
+    expect((editor as any).editorModule.deleteRow()).toBe('deleted');
+    expect(changes).toBe(0);
+  });
+
   it('never lets a failing watcher break the insert', () => {
     const editor = fakeEditor(() => 'ok');
     watchRowCommands(editor, () => {

@@ -149,11 +149,14 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
-  // Native insertRow/deleteRow bypass runCommands. The interceptor starts a
-  // Syncfusion history transaction, runs the command, then adopts and
-  // recomputes in the same turn so one user action is one native undo entry.
+  // Native insertRow/deleteRow bypass runCommands. After the user's command
+  // the interceptor adopts and recomputes in the same turn. Replay during
+  // undo/redo must not flush: that inserts content controls mid-history and
+  // leaves redo unable to delete the row.
   const unwatchRowCommands = watchRowCommands(editor, () => {
     if (controller.phase !== 'idle') return;
+    const history = editor.editorHistoryModule;
+    if (history?.isUndoing || history?.isRedoing) return;
     controller.flush({ mode: 'self-heal' });
   });
 

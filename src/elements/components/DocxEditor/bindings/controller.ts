@@ -194,9 +194,13 @@ export class ReconciliationController {
   /**
    * Serialize -> reconcile -> apply. Used on Enter, blur, commands, and before
    * saving. Pass mode 'self-heal' for undo/redo-originated reconciles: formulas
-   * recompute, fields are left exactly as history restored them.
+   * recompute, fields are left exactly as history restored them. Pass
+   * adoptRows: false after undo/redo so a restored row is never re-wrapped.
    */
-  flush({ mode = 'commit' }: { mode?: ReconcileMode } = {}): void {
+  flush({
+    mode = 'commit',
+    adoptRows
+  }: { mode?: ReconcileMode; adoptRows?: boolean } = {}): void {
     this.clearTimeoutFn(this.debounceTimer);
     if (this.phase !== 'idle') {
       this.pendingFlush = true;
@@ -224,7 +228,8 @@ export class ReconciliationController {
       result = applyRules(parsed, {
         prevValues: this.values,
         mode,
-        rowTemplates: this.rowTemplates
+        rowTemplates: this.rowTemplates,
+        ...(adoptRows === false ? { adoptRows: false } : {})
       });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {
@@ -241,7 +246,7 @@ export class ReconciliationController {
     const apply: CommitOptions['apply'] =
       result.sfdt === parsed
         ? 'none'
-        : result.structural
+        : result.structural && adoptRows !== false
         ? 'structural'
         : result.writes.length && this.editor.updateValues
         ? 'patch'

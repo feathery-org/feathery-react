@@ -10,8 +10,10 @@ import {
   Occurrence,
   removeLineItem,
   scanBindings,
+  setAt,
   setOccurrenceText
 } from '../sfdtAdapter';
+import { SfdtRow } from '../sfdtTypes';
 import { buildCostsFixture } from './fixtures/costsFixture';
 
 function occ(
@@ -329,5 +331,32 @@ describe('applyRules', () => {
     // And every write is formula-kind: nothing for the adapter to record.
     expect(result.writes.length).toBeGreaterThan(0);
     expect(result.writes.every((write) => write.kind === 'formula')).toBe(true);
+  });
+
+  it('leaves unbound rows alone when adoptRows is false', () => {
+    const doc = buildCostsFixture();
+    const table = scanBindings(doc).tables.get('costs')!;
+    const last = table.rows[table.rows.length - 1];
+    const rowsPath = last.path.slice(0, -1);
+    const rows = getAt(doc, rowsPath) as SfdtRow[];
+    const at = Number(last.path[last.path.length - 1]) + 1;
+    const withRow = setAt(doc, rowsPath, [
+      ...rows.slice(0, at),
+      {
+        rowFormat: {},
+        cells: [
+          { blocks: [{ inlines: [{ characterFormat: {}, text: 'Extra' }] }] },
+          { blocks: [{ inlines: [{ characterFormat: {}, text: '1' }] }] },
+          { blocks: [{ inlines: [{ characterFormat: {}, text: '10' }] }] },
+          { blocks: [{ inlines: [{ characterFormat: {}, text: '' }] }] }
+        ]
+      },
+      ...rows.slice(at)
+    ]);
+
+    expect(applyRules(withRow).structural).toBe(true);
+    const result = applyRules(withRow, { adoptRows: false });
+    expect(result.structural).toBe(false);
+    expect(result.structuralMutations).toEqual([]);
   });
 });

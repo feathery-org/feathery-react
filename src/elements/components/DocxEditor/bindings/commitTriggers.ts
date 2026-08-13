@@ -24,10 +24,11 @@
 // Undo and redo are the subtle case. History has just restored field cells to
 // exactly what the user expects to see, so that must not be treated as a pending
 // edit. Instead a formulas-only reconcile runs shortly after, which recomputes
-// totals without rewriting fields: a recorded rewrite there would clear the redo
-// stack, and a suppressed one would corrupt undo. Debounced because one undo can
-// fire several contentChange events, and it covers the toolbar buttons as well as
-// the hotkeys.
+// totals without rewriting fields or adopting rows: a recorded rewrite there
+// would clear the redo stack, a suppressed one would corrupt undo, and
+// insertContentControl on a restored cell hides the original binding. Debounced
+// because one undo can fire several contentChange events, and it covers the
+// toolbar buttons as well as the hotkeys.
 //
 // Framework-free on purpose: React wiring belongs to the hook that calls this.
 
@@ -117,7 +118,7 @@ export function createCommitTriggers(
         pendingEdit = false;
         clearTimeoutFn(selfHealTimer);
         selfHealTimer = setTimeoutFn(
-          () => controller.flush({ mode: 'self-heal' }),
+          () => controller.flush({ mode: 'self-heal', adoptRows: false }),
           selfHealDelayMs
         );
         return;
@@ -132,6 +133,8 @@ export function createCommitTriggers(
     },
 
     onSelectionChange(): void {
+      const history = editor.editorHistoryModule;
+      if (history && (history.isUndoing || history.isRedoing)) return;
       if (!pendingEdit || controller.phase !== 'idle') return;
       const path = currentBlockPath();
       const movedBlock =
