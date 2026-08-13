@@ -42,6 +42,20 @@ describe('loadGoogleFonts', () => {
     );
   });
 
+  it('retries a family on a later call if its stylesheet failed to load', () => {
+    // Arrange
+    loadGoogleFonts(['Lato:400']);
+    const [link] = getFontLinks();
+
+    // Act — transient network failure on the stylesheet request
+    link.dispatchEvent(new Event('error'));
+    loadGoogleFonts(['Lato:400']);
+
+    // Assert — failed link removed, fresh request issued
+    expect(getFontLinks()).toHaveLength(1);
+    expect(getFontLinks()[0]).not.toBe(link);
+  });
+
   it('does not re-request a family it already loaded', () => {
     // Arrange
     loadGoogleFonts(['Inter:400']);
