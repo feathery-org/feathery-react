@@ -67,6 +67,8 @@ export const getFormContext = (formUuid: string) => {
       });
     },
     setProgress: (val: any) => formState.setUserProgress(val),
+    openDataMapping: ({ hubs }: { hubs: any[] }) =>
+      formState.setDataMappingState?.({ show: true, hubs }),
     updateUserId,
     updateTheme,
     goToStep: (stepKey: any) => {
@@ -217,14 +219,24 @@ export const getFormContext = (formUuid: string) => {
       operation,
       entryId,
       data,
-      where
-    }: HubActionOptions) =>
+      where,
+      includeDrafts,
+      skipValidation
+    }: // Not in @feathery/client-utils' HubActionOptions yet. `rows` and
+    // `fuserKey` are deliberately not forwarded - writing drafts is the mapping
+    // modal's job and the fuser always comes from the current user.
+    HubActionOptions & {
+      includeDrafts?: 'all' | 'onlyDrafts';
+      skipValidation?: boolean;
+    }) =>
       formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
         data,
-        where
+        where,
+        includeDrafts,
+        skipValidation
       }),
     generateDocuments: ({
       documentIds,
