@@ -17,6 +17,7 @@ import LoginForm from './auth/LoginForm';
 import useAuthClient from './auth/useAuthClient';
 import { AssistantChat } from './assistant';
 import { resolveLabelStyle } from './elements/utils/labelStyleResolver';
+import { getImageAltText } from './utils/accessibility';
 import DocxEditor, { DocxEditorProps } from './elements/components/DocxEditor';
 import './utils/polyfills';
 
@@ -81,6 +82,7 @@ export {
   setFieldValues,
   getFieldValues,
   resolveLabelStyle,
+  getImageAltText,
   renderAt,
   LoginForm,
   useAuthClient,
