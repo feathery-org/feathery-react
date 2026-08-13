@@ -3584,6 +3584,35 @@ function tableInsertionSfdt() {
 }
 
 describe('tracked inserts never author deletions', () => {
+  it('real SDK: a plain-table cell replacement keeps one native change card', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'plain-table-cell',
+        edits: [
+          {
+            op: 'set_cell_text',
+            anchor: '0;1;1;1;0',
+            text: '2 King St W'
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'set_cell_text',
+        route: 'editor'
+      });
+      expect(revisionTypes(ed).sort()).toEqual(['Deletion', 'Insertion']);
+      const cards = listRevisionGroups(ed as unknown as LiveEditor);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].items).toHaveLength(1);
+      expect(blockTexts(ed)).toContain('2 King St W');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: pure insert_text before the Premium Summary title creates no Deletion revision and reject restores the heading byte-for-byte', () => {
     const ed = makeRealDocumentEditor(premiumSummaryHeadingSfdt());
     try {
@@ -3650,9 +3679,13 @@ describe('tracked inserts never author deletions', () => {
 
       expect(result.results[0]).toMatchObject({
         ok: true,
-        op: 'replace_text'
+        op: 'replace_text',
+        route: 'editor'
       });
       expect(revisionTypes(ed).sort()).toEqual(['Deletion', 'Insertion']);
+      const cards = listRevisionGroups(ed as unknown as LiveEditor);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].items).toHaveLength(1);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -3769,8 +3802,20 @@ describe('insert_table requires same-batch cell writes', () => {
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'new-section-before-summary',
         edits: [
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'New Section' },
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Policy Information' },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'New Section'
+          },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'Policy Information'
+          },
           {
             op: 'insert_table',
             group,
@@ -3783,7 +3828,13 @@ describe('insert_table requires same-batch cell writes', () => {
               ['P-123', '2026 - 2027']
             ]
           },
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Coverages' },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'Coverages'
+          },
           {
             op: 'insert_table',
             group,
@@ -3804,7 +3855,13 @@ describe('insert_table requires same-batch cell writes', () => {
               quotedText: 'First $100, Second $200, Third $300'
             }
           },
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Deductibles' },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'Deductibles'
+          },
           {
             op: 'insert_table',
             group,

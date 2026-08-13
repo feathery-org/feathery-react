@@ -138,6 +138,40 @@ function readValues(
   return { values, errors };
 }
 
+function groupedRevisionIds(sfdt: SfdtDocument): Set<string> {
+  const ids = new Set<string>();
+  const revisions = Array.isArray(sfdt.revisions) ? sfdt.revisions : [];
+  for (const revision of revisions as any[]) {
+    if (revision?.customData == null || revision.customData === '') continue;
+    const id = revision.revisionId ?? revision.revisionID;
+    if (id != null) ids.add(String(id));
+  }
+  return ids;
+}
+
+function allRevisionIds(sfdt: SfdtDocument): Set<string> {
+  const ids = new Set<string>();
+  const revisions = Array.isArray(sfdt.revisions) ? sfdt.revisions : [];
+  for (const revision of revisions as any[]) {
+    const id = revision?.revisionId ?? revision?.revisionID;
+    if (id != null) ids.add(String(id));
+  }
+  return ids;
+}
+
+function referencesRevisionId(node: any, ids: Set<string>): boolean {
+  if (!node || !ids.size) return false;
+  if (Array.isArray(node))
+    return node.some((entry) => referencesRevisionId(entry, ids));
+  if (typeof node !== 'object') return false;
+  if (
+    Array.isArray(node.revisionIds) &&
+    node.revisionIds.some((id: unknown) => ids.has(String(id)))
+  )
+    return true;
+  return Object.values(node).some((value) => referencesRevisionId(value, ids));
+}
+
 /** Formula node id: doc-level formulas by name, row formulas by row scope. */
 function nodeId(occurrence: Occurrence): string {
   return occurrence.tableId
@@ -187,6 +221,8 @@ export function applyRules(
   let structural = false;
   let next = sfdt;
   let index = scanBindings(next);
+  const groupedRevisions = groupedRevisionIds(sfdt);
+  const revisions = allRevisionIds(sfdt);
 
   /* ---- 0. adopt rows the user inserted with native editor tools ----
      A data row without any bindings gets its column bindings and formulas
@@ -298,8 +334,17 @@ export function applyRules(
     for (const occurrence of parsed) {
       const rendered = renderDisplay(occurrence.def.fieldType, txValue);
       if (values.get(occurrence.key) !== txValue) {
-        next = setOccurrenceText(next, occurrence, rendered);
-        setWrite(occurrence.tag, rendered, 'sync');
+        // A grouped tracked replacement serializes as old Deletion plus new
+        // Insertion runs. scanBindings projects it to the visible new value;
+        // keep that pair intact while still repairing stale siblings. Ungrouped
+        // adapter normalization keeps its established collapsed-write path.
+        if (
+          occurrence.text !== rendered ||
+          !referencesRevisionId(getAt(next, occurrence.path), groupedRevisions)
+        ) {
+          next = setOccurrenceText(next, occurrence, rendered);
+          setWrite(occurrence.tag, rendered, 'sync');
+        }
       } else if (mode === 'commit' && occurrence.text !== rendered) {
         next = setOccurrenceText(next, occurrence, rendered);
         setWrite(occurrence.tag, rendered, 'field');
@@ -322,7 +367,13 @@ export function applyRules(
         occurrence.def.fieldType,
         values.get(occurrence.key) as string
       );
-      if (occurrence.text !== rendered) {
+      const node = getAt(next, occurrence.path);
+      const hasPendingRevision = referencesRevisionId(node, revisions);
+      const hasGroupedRevision = referencesRevisionId(node, groupedRevisions);
+      if (
+        occurrence.text !== rendered ||
+        (hasPendingRevision && !hasGroupedRevision)
+      ) {
         next = setOccurrenceText(next, occurrence, rendered);
         writes.set(occurrence.tag, { text: rendered, kind: 'field' });
       }

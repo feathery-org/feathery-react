@@ -82,6 +82,13 @@ const indexOf = (editor: DocumentEditor) => scanBindings(parsed(editor));
 const rowIdsOf = (editor: DocumentEditor, tableId: string): string[] =>
   (indexOf(editor).tables.get(tableId)?.rows ?? []).map((row) => row.rowId);
 
+const rejectAllRevisions = (editor: DocumentEditor): void => {
+  const pending = Array.from({ length: editor.revisions.length }, (_, index) =>
+    editor.revisions.get(index)
+  );
+  for (const revision of pending.reverse()) revision.reject();
+};
+
 // Row 2 is the last DATA row of the costs table; rows 3-5 are the summary band.
 const LAST_DATA_CELL = '0;2;2;0;0';
 const FIRST_DATA_CELL = '0;2;1;0;0';
@@ -120,6 +127,25 @@ describe('structural ops on a bound table', () => {
     expect(textAt(editor, '0;2;3;0;0')).toBe('');
     expect(textAt(editor, '0;2;3;3;0')).toBe('$0.00');
     expect(textAt(editor, '0;2;4;1;0')).toBe('$7,800.00');
+  });
+
+  it('creates a rejectable revision for a bound row insert', () => {
+    const before = editor.serialize();
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-row-review',
+      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL }]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(editor.revisions.length).toBeGreaterThan(0);
+    expect(rowIdsOf(editor, 'costs')).toHaveLength(3);
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(editor.revisions.length).toBe(0);
+    expect(rowIdsOf(editor, 'costs')).toEqual(['r-1', 'r-2']);
+    expect(editor.serialize()).toBe(before);
   });
 
   it('fills a row inserted earlier in the same change set', () => {
@@ -336,11 +362,48 @@ describe('structural ops on a bound table', () => {
       route: 'engine'
     });
     expect(rowIdsOf(editor, 'costs')).toEqual(['r-2']);
-    expect(textAt(editor, '0;2;1;0;0')).toBe('Development');
-    expect(textAt(editor, '0;2;2;1;0')).toBe('$6,000.00');
+    // A tracked deletion keeps the old row in raw SFDT until review, so the
+    // retained row keeps its physical row anchor until the deletion is accepted.
+    expect(textAt(editor, '0;2;2;0;0')).toBe('Development');
+    expect(textAt(editor, '0;2;3;1;0')).toBe('$6,000.00');
     expect(textAt(editor, '0;4')).toBe(
       'Amount due for Website relaunch: $6,000.00.'
     );
+  });
+
+  it('creates a rejectable revision for a bound row delete', () => {
+    const before = editor.serialize();
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-row-delete-review',
+      edits: [{ op: 'delete_row', anchor: FIRST_DATA_CELL }]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    const revisions = Array.from(
+      { length: editor.revisions.length },
+      (_, index) => editor.revisions.get(index)
+    );
+    expect(revisions).toHaveLength(9);
+    expect(
+      revisions.filter((revision) => revision.revisionType === 'Deletion')
+    ).toHaveLength(5);
+    expect(
+      revisions.filter((revision) => revision.revisionType === 'Insertion')
+    ).toHaveLength(4);
+    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
+      true
+    );
+    expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
+      1
+    );
+    expect(rowIdsOf(editor, 'costs')).toEqual(['r-2']);
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(editor.revisions.length).toBe(0);
+    expect(rowIdsOf(editor, 'costs')).toEqual(['r-1', 'r-2']);
+    expect(editor.serialize()).toBe(before);
   });
 
   it('refuses delete_row on a summary row that carries no row binding', () => {
@@ -371,7 +434,27 @@ describe('structural ops on a bound table', () => {
     const index = indexOf(editor);
     expect(index.tables.has('expenses')).toBe(false);
     expect(index.tables.has('costs')).toBe(true);
-    // The marker went with the table: no orphaned content control is left behind.
-    expect(editor.serialize()).not.toContain('[[table=expenses]]');
+    // The marker remains only as rejectable deleted content until review.
+    expect(editor.serialize()).toContain('[[table=expenses]]');
+  });
+
+  it('creates a rejectable revision for a bound table delete', () => {
+    const before = editor.serialize();
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-table-delete-review',
+      edits: [{ op: 'delete_table', anchor: '0;6;1;0;0' }]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(editor.revisions.length).toBe(1);
+    expect(editor.revisions.get(0).revisionType).toBe('Deletion');
+    expect(indexOf(editor).tables.has('expenses')).toBe(false);
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(editor.revisions.length).toBe(0);
+    expect(indexOf(editor).tables.has('expenses')).toBe(true);
+    expect(editor.serialize()).toBe(before);
   });
 });

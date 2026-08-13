@@ -15,10 +15,25 @@
 import 'jest-canvas-mock';
 import { flattenSfdt, getDocumentInventory } from '../syncfusionDocumentOps';
 import { buildCostsFixture } from '../../../../elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
+import {
+  getAt,
+  scanBindings
+} from '../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
 
 const flatten = () => flattenSfdt(buildCostsFixture() as any);
 const byAnchor = (anchor: string) =>
   flatten().find((block) => block.anchor === anchor);
+
+const legacyControlText = (node: any): string =>
+  (node?.inlines ?? [])
+    .map((inline: any) =>
+      inline?.contentControlProperties
+        ? legacyControlText(inline)
+        : typeof inline?.text === 'string'
+        ? inline.text
+        : ''
+    )
+    .join('');
 
 describe('reading a bound document', () => {
   it('sees text held inside bound fields', () => {
@@ -149,6 +164,50 @@ describe('reading a bound document', () => {
     };
     const inventory = getDocumentInventory(editor as any, { scope: 'full' });
     expect(JSON.stringify(inventory)).not.toContain('"binding"');
+  });
+
+  it('round-trips a bindings-free document with identical reads', () => {
+    const plain = {
+      sections: [
+        {
+          blocks: [
+            { inlines: [{ text: 'Before' }] },
+            {
+              rows: [
+                {
+                  cells: [{ blocks: [{ inlines: [{ text: 'Plain cell' }] }] }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+    const before = flattenSfdt(plain as any);
+    const serialized = JSON.stringify(plain);
+    const roundTripped = JSON.parse(serialized);
+
+    expect(flattenSfdt(roundTripped)).toEqual(before);
+    expect(JSON.stringify(roundTripped)).toBe(serialized);
+    expect(scanBindings(roundTripped).occurrences).toEqual([]);
+  });
+
+  it('reads a bound document with zero revisions exactly as legacy concatenation did', () => {
+    const sfdt: any = buildCostsFixture();
+    expect(sfdt.revisions ?? []).toEqual([]);
+
+    const before = scanBindings(sfdt);
+    for (const occurrence of before.occurrences)
+      expect(occurrence.text).toBe(
+        legacyControlText(getAt(sfdt, occurrence.path))
+      );
+
+    const after = scanBindings(JSON.parse(JSON.stringify(sfdt)));
+    expect(
+      after.occurrences.map((occurrence) => [occurrence.key, occurrence.text])
+    ).toEqual(
+      before.occurrences.map((occurrence) => [occurrence.key, occurrence.text])
+    );
   });
 });
 

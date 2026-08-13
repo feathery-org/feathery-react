@@ -92,6 +92,57 @@ const textAt = (editor: DocumentEditor, anchor: string): string | undefined =>
     (block) => block.anchor === anchor
   )?.text;
 
+const controlByTag = (node: any, tag: string): any => {
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      const found = controlByTag(entry, tag);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!node || typeof node !== 'object') return undefined;
+  if (node.contentControlProperties?.tag === tag) return node;
+  for (const value of Object.values(node)) {
+    const found = controlByTag(value, tag);
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const controlByName = (node: any, name: string): any => {
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      const found = controlByName(entry, name);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!node || typeof node !== 'object') return undefined;
+  if (
+    String(node.contentControlProperties?.tag ?? '').startsWith(
+      `[[name=${name}|`
+    )
+  )
+    return node;
+  for (const value of Object.values(node)) {
+    const found = controlByName(value, name);
+    if (found) return found;
+  }
+  return undefined;
+};
+
+const rejectAllRevisions = (editor: DocumentEditor): void => {
+  const pending = Array.from({ length: editor.revisions.length }, (_, index) =>
+    editor.revisions.get(index)
+  );
+  for (const revision of pending.reverse()) revision.reject();
+};
+
+const liveRevisions = (editor: DocumentEditor) =>
+  Array.from({ length: editor.revisions.length }, (_, index) =>
+    editor.revisions.get(index)
+  );
+
 describe('writes aimed at a bound cell', () => {
   let editor: DocumentEditor;
   let attached: AttachedBindings;
@@ -129,12 +180,173 @@ describe('writes aimed at a bound cell', () => {
     expect(tagsIn(editor)).toHaveLength(before);
     expect(textAt(editor, QUANTITY_CELL)).toBe('20');
     expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,000.00');
+    const quantity = controlByTag(
+      JSON.parse(editor.serialize()),
+      '[[name=quantity|type=integer|row=r-1]]'
+    );
+    expect(quantity.inlines.map((inline: any) => inline.text)).toEqual([
+      '12',
+      '20'
+    ]);
+    expect(
+      quantity.inlines.every(
+        (inline: any) =>
+          Array.isArray(inline.revisionIds) && inline.revisionIds.length === 1
+      )
+    ).toBe(true);
     expect(textAt(editor, '0;2;3;1;0')).toBe('$9,000.00');
     expect(textAt(editor, '0;4')).toBe(
       'Amount due for Website relaunch: $9,000.00.'
     );
     expect(textAt(editor, '0;8')).toBe(
       'Combined total (costs + expenses): $10,700.00.'
+    );
+  });
+
+  it('creates a rejectable revision for a bound input and restores its dependents on reject', () => {
+    const before = editor.serialize();
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-input-review',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '20',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    const revisions = liveRevisions(editor);
+    expect(revisions).toHaveLength(12);
+    expect(
+      revisions.filter((revision) => revision.revisionType === 'Deletion')
+    ).toHaveLength(6);
+    expect(
+      revisions.filter((revision) => revision.revisionType === 'Insertion')
+    ).toHaveLength(6);
+    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
+      true
+    );
+    expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
+      1
+    );
+    const sfdt = JSON.parse(editor.serialize());
+    const quantity = controlByTag(
+      sfdt,
+      '[[name=quantity|type=integer|row=r-1]]'
+    );
+    const lineTotal = controlByName(sfdt, 'line_total');
+    expect(quantity.inlines.map((inline: any) => inline.text)).toEqual([
+      '12',
+      '20'
+    ]);
+    expect(lineTotal.inlines.map((inline: any) => inline.text)).toEqual([
+      '$1,800.00',
+      '$3,000.00'
+    ]);
+    const quantityRevisionIds = quantity.inlines.flatMap(
+      (inline: any) => inline.revisionIds ?? []
+    );
+    expect(
+      sfdt.revisions
+        .filter((revision: any) =>
+          quantityRevisionIds.includes(revision.revisionId)
+        )
+        .map((revision: any) => revision.revisionType)
+    ).toEqual(['Deletion', 'Insertion']);
+    expect(textAt(editor, QUANTITY_CELL)).toBe('20');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,000.00');
+
+    const authoredRevisionIds = revisions.map(
+      (revision) => revision.revisionID
+    );
+    attached.controller.flush();
+    expect(
+      liveRevisions(editor).map((revision) => revision.revisionID)
+    ).toEqual(authoredRevisionIds);
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(editor.revisions.length).toBe(0);
+    expect(textAt(editor, QUANTITY_CELL)).toBe('12');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$1,800.00');
+    expect(editor.serialize()).toBe(before);
+  });
+
+  it('collapses a superseded pending value to one pair that still rejects to the original', () => {
+    const before = editor.serialize();
+    const first = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-value-first',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '20',
+          literal: true
+        }
+      ]
+    });
+    expect(first.results[0]).toMatchObject({ ok: true, route: 'engine' });
+
+    const second = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-value-second',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '25',
+          literal: true
+        }
+      ]
+    });
+
+    expect(second.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(editor.revisions.length).toBe(12);
+    expect(textAt(editor, QUANTITY_CELL)).toBe('25');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,750.00');
+    expect(
+      controlByTag(
+        JSON.parse(editor.serialize()),
+        '[[name=quantity|type=integer|row=r-1]]'
+      ).inlines.map((inline: any) => inline.text)
+    ).toEqual(['12', '25']);
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(textAt(editor, QUANTITY_CELL)).toBe('12');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$1,800.00');
+    expect(editor.serialize()).toBe(before);
+  });
+
+  it('keeps a bound input and its dependents after accepting their shared group', () => {
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-input-accept',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '20',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(editor.revisions.length).toBe(12);
+
+    editor.revisions.acceptAll();
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(editor.revisions.length).toBe(0);
+    expect(textAt(editor, QUANTITY_CELL)).toBe('20');
+    expect(textAt(editor, LINE_TOTAL_CELL)).toBe('$3,000.00');
+    expect(textAt(editor, '0;2;3;1;0')).toBe('$9,000.00');
+    expect(textAt(editor, '0;4')).toBe(
+      'Amount due for Website relaunch: $9,000.00.'
     );
   });
 
@@ -233,6 +445,9 @@ describe('writes aimed at a bound cell', () => {
       route: 'editor'
     });
     expect(editor.serialize()).toContain('Cost estimate v2');
+    expect(
+      liveRevisions(editor).map((revision) => revision.revisionType)
+    ).toEqual(['Deletion', 'Insertion']);
   });
 
   it('preflights mixed editor and engine batches before either route writes', () => {

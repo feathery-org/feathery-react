@@ -26,11 +26,10 @@
 // with it the binding. Every result says which route it took:
 //
 //   - `route: 'engine'` - the binding engine performed the write inside one
-//     transaction, then recomputed every formula that depended on it. Engine
-//     transactions author no revision, so they are not reviewable cards and
-//     cannot be rolled back after the fact; a batch mixing both routes is
-//     all-or-nothing, and editor-routed edits are undone if the engine
-//     transaction fails.
+//     transaction, then recomputed every formula that depended on it. The SFDT
+//     diff is opened with first-class revisions, so the input and its dependent
+//     formulas are one reviewable group. A batch mixing both routes remains
+//     all-or-nothing, and editor-routed edits are undone if the engine fails.
 //   - `route: 'editor'` - the ordinary tracked write above, unchanged.
 //
 // Bindings do not lock a document down wholesale: an op that touches nothing
@@ -98,6 +97,7 @@ import {
   parseDisplay,
   renderDisplay
 } from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
+import { applyRules as applyBindingRules } from '../../../elements/components/DocxEditor/bindings/core/engine';
 import {
   collectRefs,
   parseExpression
@@ -10965,9 +10965,25 @@ function groupNewRevisions(
   before: LiveRevision[],
   changeSetId: string,
   restoresByGroup?: Map<string, AppearanceRestore[]>,
-  stylesByGroup?: Map<string, ParagraphStyleRestore[]>
+  stylesByGroup?: Map<string, ParagraphStyleRestore[]>,
+  revisionsWereReloaded = false
 ): RevisionGroupingReport {
-  const created = createdRevisions(editor, before);
+  const created = revisionsWereReloaded
+    ? (() => {
+        // Binding commands reload one SFDT. Syncfusion recreates live Revision
+        // objects during open(), so persisted ids are their stable identity.
+        const beforeIds = new Set(
+          before
+            .map((revision) => revision.revisionID)
+            .filter((id): id is string => typeof id === 'string' && !!id)
+        );
+        return snapshotRevisions(editor).filter((revision) =>
+          revision.revisionID
+            ? !beforeIds.has(revision.revisionID)
+            : !before.includes(revision)
+        );
+      })()
+    : createdRevisions(editor, before);
   const revisionsByGroup = new Map<string, number>();
   const appearanceGroups = new Set<string>();
   if (!created.length)
@@ -11433,9 +11449,8 @@ interface EngineMutationPlan {
   /**
    * Every figure this plan writes on the strength of a declared provenance, with
    * the cell each one licenses. Carried on the PLAN rather than on the result
-   * because an engine transaction authors no revision and cannot be rolled back
-   * after the fact: the single-use licence for a user-stated figure has to be
-   * judged before the transaction runs.
+   * so the single-use licence for a user-stated figure is judged before the
+   * all-or-nothing engine transaction runs.
    */
   literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
   execute(state: EngineMutationState): EngineMutationOutcome;
@@ -11471,6 +11486,260 @@ interface BoundDuplicateRowValue {
 
 interface BoundDuplicateRowPlan {
   values: BoundDuplicateRowValue[];
+}
+
+let synthesizedRevisionSequence = 0;
+
+function freshSynthesizedRevisionId(): string {
+  synthesizedRevisionSequence += 1;
+  return `robin-${Date.now().toString(
+    36
+  )}-${synthesizedRevisionSequence.toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
+function occurrenceBuckets(index: BindingIndex): Map<string, Occurrence[]> {
+  const buckets = new Map<string, Occurrence[]>();
+  for (const occurrence of index.occurrences) {
+    const bucket = buckets.get(occurrence.tag);
+    if (bucket) bucket.push(occurrence);
+    else buckets.set(occurrence.tag, [occurrence]);
+  }
+  return buckets;
+}
+
+function trackedRun(
+  node: any,
+  text: string,
+  revisionId: string
+): Record<string, unknown> {
+  const source = (node?.inlines ?? []).find(
+    (inline: any) => inline && typeof inline.text === 'string'
+  );
+  return {
+    ...(source?.characterFormat
+      ? { characterFormat: cloneJson(source.characterFormat) }
+      : {}),
+    text,
+    revisionIds: [revisionId]
+  };
+}
+
+function revisionIdsInNode(node: any, out = new Set<string>()): Set<string> {
+  if (Array.isArray(node)) {
+    node.forEach((entry) => revisionIdsInNode(entry, out));
+    return out;
+  }
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node.revisionIds))
+    node.revisionIds.forEach((id: unknown) => out.add(String(id)));
+  Object.values(node).forEach((value) => revisionIdsInNode(value, out));
+  return out;
+}
+
+/**
+ * Turn one pure binding transaction into first-class Syncfusion revisions.
+ * Reconciliation has already run, so the diff includes the authored value and
+ * every dependent formula. scanBindings projects each pair to its Insertion
+ * run while review is pending.
+ */
+function synthesizeBoundCommandRevisions(
+  before: any,
+  after: any,
+  changeSetId: string,
+  op: EditOp
+): any {
+  const beforeIndex = scanBindings(before);
+  const afterIndex = scanBindings(after);
+  const beforeByTag = occurrenceBuckets(beforeIndex);
+  const seenByTag = new Map<string, number>();
+  let revisions = [...(Array.isArray(after.revisions) ? after.revisions : [])];
+  let next = after;
+  let synthesized = false;
+  const date = new Date().toISOString();
+  const customData = revisionGroupTag(changeSetId, opGroupId(op, changeSetId));
+  const addRevision = (
+    revisionType: 'Insertion' | 'Deletion',
+    revisionId: string
+  ) => {
+    synthesized = true;
+    revisions.push({
+      author: ASSISTANT_DOCUMENT_AUTHOR,
+      date,
+      revisionType,
+      revisionId,
+      customData
+    });
+  };
+
+  for (const occurrence of afterIndex.occurrences) {
+    const ordinal = seenByTag.get(occurrence.tag) ?? 0;
+    seenByTag.set(occurrence.tag, ordinal + 1);
+    const previous = beforeByTag.get(occurrence.tag)?.[ordinal];
+    if (!previous || previous.text === occurrence.text) continue;
+
+    const deletionId = freshSynthesizedRevisionId();
+    const insertionId = freshSynthesizedRevisionId();
+    const oldNode = getAt(before, previous.path);
+    const newNode = getAt(next, occurrence.path);
+    const superseded = revisionIdsInNode(oldNode);
+    const originalText = superseded.size
+      ? inlineText(oldNode?.inlines ?? [], insertedRevisionIds(before))
+      : previous.text;
+    if (superseded.size)
+      revisions = revisions.filter((revision: any) => {
+        const id = revision?.revisionId ?? revision?.revisionID;
+        return id == null || !superseded.has(String(id));
+      });
+    next = setAt(next, occurrence.path, {
+      ...newNode,
+      inlines: [
+        trackedRun(oldNode, originalText, deletionId),
+        trackedRun(newNode, occurrence.text, insertionId)
+      ]
+    });
+    addRevision('Deletion', deletionId);
+    addRevision('Insertion', insertionId);
+  }
+
+  const beforeTables = beforeIndex.tables;
+  const afterTables = afterIndex.tables;
+  const insertedTableIds = new Set(
+    [...afterTables.keys()].filter((tableId) => !beforeTables.has(tableId))
+  );
+  const deletedTableIds = new Set(
+    [...beforeTables.keys()].filter((tableId) => !afterTables.has(tableId))
+  );
+
+  for (const tableId of insertedTableIds) {
+    const table = afterTables.get(tableId);
+    if (!table?.tablePath) continue;
+    const revisionId = freshSynthesizedRevisionId();
+    const rawTable = cloneJson(getAt(next, table.tablePath));
+    rawTable.rows = (rawTable.rows ?? []).map((row: any) => ({
+      ...row,
+      rowFormat: {
+        ...(row.rowFormat ?? {}),
+        revisionIds: [revisionId]
+      }
+    }));
+    next = setAt(next, table.tablePath, rawTable);
+    // The duplicate-table separator is part of the same insertion card.
+    const parentPath = table.markerPath.slice(0, -1);
+    const at = Number(table.markerPath[table.markerPath.length - 1]);
+    const siblings = getAt(next, parentPath);
+    const separator = Array.isArray(siblings) ? siblings[at - 1] : undefined;
+    if (
+      separator &&
+      Array.isArray(separator.inlines) &&
+      separator.inlines.length === 0
+    ) {
+      next = setAt(next, [...parentPath, at - 1], {
+        ...separator,
+        characterFormat: {
+          ...(separator.characterFormat ?? {}),
+          revisionIds: [revisionId]
+        }
+      });
+    }
+    addRevision('Insertion', revisionId);
+  }
+
+  for (const [tableId, afterTable] of afterTables) {
+    if (insertedTableIds.has(tableId) || !afterTable.tablePath) continue;
+    const beforeTable = beforeTables.get(tableId);
+    if (!beforeTable) continue;
+    const beforeRows = new Map(
+      beforeTable.rows
+        .filter((row) => row.rowId)
+        .map((row) => [row.rowId as string, row])
+    );
+    const afterRows = new Map(
+      afterTable.rows
+        .filter((row) => row.rowId)
+        .map((row) => [row.rowId as string, row])
+    );
+
+    const inserted = [...afterRows.keys()].filter(
+      (rowId) => !beforeRows.has(rowId)
+    );
+    if (inserted.length) {
+      const revisionId = freshSynthesizedRevisionId();
+      for (const rowId of inserted) {
+        const row = afterRows.get(rowId);
+        if (!row?.path) continue;
+        const rawRow = getAt(next, row.path);
+        next = setAt(next, row.path, {
+          ...rawRow,
+          rowFormat: {
+            ...(rawRow.rowFormat ?? {}),
+            revisionIds: [revisionId]
+          }
+        });
+      }
+      addRevision('Insertion', revisionId);
+    }
+
+    const deleted = [...beforeRows.entries()]
+      .filter(([rowId]) => !afterRows.has(rowId))
+      .map(([, row]) => row)
+      .filter((row) => row.path)
+      .sort((left, right) => {
+        const leftPath = left.path as any[];
+        const rightPath = right.path as any[];
+        return (
+          Number(leftPath[leftPath.length - 1]) -
+          Number(rightPath[rightPath.length - 1])
+        );
+      });
+    if (deleted.length) {
+      const revisionId = freshSynthesizedRevisionId();
+      const rawTable = cloneJson(getAt(next, afterTable.tablePath));
+      const rows = [...(rawTable.rows ?? [])];
+      for (const row of deleted) {
+        const rowPath = row.path as any[];
+        const at = Number(rowPath[rowPath.length - 1]);
+        const oldRow = cloneJson(getAt(before, rowPath));
+        oldRow.rowFormat = {
+          ...(oldRow.rowFormat ?? {}),
+          revisionIds: [revisionId]
+        };
+        rows.splice(at, 0, oldRow);
+      }
+      rawTable.rows = rows;
+      next = setAt(next, afterTable.tablePath, rawTable);
+      addRevision('Deletion', revisionId);
+    }
+  }
+
+  for (const tableId of deletedTableIds) {
+    const table = beforeTables.get(tableId);
+    if (!table) continue;
+    const revisionId = freshSynthesizedRevisionId();
+    const wrapper = cloneJson(getAt(before, table.markerPath));
+    const rawTable = firstTableBlockIn(wrapper);
+    if (rawTable)
+      rawTable.rows = (rawTable.rows ?? []).map((row: any) => ({
+        ...row,
+        rowFormat: {
+          ...(row.rowFormat ?? {}),
+          revisionIds: [revisionId]
+        }
+      }));
+    const parentPath = table.markerPath.slice(0, -1);
+    const at = Number(table.markerPath[table.markerPath.length - 1]);
+    const siblings = getAt(next, parentPath);
+    if (Array.isArray(siblings))
+      next = setAt(next, parentPath, [
+        ...siblings.slice(0, at),
+        wrapper,
+        ...siblings.slice(at)
+      ]);
+    addRevision('Deletion', revisionId);
+  }
+
+  return synthesized ? { ...next, revisions } : next;
 }
 
 const BOUND_TEXT_WRITE_OPS = new Set([
@@ -18911,9 +19180,9 @@ function applyDocumentEditsMeasured(
       }
 
       if (enginePlans.length) {
-        // Judged here, not in the post-write pass: an engine transaction leaves
-        // no revision to reject, so a licence violation has to stop the
-        // transaction rather than be reported over a write that already landed.
+        // Judged here, not in the post-write pass: a licence violation must stop
+        // the all-or-nothing transaction rather than be reported over a write
+        // that already landed.
         const reusedFigure = findReusedUserStatedFigureInPlans(
           results,
           enginePlans
@@ -18959,6 +19228,7 @@ function applyDocumentEditsMeasured(
                 'The binding command bridge detached before the engine transaction could run. Nothing was kept.'
               );
             const engineResult = surface.runCommand((sfdt, index) => {
+              const beforeCommand = sfdt;
               let state: EngineMutationState = {
                 sfdt,
                 index: index ?? scanBindings(sfdt)
@@ -18973,7 +19243,17 @@ function applyDocumentEditsMeasured(
                 };
               }
               applyingPlan = undefined;
-              return state.sfdt;
+              // Reconcile before diffing so dependent formulas receive the
+              // same revision group as the input or structural mutation that
+              // drove them. The controller's own pass then validates this
+              // already-reconciled, revision-bearing SFDT before opening it.
+              const reconciled = applyBindingRules(state.sfdt);
+              return synthesizeBoundCommandRevisions(
+                beforeCommand,
+                reconciled.sfdt,
+                changeSetId,
+                enginePlans[0].op
+              );
             });
             refresh(engineResult.sfdt);
             // Reconciliation reopens the SFDT and can leave Syncfusion's caret
@@ -19080,7 +19360,8 @@ function applyDocumentEditsMeasured(
     revisionSnapshot,
     changeSetId,
     appearanceRestoresByGroup,
-    paragraphStylesByGroup
+    paragraphStylesByGroup,
+    enginePlans.length > 0
   );
   const revisionCount = grouping.revisionCount;
   const materializedResults = Array.from(

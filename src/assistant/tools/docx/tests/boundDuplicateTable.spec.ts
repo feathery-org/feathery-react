@@ -78,12 +78,20 @@ const indexOf = (editor: DocumentEditor) => scanBindings(parsed(editor));
 
 const blocks = (sfdt: any) => sfdt.sections[0].blocks;
 
+const rejectAllRevisions = (editor: DocumentEditor): void => {
+  const pending = Array.from({ length: editor.revisions.length }, (_, index) =>
+    editor.revisions.get(index)
+  );
+  for (const revision of pending.reverse()) revision.reject();
+};
+
 function scrubCloneForStyleDiff(node: any): any {
   if (Array.isArray(node)) return node.map(scrubCloneForStyleDiff);
   if (!node || typeof node !== 'object') return node;
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node)) {
     if (key === 'contentControlProperties') continue;
+    if (key === 'revisionIds') continue;
     if (key === 'text') {
       out[key] = '';
       continue;
@@ -180,6 +188,33 @@ describe('duplicate_table over bound tables', () => {
     expect(textAt(editor, '0;8;1;1;0')).toBe('$600.00');
     expect(textAt(editor, '0;6;5;1;0')).toBe('$1,700.00');
     expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
+  });
+
+  it('creates one rejectable structural revision for a bound table duplicate', () => {
+    const before = editor.serialize();
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'bound-duplicate-review',
+      edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(editor.revisions.length).toBeGreaterThan(0);
+    expect(
+      Array.from({ length: editor.revisions.length }, (_, index) =>
+        editor.revisions.get(index)
+      ).every(
+        (revision) =>
+          revision.author === 'Robin' && revision.revisionType === 'Insertion'
+      )
+    ).toBe(true);
+    expect(indexOf(editor).tables.has('expenses_copy')).toBe(true);
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+
+    expect(editor.revisions.length).toBe(0);
+    expect(indexOf(editor).tables.has('expenses_copy')).toBe(false);
+    expect(editor.serialize()).toBe(before);
   });
 
   it('writes every independent instance of a duplicated document field', () => {
