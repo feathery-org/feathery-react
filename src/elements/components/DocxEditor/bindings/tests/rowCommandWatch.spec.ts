@@ -96,6 +96,33 @@ describe('watchRowCommands', () => {
     expect(() => restore()).not.toThrow();
     expect(called).toBe(0);
   });
+
+  it('adopts immediately after the native command, in the same turn', () => {
+    const original = jest.fn(() => 'ok');
+    const editor = fakeEditor(original);
+    const order: string[] = [];
+    original.mockImplementation(() => {
+      order.push('command');
+      return 'ok';
+    });
+
+    watchRowCommands(editor, () => order.push('adopt'));
+    expect((editor as any).editorModule.insertRow(false, 1)).toBe('ok');
+    expect(order).toEqual(['command', 'adopt']);
+  });
+
+  it('does not re-enter when follow-up work itself inserts a row', () => {
+    const original = jest.fn(() => 'ok');
+    const editor = fakeEditor(original);
+    let calls = 0;
+    watchRowCommands(editor, () => {
+      calls += 1;
+      (editor as any).editorModule.insertRow(true, 1);
+    });
+    (editor as any).editorModule.insertRow(false, 1);
+    expect(calls).toBe(1);
+    expect(original).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('onRowsChanged', () => {

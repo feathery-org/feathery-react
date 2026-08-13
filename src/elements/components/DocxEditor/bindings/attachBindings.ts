@@ -25,7 +25,6 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
-import { installHistoryBridge } from './historyBridge';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
@@ -140,23 +139,22 @@ export function attachBindings(
 
   // The assistant writes through its own engine and knows nothing about
   // bindings; this is how its batches get reconciled.
-  registerBindingReconciler(editor, () => controller.flush());
+  registerBindingReconciler(editor, {
+    flush: () => controller.flush(),
+    runCommands: (commands) => controller.runCommands(commands)
+  });
 
   const triggers = createCommitTriggers(editor, controller, {
     ...(setTimeoutFn ? { setTimeoutFn } : {}),
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
-  // Native row commands bypass runCommand, so this is the only signal that the
-  // set of rows changed at all.
-  const unwatchRowCommands = watchRowCommands(editor, () =>
-    triggers.onRowsChanged()
-  );
-  // Adopting that row reloads the document, which wipes native history; without
-  // this, undo has nothing left and the insert cannot be taken back.
-  const uninstallHistoryBridge = installHistoryBridge(editor, {
-    undo: () => controller.undo(),
-    redo: () => controller.redo()
+  // Native insertRow/deleteRow bypass runCommands. The interceptor starts a
+  // Syncfusion history transaction, runs the command, then adopts and
+  // recomputes in the same turn so one user action is one native undo entry.
+  const unwatchRowCommands = watchRowCommands(editor, () => {
+    if (controller.phase !== 'idle') return;
+    controller.flush({ mode: 'self-heal' });
   });
 
   const eventful = editor as EventfulEditor;
@@ -191,7 +189,6 @@ export function attachBindings(
       editableDiv?.removeEventListener?.('blur', onBlur);
       uninstallGuard();
       unwatchRowCommands();
-      uninstallHistoryBridge();
       triggers.dispose();
     }
   };
