@@ -64,7 +64,15 @@ export interface SyncfusionEditorLike {
     handleTextInput?: (text: string) => void;
     [key: string]: unknown;
   };
-  editorHistoryModule?: { isUndoing?: boolean; isRedoing?: boolean };
+  /**
+   * Also reachable as `editor.editorHistory` - that is a getter for this same
+   * object, so patching here is seen by the toolbar and by Ctrl+Z alike.
+   */
+  editorHistoryModule?: {
+    isUndoing?: boolean;
+    isRedoing?: boolean;
+    [key: string]: unknown;
+  };
   selection?: {
     startOffset?: string;
     endOffset?: string;
