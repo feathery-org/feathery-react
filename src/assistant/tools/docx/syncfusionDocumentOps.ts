@@ -17,6 +17,28 @@
 // `"{sectionIndex};{blockIndex};{rowIndex};{cellIndex};{cellBlockIndex}"`. To
 // address a character range inside the block we append `;{offset}` -> the exact
 // string `documentEditor.selection.select(start, end)` consumes.
+//
+// Bound documents take a second route through that apply engine. A document
+// whose content controls carry tags in the binding grammar (see
+// `../../../elements/components/DocxEditor/bindings`) is edited through the
+// binding engine instead of by selecting text and typing over it, because a
+// selection write deletes the content control it lands in - tag and all - and
+// with it the binding. Every result says which route it took:
+//
+//   - `route: 'engine'` - the binding engine performed the write inside one
+//     transaction, then recomputed every formula that depended on it. Engine
+//     transactions author no revision, so they are not reviewable cards and
+//     cannot be rolled back after the fact; a batch mixing both routes is
+//     all-or-nothing, and editor-routed edits are undone if the engine
+//     transaction fails.
+//   - `route: 'editor'` - the ordinary tracked write above, unchanged.
+//
+// Bindings do not lock a document down wholesale: an op that touches nothing
+// bound still takes the editor route in a bound document, and only tags in the
+// binding grammar count, so a .docx carrying ordinary Word content controls
+// keeps exactly the behaviour it had before bindings existed. Reads advertise
+// the same facts: `binding` on an inventory entry, a table, a row or a cell is
+// how the model learns what is computed and what it may write.
 
 // This module is the only document-editing engine that ships in the SDK. Keep
 // fixes here rather than forking a copy into a host application, so the in-form
@@ -195,18 +217,33 @@ export interface DocFormat {
   listLevel?: number;
 }
 
+/**
+ * What a read tells the model about one binding: enough to see that a figure is
+ * computed rather than typed, and which field to change instead.
+ */
 export interface BindingFact {
+  /** The binding's name, i.e. what a formula refers to it by. */
   field: string;
+  /** `formula` is engine-owned and refuses every write; `input` is editable. */
   kind: 'input' | 'formula';
+  /** The expression a formula binding computes, in the engine's vocabulary. */
   expr?: string;
+  /** The bound table this binding belongs to, for a cell inside one. */
   table?: string;
+  /** The bound row id, which survives the row moving or being renumbered. */
   row?: string;
 }
 
+/** The bound identity of a table, on both structure and facts reads. */
 export interface BoundTableFact {
   kind: 'bound';
   tableId: string;
+  /**
+   * The table's bound rows in document order - unbound rows (a header, a totals
+   * row) are not listed. `null` marks a bound row carrying no row id.
+   */
   rowIds: Array<string | null>;
+  /** The names of the table's bound columns. */
   columns: string[];
 }
 
@@ -224,6 +261,7 @@ export interface InventoryEntry {
   kind: string;
   text: string;
   format?: DocFormat;
+  /** Present only when this block's text is a document binding's value. */
   binding?: BindingFact;
 }
 
@@ -347,6 +385,9 @@ export interface StructureTable {
   styled?: true;
   /** The Word table style, when it has one. */
   styleName?: string;
+  /**
+   * Present when the table is bound: structural ops on it route to the engine.
+   */
   binding?: BoundTableFact;
 }
 
@@ -458,6 +499,10 @@ export interface TableCellFact {
    * row costs one appearance object rather than one per cell.
    */
   appearance?: AppearanceFacts;
+  /**
+   * The binding this cell holds, when it holds one. A `formula` cell is written
+   * by changing the inputs it is computed from, never directly.
+   */
   binding?: BindingFact;
 }
 
@@ -485,6 +530,10 @@ export interface TableRowFact {
    * which case each cell carries its own `appearance`.
    */
   appearance?: AppearanceFacts;
+  /**
+   * The row's binding identity, when it has one. `rowId` is what the engine
+   * addresses the row by, so it survives rows above it being added or removed.
+   */
   binding?: { rowId: string | null };
   cells: TableCellFact[];
 }
@@ -523,6 +572,7 @@ export interface TableFacts {
   styleName?: string;
   /** Table-level fill/borders, when set. */
   appearance?: AppearanceFacts;
+  /** Present when the table is bound, with its row ids and bound columns. */
   binding?: BoundTableFact;
   /**
    * Always false. A facts read has no maxEntries and is never capped: layout
@@ -824,6 +874,12 @@ export interface EditResult {
   ok: boolean;
   anchor?: string;
   op: string;
+  /**
+   * Which path the edit took: `engine` for a binding-engine transaction (which
+   * recomputes dependent formulas and authors no revision), `editor` for the
+   * ordinary tracked write. Every applied result carries it; `editor` is the
+   * default, so a document with no bindings reports nothing but `editor`.
+   */
   route?: 'engine' | 'editor';
   error?: string;
   /** The stable content identity moved from the requested anchor before write. */
@@ -12738,6 +12794,22 @@ function planCreatedBoundRowWrite(
   };
 }
 
+/**
+ * The routing decision, taken in preflight before anything is written: an
+ * engine plan when the op touches a binding, `null` when it does not and the
+ * ordinary tracked-editor path should have it.
+ *
+ * Bound is decided by what the op TARGETS, not by the document: a bound tag on
+ * the target block, a structural op on a bound table, or a write into a row an
+ * earlier engine-routed `insert_row` in this same batch is about to create.
+ * Everything else in a bound document still routes to the editor - which is why
+ * a heading in a document full of bindings is still an ordinary tracked write.
+ *
+ * Three things it refuses rather than routes, because no path can honour them:
+ * writing a formula (redirected to the inputs it is computed from), a write
+ * that would land in a bound block's neighbour whose offsets cannot be trusted,
+ * and an op with no binding-engine equivalent for a binding it does reach.
+ */
 function planBindingRoutedOp(
   editor: LiveEditor,
   sfdt: any,

@@ -185,7 +185,11 @@ describe('save gating', () => {
   });
 
   it('refuses a save while a bound cell holds invalid input', () => {
-    writeIntoControl(editor, '[[name=quantity|type=integer|row=r-1]]', 'twelve');
+    writeIntoControl(
+      editor,
+      '[[name=quantity|type=integer|row=r-1]]',
+      'twelve'
+    );
 
     expect(attached.commitForSave()).toBe(false);
     expect(
@@ -228,10 +232,9 @@ describe('content-change suppression', () => {
   it('brackets the initial reconcile so it is not read as a user edit', () => {
     const editor = makeEditor(buildTemplateTokenDocument());
     const calls: boolean[] = [];
-    const attached = attachBindings(
-      editor as unknown as SyncfusionEditorLike,
-      { onSuppressContentChange: (suppressed) => calls.push(suppressed) }
-    );
+    const attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onSuppressContentChange: (suppressed) => calls.push(suppressed)
+    });
     try {
       // Computing a template's formulas is the editor doing its job, not the
       // user dirtying the document.

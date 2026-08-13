@@ -8,7 +8,7 @@
 // triggers depend on. Everything here is the shipped code - no forks, no fakes -
 // so what the page does is what a form does.
 //
-// Not part of the package build. See harness/README.md.
+// Not part of the package build. See harness/bindings/README.md.
 
 import { attachBindings } from '../../src/elements/components/DocxEditor/bindings/attachBindings';
 import {
@@ -34,6 +34,9 @@ import { buildTemplateTokenDocument } from '../../src/elements/components/DocxEd
 import { createDocxEditorBridge } from '../../src/assistant/tools/docx/docxEditorBridge';
 import { flattenSfdt } from '../../src/assistant/tools/docx/syncfusionDocumentOps';
 
+// Browser-only harness bootstrap: attaching to the real window IS the point, so
+// the SSR-safety rule does not apply here.
+// eslint-disable-next-line no-restricted-globals
 (window as any).Bindings = {
   attachBindings,
   // The pure engine, for poking at a document straight from the console.

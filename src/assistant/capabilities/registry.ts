@@ -9,11 +9,11 @@
 // yet (that is S5, and so is folding each entry's `apply` into the registry).
 //
 // Every entry references the switch case that implements it in
-// `../tools/syncfusionDocumentOps.ts` (`applyAnchoredOp` / `applyAnchorlessOp`,
-// plus the executor's `applyReplaceAll` special case). A unit test asserts the
-// registry and those switch cases agree in both directions - an entry with no
-// handler is a lie to the model, a handler with no entry is a capability
-// nobody can reach.
+// `../tools/docx/syncfusionDocumentOps.ts` (`applyAnchoredOp` /
+// `applyAnchorlessOp`, plus the executor's `applyReplaceAll` special case). A
+// unit test asserts the registry and those switch cases agree in both
+// directions - an entry with no handler is a lie to the model, a handler with
+// no entry is a capability nobody can reach.
 //
 /**
  * Param types use a small fixed language (m5 C3: no arbitrary schema
@@ -87,6 +87,12 @@ export interface SectionComposerSpec {
   blocks: SectionComposerBlock[];
 }
 
+/**
+ * What a `duplicate_table` copy is filled with: `'copy'` for the source's own
+ * data rows, or one payload per row to materialize from the prototype row, each
+ * keyed by bound input name. See the op's entry below for the provenance every
+ * numeric value in such a payload has to carry.
+ */
 export type DuplicateTableRows =
   | 'copy'
   | Array<Record<string, string | number | boolean | null>>;
@@ -95,7 +101,7 @@ export type DuplicateTableRows =
 // name-by-name comparison of the two lists reads as a clean diff.
 //
 // The array is const-asserted so every entry survives as a literal type: the
-// typed handler tables in `../tools/syncfusionDocumentOps.ts` derive each
+// typed handler tables in `../tools/docx/syncfusionDocumentOps.ts` derive each
 // handler's parameter type from its entry here (S5). `satisfies` would be the
 // idiomatic spelling, but the repo pins TypeScript 4.7, so the entry-shape
 // check is the explicit assignability statement after the array instead.
@@ -275,14 +281,24 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // `rows: 'copy'` copies the data rows and their current displayed values.
     // `rows: [{...}]` keeps the table skeleton and materializes exactly those
     // data rows from the prototype row, setting editable bound input columns
-    // through the binding engine in the same transaction. Any numeric
+    // through the binding engine in the same transaction. Each payload is keyed
+    // by bound input name, so it is a bound-table facility: an unbound table
+    // has nothing to fill and is always copied as it stands. Any numeric
     // replacement value in that row payload must carry the same provenance as
     // set_cell_text on the op itself: `literal: true`, or `quotedFrom` +
     // `quotedText` containing the exact displayed figure.
+    //
+    // Placement is engine-owned and takes no param: the copy always lands
+    // immediately after its source, separated by an empty paragraph (Word
+    // renders two adjacent tables as one - see `spliceDuplicateAfter`). Moving
+    // it elsewhere is a separate, later edit against the copy's own anchor.
+    //
+    // One per change set, and last of the anchored edits in it: duplicating a
+    // table inserts a table, so every later anchor may have moved. Re-read the
+    // document before targeting the copy.
     op: 'duplicate_table',
     params: {
       rows: 'duplicateRows?',
-      placeAfter: 'string?',
       literal: 'boolean?',
       quotedFrom: 'string?',
       quotedText: 'string?'
@@ -732,9 +748,10 @@ export type CapabilityEntriesWellFormed = AssertCapabilityEntries<
 //
 // Before S5 the registry and the dispatch switches were kept in agreement by a
 // test. A test can be deleted, skipped, or pass vacuously; these types cannot.
-// Every op handler in `../tools/syncfusionDocumentOps.ts` is typed against its
-// entry here, so a handler that consumes a param the entry does not declare -
-// or an entry that declares an op no handler implements - fails to compile.
+// Every op handler in `../tools/docx/syncfusionDocumentOps.ts` is typed against
+// its entry here, so a handler that consumes a param the entry does not
+// declare - or an entry that declares an op no handler implements - fails to
+// compile.
 // ---------------------------------------------------------------------------
 
 /** `'a,b,c'` -> `'a' | 'b' | 'c'` (the member list of an `enum[...]` type). */

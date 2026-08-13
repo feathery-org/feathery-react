@@ -17,7 +17,9 @@ describe('convertTemplateTokens', () => {
     const base = buildTemplateTokenDocument();
     const text = JSON.stringify(base);
     expect(text).toContain('[[table=costs]]');
-    expect(text).toContain('[[name=quantity|type=integer|default=12|row=auto]]');
+    expect(text).toContain(
+      '[[name=quantity|type=integer|default=12|row=auto]]'
+    );
     expect(text).not.toContain('contentControlProperties');
     expect(
       (base.sections![0].blocks || []).filter((block) =>
@@ -180,9 +182,7 @@ describe('convertTemplateTokens', () => {
     );
     expect(control!.inlines![0].text).toBe('0%');
     expect(paragraph.inlines![0].text).toBe('Tax: ');
-    expect(
-      paragraph.inlines![paragraph.inlines!.length - 1].text
-    ).toBe(' end');
+    expect(paragraph.inlines![paragraph.inlines!.length - 1].text).toBe(' end');
   });
 
   it('shows value, falls back to default, then to one implied by the type', () => {

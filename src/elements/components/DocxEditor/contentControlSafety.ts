@@ -19,8 +19,15 @@
 // controls that have tags but no colour, and clicking one crashes the render.
 //
 // This is deliberately NOT part of the bindings feature. Any .docx containing
-// Word content controls hits it, whether or not bindings are on, so it runs on
-// the ordinary open path.
+// Word content controls hits it, whether or not bindings are on, so it belongs
+// on the ordinary open path rather than behind the bindings gate.
+//
+// It is NOT on that path yet. The stamp is exported and pinned by tests
+// (bindings/tests/reportedEditorBugs.spec.ts) but has no product call site, so
+// the crash above is still reachable in a shipped editor. Wiring it means
+// calling it from the open effect in `useDocxEditor`, after Syncfusion's
+// `documentChange` has been heard for the open - that is the first moment
+// `contentControlCollection` is populated, and it is already awaited there.
 //
 // '#00000000' is transparent, which the renderer itself maps to grey - the same
 // value used for controls this package creates, so a normalized control is

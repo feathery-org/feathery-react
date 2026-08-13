@@ -141,9 +141,8 @@ describe('a content control with no colour does not break rendering', () => {
     try {
       const collection = editor.documentHelper.contentControlCollection;
       const withoutColor = () =>
-        collection.filter(
-          (c: any) => c.contentControlProperties?.color == null
-        ).length;
+        collection.filter((c: any) => c.contentControlProperties?.color == null)
+          .length;
       // The precondition: the editor really did read them without a colour.
       expect(withoutColor()).toBeGreaterThan(0);
 
@@ -170,9 +169,7 @@ describe('a content control with no colour does not break rendering', () => {
     // ordinary open path, and must never stop a document from opening.
     expect(stampMissingContentControlColors(null)).toBe(0);
     expect(stampMissingContentControlColors({})).toBe(0);
-    expect(
-      stampMissingContentControlColors({ documentHelper: {} })
-    ).toBe(0);
+    expect(stampMissingContentControlColors({ documentHelper: {} })).toBe(0);
   });
 });
 
@@ -190,7 +187,9 @@ describe('row adoption stays inside the data block', () => {
     const doc = boundDoc();
     const table = firstTable(doc);
     const subtotalCell = table.rows[2].cells[3];
-    subtotalCell.blocks[0].inlines = [{ characterFormat: {}, text: '$1,800.00' }];
+    subtotalCell.blocks[0].inlines = [
+      { characterFormat: {}, text: '$1,800.00' }
+    ];
 
     const result = adoptUnboundRows(doc, 'costs');
 
@@ -286,9 +285,7 @@ describe('row adoption stays inside the data block', () => {
     expect(rows[1][3]).toBe('$1,800.00'); // 12 x 150
     expect(rows[2][3]).toBe('$150.00'); // 3 x 50
     expect(rows[3][3]).toBe('$1,950.00'); // subtotal
-    expect(
-      result.diagnostics.some((d) => d.code === 'row-adopted')
-    ).toBe(true);
+    expect(result.diagnostics.some((d) => d.code === 'row-adopted')).toBe(true);
   });
 
   it('leaves a trailing prose row alone, because its formula cell has text', () => {

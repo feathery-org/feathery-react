@@ -242,9 +242,9 @@ describe('runCommand', () => {
     controller.runCommand((sfdt, index) =>
       setTaggedValue(sfdt, 'project.name', 'Rebrand', index ?? undefined)
     );
-    for (const occurrence of scanBindings(editor.doc as SfdtDocument).fields.get(
-      'project.name'
-    )!) {
+    for (const occurrence of scanBindings(
+      editor.doc as SfdtDocument
+    ).fields.get('project.name')!) {
       expect(occurrence.text).toBe('Rebrand');
     }
 

@@ -6,10 +6,12 @@
 //
 //   - NOT Syncfusion's title-matched importContentControlData, whose
 //     (type, title) matching collides whenever two controls share a title.
-//   - NOT the selection + insertText primitive the assistant's document ops use.
-//     selectContentControl followed by insertText DELETES the content control,
-//     tag and all, locked or not. updateContentControl is the only write that
-//     preserves the binding.
+//   - NOT the selection + insertText primitive the assistant's document ops use
+//     on unbound content. selectContentControl followed by insertText DELETES
+//     the content control, tag and all, locked or not. updateContentControl is
+//     the only write that preserves the binding - which is why those ops route
+//     a write that reaches a binding through this engine rather than taking it
+//     themselves.
 //
 // History is the other half of the contract. Only 'field' writes - normalization
 // of the cell the user just edited - are recorded, because a suppressed rewrite

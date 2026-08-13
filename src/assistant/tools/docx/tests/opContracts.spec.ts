@@ -474,7 +474,9 @@ const CONTRACTS: Record<string, ContractCase> = {
       ed.revisions.acceptAll();
       expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Gamma']);
       // Relocated, not retyped: exactly one copy of the body that travelled.
-      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(1);
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(
+        1
+      );
     }
   },
   copy_section: {
@@ -492,7 +494,9 @@ const CONTRACTS: Record<string, ContractCase> = {
       ed.revisions.acceptAll();
       // Both copies survive a copy, which is the whole difference from a move.
       expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Beta', 'Gamma']);
-      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(2);
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(
+        2
+      );
     }
   },
   swap_sections: {
@@ -501,7 +505,9 @@ const CONTRACTS: Record<string, ContractCase> = {
     verify: (ed) => {
       ed.revisions.acceptAll();
       expect(headingTexts(ed)).toEqual(['Gamma', 'Beta', 'Alpha']);
-      expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(1);
+      expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(
+        1
+      );
     }
   },
   split_table: {

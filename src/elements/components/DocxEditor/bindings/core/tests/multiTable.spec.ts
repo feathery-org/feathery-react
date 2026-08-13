@@ -19,9 +19,10 @@ describe('two tables sharing one field', () => {
     const index = scanBindings(buildCostsFixture());
     expect(index.diagnostics).toEqual([]);
     expect([...index.tables.keys()].sort()).toEqual(['costs', 'expenses']);
-    expect(
-      index.tables.get('expenses')!.rows.map((row) => row.rowId)
-    ).toEqual(['e-1', 'e-2']);
+    expect(index.tables.get('expenses')!.rows.map((row) => row.rowId)).toEqual([
+      'e-1',
+      'e-2'
+    ]);
 
     // tax_rate is ONE document-level number with an occurrence in each header.
     const tax = index.fields.get('tax_rate')!;
@@ -222,7 +223,8 @@ describe('two tables sharing one field', () => {
     const result = applyRules(doc, {});
     expect(
       result.diagnostics.some(
-        (entry) => entry.code === 'row-adopted' && /expenses/.test(entry.message)
+        (entry) =>
+          entry.code === 'row-adopted' && /expenses/.test(entry.message)
       )
     ).toBe(true);
     const rows = result.index.tables.get('expenses')!.rows;

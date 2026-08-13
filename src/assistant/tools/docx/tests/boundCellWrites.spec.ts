@@ -112,7 +112,12 @@ describe('writes aimed at a bound cell', () => {
     const before = tagsIn(editor).length;
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
-        { op: 'set_cell_text', anchor: QUANTITY_CELL, text: '20', literal: true }
+        {
+          op: 'set_cell_text',
+          anchor: QUANTITY_CELL,
+          text: '20',
+          literal: true
+        }
       ]
     });
 

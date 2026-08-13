@@ -36,14 +36,18 @@ const headerRow = (...texts: string[]): SfdtRow => ({
   cells: texts.map(cell)
 });
 
-const TAX_RATE_TOKEN =
-  '[[name=tax_rate|type=percent|del=keep|default=0%]]';
+const TAX_RATE_TOKEN = '[[name=tax_rate|type=percent|del=keep|default=0%]]';
 
 const costsTable = (): SfdtBlock => ({
   tableFormat: {},
   columnCount: 4,
   rows: [
-    headerRow('Item', 'Qty', 'Unit price', `Line total — tax ${TAX_RATE_TOKEN}`),
+    headerRow(
+      'Item',
+      'Qty',
+      'Unit price',
+      `Line total — tax ${TAX_RATE_TOKEN}`
+    ),
     row(
       '[[name=item|default=Design work|row=auto]]',
       '[[name=quantity|type=integer|default=12|row=auto]]',
@@ -56,7 +60,12 @@ const costsTable = (): SfdtBlock => ({
       '[[name=unit_cost|type=currency|default=200|row=auto]]',
       '[[name=line_total|expr=mul(quantity,unit_cost)|row=auto]]'
     ),
-    row('Subtotal', '', '', '[[name=costs_subtotal|expr=sum(costs.line_total)]]'),
+    row(
+      'Subtotal',
+      '',
+      '',
+      '[[name=costs_subtotal|expr=sum(costs.line_total)]]'
+    ),
     row('Tax', '', '', '[[name=costs_tax|expr=mul(costs_subtotal,tax_rate)]]'),
     row(
       'Total',

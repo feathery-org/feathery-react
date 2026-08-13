@@ -1,176 +1,230 @@
 <!DOCTYPE html>
+<!--
+  The review rail's own harness: a real DocxEditor with buttons that seed
+  tracked changes tagged exactly the way applyDocumentEdits tags them, so the
+  grouping, the cards and accept/reject can be exercised without a form, a
+  backend or the assistant.
+
+  Unlike the bindings pages next door, this one runs the PACKAGE bundle:
+
+      yarn dev                          # builds dist/index.js and watches
+      ./harness/bindings/serve.sh       # any server rooted at the repo
+      # → http://localhost:8770/harness/tracked-changes.html
+-->
 <html>
-<head>
-  <meta charset="utf-8" />
-  <title>TrackedChangeGroups harness</title>
-  <style>
-    html, body { height: 100%; margin: 0; font-family: sans-serif; }
-    #controls { padding: 8px; display: flex; gap: 8px; border-bottom: 1px solid #ddd; }
-    #root { height: calc(100vh - 50px); }
-  </style>
-</head>
-<body>
-  <div id="controls">
-    <button onclick="seedGroups()">Seed 2 assistant groups</button>
-    <button onclick="seedDeletion()">Seed grouped deletion</button>
-    <button onclick="seedScattered()">Seed scattered group (start + end)</button>
-    <button onclick="seedReplace()">Seed replace (one edit)</button>
-    <button onclick="seedUngrouped()">Seed human edit (should NOT appear in panel)</button>
-    <button onclick="seedTable()">Seed tracked table</button>
-  </div>
-  <div id="root"></div>
-
-  <script src="/node_modules/react/umd/react.development.js"></script>
-  <script src="/node_modules/react-dom/umd/react-dom.development.js"></script>
-  <!-- webpack.development.js externalizes the module "react" (lowercase), so
-       the UMD bundle resolves it from window.react — alias it to the CDN global. -->
-  <script>window.react = window.React;</script>
-  <script>
-    // useDocxEditor loads the Syncfusion CDN bundle via global.scriptjsLoadPromise,
-    // which only Feathery.init() sets up. Shim scriptjs so the harness can skip init.
-    const loadScript = (src) =>
-      new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = src; s.onload = res; s.onerror = rej;
-        document.head.appendChild(s);
-      });
-    const scriptShim = (deps, cb) => {
-      Promise.all((Array.isArray(deps) ? deps : [deps]).map(loadScript))
-        .then(() => cb && cb());
-    };
-    scriptShim.order = (deps, cb) => {
-      (async () => {
-        for (const d of Array.isArray(deps) ? deps : [deps]) await loadScript(d);
-        cb && cb();
-      })();
-    };
-    window.scriptjsLoadPromise = Promise.resolve({ default: scriptShim });
-  </script>
-  <script>
-    // Cache-bust the 30MB dev bundle: a plain reload otherwise serves the
-    // browser's stale cached copy after webpack rebuilds. document.write keeps
-    // the load synchronous so the harness script below still runs after it.
-    document.write(
-      '<scr' + 'ipt src="/dist/index.js?t=' + Date.now() + '"></scr' + 'ipt>'
-    );
-  </script>
-  <script>
-    window.editor = null;
-    ReactDOM.createRoot(document.getElementById('root')).render(
-      React.createElement(Feathery.DocxEditor, {
-        fileName: 'harness-demo',
-        onEditorReady: (ed) => { window.editor = ed; console.log('editor ready'); },
-        onError: (err) => console.error('DocxEditor error:', err),
-        onSave: async (blob) => console.log('onSave', blob)
-      })
-    );
-
-    // Same tag shape applyDocumentEdits stamps via revisionSettings.customData
-    // (see revisionGroupTag in syncfusionDocumentOps.ts).
-    const tag = (group) =>
-      JSON.stringify({ v: 1, source: 'robin', changeSetId: 'demo-change-set', group });
-
-    function withGroup(group, fn) {
-      const settings =
-        editor.documentEditorSettings && editor.documentEditorSettings.revisionSettings;
-      const prevTrack = editor.enableTrackChanges;
-      const prevUser = editor.currentUser;
-      editor.currentUser = 'Robin (assistant)';
-      editor.enableTrackChanges = true;
-      if (settings) settings.customData = tag(group);
-      try { fn(); } finally {
-        if (settings) settings.customData = null;
-        editor.enableTrackChanges = prevTrack;
-        editor.currentUser = prevUser;
+  <head>
+    <meta charset="utf-8" />
+    <title>TrackedChangeGroups harness</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: sans-serif;
       }
-    }
+      #controls {
+        padding: 8px;
+        display: flex;
+        gap: 8px;
+        border-bottom: 1px solid #ddd;
+      }
+      #root {
+        height: calc(100vh - 50px);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <button onclick="seedGroups()">Seed 2 assistant groups</button>
+      <button onclick="seedDeletion()">Seed grouped deletion</button>
+      <button onclick="seedScattered()">
+        Seed scattered group (start + end)
+      </button>
+      <button onclick="seedReplace()">Seed replace (one edit)</button>
+      <button onclick="seedUngrouped()">
+        Seed human edit (should NOT appear in panel)
+      </button>
+      <button onclick="seedTable()">Seed tracked table</button>
+    </div>
+    <div id="root"></div>
 
-    function seedGroups() {
-      if (!editor) return alert('Editor not ready yet');
-      withGroup('update-premium-2026', () => {
-        editor.editor.insertText('The 2026 premium is $1,200. ');
-      });
-      // Deliberately back-to-back: installRevisionGroupIsolation must keep
-      // these two groups as separate revisions despite adjacency.
-      withGroup('add-cancellation-clause', () => {
-        editor.editor.insertText('Either party may cancel with 30 days notice. ');
-      });
-    }
-
-    function seedDeletion() {
-      if (!editor) return alert('Editor not ready yet');
-      // Type some plain text first, then delete part of it as a tracked change.
-      editor.editor.insertText('Text destined for deletion. ');
-      editor.selection.movePreviousPosition();
-      for (let i = 0; i < 10; i++) editor.selection.extendBackward();
-      withGroup('remove-old-wording', () => {
-        editor.editor.delete();
-      });
-    }
-
-    // ONE group whose edits land in different places in the document: an
-    // insert at the very start and another at the very end. One card,
-    // "2 edits", and group Accept must resolve both despite the gap.
-    function seedScattered() {
-      if (!editor) return alert('Editor not ready yet');
-      editor.editor.insertText('Middle of the document, untouched. ');
-      editor.selection.moveToDocumentStart();
-      withGroup('scattered-edits', () => {
-        editor.editor.insertText('Added at the start. ');
-      });
-      editor.selection.moveToDocumentEnd();
-      withGroup('scattered-edits', () => {
-        editor.editor.insertText('Added at the end. ');
-      });
-    }
-
-    // A tracked replace: select existing text and type over it while a group
-    // tag is stamped. SyncFusion records deletion+insertion; the panel must
-    // show it as ONE "±" edit resolved by one approval.
-    function seedReplace() {
-      if (!editor) return alert('Editor not ready yet');
-      editor.editor.insertText('The premium is $5,500 for 2026. ');
-      // Select "$5,500" (drag backwards over it from just after the amount).
-      for (let i = 0; i < 10; i++) editor.selection.movePreviousPosition();
-      for (let i = 0; i < 6; i++) editor.selection.extendBackward();
-      withGroup('update-premium-amount', () => {
-        editor.editor.insertText('6,000 ');
-      });
-      editor.selection.moveToDocumentEnd();
-    }
-
-    function seedUngrouped() {
-      if (!editor) return alert('Editor not ready yet');
-      const prev = editor.enableTrackChanges;
-      editor.enableTrackChanges = true;
-      editor.editor.insertText('A human tracked edit. ');
-      editor.enableTrackChanges = prev;
-    }
-
-    // The table arrives as a TRACKED insertion tagged to one assistant
-    // group: each row lands as a structural insertion revision and the cell
-    // text as text insertions, so the panel shows a single reviewable card
-    // whose group Accept/Reject settles the whole table.
-    function seedTable() {
-      if (!editor) return alert('Editor not ready yet');
-      editor.selection.moveToDocumentEnd();
-      withGroup('add-premium-table', () => {
-        editor.editor.insertText('Premium schedule for review:');
-        editor.editor.insertTable(3, 3);
-        const cells = [
-          'Item', 'Current', 'Proposed',
-          'Premium', '$5,200', '$5,500',
-          'Deductible', '$1,000', '$1,200'
-        ];
-        cells.forEach((text, i) => {
-          editor.editor.insertText(text);
-          // Tab navigation hops to the next cell (row-major). Never tab out
-          // of the LAST cell - that would append a new empty row.
-          if (i < cells.length - 1) editor.selection.handleTabKey(true, false);
+    <script src="/node_modules/react/umd/react.development.js"></script>
+    <script src="/node_modules/react-dom/umd/react-dom.development.js"></script>
+    <!-- webpack.development.js externalizes the module "react" (lowercase), so
+       the UMD bundle resolves it from window.react — alias it to the CDN global. -->
+    <script>
+      window.react = window.React;
+    </script>
+    <script>
+      // useDocxEditor loads the Syncfusion CDN bundle via global.scriptjsLoadPromise,
+      // which only Feathery.init() sets up. Shim scriptjs so the harness can skip init.
+      const loadScript = (src) =>
+        new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = src;
+          s.onload = res;
+          s.onerror = rej;
+          document.head.appendChild(s);
         });
-      });
-      editor.selection.moveToDocumentEnd();
-    }
-  </script>
-</body>
+      const scriptShim = (deps, cb) => {
+        Promise.all((Array.isArray(deps) ? deps : [deps]).map(loadScript)).then(
+          () => cb && cb()
+        );
+      };
+      scriptShim.order = (deps, cb) => {
+        (async () => {
+          for (const d of Array.isArray(deps) ? deps : [deps])
+            await loadScript(d);
+          cb && cb();
+        })();
+      };
+      window.scriptjsLoadPromise = Promise.resolve({ default: scriptShim });
+    </script>
+    <script>
+      // Cache-bust the 30MB dev bundle: a plain reload otherwise serves the
+      // browser's stale cached copy after webpack rebuilds. document.write keeps
+      // the load synchronous so the harness script below still runs after it.
+      document.write(
+        '<scr' + 'ipt src="/dist/index.js?t=' + Date.now() + '"></scr' + 'ipt>'
+      );
+    </script>
+    <script>
+      window.editor = null;
+      ReactDOM.createRoot(document.getElementById('root')).render(
+        React.createElement(Feathery.DocxEditor, {
+          fileName: 'harness-demo',
+          onEditorReady: (ed) => {
+            window.editor = ed;
+            console.log('editor ready');
+          },
+          onError: (err) => console.error('DocxEditor error:', err),
+          onSave: async (blob) => console.log('onSave', blob)
+        })
+      );
+
+      // Same tag shape applyDocumentEdits stamps via revisionSettings.customData
+      // (see revisionGroupTag in syncfusionDocumentOps.ts).
+      const tag = (group) =>
+        JSON.stringify({
+          v: 1,
+          source: 'robin',
+          changeSetId: 'demo-change-set',
+          group
+        });
+
+      function withGroup(group, fn) {
+        const settings =
+          editor.documentEditorSettings &&
+          editor.documentEditorSettings.revisionSettings;
+        const prevTrack = editor.enableTrackChanges;
+        const prevUser = editor.currentUser;
+        editor.currentUser = 'Robin (assistant)';
+        editor.enableTrackChanges = true;
+        if (settings) settings.customData = tag(group);
+        try {
+          fn();
+        } finally {
+          if (settings) settings.customData = null;
+          editor.enableTrackChanges = prevTrack;
+          editor.currentUser = prevUser;
+        }
+      }
+
+      function seedGroups() {
+        if (!editor) return alert('Editor not ready yet');
+        withGroup('update-premium-2026', () => {
+          editor.editor.insertText('The 2026 premium is $1,200. ');
+        });
+        // Deliberately back-to-back: installRevisionGroupIsolation must keep
+        // these two groups as separate revisions despite adjacency.
+        withGroup('add-cancellation-clause', () => {
+          editor.editor.insertText(
+            'Either party may cancel with 30 days notice. '
+          );
+        });
+      }
+
+      function seedDeletion() {
+        if (!editor) return alert('Editor not ready yet');
+        // Type some plain text first, then delete part of it as a tracked change.
+        editor.editor.insertText('Text destined for deletion. ');
+        editor.selection.movePreviousPosition();
+        for (let i = 0; i < 10; i++) editor.selection.extendBackward();
+        withGroup('remove-old-wording', () => {
+          editor.editor.delete();
+        });
+      }
+
+      // ONE group whose edits land in different places in the document: an
+      // insert at the very start and another at the very end. One card,
+      // "2 edits", and group Accept must resolve both despite the gap.
+      function seedScattered() {
+        if (!editor) return alert('Editor not ready yet');
+        editor.editor.insertText('Middle of the document, untouched. ');
+        editor.selection.moveToDocumentStart();
+        withGroup('scattered-edits', () => {
+          editor.editor.insertText('Added at the start. ');
+        });
+        editor.selection.moveToDocumentEnd();
+        withGroup('scattered-edits', () => {
+          editor.editor.insertText('Added at the end. ');
+        });
+      }
+
+      // A tracked replace: select existing text and type over it while a group
+      // tag is stamped. SyncFusion records deletion+insertion; the panel must
+      // show it as ONE "±" edit resolved by one approval.
+      function seedReplace() {
+        if (!editor) return alert('Editor not ready yet');
+        editor.editor.insertText('The premium is $5,500 for 2026. ');
+        // Select "$5,500" (drag backwards over it from just after the amount).
+        for (let i = 0; i < 10; i++) editor.selection.movePreviousPosition();
+        for (let i = 0; i < 6; i++) editor.selection.extendBackward();
+        withGroup('update-premium-amount', () => {
+          editor.editor.insertText('6,000 ');
+        });
+        editor.selection.moveToDocumentEnd();
+      }
+
+      function seedUngrouped() {
+        if (!editor) return alert('Editor not ready yet');
+        const prev = editor.enableTrackChanges;
+        editor.enableTrackChanges = true;
+        editor.editor.insertText('A human tracked edit. ');
+        editor.enableTrackChanges = prev;
+      }
+
+      // The table arrives as a TRACKED insertion tagged to one assistant
+      // group: each row lands as a structural insertion revision and the cell
+      // text as text insertions, so the panel shows a single reviewable card
+      // whose group Accept/Reject settles the whole table.
+      function seedTable() {
+        if (!editor) return alert('Editor not ready yet');
+        editor.selection.moveToDocumentEnd();
+        withGroup('add-premium-table', () => {
+          editor.editor.insertText('Premium schedule for review:');
+          editor.editor.insertTable(3, 3);
+          const cells = [
+            'Item',
+            'Current',
+            'Proposed',
+            'Premium',
+            '$5,200',
+            '$5,500',
+            'Deductible',
+            '$1,000',
+            '$1,200'
+          ];
+          cells.forEach((text, i) => {
+            editor.editor.insertText(text);
+            // Tab navigation hops to the next cell (row-major). Never tab out
+            // of the LAST cell - that would append a new empty row.
+            if (i < cells.length - 1)
+              editor.selection.handleTabKey(true, false);
+          });
+        });
+        editor.selection.moveToDocumentEnd();
+      }
+    </script>
+  </body>
 </html>
