@@ -83,10 +83,7 @@ function cc(
 ): SfdtInline {
   const run: SfdtInline = { text };
   if (characterFormat) run.characterFormat = characterFormat;
-  return {
-    contentControlProperties: ccProps(tag, title, locked),
-    inlines: [run]
-  };
+  return { contentControlProperties: ccProps(tag, title, locked), inlines: [run] };
 }
 
 function headerCellInlines(
@@ -234,25 +231,13 @@ function dataRow(
         60
       ),
       bodyCell(
-        [
-          cc(
-            fieldTag('unit_cost', CURRENCY, rowId),
-            'Unit price',
-            false,
-            unitText
-          )
-        ],
+        [cc(fieldTag('unit_cost', CURRENCY, rowId), 'Unit price', false, unitText)],
         100
       ),
       bodyCell(
         [
           cc(
-            formulaTag(
-              'line_total',
-              CURRENCY,
-              'mul(quantity,unit_cost)',
-              rowId
-            ),
+            formulaTag('line_total', CURRENCY, 'mul(quantity,unit_cost)', rowId),
             'Line total',
             true,
             totalText
@@ -291,18 +276,15 @@ function summaryRow(
   };
 }
 
-function expenseRow(rowId: string, label: string, amountText: string): SfdtRow {
+function expenseRow(
+  rowId: string,
+  label: string,
+  amountText: string
+): SfdtRow {
   return {
     cells: [
       bodyCell(
-        [
-          cc(
-            fieldTag('expense', { kind: 'text' }, rowId),
-            'Expense',
-            false,
-            label
-          )
-        ],
+        [cc(fieldTag('expense', { kind: 'text' }, rowId), 'Expense', false, label)],
         250,
         { align: 'Left' }
       ),
@@ -357,12 +339,7 @@ function buildExpensesTable(): SfdtBlock {
       summaryRow(
         'Subtotal',
         cc(
-          formulaTag(
-            'expenses_subtotal',
-            CURRENCY,
-            'sum(expenses.amount)',
-            null
-          ),
+          formulaTag('expenses_subtotal', CURRENCY, 'sum(expenses.amount)', null),
           'Expenses subtotal',
           true,
           '$1,700.00'
@@ -448,12 +425,7 @@ export function buildCostsFixture(): SfdtDocument {
       summaryRow(
         'Tax',
         cc(
-          formulaTag(
-            'costs_tax',
-            CURRENCY,
-            'mul(costs_subtotal,tax_rate)',
-            null
-          ),
+          formulaTag('costs_tax', CURRENCY, 'mul(costs_subtotal,tax_rate)', null),
           'Costs tax',
           true,
           '$0.00'
@@ -555,11 +527,7 @@ export function buildCostsFixture(): SfdtDocument {
             contentControlProperties: {
               lockContentControl: true,
               lockContents: false,
-              tag: formatTag({
-                version: 2,
-                kind: 'table',
-                tableId: 'expenses'
-              }),
+              tag: formatTag({ version: 2, kind: 'table', tableId: 'expenses' }),
               title: 'Expenses table',
               type: 'RichText',
               hasPlaceHolderText: false,

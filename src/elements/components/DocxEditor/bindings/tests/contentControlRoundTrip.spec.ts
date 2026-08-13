@@ -240,9 +240,7 @@ describe('S1 content control tags survive DOCX export', () => {
 
   it('keeps the locked formula control locked through export', async () => {
     const editor = makeRealDocumentEditor(
-      docWith(
-        para(taggedInline(FORMULA_TAG, '$30.00', { lockContents: true }))
-      ),
+      docWith(para(taggedInline(FORMULA_TAG, '$30.00', { lockContents: true }))),
       { optimizeSfdt: false }
     );
     try {

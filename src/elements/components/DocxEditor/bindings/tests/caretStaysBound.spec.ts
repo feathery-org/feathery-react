@@ -259,13 +259,7 @@ describe('a write never strands the caret outside its control', () => {
     const before = editor.selection.startOffset;
 
     const writes: EngineWrite[] = [
-      {
-        tag: String(
-          boundControl(editor, 'quantity').contentControlProperties.tag
-        ),
-        text: '12',
-        kind: 'field'
-      }
+      { tag: String(boundControl(editor, 'quantity').contentControlProperties.tag), text: '12', kind: 'field' }
     ];
     expect(adapter.updateValues!(writes)).toBe(true);
 
@@ -295,6 +289,7 @@ describe('a write never strands the caret outside its control', () => {
     expect(editor.selection.startOffset).toBe(before);
     expect(isCaretInside(editor, 'quantity')).toBe(true);
   });
+
 });
 
 describe('a write restores both scroll axes', () => {

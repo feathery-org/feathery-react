@@ -8,7 +8,7 @@
 // triggers depend on. Everything here is the shipped code - no forks, no fakes -
 // so what the page does is what a form does.
 //
-// Not part of the package build. See harness/bindings/README.md.
+// Not part of the package build. See harness/README.md.
 
 import { attachBindings } from '../../src/elements/components/DocxEditor/bindings/attachBindings';
 import {
@@ -31,12 +31,7 @@ import { isOptimizedSfdt } from '../../src/elements/components/DocxEditor/bindin
 import { parseTag } from '../../src/elements/components/DocxEditor/bindings/core/tagDsl';
 import { buildCostsFixture } from '../../src/elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
 import { buildTemplateTokenDocument } from '../../src/elements/components/DocxEditor/bindings/core/tests/fixtures/templateTokenFixture';
-import { createDocxEditorBridge } from '../../src/assistant/tools/docx/docxEditorBridge';
-import { flattenSfdt } from '../../src/assistant/tools/docx/syncfusionDocumentOps';
 
-// Browser-only harness bootstrap: attaching to the real window IS the point, so
-// the SSR-safety rule does not apply here.
-// eslint-disable-next-line no-restricted-globals
 (window as any).Bindings = {
   attachBindings,
   // The pure engine, for poking at a document straight from the console.
@@ -59,10 +54,5 @@ import { flattenSfdt } from '../../src/assistant/tools/docx/syncfusionDocumentOp
   // Two documents: one already bound, one still carrying [[...]] tokens so the
   // import path is visible too.
   buildCostsFixture,
-  buildTemplateTokenDocument,
-  // The assistant's own bridge, unchanged: robin-bound-ops.html drives a bound
-  // document through exactly the entry point Robin's tool dispatch uses, so the
-  // routing decision (engine vs tracked write) is the shipped one.
-  createDocxEditorBridge,
-  flattenSfdt
+  buildTemplateTokenDocument
 };
