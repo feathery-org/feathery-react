@@ -66,8 +66,15 @@ describe('row adoption', () => {
         (entry) => entry.type === 'row-adopted' && entry.tableId === 'costs'
       )
     ).toBe(true);
-    // Adoption rewrites tags, so the document needs a full reload.
+    // Adoption rewrites tags. The live editor applies that as a native
+    // mutation; the engine only reports that the change is structural.
     expect(result.structural).toBe(true);
+    expect(
+      result.structuralMutations.some(
+        (mutation) =>
+          mutation.kind === 'adopt-row' && mutation.tableId === 'costs'
+      )
+    ).toBe(true);
 
     const rows = result.index.tables.get('costs')!.rows;
     expect(rows).toHaveLength(3);

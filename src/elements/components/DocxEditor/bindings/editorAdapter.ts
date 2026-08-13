@@ -24,8 +24,10 @@
 // already typing in the next field when a commit trigger fired.
 
 import { EngineWrite } from './core/engine';
+import type { NativeStructuralMutation } from './core/sfdtAdapter';
 import { EditorPort } from './controller';
 import { anchorCaret, CaretAnchor, resolveAnchor } from './controlGeometry';
+import { applyNativeStructuralMutations } from './nativeStructuralAdapter';
 
 export interface ContentControlLike {
   contentControlProperties?: { tag?: string; [key: string]: unknown };
@@ -132,6 +134,8 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
   return {
     serialize: () => editor.serialize(),
     open: (sfdt: string) => editor.open(sfdt),
+    applyStructuralMutations: (mutations: NativeStructuralMutation[]) =>
+      applyNativeStructuralMutations(editor, mutations),
 
     updateValues(writes: EngineWrite[]): boolean {
       const helper = editor.documentHelper;
@@ -144,6 +148,9 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       if (writes.some((write) => !write.text)) return false;
 
       const previousHistory = editor.enableEditorHistory;
+      const history = editor.editorHistoryModule as any;
+      const fieldWrites = writes.filter((write) => write.kind === 'field');
+      let complex = false;
       let selection: { start: string; end: string } | null = null;
       // Where the caret sits WITHIN its control, which survives the control
       // changing length; the absolute offset below does not.
@@ -195,8 +202,14 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         // flag, container drift) would make the user's next keystroke inside
         // this control a tracked insertion.
         editor.enableTrackChanges = false;
-        if (!apply(writes.filter((write) => write.kind === 'field')))
-          return false;
+        if (
+          fieldWrites.length > 1 &&
+          typeof (editorModule as any).initComplexHistory === 'function'
+        ) {
+          (editorModule as any).initComplexHistory('BindingValues');
+          complex = true;
+        }
+        if (!apply(fieldWrites)) return false;
         editor.enableEditorHistory = false;
         if (!apply(writes.filter((write) => write.kind !== 'field')))
           return false;
@@ -204,6 +217,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       } catch {
         return false;
       } finally {
+        if (complex) history?.updateComplexHistory?.();
         editor.enableEditorHistory = previousHistory;
         editor.enableTrackChanges = false;
         try {

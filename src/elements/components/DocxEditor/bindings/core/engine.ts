@@ -13,6 +13,7 @@ import {
   adoptUnboundRows,
   BindingIndex,
   getAt,
+  NativeStructuralMutation,
   Occurrence,
   scanBindings,
   setCalculatedValue,
@@ -83,6 +84,7 @@ export interface ApplyRulesResult {
   changed: ChangeRecord[];
   diagnostics: Diagnostic[];
   writes: EngineWrite[];
+  structuralMutations: NativeStructuralMutation[];
   /** True when the transaction changed more than content-control text. */
   structural: boolean;
   /** Carry these into the next reconcile. */
@@ -187,6 +189,7 @@ export function applyRules(
   let structural = false;
   let next = sfdt;
   let index = scanBindings(next);
+  const structuralMutations: NativeStructuralMutation[] = [];
 
   /* ---- 0. adopt rows the user inserted with native editor tools ----
      A data row without any bindings gets its column bindings and formulas
@@ -213,6 +216,7 @@ export function applyRules(
     if (result.adopted.length) {
       next = result.sfdt;
       structural = true;
+      structuralMutations.push(...result.mutations);
       for (const rowId of result.adopted) {
         changed.push({ type: 'row-adopted', tableId, rowId });
         diag(
@@ -598,6 +602,7 @@ export function applyRules(
       changed,
       diagnostics,
       writes: writeList,
+      structuralMutations,
       structural,
       rowTemplates: rememberTemplates(index)
     };
@@ -609,6 +614,7 @@ export function applyRules(
     changed,
     diagnostics,
     writes: writeList,
+    structuralMutations,
     structural,
     rowTemplates: rememberTemplates(index)
   };

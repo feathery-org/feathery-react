@@ -8,8 +8,14 @@
 //
 // Wrapping those two methods covers every entry point, and costs nothing per
 // keystroke: the alternative was probing the document on every contentChange.
+// The wrap is an around-command interceptor: the native command runs, then
+// adoption and formula writes are applied in the same turn. insertRow already
+// records one table-clone history entry; grouping adoption on top of that
+// clone crashes Syncfusion undo, so adoption stays history-invisible and
+// post-undo/redo self-heal re-binds an empty redone row.
 
 import { SyncfusionEditorLike } from './editorAdapter';
+import { isApplyingNativeStructuralMutations } from './nativeStructuralAdapter';
 
 type RowCommand = (...args: unknown[]) => unknown;
 
@@ -19,9 +25,9 @@ const WATCHED: ReadonlyArray<'insertRow' | 'deleteRow'> = [
 ];
 
 /**
- * Call `onRowChange` after every native row insert or delete. Returns a function
- * that puts the original methods back, so a detached instance is left as we
- * found it.
+ * Run `onRowChange` immediately after each native insert or delete. Returns a
+ * function that puts the original methods back, so a detached instance is left
+ * as we found it.
  */
 export function watchRowCommands(
   editor: SyncfusionEditorLike,
@@ -33,6 +39,7 @@ export function watchRowCommands(
   if (!editorModule) return () => undefined;
 
   const restores: Array<() => void> = [];
+  let running = false;
   for (const name of WATCHED) {
     const original = editorModule[name];
     if (typeof original !== 'function') continue;
@@ -40,13 +47,21 @@ export function watchRowCommands(
       this: unknown,
       ...args: unknown[]
     ) {
-      const result = original.apply(this, args);
-      try {
-        onRowChange();
-      } catch {
-        // A failure here must never break the user's row command.
+      if (running || isApplyingNativeStructuralMutations()) {
+        return original.apply(this, args);
       }
-      return result;
+      running = true;
+      try {
+        const result = original.apply(this, args);
+        try {
+          onRowChange();
+        } catch {
+          // A failure here must never break the user's row command.
+        }
+        return result;
+      } finally {
+        running = false;
+      }
     };
     editorModule[name] = patched;
     restores.push(() => {
