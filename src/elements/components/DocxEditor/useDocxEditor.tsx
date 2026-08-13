@@ -7,6 +7,7 @@ import {
   preserveDocumentViewDuring
 } from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
+import { stampMissingContentControlColors } from './contentControlSafety';
 import { DocxSource } from './types';
 import {
   DocxBindingsState,
@@ -1043,6 +1044,12 @@ export function useDocxEditor({
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
         }
+        // A .docx round trip drops every content control's colour, and the
+        // border renderer reads it unguarded - so without this, clicking any
+        // content control throws mid-paint and half the page disappears. Runs
+        // for every document, not just bound ones: a template authored in Word
+        // hits it too. See contentControlSafety.
+        stampMissingContentControlColors(liveEditor);
         openedKeyRef.current = openKey;
         // A freshly opened document has nothing unsaved in it yet.
         unsavedRef.current = false;
