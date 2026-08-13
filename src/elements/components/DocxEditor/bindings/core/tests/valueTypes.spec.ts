@@ -7,6 +7,7 @@ import {
   isNumericType,
   parseDisplay,
   renderDisplay,
+  todayIso,
   ValueError
 } from '../valueTypes';
 import { BoundDefinition, FieldType } from '../tagDsl';
@@ -129,6 +130,26 @@ describe('type helpers', () => {
     expect(defaultValue(field(TEXT))).toBe('');
     expect(defaultValue(field(USD, '$25.00'))).toBe('25');
     expect(defaultValue(field(PERCENT, '8%'))).toBe('0.08');
+  });
+
+  it('starts an undeclared date at today, and takes the clock injected', () => {
+    expect(defaultValue(field(DATE), '2026-08-12')).toBe('2026-08-12');
+    // An explicit default still wins over today.
+    expect(defaultValue(field(DATE, '2020-01-01'), '2026-08-12')).toBe(
+      '2020-01-01'
+    );
+  });
+
+  it('reads a real date from todayIso, formatted the way date fields parse', () => {
+    const today = todayIso();
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(parseDisplay(DATE, today)).toBe(today);
+  });
+
+  it('ignores value: it belongs to one occurrence, not to new rows', () => {
+    const def = field(USD, '$25.00');
+    def.options.value = '$999.00';
+    expect(defaultValue(def)).toBe('25');
   });
 
   it('surfaces a default the type cannot hold', () => {

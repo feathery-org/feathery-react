@@ -33,10 +33,14 @@ const KEYS = new Set([
   'expr',
   'type',
   'del',
+  'value',
   'default',
   'label',
   'row'
 ]);
+
+/** Free-text option values: percent-encoded, and decoded on the way in. */
+const TEXT_OPTION_KEYS = ['value', 'default', 'label', 'row'] as const;
 
 export type TagVersion = 1 | 2;
 
@@ -50,6 +54,9 @@ export type FieldType =
   | { kind: 'date'; format: string };
 
 export interface TagOptions {
+  /** What this occurrence shows now. Never inherited by a new row. */
+  value?: string;
+  /** What a newly created row's cell starts with. */
   default?: string;
   label?: string;
   row?: string;
@@ -129,9 +136,16 @@ export const KEY_REFERENCE: KeyReferenceEntry[] = [
     meaning: 'delete = occurrence may be removed; keep = protected'
   },
   {
+    key: 'value',
+    required: 'no',
+    default: 'falls back to default',
+    meaning:
+      'what this occurrence shows now; never inherited by a new row (percent-encoded)'
+  },
+  {
     key: 'default',
     required: 'no',
-    default: "'' / 0 by type",
+    default: "'' text / 0 numeric / today date",
     meaning: 'initial value for new rows/instances (percent-encoded)'
   },
   {
@@ -285,8 +299,8 @@ function parseLegacyOptions(fields: string[], tag: string): TagOptions {
     const eq = field.indexOf('=');
     if (eq === -1)
       fail(`unexpected trailing field ${JSON.stringify(field)}`, tag);
-    const key = field.slice(0, eq);
-    if (key !== 'default' && key !== 'label' && key !== 'row')
+    const key = field.slice(0, eq) as (typeof TEXT_OPTION_KEYS)[number];
+    if (!(TEXT_OPTION_KEYS as readonly string[]).includes(key))
       fail(`unknown option ${JSON.stringify(key)}`, tag);
     if (key in options) fail(`duplicate option ${JSON.stringify(key)}`, tag);
     options[key] = decodeValue(field.slice(eq + 1));
@@ -385,7 +399,7 @@ export function parseTag(tag: unknown): Definition | null {
     fail(`invalid name ${JSON.stringify(pairs.name)}`, tag);
 
   const options: TagOptions = {};
-  for (const key of ['default', 'label', 'row'] as const) {
+  for (const key of TEXT_OPTION_KEYS) {
     if (pairs[key] !== undefined) options[key] = decodeValue(pairs[key]);
   }
   if (options.row !== undefined && !ID_RE.test(options.row))
@@ -448,7 +462,7 @@ export function formatTag(def: Definition): string {
       `cannot format kind ${JSON.stringify((def as Definition).kind)}`
     );
   }
-  for (const key of ['default', 'label', 'row'] as const) {
+  for (const key of TEXT_OPTION_KEYS) {
     const value = def.options?.[key];
     if (value !== undefined) parts.push(`${key}=${encodeValue(value)}`);
   }

@@ -6,6 +6,7 @@
 import { applyRules, hasBlockingErrors } from '../engine';
 import { scanBindings, setOccurrenceText } from '../sfdtAdapter';
 import { convertTemplateTokens } from '../templateImport';
+import { todayIso } from '../valueTypes';
 import { buildTemplateTokenDocument } from './fixtures/templateTokenFixture';
 
 const importTemplate = () =>
@@ -182,6 +183,44 @@ describe('convertTemplateTokens', () => {
     expect(
       paragraph.inlines![paragraph.inlines!.length - 1].text
     ).toBe(' end');
+  });
+
+  it('shows value, falls back to default, then to one implied by the type', () => {
+    const textOf = (token: string): string | undefined => {
+      const { sfdt, diagnostics } = convertTemplateTokens({
+        sections: [
+          { blocks: [{ paragraphFormat: {}, inlines: [{ text: token }] }] }
+        ]
+      });
+      expect(diagnostics).toEqual([]);
+      const control = (sfdt.sections![0].blocks![0].inlines || []).find(
+        (inline) => inline.contentControlProperties
+      );
+      return control!.inlines![0].text;
+    };
+    // value describes this occurrence; default only seeds a new row.
+    expect(textOf('[[name=qty|type=integer|value=12|default=1]]')).toBe('12');
+    expect(textOf('[[name=qty|type=integer|default=1]]')).toBe('1');
+    // Neither given: 0 for numbers, blank for text, today for dates.
+    expect(textOf('[[name=qty|type=integer]]')).toBe('0');
+    expect(textOf('[[name=note]]')).toBe('');
+    expect(textOf('[[name=due|type=date]]')).toBe(todayIso());
+  });
+
+  it('reports an unparseable value against the key that carried it', () => {
+    const { diagnostics } = convertTemplateTokens({
+      sections: [
+        {
+          blocks: [
+            {
+              paragraphFormat: {},
+              inlines: [{ text: '[[name=qty|type=integer|value=lots]]' }]
+            }
+          ]
+        }
+      ]
+    });
+    expect(diagnostics.map((entry) => entry.code)).toContain('bad-value');
   });
 
   it('treats a dangling table marker as a diagnostic, not a guess', () => {

@@ -26,7 +26,12 @@ import {
   parseTag,
   TableDefinition
 } from './tagDsl';
-import { defaultValue, isValueError, renderDisplay } from './valueTypes';
+import {
+  defaultValue,
+  isValueError,
+  parseDisplay,
+  renderDisplay
+} from './valueTypes';
 import { freshRowId } from './sfdtAdapter';
 import {
   ContentControlProperties,
@@ -85,21 +90,29 @@ function tokenToCc(
       inlines: [{ text: '…' }]
     };
   }
+  // `value` is what this occurrence shows; `default` only seeds new rows, so it
+  // is the fallback here rather than the source.
+  const explicit = def.options ? def.options.value : undefined;
+  const key = explicit !== undefined ? 'value' : 'default';
   let text = '';
   try {
-    text = renderDisplay(def.fieldType, defaultValue(def));
+    text = renderDisplay(
+      def.fieldType,
+      explicit !== undefined
+        ? parseDisplay(def.fieldType, explicit)
+        : defaultValue(def)
+    );
   } catch (thrown) {
     if (!isValueError(thrown)) throw thrown;
     diag(
       diagnostics,
       'error',
-      'bad-default',
-      `"${def.name}": default does not parse as ${def.fieldType.kind}`
+      `bad-${key}`,
+      `"${def.name}": ${key} does not parse as ${def.fieldType.kind}`
     );
-    text =
-      def.options && def.options.default !== undefined
-        ? def.options.default
-        : '';
+    // Keep the unparseable text visible rather than silently blanking the cell.
+    const raw = explicit !== undefined ? explicit : def.options?.default;
+    text = raw !== undefined ? raw : '';
   }
   return { contentControlProperties: ccProps(def, false), inlines: [{ text }] };
 }
