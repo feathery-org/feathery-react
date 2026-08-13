@@ -27,7 +27,10 @@ jest.mock('../../../../utils/validation', () => {
     })),
     isSupportedCountry: jest.fn(() => true),
     getExampleNumber: jest.fn(() => '+1 555 123 4567'),
-    validatePhoneNumberLength: () => undefined
+    validatePhoneNumberLength: () => undefined,
+    isValidPhoneNumber: jest.fn(
+      (number: string) => number.replace(/\D/g, '').length === 11
+    )
   };
   return {
     phoneLibPromise: Promise.resolve(lib),
@@ -279,6 +282,24 @@ describe('PhoneField Component', () => {
       typePhoneNumber(input, '+15551234567');
       expect(onComplete).toHaveBeenCalledWith('15551234567');
     });
+
+    it('commits the number while typing once it becomes valid, without blur', () => {
+      const element = createPhoneElement();
+      const onComplete = createStatefulOnComplete();
+      const props = createPhoneProps(element, { onComplete });
+
+      render(<PhoneField {...props} />);
+
+      const input = getPhoneInput();
+
+      typePartialPhoneNumber(input, '+1555123456');
+      expect(onComplete).not.toHaveBeenCalled();
+
+      // No blur — the moment the number is valid it should commit so any
+      // stale validation error can clear while the user is still typing
+      typePartialPhoneNumber(input, '+15551234567');
+      expect(onComplete).toHaveBeenCalledWith('15551234567');
+    });
   });
 
   describe('Cursor placement after focus', () => {
@@ -311,7 +332,9 @@ describe('PhoneField Component', () => {
 
       // Select UK (phone code "44", length=2, not > 3 → delta=1, cursor = 2 + 1 = 3)
       act(() => {
-        fireEvent.click(document.querySelector('[data-testid="country-trigger"]')!);
+        fireEvent.click(
+          document.querySelector('[data-testid="country-trigger"]')!
+        );
       });
       act(() => {
         fireEvent.click(
