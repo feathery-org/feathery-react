@@ -91,7 +91,7 @@ const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
  *   - flipping it needs a `yarn build` and a re-link into the consuming app;
  *   - it applies globally, so leave it false on anything shared.
  */
-const FORCE_DOCUMENT_BINDINGS = false;
+const FORCE_DOCUMENT_BINDINGS = true;
 
 function getPendingDraft(containerId?: string): RefreshEventDetail | undefined {
   if (!containerId) return undefined;
