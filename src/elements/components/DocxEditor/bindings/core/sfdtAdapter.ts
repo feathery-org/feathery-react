@@ -785,6 +785,9 @@ export function adoptUnboundRows(
       const control = controls[binding.i];
       const def = binding.def;
       def.options.row = rowId;
+      // `value` describes the row it was authored on; a new row starts from
+      // `default` instead, so carrying it over would clone stale data.
+      delete def.options.value;
       control.contentControlProperties = {
         ...control.contentControlProperties,
         tag: formatTag(def)

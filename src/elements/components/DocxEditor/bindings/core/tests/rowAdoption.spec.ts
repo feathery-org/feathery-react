@@ -100,6 +100,22 @@ describe('row adoption', () => {
     expect(hasBlockingErrors(result.diagnostics)).toBe(false);
   });
 
+  it('seeds a new row from default and never inherits value', () => {
+    // value belongs to the row it was authored on - carrying it into a new row
+    // would clone stale data.
+    const doc: SfdtDocument = JSON.parse(
+      JSON.stringify(withNativeRow(['', '', '', ''])).replace(
+        '[[name=quantity|type=integer|row=r-2]]',
+        '[[name=quantity|type=integer|value=99|default=5|row=r-2]]'
+      )
+    );
+    const adopted = applyRules(doc, {}).index.tables.get('costs')!.rows[2];
+    const quantity = adopted.bindings.get('quantity')!;
+    expect(quantity.text).toBe('5');
+    expect(quantity.def.options.value).toBeUndefined();
+    expect(quantity.def.options.default).toBe('5');
+  });
+
   it('is idempotent: a second reconcile leaves the adopted row untouched', () => {
     const first = applyRules(withNativeRow(['QA testing', '4', '250', '']), {});
     const second = applyRules(first.sfdt, { prevValues: first.values });

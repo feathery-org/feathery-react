@@ -147,10 +147,32 @@ export function isNumericType(fieldType: FieldType): boolean {
   );
 }
 
-/** The value a freshly created row instance starts with. */
-export function defaultValue(def: BoundDefinition): string {
+/**
+ * Today as YYYY-MM-DD in the reader's own timezone - a UTC date would read as
+ * tomorrow for anyone east of it late in the day. Injectable so tests are
+ * deterministic; this is the engine's only clock read.
+ */
+export function todayIso(): string {
+  const now = new Date();
+  const pad = (part: number): string => String(part).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+    now.getDate()
+  )}`;
+}
+
+/**
+ * The value a freshly created row instance starts with: an explicit `default`,
+ * else one implied by the type. Deliberately ignores `value`, which describes a
+ * single occurrence and must not be inherited by a new row.
+ */
+export function defaultValue(
+  def: BoundDefinition,
+  today: string = todayIso()
+): string {
   if (def.options && def.options.default !== undefined) {
     return parseDisplay(def.fieldType, def.options.default);
   }
-  return isNumericType(def.fieldType) ? '0' : '';
+  if (isNumericType(def.fieldType)) return '0';
+  if (def.fieldType.kind === 'date') return today;
+  return '';
 }

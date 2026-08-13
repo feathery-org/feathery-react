@@ -179,4 +179,18 @@ describe('tag DSL', () => {
     expect(def.options.default).toBe('a|b=c[d]');
     expect(formatTag(def)).toBe('[[name=note|default=a%7Cb%3Dc%5Bd%5D]]');
   });
+
+  it('carries value and default as separate keys', () => {
+    const def = bound('[[name=qty|type=integer|value=12|default=1]]');
+    expect(def.options.value).toBe('12');
+    expect(def.options.default).toBe('1');
+    // Canonical order is fixed: value before default.
+    expect(formatTag(def)).toBe('[[name=qty|type=integer|value=12|default=1]]');
+  });
+
+  it('percent-encodes value the same way as default', () => {
+    const def = bound(`[[name=item|value=${encodeValue('Purell [500ml]')}]]`);
+    expect(def.options.value).toBe('Purell [500ml]');
+    expect(formatTag(def)).toBe('[[name=item|value=Purell %5B500ml%5D]]');
+  });
 });
