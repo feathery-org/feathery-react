@@ -538,8 +538,12 @@ const CONTRACTS: Record<string, ContractCase> = {
         ok: true,
         op: 'duplicate_table',
         route: 'editor',
-        anchor: '0;2'
+        anchor: '0;3'
       });
+      // An empty paragraph separates the two tables; Word renders adjacent
+      // tables as one block.
+      const between = JSON.parse(ed.serialize()).sec[0].b[2];
+      expect(between.rw ?? between.rows).toBeUndefined();
       const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
         (block) => block.kind === 'table_cell'
       );

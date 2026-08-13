@@ -135,7 +135,12 @@ describe('duplicate_table over bound tables', () => {
     );
 
     const after = parsed(editor);
-    const cloneTable = after.sections[0].blocks[7];
+    // Word renders two adjacent tables as one, so the copy is separated from its
+    // source by an empty paragraph rather than landing flush against it.
+    const separator = after.sections[0].blocks[7];
+    expect(separator.rows).toBeUndefined();
+    expect(separator.blocks).toBeUndefined();
+    const cloneTable = after.sections[0].blocks[8];
     expect(scrubCloneForStyleDiff(cloneTable)).toEqual(
       scrubCloneForStyleDiff(sourceTable)
     );
@@ -147,7 +152,7 @@ describe('duplicate_table over bound tables', () => {
       edits: [
         {
           op: 'set_cell_text',
-          anchor: '0;7;1;1;0',
+          anchor: '0;8;1;1;0',
           text: '$600.00',
           literal: true
         }
@@ -158,9 +163,9 @@ describe('duplicate_table over bound tables', () => {
       route: 'engine'
     });
     expect(textAt(editor, '0;6;1;1;0')).toBe('$500.00');
-    expect(textAt(editor, '0;7;1;1;0')).toBe('$600.00');
+    expect(textAt(editor, '0;8;1;1;0')).toBe('$600.00');
     expect(textAt(editor, '0;6;5;1;0')).toBe('$1,700.00');
-    expect(textAt(editor, '0;7;5;1;0')).toBe('$1,800.00');
+    expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
   });
 
   it('materializes replacement rows through the engine and recomputes formulas', () => {
@@ -184,12 +189,13 @@ describe('duplicate_table over bound tables', () => {
       route: 'engine'
     });
     expect(indexOf(editor).tables.has('costs_copy')).toBe(true);
-    expect(textAt(editor, '0;3;1;0;0')).toBe('Hosting');
-    expect(textAt(editor, '0;3;1;3;0')).toBe('$300.00');
-    expect(textAt(editor, '0;3;2;0;0')).toBe('Support');
-    expect(textAt(editor, '0;3;2;3;0')).toBe('$480.00');
-    expect(textAt(editor, '0;3;3;1;0')).toBe('$780.00');
-    expect(textAt(editor, '0;3;5;1;0')).toBe('$780.00');
+    expect(result.results[0].anchor).toBe('0;4');
+    expect(textAt(editor, '0;4;1;0;0')).toBe('Hosting');
+    expect(textAt(editor, '0;4;1;3;0')).toBe('$300.00');
+    expect(textAt(editor, '0;4;2;0;0')).toBe('Support');
+    expect(textAt(editor, '0;4;2;3;0')).toBe('$480.00');
+    expect(textAt(editor, '0;4;3;1;0')).toBe('$780.00');
+    expect(textAt(editor, '0;4;5;1;0')).toBe('$780.00');
   });
 
   it('refuses numeric replacement rows without provenance before cloning', () => {

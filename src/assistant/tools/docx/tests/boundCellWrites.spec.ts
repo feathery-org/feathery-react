@@ -183,7 +183,9 @@ describe('writes aimed at a bound cell', () => {
     const failure: any = result.results[0];
     expect(failure.error).toBe('target_is_bound_formula');
     expect(failure.route).toBe('engine');
-    expect(failure.retry).toBeUndefined();
+    // No rewording of the same write can succeed, and the message says what CAN:
+    // change the inputs the value is computed from.
+    expect(failure.retry).toBe('never');
     expect(failure.message).toMatch(/quantity/);
     expect(failure.message).toMatch(/unit_cost/);
   });
