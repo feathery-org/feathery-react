@@ -2,7 +2,6 @@
 // need to use var for this to work - https://stackoverflow.com/a/69230938
 declare global {
   var scriptjsLoadPromise: any;
-  var webfontloaderPromise: any;
   var Persona: any;
   var firebase: any;
   var lottie: any;

@@ -20,6 +20,7 @@ import {
 } from '../formHelperFunctions';
 import { getDefaultFormFieldValue } from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
+import { loadGoogleFonts } from '../fonts';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
 import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
@@ -389,11 +390,7 @@ export default class FeatheryClient extends IntegrationClient {
 
   _loadFormPackages(res: any) {
     // Load default fonts
-    if (res.fonts.length && global.webfontloaderPromise) {
-      global.webfontloaderPromise.then((WebFont: any) => {
-        WebFont.load({ google: { families: res.fonts } });
-      });
-    }
+    loadGoogleFonts(res.fonts);
     // Load user-uploaded fonts
     Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
       (fontStyles as any).forEach(({ source, style, weight }: any) => {
