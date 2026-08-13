@@ -145,7 +145,6 @@ describe('structural ops on a bound table', () => {
         }
       ]
     });
-
     expect(result.results.map((entry) => entry.ok)).toEqual([
       true,
       true,
@@ -171,6 +170,117 @@ describe('structural ops on a bound table', () => {
     // that held index 3 before the insert.
     expect(textAt(editor, '0;2;1;0;0')).toBe('Design work');
     expect(textAt(editor, '0;2;2;0;0')).toBe('Development');
+  });
+
+  it('inserts a bound row after another engine write in the same batch', () => {
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;2;1;1;0',
+          text: '13',
+          literal: true
+        },
+        { op: 'insert_row', anchor: LAST_DATA_CELL }
+      ]
+    });
+
+    expect(result.results).toMatchObject([
+      { ok: true, route: 'engine' },
+      { ok: true, route: 'engine', op: 'insert_row' }
+    ]);
+    expect(rowIdsOf(editor, 'costs')).toHaveLength(3);
+    expect(textAt(editor, '0;2;3;0;0')).toBe('');
+  });
+
+  it('inserts a bound row in a later batch without using the engine write caret', () => {
+    const write = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;2;1;1;0',
+          text: '13',
+          literal: true
+        }
+      ]
+    });
+    expect(write.results[0]).toMatchObject({ ok: true, route: 'engine' });
+
+    const inserted = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [{ op: 'insert_row', anchor: LAST_DATA_CELL }]
+    });
+
+    expect(inserted.results[0]).toMatchObject({
+      ok: true,
+      route: 'engine',
+      op: 'insert_row'
+    });
+    expect(rowIdsOf(editor, 'costs')).toHaveLength(3);
+  });
+
+  it('appends a table from its anchor after a bound write in the same batch', () => {
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;2;1;0;0',
+          text: 'Software'
+        },
+        {
+          op: 'insert_table',
+          anchor: '0;9',
+          position: 'after',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Region', 'Owner'],
+            ['North', 'Alex']
+          ]
+        }
+      ]
+    });
+    expect(result.results).toMatchObject([
+      { ok: true, route: 'engine' },
+      { ok: true, route: 'editor', op: 'insert_table' }
+    ]);
+    expect(textAt(editor, '0;10;0;0;0')).toBe('Region');
+    expect(textAt(editor, '0;10;1;1;0')).toBe('Alex');
+  });
+
+  it('appends a table in a later batch without using the engine write caret', () => {
+    const write = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;2;1;0;0',
+          text: 'Software'
+        }
+      ]
+    });
+    expect(write.results[0]).toMatchObject({ ok: true, route: 'engine' });
+
+    const inserted = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'insert_table',
+          anchor: '0;9',
+          position: 'after',
+          rows: 2,
+          columns: 2,
+          initialCells: [
+            ['Region', 'Owner'],
+            ['North', 'Alex']
+          ]
+        }
+      ]
+    });
+    expect(inserted.results[0]).toMatchObject({
+      ok: true,
+      route: 'editor',
+      op: 'insert_table'
+    });
+    expect(textAt(editor, '0;10;0;0;0')).toBe('Region');
+    expect(textAt(editor, '0;10;1;1;0')).toBe('Alex');
   });
 
   it('refuses `expect` on a row this same batch has not created yet', () => {

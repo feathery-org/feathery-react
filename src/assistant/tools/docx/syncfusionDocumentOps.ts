@@ -8419,7 +8419,8 @@ export const ANCHORED_OP_HANDLERS: {
   // `above`, `count`, `rows` and `columns` were advertised in the tool schema
   // and silently dropped: every insert_row was one row below, every
   // insert_table was 1x1. Every op maps its arguments explicitly now.
-  insert_row: ({ editor, op }) => {
+  insert_row: ({ editor, op, block }) => {
+    selectBlock(editor, block);
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
   },
   insert_table: ({ editor, op, block, byAnchor }) => {
@@ -8431,7 +8432,8 @@ export const ANCHORED_OP_HANDLERS: {
       );
     const position =
       typeof op.position === 'string' ? op.position.toLowerCase() : 'before';
-    let insertionAnchor = block.anchor;
+    const tableAnchor = resultingInsertedTableAnchor(op);
+    let selectedInsertion = false;
     if (position === 'after') {
       const parts = block.anchor.split(';');
       const blockIndex = Number(parts[1]);
@@ -8440,15 +8442,21 @@ export const ANCHORED_OP_HANDLERS: {
           ? `${parts[0]};${blockIndex + 1}`
           : '';
       const next = nextAnchor ? byAnchor.get(nextAnchor) : undefined;
-      if (!next)
-        throw new OpError(
-          'insert_table_after_requires_following_block',
-          'A table can be placed after this block only when the next body block is addressable. Anchor the next block with position "before" instead; nothing was written.',
-          [`anchor after ${block.anchor}: ${nextAnchor || 'unavailable'}`]
-        );
-      insertionAnchor = next.anchor;
+      if (next) {
+        selectRange(editor, next.anchor, 0, 0);
+        selectedInsertion = true;
+      } else {
+        // Syncfusion inserts a table AT the selected paragraph, not after it.
+        // At the document tail first split the resolved paragraph to create the
+        // address the op promises, then replace that new paragraph with the
+        // table. Both writes are tracked in the same operation.
+        selectRange(editor, block.anchor, block.length, block.length);
+        callEditor(editor, 'insertText', '\n');
+        selectRange(editor, tableAnchor, 0, 0);
+        selectedInsertion = true;
+      }
     }
-    selectRange(editor, insertionAnchor, 0, 0);
+    if (!selectedInsertion) selectRange(editor, block.anchor, 0, 0);
     callEditor(
       editor,
       'insertTable',
@@ -8463,7 +8471,7 @@ export const ANCHORED_OP_HANDLERS: {
           if (!text) return;
           selectRange(
             editor,
-            `${insertionAnchor};${rowIndex};${columnIndex};0`,
+            `${tableAnchor};${rowIndex};${columnIndex};0`,
             0,
             0
           );
@@ -11851,13 +11859,137 @@ function setBoundOccurrenceCanonical(
   };
 }
 
+interface IndependentDocumentField {
+  name: string;
+  occurrences: Occurrence[];
+  locations: string[];
+}
+
+function containingBindingTable(
+  index: BindingIndex,
+  occurrence: Occurrence
+): TableEntry | undefined {
+  return [...index.tables.values()].find((table) =>
+    pathHasPrefix(table.markerPath, occurrence.path)
+  );
+}
+
+/**
+ * A duplicated table prefixes its private document fields with the new table
+ * id. Strip only that owning prefix when comparing field identity, so a write
+ * to `tax_rate` can see the independent `expenses_copy_tax_rate` instance the
+ * duplicate created without conflating unrelated fields elsewhere.
+ */
+function documentFieldIdentity(
+  index: BindingIndex,
+  occurrence: Occurrence
+): string {
+  const owner = containingBindingTable(index, occurrence);
+  const prefix = owner ? `${owner.tableId}_` : '';
+  return prefix && occurrence.name.startsWith(prefix)
+    ? occurrence.name.slice(prefix.length)
+    : occurrence.name;
+}
+
+function independentDocumentFields(
+  index: BindingIndex,
+  target: Occurrence
+): IndependentDocumentField[] {
+  if (target.tableId || target.rowId || target.def.kind !== 'field') return [];
+  const identity = documentFieldIdentity(index, target);
+  const fields: IndependentDocumentField[] = [];
+  for (const [name, occurrences] of index.fields) {
+    const first = occurrences[0];
+    if (!first || documentFieldIdentity(index, first) !== identity) continue;
+    const locations = [
+      ...new Set(
+        occurrences.map((occurrence) => {
+          const table = containingBindingTable(index, occurrence);
+          return table
+            ? `table "${table.tableId}"`
+            : `document path ${occurrence.path.join('/')}`;
+        })
+      )
+    ];
+    fields.push({ name, occurrences, locations });
+  }
+  return fields;
+}
+
+function independentFieldDetails(fields: IndependentDocumentField[]): string[] {
+  return fields.map(
+    (field, index) =>
+      `instance ${index + 1}: "${field.name}" at ${field.locations.join(', ')}`
+  );
+}
+
+function leaveEngineAtAddressableBodySelection(
+  editor: LiveEditor,
+  blocks: FlatBlock[]
+): void {
+  const target = blocks.find(
+    (block) =>
+      /^\d+;\d+$/.test(block.anchor) &&
+      block.kind !== 'table_cell' &&
+      !block.boundTag &&
+      !block.offsetsUntrusted
+  );
+  if (target) selectRange(editor, target.anchor, target.length, target.length);
+}
+
+function ambiguousIndependentFieldWrite(
+  op: EditOp,
+  index: BindingIndex,
+  target: Occurrence,
+  fields: IndependentDocumentField[],
+  reason: string
+): OpError {
+  return new OpError(
+    'independent_binding_instances_ambiguous',
+    `${op.op} names field "${documentFieldIdentity(
+      index,
+      target
+    )}", but it resolves to ${
+      fields.length
+    } independent binding instances. ${reason} Nothing was written.`,
+    independentFieldDetails(fields)
+  );
+}
+
 function boundInputTextPlan(
   index: number,
   op: EditOp,
   block: FlatBlock,
-  occurrence: Occurrence
+  occurrence: Occurrence,
+  runtime: BindingRuntime
 ): EngineMutationPlan {
   const desired = desiredBoundDisplayText(op, block, occurrence);
+  const independent = independentDocumentFields(runtime.index, occurrence);
+  if (independent.length > 1 && op.op !== 'set_cell_text')
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'Only set_cell_text supplies one complete replacement value that can be applied to every instance deterministically.'
+    );
+  if (
+    independent.length > 1 &&
+    independent.some(
+      (field) =>
+        field.occurrences[0]?.def.kind !== 'field' ||
+        !field.occurrences[0]?.def.isEditable ||
+        JSON.stringify(field.occurrences[0]?.def.fieldType) !==
+          JSON.stringify(occurrence.def.fieldType)
+    )
+  )
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'Their types or editability differ, so one value cannot be written safely to all of them.'
+    );
   const literalNumber = guardBoundNumericReplacement(op, occurrence, desired);
   let canonical: string;
   try {
@@ -11896,24 +12028,42 @@ function boundInputTextPlan(
           `The binding "${occurrence.name}" could not be found when applying ${op.op}. Nothing was written.`,
           [`binding: ${occurrence.tag}`]
         );
-      const next = setBoundOccurrenceCanonical(
-        state,
-        liveOccurrence,
-        canonical
-      );
+      let next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
+      if (independent.length > 1) {
+        for (const field of independent) {
+          if (field.name === liveOccurrence.name) continue;
+          next = {
+            sfdt: setTaggedValue(next.sfdt, field.name, canonical, state.index),
+            index: state.index
+          };
+        }
+      }
+      const details = [
+        ...(independent.length > 1
+          ? [
+              `updated ${
+                independent.length
+              } independent instances of field "${documentFieldIdentity(
+                state.index,
+                liveOccurrence
+              )}"`,
+              ...independentFieldDetails(independent)
+            ]
+          : []),
+        ...(desired === renderDisplay(liveOccurrence.def.fieldType, canonical)
+          ? []
+          : [
+              `display normalized from ${JSON.stringify(
+                desired
+              )} to ${JSON.stringify(
+                renderDisplay(liveOccurrence.def.fieldType, canonical)
+              )}`
+            ])
+      ];
       return {
         sfdt: next.sfdt,
         anchor: block.anchor,
-        details:
-          desired === renderDisplay(liveOccurrence.def.fieldType, canonical)
-            ? undefined
-            : [
-                `display normalized from ${JSON.stringify(
-                  desired
-                )} to ${JSON.stringify(
-                  renderDisplay(liveOccurrence.def.fieldType, canonical)
-                )}`
-              ]
+        ...(details.length ? { details } : {})
       };
     }
   };
@@ -12885,7 +13035,7 @@ function planBindingRoutedOp(
   if (occurrence.def.kind === 'formula' && BOUND_WRITE_OPS.has(op.op))
     throw formulaRedirect(op, occurrence);
   if (occurrence.def.kind === 'field' && BOUND_TEXT_WRITE_OPS.has(op.op))
-    return boundInputTextPlan(index, op, target, occurrence);
+    return boundInputTextPlan(index, op, target, occurrence, runtime);
   if (BOUND_WRITE_OPS.has(op.op))
     throw new OpError(
       'binding_write_unroutable',
@@ -18826,6 +18976,11 @@ function applyDocumentEditsMeasured(
               return state.sfdt;
             });
             refresh(engineResult.sfdt);
+            // Reconciliation reopens the SFDT and can leave Syncfusion's caret
+            // inside the content control that was just updated. Keep the next
+            // assistant operation on a public body position even though every
+            // structural handler also resolves and selects its own anchor.
+            leaveEngineAtAddressableBodySelection(editor, blocks);
             if (engineResult.diagnostics.length) {
               warnings.push(
                 `binding_engine_diagnostics: ${engineResult.diagnostics

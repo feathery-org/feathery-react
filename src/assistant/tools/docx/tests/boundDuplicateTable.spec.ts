@@ -136,10 +136,24 @@ describe('duplicate_table over bound tables', () => {
 
     const after = parsed(editor);
     // Word renders two adjacent tables as one, so the copy is separated from its
-    // source by an empty paragraph rather than landing flush against it.
+    // source by an empty TOP-LEVEL paragraph rather than landing flush against
+    // it. Both tables are block content controls; a paragraph inside either
+    // wrapper would still leave the wrappers adjacent in Word.
+    expect(
+      after.sections[0].blocks
+        .slice(6, 9)
+        .map((entry: any) =>
+          entry.contentControlProperties?.tag
+            ? entry.contentControlProperties.tag
+            : entry.inlines
+            ? 'paragraph'
+            : 'other'
+        )
+    ).toEqual(['[[table=expenses]]', 'paragraph', '[[table=expenses_copy]]']);
     const separator = after.sections[0].blocks[7];
     expect(separator.rows).toBeUndefined();
     expect(separator.blocks).toBeUndefined();
+    expect(separator.inlines).toEqual([]);
     const cloneTable = after.sections[0].blocks[8];
     expect(scrubCloneForStyleDiff(cloneTable)).toEqual(
       scrubCloneForStyleDiff(sourceTable)
@@ -166,6 +180,81 @@ describe('duplicate_table over bound tables', () => {
     expect(textAt(editor, '0;8;1;1;0')).toBe('$600.00');
     expect(textAt(editor, '0;6;5;1;0')).toBe('$1,700.00');
     expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
+  });
+
+  it('writes every independent instance of a duplicated document field', () => {
+    const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
+    });
+    expect(duplicate.results[0].ok).toBe(true);
+    const copyTax = flattenSfdt(parsed(editor)).find((block) =>
+      block.boundTag?.includes('name=expenses_copy_tax_rate')
+    );
+    expect(copyTax).toBeDefined();
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: copyTax!.anchor,
+          text: '8%',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(result.results[0].details).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('updated 2 independent instances')
+      ])
+    );
+    expect(
+      indexOf(editor)
+        .fields.get('tax_rate')
+        ?.map((entry) => entry.text)
+    ).toEqual(['8%', '8%']);
+    expect(
+      indexOf(editor)
+        .fields.get('expenses_copy_tax_rate')
+        ?.map((entry) => entry.text)
+    ).toEqual(['8%']);
+  });
+
+  it('refuses an ambiguous transform across independent field instances', () => {
+    const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
+    });
+    expect(duplicate.results[0].ok).toBe(true);
+    const copyTax = flattenSfdt(parsed(editor)).find((block) =>
+      block.boundTag?.includes('name=expenses_copy_tax_rate')
+    );
+    const before = editor.serialize();
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: copyTax!.anchor,
+          find: '0%',
+          replace: '8%'
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({
+      ok: false,
+      route: 'engine',
+      error: 'independent_binding_instances_ambiguous',
+      message: expect.stringContaining('2 independent binding instances')
+    });
+    expect(result.results[0].details).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('table "costs"'),
+        expect.stringContaining('table "expenses_copy"')
+      ])
+    );
+    expect(editor.serialize()).toBe(before);
   });
 
   it('materializes replacement rows through the engine and recomputes formulas', () => {
