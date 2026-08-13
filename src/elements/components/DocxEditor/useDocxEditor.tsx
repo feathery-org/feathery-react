@@ -7,6 +7,7 @@ import {
   preserveDocumentViewDuring
 } from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
+import { stampMissingContentControlColors } from './contentControlSafety';
 import { DocxSource } from './types';
 import {
   DocxBindingsState,
@@ -96,6 +97,37 @@ const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
 /** True while a source document is being opened/reopened on this editor. */
 export function isOpeningDocument(ed: any): boolean {
   return !!ed?.[OPENING_DOCUMENT_KEY];
+}
+
+// A conversion that never completes must not strand the editor in `loading`.
+const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
+
+/**
+ * Resolves when Syncfusion finishes laying the document out. `documentChange`
+ * fires exactly once per open, after open()/openAsync() has already resolved,
+ * and is the only signal that the document is really on screen.
+ */
+function waitForDocumentLoad(ed: any): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        ed.removeEventListener?.('documentChange', finish);
+      } catch {
+        /* instance already torn down */
+      }
+      resolve();
+    };
+    try {
+      ed.addEventListener?.('documentChange', finish);
+    } catch {
+      finish();
+      return;
+    }
+    setTimeout(finish, DOCUMENT_LOAD_TIMEOUT_MS);
+  });
 }
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
@@ -987,6 +1019,10 @@ export function useDocxEditor({
         });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
         liveEditor[OPENING_DOCUMENT_KEY] = true;
+        // open() resolves before the converted document is laid out, so anything
+        // reading the document here sees the previous (often blank) one.
+        // Registered before the open so a fast load cannot outrun the listener.
+        const documentLoaded = waitForDocumentLoad(liveEditor);
         try {
           if (typeof liveEditor.openAsync === 'function') {
             await liveEditor.openAsync(blob);
@@ -1003,6 +1039,17 @@ export function useDocxEditor({
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
         }
+        await documentLoaded;
+        if (cancelled) {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          return;
+        }
+        // A .docx round trip drops every content control's colour, and the
+        // border renderer reads it unguarded - so without this, clicking any
+        // content control throws mid-paint and half the page disappears. Runs
+        // for every document, not just bound ones: a template authored in Word
+        // hits it too. See contentControlSafety.
+        stampMissingContentControlColors(liveEditor);
         openedKeyRef.current = openKey;
         // A freshly opened document has nothing unsaved in it yet.
         unsavedRef.current = false;

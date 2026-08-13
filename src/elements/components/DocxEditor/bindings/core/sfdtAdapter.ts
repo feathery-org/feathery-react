@@ -701,18 +701,57 @@ export interface AdoptionResult {
   skipped: Array<{ rowIndex: number; reason: string }>;
 }
 
+/**
+ * Indexes of rows that look like the user's own additions: not a header, and
+ * carrying no content control. Used only to report rows that could not be
+ * adopted for want of a template.
+ */
+function countAdoptableRows(sfdt: SfdtDocument, tablePath: SfdtPath): number[] {
+  const tableNode = getAt(sfdt, tablePath) as { rows?: SfdtRow[] } | undefined;
+  const rows = (tableNode && tableNode.rows) || [];
+  const out: number[] = [];
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || (row.rowFormat && row.rowFormat.isHeader)) continue;
+    if (!(row.cells || []).length) continue;
+    if (JSON.stringify(row).includes('contentControlProperties')) continue;
+    out.push(r);
+  }
+  return out;
+}
+
 export function adoptUnboundRows(
   sfdt: SfdtDocument,
   tableId: string,
   index: BindingIndex = scanBindings(sfdt),
-  rowIdGen: () => string = freshRowId
+  rowIdGen: () => string = freshRowId,
+  /**
+   * Row shape from an earlier reconcile, used when the user has deleted every
+   * bound row - the document then holds no copy of it at all.
+   */
+  fallbackTemplate?: SfdtRow
 ): AdoptionResult {
   const table = index.tables.get(tableId);
-  if (!table || !table.rows.length || !table.tablePath)
-    return { sfdt, adopted: [], skipped: [] };
-  const lastBoundRow = table.rows[table.rows.length - 1];
-  if (!lastBoundRow.path) return { sfdt, adopted: [], skipped: [] };
-  const templateRow = getAt(sfdt, lastBoundRow.path) as SfdtRow;
+  if (!table || !table.tablePath) return { sfdt, adopted: [], skipped: [] };
+  const lastBoundRow = table.rows.length
+    ? table.rows[table.rows.length - 1]
+    : undefined;
+  const templateRow =
+    lastBoundRow && lastBoundRow.path
+      ? (getAt(sfdt, lastBoundRow.path) as SfdtRow)
+      : fallbackTemplate;
+  if (!templateRow) {
+    // Nothing to copy from. Report it rather than leaving rows plain in silence.
+    const unbound = countAdoptableRows(sfdt, table.tablePath);
+    return {
+      sfdt,
+      adopted: [],
+      skipped: unbound.map((rowIndex) => ({
+        rowIndex,
+        reason: 'the table has no bound row to copy, and none was remembered'
+      }))
+    };
+  }
   const tableNode = getAt(sfdt, table.tablePath) as { rows?: SfdtRow[] };
   let next = sfdt;
   const adopted: string[] = [];
@@ -785,6 +824,9 @@ export function adoptUnboundRows(
       const control = controls[binding.i];
       const def = binding.def;
       def.options.row = rowId;
+      // `value` describes the row it was authored on; a new row starts from
+      // `default` instead, so carrying it over would clone stale data.
+      delete def.options.value;
       control.contentControlProperties = {
         ...control.contentControlProperties,
         tag: formatTag(def)

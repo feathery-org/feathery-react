@@ -45,6 +45,11 @@ export interface CommitTriggerOptions {
    * first.
    */
   enterDelayMs?: number;
+  /**
+   * Delay before reacting to a row being added or removed. One such command can
+   * emit several contentChange events; this collapses them.
+   */
+  adoptDelayMs?: number;
   setTimeoutFn?: (fn: () => void, ms: number) => unknown;
   clearTimeoutFn?: (id: unknown) => void;
 }
@@ -58,6 +63,8 @@ export interface CommitTriggers {
   onEditorBlur(): void;
   /** Call from the editor's keyDown event. */
   onKeyDown(key: string | undefined): void;
+  /** Call when the editor added or removed a table row on its own. */
+  onRowsChanged(): void;
   /** Clear the pending-edit flag, e.g. after the controller commits. */
   clearPendingEdit(): void;
   /** True when an edit is waiting for a commit trigger. */
@@ -72,6 +79,7 @@ export function createCommitTriggers(
   {
     selfHealDelayMs = 60,
     enterDelayMs = 30,
+    adoptDelayMs = 60,
     setTimeoutFn = (fn, ms) => setTimeout(fn, ms),
     clearTimeoutFn = (id) => clearTimeout(id as any)
   }: CommitTriggerOptions = {}
@@ -81,6 +89,7 @@ export function createCommitTriggers(
   let editedBlockPath: string | null = null;
   let selfHealTimer: unknown = null;
   let enterTimer: unknown = null;
+  let adoptTimer: unknown = null;
 
   const currentControl = (): ContentControlLike | null =>
     editor.selection?.currentContentControl || null;
@@ -140,6 +149,18 @@ export function createCommitTriggers(
       enterTimer = setTimeoutFn(commit, enterDelayMs);
     },
 
+    onRowsChanged(): void {
+      // A new row must show its defaults immediately, and a deleted one must drop
+      // out of the totals at once - but neither is a commit: 'self-heal' adopts
+      // and recomputes without rewriting the cell the user may still be typing
+      // in. Leaves pendingEdit alone.
+      clearTimeoutFn(adoptTimer);
+      adoptTimer = setTimeoutFn(
+        () => controller.flush({ mode: 'self-heal' }),
+        adoptDelayMs
+      );
+    },
+
     clearPendingEdit(): void {
       pendingEdit = false;
     },
@@ -151,6 +172,7 @@ export function createCommitTriggers(
     dispose(): void {
       clearTimeoutFn(selfHealTimer);
       clearTimeoutFn(enterTimer);
+      clearTimeoutFn(adoptTimer);
       pendingEdit = false;
       editedControl = null;
       editedBlockPath = null;

@@ -24,6 +24,8 @@ import {
 } from './editorAdapter';
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
+import { watchRowCommands } from './rowCommandWatch';
+import { installHistoryBridge } from './historyBridge';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
@@ -148,6 +150,17 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
+  // Native row commands bypass runCommand, so this is the only signal that the
+  // set of rows changed at all.
+  const unwatchRowCommands = watchRowCommands(editor, () =>
+    triggers.onRowsChanged()
+  );
+  // Adopting that row reloads the document, which wipes native history; without
+  // this, undo has nothing left and the insert cannot be taken back.
+  const uninstallHistoryBridge = installHistoryBridge(editor, {
+    undo: () => controller.undo(),
+    redo: () => controller.redo()
+  });
 
   const eventful = editor as EventfulEditor;
   const onContentChange = () => triggers.onContentChange();
@@ -180,6 +193,8 @@ export function attachBindings(
       eventful.removeEventListener?.('keyDown', onKeyDown);
       editableDiv?.removeEventListener?.('blur', onBlur);
       uninstallGuard();
+      unwatchRowCommands();
+      uninstallHistoryBridge();
       triggers.dispose();
     }
   };

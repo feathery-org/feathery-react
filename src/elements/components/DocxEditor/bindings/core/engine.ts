@@ -12,6 +12,7 @@
 import {
   adoptUnboundRows,
   BindingIndex,
+  getAt,
   Occurrence,
   scanBindings,
   setCalculatedValue,
@@ -29,7 +30,8 @@ import {
   Diagnostic,
   DiagnosticSeverity,
   SfdtDocument,
-  SfdtPath
+  SfdtPath,
+  SfdtRow
 } from './sfdtTypes';
 
 /**
@@ -60,9 +62,18 @@ export type ChangeRecord =
 
 export type ReconcileMode = 'commit' | 'self-heal';
 
+/**
+ * A bound row kept per table so adoption survives the user deleting every one of
+ * them. Without it, the last delete removes the only copy of the row shape and
+ * every row inserted afterwards stays plain text - permanently, and silently.
+ */
+export type RowTemplates = Map<string, SfdtRow>;
+
 export interface ApplyRulesOptions {
   prevValues?: Map<string, string> | null;
   mode?: ReconcileMode;
+  /** Templates from earlier reconciles; used only when no bound row survives. */
+  rowTemplates?: RowTemplates | null;
 }
 
 export interface ApplyRulesResult {
@@ -74,6 +85,8 @@ export interface ApplyRulesResult {
   writes: EngineWrite[];
   /** True when the transaction changed more than content-control text. */
   structural: boolean;
+  /** Carry these into the next reconcile. */
+  rowTemplates: RowTemplates;
 }
 
 function diag(
@@ -162,7 +175,11 @@ type RefTarget =
  */
 export function applyRules(
   sfdt: SfdtDocument,
-  { prevValues = null, mode = 'commit' }: ApplyRulesOptions = {}
+  {
+    prevValues = null,
+    mode = 'commit',
+    rowTemplates = null
+  }: ApplyRulesOptions = {}
 ): ApplyRulesResult {
   const diagnostics: Diagnostic[] = [];
   const changed: ChangeRecord[] = [];
@@ -176,8 +193,15 @@ export function applyRules(
      inferred from the last bound row above it; typed cell text becomes the
      field values. Rows that do not match the template shape are left alone
      with a warning instead of guessing. */
+  const nextTemplates: RowTemplates = new Map(rowTemplates || []);
   for (const tableId of [...index.tables.keys()]) {
-    const result = adoptUnboundRows(next, tableId, index);
+    const result = adoptUnboundRows(
+      next,
+      tableId,
+      index,
+      undefined,
+      nextTemplates.get(tableId)
+    );
     for (const skipped of result.skipped) {
       diag(
         diagnostics,
@@ -549,6 +573,21 @@ export function applyRules(
     text: write.text,
     kind: write.kind
   }));
+  /**
+   * Remember each table's last bound row, so a later reconcile can still adopt
+   * once the user has deleted every bound row. Only refreshed while one exists -
+   * an emptied table keeps whatever was captured last.
+   */
+  const rememberTemplates = (from: BindingIndex): RowTemplates => {
+    for (const [tableId, table] of from.tables) {
+      const last = table.rows[table.rows.length - 1];
+      if (!last || !last.path) continue;
+      const row = getAt(next, last.path) as SfdtRow | undefined;
+      if (row) nextTemplates.set(tableId, JSON.parse(JSON.stringify(row)));
+    }
+    return nextTemplates;
+  };
+
   if (next !== sfdt) {
     index = scanBindings(next);
     const reread = readValues(index, []);
@@ -559,7 +598,8 @@ export function applyRules(
       changed,
       diagnostics,
       writes: writeList,
-      structural
+      structural,
+      rowTemplates: rememberTemplates(index)
     };
   }
   return {
@@ -569,6 +609,7 @@ export function applyRules(
     changed,
     diagnostics,
     writes: writeList,
-    structural
+    structural,
+    rowTemplates: rememberTemplates(index)
   };
 }
