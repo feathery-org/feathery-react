@@ -450,6 +450,38 @@ describe('writes aimed at a bound cell', () => {
     ).toEqual(['Deletion', 'Insertion']);
   });
 
+  it('tracks ordinary prose beside a binding without touching the control', () => {
+    const before = editor.serialize();
+    const controlsBefore = tagsIn(editor);
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'prepared-date-prose',
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: '0;1',
+          find: 'Prepared: 2026-08-11',
+          replace: 'Prepared: 2026-09-01'
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({
+      ok: true,
+      op: 'replace_text',
+      route: 'editor'
+    });
+    expect(textAt(editor, '0;1')).toBe(
+      'Project: Website relaunch    Prepared: 2026-09-01'
+    );
+    expect(tagsIn(editor)).toEqual(controlsBefore);
+    expect(
+      liveRevisions(editor).map((revision) => revision.revisionType)
+    ).toEqual(['Deletion', 'Insertion']);
+
+    rejectAllRevisions(editor);
+    expect(editor.serialize()).toBe(before);
+  });
+
   it('preflights mixed editor and engine batches before either route writes', () => {
     const before = editor.serialize();
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {

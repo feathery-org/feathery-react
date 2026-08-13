@@ -1084,6 +1084,8 @@ interface FlatBlock {
    * that are bound; ops consult it to refuse writes that would destroy a binding.
    */
   boundTag?: string;
+  /** Visible-text ranges occupied by bindings in this paragraph/cell. */
+  bindingRanges?: Array<{ tag: string; start: number; end: number }>;
   /**
    * Set when this block shares a paragraph with a BINDING content control, or
    * sits inside one. SyncFusion's live offsets count a control's boundary markers
@@ -1195,6 +1197,45 @@ function inlineText(
     else if (inline.name === 'Tab' || inline.tlp === undefined) continue;
   }
   return out;
+}
+
+function bindingRangesOf(
+  inlines: any[],
+  deletedIds: Set<string>
+): Array<{ tag: string; start: number; end: number }> {
+  const ranges: Array<{ tag: string; start: number; end: number }> = [];
+  let offset = 0;
+  const walk = (items: any[]) => {
+    for (const inline of items) {
+      if (inline == null) continue;
+      const revisionIds = pick(inline, 'revisionIds', 'rids');
+      if (
+        Array.isArray(revisionIds) &&
+        revisionIds.length > 0 &&
+        revisionIds.every((id) => deletedIds.has(String(id)))
+      )
+        continue;
+      const nested = getInlines(inline);
+      if (nested.length) {
+        const start = offset;
+        walk(nested);
+        const def = bindingDefinitionOf(inline);
+        if (def && (def.kind === 'field' || def.kind === 'formula')) {
+          const properties = pick(inline, 'contentControlProperties', 'ccp');
+          ranges.push({
+            tag: String(pick(properties, 'tag', 'tg')),
+            start,
+            end: offset
+          });
+        }
+        continue;
+      }
+      const text = pick(inline, 'text', 'tlp');
+      if (typeof text === 'string') offset += text.length;
+    }
+  };
+  walk(inlines);
+  return ranges.sort((left, right) => left.start - right.start);
 }
 
 /**
@@ -1767,6 +1808,10 @@ export function flattenSfdt(
                 const text = inlineText(getInlines(cb), deletedIds);
                 const format = readFormat(cb);
                 const cellBoundTag = boundTagOf(getInlines(cb));
+                const cellBindingRanges = bindingRangesOf(
+                  getInlines(cb),
+                  deletedIds
+                );
                 const cellOffsetsUntrusted =
                   insideControl ||
                   cellEntry.insideControl ||
@@ -1781,6 +1826,9 @@ export function flattenSfdt(
                   level: -1,
                   length: text.length,
                   ...(cellBoundTag ? { boundTag: cellBoundTag } : {}),
+                  ...(cellBindingRanges.length
+                    ? { bindingRanges: cellBindingRanges }
+                    : {}),
                   ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
                 });
                 paragraphs.push({
@@ -1803,6 +1851,10 @@ export function flattenSfdt(
           return;
         const format = readFormat(block);
         const blockBoundTag = boundTagOf(getInlines(block));
+        const blockBindingRanges = bindingRangesOf(
+          getInlines(block),
+          deletedIds
+        );
         const blockOffsetsUntrusted =
           insideControl || hasBindingContentControl(getInlines(block));
         const flat: FlatBlock = {
@@ -1815,6 +1867,9 @@ export function flattenSfdt(
           level: -1,
           length: text.length,
           ...(blockBoundTag ? { boundTag: blockBoundTag } : {}),
+          ...(blockBindingRanges.length
+            ? { bindingRanges: blockBindingRanges }
+            : {}),
           ...(blockOffsetsUntrusted ? { offsetsUntrusted: true } : {})
         };
         out.push(flat);
@@ -5870,7 +5925,7 @@ function runFormulaCellWrite(
       'set_cell_formula must anchor the target table cell (section;block;row;cell;paragraph).'
     );
   }
-  refuseBoundWrite('set_cell_formula', block);
+  refuseBoundWrite(op, block);
   const formulaText = String(op.formula ?? '').trim();
   const round = op.round != null ? String(op.round) : '';
   if (round && ROUNDING_MODES.indexOf(round as RoundingMode) < 0) {
@@ -6099,7 +6154,7 @@ function runColumnFormulaWrite(
       'set_column_formula must anchor ANY cell of the column to recompute (section;block;row;cell;paragraph); the table and the column are read from that anchor.'
     );
   }
-  refuseBoundWrite('set_column_formula', block);
+  refuseBoundWrite(op, block);
   const tableAnchor = `${parts[0]};${parts[1]}`;
   const column = Number(parts[3]);
   const cellParagraph = parts[4];
@@ -6508,7 +6563,54 @@ function modelAuthoredCellText(op: EditOp): string | undefined {
  * neighbour refusal below it deliberately stays retryable - a different, exactly
  * addressable target in the same document can succeed.
  */
-function refuseBoundWrite(op: string, block: FlatBlock): void {
+function requestedTextRange(
+  op: EditOp,
+  block: FlatBlock
+): { start: number; end: number } | null {
+  if (op.op === 'replace_text' || op.op === 'delete_text') {
+    const find = String(op.find ?? '');
+    if (!find) return { start: 0, end: block.length };
+    const matches: number[] = [];
+    for (
+      let at = block.text.indexOf(find);
+      at >= 0;
+      at = block.text.indexOf(find, at + 1)
+    )
+      matches.push(at);
+    if (!matches.length) return null;
+    const preferred =
+      typeof op.start === 'number' && matches.includes(op.start)
+        ? op.start
+        : matches[0];
+    return { start: preferred, end: preferred + find.length };
+  }
+  if (op.op === 'replace_selection') {
+    const start = offsetParts(offsetString(op.startOffset));
+    const end = offsetParts(offsetString(op.endOffset));
+    if (start.anchor !== block.anchor || end.anchor !== block.anchor)
+      return null;
+    return { start: start.offset, end: end.offset };
+  }
+  if (op.op === 'insert_text') {
+    const at = insertionPoint(op as TypedEditOp<'insert_text'>, block);
+    return { start: at, end: at };
+  }
+  return { start: 0, end: block.length };
+}
+
+function targetsBindingRange(op: EditOp, block: FlatBlock): boolean {
+  const ranges = block.bindingRanges ?? [];
+  if (!ranges.length) return !!block.boundTag;
+  const requested = requestedTextRange(op, block);
+  if (!requested) return true;
+  return ranges.some((range) =>
+    requested.start === requested.end
+      ? requested.start > range.start && requested.start < range.end
+      : requested.start < range.end && requested.end > range.start
+  );
+}
+
+function refuseBoundWrite(op: EditOp, block: FlatBlock): void {
   if (block.offsetsUntrusted && !block.boundTag) {
     // Not a binding itself, but sharing a paragraph or a container with one.
     // SyncFusion counts a control's boundary markers as offset positions while
@@ -6518,11 +6620,11 @@ function refuseBoundWrite(op: string, block: FlatBlock): void {
     // model accounts for markers exactly; reading these blocks is unaffected.
     throw new OpError(
       'unaddressable_in_bound_document',
-      `${op} cannot write ${block.anchor}: it sits alongside a document binding, and this engine cannot yet address that text exactly. Reading it is reliable; writing it is not. Re-read the nearby bound fields and target an editable binding value instead, or ask for a plain-text rewrite outside the bound container.`,
+      `${op.op} cannot write ${block.anchor}: it sits alongside a document binding, and this engine cannot yet address that text exactly. Reading it is reliable; writing it is not. Re-read the nearby bound fields and target an editable binding value instead, or ask for a plain-text rewrite outside the bound container.`,
       [`anchor: ${block.anchor}`]
     );
   }
-  if (!block.boundTag) return;
+  if (!block.boundTag || !targetsBindingRange(op, block)) return;
   let name = '';
   let def: Definition | null = null;
   try {
@@ -6532,7 +6634,7 @@ function refuseBoundWrite(op: string, block: FlatBlock): void {
     name = '';
   }
   if (def?.kind === 'formula')
-    throw formulaRedirect({ op } as EditOp, {
+    throw formulaRedirect(op, {
       def,
       key: '',
       name: def.name,
@@ -6546,7 +6648,7 @@ function refuseBoundWrite(op: string, block: FlatBlock): void {
   const described = name ? `the bound value "${name}"` : 'a bound value';
   throw new OpError(
     'target_is_bound',
-    `${op} cannot write ${block.anchor}: it holds ${described}, and this document uses the binding engine for that value. Target the editable binding input directly so the engine can parse, store, and recompute it.`,
+    `${op.op} cannot write ${block.anchor}: it holds ${described}, and this document uses the binding engine for that value. Target the editable binding input directly so the engine can parse, store, and recompute it.`,
     [`anchor: ${block.anchor}`, `binding: ${block.boundTag}`],
     'never'
   );
@@ -6562,7 +6664,7 @@ function guardModelAuthoredNumber(
   if (text === undefined) return undefined;
   // Before the numeric-provenance gate, and before the table-cell narrowing:
   // prose bindings are just as destroyable as cell ones.
-  refuseBoundWrite(op.op, block);
+  refuseBoundWrite(op, block);
   if (block.kind !== 'table_cell') return undefined;
   const { record, citationFailure } =
     op.op === 'set_cell_text'
@@ -7910,7 +8012,13 @@ export const ANCHORED_OP_HANDLERS: {
         'replace_text needs `find` and `replace`.'
       );
     }
-    const idx = liveText.indexOf(find);
+    // Selecting a whole paragraph by visible length can stop before text that
+    // follows a content control because the live caret space also counts the
+    // control's boundary markers. The serialized projection remains exact, and
+    // Search below resolves the actual live range including those markers.
+    const idx = block.offsetsUntrusted
+      ? block.text.indexOf(find)
+      : liveText.indexOf(find);
     if (idx < 0)
       throw new OpError('text_not_found', `"${find}" not found at anchor.`);
     const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
@@ -13265,6 +13373,15 @@ function planBindingRoutedOp(
       ? boundDuplicateTablePlan(index, op, target, tableRoute)
       : null;
   }
+  // A paragraph can mix an inline binding with ordinary prose. Exact scoped
+  // text outside every binding remains an editor write; Syncfusion Search owns
+  // its live range and accounts for the control boundary markers precisely.
+  if (
+    target.boundTag &&
+    BOUND_WRITE_OPS.has(op.op) &&
+    !targetsBindingRange(op, target)
+  )
+    return null;
   const tableStructuralOp =
     target.kind === 'table_cell' &&
     ['insert_row', 'delete_row', 'delete_table'].includes(op.op);
