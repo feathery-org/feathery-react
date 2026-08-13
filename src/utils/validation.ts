@@ -302,6 +302,18 @@ function getStandardFieldError(value: any, servar: any, repeat: any) {
   const defaultErr = defaultErrors[servar.type];
   // Check if value is badly formatted
   if (servar.type === 'phone_number' && !validators.phone(value)) {
+    // A custom logic rule may erroneously store a leading '+'. If the number
+    // is otherwise valid, strip it so validation and step submission see the
+    // digits-only value
+    const stripped =
+      typeof value === 'string' ? value.replace(/^\++/, '') : value;
+    if (stripped !== value && validators.phone(stripped)) {
+      if (servar.repeated) {
+        // @ts-ignore
+        fieldValues[servar.key][repeat] = stripped;
+      } else fieldValues[servar.key] = stripped;
+      return '';
+    }
     return defaultErr;
   } else if (servar.type === 'email' && !validators.email(value)) {
     return defaultErr;

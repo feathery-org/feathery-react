@@ -52,7 +52,10 @@ const mockLibphonenumber = {
   getExampleNumber: jest.fn(() => '+1 555 123 4567'),
   validatePhoneNumberLength: () => {
     return undefined; // always valid
-  }
+  },
+  isValidPhoneNumber: jest.fn(
+    (number: string) => number.replace(/\D/g, '').length === 11
+  )
 };
 
 jest.mock('../../../../utils/validation', () => ({
