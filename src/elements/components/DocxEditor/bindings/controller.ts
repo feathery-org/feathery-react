@@ -23,7 +23,8 @@ import {
   hasBlockingErrors,
   ApplyRulesResult,
   ChangeRecord,
-  ReconcileMode
+  ReconcileMode,
+  RowTemplates
 } from './core/engine';
 import { BindingIndex } from './core/sfdtAdapter';
 import { Diagnostic, SfdtDocument } from './core/sfdtTypes';
@@ -120,6 +121,13 @@ export class ReconciliationController {
 
   index: BindingIndex | null = null;
 
+  /**
+   * Each table's last seen bound row. Survives the user deleting every bound row,
+   * which is otherwise the point where the document loses the only copy of the
+   * row shape and no further row can be adopted.
+   */
+  rowTemplates: RowTemplates = new Map();
+
   persistedRevision = 0;
 
   undoStack: string[] = [];
@@ -160,7 +168,7 @@ export class ReconciliationController {
 
   /** Load a saved document: reconcile once, then open the result. */
   loadInitial(sfdt: SfdtDocument, revision = 0): void {
-    const result = applyRules(sfdt, {});
+    const result = applyRules(sfdt, { rowTemplates: this.rowTemplates });
     this.commit(result, { apply: 'open', markDirty: false, event: 'load' });
     this.persistedRevision = revision;
   }
@@ -207,7 +215,11 @@ export class ReconciliationController {
     let result: ApplyRulesResult;
     try {
       const started = Date.now();
-      result = applyRules(parsed, { prevValues: this.values, mode });
+      result = applyRules(parsed, {
+        prevValues: this.values,
+        mode,
+        rowTemplates: this.rowTemplates
+      });
       this.timings.reconcileMs = Date.now() - started;
     } catch (thrown) {
       this.failPhase('reconcile-failed', thrown);
@@ -247,7 +259,10 @@ export class ReconciliationController {
     // uncommitted edit in manual mode.
     this.flush();
     const mutated = fn(this.workingSfdt as SfdtDocument, this.index);
-    const result = applyRules(mutated, { prevValues: this.values });
+    const result = applyRules(mutated, {
+      prevValues: this.values,
+      rowTemplates: this.rowTemplates
+    });
     // Commands mutate JSON the editor has never seen (rows added or removed),
     // so they always repaint via open().
     this.commit(result, { apply: 'open', markDirty: true, event: 'command' });
@@ -271,7 +286,9 @@ export class ReconciliationController {
   }
 
   private restore(json: string): void {
-    const result = applyRules(JSON.parse(json), {});
+    const result = applyRules(JSON.parse(json), {
+      rowTemplates: this.rowTemplates
+    });
     this.commit(result, {
       apply: 'open',
       markDirty: true,
@@ -332,6 +349,7 @@ export class ReconciliationController {
     this.workingSfdt = result.sfdt;
     this.values = result.values;
     this.index = result.index;
+    this.rowTemplates = result.rowTemplates;
     this.diagnostics = result.diagnostics;
     if (markDirty) this.dirty = true;
 
