@@ -1,4 +1,4 @@
-import { loadGoogleFonts } from '../fonts';
+import { loadGoogleFonts, setFontLoadingDisabled } from '../fonts';
 import { featheryDoc } from '../browser';
 
 const getFontLinks = () =>
@@ -11,6 +11,7 @@ const getFontLinks = () =>
 describe('loadGoogleFonts', () => {
   afterEach(() => {
     getFontLinks().forEach((link) => link.remove());
+    setFontLoadingDisabled(false);
   });
 
   it('requests display=swap so text is never blanked during download', () => {
@@ -54,6 +55,23 @@ describe('loadGoogleFonts', () => {
     // Assert — failed link removed, fresh request issued
     expect(getFontLinks()).toHaveLength(1);
     expect(getFontLinks()[0]).not.toBe(link);
+  });
+
+  it('loads nothing while font loading is disabled, then works once re-enabled', () => {
+    // Arrange
+    setFontLoadingDisabled(true);
+
+    // Act
+    loadGoogleFonts(['Roboto:400']);
+
+    // Assert
+    expect(getFontLinks()).toHaveLength(0);
+
+    // A family skipped while disabled is not marked loaded — it still loads
+    // if fonts are re-enabled
+    setFontLoadingDisabled(false);
+    loadGoogleFonts(['Roboto:400']);
+    expect(getFontLinks()).toHaveLength(1);
   });
 
   it('does not re-request a family it already loaded', () => {
