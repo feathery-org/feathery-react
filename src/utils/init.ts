@@ -1,5 +1,5 @@
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from './uuid';
 
 import FeatheryClient, { updateRegionApiUrls } from './featheryClient';
 import * as errors from './error';

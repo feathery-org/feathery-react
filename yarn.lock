@@ -2555,19 +2555,19 @@
   resolved "https://registry.yarnpkg.com/@stripe/stripe-js/-/stripe-js-7.3.0.tgz#7b295ff9ca5bccfd56c1291b78079ae2f14836cc"
   integrity sha512-xnCyFIEI5SQnQrKkCxVj7nS5fWTZap+zuIGzmmxLMdlmgahFJaihK4zogqE8YyKKTLtrp/EldkEijSgtXsRVDg==
 
-"@stytch/core@2.49.1":
-  version "2.49.1"
-  resolved "https://registry.yarnpkg.com/@stytch/core/-/core-2.49.1.tgz#0df00742668fc46fab3310e657448b9a702e1b37"
-  integrity sha512-xSW6UfICpY+LoWdTk9f8jO+0gXvzZBc9WGYQTz42UmXtJW+BZJVnZN9n+kkonXpbASQfGqjsVdQnI4KLiLiyJQ==
+"@stytch/core@2.66.1":
+  version "2.66.1"
+  resolved "https://registry.yarnpkg.com/@stytch/core/-/core-2.66.1.tgz#44ae26952b70cc33a173d426985d97c59040e0ee"
+  integrity sha512-LqadgCPhdLfDpTHodpLmE5d/FmkleTXOAot40k1Heq6P43THDpQ82+k5UGSJpugOWrPYTMbZNR/f4OqkGuApLQ==
   dependencies:
     uuid "8.3.2"
 
-"@stytch/vanilla-js@5.23.1":
-  version "5.23.1"
-  resolved "https://registry.yarnpkg.com/@stytch/vanilla-js/-/vanilla-js-5.23.1.tgz#eedb8466106d6f737277258b85b3e57a8937862b"
-  integrity sha512-F4P3fFhSS1Bldyg/wbawaIoxKHCGSnOFEmuttn14WRoU/hcJV8ZdeRxYQuCL3/0Mqnb08wVs7eEUY2Iy2jNXjQ==
+"@stytch/vanilla-js@5.45.1":
+  version "5.45.1"
+  resolved "https://registry.yarnpkg.com/@stytch/vanilla-js/-/vanilla-js-5.45.1.tgz#74c293fdc2616cbbcf6bb433a664ad5898bc0424"
+  integrity sha512-YeCBEWqwdzf9ZQ4Z7wusiVK2m4JknJDjxGIulEwXTm7jBpUmkoin0NlTlu15pgjg6DNf1eM9REpavN0A3wZb3A==
   dependencies:
-    "@stytch/core" "2.49.1"
+    "@stytch/core" "2.66.1"
     "@types/google-one-tap" "^1.2.0"
     type-fest "4.15.0"
 
@@ -3244,11 +3244,6 @@
   version "2.0.11"
   resolved "https://registry.yarnpkg.com/@types/unist/-/unist-2.0.11.tgz#11af57b127e32487774841f7a4e54eab166d03c4"
   integrity sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA==
-
-"@types/uuid@^8.3.4":
-  version "8.3.4"
-  resolved "https://registry.yarnpkg.com/@types/uuid/-/uuid-8.3.4.tgz#bd86a43617df0594787d38b735f55c805becf1bc"
-  integrity sha512-c/I8ZRb51j+pYGAu5CrFMRxqZ2ke4y2grEBO5AUjgSkSk+qT2Ea+OdWElz/OiMf5MNpn2b17kuVBwZLQJXzihw==
 
 "@types/webfontloader@^1.6.34":
   version "1.6.34"
@@ -11743,10 +11738,10 @@ utils-merge@1.0.1:
   resolved "https://registry.yarnpkg.com/utils-merge/-/utils-merge-1.0.1.tgz#9f95710f50a267947b2ccc124741c1028427e713"
   integrity sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==
 
-uuid@8.3.2, uuid@^8.3.0, uuid@^8.3.2:
-  version "8.3.2"
-  resolved "https://registry.yarnpkg.com/uuid/-/uuid-8.3.2.tgz#80d5b5ced271bb9af6c445f21a1a04c606cefbe2"
-  integrity sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==
+uuid@8.3.2, uuid@^11.1.0, uuid@^8.3.0:
+  version "11.1.1"
+  resolved "https://registry.yarnpkg.com/uuid/-/uuid-11.1.1.tgz#f6d81d2e1c65d00762e5e29b16c5d2d995e208ad"
+  integrity sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==
 
 v8-compile-cache@^2.0.3:
   version "2.3.0"
