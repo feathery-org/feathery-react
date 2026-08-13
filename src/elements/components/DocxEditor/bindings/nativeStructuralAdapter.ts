@@ -10,7 +10,10 @@ import {
   SfdtDocument,
   SfdtInline
 } from './core/sfdtTypes';
-import type { SyncfusionEditorLike } from './editorAdapter';
+import {
+  isContentControlAttached,
+  type SyncfusionEditorLike
+} from './editorAdapter';
 
 let nativeApplyDepth = 0;
 
@@ -129,6 +132,7 @@ export function applyNativeStructuralMutations(
   const controlForTag = (tag: string) =>
     controls.find(
       (control) =>
+        isContentControlAttached(control) &&
         String(control.contentControlProperties?.tag || '') === String(tag)
     );
 

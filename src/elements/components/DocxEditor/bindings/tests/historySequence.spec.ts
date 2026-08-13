@@ -4,7 +4,10 @@ import { attachBindings, AttachedBindings } from '../attachBindings';
 import { scanBindings } from '../core/sfdtAdapter';
 import { buildCostsFixture } from '../core/tests/fixtures/costsFixture';
 import { SfdtDocument } from '../core/sfdtTypes';
-import { SyncfusionEditorLike } from '../editorAdapter';
+import {
+  isContentControlAttached,
+  SyncfusionEditorLike
+} from '../editorAdapter';
 import { bindingCommandSurfaceFor } from '../reconcileRegistry';
 import {
   destroyRealDocumentEditor,
@@ -30,7 +33,9 @@ const grandTotal = (editor: DocumentEditor) =>
 function controlForTag(editor: DocumentEditor, tag: string) {
   const collection = (editor as any).documentHelper.contentControlCollection;
   return collection.find(
-    (candidate: any) => candidate?.contentControlProperties?.tag === tag
+    (candidate: any) =>
+      candidate?.contentControlProperties?.tag === tag &&
+      isContentControlAttached(candidate)
   );
 }
 
@@ -179,6 +184,30 @@ describe('one native binding history timeline', () => {
     editor.editorHistory.redo();
     expect(costsCell(editor, 'r-1', 'quantity')).toBe('13');
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it('redoes a deleted bound row without losing remaining content controls', () => {
+    deleteRowAt(editor, QUANTITY_R2);
+    expect(costsRows(editor).map((row) => row.rowId)).toEqual(['r-1']);
+    expect(grandTotal(editor)).toBe('$1,800.00');
+    expect(editor.editorHistory.canUndo()).toBe(true);
+
+    editor.editorHistory.undo();
+    expect(costsRows(editor).map((row) => row.rowId)).toEqual(['r-1', 'r-2']);
+    expect(costsCell(editor, 'r-2', 'quantity')).toBe('30');
+    expect(controlForTag(editor, QUANTITY_R2)).toBeTruthy();
+    expect(stacks(editor).redo).toBeGreaterThan(0);
+    expect(editor.editorHistory.canRedo()).toBe(true);
+
+    editor.editorHistory.redo();
+    expect(costsRows(editor).map((row) => row.rowId)).toEqual(['r-1']);
+    expect(controlForTag(editor, QUANTITY_R2)).toBeFalsy();
+    expect(controlForTag(editor, QUANTITY_R1)).toBeTruthy();
+
+    writeIntoControl(editor, QUANTITY_R1, '13');
+    attached.controller.flush();
+    expect(costsCell(editor, 'r-1', 'quantity')).toBe('13');
+    expect(costsCell(editor, 'r-1', 'line_total')).toBe('$1,950.00');
   });
 
   it('clears redo when a new edit follows undo', () => {

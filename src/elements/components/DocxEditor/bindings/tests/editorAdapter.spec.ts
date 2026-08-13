@@ -415,7 +415,7 @@ describe('commit triggers on a real editor', () => {
     expect(triggers.hasPendingEdit()).toBe(false);
     timers.forEach((fn) => fn());
     // ...and the follow-up reconcile must be formulas-only.
-    expect(flush).toHaveBeenCalledWith({ mode: 'self-heal' });
+    expect(flush).toHaveBeenCalledWith({ mode: 'self-heal', adoptRows: false });
     flush.mockRestore();
     triggers.dispose();
   });

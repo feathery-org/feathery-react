@@ -75,6 +75,12 @@ export interface ApplyRulesOptions {
   mode?: ReconcileMode;
   /** Templates from earlier reconciles; used only when no bound row survives. */
   rowTemplates?: RowTemplates | null;
+  /**
+   * When false, skip adopting unbound rows. Undo/redo already restored
+   * structure; inserting content controls on top of live ones hides the
+   * original bindings.
+   */
+  adoptRows?: boolean;
 }
 
 export interface ApplyRulesResult {
@@ -180,7 +186,8 @@ export function applyRules(
   {
     prevValues = null,
     mode = 'commit',
-    rowTemplates = null
+    rowTemplates = null,
+    adoptRows = true
   }: ApplyRulesOptions = {}
 ): ApplyRulesResult {
   const diagnostics: Diagnostic[] = [];
@@ -197,7 +204,7 @@ export function applyRules(
      field values. Rows that do not match the template shape are left alone
      with a warning instead of guessing. */
   const nextTemplates: RowTemplates = new Map(rowTemplates || []);
-  for (const tableId of [...index.tables.keys()]) {
+  for (const tableId of adoptRows ? [...index.tables.keys()] : []) {
     const result = adoptUnboundRows(
       next,
       tableId,

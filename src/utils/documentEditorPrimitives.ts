@@ -629,7 +629,10 @@ export function parseRevisionGroupTag(
  * otherwise push tracking back on.
  */
 export function disableUserTrackChanges(
-  editor: LiveEditor,
+  // Only the track-changes flag is touched, so accept any editor-like carrying
+  // it (LiveEditor satisfies this, as does the SyncfusionEditorLike used by the
+  // keystroke guard).
+  editor: { enableTrackChanges: boolean },
   container?: { enableTrackChanges?: boolean } | null
 ): void {
   editor.enableTrackChanges = false;
