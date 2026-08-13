@@ -157,6 +157,7 @@ import {
   ACTION_AI_EXTRACTION,
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
+  ACTION_CONNECT_ACCOUNT,
   ACTION_GENERATE_ENVELOPES,
   ACTION_GENERATE_QUIK_DOCUMENTS,
   ACTION_INVITE_COLLABORATOR,
@@ -217,6 +218,12 @@ import {
 } from '../utils/error';
 import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
+import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
+import {
+  ACCOUNT_CONNECT_POPUP_NAME,
+  getPopupFeatures,
+  runOAuthPopup
+} from '../integrations/connectAccount/oauthPopup';
 import { isNum } from '../utils/primitives';
 import {
   editorContainerId,
@@ -323,21 +330,31 @@ function closePreOpenedWindows(windows: Map<number, Window | null>) {
   windows.forEach((win) => win?.close());
 }
 
-// Pre-open windows synchronously within the user-gesture call stack on iOS.
-// iOS Safari blocks window.open() after any await breaks the gesture chain.
-function preOpenIOSWindows(actions: any[]) {
+// Pre-open windows synchronously within the user-gesture call stack.
+// Connect Account always needs its popup opened this way since the OAuth
+// start call is async; iOS Safari additionally blocks window.open() for any
+// action once an await breaks the gesture chain, so tab-opening URL actions
+// get the same treatment there.
+function preOpenActionWindows(actions: any[]) {
   const windows = new Map<number, Window | null>();
-  if (isIOS()) {
-    actions.forEach((action, idx) => {
-      if (action.type === ACTION_URL && action.open_tab) {
-        const win = featheryWindow().open('about:blank', '_blank');
-        if (win) {
-          win.opener = null;
-          windows.set(idx, win);
-        }
+  actions.forEach((action, idx) => {
+    if (action.type === ACTION_CONNECT_ACCOUNT) {
+      windows.set(
+        idx,
+        featheryWindow().open(
+          'about:blank',
+          ACCOUNT_CONNECT_POPUP_NAME,
+          getPopupFeatures()
+        )
+      );
+    } else if (isIOS() && action.type === ACTION_URL && action.open_tab) {
+      const win = featheryWindow().open('about:blank', '_blank');
+      if (win) {
+        win.opener = null;
+        windows.set(idx, win);
       }
-    });
-  }
+    }
+  });
   return windows;
 }
 
@@ -558,6 +575,31 @@ function Form({
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
+  type ConnectAccountModalState = {
+    provider: string;
+    // Captured from the triggering runElementActions call: advances the
+    // action chain past this action, and ends the button/action's loading
+    // state. Each is a closure local to that call, not reachable from here
+    // any other way.
+    onFlowSuccess: () => Promise<void>;
+    onAsyncEnd: () => void;
+  };
+  const [connectAccountModal, setConnectAccountModal] =
+    useState<ConnectAccountModalState | null>(null);
+  // React state updates aren't visible inside an already-running async
+  // closure until it re-reads them, so an in-flight connect_account branch
+  // can't rely on the connectAccountModal state to notice another trigger
+  // opened a modal moments ago. This ref is synced alongside that state and
+  // is what the guard against concurrent triggers reads.
+  const connectAccountModalRef = useRef<ConnectAccountModalState | null>(null);
+  const openConnectAccountModal = (value: ConnectAccountModalState) => {
+    connectAccountModalRef.current = value;
+    setConnectAccountModal(value);
+  };
+  const closeConnectAccountModal = () => {
+    connectAccountModalRef.current = null;
+    setConnectAccountModal(null);
+  };
   const { openFlinksConnect, flinksFrame } = useFlinksConnect();
 
   // When the active step changes, recalculate the dimensions of the new step
@@ -2275,6 +2317,11 @@ function Form({
   } = useCheckButtonAction(setButtonLoader, clearLoaders);
 
   const buttonOnClick = async (button: ClickActionElement) => {
+    // Opened synchronously within the click's user-gesture call stack, before
+    // any await, so the browser doesn't treat the popup as unsolicited.
+    const actions = prioritizeActions(button.properties.actions ?? []);
+    const preOpenedWindows = preOpenActionWindows(actions);
+
     if (!isButtonActionRunning()) {
       await setButtonLoader(button);
     }
@@ -2297,9 +2344,6 @@ function Form({
         10
       );
     };
-
-    const actions = prioritizeActions(button.properties.actions ?? []);
-    const preOpenedWindows = preOpenIOSWindows(actions);
 
     try {
       if (button.properties.captcha_verification && !initState.isTestEnv) {
@@ -2544,7 +2588,7 @@ function Form({
 
     // Guards text/container callers if an async onAction or action logic rule breaks the gesture chain
     if (!externalPreOpenedWindows) {
-      preOpenIOSWindows(actions).forEach((win, idx) =>
+      preOpenActionWindows(actions).forEach((win, idx) =>
         preOpenedWindows.set(idx, win)
       );
     }
@@ -2653,6 +2697,47 @@ function Form({
           integrations?.flinks,
           updateFieldValues
         );
+        break;
+      } else if (type === ACTION_CONNECT_ACCOUNT) {
+        // isButtonActionRunning() only gates button/table triggers, so two
+        // non-button triggers (e.g. two containers) can both reach here
+        // before either's modal is dismissed. Without this, the second
+        // trigger's openConnectAccountModal call would silently discard the
+        // first trigger's flow-advance closure. Ignore this trigger instead;
+        // the shared post-loop cleanup below still releases its click lock
+        // and closes its own pre-opened popup.
+        if (connectAccountModalRef.current) break;
+
+        await Promise.all([submitPromise, client.flushCustomFields()]);
+        const popup = preOpenedWindows.get(i) ?? null;
+        preOpenedWindows.delete(i);
+        const provider = action.provider;
+        const emailKey = `feathery.connections.${provider}.email`;
+
+        try {
+          if (fieldValues[emailKey]) {
+            popup?.close();
+          } else {
+            const result = await runOAuthPopup(client, provider, popup);
+            updateFieldValues({ [emailKey]: result.account_email ?? '' });
+          }
+          // The flow advances from the modal's onSaved, not here - the
+          // respondent has not finished configuring the account yet.
+          openConnectAccountModal({
+            provider,
+            onFlowSuccess: flowOnSuccess(i),
+            onAsyncEnd
+          });
+        } catch (error) {
+          elementClicks[id] = false;
+          clearButtonActionState();
+          setElementError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to connect your account.'
+          );
+          onAsyncEnd();
+        }
         break;
       } else if (type === ACTION_URL) {
         let url = replaceTextVariables(action.url, element.repeat);
@@ -3549,6 +3634,58 @@ function Form({
             stepSettings={formSettings.assistantStepSettings}
             activeStepId={activeStep?.id}
             onLayoutChange={handleAssistantLayoutChange}
+          />
+        )}
+        {connectAccountModal && (
+          <ConnectAccountModal
+            show
+            provider={connectAccountModal.provider}
+            client={client}
+            accountEmail={
+              fieldValues[
+                `feathery.connections.${connectAccountModal.provider}.email`
+              ] as string
+            }
+            onChangeAccount={async () => {
+              // window.open must stay the first statement: the modal's
+              // button handler invokes this synchronously from a real click,
+              // and any await ahead of it would break the user-gesture chain
+              // the popup relies on.
+              const popup = featheryWindow().open(
+                'about:blank',
+                ACCOUNT_CONNECT_POPUP_NAME,
+                getPopupFeatures()
+              );
+              // The modal's handler doesn't await/catch this beyond reading
+              // the returned message, so a rejection here must not escape -
+              // otherwise a blocked popup or a failed re-auth leaves
+              // "Change account" looking inert with no explanation.
+              try {
+                const result = await runOAuthPopup(
+                  client,
+                  connectAccountModal.provider,
+                  popup
+                );
+                updateFieldValues({
+                  [`feathery.connections.${connectAccountModal.provider}.email`]:
+                    result.account_email ?? ''
+                });
+              } catch (error) {
+                return error instanceof Error
+                  ? error.message
+                  : 'Unable to connect your account.';
+              }
+            }}
+            onSaved={async (values) => {
+              updateFieldValues(values);
+              closeConnectAccountModal();
+              await connectAccountModal.onFlowSuccess();
+            }}
+            onClose={() => {
+              closeConnectAccountModal();
+              clearButtonActionState();
+              connectAccountModal.onAsyncEnd();
+            }}
           />
         )}
       </form>

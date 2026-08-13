@@ -1,6 +1,7 @@
 import React from 'react';
 import { getCompletedStepKeys } from '../../../../utils/init';
 import {
+  isStepperStepCompleted,
   isStepperStepReachable,
   isStepperStepVisible
 } from '../../../../utils/stepper';
@@ -22,6 +23,7 @@ function StepperBar({
   textPlacement = 'bottom',
   onStepClick,
   allowAllNavigation = false,
+  resetCompletionOnBack = false,
   vertical = false,
   style
 }: {
@@ -31,6 +33,7 @@ function StepperBar({
   textPlacement?: string;
   onStepClick?: (config: StepConfig) => void;
   allowAllNavigation?: boolean;
+  resetCompletionOnBack?: boolean;
   vertical?: boolean;
   style?: React.CSSProperties;
 }) {
@@ -89,10 +92,16 @@ function StepperBar({
   const renderCircle = (index: number) => {
     const isActive = index === activeStep;
     const sKey = visibleStepConfigs?.[index]?.step_key;
-    // A step is completed only if it was actually submitted. Steps skipped
-    // over (navigated past without submitting) stay uncompleted even when
-    // they sit behind the current step.
-    const isCompleted = !!sKey && completedStepKeys.has(sKey);
+    // Only submitted steps are done; a step skipped past without submitting
+    // stays undone. Also drives clickability via isStepperStepReachable below,
+    // so with resetCompletionOnBack on a step ahead of the cursor can't be
+    // jumped to either.
+    const isCompleted = isStepperStepCompleted(
+      !!sKey && completedStepKeys.has(sKey),
+      index,
+      activeStep,
+      resetCompletionOnBack
+    );
     // With all-step navigation on, any step other than the current one is
     // clickable; otherwise only completed (already-visited) steps are.
     const isClickable =
