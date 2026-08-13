@@ -20,6 +20,7 @@ import {
 } from '../../utils/stepper';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
 import { sanitizeTransportValue } from '../../utils/transportValue';
+import { getImageAltText } from '../../utils/accessibility';
 
 export type PanelRuntimeFieldEntry = {
   key: string;
@@ -614,7 +615,7 @@ export const getPanelRuntimeSnapshot = (
   (step.images ?? []).forEach((el: any) => {
     const props = el?.properties ?? {};
     const altRaw =
-      (typeof props.alt_text === 'string' && props.alt_text) ||
+      getImageAltText(props) ||
       (typeof props.caption === 'string' && props.caption) ||
       '';
     if (!altRaw) return;
