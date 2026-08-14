@@ -680,6 +680,66 @@ describe('FeatheryClient - using api helpers', () => {
     });
   });
 
+  describe('dataHubAction', () => {
+    const formKey = 'formKey';
+    const userId = 'fuser-key-1';
+    let featheryClient: FeatheryClient;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        json: jest.fn().mockResolvedValue([])
+      });
+      (initInfo as jest.Mock).mockReturnValue({ sdkKey: 'sdkKey', userId });
+      featheryClient = new FeatheryClient(formKey);
+    });
+
+    it('sends upload_unverified with batch stamping and keepalive off', async () => {
+      await featheryClient.dataHubAction({
+        hubId: 'hub-1',
+        operation: 'upload_unverified',
+        idFieldId: 'field-9',
+        rows: [{ name: 'A' }]
+      });
+
+      const [url, options] = (global.fetch as jest.Mock).mock.calls[0];
+      expect(url).toBe(`${API_URL}hub/hub-1/action/`);
+      // Chrome rejects keepalive POST bodies over 64KB; uploads must opt out.
+      expect(options.keepalive).toBe(false);
+      expect(JSON.parse(options.body)).toMatchObject({
+        operation: 'upload_unverified',
+        id_field_id: 'field-9',
+        id_value: userId,
+        rows: [{ name: 'A' }],
+        form_key: formKey
+      });
+    });
+
+    it('sends get with verification_status and key-based where conditions', async () => {
+      await featheryClient.dataHubAction({
+        hubId: 'hub-1',
+        operation: 'get',
+        verificationStatus: 'unverified',
+        where: [{ fieldId: 'importer', value: userId }]
+      });
+
+      const body = JSON.parse(
+        (global.fetch as jest.Mock).mock.calls[0][1].body
+      );
+      expect(body).toMatchObject({
+        operation: 'get',
+        verification_status: 'unverified',
+        where: [{ field_id: 'importer', value: userId }],
+        form_key: formKey
+      });
+      // Batch fields only apply to uploads.
+      expect(body.id_field_id).toBeUndefined();
+      expect(body.id_value).toBeUndefined();
+    });
+  });
+
   describe('inviteCollaborator', () => {
     const formKey = 'formKey';
     const userId = 'userId';

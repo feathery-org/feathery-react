@@ -311,9 +311,14 @@ function DataMappingModal({
       hubList.map((hub) => {
         // Scope to this user's import batch when the action configures an ID
         // field. `where` conditions use field keys, so translate the id.
-        const idFieldKey = (hub.fields || []).find(
-          (f) => f.id === idFieldByHub[hub.id]
-        )?.key;
+        const idFieldId = idFieldByHub[hub.id];
+        const idFieldKey = idFieldId
+          ? (hub.fields || []).find((f) => f.id === idFieldId)?.key
+          : undefined;
+        // Configured batch field no longer exists on the hub: fail closed
+        // (report nothing) instead of silently counting every user's rows.
+        if (idFieldId && !idFieldKey)
+          return Promise.resolve({ hubId: hub.id, count: 0 });
         return client
           .dataHubAction({
             hubId: hub.id,
@@ -384,13 +389,13 @@ function DataMappingModal({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !parsingFile) onClose();
     };
     const doc = featheryDoc();
     doc.addEventListener('keydown', onKey);
     dialogRef.current?.focus();
     return () => doc.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, parsingFile]);
 
   const fontFamily =
     responsiveStyles?.getTarget?.('fc')?.fontFamily ?? 'sans-serif';
@@ -428,11 +433,11 @@ function DataMappingModal({
   const allRequiredMapped = sheets.length > 0 && missingRequired.length === 0;
 
   const handleFile = async (file: File) => {
-    interactedRef.current = true;
     if (!isSpreadsheetFile(file)) {
       setFileError('Unsupported file type. Upload a CSV or Excel file.');
       return;
     }
+    interactedRef.current = true;
     setFileError('');
     setParsingFile(file.name);
     const parseStart = Date.now();
@@ -542,7 +547,13 @@ function DataMappingModal({
       for (const hub of schemas) {
         const st = perHub[hub.id];
         if (!st) continue;
-        const rows = buildStagedRows(sheets, st.mapping);
+        // A restored draft can reference since-deleted hub fields; those keys
+        // would 400 the whole upload, so drop them.
+        const validKeys = new Set(fieldsForHub(hub.id).map((f) => f.key));
+        const mapping = Object.fromEntries(
+          Object.entries(st.mapping).filter(([key]) => validKeys.has(key))
+        );
+        const rows = buildStagedRows(sheets, mapping);
         if (rows.length === 0) continue;
         await client.dataHubAction({
           hubId: hub.id,
@@ -595,7 +606,7 @@ function DataMappingModal({
     >
       <div
         onClick={() => {
-          if (busy) return;
+          if (busy || parsingFile) return;
           onClose();
         }}
         css={{
