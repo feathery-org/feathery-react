@@ -223,6 +223,14 @@ function DataMappingModal({
     return map;
   }, [hubs]);
 
+  const idFieldByHub = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    hubs.forEach((h) => {
+      map[h.hub_id] = h.id_field_id || undefined;
+    });
+    return map;
+  }, [hubs]);
+
   const hubIds = useMemo(() => hubs.map((h) => h.hub_id), [hubs]);
 
   const fieldsForHub = (hubId: string): HubFieldSchema[] => {
@@ -235,7 +243,11 @@ function DataMappingModal({
     const results = await Promise.all(
       hubList.map((hub) =>
         client
-          .dataHubAction({ hubId: hub.id, operation: 'get_staged' })
+          .dataHubAction({
+            hubId: hub.id,
+            operation: 'get_unverified',
+            idFieldId: idFieldByHub[hub.id]
+          })
           .then((r: any) => ({
             hubId: hub.id,
             count: (r?.entries || []).length
@@ -433,7 +445,12 @@ function DataMappingModal({
         if (!st) continue;
         const rows = buildStagedRows(sheets, st.mapping);
         if (rows.length === 0) continue;
-        await client.dataHubAction({ hubId: hub.id, operation: 'stage', rows });
+        await client.dataHubAction({
+          hubId: hub.id,
+          operation: 'upload_unverified',
+          idFieldId: idFieldByHub[hub.id],
+          rows
+        });
       }
     } catch (e: any) {
       setActionError(e?.message || 'Failed to save the mapped rows.');

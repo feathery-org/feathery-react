@@ -220,14 +220,12 @@ export const getFormContext = (formUuid: string) => {
       entryId,
       data,
       where,
-      includeDrafts,
-      skipValidation
-    }: // Not in @feathery/client-utils' HubActionOptions yet. `rows` and
-    // `fuserKey` are deliberately not forwarded - writing drafts is the mapping
-    // modal's job and the fuser always comes from the current user.
+      verificationStatus
+    }: // Not in @feathery/client-utils' HubActionOptions yet. `rows` and batch
+    // scoping are deliberately not forwarded - writing unverified rows is the
+    // mapping modal's job and the batch value always comes from the current user.
     HubActionOptions & {
-      includeDrafts?: 'all' | 'onlyDrafts';
-      skipValidation?: boolean;
+      verificationStatus?: 'verified' | 'unverified' | 'all';
     }) =>
       formState.client.dataHubAction({
         hubId,
@@ -235,8 +233,7 @@ export const getFormContext = (formUuid: string) => {
         entryId,
         data,
         where,
-        includeDrafts,
-        skipValidation
+        verificationStatus
       }),
     generateDocuments: ({
       documentIds,

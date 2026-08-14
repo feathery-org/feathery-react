@@ -2,6 +2,9 @@
 export interface MappingHubConfig {
   hub_id: string;
   excluded_field_ids?: string[];
+  // Hub field identifying each import batch; the importing user's key is
+  // stamped into it server-side. Unset means the hub has one shared batch.
+  id_field_id?: string | null;
 }
 
 // Field schema returned by GET /api/hub/schema/.

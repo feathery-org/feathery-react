@@ -1212,12 +1212,12 @@ export default class FeatheryClient extends IntegrationClient {
     data?: Record<string, any>;
     where?: any[];
     rows?: Record<string, any>[];
-    // `get` only. Omitted means saved rows only; when set, each entry carries
-    // a `draft` boolean.
-    includeDrafts?: 'all' | 'onlyDrafts';
-    // `finalize` only: skip the field-rule / required / uniqueness gate, which
-    // draft rows were never held to on the way in.
-    skipValidation?: boolean;
+    // Unverified ops only: hub field id identifying this user's import batch.
+    // The current user's key is sent as the batch value; the backend stamps it
+    // into every uploaded row and scopes reads to it.
+    idFieldId?: string;
+    // `get` only. Omitted means verified rows only, matching pre-feature reads.
+    verificationStatus?: 'verified' | 'unverified' | 'all';
   }) {
     const { sdkKey, userId } = initInfo();
     const {
@@ -1227,20 +1227,9 @@ export default class FeatheryClient extends IntegrationClient {
       data,
       where,
       rows,
-      includeDrafts,
-      skipValidation
+      idFieldId,
+      verificationStatus
     } = options;
-    // get/create/update/delete must NOT carry a fuser_key so their requests stay
-    // byte-identical to the pre-feature behavior. `finalize` isn't scoped either.
-    const FUSER_SCOPED_OPS = [
-      'stage',
-      'get_staged',
-      'update_staged',
-      'delete_staged'
-    ];
-    const resolvedFuserKey = FUSER_SCOPED_OPS.includes(operation)
-      ? userId
-      : undefined;
     const url = `${API_URL}hub/${hubId}/action/`;
     const res = await apiFetch(
       sdkKey,
@@ -1253,10 +1242,10 @@ export default class FeatheryClient extends IntegrationClient {
           entry_id: entryId,
           data,
           rows,
-          fuser_key: resolvedFuserKey,
-          // Wire key keeps the backend's `include_staged` spelling.
-          ...(includeDrafts ? { include_staged: includeDrafts } : {}),
-          ...(skipValidation ? { skip_validation: true } : {}),
+          ...(idFieldId ? { id_field_id: idFieldId, id_value: userId } : {}),
+          ...(verificationStatus
+            ? { verification_status: verificationStatus }
+            : {}),
           // Map each condition to the backend's snake_case shape.
           where: where?.map((cond: any) =>
             'entryId' in cond
