@@ -33,7 +33,6 @@ import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
-  apiFetch,
   dataHubAction as apiDataHubAction,
   extractAIDocument,
   ExtractionActionOptions,
@@ -1222,9 +1221,9 @@ export default class FeatheryClient extends IntegrationClient {
   // TODO: Drop the local option extension once @feathery/client-utils ships
   // the verification fields on HubActionOptions.
   async dataHubAction(
-    options: HubActionOptions & {
+    options: Omit<HubActionOptions, 'data'> & {
+      data?: Record<string, any> | Record<string, any>[];
       verificationStatus?: 'verified' | 'unverified' | 'all';
-      rows?: Record<string, any>[];
       idFieldId?: string;
       idValue?: string;
     }

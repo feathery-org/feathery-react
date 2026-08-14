@@ -212,7 +212,9 @@ function DataMappingModal({
   const [view, setView] = useState<'resume' | 'import'>('import');
   const [activeStep, setActiveStep] = useState(0);
 
-  const [unverifiedCounts, setUnverifiedCounts] = useState<Record<string, number>>({});
+  const [unverifiedCounts, setUnverifiedCounts] = useState<
+    Record<string, number>
+  >({});
 
   // Header row is NOT assumed to be line 1; `sheets` slices at the chosen one.
   const [rawSheets, setRawSheets] = useState<
@@ -373,7 +375,10 @@ function DataMappingModal({
 
   const isLastStep = activeStep >= schemas.length - 1;
 
-  const totalUnverified = Object.values(unverifiedCounts).reduce((n, c) => n + c, 0);
+  const totalUnverified = Object.values(unverifiedCounts).reduce(
+    (n, c) => n + c,
+    0
+  );
   // Memoized: buildUnverifiedRows walks every row of every mapped column.
   const totalMappedRows = useMemo(
     () =>
@@ -540,7 +545,8 @@ function DataMappingModal({
           hubId: hub.id,
           operation: 'create',
           verificationStatus: 'unverified',
-          rows,
+          // Unverified creates reuse `data` as the list of rows.
+          data: rows,
           idFieldId: idFieldByHub[hub.id]
         });
       }
@@ -728,12 +734,14 @@ function DataMappingModal({
     const resumeBody = (
       <div css={{ color: '#3f3f46', lineHeight: 1.5 }}>
         <div css={{ fontWeight: 600, marginBottom: '6px' }}>
-          {totalUnverified} row{totalUnverified === 1 ? '' : 's'} already imported
+          {totalUnverified} row{totalUnverified === 1 ? '' : 's'} already
+          imported
         </div>
         <div css={{ color: '#71717a' }}>
-          A previous upload put {totalUnverified === 1 ? 'this row' : 'these rows'}{' '}
-          into {schemas.length > 1 ? 'these data hubs' : 'this data hub'}.
-          Uploading a new file replaces {totalUnverified === 1 ? 'it' : 'them'}.
+          A previous upload put{' '}
+          {totalUnverified === 1 ? 'this row' : 'these rows'} into{' '}
+          {schemas.length > 1 ? 'these data hubs' : 'this data hub'}. Uploading
+          a new file replaces {totalUnverified === 1 ? 'it' : 'them'}.
         </div>
       </div>
     );
