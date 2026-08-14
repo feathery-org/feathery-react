@@ -19,6 +19,8 @@ import {
 } from './types';
 
 const MAX_PREVIEW_ROWS = 5;
+// Progress bar shows at least this long so fast parses still read as activity.
+const MIN_PARSE_DISPLAY_MS = 1400;
 // Below this viewport offset there isn't room to render a tooltip above its icon.
 const TOOLTIP_FLIP_THRESHOLD = 140;
 
@@ -78,6 +80,57 @@ function autoMap(
     }
   });
   return mapping;
+}
+
+// "Activity" bar while the dropped file is read + parsed. Fills most of the
+// way on a CSS transition; real completion unmounts it, so it never stalls at
+// an awkward 100%.
+function ParseProgressBar({
+  label,
+  fontFamily
+}: {
+  label: string;
+  fontFamily: string;
+}) {
+  const [width, setWidth] = useState(4);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setWidth(92));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <div css={{ padding: '48px 24px', textAlign: 'center' }}>
+      <div
+        css={{
+          marginBottom: '12px',
+          color: '#3f3f46',
+          fontFamily,
+          fontSize: '14px',
+          overflowWrap: 'anywhere'
+        }}
+      >
+        {label}
+      </div>
+      <div
+        css={{
+          height: '8px',
+          borderRadius: '999px',
+          backgroundColor: '#f4f4f5',
+          overflow: 'hidden'
+        }}
+      >
+        <div
+          css={{
+            height: '100%',
+            width: `${width}%`,
+            backgroundColor: '#0b1324',
+            borderRadius: '999px',
+            transition: 'width 1.6s cubic-bezier(0.2, 0.6, 0.3, 1)',
+            '@media (prefers-reduced-motion: reduce)': { transition: 'none' }
+          }}
+        />
+      </div>
+    </div>
+  );
 }
 
 // The tip is position:fixed so it escapes the modal's scrolling panes; no
@@ -213,6 +266,7 @@ function DataMappingModal({
   );
   const [fileName, setFileName] = useState(() => initialDraft?.fileName ?? '');
   const [fileError, setFileError] = useState('');
+  const [parsingFile, setParsingFile] = useState('');
   const [perHub, setPerHub] = useState<Record<string, HubImportState>>(
     () => initialDraft?.perHub ?? {}
   );
@@ -379,10 +433,19 @@ function DataMappingModal({
       setFileError('Unsupported file type. Upload a CSV or Excel file.');
       return;
     }
+    setFileError('');
+    setParsingFile(file.name);
+    const parseStart = Date.now();
+    // Let the progress bar paint before the CPU-bound parse starts.
+    await new Promise((resolve) => setTimeout(resolve, 30));
     try {
       const raw = (await parseWorkbook(file)).filter(
         (s) => (s.rows || []).length > 0
       );
+      // Keep the bar up for a beat, then jump straight to the mapping step.
+      const remaining = MIN_PARSE_DISPLAY_MS - (Date.now() - parseStart);
+      if (remaining > 0)
+        await new Promise((resolve) => setTimeout(resolve, remaining));
       if (raw.length === 0) {
         setFileError("Couldn't find any data in this file.");
         return;
@@ -405,8 +468,29 @@ function DataMappingModal({
       setFileError(
         "Couldn't read this file. Make sure it's a valid CSV or Excel file."
       );
+    } finally {
+      setParsingFile('');
     }
   };
+
+  // If the file was parsed before the hub schemas arrived, auto-map each hub
+  // as soon as they do.
+  useEffect(() => {
+    if (schemas.length === 0 || sheets.length === 0) return;
+    setPerHub((prev) => {
+      const missing = schemas.filter((hub) => !prev[hub.id]);
+      if (missing.length === 0) return prev;
+      const next = { ...prev };
+      missing.forEach((hub) => {
+        next[hub.id] = {
+          selectedSheet: 0,
+          mapping: autoMap(fieldsForHub(hub.id), sheets, sheets[0]?.name)
+        };
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schemas, sheets]);
 
   const setSelectedSheet = (hubId: string, index: number) =>
     setPerHub((prev) => ({
@@ -691,6 +775,16 @@ function DataMappingModal({
 
   // ---- Import: upload + map ----
   if (sheets.length === 0) {
+    if (parsingFile) {
+      return shell(
+        <ParseProgressBar
+          label={`Opening ${parsingFile}…`}
+          fontFamily={fontFamily}
+        />,
+        undefined,
+        true
+      );
+    }
     const dropzone = (
       <div
         onClick={() => fileInputRef.current?.click()}
