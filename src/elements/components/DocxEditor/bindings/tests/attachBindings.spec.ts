@@ -242,3 +242,95 @@ describe('content-change suppression', () => {
     }
   });
 });
+
+describe('surviving the editor being torn down mid-event', () => {
+  // Going back a form step unmounts the editor. React runs the host's
+  // instance.destroy() cleanup BEFORE this binding's dispose, so destroy fires
+  // teardown selectionChange/contentChange events into the still-attached
+  // listeners while the editor's internals are half-null. A listener that throws
+  // there makes Syncfusion log "Error caught while running custom logic" and the
+  // throw reaches the host's error boundary, crashing the whole form.
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+  const handlers: Record<string, (...args: any[]) => void> = {};
+
+  beforeEach(() => {
+    editor = makeEditor(buildTemplateTokenDocument());
+    // Capture the listeners attachBindings installs so the test can fire them
+    // by hand, standing in for the events destroy() emits.
+    const add = jest
+      .spyOn(editor, 'addEventListener')
+      .mockImplementation((name: any, handler: any) => {
+        handlers[name] = handler;
+      });
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+    add.mockRestore();
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+  });
+
+  // A destroyed Syncfusion instance dereferences null internals the moment its
+  // selection is read - the exact "Cannot convert undefined or null to object"
+  // from the field report. `selection` is a prototype getter, so an own-property
+  // shadow throws for the test and deleting it restores the real editor.
+  function breakSelection(): void {
+    Object.defineProperty(editor, 'selection', {
+      configurable: true,
+      get() {
+        throw new Error('Cannot convert undefined or null to object');
+      }
+    });
+  }
+  function healSelection(): void {
+    delete (editor as unknown as { selection?: unknown }).selection;
+  }
+
+  it('does not let a teardown event throw into the host', () => {
+    // Type first, so the later selectionChange tries to commit through the now
+    // broken editor rather than returning early on no pending edit.
+    handlers.contentChange();
+    breakSelection();
+    try {
+      expect(() => handlers.selectionChange()).not.toThrow();
+      expect(() => handlers.contentChange()).not.toThrow();
+      expect(() =>
+        handlers.keyDown({ event: { key: 'Enter' } })
+      ).not.toThrow();
+    } finally {
+      // Heal before afterEach so destroy() can read selection normally.
+      healSelection();
+    }
+  });
+
+  it('stops calling into the controller once disposed', () => {
+    handlers.contentChange();
+    const flush = jest.spyOn(attached.controller, 'flush');
+    attached.dispose();
+
+    // A stray event or timer that fires after dispose must find the handlers
+    // inert, not reconcile a document that is on its way out.
+    handlers.selectionChange();
+    handlers.contentChange();
+    expect(flush).not.toHaveBeenCalled();
+
+    // Reattach so afterEach's dispose stays valid.
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+  });
+
+  it('dispose does not throw when the editor was already destroyed', () => {
+    // The real unmount order: React runs the host's instance.destroy() cleanup
+    // before this binding's dispose. removeEventListener and the un-patch helpers
+    // then run against a torn-down instance. dispose runs inside React's commit,
+    // so a throw here is caught by an error boundary and crashes the form.
+    destroy(editor);
+    expect(() => attached.dispose()).not.toThrow();
+    // afterEach will call dispose() again (idempotent) and destroy() a second
+    // time; reattaching against the destroyed instance is not possible, so make
+    // both safe no-ops.
+    attached = { dispose() {} } as AttachedBindings;
+    editor = { destroy() {}, get element() { return null; } } as unknown as DocumentEditor;
+  });
+});

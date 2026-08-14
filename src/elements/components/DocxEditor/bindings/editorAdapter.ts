@@ -158,6 +158,11 @@ export function configureEditorForBindings(
 }
 
 export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
+  // The deferred restore below outlives the synchronous call. On a step-back the
+  // editor is destroyed before it fires; tracking it lets dispose() cancel it so
+  // it never reads selection on a torn-down instance.
+  let pendingRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+
   const controlsForTag = (
     collection: ContentControlLike[],
     tag: string
@@ -319,7 +324,9 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       } catch {
         caretAfterOpen = undefined;
       }
-      setTimeout(() => {
+      if (pendingRestoreTimer != null) clearTimeout(pendingRestoreTimer);
+      pendingRestoreTimer = setTimeout(() => {
+        pendingRestoreTimer = null;
         try {
           const caretNow = editor.selection?.startOffset;
           if (
@@ -340,6 +347,13 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
           /* best effort */
         }
       }, 60);
+    },
+
+    dispose(): void {
+      if (pendingRestoreTimer != null) {
+        clearTimeout(pendingRestoreTimer);
+        pendingRestoreTimer = null;
+      }
     }
   };
 }

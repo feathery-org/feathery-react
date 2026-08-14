@@ -110,8 +110,9 @@ export function attachBindings(
     onFieldValues?.(collectFieldValues(event.controller));
   };
 
+  const editorPort = createEditorAdapter(editor);
   const controller = new ReconciliationController({
-    editor: createEditorAdapter(editor),
+    editor: editorPort,
     persistence,
     // Manual commit: edits reconcile on Enter and on blur, never mid-keystroke.
     debounceMs: null,
@@ -162,10 +163,29 @@ export function attachBindings(
   });
 
   const eventful = editor as EventfulEditor;
-  const onContentChange = () => triggers.onContentChange();
-  const onSelectionChange = () => triggers.onSelectionChange();
-  const onKeyDown = (args: any) => triggers.onKeyDown(args?.event?.key);
-  const onBlur = () => triggers.onEditorBlur();
+  // Going back a form step unmounts the editor: the host destroys the Syncfusion
+  // instance in a sibling effect, and React runs that cleanup BEFORE this
+  // binding's dispose. Destroy fires teardown selectionChange/contentChange
+  // events that still reach these listeners, now pointed at half-null editor
+  // internals - Syncfusion throws "Cannot convert undefined or null to object"
+  // and reports it as "Error caught while running custom logic", which reaches
+  // the host's error boundary and takes the form down. A handler that never
+  // throws, and bails once the editor is gone, cannot start that chain.
+  let disposed = false;
+  const runGuarded = (fn: () => void): void => {
+    if (disposed || (editor as { isDestroyed?: boolean }).isDestroyed) return;
+    try {
+      fn();
+    } catch (error) {
+      console.error('Feathery: document bindings event handler failed', error);
+    }
+  };
+  const onContentChange = () => runGuarded(() => triggers.onContentChange());
+  const onSelectionChange = () =>
+    runGuarded(() => triggers.onSelectionChange());
+  const onKeyDown = (args: any) =>
+    runGuarded(() => triggers.onKeyDown(args?.event?.key));
+  const onBlur = () => runGuarded(() => triggers.onEditorBlur());
 
   eventful.addEventListener?.('contentChange', onContentChange);
   eventful.addEventListener?.('selectionChange', onSelectionChange);
@@ -186,14 +206,43 @@ export function attachBindings(
     fieldValues: () => collectFieldValues(controller),
     importDiagnostics,
     dispose(): void {
-      unregisterBindingReconciler(editor);
-      eventful.removeEventListener?.('contentChange', onContentChange);
-      eventful.removeEventListener?.('selectionChange', onSelectionChange);
-      eventful.removeEventListener?.('keyDown', onKeyDown);
-      editableDiv?.removeEventListener?.('blur', onBlur);
-      uninstallGuard();
-      unwatchRowCommands();
-      triggers.dispose();
+      // Set first: removing a listener can itself fire an event, and any stray
+      // timer that fires after this point must find the handlers inert.
+      disposed = true;
+      // React runs the host's instance.destroy() cleanup BEFORE this one, so by
+      // the time dispose runs the editor is often already torn down. Calling
+      // removeEventListener (and the un-patch helpers) on a destroyed Syncfusion
+      // instance can dereference its null internals and throw "Cannot convert
+      // undefined or null to object". dispose runs inside React's unmount commit,
+      // where a throw is caught by the nearest error boundary and takes the form
+      // down - so every step is isolated and a failure is logged, never thrown.
+      const step = (label: string, fn: () => void): void => {
+        try {
+          fn();
+        } catch (error) {
+          console.error(
+            `Feathery: document bindings dispose (${label})`,
+            error
+          );
+        }
+      };
+      step('unregister', () => unregisterBindingReconciler(editor));
+      step('contentChange', () =>
+        eventful.removeEventListener?.('contentChange', onContentChange)
+      );
+      step('selectionChange', () =>
+        eventful.removeEventListener?.('selectionChange', onSelectionChange)
+      );
+      step('keyDown', () =>
+        eventful.removeEventListener?.('keyDown', onKeyDown)
+      );
+      step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
+      step('guard', () => uninstallGuard());
+      step('rowCommands', () => unwatchRowCommands());
+      step('triggers', () => triggers.dispose());
+      // Cancels the deferred view restore, which would otherwise read
+      // editor.selection ~60ms after the editor was destroyed.
+      step('editorPort', () => editorPort.dispose?.());
     }
   };
 }

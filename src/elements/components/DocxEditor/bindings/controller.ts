@@ -62,6 +62,8 @@ export interface EditorPort {
   /** Selection/scroll snapshot, for the open() path only. */
   captureView?(): unknown;
   restoreView?(view: unknown): void;
+  /** Cancel any pending async work (e.g. a deferred view restore). */
+  dispose?(): void;
 }
 
 export type ControllerEventName =
