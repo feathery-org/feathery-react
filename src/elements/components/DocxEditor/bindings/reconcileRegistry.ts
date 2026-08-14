@@ -109,7 +109,8 @@ export function diffBindingCommands(
 
   for (const tableId of previousTables) {
     if (next.tables.has(tableId)) continue;
-    const table = previous.tables.get(tableId)!;
+    const table = previous.tables.get(tableId);
+    if (!table) continue;
     const marker = getAt(before, table.markerPath) as any;
     commands.push({
       type: 'remove-table',
@@ -119,7 +120,8 @@ export function diffBindingCommands(
   }
   for (const tableId of nextTables) {
     if (previous.tables.has(tableId)) continue;
-    const table = next.tables.get(tableId)!;
+    const table = next.tables.get(tableId);
+    if (!table) continue;
     const parent = table.markerPath.slice(0, -1);
     const at = Number(table.markerPath[table.markerPath.length - 1]);
     const anchor = [...previous.tables.values()]
@@ -145,24 +147,26 @@ export function diffBindingCommands(
   }
 
   for (const tableId of nextTables.filter((id) => previous.tables.has(id))) {
-    const beforeTable = previous.tables.get(tableId)!;
-    const afterTable = next.tables.get(tableId)!;
+    const beforeTable = previous.tables.get(tableId);
+    const afterTable = next.tables.get(tableId);
+    if (!beforeTable || !afterTable) continue;
     const beforeIds = new Set(beforeTable.rows.map((row) => row.rowId));
     const afterIds = new Set(afterTable.rows.map((row) => row.rowId));
     for (const row of beforeTable.rows)
-      if (!afterIds.has(row.rowId))
-        commands.push({ type: 'remove-row', tableId, rowId: row.rowId! });
+      if (row.rowId && !afterIds.has(row.rowId))
+        commands.push({ type: 'remove-row', tableId, rowId: row.rowId });
     for (let i = 0; i < afterTable.rows.length; i++) {
       const row = afterTable.rows[i];
-      if (!beforeIds.has(row.rowId))
+      if (row.rowId && !beforeIds.has(row.rowId))
         commands.push({
           type: 'add-row',
           tableId,
           afterRowId: i ? afterTable.rows[i - 1].rowId : null,
-          rowId: row.rowId!
+          rowId: row.rowId
         });
     }
     for (const row of afterTable.rows) {
+      if (!row.rowId) continue;
       for (const occurrence of row.bindings.values()) {
         if (occurrence.def.kind !== 'field') continue;
         const prior = beforeTable.rows
@@ -172,7 +176,7 @@ export function diffBindingCommands(
         commands.push({
           type: 'set-value',
           tableId,
-          rowId: row.rowId!,
+          rowId: row.rowId,
           name: occurrence.name,
           value: parseDisplay(occurrence.def.fieldType, occurrence.text)
         });
