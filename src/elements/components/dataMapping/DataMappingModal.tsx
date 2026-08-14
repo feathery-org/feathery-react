@@ -187,6 +187,11 @@ function DataMappingModal({
   responsiveStyles,
   onClose
 }: DataMappingModalProps) {
+  // Draft restore is synchronous so reopening the modal is instant; only the
+  // hub schemas/counts load over the network.
+  const initialDraft = draftCache.get(
+    draftKey(hubs.map((h) => h.hub_id))
+  );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [schemas, setSchemas] = useState<HubSchema[]>([]);
@@ -198,15 +203,22 @@ function DataMappingModal({
   // Header row is NOT assumed to be line 1; `sheets` slices at the chosen one.
   const [rawSheets, setRawSheets] = useState<
     { name: string; rows: string[][] }[]
-  >([]);
-  const [headerRows, setHeaderRows] = useState<number[]>([]);
+  >(() => initialDraft?.rawSheets ?? []);
+  const [headerRows, setHeaderRows] = useState<number[]>(
+    () => initialDraft?.headerRows ?? []
+  );
   const sheets = useMemo<NormalizedSheet[]>(
     () => deriveSheets(rawSheets, headerRows),
     [rawSheets, headerRows]
   );
-  const [fileName, setFileName] = useState('');
+  const [fileName, setFileName] = useState(() => initialDraft?.fileName ?? '');
   const [fileError, setFileError] = useState('');
-  const [perHub, setPerHub] = useState<Record<string, HubImportState>>({});
+  const [perHub, setPerHub] = useState<Record<string, HubImportState>>(
+    () => initialDraft?.perHub ?? {}
+  );
+  // Once the user drops a file, a late-arriving count must not yank them to
+  // the resume screen.
+  const interactedRef = useRef(false);
 
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -286,17 +298,10 @@ function DataMappingModal({
         const counts = await refreshStagedCounts(orderedSchemas);
         if (cancelled) return;
 
-        const draft = draftCache.get(draftKey(hubIds));
-        if (draft) {
-          setFileName(draft.fileName);
-          setRawSheets(draft.rawSheets);
-          setHeaderRows(draft.headerRows);
-          setPerHub(draft.perHub);
-        }
         const hasStaged = Object.values(counts).some((n) => n > 0);
         setSchemas(orderedSchemas);
-        setView(!draft && hasStaged ? 'resume' : 'import');
-        setActiveStep(0);
+        if (!initialDraft && !interactedRef.current && hasStaged)
+          setView('resume');
         setLoading(false);
       } catch {
         if (!cancelled) {
@@ -312,7 +317,7 @@ function DataMappingModal({
 
   // Cache the in-progress work so closing before confirming doesn't lose it.
   useEffect(() => {
-    if (loading || rawSheets.length === 0) return;
+    if (rawSheets.length === 0) return;
     draftCache.set(draftKey(hubIds), {
       fileName,
       rawSheets,
@@ -369,6 +374,7 @@ function DataMappingModal({
   const allRequiredMapped = sheets.length > 0 && missingRequired.length === 0;
 
   const handleFile = async (file: File) => {
+    interactedRef.current = true;
     if (!isSpreadsheetFile(file)) {
       setFileError('Unsupported file type. Upload a CSV or Excel file.');
       return;
@@ -598,13 +604,6 @@ function DataMappingModal({
     </div>
   );
 
-  if (loading) {
-    return shell(
-      <div css={{ color: '#71717a' }}>Loading…</div>,
-      undefined,
-      true
-    );
-  }
   if (loadError) {
     return shell(
       <div css={{ color: '#ef4444' }}>{loadError}</div>,
@@ -678,6 +677,16 @@ function DataMappingModal({
       </>
     );
     return shell(resumeBody, resumeFooter, true);
+  }
+
+  // Resume needs counts; the mapping step needs schemas. Only block once the
+  // user is past the dropzone and the background load hasn't finished.
+  if (loading && sheets.length > 0) {
+    return shell(
+      <div css={{ color: '#71717a' }}>Loading…</div>,
+      undefined,
+      true
+    );
   }
 
   // ---- Import: upload + map ----
