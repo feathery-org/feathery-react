@@ -85,6 +85,20 @@ function destroyRealDocumentEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+function expectDocumentContentUnchangedAndTrackingOff(
+  editor: DocumentEditor,
+  before: string
+): void {
+  expect(editor.enableTrackChanges).toBe(false);
+  const beforeSfdt = JSON.parse(before);
+  const afterSfdt = JSON.parse(editor.serialize());
+  delete beforeSfdt.trackChanges;
+  delete beforeSfdt.tc;
+  delete afterSfdt.trackChanges;
+  delete afterSfdt.tc;
+  expect(afterSfdt).toEqual(beforeSfdt);
+}
+
 function rejectEveryRealRevision(editor: DocumentEditor): void {
   const revisions = Array.from({ length: editor.revisions.length }, (_, i) =>
     editor.revisions.get(i)
@@ -212,7 +226,7 @@ describe('a figure written into a column of formatted amounts wears its format',
   it('real SDK: a bare 9660 beside $36,803.00 lands as $9,660.00, and the re-render is recorded', () => {
     const ed = makeRealDocumentEditor(scheduleSfdt());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         edits: [
@@ -457,7 +471,7 @@ describe('the provenance gate: who authored this number', () => {
         });
         // Nothing entered the document and no revision was created.
         expect(ed.revisions.length).toBe(0);
-        expect(ed.serialize()).toBe(before);
+        expectDocumentContentUnchangedAndTrackingOff(ed, before);
         // The remedy names every route by name, including the new one.
         const rendered = JSON.stringify(result.results[0]);
         expect(rendered).toContain('set_cell_formula');
@@ -495,7 +509,7 @@ describe('the provenance gate: who authored this number', () => {
       expect(result.results[0].message).toContain(
         'does not contain this figure'
       );
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -583,7 +597,7 @@ describe('the provenance gate: who authored this number', () => {
         ok: false,
         error: 'unannounced_dependency_chain'
       });
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -607,7 +621,7 @@ describe('the premium row from the uploaded policy, end to end', () => {
     sfdt.sections[0].blocks[1].rows.pop();
     const ed = makeRealDocumentEditor(sfdt);
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'cs-homeowners-premium-row',
@@ -631,7 +645,7 @@ describe('the premium row from the uploaded policy, end to end', () => {
     sfdt.sections[0].blocks[1].rows.pop();
     const ed = makeRealDocumentEditor(sfdt);
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'cs-homeowners-premium-row',
@@ -695,7 +709,7 @@ const feeTableEdit = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe('an authored cell matrix crosses the same number-provenance gate', () => {
-  it('real SDK: a quantity column with no cited source is refused, document untouched', () => {
+  it('real SDK: an uncited quantity matrix leaves content untouched and turns tracking off', () => {
     const ed = makeRealDocumentEditor(scheduleSfdt());
     try {
       ed.enableTrackChanges = true;
@@ -710,7 +724,7 @@ describe('an authored cell matrix crosses the same number-provenance gate', () =
       });
       expect(result.results[0].message).toContain('$125.00');
       expect(result.changeSet).toMatchObject({ status: 'failed' });
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -741,7 +755,7 @@ describe('an authored cell matrix crosses the same number-provenance gate', () =
       expect(result.results[0].message).toContain(
         'does not contain this figure'
       );
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -750,7 +764,7 @@ describe('an authored cell matrix crosses the same number-provenance gate', () =
   it('real SDK: every figure quoted from the cited excerpt applies, and rejecting restores the document', () => {
     const ed = makeRealDocumentEditor(scheduleSfdt());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         edits: [
@@ -858,7 +872,7 @@ describe('an authored cell matrix crosses the same number-provenance gate', () =
         error: 'unsourced_authored_figure'
       });
       expect(result.results[0].message).toContain('$210.00');
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }

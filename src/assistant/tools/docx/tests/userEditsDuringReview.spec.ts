@@ -174,4 +174,25 @@ describe('user edits while assistant changes are pending', () => {
       destroyRealDocumentEditor(ed);
     }
   });
+
+  it('leaves tracking off after a batch that started with it on, so later typing stays plain', () => {
+    const ed = makeRealDocumentEditor(doc());
+    try {
+      ed.enableTrackChanges = true;
+      applyRobinReplace(ed);
+      expect(ed.enableTrackChanges).toBe(false);
+
+      const before = revisionTexts(ed);
+      ed.selection.select('0;1;0', '0;1;0');
+      (ed as any).editorModule.insertText('Hello ');
+
+      ed.selection.select('0;1;0', '0;1;80');
+      expect(ed.selection.text).toContain('Hello');
+      expect(revisionTexts(ed)).toEqual(before);
+      for (const text of revisionTexts(ed)) expect(text).not.toContain('Hello');
+      expect(listRevisionGroups(ed as any)).toHaveLength(1);
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
 });

@@ -8,6 +8,7 @@ import {
   getDocumentInventory,
   setAssistantSessionActive
 } from './syncfusionDocumentOps';
+import { reconcileBoundDocument } from '../../../elements/components/DocxEditor/bindings/reconcileRegistry';
 
 const unavailable = (message: string) => ({
   ok: false,
@@ -36,7 +37,13 @@ export const createDocxEditorBridge = (getEditor: () => any): DocxBridge => ({
     // per-call flag can bridge. AssistantChat clears this at turn end, so
     // text-only turns (which never reach here) don't suppress real clicks.
     setAssistantSessionActive(editor, true);
-    return applyDocumentEdits(editor, input ?? {});
+    const result = await applyDocumentEdits(editor, input ?? {});
+    // These edits are user-origin as far as bindings are concerned, and some of
+    // them - an inserted row above all - change what formulas depend on. Settle
+    // the document now rather than leaving it inconsistent until the user's next
+    // commit. A no-op when the document has no bindings.
+    reconcileBoundDocument(editor);
+    return result;
   },
   findDocumentOccurrences: async (input) => {
     const editor = getEditor();

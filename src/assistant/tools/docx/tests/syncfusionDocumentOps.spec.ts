@@ -209,6 +209,15 @@ function makeRealDocumentEditor(sfdt: any): DocumentEditor {
   });
   editor.appendTo(host);
   editor.open(JSON.stringify(sfdt));
+  // Assist forces tracking off after every batch. Byte-for-byte reject
+  // restores compare serialize(), which also encodes the document-level
+  // track-changes mode flag (`tc`). Normalize it so those comparisons
+  // assert document content, not the leftover mode bit.
+  const originalSerialize = editor.serialize.bind(editor);
+  editor.serialize = () =>
+    originalSerialize()
+      .replace(/,"tc":1,/, ',"tc":0,')
+      .replace(/"trackChanges":true/, '"trackChanges":false');
 
   return editor;
 }
@@ -499,7 +508,7 @@ describe('anchorFromOffset + readSelection', () => {
 });
 
 describe('applyDocumentEdits', () => {
-  it('forces track-changes on for the batch then restores it', () => {
+  it('forces track-changes on for the batch then leaves it off', () => {
     const ed = make([para('Quote: $5,500')]);
     ed.enableTrackChanges = false;
     const seen: boolean[] = [];
@@ -514,7 +523,18 @@ describe('applyDocumentEdits', () => {
       ]
     });
     expect(seen).toEqual([true]); // track-changes was ON during the write
-    expect(ed.enableTrackChanges).toBe(false); // restored afterwards
+    expect(ed.enableTrackChanges).toBe(false); // forced off afterwards
+  });
+
+  it('leaves track-changes off even if the host had it on', () => {
+    const ed = make([para('Quote: $5,500')]);
+    ed.enableTrackChanges = true;
+    applyDocumentEdits(ed, {
+      edits: [
+        { op: 'replace_text', anchor: '0;0', find: '5,500', replace: '6,000' }
+      ]
+    });
+    expect(ed.enableTrackChanges).toBe(false);
   });
 
   it('flags the editor as assistant-writing for exactly the span of a call', () => {
@@ -1440,7 +1460,7 @@ describe('live occurrence search and scoped replacement', () => {
           expect.objectContaining({ ok: true, anchor: '0;2' })
         ])
       );
-      expect(ed.enableTrackChanges).toBe(true);
+      expect(ed.enableTrackChanges).toBe(false);
 
       const old = findDocumentOccurrences(ed as unknown as LiveEditor, {
         text: 'marlow',
@@ -1692,7 +1712,7 @@ describe('live occurrence search and scoped replacement', () => {
       });
       expect(edited.changeSet).toMatchObject({ status: 'applied' });
       expect(edited.results.every((result) => result.ok)).toBe(true);
-      expect(ed.enableTrackChanges).toBe(true);
+      expect(ed.enableTrackChanges).toBe(false);
       expect(realRevisions(ed)).toHaveLength(6);
       expect(
         realRevisions(ed)
@@ -1851,7 +1871,7 @@ describe('live occurrence search and scoped replacement', () => {
           })
         ])
       );
-      expect(ed.enableTrackChanges).toBe(true);
+      expect(ed.enableTrackChanges).toBe(false);
       expect(realRevisions(ed)).toHaveLength(2);
       expect(
         findDocumentOccurrences(ed as unknown as LiveEditor, {
@@ -3584,6 +3604,35 @@ function tableInsertionSfdt() {
 }
 
 describe('tracked inserts never author deletions', () => {
+  it('real SDK: a plain-table cell replacement keeps one native change card', () => {
+    const ed = makeRealDocumentEditor(locationScheduleSfdt());
+    try {
+      const result = applyDocumentEdits(ed as unknown as LiveEditor, {
+        changeSetId: 'plain-table-cell',
+        edits: [
+          {
+            op: 'set_cell_text',
+            anchor: '0;1;1;1;0',
+            text: '2 King St W'
+          }
+        ]
+      });
+
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'set_cell_text',
+        route: 'editor'
+      });
+      expect(revisionTypes(ed).sort()).toEqual(['Deletion', 'Insertion']);
+      const cards = listRevisionGroups(ed as unknown as LiveEditor);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].items).toHaveLength(1);
+      expect(blockTexts(ed)).toContain('2 King St W');
+    } finally {
+      destroyRealDocumentEditor(ed);
+    }
+  });
+
   it('real SDK: pure insert_text before the Premium Summary title creates no Deletion revision and reject restores the heading byte-for-byte', () => {
     const ed = makeRealDocumentEditor(premiumSummaryHeadingSfdt());
     try {
@@ -3650,9 +3699,13 @@ describe('tracked inserts never author deletions', () => {
 
       expect(result.results[0]).toMatchObject({
         ok: true,
-        op: 'replace_text'
+        op: 'replace_text',
+        route: 'editor'
       });
       expect(revisionTypes(ed).sort()).toEqual(['Deletion', 'Insertion']);
+      const cards = listRevisionGroups(ed as unknown as LiveEditor);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].items).toHaveLength(1);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -3769,8 +3822,20 @@ describe('insert_table requires same-batch cell writes', () => {
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'new-section-before-summary',
         edits: [
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'New Section' },
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Policy Information' },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'New Section'
+          },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'Policy Information'
+          },
           {
             op: 'insert_table',
             group,
@@ -3783,7 +3848,13 @@ describe('insert_table requires same-batch cell writes', () => {
               ['P-123', '2026 - 2027']
             ]
           },
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Coverages' },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'Coverages'
+          },
           {
             op: 'insert_table',
             group,
@@ -3804,7 +3875,13 @@ describe('insert_table requires same-batch cell writes', () => {
               quotedText: 'First $100, Second $200, Third $300'
             }
           },
-          { op: 'insert_text', group, anchor: '0;0', position: 'before', text: 'Deductibles' },
+          {
+            op: 'insert_text',
+            group,
+            anchor: '0;0',
+            position: 'before',
+            text: 'Deductibles'
+          },
           {
             op: 'insert_table',
             group,

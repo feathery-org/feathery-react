@@ -1,0 +1,58 @@
+// Harness entry: exposes the PORTED binding engine on window for a plain HTML
+// page to drive.
+//
+// This exists because jsdom cannot test the things that actually break in a
+// browser. It has no real caret, so the keystroke guard's reach is unproven; it
+// cannot fire the hidden editable div's textInput or blur; and the ORDER of
+// contentChange/selectionChange under real typing is exactly what the commit
+// triggers depend on. Everything here is the shipped code - no forks, no fakes -
+// so what the page does is what a form does.
+//
+// Not part of the package build. See harness/README.md.
+
+import { attachBindings } from '../../src/elements/components/DocxEditor/bindings/attachBindings';
+import {
+  applyRules,
+  hasBlockingErrors
+} from '../../src/elements/components/DocxEditor/bindings/core/engine';
+import {
+  addLineItem,
+  removeLineItem,
+  scanBindings,
+  setTaggedValue
+} from '../../src/elements/components/DocxEditor/bindings/core/sfdtAdapter';
+import {
+  anchorCaret,
+  innerRangeOf,
+  snapOffsetForCaret
+} from '../../src/elements/components/DocxEditor/bindings/controlGeometry';
+import { convertTemplateTokens } from '../../src/elements/components/DocxEditor/bindings/core/templateImport';
+import { isOptimizedSfdt } from '../../src/elements/components/DocxEditor/bindings/core/sfdtTypes';
+import { parseTag } from '../../src/elements/components/DocxEditor/bindings/core/tagDsl';
+import { buildCostsFixture } from '../../src/elements/components/DocxEditor/bindings/core/tests/fixtures/costsFixture';
+import { buildTemplateTokenDocument } from '../../src/elements/components/DocxEditor/bindings/core/tests/fixtures/templateTokenFixture';
+
+(window as any).Bindings = {
+  attachBindings,
+  // The pure engine, for poking at a document straight from the console.
+  applyRules,
+  hasBlockingErrors,
+  // Adapter operations the page drives through controller.runCommand.
+  addLineItem,
+  removeLineItem,
+  setTaggedValue,
+  scanBindings,
+  convertTemplateTokens,
+  isOptimizedSfdt,
+  parseTag,
+  // Caret geometry, for checking from the console whether the caret is actually
+  // inside a binding - the difference is one offset and invisible on screen.
+  // Bindings.innerRangeOf(editor, control) / Bindings.snapOffsetForCaret(editor)
+  anchorCaret,
+  innerRangeOf,
+  snapOffsetForCaret,
+  // Two documents: one already bound, one still carrying [[...]] tokens so the
+  // import path is visible too.
+  buildCostsFixture,
+  buildTemplateTokenDocument
+};

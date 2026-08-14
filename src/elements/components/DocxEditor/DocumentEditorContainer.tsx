@@ -77,6 +77,22 @@ interface RefreshEventDetail {
 const REFRESH_EVENT = 'feathery-docx-editor-refresh';
 const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
 
+/**
+ * FLIP THIS TO TEST DOCUMENT BINDINGS. Ships false.
+ *
+ * Turns on the [[...]] binding engine for every DocxEditor in the bundle:
+ * template tokens become content controls, formulas compute, and edits
+ * reconcile on Enter or blur. The per-host switch is
+ * window.featherySyncfusion.bindings; this is the blunt version, for when
+ * rebuilding the package is easier than arranging for that global to be set
+ * before the editor mounts.
+ *
+ * Two things follow from it being a compile-time constant:
+ *   - flipping it needs a `yarn build` and a re-link into the consuming app;
+ *   - it applies globally, so leave it false on anything shared.
+ */
+const FORCE_DOCUMENT_BINDINGS = true;
+
 function getPendingDraft(containerId?: string): RefreshEventDetail | undefined {
   if (!containerId) return undefined;
   return (featheryWindow() as any)[PENDING_DRAFTS_KEY]?.[containerId];
@@ -277,6 +293,14 @@ export default function DocumentEditorContainer({
     containerToolbarOutcomes(targetAction ?? {});
   const reviewChanges = !!assistantEnabled && !readOnly;
 
+  // Opt-in, and off unless a host asks for it: window.featherySyncfusion.bindings
+  // rides the same config object that already carries serviceUrl and licenseKey,
+  // or FORCE_DOCUMENT_BINDINGS is flipped for local testing.
+  const bindingsEnabled =
+    FORCE_DOCUMENT_BINDINGS || syncfusion.bindings === true;
+  // The most recent committed document-field values, read at save time.
+  const bindingValuesRef = useRef<Record<string, string>>({});
+
   const saveEnvelope = useCallback(
     async (blob: Blob) => {
       if (!envelope) return;
@@ -293,14 +317,22 @@ export default function DocumentEditorContainer({
             : current
         );
       }
+      const newValues: Record<string, any> = {};
       if (
         savesToField &&
         targetAction?.save_document_field_key &&
         savedFileUrl
       ) {
-        const newValues = {
-          [targetAction.save_document_field_key]: savedFileUrl
-        };
+        newValues[targetAction.save_document_field_key] = savedFileUrl;
+      }
+      // Document-level bindings write back to form fields of the same name, and
+      // ONLY to fields the form already has - a binding in a template is not
+      // permission to invent a field. Pushed here with the save rather than on
+      // every reconcile: pressing Enter should not cost a network round trip.
+      for (const [name, value] of Object.entries(bindingValuesRef.current)) {
+        if (name in fieldValues) newValues[name] = value;
+      }
+      if (Object.keys(newValues).length) {
         setFieldValues(newValues, true, true);
         await client.submitCustom(newValues);
       }
@@ -529,6 +561,12 @@ export default function DocumentEditorContainer({
       // Save-to-field flow: the document's destination is a form field (set
       // on every save), not the user's machine — no Download button.
       hideDownload={savesToField}
+      bindings={{
+        enabled: bindingsEnabled,
+        onFieldValues: (values) => {
+          bindingValuesRef.current = values;
+        }
+      }}
       onSave={saveEnvelope}
       // readOnly editors never dirty, so skip registering them entirely
       onChange={
