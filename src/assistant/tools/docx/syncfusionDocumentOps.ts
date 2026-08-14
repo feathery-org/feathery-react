@@ -12498,16 +12498,20 @@ function rewriteBindingExpression(
   expression: string,
   oldTableId: string,
   newTableId: string,
-  renamedDocBindings: Map<string, string>
+  renamedDocBindings: Map<string, string>,
+  preservedDocBindings: Set<string>
 ): string {
   return String(expression).replace(
     /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
     (token, offset, source) => {
       const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
       if (after === '(') return token;
+      const renamed = renamedDocBindings.get(token);
+      if (renamed) return renamed;
+      if (preservedDocBindings.has(token)) return token;
       if (token.startsWith(`${oldTableId}.`))
         return `${newTableId}.${token.slice(oldTableId.length + 1)}`;
-      return renamedDocBindings.get(token) ?? token;
+      return token;
     }
   );
 }
@@ -12568,6 +12572,7 @@ function rewriteBindingsInClone(
     newTableId: string;
     rowIds: Map<string, string>;
     renameDocBindings: Map<string, string>;
+    preservedDocBindings: Set<string>;
     copyRows: boolean;
   }
 ): void {
@@ -12604,17 +12609,20 @@ function rewriteBindingsInClone(
           ];
         }
       }
-      const renamed = options.renameDocBindings.get(def.name);
+      const renamed = def.isGlobal
+        ? undefined
+        : options.renameDocBindings.get(def.name);
       if (renamed) {
         def.name = renamed;
         changed = true;
       }
-      if (def.kind === 'formula') {
+      if (def.kind === 'formula' && !def.isGlobal) {
         const nextExpression = rewriteBindingExpression(
           def.expression,
           options.oldTableId,
           options.newTableId,
-          options.renameDocBindings
+          options.renameDocBindings,
+          options.preservedDocBindings
         );
         if (nextExpression !== def.expression) {
           def.expression = nextExpression;
@@ -12790,6 +12798,7 @@ function boundDuplicateTablePlan(
       for (const occurrence of state.index.occurrences) {
         if (occurrence.tableId) continue;
         if (!pathHasPrefix(markerPath, occurrence.path)) continue;
+        if (occurrence.def.isGlobal) continue;
         if (!renameDocBindings.has(occurrence.name)) {
           const suffix = occurrence.name.startsWith(`${tableRoute.tableId}_`)
             ? occurrence.name.slice(tableRoute.tableId.length + 1)
@@ -12800,6 +12809,11 @@ function boundDuplicateTablePlan(
           );
         }
       }
+      const preservedDocBindings = new Set(
+        [...state.index.fields.keys(), ...state.index.formulas.keys()].filter(
+          (name) => !renameDocBindings.has(name)
+        )
+      );
       const rowIds = freshRowIdsFor(liveTable, newTableId);
       if (replacementRows) {
         const rawTable = firstTableBlockIn(clone);
@@ -12839,6 +12853,7 @@ function boundDuplicateTablePlan(
             newTableId,
             rowIds: new Map([[prototypeEntry.rowId as string, newRowId]]),
             renameDocBindings,
+            preservedDocBindings,
             copyRows: false
           });
           return rowClone;
@@ -12854,6 +12869,7 @@ function boundDuplicateTablePlan(
         newTableId,
         rowIds,
         renameDocBindings,
+        preservedDocBindings,
         copyRows
       });
       let next = setAt(
