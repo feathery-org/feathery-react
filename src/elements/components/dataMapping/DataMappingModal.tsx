@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MODAL_Z_INDEX } from '../../../utils/styles';
 import { featheryDoc } from '../../../utils/browser';
+import { initInfo } from '../../../utils/init';
 import {
   buildStagedRows,
   ColumnRef,
@@ -241,18 +242,26 @@ function DataMappingModal({
 
   const refreshStagedCounts = async (hubList: HubSchema[]) => {
     const results = await Promise.all(
-      hubList.map((hub) =>
-        client
+      hubList.map((hub) => {
+        // Scope to this user's import batch when the action configures an ID
+        // field. `where` conditions use field keys, so translate the id.
+        const idFieldKey = (hub.fields || []).find(
+          (f) => f.id === idFieldByHub[hub.id]
+        )?.key;
+        return client
           .dataHubAction({
             hubId: hub.id,
-            operation: 'get_unverified',
-            idFieldId: idFieldByHub[hub.id]
+            operation: 'get',
+            verificationStatus: 'unverified',
+            where: idFieldKey
+              ? [{ fieldId: idFieldKey, value: initInfo().userId }]
+              : undefined
           })
           .then((r: any) => ({
             hubId: hub.id,
-            count: (r?.entries || []).length
-          }))
-      )
+            count: (Array.isArray(r) ? r : []).length
+          }));
+      })
     );
     const counts: Record<string, number> = {};
     results.forEach((r) => {

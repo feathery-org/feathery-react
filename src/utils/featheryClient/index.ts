@@ -1212,9 +1212,9 @@ export default class FeatheryClient extends IntegrationClient {
     data?: Record<string, any>;
     where?: any[];
     rows?: Record<string, any>[];
-    // Unverified ops only: hub field id identifying this user's import batch.
-    // The current user's key is sent as the batch value; the backend stamps it
-    // into every uploaded row and scopes reads to it.
+    // `upload_unverified` only: hub field id identifying this user's import
+    // batch. The current user's key is sent as the batch value; the backend
+    // stamps it into every uploaded row. Reads scope via `where` on that field.
     idFieldId?: string;
     // `get` only. Omitted means verified rows only, matching pre-feature reads.
     verificationStatus?: 'verified' | 'unverified' | 'all';
