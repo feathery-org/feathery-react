@@ -1237,6 +1237,10 @@ export default class FeatheryClient extends IntegrationClient {
       {
         headers: { 'Content-Type': 'application/json' },
         method: 'POST',
+        // The modal awaits these responses, so keepalive semantics buy nothing
+        // and Chrome rejects keepalive bodies over 64KB - a mapped spreadsheet
+        // upload fails with "Failed to fetch" before hitting the network.
+        keepalive: false,
         body: JSON.stringify({
           operation,
           entry_id: entryId,
