@@ -163,6 +163,7 @@ import {
   resolveRevisionIndividually,
   revisionGroupTag,
   snapshotRevisions,
+  wrappingDocumentEditorContainer,
   writeTableLayout,
   writeTableProperties
 } from '../../../utils/documentEditorPrimitives';
@@ -2016,29 +2017,6 @@ function tableBlockAt(sfdt: any, tableAnchor: string): any {
   if (!container) return undefined;
   if (getRows(container.block)) return container.block;
   return getBlocks(container.block).find((candidate) => getRows(candidate));
-}
-
-function setTopLevelBlocks(
-  sfdt: any,
-  sectionIndex: number,
-  blocks: any[]
-): any {
-  const next = cloneJson(sfdt);
-  const sections = pick(next, 'sections', 'sec');
-  const section = Array.isArray(sections) ? sections[sectionIndex] : undefined;
-  if (!section)
-    throw new OpError(
-      'section_not_found',
-      `Could not update section ${sectionIndex} in the serialized document. Nothing was written.`
-    );
-  const key = section.blocks !== undefined ? 'blocks' : 'b';
-  if (!Array.isArray(section[key]))
-    throw new OpError(
-      'section_blocks_unavailable',
-      `Could not update section ${sectionIndex} blocks in the serialized document. Nothing was written.`
-    );
-  section[key] = blocks;
-  return next;
 }
 
 function scanReadableBindings(sfdt: any): BindingIndex | null {
@@ -7939,6 +7917,43 @@ function prunePayloadRows(payload: string, keep: number[]): string {
   return JSON.stringify(parsed);
 }
 
+/**
+ * A live clipboard copy of a table, resolved to what the user currently sees.
+ *
+ * Pending deletions are omitted, pending insertions are kept, and the source's
+ * revision ids are removed before paste: the paste authors one fresh tracked
+ * insertion for the duplicate instead of making an older review card span both
+ * tables. The leading empty paragraph keeps Word from coalescing the source and
+ * copy into one table; the optional trailing one does the same when another
+ * table immediately follows the source.
+ */
+function duplicateTablePayload(
+  payload: string,
+  documentSfdt: any,
+  trailingSeparator: boolean
+): string {
+  const parsed = clonedWithoutRevisions(documentSfdt, JSON.parse(payload));
+  // Clipboard SFDT carries the selected revisions table as well as references
+  // from the selected content. Once the references are stripped, carrying the
+  // now-unreachable records into the paste would only duplicate metadata.
+  delete parsed.revisions;
+  delete parsed.r;
+  const sections = pick(parsed, 'sections', 'sec');
+  if (!Array.isArray(sections)) return payload;
+  const section = sections.find((candidate) =>
+    getBlocks(candidate).some((block) => !!getRows(block))
+  );
+  if (!section)
+    throw new OpError(
+      'duplicate_table_payload_not_a_table',
+      'SyncFusion returned no table for the range this duplicate captured, so nothing was written.'
+    );
+  const blocks = getBlocks(section);
+  blocks.unshift(emptyParagraphBlock(parsed));
+  if (trailingSeparator) blocks.push(emptyParagraphBlock(parsed));
+  return JSON.stringify(parsed);
+}
+
 /** The cell blocks of a range that belong to one of `rows`. */
 function rangeRowBlocks(range: BlockRange, rows: number[]): FlatBlock[] {
   const wanted = new Set(rows);
@@ -8366,14 +8381,54 @@ export const ANCHORED_OP_HANDLERS: {
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
   },
-  duplicate_table: ({ editor, op, block }) => {
-    const plan = plainDuplicateTablePlan(-1, op, block);
-    const outcome = plan.execute(serializeSfdt(editor));
-    editor.open(JSON.stringify(outcome.sfdt));
+  duplicate_table: ({ editor, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const sfdt = serializeSfdt(editor);
+    const tableAnchor = tableAnchorForBlock(block);
+    if (!tableAnchor)
+      throw new OpError(
+        'duplicate_table_requires_table_anchor',
+        'duplicate_table needs an anchor inside the table, or the table anchor from a structure read.'
+      );
+    assertDuplicateSourceHasNoForeignEdits(sfdt, tableAnchor);
+    const source = resolveTableRange(blocks, tableAnchor);
+    const container = tableContainerAt(sfdt, tableAnchor);
+    if (!container)
+      throw new OpError(
+        'table_not_found',
+        `No table answers to "${tableAnchor}". Nothing was written.`
+      );
+    const sourceAddress = topLevelAddress(source.blocks[0].anchor);
+    const trailingSeparator = !!firstTableBlockIn(
+      container.blocks[container.blockIndex + 1]
+    );
+    const { paste, pastedSfdt } = relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      {
+        // The range end is the first caret after the table: the next body
+        // paragraph's start. Unlike a model-supplied relocation target,
+        // it is derived from the already-resolved source and cannot land inside
+        // its cells.
+        anchor: source.endAnchor,
+        address: { ...sourceAddress, block: sourceAddress.block + 1 }
+      },
+      {
+        removeSource: false,
+        transformPayload: (payload) =>
+          duplicateTablePayload(payload, sfdt, trailingSeparator)
+      }
+    );
+    const anchor = assertPastedTableMatches(
+      pastedSfdt,
+      paste,
+      source,
+      source.blocks
+    );
     return {
-      ...(outcome.anchor ? { anchor: outcome.anchor } : {}),
-      postWriteSfdt: outcome.sfdt,
-      ...(outcome.details ? { details: outcome.details } : {})
+      anchor,
+      postWriteSfdt: pastedSfdt
     };
   },
   insert_text: ({ editor, op, block }) => {
@@ -11580,14 +11635,6 @@ interface CreatedBoundRowTarget {
   offset: number;
 }
 
-interface PlainSfdtMutationPlan {
-  route: 'editor';
-  index: number;
-  op: EditOp;
-  anchor?: string;
-  execute(sfdt: any): EngineMutationOutcome;
-}
-
 interface BoundDuplicateRowValue {
   field: string;
   canonical: string;
@@ -12500,39 +12547,6 @@ function spliceDuplicateAfter(
   ];
 }
 
-/**
- * The anchor a duplicate's table answers to once `spliceDuplicateAfter` has put
- * it (and its separating paragraph) in.
- *
- * Derived from the same expanded walk that numbers every other anchor rather than
- * from raw arithmetic: a source wrapped in a block content control contributes as
- * many addressable blocks as the wrapper holds, so `blockIndex + 2` is only right
- * when it holds exactly one.
- */
-function duplicateTableAnchor(
-  sectionIndex: number,
-  siblings: any[],
-  sourceBlock: any
-): string {
-  const expanded = expandBlockContentControls(siblings);
-  const sourceEntries = expandBlockContentControls([sourceBlock]);
-  const firstExpanded = expanded.findIndex(
-    (entry) => entry.block === sourceEntries[0]?.block
-  );
-  // Where the table sits WITHIN the copy, when the copy is a wrapper holding more
-  // than the table alone. A source the walker does not descend into contributes
-  // exactly one addressable block, so the table is that block.
-  const tableOffset = Math.max(
-    0,
-    sourceEntries.findIndex((entry) => getRows(entry.block))
-  );
-  const lastExpanded = firstExpanded + sourceEntries.length - 1;
-  const separatorParagraph = 1;
-  return `${sectionIndex};${
-    lastExpanded + separatorParagraph + 1 + tableOffset
-  }`;
-}
-
 function freshRowIdsFor(
   table: TableEntry,
   newTableId: string
@@ -12893,75 +12907,6 @@ function boundDuplicateTablePlan(
           `new table: ${newTableId}`,
           `row ids: ${verified.rows.map((row) => row.rowId).join(', ')}`
         ]
-      };
-    }
-  };
-}
-
-function plainDuplicateTablePlan(
-  index: number,
-  op: EditOp,
-  block: FlatBlock
-): PlainSfdtMutationPlan {
-  const tableAnchor =
-    tableAnchorForBlock(block) ?? normalizeTableAnchor(op.anchor);
-  if (!tableAnchor)
-    throw new OpError(
-      'duplicate_table_requires_table_anchor',
-      'duplicate_table needs an anchor inside the table, or the table anchor from a structure read.'
-    );
-  return {
-    route: 'editor',
-    index,
-    op,
-    anchor: tableAnchor,
-    execute(sfdt) {
-      const container = tableContainerAt(sfdt, tableAnchor);
-      const table = tableBlockAt(sfdt, tableAnchor);
-      const rows = getRows(table);
-      if (!container || !rows)
-        throw new OpError(
-          'table_not_found',
-          `No table answers to "${tableAnchor}". Nothing was written.`
-        );
-      assertDuplicateSourceHasNoForeignEdits(sfdt, tableAnchor);
-      const clone = clonedWithoutRevisions(sfdt, container.block);
-      const next = setTopLevelBlocks(
-        sfdt,
-        container.sectionIndex,
-        spliceDuplicateAfter(
-          sfdt,
-          container.blocks,
-          container.blockIndex,
-          clone
-        )
-      );
-      const newAnchor = duplicateTableAnchor(
-        container.sectionIndex,
-        container.blocks,
-        container.block
-      );
-      const clonedTable = tableBlockAt(next, newAnchor);
-      const clonedRows = getRows(clonedTable);
-      if (!clonedRows || clonedRows.length !== rows.length)
-        throw new OpError(
-          'duplicate_table_not_observable',
-          `duplicate_table did not create a table with ${rows.length} rows after "${tableAnchor}". Nothing was kept.`
-        );
-      const sourceColumns = Math.max(
-        ...rows.map((row) => (pick(row, 'cells', 'c') ?? []).length)
-      );
-      const cloneColumns = Math.max(
-        ...clonedRows.map((row) => (pick(row, 'cells', 'c') ?? []).length)
-      );
-      if (sourceColumns !== cloneColumns)
-        throw new OpError(
-          'duplicate_table_shape_mismatch',
-          `duplicate_table created a ${clonedRows.length}x${cloneColumns} table, expected ${rows.length}x${sourceColumns}. Nothing was kept.`
-        );
-      return {
-        sfdt: next,
-        anchor: newAnchor
       };
     }
   };
@@ -17726,7 +17671,6 @@ function applyDocumentEditsMeasured(
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSet(edits, columnTouches);
-  const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
   // enableTrackChanges flips to true only inside the protected try below
   // (which forces it off in `finally` so later user typing is never tracked).
@@ -19091,7 +19035,10 @@ function applyDocumentEditsMeasured(
             // Provenance makes the command layer author the review records in
             // SFDT. Native tracking must be off before that SFDT is opened;
             // the outer finally also leaves it off for subsequent user input.
-            disableUserTrackChanges(editor);
+            disableUserTrackChanges(
+              editor,
+              wrappingDocumentEditorContainer(editor)
+            );
             const surface = bindingCommandSurfaceFor(editor);
             if (!surface)
               throw new OpError(
@@ -19185,12 +19132,10 @@ function applyDocumentEditsMeasured(
       }
     }
   } finally {
-    // A completed assistant write leaves tracking off so the user's next
-    // keystroke is plain. A refused/no-op batch must remain byte-identical,
-    // including a pre-existing document flag it never had authority to change.
-    if (results.some((result) => result?.ok && !result.noOp))
-      disableUserTrackChanges(editor);
-    else editor.enableTrackChanges = priorTrackChanges;
+    // Every assistant batch leaves both SyncFusion owners in user-editing mode.
+    // The outer container can otherwise push its stale true flag back into the
+    // editor on documentChange after this finally block has run.
+    disableUserTrackChanges(editor, wrappingDocumentEditorContainer(editor));
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
     if (suspendLayout) {

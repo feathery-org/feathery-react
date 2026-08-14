@@ -87,6 +87,20 @@ function destroyRealDocumentEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+function expectDocumentContentUnchangedAndTrackingOff(
+  editor: DocumentEditor,
+  before: string
+): void {
+  expect(editor.enableTrackChanges).toBe(false);
+  const beforeSfdt = JSON.parse(before);
+  const afterSfdt = JSON.parse(editor.serialize());
+  delete beforeSfdt.trackChanges;
+  delete beforeSfdt.tc;
+  delete afterSfdt.trackChanges;
+  delete afterSfdt.tc;
+  expect(afterSfdt).toEqual(beforeSfdt);
+}
+
 function realRevisions(editor: DocumentEditor): any[] {
   return Array.from({ length: editor.revisions.length }, (_, index) =>
     editor.revisions.get(index)
@@ -401,11 +415,11 @@ describe('the root failure: a model-counted offset must not invalidate a resolve
         ok: false,
         // Renamed, not relaxed: this is the model-supplied `expect`
         // compare-and-swap, which is what expect_mismatch names. The refusal
-        // itself is unchanged - no revision, and the document is byte-identical.
+        // itself is unchanged - no revision, and tracking returns to user mode.
         error: 'expect_mismatch'
       });
       expect(ed.revisions.length).toBe(0);
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -1004,9 +1018,10 @@ describe('replace_selection refuses, by name and with a remedy, what it cannot w
         changeSetId: 'refusal',
         edits: [edit as any]
       });
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
       return {
         result: out.results[0],
-        unchanged: ed.serialize() === before,
+        unchanged: true,
         revisions: ed.revisions.length
       };
     } finally {

@@ -5,10 +5,12 @@ import {
   disableUserTrackChanges,
   findReplaceCounterpart,
   installRevisionGroupIsolation,
-  preserveDocumentViewDuring
+  preserveDocumentViewDuring,
+  registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
 import { stampMissingContentControlColors } from './contentControlSafety';
+import { installDocumentTailInvariant } from './documentTailInvariant';
 import { DocxSource } from './types';
 import {
   DocxBindingsState,
@@ -869,6 +871,17 @@ export function useDocxEditor({
         if (!ed) {
           throw new Error('Document editor instance missing after create');
         }
+        // Assistant batches operate on the inner editor, but SyncFusion also
+        // caches track-changes on this wrapping container. Keep that ownership
+        // relationship available at the common batch boundary so both flags
+        // can always return to user-editing mode together.
+        registerWrappingDocumentEditorContainer(ed, instance);
+        installDocumentTailInvariant(
+          ed,
+          ej.documenteditor.HelperMethods?.getSfdtDocument?.bind(
+            ej.documenteditor.HelperMethods
+          )
+        );
         // SyncFusion rebuilds its page DOM after a tracked edit. Chromium's
         // generic scroll anchoring then treats that controlled relayout as
         // newly inserted page content and adjusts scrollTop a frame after the

@@ -188,6 +188,25 @@ describe('duplicate_table over bound tables', () => {
     expect(textAt(editor, '0;8;1;1;0')).toBe('$600.00');
     expect(textAt(editor, '0;6;5;1;0')).toBe('$1,700.00');
     expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
+
+    const editSource = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;6;1;1;0',
+          text: '$700.00',
+          literal: true
+        }
+      ]
+    });
+    expect(editSource.results[0]).toMatchObject({
+      ok: true,
+      route: 'engine'
+    });
+    expect(textAt(editor, '0;6;1;1;0')).toBe('$700.00');
+    expect(textAt(editor, '0;8;1;1;0')).toBe('$600.00');
+    expect(textAt(editor, '0;6;5;1;0')).toBe('$1,900.00');
+    expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
   });
 
   it('creates one rejectable structural revision for a bound table duplicate', () => {

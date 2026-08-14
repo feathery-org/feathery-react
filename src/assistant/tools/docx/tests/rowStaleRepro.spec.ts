@@ -76,6 +76,20 @@ function destroyRealDocumentEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+function expectDocumentContentUnchangedAndTrackingOff(
+  editor: DocumentEditor,
+  before: string
+): void {
+  expect(editor.enableTrackChanges).toBe(false);
+  const beforeSfdt = JSON.parse(before);
+  const afterSfdt = JSON.parse(editor.serialize());
+  delete beforeSfdt.trackChanges;
+  delete beforeSfdt.tc;
+  delete afterSfdt.trackChanges;
+  delete afterSfdt.tc;
+  expect(afterSfdt).toEqual(beforeSfdt);
+}
+
 function rejectEveryRealRevision(editor: DocumentEditor): void {
   const revisions = Array.from({ length: editor.revisions.length }, (_, i) =>
     editor.revisions.get(i)
@@ -247,7 +261,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
       expect(result.results[1]).toMatchObject({ ok: false });
       expect(result.changeSet).toMatchObject({ status: 'failed' });
       // The failed change set rolled everything back.
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -292,7 +306,7 @@ describe('mid-table insert_row with same-change-set cell fills (live 2026-07-27 
           .slice(1)
           .every((r) => r.error === 'change_set_failed')
       ).toBe(true);
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
