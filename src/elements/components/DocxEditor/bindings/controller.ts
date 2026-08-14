@@ -484,12 +484,7 @@ export class ReconciliationController {
     result: ApplyRulesResult,
     { apply, markDirty, event }: CommitOptions
   ): void {
-    this.workingSfdt = result.sfdt;
-    this.values = result.values;
-    this.index = result.index;
-    this.rowTemplates = result.rowTemplates;
-    this.diagnostics = result.diagnostics;
-    if (markDirty) this.dirty = true;
+    let failed = false;
 
     if (apply === 'patch' || apply === 'structural' || apply === 'open') {
       this.phase = 'loading';
@@ -529,19 +524,33 @@ export class ReconciliationController {
         if (view != null && this.editor.restoreView)
           this.editor.restoreView(view);
       } else if (!patched) {
-        this.diagnostics = [
-          ...this.diagnostics,
-          {
-            severity: 'error',
-            code: 'native-mutation-failed',
-            message:
-              'The binding update could not be applied without replacing the live document.',
-            path: []
-          }
-        ];
+        failed = true;
       }
     }
+    if (failed) {
+      this.diagnostics = [
+        ...result.diagnostics,
+        {
+          severity: 'error',
+          code: 'native-mutation-failed',
+          message:
+            'The binding update could not be applied without replacing the live document.',
+          path: []
+        }
+      ];
+    } else {
+      this.workingSfdt = result.sfdt;
+      this.values = result.values;
+      this.index = result.index;
+      this.rowTemplates = result.rowTemplates;
+      this.diagnostics = result.diagnostics;
+    }
+    if (markDirty) this.dirty = true;
     this.phase = 'idle';
-    this.onChange({ controller: this, event, changed: result.changed });
+    this.onChange({
+      controller: this,
+      event: failed ? 'error' : event,
+      changed: result.changed
+    });
   }
 }

@@ -201,6 +201,25 @@ describe('controller over a real DocumentEditor', () => {
     ).toBe(false);
   });
 
+  it('skips an empty write without dropping the rest of its batch', () => {
+    const adapter = createEditorAdapter(
+      editor as unknown as SyncfusionEditorLike
+    );
+    expect(
+      adapter.updateValues!([
+        { tag: QUANTITY_R1, text: '', kind: 'field' },
+        {
+          tag: '[[name=line_total|expr=mul(quantity,unit_cost)|row=r-1]]',
+          text: '$2,000.00',
+          kind: 'formula'
+        }
+      ])
+    ).toBe(true);
+
+    expect(costsCell(editor, 'quantity')).toBe('12');
+    expect(costsCell(editor, 'line_total')).toBe('$2,000.00');
+  });
+
   it('leaves track-changes off after a reconcile, even if it was on', () => {
     // Restoring a leftover true re-arms tracking for the next keystroke inside
     // the control the user just edited.

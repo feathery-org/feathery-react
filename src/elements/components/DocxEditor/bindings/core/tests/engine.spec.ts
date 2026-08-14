@@ -30,6 +30,38 @@ const textsOf = (index: BindingIndex, name: string) =>
   index.formulas.get(name)!.map((entry) => entry.text);
 
 describe('applyRules', () => {
+  it('renders a percent formula with the same precision as its input', () => {
+    const doc = {
+      sections: [
+        {
+          blocks: [
+            {
+              inlines: [
+                {
+                  contentControlProperties: {
+                    tag: '[[name=rate|type=percent]]'
+                  },
+                  inlines: [{ text: '8.5%' }]
+                },
+                {
+                  contentControlProperties: {
+                    tag: '[[name=result|expr=mul(rate,1)|type=percent]]'
+                  },
+                  inlines: [{ text: '0%' }]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const result = applyRules(doc, {});
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.index.formulas.get('result')![0].text).toBe('8.5%');
+  });
+
   it('rewrites nothing on a clean load', () => {
     const doc = buildCostsFixture();
     const result = applyRules(doc, {});

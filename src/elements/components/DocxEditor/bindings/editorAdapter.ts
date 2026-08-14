@@ -189,11 +189,14 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       const collection = helper.contentControlCollection;
       if (!Array.isArray(collection)) return false;
       // Empty text would be replaced by the editor's placeholder string.
-      if (writes.some((write) => !write.text)) return false;
+      const applicableWrites = writes.filter((write) => !!write.text);
+      if (!applicableWrites.length) return false;
 
       const previousHistory = editor.enableEditorHistory;
       const history = editor.editorHistoryModule as any;
-      const fieldWrites = writes.filter((write) => write.kind === 'field');
+      const fieldWrites = applicableWrites.filter(
+        (write) => write.kind === 'field'
+      );
       let complex = false;
       let selection: { start: string; end: string } | null = null;
       // Where the caret sits WITHIN its control, which survives the control
@@ -255,7 +258,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         }
         if (!apply(fieldWrites)) return false;
         editor.enableEditorHistory = false;
-        if (!apply(writes.filter((write) => write.kind !== 'field')))
+        if (!apply(applicableWrites.filter((write) => write.kind !== 'field')))
           return false;
         return true;
       } catch {

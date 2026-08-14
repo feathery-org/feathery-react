@@ -242,6 +242,35 @@ describe('reconciling a user edit', () => {
     );
   });
 
+  it('retries a user edit after a failed live patch', () => {
+    const { editor, clock, controller } = setup();
+    controller.loadInitial(buildCostsFixture());
+    editor.supportsPatching = false;
+
+    editor.userEdit(
+      (occurrence) => occurrence.name === 'project.name',
+      'Rebrand 2027'
+    );
+    clock.fire();
+
+    expect(
+      [...(controller.values as Map<string, string>)].filter(([key]) =>
+        key.startsWith('doc:project.name')
+      )
+    ).toEqual([
+      ['doc:project.name#0', 'Website relaunch'],
+      ['doc:project.name#1', 'Website relaunch']
+    ]);
+
+    editor.supportsPatching = true;
+    controller.flush();
+    expect(
+      scanBindings(editor.doc as SfdtDocument)
+        .fields.get('project.name')!
+        .map((occurrence) => occurrence.text)
+    ).toEqual(['Rebrand 2027', 'Rebrand 2027']);
+  });
+
   it('does not touch the editor when reconciliation changes nothing', () => {
     const { editor, clock, controller } = setup();
     controller.loadInitial(buildCostsFixture());

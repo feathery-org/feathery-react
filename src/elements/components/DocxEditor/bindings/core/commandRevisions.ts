@@ -5,7 +5,7 @@
 import type { BindingCommandProvenance } from '../reconcileRegistry';
 import { getAt, scanBindings, setAt } from './sfdtAdapter';
 import type { Occurrence } from './sfdtAdapter';
-import type { SfdtDocument, SfdtInline } from './sfdtTypes';
+import type { SfdtDocument, SfdtInline, SfdtPath } from './sfdtTypes';
 
 let revisionSequence = 0;
 
@@ -75,6 +75,15 @@ function trackedRun(node: any, text: string, revisionId: string): SfdtInline {
     text,
     revisionIds: [revisionId]
   };
+}
+
+function inlineContainerPath(node: any): SfdtPath | null {
+  if (Array.isArray(node?.inlines)) return [];
+  for (let i = 0; i < (node?.blocks ?? []).length; i++) {
+    const nested = inlineContainerPath(node.blocks[i]);
+    if (nested) return ['blocks', i, ...nested];
+  }
+  return null;
 }
 
 function revisionIdsIn(node: any, out = new Set<string>()): Set<string> {
@@ -151,6 +160,16 @@ export function authorCommandRevisions(
     const insertionId = freshRevisionId();
     const oldNode = getAt(before, previous.path);
     const newNode = getAt(next, occurrence.path);
+    const oldInlinePath = inlineContainerPath(oldNode);
+    const newInlinePath = inlineContainerPath(newNode);
+    if (!oldInlinePath || !newInlinePath)
+      throw new Error(
+        `cannot author a tracked value for binding ${JSON.stringify(
+          occurrence.tag
+        )}: content control has no inline-bearing descendant`
+      );
+    const oldInlineNode = getAt(oldNode, oldInlinePath);
+    const newInlineNode = getAt(newNode, newInlinePath);
     const superseded = revisionIdsIn(oldNode);
     const originalText = superseded.size
       ? textWithoutRevisions(oldNode, revisionIdsOfType(before, 'Insertion'))
@@ -160,11 +179,11 @@ export function authorCommandRevisions(
         const id = revision?.revisionId ?? revision?.revisionID;
         return id == null || !superseded.has(String(id));
       });
-    next = setAt(next, occurrence.path, {
-      ...newNode,
+    next = setAt(next, [...occurrence.path, ...newInlinePath], {
+      ...newInlineNode,
       inlines: [
-        trackedRun(oldNode, originalText, deletionId),
-        trackedRun(newNode, occurrence.text, insertionId)
+        trackedRun(oldInlineNode, originalText, deletionId),
+        trackedRun(newInlineNode, occurrence.text, insertionId)
       ]
     });
     addRevision('Deletion', deletionId);

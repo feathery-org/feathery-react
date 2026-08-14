@@ -617,10 +617,20 @@ export function applyRules(
       const raw = evalAst(node.ast, node);
       if (Array.isArray(raw))
         throw new FormulaError('formula produced a column, not a value');
-      const fieldType = node.occ.def.fieldType as { scale?: number };
+      const fieldType = node.occ.def.fieldType as {
+        kind: string;
+        scale?: number;
+      };
       // Round to the type's scale BEFORE storing, so a dependent formula sums
-      // already-rounded values rather than compounding fractions.
-      results.set(id, D.roundTo(raw, fieldType.scale ?? 0));
+      // already-rounded values rather than compounding fractions. Percent
+      // inputs retain their canonical fraction's precision, so formulas must do
+      // the same to render equivalently.
+      results.set(
+        id,
+        fieldType.kind === 'percent'
+          ? D.normalize(raw)
+          : D.roundTo(raw, fieldType.scale ?? 0)
+      );
     } catch (thrown) {
       if (!isFormulaError(thrown)) throw thrown;
       diag(
