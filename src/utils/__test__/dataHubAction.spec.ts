@@ -22,7 +22,7 @@ describe('FeatheryClient.dataHubAction', () => {
       hubId: 'hub-1',
       operation: 'create',
       verificationStatus: 'unverified',
-      rows: [{ name: 'A' }],
+      data: [{ name: 'A' }],
       idFieldId: 'field-9'
     });
 
@@ -31,7 +31,7 @@ describe('FeatheryClient.dataHubAction', () => {
       expect.objectContaining({
         operation: 'create',
         verificationStatus: 'unverified',
-        rows: [{ name: 'A' }],
+        data: [{ name: 'A' }],
         idFieldId: 'field-9',
         // The current user's key is the batch value.
         idValue: userId
