@@ -299,7 +299,7 @@ function parseLegacyOptions(fields: string[], tag: string): TagOptions {
     const eq = field.indexOf('=');
     if (eq === -1)
       fail(`unexpected trailing field ${JSON.stringify(field)}`, tag);
-    const key = field.slice(0, eq) as (typeof TEXT_OPTION_KEYS)[number];
+    const key = field.slice(0, eq) as typeof TEXT_OPTION_KEYS[number];
     if (!(TEXT_OPTION_KEYS as readonly string[]).includes(key))
       fail(`unknown option ${JSON.stringify(key)}`, tag);
     if (key in options) fail(`duplicate option ${JSON.stringify(key)}`, tag);

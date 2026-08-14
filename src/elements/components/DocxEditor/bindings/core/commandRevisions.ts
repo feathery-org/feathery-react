@@ -3,11 +3,7 @@
 // the caller supplies explicit provenance for this one command batch.
 
 import type { BindingCommandProvenance } from '../reconcileRegistry';
-import {
-  getAt,
-  scanBindings,
-  setAt
-} from './sfdtAdapter';
+import { getAt, scanBindings, setAt } from './sfdtAdapter';
 import type { Occurrence } from './sfdtAdapter';
 import type { SfdtDocument, SfdtInline } from './sfdtTypes';
 
@@ -68,11 +64,7 @@ function textWithoutRevisions(node: any, omitted: Set<string>): string {
   return textWithoutRevisions(inlines, omitted);
 }
 
-function trackedRun(
-  node: any,
-  text: string,
-  revisionId: string
-): SfdtInline {
+function trackedRun(node: any, text: string, revisionId: string): SfdtInline {
   const source = (node?.inlines ?? []).find(
     (inline: any) => inline && typeof inline.text === 'string'
   );
@@ -108,9 +100,7 @@ function tableIn(node: any): any | undefined {
 }
 
 function isEmptyParagraph(node: any): boolean {
-  return (
-    !!node && Array.isArray(node.inlines) && node.inlines.length === 0
-  );
+  return !!node && Array.isArray(node.inlines) && node.inlines.length === 0;
 }
 
 /**
@@ -221,22 +211,24 @@ export function authorCommandRevisions(
     // add-table always creates the leading separator. It creates the trailing
     // one only when the source table previously touched another table.
     markSeparator(at - 1);
-    const priorSiblingWasTable = [...beforeTables.values()].some((candidate) => {
-      if (
-        JSON.stringify(candidate.markerPath.slice(0, -1)) !==
-        JSON.stringify(parentPath)
-      )
-        return false;
-      const candidateAt = Number(
-        candidate.markerPath[candidate.markerPath.length - 1]
-      );
-      const beforeSiblings = getAt(before, parentPath);
-      return (
-        candidateAt < at &&
-        Array.isArray(beforeSiblings) &&
-        !!tableIn(beforeSiblings[candidateAt + 1])
-      );
-    });
+    const priorSiblingWasTable = [...beforeTables.values()].some(
+      (candidate) => {
+        if (
+          JSON.stringify(candidate.markerPath.slice(0, -1)) !==
+          JSON.stringify(parentPath)
+        )
+          return false;
+        const candidateAt = Number(
+          candidate.markerPath[candidate.markerPath.length - 1]
+        );
+        const beforeSiblings = getAt(before, parentPath);
+        return (
+          candidateAt < at &&
+          Array.isArray(beforeSiblings) &&
+          !!tableIn(beforeSiblings[candidateAt + 1])
+        );
+      }
+    );
     if (priorSiblingWasTable) markSeparator(at + 1);
     addRevision('Insertion', revisionId);
   }

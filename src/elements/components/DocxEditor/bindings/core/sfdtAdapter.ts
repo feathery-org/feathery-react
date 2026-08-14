@@ -756,13 +756,6 @@ function findCellBinding(cell: SfdtCell): CellBinding | null {
   return null;
 }
 
-export interface AdoptionResult {
-  sfdt: SfdtDocument;
-  adopted: string[];
-  mutations: AdoptedRowMutation[];
-  skipped: Array<{ rowIndex: number; reason: string }>;
-}
-
 export interface AdoptedRowMutation {
   kind: 'adopt-row';
   tableId: string;
@@ -771,6 +764,14 @@ export interface AdoptedRowMutation {
   rowId: string;
   row: SfdtRow;
 }
+
+export interface AdoptionResult {
+  sfdt: SfdtDocument;
+  adopted: string[];
+  mutations: AdoptedRowMutation[];
+  skipped: Array<{ rowIndex: number; reason: string }>;
+}
+
 export interface InsertRowMutation extends Omit<AdoptedRowMutation, 'kind'> {
   kind: 'insert-row';
   afterRowId: string | null;
