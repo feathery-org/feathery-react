@@ -40,6 +40,7 @@ import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { GetConfigParams } from '../internalState';
 import {
+  apiFetch,
   dataHubAction as apiDataHubAction,
   extractAIDocument,
   ExtractionActionOptions,
@@ -1275,8 +1276,46 @@ export default class FeatheryClient extends IntegrationClient {
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 
-  async dataHubAction(options: HubActionOptions) {
-    const { sdkKey } = initInfo();
-    return apiDataHubAction(sdkKey, options, this.formKey);
+  // Delegates to client-utils so the browser and the server-side lambdas
+  // share one request shape. `create` + verificationStatus 'unverified'
+  // stages `rows` as an import batch; when the button action configures an
+  // ID field, the current user's key is the batch value - stamped into that
+  // field server-side - so a pending import survives reloads without a
+  // dedicated backend column.
+  // TODO: Drop the local option extension once @feathery/client-utils ships
+  // the verification fields on HubActionOptions.
+  async dataHubAction(
+    options: HubActionOptions & {
+      verificationStatus?: 'verified' | 'unverified' | 'all';
+      rows?: Record<string, any>[];
+      idFieldId?: string;
+      idValue?: string;
+    }
+  ) {
+    const { sdkKey, userId } = initInfo();
+    const resolved =
+      options.idFieldId && !options.idValue
+        ? { ...options, idValue: userId }
+        : options;
+    return apiDataHubAction(sdkKey, resolved as HubActionOptions, this.formKey);
+  }
+
+  async getHubSchemas(hubIds: string[]) {
+    const { sdkKey, userId } = initInfo();
+    const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
+    if (this.formKey) params.set('form_key', this.formKey);
+    if (userId) params.set('fuser_key', userId);
+    const url = `${API_URL}hub/schema/?${params.toString()}`;
+    const res = await apiFetch(
+      sdkKey,
+      url,
+      { headers: { 'Content-Type': 'application/json' }, method: 'GET' },
+      false
+    );
+    if (res) {
+      if (res.ok) return await res.json();
+      throw Error(parseAPIError(await res.json()));
+    }
+    return { hubs: [] };
   }
 }

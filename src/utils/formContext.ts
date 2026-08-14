@@ -67,6 +67,8 @@ export const getFormContext = (formUuid: string) => {
       });
     },
     setProgress: (val: any) => formState.setUserProgress(val),
+    openDataMapping: ({ hubs }: { hubs: any[] }) =>
+      formState.setDataMappingState?.({ show: true, hubs }),
     updateUserId,
     updateTheme,
     goToStep: (stepKey: any) => {
@@ -217,14 +219,20 @@ export const getFormContext = (formUuid: string) => {
       operation,
       entryId,
       data,
-      where
-    }: HubActionOptions) =>
+      where,
+      verificationStatus
+    }: // TODO: Use HubActionOptions directly once client-utils ships
+    // verificationStatus on it.
+    HubActionOptions & {
+      verificationStatus?: 'verified' | 'unverified' | 'all';
+    }) =>
       formState.client.dataHubAction({
         hubId,
         operation,
         entryId,
         data,
-        where
+        where,
+        verificationStatus
       }),
     generateDocuments: ({
       documentIds,
