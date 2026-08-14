@@ -66,6 +66,29 @@ describe('tag DSL', () => {
     });
     expect(bound('[[name=note]]').isDeletable).toBe(true);
     expect(bound('[[name=note|del=keep]]').isDeletable).toBe(false);
+    expect(bound('[[name=note]]').isGlobal).toBe(false);
+  });
+
+  it('round-trips an explicit global identity and omits the false default', () => {
+    const field = bound('[[name=tax_rate|type=percent|global=true]]');
+    expect(field.isGlobal).toBe(true);
+    expect(formatTag(field)).toBe(
+      '[[name=tax_rate|type=percent|global=true]]'
+    );
+
+    const formula = bound(
+      '[[name=tax_total|expr=mul(subtotal,tax_rate)|global=true]]'
+    );
+    expect(formula.isGlobal).toBe(true);
+    expect(formatTag(formula)).toBe(
+      '[[name=tax_total|expr=mul(subtotal,tax_rate)|global=true]]'
+    );
+
+    const explicitFalse = bound(
+      '[[name=tax_rate|type=percent|global=false]]'
+    );
+    expect(explicitFalse.isGlobal).toBe(false);
+    expect(formatTag(explicitFalse)).toBe('[[name=tax_rate|type=percent]]');
   });
 
   it('expands bare type shorthands to their defaults', () => {
@@ -160,6 +183,7 @@ describe('tag DSL', () => {
       '[[name=a|type=money]]', // unknown type
       '[[name=a|type=currency:usd:2]]', // lowercase currency
       '[[name=a|del=maybe]]', // bad delete policy
+      '[[name=a|global=maybe]]', // bad global scope
       '[[name=a|expr=]]', // empty expression
       '[[name=a|expr=sum(x)|del=delete]]', // formulas are always keep
       '[[table=costs|name=a]]', // table takes no other keys

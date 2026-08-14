@@ -43,7 +43,7 @@ if (!(window.SVGElement.prototype as any).getBBox) {
     ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
 }
 
-function makeEditor(): DocumentEditor {
+function makeEditor(sfdt = buildCostsFixture()): DocumentEditor {
   const host = document.createElement('div');
   host.style.width = '900px';
   host.style.height = '700px';
@@ -59,7 +59,7 @@ function makeEditor(): DocumentEditor {
     documentEditorSettings: { optimizeSfdt: false }
   });
   editor.appendTo(host);
-  editor.open(JSON.stringify(buildCostsFixture()));
+  editor.open(JSON.stringify(sfdt));
   return editor;
 }
 
@@ -169,6 +169,7 @@ describe('duplicate_table over bound tables', () => {
     expect(JSON.stringify(cloneTable)).toContain('[[table=expenses_copy]]');
     expect(JSON.stringify(cloneTable)).toContain('expenses_copy_subtotal');
     expect(JSON.stringify(cloneTable)).toContain('sum(expenses_copy.amount)');
+    expect(JSON.stringify(cloneTable)).not.toContain('global=');
 
     const editCopy = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
@@ -188,6 +189,92 @@ describe('duplicate_table over bound tables', () => {
     expect(textAt(editor, '0;8;1;1;0')).toBe('$600.00');
     expect(textAt(editor, '0;6;5;1;0')).toBe('$1,700.00');
     expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
+  });
+
+  it('keeps a global field shared across the copy and tracks its full dependency update as one rejectable group', () => {
+    attached.dispose();
+    destroy(editor);
+    editor = makeEditor(buildCostsFixture({ globalTaxRate: true }));
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+
+    const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
+    });
+    expect(duplicate.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    editor.revisions.acceptAll();
+    attached.controller.flush({ mode: 'self-heal' });
+
+    const duplicated = indexOf(editor);
+    expect(duplicated.fields.get('tax_rate')).toHaveLength(3);
+    expect(duplicated.fields.has('expenses_copy_tax_rate')).toBe(false);
+    expect(
+      duplicated.fields
+        .get('tax_rate')
+        ?.every((occurrence) => occurrence.def.isGlobal)
+    ).toBe(true);
+    expect(
+      duplicated.formulas.get('expenses_copy_tax')?.[0].def.kind === 'formula'
+        ? duplicated.formulas.get('expenses_copy_tax')?.[0].def.expression
+        : null
+    ).toBe('mul(expenses_copy_subtotal,tax_rate)');
+
+    const beforeWrite = editor.serialize();
+    const copyTax = flattenSfdt(parsed(editor)).find(
+      (block) =>
+        block.anchor.startsWith('0;8;') &&
+        block.boundTag === '[[name=tax_rate|type=percent|del=keep|global=true]]'
+    );
+    expect(copyTax).toBeDefined();
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'global-tax-rate',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: copyTax!.anchor,
+          text: '8%',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(result.results[0].details ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('independent instances')])
+    );
+    const updated = indexOf(editor);
+    expect(updated.fields.get('tax_rate')?.map((entry) => entry.text)).toEqual([
+      '8%',
+      '8%',
+      '8%'
+    ]);
+    expect(updated.formulas.get('costs_tax')?.[0].text).toBe('$624.00');
+    expect(updated.formulas.get('grand_total')?.[0].text).toBe('$8,424.00');
+    expect(updated.formulas.get('expenses_tax')?.[0].text).toBe('$136.00');
+    expect(updated.formulas.get('expenses_total')?.[0].text).toBe('$1,836.00');
+    expect(updated.formulas.get('expenses_copy_tax')?.[0].text).toBe('$136.00');
+    expect(updated.formulas.get('expenses_copy_total')?.[0].text).toBe(
+      '$1,836.00'
+    );
+
+    const revisions = Array.from(
+      { length: editor.revisions.length },
+      (_, revisionIndex) => editor.revisions.get(revisionIndex)
+    );
+    expect(revisions.length).toBeGreaterThan(0);
+    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
+      true
+    );
+    expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
+      1
+    );
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+    expect(editor.revisions.length).toBe(0);
+    expect(editor.serialize()).toBe(beforeWrite);
   });
 
   it('creates one rejectable structural revision for a bound table duplicate', () => {
