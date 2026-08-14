@@ -141,7 +141,8 @@ export function attachBindings(
   // bindings; this is how its batches get reconciled.
   registerBindingReconciler(editor, {
     flush: () => controller.flush(),
-    runCommands: (commands) => controller.runCommands(commands)
+    runCommands: (commands, options) =>
+      controller.runCommands(commands, options)
   });
 
   const triggers = createCommitTriggers(editor, controller, {

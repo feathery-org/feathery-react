@@ -39,8 +39,12 @@ import {
 } from './core/sfdtAdapter';
 import { Diagnostic, SfdtBlock, SfdtDocument, SfdtRow } from './core/sfdtTypes';
 import { renderDisplay } from './core/valueTypes';
+import { authorCommandRevisions } from './core/commandRevisions';
 import { DocumentPersistence, SaveResult } from './persistence';
-import type { BindingCommand } from './reconcileRegistry';
+import type {
+  BindingCommand,
+  BindingCommandOptions
+} from './reconcileRegistry';
 
 /** What the controller needs from an editor. */
 export interface EditorPort {
@@ -259,7 +263,10 @@ export class ReconciliationController {
     }
   }
 
-  runCommands(commands: BindingCommand[]): ApplyRulesResult {
+  runCommands(
+    commands: BindingCommand[],
+    options: BindingCommandOptions = {}
+  ): ApplyRulesResult {
     if (!this.workingSfdt) throw new Error('no document loaded');
     this.flush();
     let mutated = this.workingSfdt as SfdtDocument;
@@ -332,15 +339,28 @@ export class ReconciliationController {
         const blocksPath = anchor.markerPath.slice(0, -1);
         const at = Number(anchor.markerPath[anchor.markerPath.length - 1]);
         const blocks = getAt(mutated, blocksPath) as SfdtBlock[];
+        const hasTable = (block: SfdtBlock | undefined): boolean => {
+          if (!block) return false;
+          if (Array.isArray(block.rows)) return true;
+          return (block.blocks ?? []).some(hasTable);
+        };
+        // Word coalesces adjacent top-level tables into one grid. A paragraph
+        // is a storage-topology separator, so add-table owns that invariant for
+        // every caller rather than requiring each caller to remember it.
+        const insertedBlocks: SfdtBlock[] = [
+          { inlines: [] },
+          command.block,
+          ...(hasTable(blocks[at + 1]) ? [{ inlines: [] }] : [])
+        ];
         mutated = setAt(mutated, blocksPath, [
           ...blocks.slice(0, at + 1),
-          command.block,
+          ...insertedBlocks,
           ...blocks.slice(at + 1)
         ]);
         structuralMutations.push({
           kind: 'insert-table',
           afterTag: command.afterTag,
-          block: command.block
+          blocks: insertedBlocks
         });
       } else {
         const table = index.tables.get(command.tableId);
@@ -356,7 +376,7 @@ export class ReconciliationController {
       }
       index = scanBindings(mutated);
     }
-    const result = applyRules(mutated, {
+    let result = applyRules(mutated, {
       prevValues: this.values,
       rowTemplates: this.rowTemplates
     });
@@ -397,8 +417,18 @@ export class ReconciliationController {
         [...authoredWrites, ...result.writes].map((write) => [write.tag, write])
       ).values()
     ];
+    if (options.provenance) {
+      const sfdt = authorCommandRevisions(
+        this.workingSfdt as SfdtDocument,
+        result.sfdt,
+        options.provenance
+      );
+      result = { ...result, sfdt, index: scanBindings(sfdt) };
+    }
     this.commit(result, {
-      apply: result.structuralMutations.length
+      apply: options.provenance
+        ? 'open'
+        : result.structuralMutations.length
         ? 'structural'
         : result.writes.length
         ? 'patch'

@@ -180,12 +180,13 @@ describe('user edits inside content controls stay untracked', () => {
       expect(result.results[0]).toMatchObject({ ok: true });
       expect(ed.enableTrackChanges).toBe(false);
 
+      const beforeTypingRevisions = revisionTexts(ed);
       const quantity = quantityControl(ed);
       caretInside(ed, quantity, 'end');
       (ed as any).editorModule.handleTextInput('7');
 
       expect(interiorText(quantity)).toContain('7');
-      for (const text of revisionTexts(ed)) expect(text).not.toContain('7');
+      expect(revisionTexts(ed)).toEqual(beforeTypingRevisions);
       expect(listRevisionGroups(ed as any).every((group) => !group.untagged)).toBe(
         true
       );

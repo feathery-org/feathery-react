@@ -39,9 +39,26 @@ export type BindingCommand =
     }
   | { type: 'remove-table'; tableId: string; tag: string };
 
+/**
+ * Present only for an authored assistant batch. Ordinary commands omit this so
+ * user edits and mechanical reconciliation never acquire review revisions.
+ */
+export interface BindingCommandProvenance {
+  author: string;
+  changeSetId: string;
+  group: string;
+}
+
+export interface BindingCommandOptions {
+  provenance?: BindingCommandProvenance;
+}
+
 export interface BindingCommandSurface {
   flush(): void;
-  runCommands(commands: BindingCommand[]): ApplyRulesResult;
+  runCommands(
+    commands: BindingCommand[],
+    options?: BindingCommandOptions
+  ): ApplyRulesResult;
 }
 
 const reconcilers = new WeakMap<object, BindingCommandSurface>();
@@ -80,7 +97,6 @@ export function bindingCommandSurfaceFor(
   if (!editor || typeof editor !== 'object') return null;
   return reconcilers.get(editor as object) ?? null;
 }
-
 export function diffBindingCommands(
   before: SfdtDocument,
   after: SfdtDocument

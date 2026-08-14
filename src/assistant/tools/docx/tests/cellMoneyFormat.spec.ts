@@ -212,7 +212,7 @@ describe('a figure written into a column of formatted amounts wears its format',
   it('real SDK: a bare 9660 beside $36,803.00 lands as $9,660.00, and the re-render is recorded', () => {
     const ed = makeRealDocumentEditor(scheduleSfdt());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         edits: [
@@ -607,7 +607,7 @@ describe('the premium row from the uploaded policy, end to end', () => {
     sfdt.sections[0].blocks[1].rows.pop();
     const ed = makeRealDocumentEditor(sfdt);
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'cs-homeowners-premium-row',
@@ -631,7 +631,7 @@ describe('the premium row from the uploaded policy, end to end', () => {
     sfdt.sections[0].blocks[1].rows.pop();
     const ed = makeRealDocumentEditor(sfdt);
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         changeSetId: 'cs-homeowners-premium-row',
@@ -750,7 +750,7 @@ describe('an authored cell matrix crosses the same number-provenance gate', () =
   it('real SDK: every figure quoted from the cited excerpt applies, and rejecting restores the document', () => {
     const ed = makeRealDocumentEditor(scheduleSfdt());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
       const result = applyDocumentEdits(ed as unknown as LiveEditor, {
         edits: [

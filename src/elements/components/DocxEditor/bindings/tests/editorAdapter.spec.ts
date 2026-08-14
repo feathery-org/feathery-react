@@ -23,6 +23,7 @@ import {
 } from '../editorAdapter';
 import { installKeystrokeGuard, isBlockedInField } from '../keystrokeGuard';
 import { createCommitTriggers } from '../commitTriggers';
+import { innerRangeOf } from '../controlGeometry';
 import { scanBindings } from '../core/sfdtAdapter';
 import { SfdtDocument } from '../core/sfdtTypes';
 import { buildCostsFixture } from '../core/tests/fixtures/costsFixture';
@@ -95,8 +96,7 @@ function writeIntoControl(
 ): void {
   const collection = (editor as any).documentHelper.contentControlCollection;
   const control = collection.find(
-    (candidate: any) =>
-      candidate?.contentControlProperties?.tag === tag
+    (candidate: any) => candidate?.contentControlProperties?.tag === tag
   );
   if (!control) throw new Error(`no control for ${tag}`);
   (editor as any).editorModule.updateContentControl(control, text);
@@ -218,6 +218,39 @@ describe('controller over a real DocumentEditor', () => {
     // The write above is not itself tracked (it is how the product patches), so
     // what matters is that reconciliation added nothing on top of it.
     expect(editor.revisions.length).toBe(before);
+  });
+
+  it('keeps direct user typing in a bound input untracked', () => {
+    expect(editor.enableTrackChanges).toBe(false);
+    const collection = (editor as any).documentHelper.contentControlCollection;
+    const control = collection.find(
+      (candidate: any) =>
+        candidate?.contentControlProperties?.tag === QUANTITY_R1
+    );
+    const range = innerRangeOf(
+      editor as unknown as SyncfusionEditorLike,
+      control
+    )!;
+
+    editor.selection.select(
+      `${range.prefix}${range.start}`,
+      `${range.prefix}${range.end}`
+    );
+    editor.editor.insertText('13');
+    controller.flush();
+
+    expect(editor.revisions.length).toBe(0);
+    expect(costsCell(editor, 'quantity')).toBe('13');
+    expect(costsCell(editor, 'line_total')).toBe('$1,950.00');
+  });
+
+  it('keeps direct user typing in plain prose untracked', () => {
+    expect(editor.enableTrackChanges).toBe(false);
+    editor.selection.select('0;0;0', '0;0;7');
+    editor.editor.insertText('Updated');
+
+    expect(editor.revisions.length).toBe(0);
+    expect(editor.serialize()).toContain('Updated');
   });
 });
 

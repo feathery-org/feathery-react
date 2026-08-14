@@ -123,15 +123,40 @@ function deepClone<T>(node: T): T {
 
 /* ---------------- scanning ---------------- */
 
-function ccText(node: any): string {
+function revisionIdsOfType(
+  sfdt: SfdtDocument,
+  type: 'Insertion' | 'Deletion'
+): Set<string> {
+  const ids = new Set<string>();
+  const revisions = Array.isArray(sfdt.revisions) ? sfdt.revisions : [];
+  for (const revision of revisions) {
+    if (!revision || String(revision.revisionType) !== type) continue;
+    const id = revision.revisionId ?? revision.revisionID;
+    if (id != null) ids.add(String(id));
+  }
+  return ids;
+}
+
+function hasOnlyRevisionIds(node: any, ids: Set<string>): boolean {
+  const revisionIds = node?.revisionIds;
+  return (
+    Array.isArray(revisionIds) &&
+    revisionIds.length > 0 &&
+    revisionIds.every((id) => ids.has(String(id)))
+  );
+}
+
+function ccText(node: any, deletedRevisionIds: Set<string>): string {
   let out = '';
   const inlines =
     node.inlines ||
     (node.blocks || []).flatMap((block: any) => block?.inlines || []);
   for (const inline of inlines) {
+    if (hasOnlyRevisionIds(inline, deletedRevisionIds)) continue;
     if (typeof inline.text === 'string' && !inline.contentControlProperties)
       out += inline.text;
-    else if (inline.contentControlProperties) out += ccText(inline);
+    else if (inline.contentControlProperties)
+      out += ccText(inline, deletedRevisionIds);
   }
   return out;
 }
@@ -163,6 +188,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
     diagnostics: []
   };
   const ordinals = new Map<string, number>();
+  const deletedRevisionIds = revisionIdsOfType(sfdt, 'Deletion');
 
   // Minified SFDT has none of the keys below, so it would otherwise scan as a
   // document with zero bindings - indistinguishable from an unbound template.
@@ -197,7 +223,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       def,
       tag,
       path,
-      text: ccText(ccNode),
+      text: ccText(ccNode, deletedRevisionIds),
       tableId,
       rowId,
       lockContents: !!(
@@ -301,6 +327,16 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
         );
         let innerCtx = tableCtx;
         if (def && def.kind === 'table') {
+          const rawTable = block.blocks.find(
+            (candidate: any) => candidate && Array.isArray(candidate.rows)
+          );
+          if (
+            rawTable?.rows?.length &&
+            rawTable.rows.every((row: SfdtRow) =>
+              hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)
+            )
+          )
+            return;
           if (index.tables.has(def.tableId)) {
             diag(
               index.diagnostics,
@@ -336,6 +372,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
         walkBlocks(block.blocks, [...path, 'blocks'], innerCtx, rowPath);
       } else if (Array.isArray(block.rows)) {
         block.rows.forEach((row: SfdtRow, r: number) => {
+          if (hasOnlyRevisionIds(row.rowFormat, deletedRevisionIds)) return;
           const currentRowPath = [...path, 'rows', r];
           (row.cells || []).forEach((cell, c) => {
             if ((cell as any).contentControlProperties) {
@@ -747,7 +784,7 @@ export interface DeleteRowMutation {
 export interface InsertTableMutation {
   kind: 'insert-table';
   afterTag: string;
-  block: SfdtBlock;
+  blocks: SfdtBlock[];
 }
 export interface DeleteTableMutation {
   kind: 'delete-table';

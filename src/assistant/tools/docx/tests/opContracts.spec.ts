@@ -474,7 +474,9 @@ const CONTRACTS: Record<string, ContractCase> = {
       ed.revisions.acceptAll();
       expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Gamma']);
       // Relocated, not retyped: exactly one copy of the body that travelled.
-      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(1);
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(
+        1
+      );
     }
   },
   copy_section: {
@@ -492,7 +494,9 @@ const CONTRACTS: Record<string, ContractCase> = {
       ed.revisions.acceptAll();
       // Both copies survive a copy, which is the whole difference from a move.
       expect(headingTexts(ed)).toEqual(['Beta', 'Alpha', 'Beta', 'Gamma']);
-      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(2);
+      expect(blockTexts(ed).filter((text) => text === 'b body')).toHaveLength(
+        2
+      );
     }
   },
   swap_sections: {
@@ -501,7 +505,9 @@ const CONTRACTS: Record<string, ContractCase> = {
     verify: (ed) => {
       ed.revisions.acceptAll();
       expect(headingTexts(ed)).toEqual(['Gamma', 'Beta', 'Alpha']);
-      expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(1);
+      expect(blockTexts(ed).filter((text) => text === 'a body')).toHaveLength(
+        1
+      );
     }
   },
   split_table: {
@@ -528,6 +534,32 @@ const CONTRACTS: Record<string, ContractCase> = {
       expect(texts.filter((text) => text === 'Line')).toHaveLength(2);
       expect(texts.filter((text) => text === 'Carrier')).toHaveLength(2);
       expect(texts.filter((text) => text === 'Acme')).toHaveLength(2);
+    }
+  },
+  duplicate_table: {
+    fixture: tableFixture,
+    edits: [{ op: 'duplicate_table', anchor: '0;1;0;0;0', rows: 'copy' }],
+    verify: (ed, result) => {
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'duplicate_table',
+        route: 'editor',
+        anchor: '0;3'
+      });
+      // An empty paragraph separates the two tables; Word renders adjacent
+      // tables as one block.
+      const between = JSON.parse(ed.serialize()).sec[0].b[2];
+      expect(between.rw ?? between.rows).toBeUndefined();
+      const cells = flattenSfdt(JSON.parse(ed.serialize())).filter(
+        (block) => block.kind === 'table_cell'
+      );
+      expect(cells.map((cell) => cell.text)).toEqual(
+        expect.arrayContaining(['Loc #', 'Address', '0093', '1 King St W'])
+      );
+      expect(cells.filter((cell) => cell.text === 'Loc #')).toHaveLength(2);
+      expect(cells.filter((cell) => cell.text === '1 King St W')).toHaveLength(
+        2
+      );
     }
   },
   insert_text: {
@@ -1666,7 +1698,12 @@ describe('op contracts: every advertised op works over its real route', () => {
     Object.entries(entry.params as Record<string, string>)
       .filter(([param, type]) => {
         if (SENTINEL_SELECTOR_FIELDS.has(`${entry.op}.${param}`)) return false;
-        if (type === 'sectionSpec' || type === 'string[][]?') return true;
+        if (
+          type === 'sectionSpec' ||
+          type === 'string[][]?' ||
+          type === 'duplicateRows?'
+        )
+          return true;
         return (
           MODEL_AUTHORED_TEXT_FIELDS.includes(param) &&
           (type === 'string' || type === 'string?')
@@ -1685,6 +1722,7 @@ describe('op contracts: every advertised op works over its real route', () => {
         'insert_text.text',
         'insert_section.sectionSpec',
         'insert_table.initialCells',
+        'duplicate_table.rows',
         'set_cell_text.text'
       ])
     );
@@ -1702,6 +1740,8 @@ describe('op contracts: every advertised op works over its real route', () => {
             }
           : type === 'string[][]?'
           ? [[SENTINEL, 'Limit']]
+          : type === 'duplicateRows?'
+          ? [{ item: SENTINEL }]
           : SENTINEL;
       // The rest of the op is its own contract case's shape, so the refusal is
       // the only thing that can be under test here.

@@ -160,7 +160,7 @@ export function applyNativeStructuralMutations(
         selection.collapseToEnd();
         module.paste(
           JSON.stringify({
-            sections: [{ blocks: [mutation.block], headersFooters: {} }]
+            sections: [{ blocks: mutation.blocks, headersFooters: {} }]
           })
         );
       } else if (mutation.kind === 'adopt-row') {
