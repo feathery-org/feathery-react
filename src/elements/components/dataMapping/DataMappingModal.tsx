@@ -415,7 +415,6 @@ function DataMappingModal({
       });
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schemas, sheets]);
 
   const handleFile = async (file: File) => {
@@ -484,10 +483,24 @@ function DataMappingModal({
       const next = { ...prev };
       schemas.forEach((hub) => {
         const sel = prev[hub.id]?.selectedSheet ?? 0;
-        next[hub.id] = {
-          selectedSheet: sel,
-          mapping: autoMap(fieldsForHub(hub.id), derived, derived[sel]?.name)
-        };
+        const prevMapping = prev[hub.id]?.mapping ?? {};
+        const auto = autoMap(fieldsForHub(hub.id), derived, derived[sel]?.name);
+        // Keep manual selections that still resolve on the new headers; only
+        // broken or unmapped fields fall back to auto-mapping.
+        const mapping: FieldMapping = {};
+        fieldsForHub(hub.id).forEach((field) => {
+          const existing = prevMapping[field.key];
+          const stillValid =
+            existing &&
+            derived.some(
+              (sheet) =>
+                sheet.name === existing.sheet &&
+                sheet.headers.includes(existing.header)
+            );
+          if (stillValid) mapping[field.key] = existing;
+          else if (auto[field.key]) mapping[field.key] = auto[field.key];
+        });
+        next[hub.id] = { selectedSheet: sel, mapping };
       });
       return next;
     });
@@ -652,7 +665,15 @@ function DataMappingModal({
             flex: '0 0 auto'
           }}
         >
-          <button type='button' onClick={onClose} css={btn(false)}>
+          <button
+            type='button'
+            disabled={busy || !!parsingFile}
+            onClick={() => {
+              if (busy || parsingFile) return;
+              onClose();
+            }}
+            css={btn(false, busy || !!parsingFile)}
+          >
             Cancel
           </button>
           <div css={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

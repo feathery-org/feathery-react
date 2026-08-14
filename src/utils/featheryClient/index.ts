@@ -1294,20 +1294,17 @@ export default class FeatheryClient extends IntegrationClient {
   ) {
     const { sdkKey, userId } = initInfo();
     const resolved =
-      options.idFieldId && !options.idValue
+      options.operation === 'create' && options.idFieldId && !options.idValue
         ? { ...options, idValue: userId }
         : options;
     return apiDataHubAction(sdkKey, resolved as HubActionOptions, this.formKey);
   }
 
   async getHubSchemas(hubIds: string[]) {
-    const { sdkKey, userId } = initInfo();
     const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
     if (this.formKey) params.set('form_key', this.formKey);
-    if (userId) params.set('fuser_key', userId);
     const url = `${API_URL}hub/schema/?${params.toString()}`;
-    const res = await apiFetch(
-      sdkKey,
+    const res = await this._fetch(
       url,
       { headers: { 'Content-Type': 'application/json' }, method: 'GET' },
       false
