@@ -76,7 +76,7 @@ function makeRealDocumentEditor(sfdt: any): DocumentEditor {
   });
   editor.appendTo(host);
   editor.open(JSON.stringify(sfdt));
-  editor.enableTrackChanges = true;
+  editor.enableTrackChanges = false;
   return editor;
 }
 

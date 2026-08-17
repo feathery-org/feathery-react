@@ -9,7 +9,8 @@
 //      These are side-effect free and unit tested with fixture SFDT.
 //   2. A live apply engine that resolves anchors to SyncFusion hierarchical
 //      selection indices and mutates the editor, with track-changes forced on
-//      around the batch and an `expect` compare-and-swap guard.
+//      around the batch (then forced off so user typing stays untracked) and
+//      an `expect` compare-and-swap guard.
 //
 // Anchor scheme: an anchor IS the SyncFusion hierarchical index prefix of a
 // block, with the trailing character offset omitted. A top-level paragraph is
@@ -17,6 +18,27 @@
 // `"{sectionIndex};{blockIndex};{rowIndex};{cellIndex};{cellBlockIndex}"`. To
 // address a character range inside the block we append `;{offset}` -> the exact
 // string `documentEditor.selection.select(start, end)` consumes.
+//
+// Bound documents take a second route through that apply engine. A document
+// whose content controls carry tags in the binding grammar (see
+// `../../../elements/components/DocxEditor/bindings`) is edited through the
+// binding engine instead of by selecting text and typing over it, because a
+// selection write deletes the content control it lands in - tag and all - and
+// with it the binding. Every result says which route it took:
+//
+//   - `route: 'engine'` - the binding engine performed the write inside one
+//     transaction, then recomputed every formula that depended on it. The SFDT
+//     diff is opened with first-class revisions, so the input and its dependent
+//     formulas are one reviewable group. A batch mixing both routes remains
+//     all-or-nothing, and editor-routed edits are undone if the engine fails.
+//   - `route: 'editor'` - the ordinary tracked write above, unchanged.
+//
+// Bindings do not lock a document down wholesale: an op that touches nothing
+// bound still takes the editor route in a bound document, and only tags in the
+// binding grammar count, so a .docx carrying ordinary Word content controls
+// keeps exactly the behaviour it had before bindings existed. Reads advertise
+// the same facts: `binding` on an inventory entry, a table, a row or a cell is
+// how the model learns what is computed and what it may write.
 
 // This module is the only document-editing engine that ships in the SDK. Keep
 // fixes here rather than forking a copy into a host application, so the in-form
@@ -62,6 +84,43 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+// Binding engine primitives. Imported rather than re-implemented so a content
+// control this engine did not author is never mistaken for a binding, and bound
+// values use the same parse/render/transaction path as direct editor input.
+import {
+  formatTag,
+  parseTag
+} from '../../../elements/components/DocxEditor/bindings/core/tagDsl';
+import type { Definition } from '../../../elements/components/DocxEditor/bindings/core/tagDsl';
+import {
+  defaultValue,
+  isValueError,
+  parseDisplay,
+  renderDisplay
+} from '../../../elements/components/DocxEditor/bindings/core/valueTypes';
+import {
+  collectRefs,
+  parseExpression
+} from '../../../elements/components/DocxEditor/bindings/core/formula';
+import {
+  addLineItem,
+  getAt,
+  removeLineItem,
+  scanBindings,
+  setAt,
+  setOccurrenceText,
+  setTaggedValue
+} from '../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
+import type {
+  BindingIndex,
+  Occurrence,
+  TableEntry
+} from '../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
+import {
+  bindingCommandSurfaceFor,
+  diffBindingCommands,
+  type BindingCommandSurface
+} from '../../../elements/components/DocxEditor/bindings/reconcileRegistry';
 import {
   AppearanceFacts,
   appearanceEquals,
@@ -92,6 +151,7 @@ import {
 } from './tableAppearance';
 import {
   createdRevisions,
+  disableUserTrackChanges,
   groupRevisionsAtomic,
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
@@ -103,6 +163,7 @@ import {
   resolveRevisionIndividually,
   revisionGroupTag,
   snapshotRevisions,
+  wrappingDocumentEditorContainer,
   writeTableLayout,
   writeTableProperties
 } from '../../../utils/documentEditorPrimitives';
@@ -159,6 +220,36 @@ export interface DocFormat {
   listLevel?: number;
 }
 
+/**
+ * What a read tells the model about one binding: enough to see that a figure is
+ * computed rather than typed, and which field to change instead.
+ */
+export interface BindingFact {
+  /** The binding's name, i.e. what a formula refers to it by. */
+  field: string;
+  /** `formula` is engine-owned and refuses every write; `input` is editable. */
+  kind: 'input' | 'formula';
+  /** The expression a formula binding computes, in the engine's vocabulary. */
+  expr?: string;
+  /** The bound table this binding belongs to, for a cell inside one. */
+  table?: string;
+  /** The bound row id, which survives the row moving or being renumbered. */
+  row?: string;
+}
+
+/** The bound identity of a table, on both structure and facts reads. */
+export interface BoundTableFact {
+  kind: 'bound';
+  tableId: string;
+  /**
+   * The table's bound rows in document order - unbound rows (a header, a totals
+   * row) are not listed. `null` marks a bound row carrying no row id.
+   */
+  rowIds: Array<string | null>;
+  /** The names of the table's bound columns. */
+  columns: string[];
+}
+
 type FormatBag = Record<string, any>;
 
 export interface OutlineSection {
@@ -173,6 +264,8 @@ export interface InventoryEntry {
   kind: string;
   text: string;
   format?: DocFormat;
+  /** Present only when this block's text is a document binding's value. */
+  binding?: BindingFact;
 }
 
 export interface IndexBlock {
@@ -295,6 +388,10 @@ export interface StructureTable {
   styled?: true;
   /** The Word table style, when it has one. */
   styleName?: string;
+  /**
+   * Present when the table is bound: structural ops on it route to the engine.
+   */
+  binding?: BoundTableFact;
 }
 
 // One SFDT section (the spans between section breaks), by 0-based index.
@@ -405,6 +502,11 @@ export interface TableCellFact {
    * row costs one appearance object rather than one per cell.
    */
   appearance?: AppearanceFacts;
+  /**
+   * The binding this cell holds, when it holds one. A `formula` cell is written
+   * by changing the inputs it is computed from, never directly.
+   */
+  binding?: BindingFact;
 }
 
 export interface TableRowFact {
@@ -431,6 +533,11 @@ export interface TableRowFact {
    * which case each cell carries its own `appearance`.
    */
   appearance?: AppearanceFacts;
+  /**
+   * The row's binding identity, when it has one. `rowId` is what the engine
+   * addresses the row by, so it survives rows above it being added or removed.
+   */
+  binding?: { rowId: string | null };
   cells: TableCellFact[];
 }
 
@@ -468,6 +575,8 @@ export interface TableFacts {
   styleName?: string;
   /** Table-level fill/borders, when set. */
   appearance?: AppearanceFacts;
+  /** Present when the table is bound, with its row ids and bound columns. */
+  binding?: BoundTableFact;
   /**
    * Always false. A facts read has no maxEntries and is never capped: layout
    * facts are small even for a table whose contents are not, and a partial
@@ -768,6 +877,14 @@ export interface EditResult {
   ok: boolean;
   anchor?: string;
   op: string;
+  /**
+   * Which path the edit took: `engine` for a binding-engine transaction (which
+   * recomputes dependent formulas and authors one grouped SFDT change set),
+   * `editor` for the ordinary native tracked write. Every applied result carries
+   * it; `editor` is the default, so a document with no bindings reports nothing
+   * but `editor`.
+   */
+  route?: 'engine' | 'editor';
   error?: string;
   /** The stable content identity moved from the requested anchor before write. */
   relocated?: { from: string; to: string };
@@ -965,6 +1082,26 @@ interface FlatBlock {
   isHeading: boolean;
   level: number;
   length: number;
+  /**
+   * The binding tag of a document field or formula living in this block, when it
+   * has one. Present only in documents that use bindings, and only on the blocks
+   * that are bound; ops consult it to refuse writes that would destroy a binding.
+   */
+  boundTag?: string;
+  /** Visible-text ranges occupied by bindings in this paragraph/cell. */
+  bindingRanges?: Array<{ tag: string; start: number; end: number }>;
+  /**
+   * Set when this block shares a paragraph with a BINDING content control, or
+   * sits inside one. SyncFusion's live offsets count a control's boundary markers
+   * as positions while this walker counts only characters, so an anchored write
+   * here lands off by however many markers precede it. Ops refuse rather than
+   * write into a range they cannot address exactly.
+   *
+   * Only tags in the binding grammar count. A document carrying ordinary Word
+   * structured document tags is not a bound document and keeps the write
+   * behaviour it had before bindings existed.
+   */
+  offsetsUntrusted?: true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,10 +1190,148 @@ function inlineText(
       continue;
     const text = pick(inline, 'text', 'tlp');
     if (typeof text === 'string') out += text;
+    // A content control wraps its runs in a nested inline list, so its text is
+    // one level down. Without descending, every value held by a bound field or
+    // formula is invisible here - the document reads as though those cells were
+    // empty, and so does everything built on this: the inventory, table facts,
+    // and the search index.
+    else if (getInlines(inline).length)
+      out += inlineText(getInlines(inline), deletedIds);
     // Tabs render as whitespace in the offset stream.
     else if (inline.name === 'Tab' || inline.tlp === undefined) continue;
   }
   return out;
+}
+
+function bindingRangesOf(
+  inlines: any[],
+  deletedIds: Set<string>
+): Array<{ tag: string; start: number; end: number }> {
+  const ranges: Array<{ tag: string; start: number; end: number }> = [];
+  let offset = 0;
+  const walk = (items: any[]) => {
+    for (const inline of items) {
+      if (inline == null) continue;
+      const revisionIds = pick(inline, 'revisionIds', 'rids');
+      if (
+        Array.isArray(revisionIds) &&
+        revisionIds.length > 0 &&
+        revisionIds.every((id) => deletedIds.has(String(id)))
+      )
+        continue;
+      const nested = getInlines(inline);
+      if (nested.length) {
+        const start = offset;
+        walk(nested);
+        const def = bindingDefinitionOf(inline);
+        if (def && (def.kind === 'field' || def.kind === 'formula')) {
+          const properties = pick(inline, 'contentControlProperties', 'ccp');
+          ranges.push({
+            tag: String(pick(properties, 'tag', 'tg')),
+            start,
+            end: offset
+          });
+        }
+        continue;
+      }
+      const text = pick(inline, 'text', 'tlp');
+      if (typeof text === 'string') offset += text.length;
+    }
+  };
+  walk(inlines);
+  return ranges.sort((left, right) => left.start - right.start);
+}
+
+/**
+ * The binding tag of the first document field or formula in a block's runs.
+ *
+ * A bound value is not editable text: it is owned by the binding engine, which
+ * rewrites it on every reconcile. Worse, the write primitive these ops use -
+ * select a range, then insertText - DELETES a content control outright rather
+ * than replacing its contents, so a write aimed at a bound cell destroys the
+ * author's binding instead of changing its value. Ops refuse instead.
+ *
+ * Foreign content controls return undefined: parseTag only claims tags in the
+ * binding grammar, so a control this engine did not author is ordinary text.
+ */
+function boundTagOf(inlines: any[]): string | undefined {
+  if (!Array.isArray(inlines)) return undefined;
+  for (const inline of inlines) {
+    const def = bindingDefinitionOf(inline);
+    if (def && (def.kind === 'field' || def.kind === 'formula')) {
+      const properties = pick(inline, 'contentControlProperties', 'ccp');
+      return String(pick(properties, 'tag', 'tg'));
+    }
+    const nested = getInlines(inline);
+    if (nested.length) {
+      const found = boundTagOf(nested);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The binding definition a node's content control declares, or null.
+ *
+ * The single place that decides whether a content control belongs to this
+ * engine. Anything the binding grammar does not claim - a Word form field, a
+ * template's plain-text SDT, a malformed tag - is ordinary content, and the
+ * whole bound-document write regime must stay off it.
+ */
+function bindingDefinitionOf(node: any): Definition | null {
+  const properties = node && pick(node, 'contentControlProperties', 'ccp');
+  const tag = properties && pick(properties, 'tag', 'tg');
+  if (typeof tag !== 'string') return null;
+  try {
+    return parseTag(tag) ?? null;
+  } catch {
+    // A malformed binding tag is the engine's diagnostic to raise, not ours.
+    return null;
+  }
+}
+
+// A content control that wraps BLOCKS rather than runs - how a table marker is
+// expressed - is transparent to the walker: the blocks inside it are the ones the
+// document addresses. SyncFusion agrees; with the costs table wrapped in a
+// marker, its own selection offsets still report the table as block 2, not the
+// wrapper. Leaving the wrapper opaque made every configured table flatten to an
+// empty paragraph, i.e. invisible.
+function expandBlockContentControls(
+  blocks: any[],
+  insideControl = false
+): Array<{ block: any; insideControl: boolean }> {
+  const out: Array<{ block: any; insideControl: boolean }> = [];
+  for (const block of blocks) {
+    const isWrapper =
+      block &&
+      pick(block, 'contentControlProperties', 'ccp') !== undefined &&
+      Array.isArray(pick(block, 'blocks', 'b')) &&
+      !getRows(block) &&
+      !pick(block, 'inlines', 'i');
+    if (isWrapper)
+      out.push(
+        ...expandBlockContentControls(
+          getBlocks(block),
+          // A foreign wrapper is transparent for ADDRESSING but says nothing
+          // about offsets: only a binding marker makes the content inside it
+          // unaddressable.
+          insideControl || bindingDefinitionOf(block) !== null
+        )
+      );
+    else out.push({ block, insideControl });
+  }
+  return out;
+}
+
+/** Whether a paragraph's runs contain a content control this engine authored. */
+function hasBindingContentControl(inlines: any[]): boolean {
+  if (!Array.isArray(inlines)) return false;
+  for (const inline of inlines) {
+    if (bindingDefinitionOf(inline)) return true;
+    if (hasBindingContentControl(getInlines(inline))) return true;
+  }
+  return false;
 }
 
 function allRevisionIdsIn(rids: unknown, ids: Set<string>): boolean {
@@ -1523,34 +1798,52 @@ export function flattenSfdt(
   const deletedIds = dropRevisionIds ?? deletedRevisionIds(sfdt);
 
   sections.forEach((section, si) => {
-    getBlocks(section).forEach((block, bi) => {
+    expandBlockContentControls(getBlocks(section)).forEach((entry, bi) => {
+      const { block, insideControl } = entry;
       const rows = getRows(block);
       if (rows) {
         // Table: descend into each cell's blocks.
         rows.forEach((row: any, ri: number) => {
           const cells: any[] = pick(row, 'cells', 'c') ?? [];
           cells.forEach((cell, ci) => {
-            getBlocks(cell).forEach((cb, cbi) => {
-              const text = inlineText(getInlines(cb), deletedIds);
-              const format = readFormat(cb);
-              out.push({
-                anchor: `${si};${bi};${ri};${ci};${cbi}`,
-                kind: 'table_cell',
-                text,
-                format,
-                ...readBlockFormats(cb),
-                isHeading: false,
-                level: -1,
-                length: text.length
-              });
-              paragraphs.push({
-                styleName: format?.styleName ?? '',
-                text,
-                ...(format?.fontSize !== undefined
-                  ? { fontSize: format.fontSize }
-                  : {})
-              });
-            });
+            expandBlockContentControls(getBlocks(cell)).forEach(
+              (cellEntry, cbi) => {
+                const cb = cellEntry.block;
+                const text = inlineText(getInlines(cb), deletedIds);
+                const format = readFormat(cb);
+                const cellBoundTag = boundTagOf(getInlines(cb));
+                const cellBindingRanges = bindingRangesOf(
+                  getInlines(cb),
+                  deletedIds
+                );
+                const cellOffsetsUntrusted =
+                  insideControl ||
+                  cellEntry.insideControl ||
+                  hasBindingContentControl(getInlines(cb));
+                out.push({
+                  anchor: `${si};${bi};${ri};${ci};${cbi}`,
+                  kind: 'table_cell',
+                  text,
+                  format,
+                  ...readBlockFormats(cb),
+                  isHeading: false,
+                  level: -1,
+                  length: text.length,
+                  ...(cellBoundTag ? { boundTag: cellBoundTag } : {}),
+                  ...(cellBindingRanges.length
+                    ? { bindingRanges: cellBindingRanges }
+                    : {}),
+                  ...(cellOffsetsUntrusted ? { offsetsUntrusted: true } : {})
+                });
+                paragraphs.push({
+                  styleName: format?.styleName ?? '',
+                  text,
+                  ...(format?.fontSize !== undefined
+                    ? { fontSize: format.fontSize }
+                    : {})
+                });
+              }
+            );
           });
         });
       } else {
@@ -1561,6 +1854,13 @@ export function flattenSfdt(
         )
           return;
         const format = readFormat(block);
+        const blockBoundTag = boundTagOf(getInlines(block));
+        const blockBindingRanges = bindingRangesOf(
+          getInlines(block),
+          deletedIds
+        );
+        const blockOffsetsUntrusted =
+          insideControl || hasBindingContentControl(getInlines(block));
         const flat: FlatBlock = {
           anchor: `${si};${bi}`,
           kind: 'paragraph',
@@ -1569,7 +1869,12 @@ export function flattenSfdt(
           ...readBlockFormats(block),
           isHeading: false,
           level: -1,
-          length: text.length
+          length: text.length,
+          ...(blockBoundTag ? { boundTag: blockBoundTag } : {}),
+          ...(blockBindingRanges.length
+            ? { bindingRanges: blockBindingRanges }
+            : {}),
+          ...(blockOffsetsUntrusted ? { offsetsUntrusted: true } : {})
         };
         out.push(flat);
         paragraphs.push({
@@ -1606,13 +1911,22 @@ export function flattenSfdt(
   return out;
 }
 
-function toInventoryEntry(b: FlatBlock): InventoryEntry {
+function toInventoryEntry(
+  b: FlatBlock,
+  tables: Map<string, BoundTableFact> = new Map()
+): InventoryEntry {
   const entry: InventoryEntry = {
     anchor: b.anchor,
     kind: b.kind,
     text: b.text
   };
   if (b.format) entry.format = b.format;
+  const tableAnchor = tableAnchorForBlock(b);
+  const binding = bindingFactFromTag(
+    b.boundTag,
+    tableAnchor ? tables.get(tableAnchor)?.tableId : undefined
+  );
+  if (binding) entry.binding = binding;
   return entry;
 }
 
@@ -1648,14 +1962,135 @@ interface TableAccumulator {
   headerByCell: Map<number, string[]>;
 }
 
-/** The raw SFDT block a table anchor (`"0;7"`) names, or undefined. */
-function tableBlockAt(sfdt: any, tableAnchor: string): any {
+interface TableContainerRef {
+  sectionIndex: number;
+  blockIndex: number;
+  blocks: any[];
+  block: any;
+}
+
+/**
+ * The top-level SFDT block a table anchor (`"0;7"`) names, or undefined.
+ *
+ * Anchors are numbered over the EXPANDED block list - block content controls are
+ * transparent to the walker (see `expandBlockContentControls`) - so the raw
+ * `sections[s].blocks` index is not the same number whenever a wrapper holds
+ * anything other than exactly one block, or a wrapper sits earlier in the
+ * section. The anchor is therefore translated back through the same expansion
+ * rather than used as a raw index; `blockIndex` remains a raw index into
+ * `blocks`, which is what the mutating callers splice with.
+ */
+function tableContainerAt(
+  sfdt: any,
+  tableAnchor: string
+): TableContainerRef | null {
   const [sectionIndex, blockIndex] = tableAnchor.split(';').map(Number);
   if (!Number.isInteger(sectionIndex) || !Number.isInteger(blockIndex))
-    return undefined;
+    return null;
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
-  const block = getBlocks(sections[sectionIndex] ?? {})[blockIndex];
-  return getRows(block) ? block : undefined;
+  const blocks = getBlocks(sections[sectionIndex] ?? {});
+  const addressed = expandBlockContentControls(blocks)[blockIndex]?.block;
+  if (!addressed) return null;
+  const rawIndex = blocks.findIndex((candidate: any) =>
+    topLevelBlockHolds(candidate, addressed)
+  );
+  if (rawIndex < 0) return null;
+  return {
+    sectionIndex,
+    blockIndex: rawIndex,
+    blocks,
+    block: blocks[rawIndex]
+  };
+}
+
+/** Whether a section block IS, or wraps, an addressable block. */
+function topLevelBlockHolds(candidate: any, addressed: any): boolean {
+  if (candidate === addressed) return true;
+  return expandBlockContentControls([candidate]).some(
+    (entry) => entry.block === addressed
+  );
+}
+
+/** The raw SFDT table block a table anchor (`"0;7"`) names, or undefined. */
+function tableBlockAt(sfdt: any, tableAnchor: string): any {
+  const container = tableContainerAt(sfdt, tableAnchor);
+  if (!container) return undefined;
+  if (getRows(container.block)) return container.block;
+  return getBlocks(container.block).find((candidate) => getRows(candidate));
+}
+
+function scanReadableBindings(sfdt: any): BindingIndex | null {
+  if (!Array.isArray(sfdt?.sections)) return null;
+  const index = scanBindings(sfdt);
+  return index.occurrences.length || index.tables.size ? index : null;
+}
+
+/**
+ * The block anchor (`"0;7"`) of a bound table, in the SAME coordinate system the
+ * flattened blocks use.
+ *
+ * The scanner's `markerPath` is a RAW path (`sections/0/blocks/3`), and raw block
+ * indices diverge from anchors as soon as a block content control holds anything
+ * other than exactly one block, or one sits earlier in the section. So the
+ * marker's own table is located in the expanded walk by identity instead of its
+ * raw index being reused as an anchor - which is what let a genuinely bound table
+ * fall through to the native editor route and be edited behind its marker's back.
+ */
+function boundTableAnchor(sfdt: any, table: TableEntry): string | null {
+  const path = table.markerPath;
+  if (path.length < 2 || path[0] !== 'sections') return null;
+  const sectionIndex = Number(path[1]);
+  if (!Number.isInteger(sectionIndex)) return null;
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const section = sections[sectionIndex];
+  if (!section) return null;
+  const marker = getAt(sfdt, path);
+  const tableBlock = marker ? firstTableBlockIn(marker) : undefined;
+  if (!tableBlock) return null;
+  const blockIndex = expandBlockContentControls(getBlocks(section)).findIndex(
+    (entry) => entry.block === tableBlock
+  );
+  return blockIndex < 0 ? null : `${sectionIndex};${blockIndex}`;
+}
+
+function bindingTablesByAnchor(
+  sfdt: any,
+  scanned?: BindingIndex | null
+): Map<string, BoundTableFact> {
+  const index = scanned === undefined ? scanReadableBindings(sfdt) : scanned;
+  const out = new Map<string, BoundTableFact>();
+  if (!index) return out;
+  for (const table of index.tables.values()) {
+    const anchor = boundTableAnchor(sfdt, table);
+    if (!anchor) continue;
+    out.set(anchor, {
+      kind: 'bound',
+      tableId: table.tableId,
+      rowIds: table.rows.map((row) => row.rowId),
+      columns: [...table.columnDefs.keys()]
+    });
+  }
+  return out;
+}
+
+function bindingFactFromTag(
+  tag: string | undefined,
+  table?: string
+): BindingFact | undefined {
+  if (!tag) return undefined;
+  try {
+    const def = parseTag(tag);
+    if (!def || def.kind === 'table') return undefined;
+    return {
+      field: def.name,
+      kind: def.kind === 'formula' ? 'formula' : 'input',
+      ...(def.kind === 'formula' ? { expr: def.expression } : {}),
+      ...(table ? { table } : {}),
+      ...(def.options.row ? { row: def.options.row } : {})
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 // `sfdt` is optional because the fixture-driven read path may not have it;
@@ -1666,6 +2101,7 @@ function collectStructureTables(
 ): StructureTable[] {
   const order: TableAccumulator[] = [];
   const byAnchor = new Map<string, TableAccumulator>();
+  const boundTables = sfdt ? bindingTablesByAnchor(sfdt) : new Map();
   for (const b of blocks) {
     if (b.kind !== 'table_cell') continue;
     const parts = b.anchor.split(';');
@@ -1720,6 +2156,8 @@ function collectStructureTables(
       if (appearance.styleName) table.styleName = appearance.styleName;
       if (!tableIsUnstyled(appearance)) table.styled = true;
     }
+    const binding = boundTables.get(t.anchor);
+    if (binding) table.binding = binding;
     return table;
   });
 }
@@ -1816,6 +2254,13 @@ export function collectTableFacts(
   // alignment, header flags, table style. Without this a model asked to make a
   // new section's table match its siblings had nothing to match against.
   const appearance = collectTableAppearance(tableBlock) as TableAppearance;
+  const bindingIndex = scanReadableBindings(sfdt);
+  const tableBinding = bindingTablesByAnchor(sfdt, bindingIndex).get(
+    tableAnchor
+  );
+  const boundTableEntry = tableBinding
+    ? bindingIndex?.tables.get(tableBinding.tableId)
+    : undefined;
 
   const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
   const rows: TableRowFact[] = [];
@@ -1880,6 +2325,11 @@ export function collectTableFacts(
         // already hoisted a shared row appearance up to the row.
         ...(appearance?.rows[row]?.cells[column]
           ? { appearance: appearance.rows[row].cells[column] }
+          : {}),
+        ...(first?.boundTag
+          ? {
+              binding: bindingFactFromTag(first.boundTag, tableBinding?.tableId)
+            }
           : {})
       };
       if (fact.columnSpan || fact.rowSpan) {
@@ -1894,10 +2344,14 @@ export function collectTableFacts(
       cells.push(fact);
     });
     const filled = cells.filter((cell) => !cell.blank);
+    const boundRow = boundTableEntry?.rows.find(
+      (entry) => entry.path && Number(entry.path[entry.path.length - 1]) === row
+    );
     rows.push({
       row,
       cellCount: cells.length,
       filledCells: filled.length,
+      ...(boundRow ? { binding: { rowId: boundRow.rowId } } : {}),
       ...(filled.length === 0 ? { blankRow: true as const } : {}),
       ...(filled.length > 0 && filled.every((cell) => cell.bold)
         ? { allBold: true as const }
@@ -1945,6 +2399,7 @@ export function collectTableFacts(
     mergedCells,
     ...(appearance?.styleName ? { styleName: appearance.styleName } : {}),
     ...(appearance?.appearance ? { appearance: appearance.appearance } : {}),
+    ...(tableBinding ? { binding: tableBinding } : {}),
     rows,
     columns,
     truncated: false
@@ -2005,6 +2460,7 @@ export function buildInventoryFromBlocks(
   const { scope, sectionAnchor, maxEntries } = input;
   const cap = <T>(list: T[]): T[] =>
     maxEntries && maxEntries > 0 ? list.slice(0, maxEntries) : list;
+  const boundTables = sfdt ? bindingTablesByAnchor(sfdt) : new Map();
 
   if (scope === 'outline') {
     const sections = collectOutlineSections(blocks);
@@ -2210,7 +2666,7 @@ export function buildInventoryFromBlocks(
       // The live bug this guards: a 94-row table read at maxEntries 60 looked
       // complete, so the model summed 60 rows and GUESSED the last anchor.
       return {
-        inventory: slice.map(toInventoryEntry),
+        inventory: slice.map((block) => toInventoryEntry(block, boundTables)),
         truncation: {
           returned: slice.length,
           total: section.length,
@@ -2218,7 +2674,9 @@ export function buildInventoryFromBlocks(
         }
       };
     }
-    return { inventory: slice.map(toInventoryEntry) };
+    return {
+      inventory: slice.map((block) => toInventoryEntry(block, boundTables))
+    };
   }
 
   // full - the whole-document path keeps its hard limit, and past it the
@@ -2241,7 +2699,7 @@ export function buildInventoryFromBlocks(
   const all = cap(blocks);
   if (all.length < blocks.length) {
     return {
-      inventory: all.map(toInventoryEntry),
+      inventory: all.map((block) => toInventoryEntry(block, boundTables)),
       truncation: {
         returned: all.length,
         total: blocks.length,
@@ -2249,7 +2707,9 @@ export function buildInventoryFromBlocks(
       }
     };
   }
-  return { inventory: all.map(toInventoryEntry) };
+  return {
+    inventory: all.map((block) => toInventoryEntry(block, boundTables))
+  };
 }
 
 // Blocks POSTed to /assistant/document-index. The index endpoint validates each
@@ -5042,6 +5502,7 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
  * structured computation reports). Most handlers return nothing.
  */
 interface OpSuccessExtras {
+  anchor?: string;
   details?: string[];
   formula?: FormulaCellReport;
   column?: ColumnFormulaReport;
@@ -5445,6 +5906,7 @@ function runFormulaCellWrite(
       'set_cell_formula must anchor the target table cell (section;block;row;cell;paragraph).'
     );
   }
+  refuseBoundWrite(op, block);
   const formulaText = String(op.formula ?? '').trim();
   const round = op.round != null ? String(op.round) : '';
   if (round && ROUNDING_MODES.indexOf(round as RoundingMode) < 0) {
@@ -5673,6 +6135,7 @@ function runColumnFormulaWrite(
       'set_column_formula must anchor ANY cell of the column to recompute (section;block;row;cell;paragraph); the table and the column are read from that anchor.'
     );
   }
+  refuseBoundWrite(op, block);
   const tableAnchor = `${parts[0]};${parts[1]}`;
   const column = Number(parts[3]);
   const cellParagraph = parts[4];
@@ -6065,6 +6528,113 @@ function modelAuthoredCellText(op: EditOp): string | undefined {
   }
 }
 
+/**
+ * Refuse a write that would land on a bound field or formula.
+ *
+ * Two independent reasons, either sufficient. A bound value is OWNED by the
+ * document's binding engine, which recomputes it on the next reconcile, so a
+ * value written here would be overwritten anyway. And the write primitive these
+ * ops use - select a range, then insertText - DELETES a content control rather
+ * than replacing its contents, so the attempt destroys the author's binding
+ * instead of changing its value.
+ *
+ * A bound target carries `retry: 'never'` because no rewording of the same
+ * request can succeed: the value moves by editing the inputs it is computed
+ * from, or the form field it is bound to, not by writing the cell. The
+ * neighbour refusal below it deliberately stays retryable - a different, exactly
+ * addressable target in the same document can succeed.
+ */
+function requestedTextRange(
+  op: EditOp,
+  block: FlatBlock
+): { start: number; end: number } | null {
+  if (op.op === 'replace_text' || op.op === 'delete_text') {
+    const find = String(op.find ?? '');
+    if (!find) return { start: 0, end: block.length };
+    const matches: number[] = [];
+    for (
+      let at = block.text.indexOf(find);
+      at >= 0;
+      at = block.text.indexOf(find, at + 1)
+    )
+      matches.push(at);
+    if (!matches.length) return null;
+    const preferred =
+      typeof op.start === 'number' && matches.includes(op.start)
+        ? op.start
+        : matches[0];
+    return { start: preferred, end: preferred + find.length };
+  }
+  if (op.op === 'replace_selection') {
+    const start = offsetParts(offsetString(op.startOffset));
+    const end = offsetParts(offsetString(op.endOffset));
+    if (start.anchor !== block.anchor || end.anchor !== block.anchor)
+      return null;
+    return { start: start.offset, end: end.offset };
+  }
+  if (op.op === 'insert_text') {
+    const at = insertionPoint(op as TypedEditOp<'insert_text'>, block);
+    return { start: at, end: at };
+  }
+  return { start: 0, end: block.length };
+}
+
+function targetsBindingRange(op: EditOp, block: FlatBlock): boolean {
+  const ranges = block.bindingRanges ?? [];
+  if (!ranges.length) return !!block.boundTag;
+  const requested = requestedTextRange(op, block);
+  if (!requested) return true;
+  return ranges.some((range) =>
+    requested.start === requested.end
+      ? requested.start > range.start && requested.start < range.end
+      : requested.start < range.end && requested.end > range.start
+  );
+}
+
+function refuseBoundWrite(op: EditOp, block: FlatBlock): void {
+  if (block.offsetsUntrusted && !block.boundTag) {
+    // Not a binding itself, but sharing a paragraph or a container with one.
+    // SyncFusion counts a control's boundary markers as offset positions while
+    // this walker counts characters, so the range this op would select is off by
+    // however many markers precede it - measured: a write to a header cell of a
+    // bound table replaced three of its four characters. Refuse until the offset
+    // model accounts for markers exactly; reading these blocks is unaffected.
+    throw new OpError(
+      'unaddressable_in_bound_document',
+      `${op.op} cannot write ${block.anchor}: it sits alongside a document binding, and this engine cannot yet address that text exactly. Reading it is reliable; writing it is not. Re-read the nearby bound fields and target an editable binding value instead, or ask for a plain-text rewrite outside the bound container.`,
+      [`anchor: ${block.anchor}`]
+    );
+  }
+  if (!block.boundTag || !targetsBindingRange(op, block)) return;
+  let name = '';
+  let def: Definition | null = null;
+  try {
+    def = parseTag(block.boundTag);
+    if (def && def.kind !== 'table') name = def.name;
+  } catch {
+    name = '';
+  }
+  if (def?.kind === 'formula')
+    throw formulaRedirect(op, {
+      def,
+      key: '',
+      name: def.name,
+      path: [],
+      tag: block.boundTag,
+      text: block.text,
+      tableId: null,
+      rowId: def.options.row ?? null,
+      lockContents: false
+    });
+  const described = name ? `the bound value "${name}"` : 'a bound value';
+  throw new OpError(
+    'target_is_bound',
+    `${op.op} cannot write ${block.anchor}: it holds ${described}, and this document uses the binding engine for that value. Target the editable binding input directly so the engine can parse, store, and recompute it.`,
+    [`anchor: ${block.anchor}`, `binding: ${block.boundTag}`],
+    'never'
+  );
+}
+
 function guardModelAuthoredNumber(
   op: EditOp,
   block: FlatBlock,
@@ -6073,6 +6643,9 @@ function guardModelAuthoredNumber(
 ): LiteralNumberWrite | undefined {
   const text = modelAuthoredCellText(op);
   if (text === undefined) return undefined;
+  // Before the numeric-provenance gate, and before the table-cell narrowing:
+  // prose bindings are just as destroyable as cell ones.
+  refuseBoundWrite(op, block);
   if (block.kind !== 'table_cell') return undefined;
   const { record, citationFailure } =
     op.op === 'set_cell_text'
@@ -6443,6 +7016,7 @@ function collectRevisionIds(block: any, out: Set<string>): void {
     }
     return;
   }
+  for (const nested of getBlocks(block)) collectRevisionIds(nested, out);
   add(paragraphMarkRevisionIds(block));
   for (const inline of getInlines(block))
     add(pick(inline, 'revisionIds', 'rids'));
@@ -6460,9 +7034,9 @@ function collectRevisionIds(block: any, out: Set<string>): void {
  * from widget state, and treat an unattributed revision as ours rather than
  * refusing a document we cannot name an author for.
  */
-function foreignPendingAuthor(
+function foreignPendingAuthorInBlocks(
   sfdt: any,
-  range: BlockRange
+  rawBlocks: any[]
 ): string | undefined {
   const revisions = pick(sfdt, 'revisions', 'r');
   if (!Array.isArray(revisions) || !revisions.length) return undefined;
@@ -6474,13 +7048,19 @@ function foreignPendingAuthor(
     authorById.set(String(id), typeof author === 'string' ? author : '');
   }
   const ids = new Set<string>();
-  for (const block of rawBlocksInRange(sfdt, range))
-    collectRevisionIds(block, ids);
+  for (const block of rawBlocks) collectRevisionIds(block, ids);
   for (const id of Array.from(ids)) {
     const author = authorById.get(id);
     if (author && author !== ASSISTANT_DOCUMENT_AUTHOR) return author;
   }
   return undefined;
+}
+
+function foreignPendingAuthor(
+  sfdt: any,
+  range: BlockRange
+): string | undefined {
+  return foreignPendingAuthorInBlocks(sfdt, rawBlocksInRange(sfdt, range));
 }
 
 // ---------------------------------------------------------------------------
@@ -6667,6 +7247,30 @@ function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
         `Ask for ${author}'s change to be accepted or rejected first, then relocate the section.`
       ]
     );
+}
+
+function assertDuplicateSourceHasNoForeignEdits(
+  sfdt: any,
+  tableAnchor: string
+): void {
+  const container = tableContainerAt(sfdt, tableAnchor);
+  const author = container
+    ? foreignPendingAuthorInBlocks(sfdt, [container.block])
+    : undefined;
+  if (!author) return;
+  throw new OpError(
+    'duplicate_table_source_has_pending_review',
+    `Refusing to duplicate the table at ${JSON.stringify(
+      tableAnchor
+    )}: it contains a pending tracked change by ${JSON.stringify(
+      author
+    )}. Cloning the table would also clone their pending review card into new content. Nothing was written.`,
+    [
+      `table: ${tableAnchor}`,
+      `pending author: ${author}`,
+      `Ask for ${author}'s change to be accepted or rejected first, then duplicate the table.`
+    ]
+  );
 }
 
 /**
@@ -7313,6 +7917,43 @@ function prunePayloadRows(payload: string, keep: number[]): string {
   return JSON.stringify(parsed);
 }
 
+/**
+ * A live clipboard copy of a table, resolved to what the user currently sees.
+ *
+ * Pending deletions are omitted, pending insertions are kept, and the source's
+ * revision ids are removed before paste: the paste authors one fresh tracked
+ * insertion for the duplicate instead of making an older review card span both
+ * tables. The leading empty paragraph keeps Word from coalescing the source and
+ * copy into one table; the optional trailing one does the same when another
+ * table immediately follows the source.
+ */
+function duplicateTablePayload(
+  payload: string,
+  documentSfdt: any,
+  trailingSeparator: boolean
+): string {
+  const parsed = clonedWithoutRevisions(documentSfdt, JSON.parse(payload));
+  // Clipboard SFDT carries the selected revisions table as well as references
+  // from the selected content. Once the references are stripped, carrying the
+  // now-unreachable records into the paste would only duplicate metadata.
+  delete parsed.revisions;
+  delete parsed.r;
+  const sections = pick(parsed, 'sections', 'sec');
+  if (!Array.isArray(sections)) return payload;
+  const section = sections.find((candidate) =>
+    getBlocks(candidate).some((block) => !!getRows(block))
+  );
+  if (!section)
+    throw new OpError(
+      'duplicate_table_payload_not_a_table',
+      'SyncFusion returned no table for the range this duplicate captured, so nothing was written.'
+    );
+  const blocks = getBlocks(section);
+  blocks.unshift(emptyParagraphBlock(parsed));
+  if (trailingSeparator) blocks.push(emptyParagraphBlock(parsed));
+  return JSON.stringify(parsed);
+}
+
 /** The cell blocks of a range that belong to one of `rows`. */
 function rangeRowBlocks(range: BlockRange, rows: number[]): FlatBlock[] {
   const wanted = new Set(rows);
@@ -7389,7 +8030,13 @@ export const ANCHORED_OP_HANDLERS: {
         'replace_text needs `find` and `replace`.'
       );
     }
-    const idx = liveText.indexOf(find);
+    // Selecting a whole paragraph by visible length can stop before text that
+    // follows a content control because the live caret space also counts the
+    // control's boundary markers. The serialized projection remains exact, and
+    // Search below resolves the actual live range including those markers.
+    const idx = block.offsetsUntrusted
+      ? block.text.indexOf(find)
+      : liveText.indexOf(find);
     if (idx < 0)
       throw new OpError('text_not_found', `"${find}" not found at anchor.`);
     const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
@@ -7734,6 +8381,56 @@ export const ANCHORED_OP_HANDLERS: {
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
   },
+  duplicate_table: ({ editor, block, byAnchor }) => {
+    const blocks = Array.from(byAnchor.values());
+    const sfdt = serializeSfdt(editor);
+    const tableAnchor = tableAnchorForBlock(block);
+    if (!tableAnchor)
+      throw new OpError(
+        'duplicate_table_requires_table_anchor',
+        'duplicate_table needs an anchor inside the table, or the table anchor from a structure read.'
+      );
+    assertDuplicateSourceHasNoForeignEdits(sfdt, tableAnchor);
+    const source = resolveTableRange(blocks, tableAnchor);
+    const container = tableContainerAt(sfdt, tableAnchor);
+    if (!container)
+      throw new OpError(
+        'table_not_found',
+        `No table answers to "${tableAnchor}". Nothing was written.`
+      );
+    const sourceAddress = topLevelAddress(source.blocks[0].anchor);
+    const trailingSeparator = !!firstTableBlockIn(
+      container.blocks[container.blockIndex + 1]
+    );
+    const { paste, pastedSfdt } = relocateBlockRange(
+      editor,
+      sfdt,
+      source,
+      {
+        // The range end is the first caret after the table: the next body
+        // paragraph's start. Unlike a model-supplied relocation target,
+        // it is derived from the already-resolved source and cannot land inside
+        // its cells.
+        anchor: source.endAnchor,
+        address: { ...sourceAddress, block: sourceAddress.block + 1 }
+      },
+      {
+        removeSource: false,
+        transformPayload: (payload) =>
+          duplicateTablePayload(payload, sfdt, trailingSeparator)
+      }
+    );
+    const anchor = assertPastedTableMatches(
+      pastedSfdt,
+      paste,
+      source,
+      source.blocks
+    );
+    return {
+      anchor,
+      postWriteSfdt: pastedSfdt
+    };
+  },
   insert_text: ({ editor, op, block }) => {
     const offset = insertionPoint(op, block);
     const inserted = insertionText(op);
@@ -7888,7 +8585,8 @@ export const ANCHORED_OP_HANDLERS: {
   // `above`, `count`, `rows` and `columns` were advertised in the tool schema
   // and silently dropped: every insert_row was one row below, every
   // insert_table was 1x1. Every op maps its arguments explicitly now.
-  insert_row: ({ editor, op }) => {
+  insert_row: ({ editor, op, block }) => {
+    selectBlock(editor, block);
     callEditor(editor, 'insertRow', op.above === true, positiveCount(op.count));
   },
   insert_table: ({ editor, op, block, byAnchor }) => {
@@ -7900,7 +8598,8 @@ export const ANCHORED_OP_HANDLERS: {
       );
     const position =
       typeof op.position === 'string' ? op.position.toLowerCase() : 'before';
-    let insertionAnchor = block.anchor;
+    const tableAnchor = resultingInsertedTableAnchor(op);
+    let selectedInsertion = false;
     if (position === 'after') {
       const parts = block.anchor.split(';');
       const blockIndex = Number(parts[1]);
@@ -7909,15 +8608,21 @@ export const ANCHORED_OP_HANDLERS: {
           ? `${parts[0]};${blockIndex + 1}`
           : '';
       const next = nextAnchor ? byAnchor.get(nextAnchor) : undefined;
-      if (!next)
-        throw new OpError(
-          'insert_table_after_requires_following_block',
-          'A table can be placed after this block only when the next body block is addressable. Anchor the next block with position "before" instead; nothing was written.',
-          [`anchor after ${block.anchor}: ${nextAnchor || 'unavailable'}`]
-        );
-      insertionAnchor = next.anchor;
+      if (next) {
+        selectRange(editor, next.anchor, 0, 0);
+        selectedInsertion = true;
+      } else {
+        // Syncfusion inserts a table AT the selected paragraph, not after it.
+        // At the document tail first split the resolved paragraph to create the
+        // address the op promises, then replace that new paragraph with the
+        // table. Both writes are tracked in the same operation.
+        selectRange(editor, block.anchor, block.length, block.length);
+        callEditor(editor, 'insertText', '\n');
+        selectRange(editor, tableAnchor, 0, 0);
+        selectedInsertion = true;
+      }
     }
-    selectRange(editor, insertionAnchor, 0, 0);
+    if (!selectedInsertion) selectRange(editor, block.anchor, 0, 0);
     callEditor(
       editor,
       'insertTable',
@@ -7932,7 +8637,7 @@ export const ANCHORED_OP_HANDLERS: {
           if (!text) return;
           selectRange(
             editor,
-            `${insertionAnchor};${rowIndex};${columnIndex};0`,
+            `${tableAnchor};${rowIndex};${columnIndex};0`,
             0,
             0
           );
@@ -10192,6 +10897,7 @@ export const TRACKED_TEXT_OPS = new Set([
 export const TRACKED_STRUCTURAL_OPS = new Map([
   ['insert_row', 'insertion'],
   ['delete_row', 'deletion'],
+  ['delete_table', 'deletion'],
   ['delete_paragraph', 'deletion']
 ]);
 
@@ -10425,9 +11131,25 @@ function groupNewRevisions(
   before: LiveRevision[],
   changeSetId: string,
   restoresByGroup?: Map<string, AppearanceRestore[]>,
-  stylesByGroup?: Map<string, ParagraphStyleRestore[]>
+  stylesByGroup?: Map<string, ParagraphStyleRestore[]>,
+  revisionsWereReloaded = false
 ): RevisionGroupingReport {
-  const created = createdRevisions(editor, before);
+  const created = revisionsWereReloaded
+    ? (() => {
+        // Binding commands reload one SFDT. Syncfusion recreates live Revision
+        // objects during open(), so persisted ids are their stable identity.
+        const beforeIds = new Set(
+          before
+            .map((revision) => revision.revisionID)
+            .filter((id): id is string => typeof id === 'string' && !!id)
+        );
+        return snapshotRevisions(editor).filter((revision) =>
+          revision.revisionID
+            ? !beforeIds.has(revision.revisionID)
+            : !before.includes(revision)
+        );
+      })()
+    : createdRevisions(editor, before);
   const revisionsByGroup = new Map<string, number>();
   const appearanceGroups = new Set<string>();
   if (!created.length)
@@ -10547,7 +11269,8 @@ const FORMAT_OPS = new Set([
 export const TABLE_SCOPED_OPS = new Set([
   'copy_table_format',
   'restripe_table',
-  'split_table'
+  'split_table',
+  'duplicate_table'
 ]);
 
 // The appearance ops manage their own exact restores (see AppearanceRestore), so
@@ -10858,6 +11581,1550 @@ function retargetTableScopedAnchor(
   return byAnchor.has(firstCell) ? { ...op, anchor: firstCell } : op;
 }
 
+type DocxEditRoute = 'engine' | 'editor';
+
+interface BindingTableRoute {
+  anchor: string;
+  tableId: string;
+  table: TableEntry;
+}
+
+interface BindingRuntime {
+  surface: BindingCommandSurface;
+  index: BindingIndex;
+  occurrencesByTag: Map<string, Occurrence[]>;
+  tablesByAnchor: Map<string, BindingTableRoute>;
+}
+
+interface EngineMutationState {
+  sfdt: any;
+  index: BindingIndex;
+}
+
+interface EngineMutationOutcome {
+  sfdt: any;
+  anchor?: string;
+  details?: string[];
+}
+
+interface EngineMutationPlan {
+  route: 'engine';
+  index: number;
+  op: EditOp;
+  anchor?: string;
+  /**
+   * Every figure this plan writes on the strength of a declared provenance, with
+   * the cell each one licenses. Carried on the PLAN rather than on the result
+   * so the single-use licence for a user-stated figure is judged before the
+   * all-or-nothing engine transaction runs.
+   */
+  literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
+  execute(state: EngineMutationState): EngineMutationOutcome;
+}
+
+interface BoundInsertRowsPlan extends EngineMutationPlan {
+  kind: 'bound_insert_rows';
+  tableId: string;
+  tableAnchor: string;
+  firstVisualRow: number;
+  createdRowIds: string[];
+}
+
+interface CreatedBoundRowTarget {
+  plan: BoundInsertRowsPlan;
+  offset: number;
+}
+
+interface BoundDuplicateRowValue {
+  field: string;
+  canonical: string;
+  display: string;
+  literalNumber?: LiteralNumberWrite;
+}
+
+interface BoundDuplicateRowPlan {
+  values: BoundDuplicateRowValue[];
+}
+
+const BOUND_TEXT_WRITE_OPS = new Set([
+  'set_cell_text',
+  'replace_text',
+  'replace_selection',
+  'delete_text',
+  'insert_text'
+]);
+
+const BOUND_WRITE_OPS = new Set([
+  ...BOUND_TEXT_WRITE_OPS,
+  'set_cell_formula',
+  'set_column_formula',
+  'change_case'
+]);
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function stripRevisionIds(node: any): void {
+  if (Array.isArray(node)) {
+    node.forEach(stripRevisionIds);
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  delete node.revisionIds;
+  delete node.rids;
+  for (const value of Object.values(node)) stripRevisionIds(value);
+}
+
+/**
+ * A clone of what the document currently READS, referencing no tracked change:
+ * pending deletions inside it are dropped, pending insertions kept, and every
+ * `revisionIds` reference removed.
+ *
+ * `revisionIds` name entries in the document's own `revisions` array, so a
+ * verbatim clone makes ONE pending card span the source AND the copy: rejecting
+ * it would reach into the copy the user just asked for and mutate it. A FOREIGN
+ * author's pending edit is refused outright, but the assistant's own pending
+ * edits accumulate across turns until the user reviews them, and those must not
+ * block a duplicate for the rest of a session.
+ *
+ * Stripping the ids alone is not enough: a tracked replacement leaves BOTH the
+ * old run (marked deleted) and the new one, so an unresolved clone would read
+ * "AcmeGamma". The copy is what the user was looking at when they asked for it,
+ * and it is new content no existing card describes.
+ */
+function clonedWithoutRevisions<T>(sfdt: any, value: T): T {
+  const clone = cloneJson(value);
+  dropDeletedRevisionContent(clone, deletedRevisionIds(sfdt));
+  stripRevisionIds(clone);
+  return clone;
+}
+
+function dropDeletedRevisionContent(node: any, deleted: Set<string>): void {
+  if (Array.isArray(node)) {
+    node.forEach((entry) => dropDeletedRevisionContent(entry, deleted));
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  for (const key of ['inlines', 'i'])
+    if (Array.isArray(node[key]))
+      node[key] = node[key].filter(
+        (inline: any) =>
+          !allRevisionIdsIn(pick(inline, 'revisionIds', 'rids'), deleted)
+      );
+  if (getRows(node)) {
+    const key = ['rows', 'r', 'rw'].find((candidate) =>
+      Array.isArray(node[candidate])
+    ) as string;
+    node[key] = node[key].filter(
+      (row: any) => !allRevisionIdsIn(rowRevisionIds(row), deleted)
+    );
+  }
+  for (const value of Object.values(node))
+    dropDeletedRevisionContent(value, deleted);
+}
+
+function pathHasPrefix(prefix: unknown[], path: unknown[]): boolean {
+  if (prefix.length > path.length) return false;
+  return prefix.every((part, index) => String(part) === String(path[index]));
+}
+
+function pathCellIndex(path: unknown[]): number | null {
+  const cells = path.findIndex((part) => part === 'cells');
+  if (cells < 0) return null;
+  const value = Number(path[cells + 1]);
+  return Number.isInteger(value) ? value : null;
+}
+
+function rowIndexFromAnchor(anchor: unknown): number | null {
+  const parts = String(anchor ?? '').split(';');
+  if (parts.length < 5) return null;
+  const row = Number(parts[2]);
+  return Number.isInteger(row) && row >= 0 ? row : null;
+}
+
+function columnIndexFromAnchor(anchor: unknown): number | null {
+  const parts = String(anchor ?? '').split(';');
+  if (parts.length < 5) return null;
+  const column = Number(parts[3]);
+  return Number.isInteger(column) && column >= 0 ? column : null;
+}
+
+function bindingRuntime(editor: LiveEditor, sfdt: any): BindingRuntime | null {
+  const surface = bindingCommandSurfaceFor(editor);
+  if (!surface) return null;
+  const index = scanReadableBindings(sfdt);
+  if (!index) return null;
+  const occurrencesByTag = new Map<string, Occurrence[]>();
+  for (const occurrence of index.occurrences) {
+    const bucket = occurrencesByTag.get(occurrence.tag);
+    if (bucket) bucket.push(occurrence);
+    else occurrencesByTag.set(occurrence.tag, [occurrence]);
+  }
+  const tablesByAnchor = new Map<string, BindingTableRoute>();
+  for (const table of index.tables.values()) {
+    const anchor = boundTableAnchor(sfdt, table);
+    if (!anchor) continue;
+    tablesByAnchor.set(anchor, {
+      anchor,
+      tableId: table.tableId,
+      table
+    });
+  }
+  return { surface, index, occurrencesByTag, tablesByAnchor };
+}
+
+function requireBindingRuntime(
+  editor: LiveEditor,
+  sfdt: any,
+  op: EditOp,
+  // Absent when the op addresses a row an earlier edit in this same batch will
+  // create; the anchor it asked for is then the only address there is.
+  target?: FlatBlock | LiveStoryTarget
+): BindingRuntime {
+  const runtime = bindingRuntime(editor, sfdt);
+  if (runtime) return runtime;
+  const anchor =
+    target && !isLiveStoryTarget(target)
+      ? target.anchor
+      : String(op.anchor ?? '');
+  const boundTag =
+    target && !isLiveStoryTarget(target) ? target.boundTag : undefined;
+  throw new OpError(
+    'binding_engine_unavailable',
+    `${op.op} targets a document binding at "${anchor}", but the binding command bridge is not attached. Nothing was written.`,
+    [`anchor: ${anchor}`, boundTag ? `binding: ${boundTag}` : 'binding: table']
+  );
+}
+
+function occurrenceForBlock(
+  runtime: BindingRuntime,
+  block: FlatBlock
+): Occurrence | undefined {
+  if (!block.boundTag) return undefined;
+  const occurrences = runtime.occurrencesByTag.get(block.boundTag) ?? [];
+  if (occurrences.length <= 1) return occurrences[0];
+  const def = parseTag(block.boundTag);
+  if (!def || def.kind === 'table') return occurrences[0];
+  const tableAnchor = tableAnchorForBlock(block);
+  const tableId = tableAnchor
+    ? runtime.tablesByAnchor.get(tableAnchor)?.tableId
+    : undefined;
+  const rowId = def.options.row ?? null;
+  return (
+    occurrences.find(
+      (occurrence) =>
+        occurrence.name === def.name &&
+        occurrence.tableId === (tableId ?? null) &&
+        occurrence.rowId === rowId
+    ) ?? occurrences[0]
+  );
+}
+
+/**
+ * The refusal that REDIRECTS: a computed binding is written by changing the
+ * inputs it is computed from, so the message names those inputs and `retry` is
+ * `'never'` - re-sending the same write cannot succeed no matter how it is
+ * worded, and the remedy is a different target rather than a different phrasing.
+ */
+function formulaRedirect(op: EditOp, occurrence: Occurrence): OpError {
+  const expr =
+    occurrence.def.kind === 'formula' ? occurrence.def.expression : '';
+  let refs: string[] = [];
+  try {
+    refs = [...new Set(collectRefs(parseExpression(expr)))];
+  } catch {
+    refs = [];
+  }
+  const readableRefs = refs.length ? refs.join(', ') : 'its source inputs';
+  return new OpError(
+    'target_is_bound_formula',
+    `${op.op} cannot write the computed binding "${occurrence.name}". Change ${readableRefs} instead; the binding engine will recompute this value.`,
+    [
+      `binding: ${occurrence.tag}`,
+      `expr: ${expr || '(unreadable)'}`,
+      ...(refs.length ? [`inputs: ${readableRefs}`] : [])
+    ],
+    'never'
+  );
+}
+
+function retryableBoundNeighborRefusal(op: EditOp, block: FlatBlock): OpError {
+  return new OpError(
+    'unaddressable_in_bound_document',
+    `${op.op} cannot write ${block.anchor}: that text sits next to a document binding, and this engine cannot address its raw offsets without risking the content control. Re-read the nearby bound fields and target an editable binding value instead, or ask for a plain-text rewrite outside the bound container.`,
+    [`anchor: ${block.anchor}`]
+  );
+}
+
+function bindingValueParseError(
+  op: EditOp,
+  occurrence: Occurrence,
+  value: string,
+  err: unknown
+): OpError {
+  return new OpError(
+    'binding_value_parse_failed',
+    `${op.op} could not set "${occurrence.name}" to ${JSON.stringify(
+      value
+    )}: ${describeUnexpectedError(err)}. Nothing was written.`,
+    [
+      `binding: ${occurrence.tag}`,
+      `value: ${JSON.stringify(value)}`,
+      `type: ${occurrence.def.fieldType.kind}`
+    ]
+  );
+}
+
+function boundNumericWriteNeedsProvenance(
+  occurrence: Occurrence,
+  value: string
+): boolean {
+  return (
+    ['integer', 'decimal', 'currency', 'percent'].includes(
+      occurrence.def.fieldType.kind
+    ) && classifyNumericText(value).numeric
+  );
+}
+
+/**
+ * Refuse a bound numeric write with no declared provenance, and hand back the
+ * audit record when there is one.
+ *
+ * The record is the caller's to keep: `literal: true` is a ONE-CELL licence
+ * within a change set, and the plan that carries the record is what lets the
+ * boundary see a figure being spent twice.
+ */
+function guardBoundNumericReplacement(
+  op: EditOp,
+  occurrence: Occurrence,
+  value: string
+): LiteralNumberWrite | undefined {
+  if (!boundNumericWriteNeedsProvenance(occurrence, value)) return undefined;
+  const { record, citationFailure } = resolveNumberProvenance(
+    { ...op, op: 'set_cell_text', text: value } as TypedEditOp<'set_cell_text'>,
+    value.trim(),
+    occurrence.text
+  );
+  if (record) return record;
+  throw new OpError(
+    'model_authored_number',
+    `Refusing to write the numeric value ${JSON.stringify(
+      value.trim()
+    )} into bound input "${occurrence.name}" through ${
+      op.op
+    }: the engine did not compute it, so the request must say where it came from. Add \`literal: true\` if the user stated this exact value, or provide both \`quotedFrom\` and \`quotedText\` with an excerpt containing the figure.${citationFailure}`,
+    [
+      `binding: ${occurrence.tag}`,
+      `field: ${occurrence.name}`,
+      `value: ${JSON.stringify(value)}`,
+      `current content: ${JSON.stringify(occurrence.text)}`
+    ]
+  );
+}
+
+function desiredBoundDisplayText(
+  op: EditOp,
+  block: FlatBlock,
+  occurrence: Occurrence
+): string {
+  const current = occurrence.text;
+  switch (op.op) {
+    case 'set_cell_text':
+      return String(op.text ?? '');
+    case 'replace_text': {
+      const replacement = String(op.replace ?? op.text ?? op.newText ?? '');
+      const find = op.find != null ? String(op.find) : '';
+      if (!find) {
+        if (block.text === current) return replacement;
+        throw new OpError(
+          'binding_write_unroutable',
+          `replace_text at "${block.anchor}" did not say which part of the bound text to replace. Send \`find\` inside the binding value, or set the entire bound value with set_cell_text.`,
+          [
+            `binding: ${occurrence.tag}`,
+            `current value: ${JSON.stringify(current)}`
+          ]
+        );
+      }
+      if (!current.includes(find)) {
+        throw new OpError(
+          'binding_write_unroutable',
+          `replace_text found ${JSON.stringify(
+            find
+          )} in the block but not inside the binding value "${
+            occurrence.name
+          }". The surrounding text is not safely addressable through this route.`,
+          [`binding value: ${JSON.stringify(current)}`]
+        );
+      }
+      return current.replace(find, replacement);
+    }
+    case 'delete_text': {
+      const find = String(op.find ?? '');
+      if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
+      if (!current.includes(find)) {
+        throw new OpError(
+          'binding_write_unroutable',
+          `delete_text cannot remove ${JSON.stringify(
+            find
+          )} because it is not inside the binding value "${occurrence.name}".`,
+          [`binding value: ${JSON.stringify(current)}`]
+        );
+      }
+      return current.replace(find, '');
+    }
+    case 'insert_text': {
+      if (block.text !== current) {
+        throw new OpError(
+          'binding_write_unroutable',
+          `insert_text at "${block.anchor}" targets a paragraph that mixes binding text with surrounding prose. Set or replace the bound value itself instead.`,
+          [`binding: ${occurrence.tag}`]
+        );
+      }
+      const offset = insertionPoint(op as TypedEditOp<'insert_text'>, {
+        ...block,
+        text: current,
+        length: current.length
+      });
+      return (
+        current.slice(0, offset) +
+        insertionText(op as TypedEditOp<'insert_text'>) +
+        current.slice(offset)
+      );
+    }
+    case 'replace_selection': {
+      if (block.text !== current || op.expect !== current) {
+        throw new OpError(
+          'binding_write_unroutable',
+          `replace_selection can route through a binding only when the selected text is exactly the binding value. Send set_cell_text for "${occurrence.name}" instead.`,
+          [`binding: ${occurrence.tag}`]
+        );
+      }
+      return String(op.replace ?? op.text ?? op.newText ?? '');
+    }
+    default:
+      throw new OpError(
+        'binding_write_unroutable',
+        `${op.op} is not an engine-routable write for binding "${occurrence.name}".`,
+        [`binding: ${occurrence.tag}`]
+      );
+  }
+}
+
+function setBoundOccurrenceCanonical(
+  state: EngineMutationState,
+  occurrence: Occurrence,
+  canonical: string
+): EngineMutationState {
+  if (occurrence.tableId && occurrence.rowId) {
+    return {
+      sfdt: setOccurrenceText(
+        state.sfdt,
+        occurrence,
+        renderDisplay(occurrence.def.fieldType, canonical)
+      ),
+      index: state.index
+    };
+  }
+  return {
+    sfdt: setTaggedValue(state.sfdt, occurrence.name, canonical, state.index),
+    index: state.index
+  };
+}
+
+interface IndependentDocumentField {
+  name: string;
+  occurrences: Occurrence[];
+  locations: string[];
+}
+
+function containingBindingTable(
+  index: BindingIndex,
+  occurrence: Occurrence
+): TableEntry | undefined {
+  return [...index.tables.values()].find((table) =>
+    pathHasPrefix(table.markerPath, occurrence.path)
+  );
+}
+
+/**
+ * A duplicated table prefixes its private document fields with the new table
+ * id. Strip only that owning prefix when comparing field identity, so a write
+ * to `tax_rate` can see the independent `expenses_copy_tax_rate` instance the
+ * duplicate created without conflating unrelated fields elsewhere.
+ */
+function documentFieldIdentity(
+  index: BindingIndex,
+  occurrence: Occurrence
+): string {
+  const owner = containingBindingTable(index, occurrence);
+  const prefix = owner ? `${owner.tableId}_` : '';
+  return prefix && occurrence.name.startsWith(prefix)
+    ? occurrence.name.slice(prefix.length)
+    : occurrence.name;
+}
+
+function independentDocumentFields(
+  index: BindingIndex,
+  target: Occurrence
+): IndependentDocumentField[] {
+  if (target.tableId || target.rowId || target.def.kind !== 'field') return [];
+  const identity = documentFieldIdentity(index, target);
+  const fields: IndependentDocumentField[] = [];
+  for (const [name, occurrences] of index.fields) {
+    const first = occurrences[0];
+    if (!first || documentFieldIdentity(index, first) !== identity) continue;
+    const locations = [
+      ...new Set(
+        occurrences.map((occurrence) => {
+          const table = containingBindingTable(index, occurrence);
+          return table
+            ? `table "${table.tableId}"`
+            : `document path ${occurrence.path.join('/')}`;
+        })
+      )
+    ];
+    fields.push({ name, occurrences, locations });
+  }
+  return fields;
+}
+
+function independentFieldDetails(fields: IndependentDocumentField[]): string[] {
+  return fields.map(
+    (field, index) =>
+      `instance ${index + 1}: "${field.name}" at ${field.locations.join(', ')}`
+  );
+}
+
+function leaveEngineAtAddressableBodySelection(
+  editor: LiveEditor,
+  blocks: FlatBlock[]
+): void {
+  const target = blocks.find(
+    (block) =>
+      /^\d+;\d+$/.test(block.anchor) &&
+      block.kind !== 'table_cell' &&
+      !block.boundTag &&
+      !block.offsetsUntrusted
+  );
+  if (target) selectRange(editor, target.anchor, target.length, target.length);
+}
+
+function ambiguousIndependentFieldWrite(
+  op: EditOp,
+  index: BindingIndex,
+  target: Occurrence,
+  fields: IndependentDocumentField[],
+  reason: string
+): OpError {
+  return new OpError(
+    'independent_binding_instances_ambiguous',
+    `${op.op} names field "${documentFieldIdentity(
+      index,
+      target
+    )}", but it resolves to ${
+      fields.length
+    } independent binding instances. ${reason} Nothing was written.`,
+    independentFieldDetails(fields)
+  );
+}
+
+function boundInputTextPlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  occurrence: Occurrence,
+  runtime: BindingRuntime
+): EngineMutationPlan {
+  const desired = desiredBoundDisplayText(op, block, occurrence);
+  const independent = independentDocumentFields(runtime.index, occurrence);
+  if (independent.length > 1 && op.op !== 'set_cell_text')
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'Only set_cell_text supplies one complete replacement value that can be applied to every instance deterministically.'
+    );
+  if (
+    independent.length > 1 &&
+    independent.some(
+      (field) =>
+        field.occurrences[0]?.def.kind !== 'field' ||
+        !field.occurrences[0]?.def.isEditable ||
+        JSON.stringify(field.occurrences[0]?.def.fieldType) !==
+          JSON.stringify(occurrence.def.fieldType)
+    )
+  )
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'Their types or editability differ, so one value cannot be written safely to all of them.'
+    );
+  const literalNumber = guardBoundNumericReplacement(op, occurrence, desired);
+  let canonical: string;
+  try {
+    canonical = parseDisplay(occurrence.def.fieldType, desired);
+  } catch (err) {
+    if (isValueError(err))
+      throw bindingValueParseError(op, occurrence, desired, err);
+    throw err;
+  }
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: block.anchor,
+    ...(literalNumber
+      ? { literalNumbers: [{ where: block.anchor, write: literalNumber }] }
+      : {}),
+    execute(state) {
+      const liveOccurrence =
+        state.index.occurrences.find(
+          (candidate) =>
+            candidate.name === occurrence.name &&
+            candidate.tableId === occurrence.tableId &&
+            candidate.rowId === occurrence.rowId &&
+            candidate.tag === occurrence.tag
+        ) ??
+        state.index.occurrences.find(
+          (candidate) =>
+            candidate.name === occurrence.name &&
+            candidate.tableId === occurrence.tableId &&
+            candidate.rowId === occurrence.rowId
+        );
+      if (!liveOccurrence)
+        throw new OpError(
+          'binding_target_lost',
+          `The binding "${occurrence.name}" could not be found when applying ${op.op}. Nothing was written.`,
+          [`binding: ${occurrence.tag}`]
+        );
+      let next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
+      if (independent.length > 1) {
+        for (const field of independent) {
+          if (field.name === liveOccurrence.name) continue;
+          next = {
+            sfdt: setTaggedValue(next.sfdt, field.name, canonical, state.index),
+            index: state.index
+          };
+        }
+      }
+      const details = [
+        ...(independent.length > 1
+          ? [
+              `updated ${
+                independent.length
+              } independent instances of field "${documentFieldIdentity(
+                state.index,
+                liveOccurrence
+              )}"`,
+              ...independentFieldDetails(independent)
+            ]
+          : []),
+        ...(desired === renderDisplay(liveOccurrence.def.fieldType, canonical)
+          ? []
+          : [
+              `display normalized from ${JSON.stringify(
+                desired
+              )} to ${JSON.stringify(
+                renderDisplay(liveOccurrence.def.fieldType, canonical)
+              )}`
+            ])
+      ];
+      return {
+        sfdt: next.sfdt,
+        anchor: block.anchor,
+        ...(details.length ? { details } : {})
+      };
+    }
+  };
+}
+
+function boundTableForBlock(
+  runtime: BindingRuntime,
+  block: FlatBlock
+): BindingTableRoute | undefined {
+  const tableAnchor = tableAnchorForBlock(block);
+  return tableAnchor ? runtime.tablesByAnchor.get(tableAnchor) : undefined;
+}
+
+function rowIdAtVisualRow(table: TableEntry, rowIndex: number): string | null {
+  for (const row of table.rows) {
+    if (!row.path) continue;
+    const rawIndex = Number(row.path[row.path.length - 1]);
+    if (rawIndex === rowIndex) return row.rowId;
+  }
+  return null;
+}
+
+function fieldOccurrenceAtColumn(
+  table: TableEntry,
+  column: number
+): Occurrence | undefined {
+  for (const row of table.rows) {
+    for (const occurrence of row.bindings.values()) {
+      if (pathCellIndex(occurrence.path) === column) return occurrence;
+    }
+  }
+  return undefined;
+}
+
+function boundInsertRowsPlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  tableRoute: BindingTableRoute
+): BoundInsertRowsPlan {
+  const rowIndex = rowIndexFromAnchor(block.anchor);
+  if (rowIndex == null)
+    throw new OpError(
+      'not_a_cell_anchor',
+      'insert_row in a bound table needs a cell anchor from that table.'
+    );
+  const count = positiveCount(op.count);
+  const above = op.above === true;
+  const afterVisualRow = above ? rowIndex - 1 : rowIndex;
+  const afterRowId = rowIdAtVisualRow(tableRoute.table, afterVisualRow);
+  if (!afterRowId)
+    throw new OpError(
+      'bound_row_insert_unroutable',
+      `insert_row cannot add a bound line item ${
+        above ? 'above' : 'below'
+      } row ${rowIndex} because there is no bound data row on that side to clone from. Anchor a data row and insert below it, or read table_facts for current row ids.`,
+      [`table: ${tableRoute.tableId}`, `anchor: ${block.anchor}`]
+    );
+  const firstVisualRow = above ? rowIndex : rowIndex + 1;
+  const plan: BoundInsertRowsPlan = {
+    route: 'engine',
+    kind: 'bound_insert_rows',
+    index,
+    op,
+    anchor: block.anchor,
+    tableId: tableRoute.tableId,
+    tableAnchor: tableRoute.anchor,
+    firstVisualRow,
+    createdRowIds: [],
+    execute(state) {
+      let next = state.sfdt;
+      let nextIndex = state.index;
+      let after = afterRowId;
+      plan.createdRowIds.splice(0, plan.createdRowIds.length);
+      for (let offset = 0; offset < count; offset++) {
+        const added = addLineItem(next, tableRoute.tableId, after, nextIndex);
+        next = added.sfdt;
+        after = added.rowId;
+        plan.createdRowIds.push(added.rowId);
+        nextIndex = scanBindings(next);
+      }
+      const table = nextIndex.tables.get(tableRoute.tableId);
+      if (!table)
+        throw new OpError(
+          'bound_table_lost',
+          `insert_row added rows but the table "${tableRoute.tableId}" was no longer readable. Nothing was kept.`
+        );
+      for (const rowId of plan.createdRowIds) {
+        if (!table.rows.some((row) => row.rowId === rowId))
+          throw new OpError(
+            'bound_row_insert_not_observable',
+            `insert_row reported new row "${rowId}", but it was not present after the engine transaction. Nothing was kept.`
+          );
+      }
+      return {
+        sfdt: next,
+        anchor: block.anchor,
+        details: [
+          `table: ${tableRoute.tableId}`,
+          `created row ids: ${plan.createdRowIds.join(', ')}`
+        ]
+      };
+    }
+  };
+  return plan;
+}
+
+function boundDeleteRowsPlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  tableRoute: BindingTableRoute
+): EngineMutationPlan {
+  const rowIndex = rowIndexFromAnchor(block.anchor);
+  if (rowIndex == null)
+    throw new OpError(
+      'not_a_cell_anchor',
+      'delete_row in a bound table needs a cell anchor from that table.'
+    );
+  const requested =
+    Array.isArray(op.rows) && op.rows.length
+      ? [...new Set(op.rows.map(Number).filter((row) => Number.isInteger(row)))]
+      : [rowIndex];
+  const rowIds = requested.map((row) => ({
+    row,
+    rowId: rowIdAtVisualRow(tableRoute.table, row)
+  }));
+  const missing = rowIds.filter((entry) => !entry.rowId);
+  if (missing.length)
+    throw new OpError(
+      'bound_row_not_found',
+      `delete_row can remove only bound data rows. Row ${missing
+        .map((entry) => entry.row)
+        .join(', ')} has no row binding in table "${tableRoute.tableId}".`,
+      [`rows: ${requested.join(', ')}`]
+    );
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: block.anchor,
+    execute(state) {
+      let next = state.sfdt;
+      let nextIndex = state.index;
+      for (const { rowId } of rowIds) {
+        next = removeLineItem(
+          next,
+          tableRoute.tableId,
+          rowId as string,
+          nextIndex
+        );
+        nextIndex = scanBindings(next);
+      }
+      const table = nextIndex.tables.get(tableRoute.tableId);
+      if (!table)
+        throw new OpError(
+          'bound_table_lost',
+          `delete_row removed rows but the table "${tableRoute.tableId}" was no longer readable. Nothing was kept.`
+        );
+      const stillPresent = rowIds.filter((entry) =>
+        table.rows.some((row) => row.rowId === entry.rowId)
+      );
+      if (stillPresent.length)
+        throw new OpError(
+          'bound_row_delete_not_observable',
+          `delete_row did not remove row id(s) ${stillPresent
+            .map((entry) => entry.rowId)
+            .join(', ')} from table "${tableRoute.tableId}". Nothing was kept.`
+        );
+      return {
+        sfdt: next,
+        anchor: block.anchor,
+        details: [
+          `table: ${tableRoute.tableId}`,
+          `removed row ids: ${rowIds.map((entry) => entry.rowId).join(', ')}`
+        ]
+      };
+    }
+  };
+}
+
+function boundDeleteTablePlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  tableRoute: BindingTableRoute
+): EngineMutationPlan {
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: block.anchor,
+    execute(state) {
+      const liveTable = state.index.tables.get(tableRoute.tableId);
+      if (!liveTable)
+        throw new OpError(
+          'bound_table_not_found',
+          `No bound table "${tableRoute.tableId}" was found when applying delete_table. Nothing was written.`
+        );
+      const markerPath = liveTable.markerPath;
+      const blocksPath = markerPath.slice(0, -1);
+      const at = Number(markerPath[markerPath.length - 1]);
+      const siblings = getAt(state.sfdt, blocksPath);
+      if (!Array.isArray(siblings) || !Number.isInteger(at))
+        throw new OpError(
+          'bound_table_delete_unroutable',
+          `delete_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
+        );
+      const next = setAt(state.sfdt, blocksPath, [
+        ...siblings.slice(0, at),
+        ...siblings.slice(at + 1)
+      ]);
+      const nextIndex = scanBindings(next);
+      if (nextIndex.tables.has(tableRoute.tableId))
+        throw new OpError(
+          'bound_table_delete_not_observable',
+          `delete_table did not remove bound table "${tableRoute.tableId}". Nothing was kept.`
+        );
+      return {
+        sfdt: next,
+        anchor: tableRoute.anchor,
+        details: [`removed bound table: ${tableRoute.tableId}`]
+      };
+    }
+  };
+}
+
+// Every candidate must satisfy the tag grammar's NAME rule, not just the first
+// one: a table id may legally start with a digit, so a collision that rebuilt the
+// name from `base` used to emit a tag the scanner then rejected as malformed.
+function bindingNameCandidate(raw: string): string {
+  const cleaned = raw.replace(/[^A-Za-z0-9_.]/g, '_');
+  return /^[A-Za-z_]/.test(cleaned) ? cleaned : `binding_${cleaned}`;
+}
+
+function uniqueBindingName(base: string, used: Set<string>): string {
+  let candidate = bindingNameCandidate(base);
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = bindingNameCandidate(`${base}_${suffix}`);
+    suffix++;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function uniqueTableId(base: string, index: BindingIndex): string {
+  const cleanBase = `${base}_copy`.replace(/[^A-Za-z0-9_]/g, '_');
+  let candidate = cleanBase;
+  let suffix = 2;
+  while (index.tables.has(candidate)) {
+    candidate = `${cleanBase}_${suffix}`;
+    suffix++;
+  }
+  return candidate;
+}
+
+function rewriteBindingExpression(
+  expression: string,
+  oldTableId: string,
+  newTableId: string,
+  renamedDocBindings: Map<string, string>
+): string {
+  return String(expression).replace(
+    /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
+    (token, offset, source) => {
+      const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
+      if (after === '(') return token;
+      if (token.startsWith(`${oldTableId}.`))
+        return `${newTableId}.${token.slice(oldTableId.length + 1)}`;
+      return renamedDocBindings.get(token) ?? token;
+    }
+  );
+}
+
+function firstTableBlockIn(container: any): any {
+  if (getRows(container)) return container;
+  return getBlocks(container).find((block) => getRows(block));
+}
+
+/** An empty paragraph in the key convention the document already uses. */
+function emptyParagraphBlock(sfdt: any): any {
+  return sfdt?.sections !== undefined ? { inlines: [] } : { i: [] };
+}
+
+/**
+ * `siblings` with `clone` inserted after index `at`, separated from its
+ * neighbours by empty paragraphs wherever it would otherwise sit table-to-table.
+ *
+ * Word renders two adjacent tables as ONE table, so the duplicate landed flush
+ * against its source and the pair read as a single table with its rows repeated -
+ * reproduced live, on both the bound and the plain route. An empty paragraph
+ * always goes between the source and the copy, and a second one after the copy
+ * when the block it lands in front of is another table.
+ */
+function spliceDuplicateAfter(
+  sfdt: any,
+  siblings: any[],
+  at: number,
+  clone: any
+): any[] {
+  return [
+    ...siblings.slice(0, at + 1),
+    emptyParagraphBlock(sfdt),
+    clone,
+    ...(firstTableBlockIn(siblings[at + 1]) ? [emptyParagraphBlock(sfdt)] : []),
+    ...siblings.slice(at + 1)
+  ];
+}
+
+function freshRowIdsFor(
+  table: TableEntry,
+  newTableId: string
+): Map<string, string> {
+  const out = new Map<string, string>();
+  let ordinal = 1;
+  for (const row of table.rows) {
+    if (!row.rowId || out.has(row.rowId)) continue;
+    out.set(row.rowId, `${newTableId}_r${ordinal}`);
+    ordinal++;
+  }
+  return out;
+}
+
+function rewriteBindingsInClone(
+  node: any,
+  options: {
+    oldTableId: string;
+    newTableId: string;
+    rowIds: Map<string, string>;
+    renameDocBindings: Map<string, string>;
+    copyRows: boolean;
+  }
+): void {
+  if (Array.isArray(node)) {
+    node.forEach((entry) => rewriteBindingsInClone(entry, options));
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  const props = node.contentControlProperties;
+  if (props?.tag) {
+    let def: Definition | null = null;
+    try {
+      def = parseTag(String(props.tag));
+    } catch {
+      def = null;
+    }
+    if (def?.kind === 'table' && def.tableId === options.oldTableId) {
+      def.tableId = options.newTableId;
+      node.contentControlProperties = { ...props, tag: formatTag(def) };
+    } else if (def && (def.kind === 'field' || def.kind === 'formula')) {
+      let changed = false;
+      const oldRow = def.options.row;
+      if (oldRow && options.rowIds.has(oldRow)) {
+        def.options = { ...def.options, row: options.rowIds.get(oldRow) };
+        changed = true;
+        if (def.kind === 'field' && !options.copyRows) {
+          node.inlines = [
+            {
+              text: renderDisplay(def.fieldType, defaultValue(def)),
+              ...(node.inlines?.[0]?.characterFormat
+                ? { characterFormat: node.inlines[0].characterFormat }
+                : {})
+            }
+          ];
+        }
+      }
+      const renamed = options.renameDocBindings.get(def.name);
+      if (renamed) {
+        def.name = renamed;
+        changed = true;
+      }
+      if (def.kind === 'formula') {
+        const nextExpression = rewriteBindingExpression(
+          def.expression,
+          options.oldTableId,
+          options.newTableId,
+          options.renameDocBindings
+        );
+        if (nextExpression !== def.expression) {
+          def.expression = nextExpression;
+          changed = true;
+        }
+      }
+      if (changed)
+        node.contentControlProperties = { ...props, tag: formatTag(def) };
+      return;
+    }
+  }
+  for (const value of Object.values(node))
+    rewriteBindingsInClone(value, options);
+}
+
+function materializeBoundRows(
+  state: EngineMutationState,
+  tableId: string,
+  rows: BoundDuplicateRowPlan[] | null,
+  rowIds: string[]
+): any {
+  if (!rows) return state.sfdt;
+  let next = state.sfdt;
+  // ONE scan for the whole materialization: `setOccurrenceText` writes through
+  // `occurrence.path` and leaves every path intact, so the index taken before the
+  // first value stays valid for the last one. Rescanning per cell walked the
+  // whole document once per figure - 160 whole-document scans for a 40-row,
+  // 4-column payload inside a single synchronous transaction.
+  const table = state.index.tables.get(tableId);
+  rows.forEach((rowPlan, rowOffset) => {
+    const rowId = rowIds[rowOffset];
+    if (!rowId) return;
+    const row = table?.rows.find((entry) => entry.rowId === rowId);
+    if (!row) return;
+    rowPlan.values.forEach(({ field, canonical }) => {
+      const occurrence = row.bindings.get(field);
+      if (!occurrence || occurrence.def.kind !== 'field')
+        throw new OpError(
+          'duplicate_table_unknown_field',
+          `duplicate_table rows supplied "${field}", but that is not an editable input column in table "${tableId}". Nothing was written.`
+        );
+      next = setOccurrenceText(
+        next,
+        occurrence,
+        renderDisplay(occurrence.def.fieldType, canonical)
+      );
+    });
+  });
+  return next;
+}
+
+function validateBoundDuplicateRows(
+  op: EditOp,
+  tableRoute: BindingTableRoute
+): BoundDuplicateRowPlan[] | null {
+  if (op.rows === undefined || op.rows === 'copy') return null;
+  if (!Array.isArray(op.rows))
+    throw new OpError(
+      'duplicate_table_invalid_rows',
+      'duplicate_table rows must be "copy" or an array of row value objects. Nothing was written.'
+    );
+  return op.rows.map((rowValues: unknown, rowIndex: number) => {
+    if (!rowValues || typeof rowValues !== 'object' || Array.isArray(rowValues))
+      throw new OpError(
+        'duplicate_table_invalid_rows',
+        `duplicate_table rows[${rowIndex}] must be an object keyed by bound input names. Nothing was written.`
+      );
+    const values: BoundDuplicateRowValue[] = [];
+    for (const [field, rawValue] of Object.entries(
+      rowValues as Record<string, unknown>
+    )) {
+      const occurrence = tableRoute.table.rows
+        .map((row) => row.bindings.get(field))
+        .find((candidate): candidate is Occurrence => !!candidate);
+      if (!occurrence)
+        throw new OpError(
+          'duplicate_table_unknown_field',
+          `duplicate_table rows[${rowIndex}] supplied "${field}", but table "${tableRoute.tableId}" has no such bound column. Nothing was written.`
+        );
+      if (occurrence.def.kind === 'formula')
+        throw formulaRedirect(op, occurrence);
+      const display = String(rawValue ?? '');
+      const literalNumber = guardBoundNumericReplacement(
+        op,
+        occurrence,
+        display
+      );
+      let canonical: string;
+      try {
+        canonical = parseDisplay(occurrence.def.fieldType, display);
+      } catch (err) {
+        if (isValueError(err))
+          throw bindingValueParseError(op, occurrence, display, err);
+        throw err;
+      }
+      values.push({
+        field,
+        canonical,
+        display,
+        ...(literalNumber ? { literalNumber } : {})
+      });
+    }
+    return { values };
+  });
+}
+
+/**
+ * One accounting entry per figure a `duplicate_table` payload writes.
+ *
+ * `literal: true` on the op is not a blanket licence for every number in every
+ * row: the same single-use rule the cell-by-cell path enforces applies here, one
+ * cell at a time, so the boundary can see a stated figure being spent twice.
+ */
+function duplicateRowLiteralNumbers(
+  op: EditOp,
+  rows: BoundDuplicateRowPlan[] | null
+): Array<{ where: string; write: LiteralNumberWrite }> {
+  if (!rows) return [];
+  const out: Array<{ where: string; write: LiteralNumberWrite }> = [];
+  rows.forEach((row, rowIndex) => {
+    for (const value of row.values) {
+      if (!value.literalNumber) continue;
+      out.push({
+        where: `${op.anchor ?? ''} rows[${rowIndex}].${value.field}`,
+        write: value.literalNumber
+      });
+    }
+  });
+  return out;
+}
+
+function boundDuplicateTablePlan(
+  index: number,
+  op: EditOp,
+  block: FlatBlock,
+  tableRoute: BindingTableRoute
+): EngineMutationPlan {
+  const copyRows = op.rows === undefined || op.rows === 'copy';
+  const replacementRows = validateBoundDuplicateRows(op, tableRoute);
+  const literalNumbers = duplicateRowLiteralNumbers(op, replacementRows);
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: block.anchor,
+    ...(literalNumbers.length ? { literalNumbers } : {}),
+    execute(state) {
+      const liveTable = state.index.tables.get(tableRoute.tableId);
+      if (!liveTable)
+        throw new OpError(
+          'bound_table_not_found',
+          `No bound table "${tableRoute.tableId}" was found when applying duplicate_table. Nothing was written.`
+        );
+      assertDuplicateSourceHasNoForeignEdits(state.sfdt, tableRoute.anchor);
+      const markerPath = liveTable.markerPath;
+      const blocksPath = markerPath.slice(0, -1);
+      const at = Number(markerPath[markerPath.length - 1]);
+      const siblings = getAt(state.sfdt, blocksPath);
+      if (!Array.isArray(siblings) || !Number.isInteger(at))
+        throw new OpError(
+          'duplicate_table_unroutable',
+          `duplicate_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
+        );
+      const clone = clonedWithoutRevisions(
+        state.sfdt,
+        getAt(state.sfdt, markerPath)
+      );
+      const newTableId = uniqueTableId(tableRoute.tableId, state.index);
+      const usedNames = new Set(
+        state.index.occurrences.map((occurrence) => occurrence.name)
+      );
+      const renameDocBindings = new Map<string, string>();
+      for (const occurrence of state.index.occurrences) {
+        if (occurrence.tableId) continue;
+        if (!pathHasPrefix(markerPath, occurrence.path)) continue;
+        if (!renameDocBindings.has(occurrence.name)) {
+          const suffix = occurrence.name.startsWith(`${tableRoute.tableId}_`)
+            ? occurrence.name.slice(tableRoute.tableId.length + 1)
+            : occurrence.name;
+          renameDocBindings.set(
+            occurrence.name,
+            uniqueBindingName(`${newTableId}_${suffix}`, usedNames)
+          );
+        }
+      }
+      const rowIds = freshRowIdsFor(liveTable, newTableId);
+      if (replacementRows) {
+        const rawTable = firstTableBlockIn(clone);
+        const sourceTable = firstTableBlockIn(getAt(state.sfdt, markerPath));
+        const rows = getRows(rawTable);
+        const sourceRows = getRows(sourceTable);
+        const dataIndices = liveTable.rows
+          .map((row) => (row.path ? Number(row.path[row.path.length - 1]) : -1))
+          .filter((row) => row >= 0);
+        const firstData = Math.min(...dataIndices);
+        const lastData = Math.max(...dataIndices);
+        if (!rows || !sourceRows || !Number.isFinite(firstData))
+          throw new OpError(
+            'duplicate_table_no_prototype_row',
+            `duplicate_table could not find a bound prototype row in "${tableRoute.tableId}". Nothing was written.`
+          );
+        const prototype = sourceRows[firstData];
+        const prototypeEntry = liveTable.rows.find(
+          (row) =>
+            row.path &&
+            Number(row.path[row.path.length - 1]) === firstData &&
+            row.rowId
+        );
+        if (!prototypeEntry?.rowId)
+          throw new OpError(
+            'duplicate_table_no_prototype_row',
+            `duplicate_table could not identify the prototype row binding in "${tableRoute.tableId}". Nothing was written.`
+          );
+        const suppliedRowIds = replacementRows.map(
+          (_row: unknown, rowIndex: number) => `${newTableId}_r${rowIndex + 1}`
+        );
+        rowIds.clear();
+        const dataRows = suppliedRowIds.map((newRowId) => {
+          const rowClone = clonedWithoutRevisions(state.sfdt, prototype);
+          rewriteBindingsInClone(rowClone, {
+            oldTableId: tableRoute.tableId,
+            newTableId,
+            rowIds: new Map([[prototypeEntry.rowId as string, newRowId]]),
+            renameDocBindings,
+            copyRows: false
+          });
+          return rowClone;
+        });
+        rawTable.rows = [
+          ...rows.slice(0, firstData),
+          ...dataRows,
+          ...rows.slice(lastData + 1)
+        ];
+      }
+      rewriteBindingsInClone(clone, {
+        oldTableId: tableRoute.tableId,
+        newTableId,
+        rowIds,
+        renameDocBindings,
+        copyRows
+      });
+      let next = setAt(
+        state.sfdt,
+        blocksPath,
+        spliceDuplicateAfter(state.sfdt, siblings, at, clone)
+      );
+      let nextIndex = scanBindings(next);
+      const newTable = nextIndex.tables.get(newTableId);
+      if (!newTable)
+        throw new OpError(
+          'duplicate_table_not_observable',
+          `duplicate_table inserted a clone but the isolated table "${newTableId}" was not readable. Nothing was kept.`
+        );
+      next = materializeBoundRows(
+        { sfdt: next, index: nextIndex },
+        newTableId,
+        replacementRows,
+        newTable.rows
+          .map((row) => row.rowId)
+          .filter((row): row is string => !!row)
+      );
+      nextIndex = scanBindings(next);
+      const verified = nextIndex.tables.get(newTableId);
+      if (!verified)
+        throw new OpError(
+          'duplicate_table_not_observable',
+          `duplicate_table materialized rows but the isolated table "${newTableId}" was no longer readable. Nothing was kept.`
+        );
+      const sourceColumns = [...liveTable.columnDefs.keys()];
+      const cloneColumns = [...verified.columnDefs.keys()];
+      if (JSON.stringify(sourceColumns) !== JSON.stringify(cloneColumns))
+        throw new OpError(
+          'duplicate_table_shape_mismatch',
+          `duplicate_table cloned "${tableRoute.tableId}" as "${newTableId}", but its columns changed. Nothing was kept.`,
+          [
+            `source columns: ${sourceColumns.join(', ')}`,
+            `clone columns: ${cloneColumns.join(', ')}`
+          ]
+        );
+      if (replacementRows && verified.rows.length !== replacementRows.length)
+        throw new OpError(
+          'duplicate_table_row_count_mismatch',
+          `duplicate_table expected ${replacementRows.length} materialized rows but found ${verified.rows.length}. Nothing was kept.`
+        );
+      return {
+        sfdt: next,
+        anchor: boundTableAnchor(next, verified) ?? tableRoute.anchor,
+        details: [
+          `source table: ${tableRoute.tableId}`,
+          `new table: ${newTableId}`,
+          `row ids: ${verified.rows.map((row) => row.rowId).join(', ')}`
+        ]
+      };
+    }
+  };
+}
+
+function planCreatedBoundRowWrite(
+  index: number,
+  op: EditOp,
+  created: CreatedBoundRowTarget,
+  runtime: BindingRuntime
+): EngineMutationPlan {
+  if (op.op !== 'set_cell_text')
+    throw new OpError(
+      'binding_write_unroutable',
+      `${op.op} cannot target a bound row that is being created earlier in the same batch. Use set_cell_text for the new row input.`,
+      [`anchor: ${op.anchor ?? ''}`]
+    );
+  const table = runtime.index.tables.get(created.plan.tableId);
+  const column = columnIndexFromAnchor(op.anchor);
+  const templateOccurrence =
+    table && column != null
+      ? fieldOccurrenceAtColumn(table, column)
+      : undefined;
+  if (!templateOccurrence)
+    throw new OpError(
+      'bound_column_not_found',
+      `set_cell_text targets column ${
+        column ?? '(unknown)'
+      }, but no binding column was found in table "${
+        created.plan.tableId
+      }". Nothing was written.`
+    );
+  if (templateOccurrence.def.kind === 'formula')
+    throw formulaRedirect(op, templateOccurrence);
+  // The row does not exist yet, so there is no content for `expect` to describe -
+  // and the pre-insert document holds a DIFFERENT row at this index. Refuse
+  // rather than check the guard against that row or drop it silently.
+  if (typeof op.expect === 'string' && op.expect !== '')
+    throw new OpError(
+      'expect_on_created_row',
+      `set_cell_text sent \`expect\` ${JSON.stringify(
+        op.expect
+      )} for a bound row that edit ${
+        created.plan.index + 1
+      } is still creating, so there is nothing for it to match. Send this write without \`expect\`.`,
+      [`anchor: ${op.anchor ?? ''}`]
+    );
+  const display = String(op.text ?? '');
+  const literalNumber = guardBoundNumericReplacement(
+    op,
+    templateOccurrence,
+    display
+  );
+  let canonical: string;
+  try {
+    canonical = parseDisplay(templateOccurrence.def.fieldType, display);
+  } catch (err) {
+    if (isValueError(err))
+      throw bindingValueParseError(op, templateOccurrence, display, err);
+    throw err;
+  }
+  return {
+    route: 'engine',
+    index,
+    op,
+    anchor: String(op.anchor ?? ''),
+    ...(literalNumber
+      ? {
+          literalNumbers: [
+            { where: String(op.anchor ?? ''), write: literalNumber }
+          ]
+        }
+      : {}),
+    execute(state) {
+      const rowId = created.plan.createdRowIds[created.offset];
+      if (!rowId)
+        throw new OpError(
+          'bound_created_row_lost',
+          `set_cell_text could not find the row created by edit ${
+            created.plan.index + 1
+          }. Nothing was kept.`,
+          [`anchor: ${op.anchor ?? ''}`]
+        );
+      const table = state.index.tables.get(created.plan.tableId);
+      const row = table?.rows.find((entry) => entry.rowId === rowId);
+      const occurrence = row?.bindings.get(templateOccurrence.name);
+      if (!occurrence)
+        throw new OpError(
+          'bound_created_cell_lost',
+          `set_cell_text could not find "${templateOccurrence.name}" in created row "${rowId}". Nothing was kept.`
+        );
+      return {
+        sfdt: setOccurrenceText(
+          state.sfdt,
+          occurrence,
+          renderDisplay(occurrence.def.fieldType, canonical)
+        ),
+        anchor: String(op.anchor ?? ''),
+        details: [
+          `table: ${created.plan.tableId}`,
+          `row id: ${rowId}`,
+          `field: ${templateOccurrence.name}`
+        ]
+      };
+    }
+  };
+}
+
+/**
+ * The routing decision, taken in preflight before anything is written: an
+ * engine plan when the op touches a binding, `null` when it does not and the
+ * ordinary tracked-editor path should have it.
+ *
+ * Bound is decided by what the op TARGETS, not by the document: a bound tag on
+ * the target block, a structural op on a bound table, or a write into a row an
+ * earlier engine-routed `insert_row` in this same batch is about to create.
+ * Everything else in a bound document still routes to the editor - which is why
+ * a heading in a document full of bindings is still an ordinary tracked write.
+ *
+ * Three things it refuses rather than routes, because no path can honour them:
+ * writing a formula (redirected to the inputs it is computed from), a write
+ * that would land in a bound block's neighbour whose offsets cannot be trusted,
+ * and an op with no binding-engine equivalent for a binding it does reach.
+ */
+function planBindingRoutedOp(
+  editor: LiveEditor,
+  sfdt: any,
+  index: number,
+  op: EditOp,
+  target: FlatBlock | LiveStoryTarget | undefined,
+  createdRows: Map<string, CreatedBoundRowTarget>
+): EngineMutationPlan | null {
+  if (target && isLiveStoryTarget(target)) return null;
+  // A write into a row an earlier engine-routed insert_row is about to create is
+  // routed FIRST, before the missing-target guards below. Its anchor names a row
+  // that does not exist yet, so the preflight deliberately hands it over with no
+  // resolved target (`deferredNewCell`); requiring one here left this route
+  // unreachable and sent "append a bound line item, then fill it" down the native
+  // editor path, which would write into whichever row happened to hold that index
+  // before the insert.
+  const createdKey = String(op.anchor ?? '')
+    .split(';')
+    .slice(0, 3)
+    .join(';');
+  const created = createdRows.get(createdKey);
+  if (created) {
+    const runtime = requireBindingRuntime(editor, sfdt, op, target);
+    return planCreatedBoundRowWrite(index, op, created, runtime);
+  }
+  if (!target) return null;
+  if (op.op === 'duplicate_table') {
+    const runtime = bindingRuntime(editor, sfdt);
+    const tableAnchor = tableAnchorForBlock(target);
+    const tableRoute = tableAnchor
+      ? runtime?.tablesByAnchor.get(tableAnchor)
+      : undefined;
+    return tableRoute
+      ? boundDuplicateTablePlan(index, op, target, tableRoute)
+      : null;
+  }
+  // A paragraph can mix an inline binding with ordinary prose. Exact scoped
+  // text outside every binding remains an editor write; Syncfusion Search owns
+  // its live range and accounts for the control boundary markers precisely.
+  if (
+    target.boundTag &&
+    BOUND_WRITE_OPS.has(op.op) &&
+    !targetsBindingRange(op, target)
+  )
+    return null;
+  const tableStructuralOp =
+    target.kind === 'table_cell' &&
+    ['insert_row', 'delete_row', 'delete_table'].includes(op.op);
+  let maybeRuntime: BindingRuntime | null = null;
+  if (target.boundTag) {
+    maybeRuntime = requireBindingRuntime(editor, sfdt, op, target);
+  } else if (tableStructuralOp) {
+    maybeRuntime = bindingRuntime(editor, sfdt);
+    if (!maybeRuntime && target.offsetsUntrusted)
+      maybeRuntime = requireBindingRuntime(editor, sfdt, op, target);
+  }
+  const tableRoute = maybeRuntime
+    ? boundTableForBlock(maybeRuntime, target)
+    : undefined;
+  if (tableRoute) {
+    if (op.op === 'insert_row') {
+      const plan = boundInsertRowsPlan(index, op, target, tableRoute);
+      for (let offset = 0; offset < positiveCount(op.count); offset++)
+        createdRows.set(
+          `${tableRoute.anchor};${plan.firstVisualRow + offset}`,
+          { plan, offset }
+        );
+      return plan;
+    }
+    if (op.op === 'delete_row')
+      return boundDeleteRowsPlan(index, op, target, tableRoute);
+    if (op.op === 'delete_table')
+      return boundDeleteTablePlan(index, op, target, tableRoute);
+  }
+  if (target.offsetsUntrusted && !target.boundTag && BOUND_WRITE_OPS.has(op.op))
+    throw retryableBoundNeighborRefusal(op, target);
+  if (!target.boundTag) return null;
+  const runtime =
+    maybeRuntime ?? requireBindingRuntime(editor, sfdt, op, target);
+  const occurrence = occurrenceForBlock(runtime, target);
+  if (!occurrence) return null;
+  if (occurrence.def.kind === 'formula' && BOUND_WRITE_OPS.has(op.op))
+    throw formulaRedirect(op, occurrence);
+  if (occurrence.def.kind === 'field' && BOUND_TEXT_WRITE_OPS.has(op.op))
+    return boundInputTextPlan(index, op, target, occurrence, runtime);
+  if (BOUND_WRITE_OPS.has(op.op))
+    throw new OpError(
+      'binding_write_unroutable',
+      `${op.op} cannot be routed through binding "${occurrence.name}". Change an editable input field with set_cell_text or replace_text instead.`,
+      [`binding: ${occurrence.tag}`]
+    );
+  return null;
+}
+
 /**
  * Split a handler's success extras into the model-facing half and the
  * engine-internal appearance restores, which are collected rather than returned.
@@ -10928,6 +13195,73 @@ function refuseReusedUserStatedFigures(
       ]
     };
   });
+}
+
+function reusedUserStatedFigureRefusal(
+  first: { where: string; text: string },
+  where: string
+): OpError {
+  return new OpError(
+    'user_stated_figure_reused',
+    `The user-stated figure ${JSON.stringify(
+      first.text
+    )} already licenses cell "${
+      first.where
+    }" and cannot also license cell "${where}" in the same change set. ` +
+      `If "${where}" depends on the first cell, derive it with set_cell_formula. Otherwise ask the user which cell the figure belongs in. Nothing was written.`,
+    [`first literal cell: ${first.where}`, `reused literal cell: ${where}`],
+    'never'
+  );
+}
+
+/**
+ * The same one-cell licence, judged BEFORE the engine transaction runs.
+ *
+ * The post-hoc pass above can afford to fail an editor result and let rollback
+ * reject that group's native revisions. The engine transaction authors and opens
+ * its complete grouped SFDT change set atomically, so a post-hoc refusal would
+ * still report failure over a write that landed. Engine plans therefore declare
+ * their figures up front and are checked here, against each other and against
+ * whatever the editor phase already spent, while the transaction can still be
+ * skipped entirely.
+ */
+function findReusedUserStatedFigureInPlans(
+  results: Array<EditResult | undefined>,
+  enginePlans: EngineMutationPlan[]
+): { plan: EngineMutationPlan; error: OpError } | null {
+  const firstUse = new Map<string, { where: string; text: string }>();
+  const remember = (
+    where: string,
+    write: LiteralNumberWrite
+  ): string | null => {
+    if (write.source !== 'user_stated') return null;
+    const key = userStatedFigureKey(write);
+    if (!key) return null;
+    const first = firstUse.get(key);
+    if (!first) {
+      firstUse.set(key, { where, text: write.rendered?.asSent ?? write.text });
+      return null;
+    }
+    return first.where === where ? null : key;
+  };
+  for (const result of results) {
+    if (!result?.ok || !result.literalNumber) continue;
+    remember(result.anchor ?? '(unknown cell)', result.literalNumber);
+  }
+  for (const plan of enginePlans) {
+    for (const { where, write } of plan.literalNumbers ?? []) {
+      const collided = remember(where, write);
+      if (!collided) continue;
+      return {
+        plan,
+        error: reusedUserStatedFigureRefusal(
+          firstUse.get(collided) as { where: string; text: string },
+          where
+        )
+      };
+    }
+  }
+  return null;
 }
 
 function mayShiftAnchors(op: EditOp): boolean {
@@ -13209,6 +15543,49 @@ function detectBatchedSplits(edits: EditOp[]): BatchRefusal | null {
   };
 }
 
+function detectBatchedDuplicateTables(edits: EditOp[]): BatchRefusal | null {
+  const indices = edits.reduce<number[]>(
+    (found, op, index) =>
+      op?.op === 'duplicate_table' ? [...found, index] : found,
+    []
+  );
+  if (!indices.length) return null;
+  if (indices.length > 1) {
+    return {
+      code: 'duplicate_table_one_per_change_set',
+      message: `This change set asks for ${indices.length} table duplicates at once. Send one duplicate_table per change set: duplicating a table inserts a table, so later anchors move and repeated table text can no longer be resolved deterministically. Nothing was written.`,
+      details: [
+        `duplicate_table at edit ${indices.join(', ')}`,
+        'Duplicate one table, then re-read the document before targeting the next table.'
+      ],
+      indices
+    };
+  }
+  const firstDuplicate = indices[0];
+  const laterAnchored = edits
+    .map((op, index) => ({ op, index }))
+    .filter(
+      ({ op, index }) =>
+        index > firstDuplicate &&
+        op?.op &&
+        !ANCHORLESS_OPS.has(op.op) &&
+        op.op !== 'replace_all'
+    )
+    .map(({ index }) => index);
+  if (!laterAnchored.length) return null;
+  return {
+    code: 'duplicate_table_must_end_change_set',
+    message:
+      'duplicate_table must be the last anchored edit in its change set. It inserts a table, so every later anchor may have shifted and can collide with the cloned table. Nothing was written.',
+    details: [
+      `duplicate_table at edit ${firstDuplicate}`,
+      `later anchored edits: ${laterAnchored.join(', ')}`,
+      'Duplicate the table, re-read structure/table_facts, then send follow-up edits against the fresh anchors.'
+    ],
+    indices: [firstDuplicate, ...laterAnchored]
+  };
+}
+
 function detectEmptyInsertedTables(edits: EditOp[]): BatchRefusal | null {
   const emptyTables: Array<{
     index: number;
@@ -13591,6 +15968,18 @@ function authoredStrings(op: EditOp): Array<{ where: string; value: string }> {
           });
       });
     });
+  if (op.op === 'duplicate_table' && Array.isArray(op.rows)) {
+    op.rows.forEach((row: unknown, rowIndex: number) => {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return;
+      for (const [field, value] of Object.entries(row)) {
+        if (typeof value === 'string')
+          out.push({
+            where: `rows[${rowIndex}].${field}`,
+            value
+          });
+      }
+    });
+  }
   // A section spec still attached after expansion (the refusal backstop keeps
   // it) is composed content too, and its table cells are exactly the write path
   // that bypasses the per-op checks.
@@ -15282,11 +17671,11 @@ function applyDocumentEditsMeasured(
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSet(edits, columnTouches);
-  const priorTrackChanges = editor.enableTrackChanges;
   const priorCurrentUser = editor.currentUser;
   // enableTrackChanges flips to true only inside the protected try below
-  // (which restores it in `finally`) - preflight here is read-only, and a
-  // serialization failure before that point must leave it exactly as found.
+  // (which forces it off in `finally` so later user typing is never tracked).
+  // Preflight here is read-only, and a serialization failure before that
+  // point must leave tracking exactly as found.
   // The group tag rides on SyncFusion's revision customData for the duration
   // of this change set; whatever the host set there before is restored after.
   const revisionSettings = editor.documentEditorSettings?.revisionSettings;
@@ -15312,6 +17701,14 @@ function applyDocumentEditsMeasured(
   let liveSfdt: any;
   const revisionSnapshot = snapshotRevisions(editor);
   const plans: ChangeSetPlan[] = [];
+  const enginePlans: EngineMutationPlan[] = [];
+  const createdBoundRows = new Map<string, CreatedBoundRowTarget>();
+  const routeByIndex = new Map<number, DocxEditRoute>();
+  const routeForIndex = (index: number): DocxEditRoute =>
+    routeByIndex.get(index) ?? 'editor';
+  const setRoute = (index: number, route: DocxEditRoute) => {
+    if (!routeByIndex.has(index)) routeByIndex.set(index, route);
+  };
   const failedGroups = new Set<string>();
   // Exact revision object membership makes per-group rollback work even in
   // editors/test doubles which do not expose revisionSettings.customData.
@@ -15407,6 +17804,7 @@ function applyDocumentEditsMeasured(
     results[index] = {
       ok: false,
       op: op?.op ?? '',
+      route: routeForIndex(index),
       anchor: op?.anchor,
       error: isOpError(err) ? err.code : 'op_failed',
       ...(isOpError(err) && err.message && err.message !== err.code
@@ -15444,6 +17842,7 @@ function applyDocumentEditsMeasured(
         ...(results[index] ?? {}),
         ok: false,
         op: op?.op ?? '',
+        route: routeForIndex(index),
         ...(op?.anchor ? { anchor: op.anchor } : {}),
         error: 'change_set_failed',
         details: [
@@ -15496,6 +17895,54 @@ function applyDocumentEditsMeasured(
         `group_rollback_failed: ${groupId}; ${rollbackErrors.join('; ')}`
       );
   };
+  const rollbackAppliedEditorResultsForBindingAbort = (
+    reason: string
+  ): string[] => {
+    const rolledGroups = new Set<string>();
+    for (const plan of plans) {
+      const result = results[plan.index];
+      if (!result?.ok) continue;
+      const groupId = opGroupId(plan.op, changeSetId);
+      if (!rolledGroups.has(groupId)) {
+        rollbackGroup(groupId);
+        failedGroups.add(groupId);
+        rolledGroups.add(groupId);
+      }
+      results[plan.index] = {
+        ...result,
+        ok: false,
+        route: 'editor',
+        error: 'change_set_failed',
+        details: [
+          reason,
+          `Rolled back editor-routed edit ${plan.index + 1} (${
+            plan.op.op
+          }) because the mixed binding/editor batch did not apply atomically.`
+        ]
+      };
+    }
+    return [...rolledGroups];
+  };
+  const markUnresolvedEnginePlansFailed = (
+    error: string,
+    message: string,
+    details: string[]
+  ) => {
+    for (const plan of enginePlans) {
+      if (results[plan.index]) continue;
+      results[plan.index] = {
+        ok: false,
+        op: plan.op?.op ?? '',
+        route: 'engine',
+        ...(plan.anchor ?? plan.op?.anchor
+          ? { anchor: plan.anchor ?? plan.op.anchor }
+          : {}),
+        error,
+        message,
+        details
+      };
+    }
+  };
 
   // Phase 0: what only the whole batch can show. Both of these refuse BEFORE
   // any anchor is resolved, so a refused change set costs nothing at all.
@@ -15503,6 +17950,7 @@ function applyDocumentEditsMeasured(
     detectSentinelContent(edits) ??
     detectInconsistentAggregateRanges(edits) ??
     detectBatchedSplits(edits) ??
+    detectBatchedDuplicateTables(edits) ??
     detectEmptyInsertedTables(edits) ??
     detectMultilineAuthoredCells(edits) ??
     detectUnsourcedAuthoredFigures(edits) ??
@@ -15817,6 +18265,29 @@ function applyDocumentEditsMeasured(
       };
       return;
     }
+    try {
+      const routed = planBindingRoutedOp(
+        editor,
+        liveSfdt,
+        index,
+        op,
+        target,
+        createdBoundRows
+      );
+      if (routed) {
+        setRoute(index, routed.route);
+        enginePlans.push(routed);
+        observeMutationGuardBoundary(
+          op,
+          op.op === 'replace_selection' ? 'selection_content' : 'block_expect'
+        );
+        return;
+      }
+    } catch (err) {
+      setRoute(index, 'engine');
+      fail(index, op, err);
+      return;
+    }
     const inheritAnchor =
       typeof op.inheritFormatFrom === 'string'
         ? op.inheritFormatFrom.trim()
@@ -15906,21 +18377,46 @@ function applyDocumentEditsMeasured(
     },
     []
   );
-  if (!batchRefusal) {
+  const hasEngineRoute = Array.from(routeByIndex.values()).includes('engine');
+  const engineBatchPreflightFailure =
+    !batchRefusal && hasEngineRoute && preflightFailures.length > 0;
+  if (engineBatchPreflightFailure) {
+    edits.forEach((op, index) => {
+      if (results[index]) return;
+      results[index] = {
+        ok: false,
+        op: op?.op ?? '',
+        route: routeForIndex(index),
+        ...(op?.anchor ? { anchor: op.anchor } : {}),
+        error: 'change_set_preflight_failed',
+        details: [
+          `This mixed editor/binding change set was rejected before writes because edit ${
+            preflightFailures[0] + 1
+          } failed preflight; engine-routed batches are all-or-nothing across routes.`
+        ]
+      };
+    });
+  } else if (!batchRefusal) {
     for (const index of preflightFailures) {
       const groupId = opGroupId(edits[index], changeSetId);
       if (!failedGroups.has(groupId))
         markGroupFailed(groupId, index, 'refused');
     }
   }
-  const preflightFailed = !!batchRefusal || preflightFailures.length > 0;
+  const preflightFailed =
+    !!batchRefusal ||
+    engineBatchPreflightFailure ||
+    preflightFailures.length > 0;
   // Batch layout is required for large change sets, but assigning the public
   // enableLayout property queues onPropertyChanged. SyncFusion later handles
   // that queue with refreshLayout(), which unconditionally Control-Homes the
   // selection before repagination. Muted setProperties changes the same layout
   // gate without queuing navigation; one explicit layoutWholeDocument below
   // pays the deferred pagination cost while the silent edit boundary is active.
-  const suspendLayout = !batchRefusal && editor.enableLayout === true;
+  const suspendLayout =
+    !batchRefusal &&
+    !engineBatchPreflightFailure &&
+    editor.enableLayout === true;
   const setLayoutWithoutPropertyChange = (enabled: boolean) => {
     const liveEditor = editor as any;
     if (typeof liveEditor.setProperties === 'function')
@@ -15931,7 +18427,7 @@ function applyDocumentEditsMeasured(
     if (suspendLayout) setLayoutWithoutPropertyChange(false);
     editor.enableTrackChanges = true;
     editor.currentUser = ASSISTANT_DOCUMENT_AUTHOR;
-    if (batchRefusal) {
+    if (batchRefusal || engineBatchPreflightFailure) {
       warnings.push(
         `change_set_preflight_failed: ${changeSetId}; no structural or formatting writes were attempted.`
       );
@@ -16493,9 +18989,153 @@ function applyDocumentEditsMeasured(
           markGroupFailed(groupId, index, 'rolled back');
         }
       }
+
+      if (enginePlans.length) {
+        // Judged here, not in the post-write pass: a licence violation must stop
+        // the all-or-nothing transaction rather than be reported over a write
+        // that already landed.
+        const reusedFigure = findReusedUserStatedFigureInPlans(
+          results,
+          enginePlans
+        );
+        if (reusedFigure)
+          fail(
+            reusedFigure.plan.index,
+            reusedFigure.plan.op,
+            reusedFigure.error
+          );
+        const abortReason = reusedFigure
+          ? 'a user-stated figure would license two cells in one change set'
+          : results.some((result) => result && !result.ok)
+          ? 'an editor-routed edit failed before the engine transaction'
+          : '';
+        if (abortReason) {
+          const rolledGroups = rollbackAppliedEditorResultsForBindingAbort(
+            `No binding-engine writes were attempted because ${abortReason}.`
+          );
+          markUnresolvedEnginePlansFailed(
+            'change_set_failed',
+            'The mixed editor/binding change set did not apply atomically, so binding-engine writes were skipped.',
+            [
+              'No binding-engine writes were attempted.',
+              rolledGroups.length
+                ? `rolled back editor groups: ${rolledGroups.join(', ')}`
+                : 'no editor groups needed rollback'
+            ]
+          );
+          warnings.push(
+            `binding_engine_transaction_skipped: ${abortReason}; rolled_back_editor_groups=${
+              rolledGroups.join(', ') || '(none)'
+            }`
+          );
+        } else {
+          const outcomes = new Map<number, EngineMutationOutcome>();
+          let applyingPlan: EngineMutationPlan | undefined;
+          try {
+            // Provenance makes the command layer author the review records in
+            // SFDT. Native tracking must be off before that SFDT is opened;
+            // the outer finally also leaves it off for subsequent user input.
+            disableUserTrackChanges(
+              editor,
+              wrappingDocumentEditorContainer(editor)
+            );
+            const surface = bindingCommandSurfaceFor(editor);
+            if (!surface)
+              throw new OpError(
+                'binding_engine_unavailable',
+                'The binding command bridge detached before the engine transaction could run. Nothing was kept.'
+              );
+            const beforeCommands = liveSfdt;
+            let state: EngineMutationState = {
+              sfdt: beforeCommands,
+              index: scanBindings(beforeCommands)
+            };
+            for (const plan of enginePlans) {
+              applyingPlan = plan;
+              const outcome = plan.execute(state);
+              outcomes.set(plan.index, outcome);
+              state = {
+                sfdt: outcome.sfdt,
+                index: scanBindings(outcome.sfdt)
+              };
+            }
+            applyingPlan = undefined;
+            const engineResult = surface.runCommands(
+              diffBindingCommands(beforeCommands, state.sfdt),
+              {
+                provenance: {
+                  author: ASSISTANT_DOCUMENT_AUTHOR,
+                  changeSetId,
+                  group: opGroupId(enginePlans[0].op, changeSetId)
+                }
+              }
+            );
+            refresh(engineResult.sfdt);
+            // Reconciliation reopens the SFDT and can leave Syncfusion's caret
+            // inside the content control that was just updated. Keep the next
+            // assistant operation on a public body position even though every
+            // structural handler also resolves and selects its own anchor.
+            leaveEngineAtAddressableBodySelection(editor, blocks);
+            if (engineResult.diagnostics.length) {
+              warnings.push(
+                `binding_engine_diagnostics: ${engineResult.diagnostics
+                  .map(
+                    (diagnostic) =>
+                      `${diagnostic.severity}:${diagnostic.code}:${diagnostic.message}`
+                  )
+                  .slice(0, 20)
+                  .join('; ')}`
+              );
+            }
+            for (const plan of enginePlans) {
+              const outcome = outcomes.get(plan.index);
+              results[plan.index] = {
+                ok: true,
+                op: plan.op.op,
+                route: 'engine',
+                ...(outcome?.anchor ?? plan.anchor ?? plan.op.anchor
+                  ? { anchor: outcome?.anchor ?? plan.anchor ?? plan.op.anchor }
+                  : {}),
+                ...(outcome?.details ? { details: outcome.details } : {})
+              };
+            }
+          } catch (err) {
+            const failingPlan = applyingPlan ?? enginePlans[0];
+            if (failingPlan) fail(failingPlan.index, failingPlan.op, err);
+            const rolledGroups = rollbackAppliedEditorResultsForBindingAbort(
+              'The binding-engine transaction failed after editor-routed edits landed; editor-routed edits were rolled back before reporting failure.'
+            );
+            markUnresolvedEnginePlansFailed(
+              'change_set_failed',
+              'The binding-engine transaction failed, so the mixed editor/binding change set was rolled back.',
+              [
+                failingPlan
+                  ? `engine failure at edit ${failingPlan.index + 1} (${
+                      failingPlan.op.op
+                    })`
+                  : 'engine failure before the first planned mutation',
+                rolledGroups.length
+                  ? `rolled back editor groups: ${rolledGroups.join(', ')}`
+                  : 'no editor groups needed rollback'
+              ]
+            );
+            warnings.push(
+              `binding_engine_transaction_failed: ${describeUnexpectedError(
+                err
+              )}; rolled_back_editor_groups=${
+                rolledGroups.join(', ') || '(none)'
+              }`
+            );
+            refresh();
+          }
+        }
+      }
     }
   } finally {
-    editor.enableTrackChanges = priorTrackChanges;
+    // Every assistant batch leaves both SyncFusion owners in user-editing mode.
+    // The outer container can otherwise push its stale true flag back into the
+    // editor on documentChange after this finally block has run.
+    disableUserTrackChanges(editor, wrappingDocumentEditorContainer(editor));
     editor.currentUser = priorCurrentUser;
     if (revisionSettings) revisionSettings.customData = priorRevisionCustomData;
     if (suspendLayout) {
@@ -16538,10 +19178,27 @@ function applyDocumentEditsMeasured(
     revisionSnapshot,
     changeSetId,
     appearanceRestoresByGroup,
-    paragraphStylesByGroup
+    paragraphStylesByGroup,
+    enginePlans.length > 0
   );
   const revisionCount = grouping.revisionCount;
-  const hasFailure = results.some((result) => result && !result.ok);
+  const materializedResults = Array.from(
+    { length: edits.length },
+    (_, index) => {
+      const base =
+        results[index] ??
+        ({
+          ok: false,
+          op: edits[index]?.op ?? '',
+          error: preflightFailed ? 'change_set_preflight_failed' : 'op_failed'
+        } as EditResult);
+      return {
+        ...base,
+        route: base.route ?? routeForIndex(index)
+      };
+    }
+  );
+  const hasFailure = materializedResults.some((result) => !result.ok);
   const inventory = readPostEditInventory(editor, warnings);
   warnings.push(
     `document_serialization: count=${
@@ -16552,15 +19209,7 @@ function applyDocumentEditsMeasured(
     // results starts as a sparse array during preflight; Array#map skips holes,
     // so materialize every requested edit explicitly when a whole change set is
     // rejected before its sibling operations run.
-    results: Array.from(
-      { length: edits.length },
-      (_, index) =>
-        results[index] ?? {
-          ok: false,
-          op: edits[index]?.op ?? '',
-          error: preflightFailed ? 'change_set_preflight_failed' : 'op_failed'
-        }
-    ),
+    results: materializedResults,
     warnings,
     changeSet: {
       id: changeSetId,

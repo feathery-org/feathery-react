@@ -147,7 +147,7 @@ const textAt = (ed: DocumentEditor, anchor: string): string | undefined =>
 const withEditor = (sfdt: any, run: (ed: DocumentEditor) => void) => {
   const ed = makeRealDocumentEditor(sfdt);
   try {
-    ed.enableTrackChanges = true;
+    ed.enableTrackChanges = false;
     run(ed);
   } finally {
     destroyRealDocumentEditor(ed);

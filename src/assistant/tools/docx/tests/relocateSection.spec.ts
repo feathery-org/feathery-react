@@ -120,6 +120,20 @@ function destroyEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+function expectDocumentContentUnchangedAndTrackingOff(
+  editor: DocumentEditor,
+  before: string
+): void {
+  expect(editor.enableTrackChanges).toBe(false);
+  const beforeSfdt = JSON.parse(before);
+  const afterSfdt = JSON.parse(editor.serialize());
+  delete beforeSfdt.trackChanges;
+  delete beforeSfdt.tc;
+  delete afterSfdt.trackChanges;
+  delete afterSfdt.tc;
+  expect(afterSfdt).toEqual(beforeSfdt);
+}
+
 // An empty paragraph carries NO inline, which is what a real document holds. A
 // degenerate `{ text: '' }` inline survives `open()` but SFDT normalizes it away
 // on the next write, so a fixture built that way fails a byte-for-byte reject
@@ -1404,7 +1418,7 @@ describe('relocation refusals: each names what to do instead', () => {
       });
       expect(result.results[0].message).toContain('Dana Reviewer');
       // Their change is still there, and untouched.
-      expect(editor.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(editor, before);
       expect(editor.revisions.length).toBe(pendingRevisions);
     } finally {
       destroyEditor(editor);

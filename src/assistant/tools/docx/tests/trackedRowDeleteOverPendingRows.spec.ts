@@ -92,6 +92,20 @@ function destroyEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+function expectDocumentContentUnchangedAndTrackingOff(
+  editor: DocumentEditor,
+  before: string
+): void {
+  expect(editor.enableTrackChanges).toBe(false);
+  const beforeSfdt = JSON.parse(before);
+  const afterSfdt = JSON.parse(editor.serialize());
+  delete beforeSfdt.trackChanges;
+  delete beforeSfdt.tc;
+  delete afterSfdt.trackChanges;
+  delete afterSfdt.tc;
+  expect(afterSfdt).toEqual(beforeSfdt);
+}
+
 const para = (text: string) => ({ inlines: text ? [{ text }] : [] });
 
 const cell = (text: string) => ({
@@ -389,7 +403,7 @@ describe('what the relaxation did NOT loosen', () => {
       expect(result.message).toContain('changed nothing');
       expect(result.message).toContain('table_facts');
       expect(result.message).not.toContain('SyncFusion did not create');
-      expect(editor.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(editor, before);
     } finally {
       destroyEditor(editor);
     }
@@ -409,7 +423,7 @@ describe('what the relaxation did NOT loosen', () => {
 
       expect(result).toMatchObject({ ok: false, error: 'row_not_found' });
       expect(result.message).toContain('99');
-      expect(editor.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(editor, before);
       expect(editor.revisions.length).toBe(0);
     } finally {
       destroyEditor(editor);
@@ -519,6 +533,7 @@ const withHumanRow = (): DocumentEditor => {
   editor.selection.select('0;2;2;0;0;0', '0;2;2;0;0;0');
   (editor.editor as any).insertRow(false, 1);
   editor.currentUser = 'Robin';
+  editor.enableTrackChanges = false;
   return editor;
 };
 

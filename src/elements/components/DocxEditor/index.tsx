@@ -3,7 +3,7 @@ import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import TrackedChangeGroups from './TrackedChangeGroups';
-import { useDocxEditor } from './useDocxEditor';
+import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
 import { DocxSource } from './types';
 
 export interface DocxEditorProps {
@@ -51,6 +51,9 @@ export interface DocxEditorProps {
   /** Persistence boundary: receives the exported .docx. The host decides where
    *  it goes (the component never persists on its own). */
   onSave?: (blob: Blob) => unknown | Promise<unknown>;
+  /** Opt-in document bindings: [[...]] tokens become live fields and formulas
+   *  that recalculate as the document is edited. Omitting it changes nothing. */
+  bindings?: DocxBindingsConfig;
 }
 
 const overlay = {
@@ -143,7 +146,8 @@ function DocxEditor({
   onEditorReady,
   onChange,
   onError,
-  onSave
+  onSave,
+  bindings
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
   const [dirty, setDirty] = useState(false);
@@ -154,7 +158,14 @@ function DocxEditor({
   // tracked change (which re-shows the panel).
   const [changesPanelHidden, setChangesPanelHidden] = useState(false);
 
-  const { containerRef, editor, loading, error, exportDoc } = useDocxEditor({
+  const {
+    containerRef,
+    editor,
+    loading,
+    error,
+    exportDoc,
+    bindings: bindingsState
+  } = useDocxEditor({
     source,
     licenseKey,
     serviceUrl,
@@ -171,8 +182,31 @@ function DocxEditor({
         onChange?.(true);
       }
     },
-    onError
+    onError,
+    bindings
   });
+
+  /**
+   * Reconcile anything uncommitted before bytes leave the editor, and refuse to
+   * export a document the engine considers wrong - an invalid number or an
+   * ambiguous edit would otherwise be persisted as if it were fine. Reported
+   * through onError so the host surfaces it the same way it surfaces every other
+   * editor failure.
+   */
+  const readyToExport = (): boolean => {
+    if (!bindingsState.ready) return true;
+    if (bindingsState.commitForSave()) return true;
+    const detail = bindingsState.diagnostics
+      .filter((entry) => entry.severity === 'error')
+      .map((entry) => entry.message);
+    console.error('Feathery: document has unresolved binding errors', detail);
+    onError?.(
+      detail.length
+        ? `This document cannot be saved yet: ${detail[0]}`
+        : 'This document cannot be saved yet.'
+    );
+    return false;
+  };
 
   // Which editor instance the rail is showing. Derived, not state: a recreation
   // must remount the rail's boundary in the same render that swaps the editor.
@@ -215,6 +249,7 @@ function DocxEditor({
   };
 
   const handleSave = async () => {
+    if (!readyToExport()) return;
     try {
       await saveCurrentDocument(await exportDoc());
     } catch (err) {
@@ -223,6 +258,7 @@ function DocxEditor({
   };
 
   const handleDownload = async () => {
+    if (!readyToExport()) return;
     try {
       // Write the current edits to the envelope BEFORE downloading, then hand
       // back the exact bytes we exported — never a re-fetched (and possibly
@@ -237,6 +273,7 @@ function DocxEditor({
 
   const handleDownloadPdf = async () => {
     if (!onExportPdf) return;
+    if (!readyToExport()) return;
     setExportingPdf(true);
     try {
       // The host converts the SAVED document, so persist current edits first —
@@ -256,6 +293,10 @@ function DocxEditor({
   const saveThenRun = async (
     run: (blob: Blob, saveResult?: unknown) => void | Promise<void>
   ) => {
+    // Gated here rather than per-handler: this is the single funnel every
+    // terminal action goes through, so a document the binding engine considers
+    // invalid cannot be signed, sent or downloaded from any of them.
+    if (!readyToExport()) return;
     setTerminalRunning(true);
     try {
       const blob = await exportDoc();
@@ -290,6 +331,7 @@ function DocxEditor({
   // PDF variant of the 'download' terminal action — same save-first flow,
   // then the host-converted PDF bytes.
   const handleTerminalActionPdf = async () => {
+    if (!readyToExport()) return;
     setTerminalRunning(true);
     try {
       await handleDownloadPdf();
