@@ -26,8 +26,8 @@ describe('init', () => {
     const numberField = (key: string, metadata: any) => ({
       servar: { key, type: 'integer_field', format: 'currency', metadata }
     });
-    const schema = (servar_fields: any[]) => ({
-      steps: { s1: { servar_fields } }
+    const schema = (fields: any[]) => ({
+      steps: { s1: { servar_fields: fields } }
     });
 
     beforeEach(() => {
