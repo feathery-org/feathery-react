@@ -289,7 +289,7 @@ function DataMappingModal({
           .dataHubAction({
             hubId: hub.id,
             operation: 'get',
-            verificationStatus: 'unverified',
+            verification: 'unverified',
             where: idFieldKey
               ? [{ fieldId: idFieldKey, value: initInfo().userId }]
               : undefined
@@ -544,7 +544,7 @@ function DataMappingModal({
         await client.dataHubAction({
           hubId: hub.id,
           operation: 'create',
-          verificationStatus: 'unverified',
+          verification: 'unverified',
           // Unverified creates reuse `data` as the list of rows.
           data: rows,
           idFieldId: idFieldByHub[hub.id]

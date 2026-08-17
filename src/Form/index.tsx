@@ -167,7 +167,7 @@ import {
   ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
   ACTION_OAUTH_LOGIN,
-  ACTION_OPEN_DATA_MAPPING,
+  ACTION_START_DATA_MAPPING,
   ACTION_PURCHASE_PRODUCTS,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
@@ -3443,7 +3443,7 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
-      } else if (type === ACTION_OPEN_DATA_MAPPING) {
+      } else if (type === ACTION_START_DATA_MAPPING) {
         setDataMappingState({ show: true, hubs: action.mapping_hubs ?? [] });
       }
     }
