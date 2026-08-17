@@ -411,6 +411,11 @@ function PhoneField({
                 ).length;
 
                 setRawNumber(onlyDigits);
+                // Commit valid numbers immediately (same check as the form
+                // validator) so a stale "invalid phone" error clears while
+                // typing instead of waiting for blur
+                if (LPN.isValidPhoneNumber(`+${onlyDigits}`))
+                  handleOnComplete(onlyDigits);
                 const diff =
                   LPN.parseDigits(newFormatted, curCountryCode).length -
                   LPN.parseDigits(formattedNumber, curCountryCode).length;

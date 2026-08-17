@@ -2,12 +2,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
+  disableUserTrackChanges,
   findReplaceCounterpart,
   installRevisionGroupIsolation,
-  preserveDocumentViewDuring
+  preserveDocumentViewDuring,
+  registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
 import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
+import { stampMissingContentControlColors } from './contentControlSafety';
+import { installDocumentTailInvariant } from './documentTailInvariant';
 import { DocxSource } from './types';
+import {
+  DocxBindingsState,
+  useDocxBindings,
+  UseDocxBindingsOptions
+} from './bindings/useDocxBindings';
 
 // Replaced by Rollup/Webpack from SYNCFUSION_LICENSE_KEY at package build
 // time. The typeof guard keeps source-level test/dev transforms safe when they
@@ -91,6 +100,37 @@ const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
 /** True while a source document is being opened/reopened on this editor. */
 export function isOpeningDocument(ed: any): boolean {
   return !!ed?.[OPENING_DOCUMENT_KEY];
+}
+
+// A conversion that never completes must not strand the editor in `loading`.
+const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
+
+/**
+ * Resolves when Syncfusion finishes laying the document out. `documentChange`
+ * fires exactly once per open, after open()/openAsync() has already resolved,
+ * and is the only signal that the document is really on screen.
+ */
+function waitForDocumentLoad(ed: any): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        ed.removeEventListener?.('documentChange', finish);
+      } catch {
+        /* instance already torn down */
+      }
+      resolve();
+    };
+    try {
+      ed.addEventListener?.('documentChange', finish);
+    } catch {
+      finish();
+      return;
+    }
+    setTimeout(finish, DOCUMENT_LOAD_TIMEOUT_MS);
+  });
 }
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
@@ -459,6 +499,9 @@ export function installRevisionHighlightRendering(ed: any) {
 export function configureTrackedChangeReview(ed: any, enabled: boolean): void {
   if (!enabled) return;
   ed.showRevisions = false;
+  // Assist is the only author that may turn tracking on, and only inside a
+  // synchronous write batch. User typing in a review host starts untracked.
+  disableUserTrackChanges(ed);
   if (ed.commentReviewPane) ed.commentReviewPane.isUserClosed = true;
   installRevisionGroupIsolation(ed);
   installRevisionHighlightRendering(ed);
@@ -643,6 +686,11 @@ function waitForEj(timeoutMs = 15000): Promise<any> {
   });
 }
 
+export interface DocxBindingsConfig
+  extends Omit<UseDocxBindingsOptions, 'editor' | 'loading' | 'readOnly'> {
+  enabled?: boolean;
+}
+
 interface Props {
   source?: DocxSource;
   licenseKey?: string;
@@ -660,6 +708,12 @@ interface Props {
   onEditorReady?: (editor: any) => void;
   onDirty?: () => void;
   onError?: (error: string) => void;
+  /**
+   * Opt-in document bindings: [[...]] tokens become live fields and formulas that
+   * recalculate as the document is edited. Absent or disabled means not one line
+   * of binding code runs, and the editor behaves exactly as it always has.
+   */
+  bindings?: DocxBindingsConfig;
 }
 
 interface Result {
@@ -669,6 +723,7 @@ interface Result {
   error: string | null;
   exportDoc: () => Promise<Blob>;
   resize: () => void;
+  bindings: DocxBindingsState;
 }
 
 // Loads Syncfusion from the CDN at runtime and mounts the DocumentEditorContainer
@@ -685,7 +740,8 @@ export function useDocxEditor({
   onReady,
   onEditorReady,
   onDirty,
-  onError
+  onError,
+  bindings
 }: Props): Result {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerInstRef = useRef<any>(null);
@@ -699,6 +755,7 @@ export function useDocxEditor({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isReadOnly = !!readOnly;
+  const bindingsEnabled = !!bindings?.enabled;
 
   const fail = useCallback(
     (err: unknown) => {
@@ -724,6 +781,8 @@ export function useDocxEditor({
   // object". Hold a gate flip until the load settles (`loading` covers both
   // the create and the open; an open failure also settles it via fail()).
   const [reviewGate, setReviewGate] = useState(reviewChanges);
+  const reviewGateRef = useRef(reviewGate);
+  reviewGateRef.current = reviewGate;
   useEffect(() => {
     if (reviewChanges !== reviewGate && !loading) setReviewGate(reviewChanges);
   }, [reviewChanges, reviewGate, loading]);
@@ -782,7 +841,15 @@ export function useDocxEditor({
           showPropertiesPane: false,
           serviceUrl: serviceUrl || '',
           headers: headers || [],
-          height: '100%'
+          height: '100%',
+          // Syncfusion minifies serialized SFDT by default, renaming every key
+          // the binding engine reads - a bound document would come back looking
+          // like it had no bindings at all. Construction is the only place this
+          // reliably takes effect, and it is scoped to bound editors so nothing
+          // else pays for the larger payload.
+          ...(bindingsEnabled
+            ? { documentEditorSettings: { optimizeSfdt: false } }
+            : {})
         });
         // Wait until Syncfusion finishes creating the inner DocumentEditor —
         // opening a doc before `created` leaves a blank default document.
@@ -804,6 +871,17 @@ export function useDocxEditor({
         if (!ed) {
           throw new Error('Document editor instance missing after create');
         }
+        // Assistant batches operate on the inner editor, but SyncFusion also
+        // caches track-changes on this wrapping container. Keep that ownership
+        // relationship available at the common batch boundary so both flags
+        // can always return to user-editing mode together.
+        registerWrappingDocumentEditorContainer(ed, instance);
+        installDocumentTailInvariant(
+          ed,
+          ej.documenteditor.HelperMethods?.getSfdtDocument?.bind(
+            ej.documenteditor.HelperMethods
+          )
+        );
         // SyncFusion rebuilds its page DOM after a tracked edit. Chromium's
         // generic scroll anchoring then treats that controlled relayout as
         // newly inserted page content and adjusts scrollTop a frame after the
@@ -825,6 +903,7 @@ export function useDocxEditor({
         ed.enableContextMenu = true;
         try {
           configureTrackedChangeReview(ed, reviewGate);
+          if (reviewGate) disableUserTrackChanges(ed, instance);
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
@@ -852,6 +931,7 @@ export function useDocxEditor({
               // A blank document is the fallback, as it was before the carry.
             }
           }
+          if (reviewGate) disableUserTrackChanges(ed, instance);
           openedKeyRef.current = openKeyRef.current;
           ignoreContentChangeRef.current = false;
           setLoading(false);
@@ -889,7 +969,9 @@ export function useDocxEditor({
     // handled by sibling effects so we never tear down mid-fetch.
     // `reviewGate` (not `reviewChanges`) so a gate flip waits out any
     // in-flight load before recreating - see its declaration above.
-  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewGate]);
+    // `bindingsEnabled` because the SFDT verbosity it needs is a construction
+    // option; toggling it has to build a new instance to take effect.
+  }, [resolvedLicenseKey, serviceUrl, headersKey, reviewGate, bindingsEnabled]);
 
   // Apply read-only in place; do not recreate the editor.
   useEffect(() => {
@@ -958,6 +1040,10 @@ export function useDocxEditor({
         });
         const liveEditor = containerInstRef.current?.documentEditor ?? editor;
         liveEditor[OPENING_DOCUMENT_KEY] = true;
+        // open() resolves before the converted document is laid out, so anything
+        // reading the document here sees the previous (often blank) one.
+        // Registered before the open so a fast load cannot outrun the listener.
+        const documentLoaded = waitForDocumentLoad(liveEditor);
         try {
           if (typeof liveEditor.openAsync === 'function') {
             await liveEditor.openAsync(blob);
@@ -974,6 +1060,22 @@ export function useDocxEditor({
           liveEditor[OPENING_DOCUMENT_KEY] = false;
           return;
         }
+        await documentLoaded;
+        if (cancelled) {
+          liveEditor[OPENING_DOCUMENT_KEY] = false;
+          return;
+        }
+        // A .docx round trip drops every content control's colour, and the
+        // border renderer reads it unguarded - so without this, clicking any
+        // content control throws mid-paint and half the page disappears. Runs
+        // for every document, not just bound ones: a template authored in Word
+        // hits it too. See contentControlSafety.
+        stampMissingContentControlColors(liveEditor);
+        // Opening SFDT can copy trackChanges=true onto the editor (and the
+        // container, via documentChange). Put the review host back in user
+        // mode before keystrokes can land.
+        if (reviewGateRef.current)
+          disableUserTrackChanges(liveEditor, containerInstRef.current);
         openedKeyRef.current = openKey;
         // A freshly opened document has nothing unsaved in it yet.
         unsavedRef.current = false;
@@ -995,6 +1097,24 @@ export function useDocxEditor({
       ignoreContentChangeRef.current = true;
     };
   }, [editor, sourceUrl, sourceBuffer, serviceUrl, openNonce]);
+
+  // Bindings attach only once a document is actually open, and never to a
+  // read-only one: reconciliation writes to the document, and a finalized or
+  // signed envelope is not ours to rewrite.
+  const bindingsState = useDocxBindings({
+    ...bindings,
+    enabled: bindingsEnabled,
+    editor,
+    loading,
+    readOnly: isReadOnly,
+    // Engine writes echo back as contentChange. The initial reconcile is the one
+    // that must not count as the user dirtying anything - computing a template's
+    // formulas is the editor doing its job, not an edit.
+    onSuppressContentChange: (suppressed) => {
+      ignoreContentChangeRef.current = suppressed;
+    }
+  });
+
   const exportDoc = useCallback((): Promise<Blob> => {
     if (!editor) return Promise.reject(new Error('Editor is not ready'));
     return editor.saveAsBlob('Docx');
@@ -1051,5 +1171,13 @@ export function useDocxEditor({
     };
   }, [editor, resizeEditor]);
 
-  return { containerRef, editor, loading, error, exportDoc, resize };
+  return {
+    containerRef,
+    editor,
+    loading,
+    error,
+    exportDoc,
+    resize,
+    bindings: bindingsState
+  };
 }

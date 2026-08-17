@@ -466,4 +466,96 @@ describe('ImageElement', () => {
     const img = screen.getByRole('img');
     expect(img).toHaveAttribute('src', expect.stringContaining(sourceImg));
   });
+
+  // ALT TEXT
+  describe('alt text', () => {
+    const sourceImg = 'https://example.com/image.png';
+
+    async function renderWithProperties(properties: any) {
+      const ImageElement = (await import('../ImageElement')).default;
+      const { container } = render(
+        <ImageElement
+          element={{
+            properties: {
+              uploaded_image_file_field_key: '',
+              source_image: sourceImg,
+              ...properties
+            },
+            repeat: 0
+          }}
+          responsiveStyles={mockResponsiveStyles}
+        />
+      );
+      return container.querySelector('img') as HTMLImageElement;
+    }
+
+    it('renders alt_text as the alt attribute', async () => {
+      const img = await renderWithProperties({ alt_text: 'A team photo' });
+
+      expect(img).toHaveAttribute('alt', 'A team photo');
+      expect(img).not.toHaveAttribute('aria-label');
+    });
+
+    it('falls back to the legacy aria_label when alt_text is unset', async () => {
+      const img = await renderWithProperties({ aria_label: 'A team photo' });
+
+      expect(img).toHaveAttribute('alt', 'A team photo');
+      expect(img).not.toHaveAttribute('aria-label');
+    });
+
+    it('falls back to the legacy aria_label when alt_text is blank', async () => {
+      const img = await renderWithProperties({
+        alt_text: '',
+        aria_label: 'A team photo'
+      });
+
+      expect(img).toHaveAttribute('alt', 'A team photo');
+    });
+
+    it('prefers alt_text over the legacy aria_label', async () => {
+      const img = await renderWithProperties({
+        alt_text: 'A team photo',
+        aria_label: 'Stale label'
+      });
+
+      expect(img).toHaveAttribute('alt', 'A team photo');
+    });
+
+    it('renders an empty alt for a decorative image', async () => {
+      const img = await renderWithProperties({});
+
+      expect(img).toHaveAttribute('alt', '');
+      expect(img).not.toHaveAttribute('aria-label');
+    });
+
+    it('labels a pdf embed with aria-label instead of alt', async () => {
+      const pdfKey = {
+        type: 'application/pdf',
+        url: 'https://example.com/doc.pdf'
+      };
+      fieldValues.pdfKey = pdfKey;
+      (getRenderData as jest.Mock).mockResolvedValue(pdfKey);
+
+      const ImageElement = (await import('../ImageElement')).default;
+
+      const { container } = render(
+        <ImageElement
+          element={{
+            properties: {
+              uploaded_image_file_field_key: 'pdfKey',
+              alt_text: 'Signed agreement'
+            },
+            repeat: 0
+          }}
+          responsiveStyles={mockResponsiveStyles}
+        />
+      );
+
+      await waitFor(() => {
+        const embed = container.querySelector('embed') as HTMLElement;
+        expect(embed).toHaveAttribute('aria-label', 'Signed agreement');
+        expect(embed).not.toHaveAttribute('alt');
+      });
+    });
+  });
 });

@@ -225,7 +225,7 @@ const withEditor = (
 ) => {
   const ed = makeRealDocumentEditor(sfdt);
   try {
-    ed.enableTrackChanges = true;
+    ed.enableTrackChanges = false;
     run(ed);
   } finally {
     const host = ed.element;

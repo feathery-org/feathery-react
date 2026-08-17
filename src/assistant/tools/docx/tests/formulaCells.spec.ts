@@ -80,6 +80,20 @@ function destroyRealDocumentEditor(editor: DocumentEditor): void {
   element?.remove();
 }
 
+function expectDocumentContentUnchangedAndTrackingOff(
+  editor: DocumentEditor,
+  before: string
+): void {
+  expect(editor.enableTrackChanges).toBe(false);
+  const beforeSfdt = JSON.parse(before);
+  const afterSfdt = JSON.parse(editor.serialize());
+  delete beforeSfdt.trackChanges;
+  delete beforeSfdt.tc;
+  delete afterSfdt.trackChanges;
+  delete afterSfdt.tc;
+  expect(afterSfdt).toEqual(beforeSfdt);
+}
+
 function rejectEveryRealRevision(editor: DocumentEditor): void {
   const revisions = Array.from({ length: editor.revisions.length }, (_, i) =>
     editor.revisions.get(i)
@@ -152,7 +166,7 @@ describe("the captain's case: 13% tax, then re-total", () => {
   it('real SDK: one change set multiplies a premium by 1.13 and re-totals the column that now contains it; both values engine-computed, both cells keep $x,xxx.xx, and the whole set rejects byte-for-byte', () => {
     const ed = makeRealDocumentEditor(proposalSfdt());
     try {
-      ed.enableTrackChanges = true;
+      ed.enableTrackChanges = false;
       const before = ed.serialize();
 
       // The user's premium edit landed first (dictated verbatim, so it takes
@@ -336,7 +350,7 @@ describe("the captain's case: 13% tax, then re-total", () => {
         'target decimals: 2'
       );
       expect(ed.revisions.length).toBe(0);
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -387,7 +401,7 @@ describe('chaining inside one change set', () => {
     }
   });
 
-  it('real SDK: a chained set that fails at the second op leaves the document byte-identical', () => {
+  it('real SDK: a chained set that fails at the second op restores content and turns tracking off', () => {
     const ed = makeRealDocumentEditor(proposalSfdt());
     try {
       ed.enableTrackChanges = true;
@@ -413,7 +427,7 @@ describe('chaining inside one change set', () => {
       // The first op is rolled back into the same failed change set.
       expect(result.results[0]).toMatchObject({ error: 'change_set_failed' });
       expect(result.changeSet).toMatchObject({ status: 'failed' });
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -510,7 +524,7 @@ describe('self-reference and circularity', () => {
       });
       expect(result.results[0].details?.join(' ') ?? '').not.toContain('NaN');
       expect(ed.revisions.length).toBe(0);
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -640,7 +654,7 @@ describe('refusals through the real route write nothing', () => {
   ];
 
   it.each(refusals)(
-    'real SDK: %s is refused (%#) and the document stays byte-identical',
+    'real SDK: %s is refused (%#), content stays unchanged, and tracking turns off',
     (_name, extra, expectedError) => {
       const ed = makeRealDocumentEditor(proposalSfdt());
       try {
@@ -657,7 +671,7 @@ describe('refusals through the real route write nothing', () => {
         });
         expect(result.results[0].formula).toBeUndefined();
         expect(ed.revisions.length).toBe(0);
-        expect(ed.serialize()).toBe(before);
+        expectDocumentContentUnchangedAndTrackingOff(ed, before);
       } finally {
         destroyRealDocumentEditor(ed);
       }
@@ -706,7 +720,7 @@ describe('the engine refuses a model-authored number', () => {
       expect(result.results[0].details?.join(' ')).toContain('0;1;4;2;0');
       const message = JSON.stringify(result.results[0]);
       expect(ed.revisions.length).toBe(0);
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
       expect(message).toContain('0;1;4;2;0');
     } finally {
       destroyRealDocumentEditor(ed);
@@ -753,7 +767,7 @@ describe('the engine refuses a model-authored number', () => {
         error: 'model_authored_number'
       });
       expect(ed.revisions.length).toBe(0);
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }
@@ -779,7 +793,7 @@ describe('the engine refuses a model-authored number', () => {
         error: 'model_authored_number'
       });
       expect(result.changeSet).toMatchObject({ status: 'failed' });
-      expect(ed.serialize()).toBe(before);
+      expectDocumentContentUnchangedAndTrackingOff(ed, before);
     } finally {
       destroyRealDocumentEditor(ed);
     }

@@ -620,6 +620,45 @@ export function parseRevisionGroupTag(
   return undefined;
 }
 
+/**
+ * User typing is never tracked. Assist turns SyncFusion's global
+ * `enableTrackChanges` on only inside a synchronous `applyDocumentEdits`
+ * batch; this is the steady state the host starts from and the batch must
+ * leave behind. Pass the wrapping DocumentEditorContainer when you have it:
+ * its flag can drift from the inner editor on `documentChange` and would
+ * otherwise push tracking back on.
+ */
+export function disableUserTrackChanges(
+  // Only the track-changes flag is touched, so accept any editor-like carrying
+  // it (LiveEditor satisfies this, as does the SyncfusionEditorLike used by the
+  // keystroke guard).
+  editor: { enableTrackChanges: boolean },
+  container?: { enableTrackChanges?: boolean } | null
+): void {
+  editor.enableTrackChanges = false;
+  if (container && container !== editor) container.enableTrackChanges = false;
+}
+
+const wrappingDocumentEditorContainers = new WeakMap<
+  object,
+  { enableTrackChanges?: boolean }
+>();
+
+/** Remember the outer SyncFusion container that owns one live editor. */
+export function registerWrappingDocumentEditorContainer(
+  editor: object,
+  container: { enableTrackChanges?: boolean }
+): void {
+  wrappingDocumentEditorContainers.set(editor, container);
+}
+
+/** The outer container whose track-changes flag mirrors this editor's flag. */
+export function wrappingDocumentEditorContainer(
+  editor: object
+): { enableTrackChanges?: boolean } | undefined {
+  return wrappingDocumentEditorContainers.get(editor);
+}
+
 const REVISION_ISOLATION_INSTALLED = '__robinRevisionGroupIsolation';
 
 // The identity half of a tag, memoized by its exact customData string. The

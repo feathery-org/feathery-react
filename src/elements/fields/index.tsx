@@ -682,6 +682,7 @@ Object.entries(Fields).map(([key, Field]: any) => {
             <EditableFieldLabel
               elementId={element.id}
               label={servar.name}
+              focused={props.focused}
               setLabel={labelCallbacks.setLabel}
             />
           ) : (

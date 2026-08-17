@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fieldValues } from '../../utils/init';
 import { getRenderData } from '../../utils/image';
 import { hasIconGlyph, IconGlyph } from '../components/icons/iconGlyph';
+import { getImageAltText } from '../../utils/accessibility';
 
 export const PLACEHOLDER_IMAGE =
   'https://feathery.s3.us-west-1.amazonaws.com/theme-image-preview.png';
@@ -108,6 +109,7 @@ function ImageElement({
       </div>
     );
   }
+  const altText = getImageAltText(element.properties);
 
   return (
     <div
@@ -127,8 +129,7 @@ function ImageElement({
           type='application/pdf'
           width='100%'
           height='100%'
-          alt=''
-          aria-label={element.properties.aria_label}
+          aria-label={altText || undefined}
           src={documentUrl + '#view=FitH'}
           css={{
             border: 'none',
@@ -146,8 +147,7 @@ function ImageElement({
       ) : (
         <img
           src={documentUrl || undefined}
-          alt=''
-          aria-label={element.properties.aria_label}
+          alt={altText}
           css={{
             objectFit: 'contain',
             width: '100%',
