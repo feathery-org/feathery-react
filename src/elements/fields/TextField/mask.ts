@@ -100,6 +100,50 @@ function getCurrencyPrefix(code: string | undefined) {
   }
 }
 
+// Whether a number field renders its format wherever the value is shown
+// outside its own input — today, text variables. Opt-in per field: fields saved
+// before this existed have no key, so they keep interpolating the raw number.
+export function showsFormatInText(servar: any) {
+  return (
+    servar?.type === 'integer_field' &&
+    servar?.metadata?.show_format_in_text === true
+  );
+}
+
+/**
+ * Renders a stored number the way this field's own input mask renders it, for
+ * consumers outside that input. Mirrors getNumberMaskProps: same precision,
+ * grouping, zero-padding, and affixes, so a value never reads one way in the
+ * field and another way in a text variable pointed at it.
+ */
+export function formatNumberValue(servar: any, value: any) {
+  if (value === '' || value === null || value === undefined) return '';
+  const num = Number(value);
+  // Anything non-numeric is passed through rather than rendered as NaN.
+  if (isNaN(num)) return String(value);
+
+  const meta = servar?.metadata ?? {};
+  const scale = getDecimalPlaces(servar);
+  const body = new Intl.NumberFormat('en-US', {
+    useGrouping: meta.thousands_separator !== false,
+    // imask only pads when padFractionalZeros is set; otherwise it shows just
+    // the digits present, which is a floor of 0 fraction digits.
+    minimumFractionDigits: meta.pad_decimals === true ? scale : 0,
+    maximumFractionDigits: scale
+  }).format(num);
+
+  // imask keeps its mask literals outside the number block, so a negative
+  // currency value renders as "$-1,234.56" in the input. Concatenate the same
+  // way rather than using Intl's currency style, which would render
+  // "-$1,234.56" and disagree with the field the value came from.
+  if (servar?.format === 'currency')
+    return `${getCurrencyPrefix(meta.currency)}${body}`;
+  if (servar?.format === 'percentage') return `${body}%`;
+  if (servar?.format === 'custom')
+    return `${meta.prefix ?? ''}${body}${meta.suffix ?? ''}`;
+  return body;
+}
+
 // imask discards the radix character entirely at scale 0, which would rewrite a
 // stored 1234.56 as 123456 and echo that back through onAccept on mount. Snap
 // to the configured precision first so the value only ever rounds.

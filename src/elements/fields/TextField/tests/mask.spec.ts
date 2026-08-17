@@ -1,7 +1,9 @@
 import {
+  formatNumberValue,
   getDecimalPlaces,
   getNumberMaskProps,
-  roundToDecimalPlaces
+  roundToDecimalPlaces,
+  showsFormatInText
 } from '../mask';
 
 const numberServar = (metadata: any = {}, servar: any = {}) => ({
@@ -194,7 +196,10 @@ describe('getNumberMaskProps', () => {
 
   describe('pad_decimals', () => {
     it('pads when enabled', () => {
-      const props = getNumberMaskProps(numberServar({ pad_decimals: true }), '');
+      const props = getNumberMaskProps(
+        numberServar({ pad_decimals: true }),
+        ''
+      );
       expect(props.blocks.num.padFractionalZeros).toBe(true);
     });
 
@@ -245,5 +250,120 @@ describe('getNumberMaskProps', () => {
   it('passes max_length through as the mask max', () => {
     const props = getNumberMaskProps(numberServar({}, { max_length: 100 }), '');
     expect(props.blocks.num.max).toBe(100);
+  });
+});
+
+describe('showsFormatInText', () => {
+  it('is off when the key is absent, so existing fields are untouched', () => {
+    expect(showsFormatInText(numberServar())).toBe(false);
+  });
+
+  it('is on only for an explicit true', () => {
+    expect(showsFormatInText(numberServar({ show_format_in_text: true }))).toBe(
+      true
+    );
+  });
+
+  it.each([[false], ['true'], [1], [null]])(
+    'stays off for a non-boolean %p',
+    (value) => {
+      expect(
+        showsFormatInText(numberServar({ show_format_in_text: value }))
+      ).toBe(false);
+    }
+  );
+
+  it('ignores the flag on a non-number field', () => {
+    expect(
+      showsFormatInText({
+        type: 'text_field',
+        metadata: { show_format_in_text: true }
+      })
+    ).toBe(false);
+  });
+
+  it.each([[null], [undefined], [{}]])('tolerates %p', (servar) => {
+    expect(showsFormatInText(servar)).toBe(false);
+  });
+});
+
+describe('formatNumberValue', () => {
+  it.each([[''], [null], [undefined]])('maps %p to empty string', (value) => {
+    expect(formatNumberValue(numberServar(), value)).toBe('');
+  });
+
+  it('passes non-numeric input through instead of rendering NaN', () => {
+    expect(formatNumberValue(numberServar(), 'abc')).toBe('abc');
+  });
+
+  describe('format', () => {
+    it.each([
+      [{}, '1,234.56'],
+      [{ format: 'currency' }, '$1,234.56'],
+      [{ format: 'percentage' }, '1,234.56%'],
+      [{ format: 'custom' }, '1,234.56']
+    ])('renders %p as %p', (servar, expected) => {
+      expect(formatNumberValue(numberServar({}, servar), 1234.56)).toBe(
+        expected
+      );
+    });
+
+    it('uses the configured currency symbol', () => {
+      expect(
+        formatNumberValue(
+          numberServar({ currency: 'EUR' }, { format: 'currency' }),
+          1234.56
+        )
+      ).toBe('€1,234.56');
+    });
+
+    it('wraps custom affixes unescaped, since nothing parses this as a mask', () => {
+      expect(
+        formatNumberValue(
+          numberServar({ prefix: '~', suffix: ' {kg}' }, { format: 'custom' }),
+          1234.56
+        )
+      ).toBe('~1,234.56 {kg}');
+    });
+
+    it('places a currency symbol before the sign, matching the input mask', () => {
+      // imask keeps mask literals outside the number block, so the field itself
+      // shows "$-1,234.56". Intl's currency style would say "-$1,234.56".
+      expect(
+        formatNumberValue(numberServar({}, { format: 'currency' }), -1234.56)
+      ).toBe('$-1,234.56');
+    });
+  });
+
+  describe('precision', () => {
+    it.each([
+      [0, '1,235'],
+      [1, '1,234.6'],
+      [2, '1,234.56']
+    ])('rounds to %p decimal places', (places, expected) => {
+      expect(
+        formatNumberValue(numberServar({ decimal_places: places }), 1234.56)
+      ).toBe(expected);
+    });
+
+    it('defaults to 2 decimal places when unset', () => {
+      expect(formatNumberValue(numberServar(), 1234.567)).toBe('1,234.57');
+    });
+
+    it('shows only the digits present when padding is off', () => {
+      expect(formatNumberValue(numberServar(), 1234.5)).toBe('1,234.5');
+    });
+
+    it('pads to the full precision when pad_decimals is on', () => {
+      expect(
+        formatNumberValue(numberServar({ pad_decimals: true }), 1234.5)
+      ).toBe('1,234.50');
+    });
+
+    it('drops the separator when thousands_separator is off', () => {
+      expect(
+        formatNumberValue(numberServar({ thousands_separator: false }), 1234.56)
+      ).toBe('1234.56');
+    });
   });
 });

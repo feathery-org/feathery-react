@@ -9,6 +9,7 @@ import {
   initState,
   markStepCompleted,
   registerKnownFieldKeys,
+  registerTextVariableFormats,
   setFieldValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
@@ -484,6 +485,7 @@ export default class FeatheryClient extends IntegrationClient {
       // Documents button action that targets it. Otherwise formSchemas is only
       // populated via init({ preloadForms }), which hosted forms don't use.
       if (res.steps) initState.formSchemas[this.formKey] = res;
+      registerTextVariableFormats(res);
       return res;
     });
   }
