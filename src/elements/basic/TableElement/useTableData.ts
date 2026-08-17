@@ -102,6 +102,9 @@ type UseTableDataProps = {
   };
   editMode?: boolean;
   dataVersion?: number;
+  // When set (Data Hub-backed table), rows come from this map instead of the
+  // global form `fieldValues`.
+  externalFieldValues?: Record<string, any>;
 };
 
 type UseTableDataReturn = {
@@ -144,7 +147,8 @@ type UseTableDataReturn = {
 export function useTableData({
   element,
   editMode = false,
-  dataVersion = 0
+  dataVersion = 0,
+  externalFieldValues
 }: UseTableDataProps): UseTableDataReturn {
   const userColumns: Column[] = element.properties?.columns || [];
   const actions: Action[] = (element.properties?.actions || []).filter(
@@ -182,8 +186,11 @@ export function useTableData({
     if (editMode) {
       return generateExampleData(baseColumns);
     }
+    if (externalFieldValues) {
+      return externalFieldValues;
+    }
     return { ...fieldValues };
-  }, [editMode, baseColumns, dataVersion]);
+  }, [editMode, baseColumns, dataVersion, externalFieldValues]);
 
   const [searchQuery, setSearchQuery] = useState('');
 
