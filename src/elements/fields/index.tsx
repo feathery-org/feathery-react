@@ -1,6 +1,17 @@
 import React, { memo, useMemo } from 'react';
-import { DEFAULT_MIN_SIZE } from '../../Form/grid/StyledContainer/styles';
 import { isFit } from '../../utils/hydration';
+import { isNum } from '../../utils/primitives';
+import {
+  DEFAULT_CHEVRON_GAP,
+  DROPDOWN_CHEVRON_CLEARANCE,
+  DROPDOWN_FIELDS,
+  INNER_PADDING_KEYS,
+  INNER_PADDING_LEFT,
+  INNER_PADDING_RIGHT,
+  INPUT_BOX_FIELDS,
+  MULTISELECT_FIELD,
+  RESET_INLINE_PADDING_CSS
+} from '../styles';
 import {
   LABEL_TEXT_ALIGN_DEFAULT,
   getLabelGapDefault
@@ -254,7 +265,7 @@ function applyLabelFontStyles(styles: any) {
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
-function applyFieldStyles(field: any, styles: any) {
+export function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets(
     'fc',
@@ -318,6 +329,43 @@ function applyFieldStyles(field: any, styles: any) {
     width: `${a}px`
   }));
   styles.applyColor('tooltipIcon', 'font_color', 'fill');
+
+  // Applied before the switch so the per-type rules there still win. Guarded
+  // per side: a side the theme never set is left undeclared, so resetStyles'
+  // own padding stands exactly as authored.
+  if (INPUT_BOX_FIELDS.includes(type)) {
+    styles.apply(
+      'field',
+      INNER_PADDING_KEYS,
+      (a: any, b: any, c: any, d: any) => {
+        // Logical inline sides, so the padding follows the form's direction.
+        const padding: any = {};
+        if (isNum(a)) padding.paddingTop = `${a}px`;
+        if (isNum(b)) padding.paddingInlineEnd = `${b}px`;
+        if (isNum(c)) padding.paddingBottom = `${c}px`;
+        if (isNum(d)) padding.paddingInlineStart = `${d}px`;
+        return padding;
+      }
+    );
+    styles.applyInputBoxAlignment(type);
+    styles.applyInlineIconPlacement(type);
+    if (DROPDOWN_FIELDS.includes(type)) {
+      // The right padding places the chevron, and the value stops a chevron
+      // strip further in -- one value moves both together, so the padding is
+      // exactly the space between the border and the glyph. Unset, the
+      // component's own 30px inset stands: the same 10 + 20 this composes to.
+      styles.apply('field', INNER_PADDING_RIGHT, (a: any) =>
+        a === undefined
+          ? {}
+          : {
+              paddingInlineEnd: `${
+                (isNum(a) ? Number(a) : DEFAULT_CHEVRON_GAP) +
+                DROPDOWN_CHEVRON_CLEARANCE
+              }px`
+            }
+      );
+    }
+  }
 
   switch (type) {
     case 'signature':
@@ -479,17 +527,12 @@ function applyFieldStyles(field: any, styles: any) {
     case 'gmap_state':
     case 'gmap_country':
     case 'dropdown_multi':
-      if (type === 'dropdown_multi') {
-        // Dropdown multiselect can grow in height as more options are selected
-        styles.apply('sub-fc', ['height', 'height_unit'], (a: any, b: any) => {
-          if (b === '%')
-            return {
-              minHeight: `${DEFAULT_MIN_SIZE}px`,
-              height: '100%'
-            };
-          else return { minHeight: `${a}${b}` };
-        });
+      if (type === MULTISELECT_FIELD) {
+        styles.addTargets('valueContainer');
+        styles.applyMultiselectLayout();
+        styles.applyMultiselectInnerStyles();
       } else styles.applyHeight('sub-fc');
+      styles.applyDropdownChevronPlacement(type);
       styles.applyCorners('sub-fc');
       styles.applyBoxShadow('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
@@ -605,6 +648,14 @@ function applyFieldStyles(field: any, styles: any) {
         // @ts-expect-error TS(7006): Parameter 'a' implicitly has an 'any' type.
         (a, b) => ({ borderRadius: `0 ${a}px ${b}px 0` })
       );
+      // The left padding places the flag (applyPhoneFlagPlacement); the number
+      // keeps the fixed gap it has always had from it, so the theme's value
+      // never reaches the input. Pinned in rem, as resetStyles authors it, and
+      // only once the theme sets the key at all.
+      styles.apply('field', INNER_PADDING_LEFT, (l: any) =>
+        l === undefined ? {} : { paddingInlineStart: RESET_INLINE_PADDING_CSS }
+      );
+      styles.applyPhoneFlagPlacement();
       styles.applyPlaceholderStyles(type, field.styles);
 
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
@@ -647,6 +698,10 @@ function applyFieldStyles(field: any, styles: any) {
         styles.applyPlaceholderStyles(type, field.styles);
       break;
   }
+  // After the switch: applyHeight writes the box's height there, and a
+  // percentage height brings a floor of its own to merge with.
+  if (INPUT_BOX_FIELDS.includes(type) || type === MULTISELECT_FIELD)
+    styles.applyInputBoxMinHeight(type);
   return styles;
 }
 
