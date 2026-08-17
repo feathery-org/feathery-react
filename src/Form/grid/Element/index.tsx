@@ -110,6 +110,7 @@ const Element = ({ node: el, form }: any) => {
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
         assistantClient={assistantClient}
+        client={form.client}
       />
     );
   else if (type === 'tab')
