@@ -84,6 +84,11 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+import type {
+  BindingWireIdentity,
+  BindingWriteAmbiguity,
+  BindingWriteResolution
+} from './bindingWriteContract';
 // Binding engine primitives. Imported rather than re-implemented so a content
 // control this engine did not author is never mistaken for a binding, and bound
 // values use the same parse/render/transaction path as direct editor input.
@@ -227,6 +232,8 @@ export interface DocFormat {
 export interface BindingFact {
   /** The binding's name, i.e. what a formula refers to it by. */
   field: string;
+  /** Explicit wire identity; equal field labels do not imply global scope. */
+  identity: BindingWireIdentity;
   /** `formula` is engine-owned and refuses every write; `input` is editable. */
   kind: 'input' | 'formula';
   /** The expression a formula binding computes, in the engine's vocabulary. */
@@ -898,6 +905,8 @@ export interface EditResult {
   // Keep any mismatch evidence on the affected op so a caller can retry the
   // precise anchor without having to re-inventory the whole document.
   details?: string[];
+  /** Present when a non-global write needs an explicit user choice. */
+  ambiguity?: BindingWriteAmbiguity;
   // 'never' marks a failure no retry can fix (the op is not in the vocabulary),
   // so the assistant stops resending it instead of looping.
   retry?: 'never';
@@ -2083,6 +2092,7 @@ function bindingFactFromTag(
     if (!def || def.kind === 'table') return undefined;
     return {
       field: def.name,
+      identity: { id: def.name, global: def.isGlobal },
       kind: def.kind === 'formula' ? 'formula' : 'input',
       ...(def.kind === 'formula' ? { expr: def.expression } : {}),
       ...(table ? { table } : {}),

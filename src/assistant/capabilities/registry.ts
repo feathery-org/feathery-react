@@ -1,4 +1,5 @@
 // The capabilities registry: one entry per advertised document-edit op.
+import type { BindingWriteResolution } from '../tools/docx/bindingWriteContract';
 //
 // This is the declaration half of the S2 protocol (hilb-refactor-proposal S2):
 // the client tells ai-services what its document engine can actually do,
@@ -18,7 +19,7 @@
 /**
  * Param types use a small fixed language (m5 C3: no arbitrary schema
  * language): `string`, `string[][]`, `int>=0[]`, `number`, `int>0`, `int>=0`, `boolean`,
- * `duplicateRows`, `enum[a,b,...]` - each optionally suffixed `?` when the param may be
+ * `duplicateRows`, `bindingWriteResolution`, `enum[a,b,...]` - each optionally suffixed `?` when the param may be
  * omitted. Cross-op fields (`anchor`, `expect`, `start`, `end`,
  * `inheritFormatFrom`, `changeSetId`, `group`) are reserved keys with one
  * canonical meaning and are not repeated per entry; `requiresAnchor` declares
@@ -325,7 +326,8 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       text: 'string',
       literal: 'boolean?',
       quotedFrom: 'string?',
-      quotedText: 'string?'
+      quotedText: 'string?',
+      bindingResolution: 'bindingWriteResolution?'
     },
     requiresAnchor: true
   },
@@ -762,6 +764,8 @@ type EnumMembers<S extends string> = S extends `${infer Head},${infer Rest}`
 /** One non-optional param-language type to its TypeScript type. */
 type ParamBase<S extends string> = S extends 'string'
   ? string
+  : S extends 'bindingWriteResolution'
+  ? BindingWriteResolution
   : S extends 'sectionSpec'
   ? SectionComposerSpec
   : S extends 'duplicateRows'

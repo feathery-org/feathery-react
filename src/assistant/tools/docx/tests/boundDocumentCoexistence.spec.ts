@@ -90,6 +90,7 @@ describe('reading a bound document', () => {
     );
     expect(quantity.binding).toEqual({
       field: 'quantity',
+      identity: { id: 'quantity', global: false },
       kind: 'input',
       table: 'costs',
       row: 'r-1'
@@ -99,6 +100,7 @@ describe('reading a bound document', () => {
     );
     expect(formula.binding).toEqual({
       field: 'line_total',
+      identity: { id: 'line_total', global: false },
       kind: 'formula',
       expr: 'mul(quantity,unit_cost)',
       table: 'costs',
@@ -129,10 +131,32 @@ describe('reading a bound document', () => {
     expect(facts.table.rows[1].binding).toEqual({ rowId: 'r-1' });
     expect(facts.table.rows[1].cells[1].binding).toEqual({
       field: 'quantity',
+      identity: { id: 'quantity', global: false },
       kind: 'input',
       table: 'costs',
       row: 'r-1'
     });
+  });
+
+  it('marks only an explicit global tag as a global wire identity', () => {
+    const editor = {
+      serialize: () =>
+        JSON.stringify(buildCostsFixture({ globalTaxRate: true })),
+      documentHelper: {}
+    };
+    const inventory: any = getDocumentInventory(editor as any, {
+      scope: 'full'
+    });
+    const taxRates = inventory.inventory.filter(
+      (block: any) => block.binding?.field === 'tax_rate'
+    );
+    expect(taxRates).toHaveLength(2);
+    expect(
+      taxRates.map((block: any) => block.binding.identity)
+    ).toEqual([
+      { id: 'tax_rate', global: true },
+      { id: 'tax_rate', global: true }
+    ]);
   });
 
   it('leaves documents without content controls byte-identical', () => {
