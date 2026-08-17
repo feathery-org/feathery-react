@@ -28,6 +28,7 @@ import { authState } from '../../auth/LoginForm';
 import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import { RequestOptions } from '../offlineRequestHandler';
+import { completeUpload, failUpload, startUpload } from '../fileUploadProgress';
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
@@ -88,6 +89,18 @@ export const updateRegionApiUrls = (region: string) => {
  * The number of milliseconds waited until another submitCustom call
  */
 const SUBMIT_CUSTOM_DEBOUNCE_WINDOW = 1000;
+
+// Display names for the file upload progress toast. Resolved file values are
+// File objects or S3 path strings; signature blobs may have no usable name.
+const getUploadFileNames = (fileValue: any): string[] => {
+  const files = Array.isArray(fileValue) ? fileValue : [fileValue];
+  return files
+    .map((file) => {
+      if (typeof file === 'string') return file.split('/').pop() ?? '';
+      return file?.name ?? '';
+    })
+    .filter(Boolean);
+};
 
 export default class FeatheryClient extends IntegrationClient {
   /**
@@ -300,6 +313,10 @@ export default class FeatheryClient extends IntegrationClient {
 
     fileDeduplicationCount[servar.key] = numFiles;
 
+    // Don't surface field-clearing requests in the upload progress toast
+    if (numFiles > 0)
+      startUpload(this.formKey, servar.key, getUploadFileNames(fileValue));
+
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
     if (this.version) formData.set('__feathery_version', this.version);
@@ -311,6 +328,11 @@ export default class FeatheryClient extends IntegrationClient {
       keepalive: false
     };
 
+    // Only a queued request stays pending in the progress toast — the replay
+    // engine reports its eventual outcome. Every other path has to resolve the
+    // row here, including the auth and conflict failures that resolve with no
+    // response at all.
+    let queuedForReplay = false;
     try {
       // Reset retry attempts for this field before retrying so new submissions get the full budget
       await this.offlineRequestHandler.resetRetryAttemptsByUrl(url, {
@@ -326,10 +348,14 @@ export default class FeatheryClient extends IntegrationClient {
         {
           fieldKey: servar.key,
           preserveStepRequests: true
+        },
+        () => {
+          queuedForReplay = true;
         }
       );
       // Mark as successful upload - will block duplicate attempts
       fileRetryStatus[servar.key] = true;
+      if (!queuedForReplay) completeUpload(this.formKey, servar.key);
       await this.offlineRequestHandler.clearFailedRequestByUrl(url, {
         fieldKey: servar.key
       });
@@ -338,6 +364,7 @@ export default class FeatheryClient extends IntegrationClient {
       // Mark as failed - allows retry on next submission
       fileRetryStatus[servar.key] = false;
       delete fileDeduplicationCount[servar.key];
+      if (!queuedForReplay) failUpload(this.formKey, servar.key);
       throw error;
     }
   }

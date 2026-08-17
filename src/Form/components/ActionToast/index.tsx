@@ -6,6 +6,7 @@ import { DataItem } from './useAIExtractionToast';
 type ActionToastProps = {
   data: DataItem[];
   bottom?: number;
+  title?: string;
 };
 
 const getTitle = (data: DataItem[]): string => {
@@ -28,7 +29,7 @@ const getTitle = (data: DataItem[]): string => {
 };
 
 const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
-  ({ data, bottom = 20 }, ref) => {
+  ({ data, bottom = 20, title }, ref) => {
     const [isToastExpanded, setIsToastExpanded] = useState(true);
 
     if (data.length === 0) return null;
@@ -73,7 +74,7 @@ const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
               fontSize: '16px'
             }}
           >
-            {getTitle(data)}
+            {title ?? getTitle(data)}
           </h3>
           {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
         </div>

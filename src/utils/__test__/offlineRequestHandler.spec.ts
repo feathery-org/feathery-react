@@ -178,6 +178,62 @@ describe('OfflineRequestHandler - Integration Tests', () => {
         )
       ).rejects.toThrow('Failed to fetch');
     });
+
+    // Callers reporting upload progress need queueing signalled explicitly:
+    // a run() that resolves undefined is not the same as one never attempted
+    it('signals onQueued when offline', async () => {
+      Object.defineProperty(global.navigator, 'onLine', {
+        value: false,
+        configurable: true
+      });
+      const onQueued = jest.fn();
+
+      await handler.runOrSaveRequest(
+        jest.fn().mockResolvedValue({ ok: true }),
+        'https://api.example.com/submit',
+        { method: 'POST', headers: {}, body: '{}' },
+        'submit',
+        undefined,
+        undefined,
+        onQueued
+      );
+
+      expect(onQueued).toHaveBeenCalledTimes(1);
+    });
+
+    it('signals onQueued when a network error queues the request', async () => {
+      const onQueued = jest.fn();
+
+      await expect(
+        handler.runOrSaveRequest(
+          jest.fn().mockRejectedValue(new TypeError('Network request failed')),
+          'https://api.example.com/submit',
+          { method: 'POST', headers: {}, body: '{}' },
+          'submit',
+          undefined,
+          undefined,
+          onQueued
+        )
+      ).rejects.toThrow(TypeError);
+
+      expect(onQueued).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not signal onQueued when the request resolves undefined', async () => {
+      const onQueued = jest.fn();
+
+      await handler.runOrSaveRequest(
+        jest.fn().mockResolvedValue(undefined),
+        'https://api.example.com/submit',
+        { method: 'POST', headers: {}, body: '{}' },
+        'submit',
+        undefined,
+        undefined,
+        onQueued
+      );
+
+      expect(onQueued).not.toHaveBeenCalled();
+    });
   });
 
   describe('File upload retry scenario', () => {

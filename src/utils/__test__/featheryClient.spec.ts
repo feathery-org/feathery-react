@@ -1,5 +1,11 @@
 import FeatheryClient, { API_URL, STATIC_URL } from '../featheryClient';
 import { initInfo } from '../init';
+import {
+  _resetFileUploadProgress,
+  getUploadsSnapshot,
+  MIN_UPLOADING_MS,
+  setUploadIndicatorEnabled
+} from '../fileUploadProgress';
 
 /**
  * Tests for FeatheryClient._getFileValue method and resolveFile logic
@@ -527,7 +533,9 @@ jest.mock('../init', () => ({
   initFormsPromise: Promise.resolve(),
   initState: { formSessions: {} },
   fieldValues: {},
-  filePathMap: {}
+  filePathMap: {},
+  fileDeduplicationCount: {},
+  fileRetryStatus: {}
 }));
 
 describe('FeatheryClient - using api helpers', () => {
@@ -797,5 +805,114 @@ describe('FeatheryClient - using api helpers', () => {
         })
       );
     });
+  });
+});
+describe('FeatheryClient - _submitFileData upload progress', () => {
+  const formKey = 'upload-progress-form';
+  let featheryClient: FeatheryClient;
+  let onQueuedArg: (() => void) | undefined;
+  // MIN_UPLOADING_MS is measured with Date.now(), which this jest version's
+  // fake timers don't advance, so drive both clocks together
+  let clock = 0;
+  const settle = () => {
+    clock += MIN_UPLOADING_MS;
+    jest.advanceTimersByTime(MIN_UPLOADING_MS);
+  };
+  const statusOf = (fieldKey: string) =>
+    getUploadsSnapshot().find((entry) => entry.fieldKey === fieldKey)?.status;
+
+  // Stands in for the real handler so the test exercises only the branch that
+  // decides whether an upload is still pending
+  const stubHandler = (run: (onQueued: () => void) => Promise<any>) => {
+    (featheryClient as any).offlineRequestHandler = {
+      resetRetryAttemptsByUrl: jest.fn().mockResolvedValue(undefined),
+      clearFailedRequestByUrl: jest.fn().mockResolvedValue(undefined),
+      runOrSaveRequest: jest.fn(
+        (_run, _url, _options, _type, _stepKey, _metadata, onQueued) => {
+          onQueuedArg = onQueued;
+          return run(onQueued);
+        }
+      )
+    };
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    clock = 0;
+    jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    _resetFileUploadProgress();
+    onQueuedArg = undefined;
+    (initInfo as jest.Mock).mockReturnValue({ sdkKey: 'sdkKey', userId: 'u1' });
+    featheryClient = new FeatheryClient(formKey);
+    setUploadIndicatorEnabled(formKey, true);
+    jest
+      .spyOn(featheryClient as any, '_getFileValue')
+      .mockResolvedValue(new File(['contents'], 'doc.pdf'));
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it('resolves the row when the request runs and returns a response', async () => {
+    stubHandler(async () => ({ status: 200 }));
+
+    await featheryClient._submitFileData({ key: 'ranOk' }, 'step1');
+    settle();
+
+    expect(statusOf('ranOk')).toEqual('complete');
+  });
+
+  it('resolves the row when the request runs but resolves no response', async () => {
+    // _fetch swallows auth and conflict failures into an undefined response.
+    // Nothing replays those, so the row can't be left spinning.
+    stubHandler(async () => undefined);
+
+    await featheryClient._submitFileData({ key: 'noResponse' }, 'step1');
+    settle();
+
+    expect(statusOf('noResponse')).toEqual('complete');
+  });
+
+  it('leaves the row pending when the request is queued for replay', async () => {
+    stubHandler(async (onQueued) => {
+      onQueued();
+      return undefined;
+    });
+
+    await featheryClient._submitFileData({ key: 'queued' }, 'step1');
+    settle();
+
+    expect(onQueuedArg).toEqual(expect.any(Function));
+    expect(statusOf('queued')).toEqual('uploading');
+  });
+
+  it('fails the row when the request throws without being queued', async () => {
+    stubHandler(async () => {
+      throw new Error('boom');
+    });
+
+    await expect(
+      featheryClient._submitFileData({ key: 'threw' }, 'step1')
+    ).rejects.toThrow('boom');
+    settle();
+
+    expect(statusOf('threw')).toEqual('error');
+  });
+
+  it('leaves the row pending when a throwing request was queued for replay', async () => {
+    stubHandler(async (onQueued) => {
+      onQueued();
+      throw new TypeError('offline');
+    });
+
+    await expect(
+      featheryClient._submitFileData({ key: 'queuedThrew' }, 'step1')
+    ).rejects.toThrow('offline');
+    settle();
+
+    expect(statusOf('queuedThrew')).toEqual('uploading');
   });
 });
