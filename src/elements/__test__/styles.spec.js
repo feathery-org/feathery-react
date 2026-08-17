@@ -1,5 +1,9 @@
 import ResponsiveStyles, { DEFAULT_MOBILE_BREAKPOINT } from '../styles';
 import { LABEL_TEXT_ALIGN_DEFAULT } from '../utils/labelStyleResolver';
+import {
+  registerUploadedFonts,
+  resetUploadedFonts
+} from '../../utils/uploadedFonts';
 
 const TEST_COLOR_BACKGROUND = 'dddddd';
 const mockElement = {
@@ -190,6 +194,70 @@ describe('responsiveStyles', () => {
     it('uses an explicit label_text_align over the default', () => {
       const actual = buildFieldLabelTarget({ label_text_align: 'center' });
       expect(actual.textAlign).toBe('center');
+    });
+  });
+
+  describe('transformFontFamilies', () => {
+    const transform = (families) =>
+      new ResponsiveStyles(
+        mockElement,
+        [],
+        false,
+        DEFAULT_MOBILE_BREAKPOINT
+      ).transformFontFamilies(families);
+
+    afterEach(() => resetUploadedFonts());
+
+    it('passes single unspaced families through unquoted', () => {
+      expect(transform('Arial')).toBe('Arial');
+    });
+
+    it('quotes only the spaced family in a stack, not the whole value', () => {
+      expect(transform('My Font, sans-serif')).toBe("'My Font', sans-serif");
+    });
+
+    it('leaves already-quoted families alone, normalizing to single quotes', () => {
+      expect(transform('"Open Sans", serif')).toBe("'Open Sans', serif");
+    });
+
+    it('rewrites a bare uploaded family to its aliased render family', () => {
+      registerUploadedFonts(['Arial']);
+      expect(transform('Arial')).toBe("'Uploaded--Arial'");
+    });
+
+    it('leaves catalog stacks that merely mention a collided name alone', () => {
+      registerUploadedFonts(['Arial']);
+      expect(transform('Arial, sans-serif')).toBe('Arial, sans-serif');
+    });
+
+    it('matches uploaded families case-insensitively, like CSS', () => {
+      registerUploadedFonts(['Arial']);
+      expect(transform('aRIAL')).toBe("'Uploaded--Arial'");
+    });
+
+    it('aliases to the org spelling, which is what got registered', () => {
+      // The form saved `Gelasio`; the org uploaded `gelasio`. CSS matching
+      // ignores case, so the upload owns that name — and the alias has to use
+      // the org's spelling, since that is the family _loadFormPackages
+      // registered the face under.
+      registerUploadedFonts(['gelasio']);
+      expect(transform('Gelasio')).toBe("'Uploaded--gelasio'");
+    });
+
+    it('is idempotent on already-aliased values', () => {
+      registerUploadedFonts(['Arial']);
+      const once = transform('Arial');
+      expect(transform(once)).toBe(once);
+    });
+
+    it('matches an uploaded name containing a comma as a whole value', () => {
+      registerUploadedFonts(['Weird, Name']);
+      expect(transform('Weird, Name')).toBe("'Uploaded--Weird, Name'");
+    });
+
+    it('never aliases names that cannot be safely quoted into CSS', () => {
+      registerUploadedFonts(['Bad"Name']);
+      expect(transform('Bad"Name')).toBe("Bad'Name");
     });
   });
 });

@@ -24,6 +24,7 @@ import { loadGoogleFonts } from '../fonts';
 import { initializeIntegrations } from '../../integrations/utils';
 import { loadLottieLight } from '../../elements/components/Lottie';
 import { downloadAllFileUrls, featheryDoc, featheryWindow } from '../browser';
+import { loadUploadedFonts } from '../uploadedFonts';
 import { authState } from '../../auth/LoginForm';
 import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
@@ -392,23 +393,7 @@ export default class FeatheryClient extends IntegrationClient {
     // Load default fonts
     loadGoogleFonts(res.fonts);
     // Load user-uploaded fonts
-    Object.entries(res.uploaded_fonts).forEach(([family, fontStyles]) => {
-      (fontStyles as any).forEach(({ source, style, weight }: any) => {
-        const loadFont = (url: string) =>
-          new FontFace(family, `url(${url})`, { style, weight })
-            .load()
-            .then((font) => featheryDoc().fonts.add(font));
-        loadFont(source).catch(() => {
-          // Cloudfront might run into CORS issues so fall back to
-          // S3 directly if needed
-          const fallback = new URL(source);
-          fallback.hostname = S3_URL;
-          loadFont(fallback.toString()).catch((e) =>
-            console.warn(`Font load issue: ${e}`)
-          );
-        });
-      });
-    });
+    loadUploadedFonts(res.uploaded_fonts, S3_URL);
     // Load Lottie if form needs animations
     let needLottie = false;
     // Load phone number validator for phone and login fields

@@ -6,6 +6,7 @@ import {
   startsEndsWithQuotes
 } from '../utils/primitives';
 import { isDirectionColumn } from '../utils/styles';
+import { rewriteWholeUploadedFamily } from '../utils/uploadedFonts';
 import { CSSProperties } from 'react';
 
 export const DEFAULT_MOBILE_BREAKPOINT = 478;
@@ -439,6 +440,12 @@ export default class ResponsiveStyles {
   }
 
   transformFontFamilies(families: string) {
+    // A value naming an uploaded font resolves to the aliased family
+    // _loadFormPackages registered it under. Checked on the whole value,
+    // before the comma split — never per segment, so catalog stacks that
+    // merely mention a collided name keep the catalog font.
+    const wholeUploaded = rewriteWholeUploadedFamily(families);
+    if (wholeUploaded !== null) return wholeUploaded;
     families = families.replace(/"/g, "'");
     families = families
       .split(',')
@@ -446,7 +453,7 @@ export default class ResponsiveStyles {
         family = family.trim();
         if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
           // Font families with spaces must be quoted
-          return `'${families}'`;
+          return `'${family}'`;
         }
         return family;
       })
