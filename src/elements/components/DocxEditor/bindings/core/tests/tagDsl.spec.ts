@@ -184,6 +184,7 @@ describe('tag DSL', () => {
       '[[name=a|type=currency:usd:2]]', // lowercase currency
       '[[name=a|del=maybe]]', // bad delete policy
       '[[name=a|global=maybe]]', // bad global scope
+      '[[name=a|global=true|row=r-1]]', // global is document-wide
       '[[name=a|expr=]]', // empty expression
       '[[name=a|expr=sum(x)|del=delete]]', // formulas are always keep
       '[[table=costs|name=a]]', // table takes no other keys

@@ -85,6 +85,7 @@ import {
   writeIsNoOp
 } from './writeNoOp';
 import type {
+  BindingInstanceChoice,
   BindingWireIdentity,
   BindingWriteAmbiguity,
   BindingWriteResolution
@@ -4180,11 +4181,13 @@ class OpError extends Error {
   code: string;
   details?: string[];
   retry?: 'never';
+  ambiguity?: BindingWriteAmbiguity;
   constructor(
     code: string,
     message?: string,
     details?: string[],
-    retry?: 'never'
+    retry?: 'never',
+    ambiguity?: BindingWriteAmbiguity
   ) {
     super(message ?? code);
     // The shipped ES5 emit runs `Error.call(this, message) || this`, and
@@ -4196,6 +4199,7 @@ class OpError extends Error {
     this.code = code;
     this.details = details;
     this.retry = retry;
+    this.ambiguity = ambiguity;
   }
 }
 
@@ -11601,6 +11605,7 @@ interface BindingTableRoute {
 
 interface BindingRuntime {
   surface: BindingCommandSurface;
+  sfdt: any;
   index: BindingIndex;
   occurrencesByTag: Map<string, Occurrence[]>;
   tablesByAnchor: Map<string, BindingTableRoute>;
@@ -11629,6 +11634,11 @@ interface EngineMutationPlan {
    * all-or-nothing engine transaction runs.
    */
   literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
+  /** Lets the batch collapse repeated writes to one explicit global identity. */
+  bindingWrite?: {
+    identity: BindingWireIdentity;
+    canonical: string;
+  };
   execute(state: EngineMutationState): EngineMutationOutcome;
 }
 
@@ -11781,7 +11791,7 @@ function bindingRuntime(editor: LiveEditor, sfdt: any): BindingRuntime | null {
       table
     });
   }
-  return { surface, index, occurrencesByTag, tablesByAnchor };
+  return { surface, sfdt, index, occurrencesByTag, tablesByAnchor };
 }
 
 function requireBindingRuntime(
@@ -12078,12 +12088,23 @@ function independentDocumentFields(
   index: BindingIndex,
   target: Occurrence
 ): IndependentDocumentField[] {
-  if (target.tableId || target.rowId || target.def.kind !== 'field') return [];
+  if (
+    target.tableId ||
+    target.rowId ||
+    target.def.kind !== 'field' ||
+    target.def.isGlobal
+  )
+    return [];
   const identity = documentFieldIdentity(index, target);
   const fields: IndependentDocumentField[] = [];
   for (const [name, occurrences] of index.fields) {
     const first = occurrences[0];
-    if (!first || documentFieldIdentity(index, first) !== identity) continue;
+    if (
+      !first ||
+      first.def.isGlobal ||
+      documentFieldIdentity(index, first) !== identity
+    )
+      continue;
     const locations = [
       ...new Set(
         occurrences.map((occurrence) => {
@@ -12106,6 +12127,124 @@ function independentFieldDetails(fields: IndependentDocumentField[]): string[] {
   );
 }
 
+function anchorForBindingOccurrence(
+  runtime: BindingRuntime,
+  blocksByTag: Map<string, FlatBlock[]>,
+  occurrence: Occurrence
+): string | undefined {
+  const blocks = blocksByTag.get(occurrence.tag) ?? [];
+  const table = containingBindingTable(runtime.index, occurrence);
+  if (table) {
+    const tableAnchor = [...runtime.tablesByAnchor.values()].find(
+      (route) => route.tableId === table.tableId
+    )?.anchor;
+    return blocks.find((block) => tableAnchorForBlock(block) === tableAnchor)
+      ?.anchor;
+  }
+  const documentOccurrences = (
+    runtime.occurrencesByTag.get(occurrence.tag) ?? []
+  ).filter((candidate) => !containingBindingTable(runtime.index, candidate));
+  const ordinal = documentOccurrences.findIndex(
+    (candidate) => candidate.key === occurrence.key
+  );
+  const documentBlocks = blocks.filter((block) => {
+    const tableAnchor = tableAnchorForBlock(block);
+    return !tableAnchor || !runtime.tablesByAnchor.has(tableAnchor);
+  });
+  return documentBlocks[ordinal]?.anchor;
+}
+
+function bindingInstanceChoice(
+  runtime: BindingRuntime,
+  blocksByTag: Map<string, FlatBlock[]>,
+  field: IndependentDocumentField
+): BindingInstanceChoice {
+  return {
+    instanceId: field.name,
+    identity: { id: field.name, global: false },
+    occurrences: field.occurrences.map((occurrence) => {
+      const table = containingBindingTable(runtime.index, occurrence);
+      const location = table
+        ? `table "${table.tableId}"`
+        : `document path ${occurrence.path.join('/')}`;
+      const anchor = anchorForBindingOccurrence(
+        runtime,
+        blocksByTag,
+        occurrence
+      );
+      if (!anchor)
+        throw new OpError(
+          'binding_occurrence_unaddressable',
+          `Binding occurrence "${field.name}" at ${location} has no writable inventory anchor. Nothing was written.`
+        );
+      return {
+        occurrenceId: `${field.name}@${occurrence.path.join('/')}`,
+        bindingId: field.name,
+        value: occurrence.text,
+        location,
+        anchor,
+        ...(table ? { tableId: table.tableId } : {}),
+        documentPath: occurrence.path.join('/')
+      };
+    })
+  };
+}
+
+function bindingWriteAmbiguity(
+  runtime: BindingRuntime,
+  target: Occurrence,
+  fields: IndependentDocumentField[]
+): BindingWriteAmbiguity {
+  const blocksByTag = new Map<string, FlatBlock[]>();
+  for (const block of flattenSfdt(runtime.sfdt)) {
+    if (!block.boundTag) continue;
+    const bucket = blocksByTag.get(block.boundTag);
+    if (bucket) bucket.push(block);
+    else blocksByTag.set(block.boundTag, [block]);
+  }
+  const instances = fields
+    .map((field) => bindingInstanceChoice(runtime, blocksByTag, field))
+    .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
+  const signature = instances.map((instance) => ({
+    id: instance.instanceId,
+    occurrences: instance.occurrences.map((occurrence) => ({
+      id: occurrence.occurrenceId,
+      value: occurrence.value
+    }))
+  }));
+  return {
+    kind: 'binding_write',
+    ambiguityId: JSON.stringify({
+      field: documentFieldIdentity(runtime.index, target),
+      instances: signature
+    }),
+    field: documentFieldIdentity(runtime.index, target),
+    instanceCount: instances.length,
+    occurrenceCount: instances.reduce(
+      (count, instance) => count + instance.occurrences.length,
+      0
+    ),
+    instances
+  };
+}
+
+function bindingResolutionFrom(op: EditOp): BindingWriteResolution | undefined {
+  const value = op.bindingResolution;
+  if (value === undefined) return undefined;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    typeof value.ambiguityId !== 'string' ||
+    (value.choice !== 'all' && value.choice !== 'one') ||
+    (value.choice === 'one' && typeof value.instanceId !== 'string')
+  )
+    throw new OpError(
+      'binding_resolution_invalid',
+      'bindingResolution must copy the returned ambiguityId and choose either all instances or one returned instanceId. Nothing was written.'
+    );
+  return value as BindingWriteResolution;
+}
+
 function leaveEngineAtAddressableBodySelection(
   editor: LiveEditor,
   blocks: FlatBlock[]
@@ -12125,7 +12264,8 @@ function ambiguousIndependentFieldWrite(
   index: BindingIndex,
   target: Occurrence,
   fields: IndependentDocumentField[],
-  reason: string
+  reason: string,
+  ambiguity: BindingWriteAmbiguity
 ): OpError {
   return new OpError(
     'independent_binding_instances_ambiguous',
@@ -12134,8 +12274,12 @@ function ambiguousIndependentFieldWrite(
       target
     )}", but it resolves to ${
       fields.length
-    } independent binding instances. ${reason} Nothing was written.`,
-    independentFieldDetails(fields)
+    } independent binding instances across ${
+      ambiguity.occurrenceCount
+    } places. ${reason} Ask the user whether to update all instances or one listed instance. Nothing was written.`,
+    independentFieldDetails(fields),
+    undefined,
+    ambiguity
   );
 }
 
@@ -12147,18 +12291,92 @@ function boundInputTextPlan(
   runtime: BindingRuntime
 ): EngineMutationPlan {
   const desired = desiredBoundDisplayText(op, block, occurrence);
+  const sameId = runtime.index.fields.get(occurrence.name) ?? [];
+  if (
+    sameId.some(
+      (candidate) => candidate.def.isGlobal !== occurrence.def.isGlobal
+    )
+  )
+    throw new OpError(
+      'global_binding_identity_conflict',
+      `Binding "${occurrence.name}" mixes global and non-global occurrences. Nothing was written; make every occurrence of one binding id agree on global scope.`,
+      sameId.map(
+        (candidate) =>
+          `${
+            candidate.def.isGlobal ? 'global' : 'non-global'
+          } at document path ${candidate.path.join('/')}`
+      )
+    );
   const independent = independentDocumentFields(runtime.index, occurrence);
-  if (independent.length > 1 && op.op !== 'set_cell_text')
+  const ambiguity =
+    independent.length > 1
+      ? bindingWriteAmbiguity(runtime, occurrence, independent)
+      : undefined;
+  if (ambiguity && op.op !== 'set_cell_text')
     throw ambiguousIndependentFieldWrite(
       op,
       runtime.index,
       occurrence,
       independent,
-      'Only set_cell_text supplies one complete replacement value that can be applied to every instance deterministically.'
+      'Only set_cell_text can carry the explicit user resolution and one complete replacement value.',
+      ambiguity
+    );
+  const resolution = bindingResolutionFrom(op);
+  if (!ambiguity && resolution)
+    throw new OpError(
+      'binding_resolution_stale',
+      'The supplied binding ambiguity no longer exists in the live document. Re-read before writing; nothing was written.'
+    );
+  if (ambiguity && !resolution)
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'No global identity joins them.',
+      ambiguity
+    );
+  if (ambiguity && resolution?.ambiguityId !== ambiguity.ambiguityId)
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'The supplied confirmation is stale and does not match these live instances.',
+      ambiguity
+    );
+  const selectedFields = !ambiguity
+    ? independent
+    : resolution?.choice === 'all'
+    ? independent
+    : independent.filter((field) => field.name === resolution?.instanceId);
+  if (ambiguity && resolution?.choice === 'one' && !selectedFields.length)
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      `The chosen instance id ${JSON.stringify(
+        resolution.instanceId
+      )} is not one of the live choices.`,
+      ambiguity
     );
   if (
-    independent.length > 1 &&
-    independent.some(
+    ambiguity &&
+    resolution?.choice === 'one' &&
+    resolution.instanceId !== occurrence.name
+  )
+    throw new OpError(
+      'binding_resolution_target_mismatch',
+      `The operation targets binding instance "${occurrence.name}", but the user chose "${resolution.instanceId}". Re-send set_cell_text at an occurrence of the chosen instance; nothing was written.`,
+      independentFieldDetails(independent),
+      undefined,
+      ambiguity
+    );
+  if (
+    ambiguity &&
+    resolution?.choice === 'all' &&
+    selectedFields.some(
       (field) =>
         field.occurrences[0]?.def.kind !== 'field' ||
         !field.occurrences[0]?.def.isEditable ||
@@ -12171,15 +12389,29 @@ function boundInputTextPlan(
       runtime.index,
       occurrence,
       independent,
-      'Their types or editability differ, so one value cannot be written safely to all of them.'
+      'The user chose all, but their types or editability differ, so one value cannot be written safely to all of them.',
+      ambiguity
     );
-  const literalNumber = guardBoundNumericReplacement(op, occurrence, desired);
+  const selectedOccurrence = selectedFields[0]?.occurrences[0] ?? occurrence;
+  if (
+    selectedOccurrence.def.kind !== 'field' ||
+    !selectedOccurrence.def.isEditable
+  )
+    throw new OpError(
+      'binding_instance_not_editable',
+      `The selected binding instance "${selectedOccurrence.name}" is not editable. Nothing was written.`
+    );
+  const literalNumber = guardBoundNumericReplacement(
+    op,
+    selectedOccurrence,
+    desired
+  );
   let canonical: string;
   try {
-    canonical = parseDisplay(occurrence.def.fieldType, desired);
+    canonical = parseDisplay(selectedOccurrence.def.fieldType, desired);
   } catch (err) {
     if (isValueError(err))
-      throw bindingValueParseError(op, occurrence, desired, err);
+      throw bindingValueParseError(op, selectedOccurrence, desired, err);
     throw err;
   }
   return {
@@ -12190,6 +12422,10 @@ function boundInputTextPlan(
     ...(literalNumber
       ? { literalNumbers: [{ where: block.anchor, write: literalNumber }] }
       : {}),
+    bindingWrite: {
+      identity: { id: occurrence.name, global: occurrence.def.isGlobal },
+      canonical
+    },
     execute(state) {
       const liveOccurrence =
         state.index.occurrences.find(
@@ -12211,35 +12447,44 @@ function boundInputTextPlan(
           `The binding "${occurrence.name}" could not be found when applying ${op.op}. Nothing was written.`,
           [`binding: ${occurrence.tag}`]
         );
-      let next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
-      if (independent.length > 1) {
-        for (const field of independent) {
-          if (field.name === liveOccurrence.name) continue;
+      let next = state;
+      if (selectedFields.length) {
+        for (const field of selectedFields)
           next = {
             sfdt: setTaggedValue(next.sfdt, field.name, canonical, state.index),
             index: state.index
           };
-        }
+      } else {
+        next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
       }
       const details = [
-        ...(independent.length > 1
+        ...(occurrence.def.isGlobal
           ? [
-              `updated ${
-                independent.length
+              `updated global identity "${occurrence.name}" across ${sameId.length} occurrences`
+            ]
+          : []),
+        ...(ambiguity && resolution?.choice === 'all'
+          ? [
+              `user confirmed all ${
+                selectedFields.length
               } independent instances of field "${documentFieldIdentity(
                 state.index,
                 liveOccurrence
               )}"`,
-              ...independentFieldDetails(independent)
+              ...independentFieldDetails(selectedFields)
             ]
           : []),
-        ...(desired === renderDisplay(liveOccurrence.def.fieldType, canonical)
+        ...(ambiguity && resolution?.choice === 'one'
+          ? [`user confirmed only binding instance "${selectedFields[0].name}"`]
+          : []),
+        ...(desired ===
+        renderDisplay(selectedOccurrence.def.fieldType, canonical)
           ? []
           : [
               `display normalized from ${JSON.stringify(
                 desired
               )} to ${JSON.stringify(
-                renderDisplay(liveOccurrence.def.fieldType, canonical)
+                renderDisplay(selectedOccurrence.def.fieldType, canonical)
               )}`
             ])
       ];
@@ -13276,13 +13521,16 @@ function findReusedUserStatedFigureInPlans(
   }
   for (const plan of enginePlans) {
     for (const { where, write } of plan.literalNumbers ?? []) {
-      const collided = remember(where, write);
+      const logicalWhere = plan.bindingWrite?.identity.global
+        ? `global binding ${plan.bindingWrite.identity.id}`
+        : where;
+      const collided = remember(logicalWhere, write);
       if (!collided) continue;
       return {
         plan,
         error: reusedUserStatedFigureRefusal(
           firstUse.get(collided) as { where: string; text: string },
-          where
+          logicalWhere
         )
       };
     }
@@ -17841,7 +18089,8 @@ function applyDocumentEditsMeasured(
           ? { details: err.details }
           : {}
         : { details: [describeUnexpectedError(err)] }),
-      ...(isOpError(err) && err.retry ? { retry: err.retry } : {})
+      ...(isOpError(err) && err.retry ? { retry: err.retry } : {}),
+      ...(isOpError(err) && err.ambiguity ? { ambiguity: err.ambiguity } : {})
     };
   };
   const rememberGroupRevisions = (op: EditOp, before: LiveRevision[]) => {
@@ -18302,6 +18551,25 @@ function applyDocumentEditsMeasured(
       );
       if (routed) {
         setRoute(index, routed.route);
+        const globalWrite = routed.bindingWrite?.identity.global
+          ? routed.bindingWrite
+          : undefined;
+        const priorGlobalWrite = globalWrite
+          ? enginePlans.find(
+              (plan) =>
+                plan.bindingWrite?.identity.global &&
+                plan.bindingWrite.identity.id === globalWrite.identity.id
+            )?.bindingWrite
+          : undefined;
+        if (
+          globalWrite &&
+          priorGlobalWrite &&
+          priorGlobalWrite.canonical !== globalWrite.canonical
+        )
+          throw new OpError(
+            'global_binding_conflicting_writes',
+            `This change set writes global binding "${globalWrite.identity.id}" to two different values. Nothing was written; send one value for that identity.`
+          );
         enginePlans.push(routed);
         observeMutationGuardBoundary(
           op,
@@ -19076,14 +19344,29 @@ function applyDocumentEditsMeasured(
               sfdt: beforeCommands,
               index: scanBindings(beforeCommands)
             };
+            const appliedGlobalBindings = new Set<string>();
             for (const plan of enginePlans) {
               applyingPlan = plan;
+              const globalId = plan.bindingWrite?.identity.global
+                ? plan.bindingWrite.identity.id
+                : undefined;
+              if (globalId && appliedGlobalBindings.has(globalId)) {
+                outcomes.set(plan.index, {
+                  sfdt: state.sfdt,
+                  anchor: plan.anchor,
+                  details: [
+                    `global identity "${globalId}" was resolved once for this change set`
+                  ]
+                });
+                continue;
+              }
               const outcome = plan.execute(state);
               outcomes.set(plan.index, outcome);
               state = {
                 sfdt: outcome.sfdt,
                 index: scanBindings(outcome.sfdt)
               };
+              if (globalId) appliedGlobalBindings.add(globalId);
             }
             applyingPlan = undefined;
             const engineResult = surface.runCommands(

@@ -7,6 +7,7 @@ import {
   getAt,
   removeLineItem,
   scanBindings,
+  setAt,
   setOccurrenceText
 } from '../sfdtAdapter';
 import { buildCostsFixture } from './fixtures/costsFixture';
@@ -19,9 +20,10 @@ describe('two tables sharing one field', () => {
     const index = scanBindings(buildCostsFixture());
     expect(index.diagnostics).toEqual([]);
     expect([...index.tables.keys()].sort()).toEqual(['costs', 'expenses']);
-    expect(
-      index.tables.get('expenses')!.rows.map((row) => row.rowId)
-    ).toEqual(['e-1', 'e-2']);
+    expect(index.tables.get('expenses')!.rows.map((row) => row.rowId)).toEqual([
+      'e-1',
+      'e-2'
+    ]);
 
     // tax_rate is ONE document-level number with an occurrence in each header.
     const tax = index.fields.get('tax_rate')!;
@@ -36,6 +38,28 @@ describe('two tables sharing one field', () => {
     const combined = index.formulas.get('combined_total')![0].def;
     expect(combined.kind === 'formula' ? combined.expression : null).toBe(
       'sum(grand_total,expenses_total)'
+    );
+  });
+
+  it('diagnoses mixed global scope under one binding id', () => {
+    const sfdt = buildCostsFixture({ globalTaxRate: true });
+    const second = scanBindings(sfdt).fields.get('tax_rate')![1];
+    const control = getAt(sfdt, second.path);
+    const mixed = setAt(sfdt, second.path, {
+      ...control,
+      contentControlProperties: {
+        ...control.contentControlProperties,
+        tag: second.tag.replace('|global=true', '')
+      }
+    });
+
+    expect(scanBindings(mixed).diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'conflicting-definition',
+          message: expect.stringContaining('global scope')
+        })
+      ])
     );
   });
 
@@ -222,7 +246,8 @@ describe('two tables sharing one field', () => {
     const result = applyRules(doc, {});
     expect(
       result.diagnostics.some(
-        (entry) => entry.code === 'row-adopted' && /expenses/.test(entry.message)
+        (entry) =>
+          entry.code === 'row-adopted' && /expenses/.test(entry.message)
       )
     ).toBe(true);
     const rows = result.index.tables.get('expenses')!.rows;

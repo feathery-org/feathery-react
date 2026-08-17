@@ -425,6 +425,8 @@ export function parseTag(tag: unknown): Definition | null {
   }
   if (options.row !== undefined && !ID_RE.test(options.row))
     fail('row id must be [A-Za-z0-9_-]+', tag);
+  if (isGlobal && options.row !== undefined)
+    fail('global bindings cannot be row-scoped', tag);
 
   if (pairs.expr !== undefined) {
     const expression = decodeValue(pairs.expr);
@@ -471,6 +473,8 @@ export function parseTag(tag: unknown): Definition | null {
  */
 export function formatTag(def: Definition): string {
   if (def.kind === 'table') return `[[table=${def.tableId}]]`;
+  if (def.isGlobal && def.options?.row !== undefined)
+    throw new TagError('global bindings cannot be row-scoped');
   const parts = [`name=${def.name}`];
   if (def.kind === 'formula') {
     parts.push(`expr=${encodeValue(def.expression)}`);
