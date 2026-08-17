@@ -1213,7 +1213,7 @@ export default class FeatheryClient extends IntegrationClient {
   }
 
   // Delegates to client-utils so the browser and the server-side lambdas
-  // share one request shape. `create` + verificationStatus 'unverified'
+  // share one request shape. `create` + verification 'unverified'
   // stages `rows` as an import batch; when the button action configures an
   // ID field, the current user's key is the batch value - stamped into that
   // field server-side - so a pending import survives reloads without a
@@ -1223,7 +1223,7 @@ export default class FeatheryClient extends IntegrationClient {
   async dataHubAction(
     options: Omit<HubActionOptions, 'data'> & {
       data?: Record<string, any> | Record<string, any>[];
-      verificationStatus?: 'verified' | 'unverified' | 'all';
+      verification?: 'verified' | 'unverified' | 'all';
       idFieldId?: string;
       idValue?: string;
     }

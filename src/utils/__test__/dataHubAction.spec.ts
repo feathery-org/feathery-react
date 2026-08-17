@@ -21,7 +21,7 @@ describe('FeatheryClient.dataHubAction', () => {
     await client.dataHubAction({
       hubId: 'hub-1',
       operation: 'create',
-      verificationStatus: 'unverified',
+      verification: 'unverified',
       data: [{ name: 'A' }],
       idFieldId: 'field-9'
     });
@@ -30,7 +30,7 @@ describe('FeatheryClient.dataHubAction', () => {
       'sdkKey',
       expect.objectContaining({
         operation: 'create',
-        verificationStatus: 'unverified',
+        verification: 'unverified',
         data: [{ name: 'A' }],
         idFieldId: 'field-9',
         // The current user's key is the batch value.
@@ -45,12 +45,12 @@ describe('FeatheryClient.dataHubAction', () => {
     await client.dataHubAction({
       hubId: 'hub-1',
       operation: 'get',
-      verificationStatus: 'unverified',
+      verification: 'unverified',
       where: [{ fieldId: 'importer', value: userId }]
     });
 
     const options = (apiDataHubAction as jest.Mock).mock.calls[0][1];
-    expect(options.verificationStatus).toBe('unverified');
+    expect(options.verification).toBe('unverified');
     expect(options.idValue).toBeUndefined();
     expect(options.idFieldId).toBeUndefined();
   });
