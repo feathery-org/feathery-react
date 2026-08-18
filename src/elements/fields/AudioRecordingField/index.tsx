@@ -5,6 +5,7 @@ import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { AudioRecordingTranslations, defaultTranslations } from './translation';
 import AudioPlayer from './AudioPlayer';
 import LevelMeter from './LevelMeter';
+import { formatDuration } from './format';
 
 // Ordered by playback compatibility: AAC (.m4a) plays natively everywhere, so
 // it leads when the browser can encode it. Bare audio/mp4 trails the webm
@@ -33,12 +34,6 @@ const RECORDING_COLOR = '#E53935';
 // so a respondent can still read the form while recording.
 const INTERACTIVE_SELECTOR =
   'a, button, input, select, textarea, label, [role="button"], [tabindex]';
-
-const formatDuration = (totalSeconds: number) => {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-};
 
 function AudioRecordingField({
   element,
@@ -106,18 +101,23 @@ function AudioRecordingField({
     };
   }, [rawFile]);
 
-  useEffect(
-    () => () => {
-      discardRef.current = true;
-      if (timerRef.current) clearInterval(timerRef.current);
+  // Mic metering: an AnalyserNode on the recording stream, read per frame by
+  // LevelMeter. Optional — browsers without AudioContext just get no meter.
+  const setupMetering = (win: any, stream: any) => {
+    const AudioContextClass = win.AudioContext || win.webkitAudioContext;
+    if (!AudioContextClass) return;
+    try {
+      const audioCtx = new AudioContextClass();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      audioCtxRef.current = audioCtx;
+      analyserRef.current = analyser;
+      levelBufferRef.current = new Uint8Array(analyser.fftSize);
+    } catch {
       teardownMetering();
-      const recorder = recorderRef.current;
-      if (recorder && recorder.state !== 'inactive') recorder.stop();
-      // Recorder onstop stops the tracks; cover the recorder-less case too
-      else streamRef.current?.getTracks().forEach((track: any) => track.stop());
-    },
-    []
-  );
+    }
+  };
 
   const teardownMetering = () => {
     analyserRef.current = null;
@@ -140,6 +140,19 @@ function AudioRecordingField({
     }
     return Math.sqrt(sum / buffer.length);
   };
+
+  useEffect(
+    () => () => {
+      discardRef.current = true;
+      if (timerRef.current) clearInterval(timerRef.current);
+      teardownMetering();
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      // Recorder onstop stops the tracks; cover the recorder-less case too
+      else streamRef.current?.getTracks().forEach((track: any) => track.stop());
+    },
+    []
+  );
 
   const stopRecording = () => {
     if (timerRef.current) {
@@ -243,22 +256,8 @@ function AudioRecordingField({
     streamRef.current = stream;
     recorderRef.current = recorder;
     chunksRef.current = [];
+    setupMetering(win, stream);
 
-    // Feeds the waveform. Optional: unsupported browsers just get no meter.
-    const AudioContextClass = win.AudioContext || win.webkitAudioContext;
-    if (AudioContextClass) {
-      try {
-        const audioCtx = new AudioContextClass();
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        audioCtx.createMediaStreamSource(stream).connect(analyser);
-        audioCtxRef.current = audioCtx;
-        analyserRef.current = analyser;
-        levelBufferRef.current = new Uint8Array(analyser.fftSize);
-      } catch {
-        teardownMetering();
-      }
-    }
     recorder.ondataavailable = (event: any) => {
       if (event.data && event.data.size > 0) chunksRef.current.push(event.data);
     };

@@ -61,12 +61,16 @@ function LevelMeter({
     let lastSample = 0;
     let peak = 0;
     let frame = 0;
+    // Refreshed per sample tick, not per frame: getComputedStyle forces a
+    // style recalc, and the parent's color rarely changes
+    let color = getComputedStyle(canvas).color;
 
     const draw = (now: number) => {
       frame = requestAnimationFrame(draw);
       peak = Math.max(peak, getLevelRef.current());
       if (now - lastSample >= SAMPLE_INTERVAL_MS) {
         lastSample = now;
+        color = getComputedStyle(canvas).color;
         // Peak-hold with no decay envelope, so speech reads as spiky
         // clusters rather than smooth hills
         levels.copyWithin(0, 1);
@@ -75,7 +79,7 @@ function LevelMeter({
         peak = 0;
       }
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = getComputedStyle(canvas).color;
+      ctx.fillStyle = color;
       for (let i = 0; i < barCount; i++) {
         const barHeight = Math.max(MIN_BAR_HEIGHT, levels[i] * height);
         ctx.fillRect(i * pitch, (height - barHeight) / 2, BAR_WIDTH, barHeight);

@@ -1,14 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { formatDuration } from './format';
 
 // Native <audio controls> can't be themed, renders differently per browser,
 // and collapses its scrubber at field width. This draws the same affordances
 // in `currentColor`, so it inherits the form theme's field font color.
-const formatTime = (seconds: number) => {
-  if (!isFinite(seconds) || seconds < 0) seconds = 0;
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
 
 function AudioPlayer({
   src,
@@ -159,7 +154,7 @@ function AudioPlayer({
           whiteSpace: 'nowrap'
         }}
       >
-        {formatTime(current)} / {formatTime(duration)}
+        {formatDuration(current)} / {formatDuration(duration)}
       </span>
     </div>
   );
