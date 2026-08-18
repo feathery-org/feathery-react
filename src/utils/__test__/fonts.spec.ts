@@ -38,7 +38,7 @@ describe('loadGoogleFonts', () => {
     // Assert
     const [link] = getFontLinks();
     expect(link.href).toEqual(
-      'https://fonts.googleapis.com/css?family=La+Belle+Aurore%7COpen+Sans:400&display=swap'
+      'https://fonts.googleapis.com/css?family=La+Belle+Aurore:400%7COpen+Sans:400&display=swap'
     );
   });
 
@@ -77,12 +77,12 @@ describe('loadGoogleFonts', () => {
   it('skips a family fully covered by a host variable font', () => {
     // Arrange — variable fonts declare a weight range
     (featheryDoc() as any).fonts = new Set([
-      { family: 'Inter', weight: '100 900', style: 'normal' },
-      { family: 'Inter', weight: '100 900', style: 'italic' }
+      { family: 'Karla', weight: '100 900', style: 'normal' },
+      { family: 'Karla', weight: '100 900', style: 'italic' }
     ]);
 
     // Act
-    loadGoogleFonts(['Inter:400,700,400italic']);
+    loadGoogleFonts(['Karla:400,700,400italic']);
 
     // Assert
     expect(getFontLinks()).toHaveLength(0);
@@ -108,13 +108,33 @@ describe('loadGoogleFonts', () => {
 
   it('does not re-request a family it already loaded', () => {
     // Arrange
-    loadGoogleFonts(['Inter:400']);
+    loadGoogleFonts(['Rubik:400']);
 
     // Act
-    loadGoogleFonts(['Inter:400']);
+    loadGoogleFonts(['Rubik:400']);
     loadGoogleFonts([]);
 
     // Assert
     expect(getFontLinks()).toHaveLength(1);
+  });
+
+  it('re-requests a host-covered variant after the host declaration is removed', () => {
+    // Arrange — host declares the font, e.g. via a route-scoped stylesheet
+    (featheryDoc() as any).fonts = new Set([
+      { family: 'Merriweather', weight: '400', style: 'normal' }
+    ]);
+    loadGoogleFonts(['Merriweather:400']);
+    expect(getFontLinks()).toHaveLength(0);
+
+    // Act — SPA route/theme change drops the declaration, form loads again
+    (featheryDoc() as any).fonts = new Set();
+    loadGoogleFonts(['Merriweather:400']);
+
+    // Assert — the skip was not cached; the variant is now requested
+    const [link] = getFontLinks();
+    expect(link.href).toEqual(
+      'https://fonts.googleapis.com/css?family=Merriweather:400&display=swap'
+    );
+    delete (featheryDoc() as any).fonts;
   });
 });

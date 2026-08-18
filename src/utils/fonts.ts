@@ -66,41 +66,34 @@ function parseVariant(variant: string): { weight: string; style: string } {
 }
 
 /**
- * Trims a family spec ('Inter:400,700italic') down to the variants the host
- * page hasn't already declared. Returns '' when fully covered.
- */
-function missingVariantsSpec(spec: string): string {
-  const [name, variantList] = spec.split(':');
-  // A bare family name loads regular 400 from Google
-  if (!variantList) return isFontDeclaredByHost(name) ? '' : spec;
-  const missing = variantList.split(',').filter((variant) => {
-    const { weight, style } = parseVariant(variant);
-    return !isFontDeclaredByHost(name, weight, style);
-  });
-  if (!missing.length) return '';
-  return `${name}:${missing.join(',')}`;
-}
-
-/**
  * Loads Google fonts via a stylesheet link rather than webfontloader, which
  * has no way to pass `display` through to the CSS API. Without it Google's
  * response omits font-display, so the browser falls back to the default block
  * period and text renders invisible on a cold cache until the font arrives.
  *
  * Variants the host page already declared in document.fonts are not
- * re-requested.
+ * re-requested, but only variants actually requested from Google are cached —
+ * host coverage is rechecked every call, so a declaration removed by an SPA
+ * route or theme change gets picked up on the next form load.
  *
  * @param families webfontloader-style specs, e.g. 'Inter:400,400italic,700'
  */
 export function loadGoogleFonts(families: string[]) {
   if (!runningInClient()) return;
 
-  const toLoad: { spec: string; request: string }[] = [];
+  const toLoad: { name: string; variants: string[] }[] = [];
   families.forEach((spec) => {
-    if (!spec || loadedGoogleFonts.has(spec)) return;
-    loadedGoogleFonts.add(spec);
-    const request = missingVariantsSpec(spec);
-    if (request) toLoad.push({ spec, request });
+    if (!spec) return;
+    const [name, variantList] = spec.split(':');
+    // A bare family name loads regular 400 from Google
+    const variants = (variantList || '400').split(',').filter((variant) => {
+      if (loadedGoogleFonts.has(`${name}:${variant}`)) return false;
+      const { weight, style } = parseVariant(variant);
+      return !isFontDeclaredByHost(name, weight, style);
+    });
+    if (!variants.length) return;
+    variants.forEach((variant) => loadedGoogleFonts.add(`${name}:${variant}`));
+    toLoad.push({ name, variants });
   });
   if (!toLoad.length) return;
 
@@ -108,13 +101,19 @@ export function loadGoogleFonts(families: string[]) {
   link.rel = 'stylesheet';
   // Google's v1 CSS API: families joined by '|', spaces as '+'
   link.href = `https://fonts.googleapis.com/css?family=${toLoad
-    .map(({ request }) => request.replace(/ /g, '+'))
+    .map(
+      ({ name, variants }) => `${name.replace(/ /g, '+')}:${variants.join(',')}`
+    )
     .join('%7C')}&display=swap`;
-  // On a failed stylesheet request, unmark the families so a later call (e.g.
+  // On a failed stylesheet request, unmark the variants so a later call (e.g.
   // another form load or signature remount) retries instead of skipping them
   // for the rest of the page session
   link.onerror = () => {
-    toLoad.forEach(({ spec }) => loadedGoogleFonts.delete(spec));
+    toLoad.forEach(({ name, variants }) =>
+      variants.forEach((variant) =>
+        loadedGoogleFonts.delete(`${name}:${variant}`)
+      )
+    );
     link.remove();
   };
   featheryDoc().head.appendChild(link);
