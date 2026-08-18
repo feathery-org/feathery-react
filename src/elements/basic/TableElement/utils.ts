@@ -114,6 +114,38 @@ export function compareSortableValues(
  * Returns `null` past the last editable cell (forward) or before the first one
  * (backward) so the caller can commit-and-stay instead of wrapping around.
  */
+export type MoveDirection = 'up' | 'down' | 'left' | 'right';
+
+/**
+ * Compute the neighboring cell for arrow-key selection movement in
+ * spreadsheet mode. Rows move by visible display order. Clamps at the grid
+ * edges (returns null) instead of wrapping, matching spreadsheet behavior.
+ */
+export function getAdjacentCell(
+  rowIndices: number[],
+  columnCount: number,
+  current: CellCoord,
+  direction: MoveDirection
+): CellCoord | null {
+  if (columnCount <= 0) return null;
+
+  const rowPos = rowIndices.indexOf(current.rowIndex);
+  if (rowPos === -1) return null;
+
+  let { colIndex } = current;
+  let pos = rowPos;
+
+  if (direction === 'left') colIndex -= 1;
+  else if (direction === 'right') colIndex += 1;
+  else if (direction === 'up') pos -= 1;
+  else pos += 1;
+
+  if (colIndex < 0 || colIndex > columnCount - 1) return null;
+  if (pos < 0 || pos > rowIndices.length - 1) return null;
+
+  return { rowIndex: rowIndices[pos], colIndex };
+}
+
 export function getNextEditableCell(
   rowIndices: number[],
   columnCount: number,

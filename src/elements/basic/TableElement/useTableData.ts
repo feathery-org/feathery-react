@@ -98,6 +98,7 @@ type UseTableDataProps = {
       transpose?: boolean;
       enable_editing?: boolean;
       add_delete_rows?: boolean;
+      display_mode?: 'classic' | 'spreadsheet';
     };
   };
   editMode?: boolean;
