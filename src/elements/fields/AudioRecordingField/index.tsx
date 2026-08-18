@@ -7,10 +7,8 @@ import AudioPlayer from './AudioPlayer';
 import LevelMeter from './LevelMeter';
 import { formatDuration } from './format';
 
-// Ordered by playback compatibility: AAC (.m4a) plays natively everywhere, so
-// it leads when the browser can encode it. Bare audio/mp4 trails the webm
-// entries because Chrome may fill it with Opus, which .m4a players can't
-// decode; only a browser rejecting the explicit AAC codec reaches it.
+// AAC (.m4a) plays everywhere so it leads; bare audio/mp4 trails the webm
+// entries because Chrome may fill it with Opus, which .m4a players can't decode
 const MIME_PREFERENCES = [
   'audio/mp4;codecs=mp4a.40.2',
   'audio/webm;codecs=opus',
@@ -19,7 +17,6 @@ const MIME_PREFERENCES = [
   'audio/ogg;codecs=opus'
 ];
 
-// Extension is always derived from the container the recorder actually used
 const EXTENSION_MAP: Record<string, string> = {
   'audio/mp4': 'm4a',
   'audio/webm': 'webm',
@@ -30,8 +27,7 @@ const EXTENSION_MAP: Record<string, string> = {
 
 const RECORDING_COLOR = '#E53935';
 
-// Controls whose activation ends a recording. Scrolls and stray taps don't,
-// so a respondent can still read the form while recording.
+// Activating one of these ends a recording; scrolls and stray taps don't
 const INTERACTIVE_SELECTOR =
   'a, button, input, select, textarea, label, [role="button"], [tabindex]';
 
@@ -66,7 +62,6 @@ function AudioRecordingField({
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
   const startTimeRef = useRef(0);
-  // Mic level for the waveform, sampled by its own rAF loop
   const audioCtxRef = useRef<any>(null);
   const analyserRef = useRef<any>(null);
   const levelBufferRef = useRef<Uint8Array | null>(null);
@@ -75,8 +70,8 @@ function AudioRecordingField({
   // Set on unmount so an in-flight recording is dropped instead of saved
   const discardRef = useRef(false);
 
-  // Adopt externally set values (session rehydration, logic rules, clears).
-  // Recording emits the promise it stores, so its own echo is a no-op set.
+  // Adopt external values; recording emits the promise it stores, so its
+  // own echo is a no-op set
   useEffect(() => {
     setRawFile(initialFile ?? null);
   }, [initialFile]);
@@ -84,7 +79,7 @@ function AudioRecordingField({
   useEffect(() => {
     let cancelled = false;
     let url = '';
-    // Drop the previous URL up front; it is revoked by this effect's cleanup
+    // Drop the old URL up front; the cleanup below revokes it
     setPlaybackUrl('');
     if (!rawFile) return;
     Promise.resolve(rawFile)
@@ -93,7 +88,7 @@ function AudioRecordingField({
         url = URL.createObjectURL(file);
         setPlaybackUrl(url);
       })
-      // Rehydrated file promises can reject (e.g. offline) — no playback then
+      // A rehydrated file promise can reject (offline) — no playback then
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -101,8 +96,7 @@ function AudioRecordingField({
     };
   }, [rawFile]);
 
-  // Mic metering: an AnalyserNode on the recording stream, read per frame by
-  // LevelMeter. Optional — browsers without AudioContext just get no meter.
+  // Optional: browsers without AudioContext just get no waveform
   const setupMetering = (win: any, stream: any) => {
     const AudioContextClass = win.AudioContext || win.webkitAudioContext;
     if (!AudioContextClass) return;
@@ -127,7 +121,6 @@ function AudioRecordingField({
     if (ctx && ctx.state !== 'closed') ctx.close().catch(() => undefined);
   };
 
-  // Read by LevelMeter's rAF loop; returns 0 when metering is unavailable
   const getLevel = () => {
     const analyser = analyserRef.current;
     const buffer = levelBufferRef.current;
@@ -142,8 +135,8 @@ function AudioRecordingField({
   };
 
   useEffect(() => {
-    // Re-arm on mount: StrictMode (and any remount) runs the cleanup below on
-    // a live component, and a stuck discard flag would drop every recording
+    // Re-arm on mount: StrictMode runs the cleanup below on a live component,
+    // and a stuck flag would discard every later recording
     discardRef.current = false;
     return () => {
       discardRef.current = true;
@@ -167,24 +160,20 @@ function AudioRecordingField({
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 
-  // A logic rule can disable the field mid-recording, which also hides the
-  // stop control — end the recording so the mic isn't left open
+  // Disabling mid-recording also hides the stop control, so end it here
   useEffect(() => {
     if ((disabled || editMode) && recording) stopRecording();
   }, [disabled, editMode, recording]);
 
-  // Recording is scoped to this field: moving focus away, activating another
-  // control (another field, a step button), or backgrounding the tab ends it,
-  // so the mic is never left open while the respondent does something else.
-  // Stopping keeps what was recorded — it never discards.
+  // Recording is scoped to this field: focus leaving, another control being
+  // activated, or the tab hiding ends it. Stopping keeps the audio so far.
   useEffect(() => {
     if (!recording) return;
     const doc = featheryDoc();
     const isOutside = (node: any) =>
       !!node && !containerRef.current?.contains(node);
     const onFocusIn = (event: any) => {
-      // Focus falling back to the body (the record button unmounts once
-      // recording starts) isn't the respondent moving on
+      // Focus falling back to the body isn't the respondent moving on
       const target = event.target;
       if (target === doc.body || target === doc.documentElement) return;
       if (isOutside(target)) stopRecording();
@@ -238,8 +227,7 @@ function AudioRecordingField({
           MediaRecorderClass.isTypeSupported(mimeType)
         )
       : undefined;
-    // isTypeSupported is advisory — some browsers still reject the type for
-    // the actual track, so fall back to the browser's default encoding
+    // isTypeSupported is advisory; fall back to the default encoding
     let recorder: any;
     try {
       recorder = preferred
@@ -284,8 +272,8 @@ function AudioRecordingField({
       const file = new File([blob], `${servar.key}.${extension}`, {
         type: mimeType
       });
-      // Emit the same promise we hold, so the value echoing back through
-      // initialFile doesn't churn the object URL behind the audio element
+      // Emit the promise we hold, so the echo through initialFile doesn't
+      // churn the object URL behind the player
       const filePromise = Promise.resolve(file);
       setRawFile(filePromise);
       customOnChange(filePromise);
@@ -309,8 +297,7 @@ function AudioRecordingField({
     customOnChange(null);
   };
 
-  // role='button' divs get no keyboard activation for free, and recording is
-  // the only way to fill this field
+  // role='button' divs get no keyboard activation for free
   const keyActivate = (handler: (event: any) => void) => (event: any) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();

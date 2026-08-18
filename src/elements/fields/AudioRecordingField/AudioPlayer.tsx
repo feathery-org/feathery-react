@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { formatDuration } from './format';
 
-// Native <audio controls> can't be themed, renders differently per browser,
-// and collapses its scrubber at field width. This draws the same affordances
-// in `currentColor`, so it inherits the form theme's field font color.
+// Native <audio controls> can't be themed and collapses its scrubber at field
+// width, so draw the affordances in `currentColor` instead
 
 function AudioPlayer({
   src,
@@ -15,6 +14,7 @@ function AudioPlayer({
   pauseLabel: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const probedRef = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -23,12 +23,26 @@ function AudioPlayer({
     setPlaying(false);
     setCurrent(0);
     setDuration(0);
+    probedRef.current = false;
   }, [src]);
 
   const onLoaded = () => {
-    const value = audioRef.current?.duration ?? 0;
-    // A MediaRecorder blob can report Infinity until it has been seeked
-    setDuration(isFinite(value) ? value : 0);
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isFinite(audio.duration)) {
+      setDuration(audio.duration);
+      return;
+    }
+    // A live-recorded blob ships without a duration; seeking past the end
+    // makes the browser compute one. Once per source, or it would loop.
+    if (probedRef.current) return;
+    probedRef.current = true;
+    const onSeeked = () => {
+      audio.removeEventListener('seeked', onSeeked);
+      audio.currentTime = 0;
+    };
+    audio.addEventListener('seeked', onSeeked);
+    audio.currentTime = 1e7;
   };
 
   const toggle = () => {
@@ -119,8 +133,7 @@ function AudioPlayer({
         }}
       >
         <div css={{ position: 'relative', width: '100%', height: '4px' }}>
-          {/* Track and fill are siblings: nesting the fill would inherit the
-              track's opacity and make progress invisible */}
+          {/* Siblings: a nested fill would inherit the track's opacity */}
           <div
             css={{
               position: 'absolute',

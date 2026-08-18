@@ -271,6 +271,47 @@ describe('AudioRecordingField', () => {
     expect(await onChange.mock.calls[0][0]).toBeInstanceOf(File);
   });
 
+  it('re-records after clearing, keeping the new take', async () => {
+    // Mirrors a real form: the parent stores the value and feeds it back
+    const element = createAudioRecordingElement();
+    const emitted: any[] = [];
+    function Host() {
+      const [value, setValue] = React.useState<any>(null);
+      return (
+        <AudioRecordingField
+          {...createAudioRecordingProps(element)}
+          initialFile={value}
+          onChange={(next: any) => {
+            emitted.push(next);
+            setValue(next);
+          }}
+        />
+      );
+    }
+    render(<Host />);
+
+    await startRecording();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+    const first = await emitted[0];
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Clear recording'));
+    });
+    expect(screen.getByText('Record audio')).toBeTruthy();
+
+    await startRecording();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+    const second = await emitted[emitted.length - 1];
+
+    // The second take must be its own file, not the first one replayed
+    expect(second).not.toBe(first);
+    expect(second.size).toBeGreaterThan(first.size);
+  });
+
   it('shows an error message when microphone permission is denied', async () => {
     mocks.getUserMedia.mockRejectedValue(new Error('denied'));
     const element = createAudioRecordingElement();

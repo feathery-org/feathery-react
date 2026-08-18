@@ -50,11 +50,15 @@ export class MockMediaRecorder {
   start = jest.fn(() => {
     this.state = 'recording';
   });
+  // Distinct payload per instance, so a re-recording is distinguishable
+  takeIndex: number;
   stop = jest.fn(() => {
     this.state = 'inactive';
     if (!MockMediaRecorder.emitEmpty)
       this.ondataavailable?.({
-        data: new Blob(['audio-bytes'], { type: this.mimeType })
+        data: new Blob(['audio-bytes'.repeat(this.takeIndex + 1)], {
+          type: this.mimeType
+        })
       });
     this.onstop?.();
   });
@@ -62,6 +66,7 @@ export class MockMediaRecorder {
   constructor(stream: any, options: any = {}) {
     this.stream = stream;
     this.mimeType = options.mimeType ?? '';
+    this.takeIndex = MockMediaRecorder.instances.length;
     MockMediaRecorder.instances.push(this);
   }
 }
