@@ -252,6 +252,25 @@ describe('AudioRecordingField', () => {
     });
   });
 
+  it('still records after a StrictMode-style mount/cleanup/mount', async () => {
+    const onChange = jest.fn();
+    const element = createAudioRecordingElement();
+    const props = createAudioRecordingProps(element, { onChange });
+    render(
+      <React.StrictMode>
+        <AudioRecordingField {...props} />
+      </React.StrictMode>
+    );
+
+    await startRecording();
+    // The unmount guard must be re-armed on remount, or this never starts
+    expect(screen.getByLabelText('Stop recording')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+    expect(await onChange.mock.calls[0][0]).toBeInstanceOf(File);
+  });
+
   it('shows an error message when microphone permission is denied', async () => {
     mocks.getUserMedia.mockRejectedValue(new Error('denied'));
     const element = createAudioRecordingElement();

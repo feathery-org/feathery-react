@@ -141,8 +141,11 @@ function AudioRecordingField({
     return Math.sqrt(sum / buffer.length);
   };
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Re-arm on mount: StrictMode (and any remount) runs the cleanup below on
+    // a live component, and a stuck discard flag would drop every recording
+    discardRef.current = false;
+    return () => {
       discardRef.current = true;
       if (timerRef.current) clearInterval(timerRef.current);
       teardownMetering();
@@ -150,9 +153,8 @@ function AudioRecordingField({
       if (recorder && recorder.state !== 'inactive') recorder.stop();
       // Recorder onstop stops the tracks; cover the recorder-less case too
       else streamRef.current?.getTracks().forEach((track: any) => track.stop());
-    },
-    []
-  );
+    };
+  }, []);
 
   const stopRecording = () => {
     if (timerRef.current) {
