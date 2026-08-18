@@ -43,7 +43,9 @@ function LevelMeter({
       width = next;
       canvas.width = width * dpr;
       canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
+      // Percentage width, not the measured px: a canvas sized in px acts as an
+      // intrinsically-sized flex item and would widen the field while recording
+      canvas.style.width = '100%';
       canvas.style.height = `${height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const count = Math.max(1, Math.floor(width / pitch));
@@ -96,7 +98,13 @@ function LevelMeter({
   return (
     <div
       ref={containerRef}
-      css={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center' }}
+      css={{
+        flex: 1,
+        minWidth: 0,
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center'
+      }}
       aria-hidden='true'
     >
       <canvas ref={canvasRef} css={{ display: 'block' }} />
