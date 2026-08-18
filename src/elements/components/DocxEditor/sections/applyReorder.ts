@@ -82,6 +82,73 @@ export interface ApplyReorderResult {
 // Hierarchical-index offset large enough to clamp to a paragraph's end.
 const END_OFFSET = 2147483647;
 
+// Every reorder GESTURE (one drag or chevron press) may apply as several native
+// complex-history groups — a multi-section selection is several single-section
+// relocations. We tag all groups from one gesture with the SAME batch action
+// (`ReorderSections#<seq>`); installReorderUndoBatching then collapses the whole
+// gesture back into a single undo/redo. A plain counter (no Date/random) so
+// resume/replay stays deterministic.
+let reorderBatchSeq = 0;
+const BATCH_PREFIX = 'ReorderSections#';
+
+type HistoryModule = NonNullable<ReorderEditor['editorHistory']> & {
+  undo?: () => void;
+  redo?: () => void;
+  undoStack?: Array<{ action?: unknown }>;
+  redoStack?: Array<{ action?: unknown }>;
+  __reorderBatchPatched?: boolean;
+};
+
+// The action id on the top of a history stack, but only when it's one of ours.
+const topBatchId = (stack?: Array<{ action?: unknown }>): string | null => {
+  const top = stack && stack.length ? stack[stack.length - 1] : undefined;
+  const action = top?.action;
+  return typeof action === 'string' && action.startsWith(BATCH_PREFIX)
+    ? action
+    : null;
+};
+
+/**
+ * Wrap `editorHistory.undo`/`redo` so ONE call collapses a whole reorder gesture
+ * — several native groups all tagged with the same `ReorderSections#<seq>` — into
+ * a single undo/redo. Any other history entry (a normal edit) passes straight
+ * through to the original single call. Idempotent: guarded per history instance,
+ * and a no-op on editors that don't expose undo/redo (e.g. test fakes).
+ */
+export function installReorderUndoBatching(editor: ReorderEditor): void {
+  const hist = editor.editorHistory as HistoryModule | undefined;
+  if (!hist || hist.__reorderBatchPatched) return;
+  const origUndo =
+    typeof hist.undo === 'function' ? hist.undo.bind(hist) : undefined;
+  const origRedo =
+    typeof hist.redo === 'function' ? hist.redo.bind(hist) : undefined;
+  if (!origUndo || !origRedo) return;
+
+  hist.undo = function reorderAwareUndo(): void {
+    const id = topBatchId(hist.undoStack);
+    if (id == null) {
+      origUndo();
+      return;
+    }
+    // Drain every contiguous group of this gesture. The guard bounds the loop
+    // in case a stack somehow never shrinks.
+    let guardCount = 0;
+    while (topBatchId(hist.undoStack) === id && guardCount++ < 500) origUndo();
+  };
+
+  hist.redo = function reorderAwareRedo(): void {
+    const id = topBatchId(hist.redoStack);
+    if (id == null) {
+      origRedo();
+      return;
+    }
+    let guardCount = 0;
+    while (topBatchId(hist.redoStack) === id && guardCount++ < 500) origRedo();
+  };
+
+  hist.__reorderBatchPatched = true;
+}
+
 const errorResult = (
   code: string,
   message: string,
@@ -220,7 +287,8 @@ function nativeSingleMove(
   from: number,
   to: number,
   source: SfdtSection,
-  n: number
+  n: number,
+  action: string
 ): void {
   const sel = editor.selection as NonNullable<ReorderEditor['selection']>;
   const ed = editor.editor as NonNullable<ReorderEditor['editor']>;
@@ -239,7 +307,7 @@ function nativeSingleMove(
   );
   const endGroup = (hist.updateComplexHistory as () => void).bind(hist);
 
-  beginGroup('ReorderSections');
+  beginGroup(action);
   try {
     // 1. Delete the source section (whole section incl. its break).
     if (from < n - 1) {
@@ -354,9 +422,13 @@ function tryNativeReplay(
   // header re-render → fall back to open() for the whole reorder.
   if (moves.some((m) => hasHeadersFooters(origSecs[m.orig]))) return false;
 
+  // Ensure the undo/redo wrapper is present, and tag every group of this
+  // gesture with one batch id so a multi-section move undoes/redoes in one press.
+  installReorderUndoBatching(editor);
+  const batchAction = `${BATCH_PREFIX}${(reorderBatchSeq += 1)}`;
   try {
     for (const m of moves) {
-      nativeSingleMove(editor, m.from, m.to, origSecs[m.orig], n);
+      nativeSingleMove(editor, m.from, m.to, origSecs[m.orig], n, batchAction);
     }
   } catch {
     return false;

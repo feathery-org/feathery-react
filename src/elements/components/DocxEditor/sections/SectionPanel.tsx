@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { readSections, SectionNode } from './outline';
-import { applyReorderTo } from './applyReorder';
+import { applyReorderTo, installReorderUndoBatching } from './applyReorder';
 import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { Diagnostic, SfdtDocument } from '../bindings/core/sfdtTypes';
 import {
@@ -126,12 +126,22 @@ export default function SectionList({ editor, markDirty }: Props) {
   // Reordering is disabled while the assistant is writing (it's mutating the
   // same document). isAssistantWriting stays true for the whole editing turn.
   const [locked, setLocked] = useState(false);
+  // The panel root; focused on card selection so keyboard undo/redo lands on our
+  // handler (not the browser) even though the cards sit outside the editor.
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Prime the transparent drag image on mount so it's decoded before the first
   // drag — otherwise the browser shows its default (globe) ghost that once.
   useEffect(() => {
     getTransparentDragImage();
   }, []);
+
+  // Install the reorder-aware undo/redo wrapper so one keyboard press (or the
+  // toolbar button) collapses a whole multi-section move into one undo/redo.
+  useEffect(() => {
+    if (!editor) return;
+    guard(() => installReorderUndoBatching(editor));
+  }, [editor]);
 
   // Track whether the assistant is working. Editor events cover the writes; a
   // short poll catches the turn-end clear (which fires no editor event).
@@ -185,9 +195,31 @@ export default function SectionList({ editor, markDirty }: Props) {
     [editor]
   );
 
+  /* ---------------- keyboard undo/redo ---------------- */
+
+  // Ctrl/⌘+Z = undo, Ctrl/⌘+Shift+Z or Ctrl+Y = redo. We handle these on the
+  // panel because, once a card is selected, focus is outside the Syncfusion
+  // editor — so the editor never sees the key, and without preventDefault the
+  // browser runs its own shortcut (e.g. Ctrl+Y opens chrome://history). Routing
+  // through editorHistory.undo/redo also picks up the reorder batch wrapper, so
+  // a whole multi-section move undoes/redoes in a single press.
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    const key = event.key.toLowerCase();
+    if (key === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      guard(() => editor?.editorHistory?.undo?.());
+    } else if ((key === 'z' && event.shiftKey) || key === 'y') {
+      event.preventDefault();
+      guard(() => editor?.editorHistory?.redo?.());
+    }
+  };
+
   /* ---------------- selection ---------------- */
 
   const onSelect = (event: React.MouseEvent, node: SectionNode) => {
+    // Pull keyboard focus into the panel so undo/redo keys hit onKeyDown.
+    panelRef.current?.focus({ preventScroll: true });
     if (event.shiftKey && anchor != null) {
       setSelected(range(anchor, node.index));
     } else if (event.metaKey || event.ctrlKey) {
@@ -312,12 +344,16 @@ export default function SectionList({ editor, markDirty }: Props) {
 
   return (
     <div
+      ref={panelRef}
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
       css={{
         position: 'absolute',
         inset: 0,
         display: 'flex',
         flexDirection: 'column',
-        minHeight: 0
+        minHeight: 0,
+        outline: 'none'
       }}
     >
       <div

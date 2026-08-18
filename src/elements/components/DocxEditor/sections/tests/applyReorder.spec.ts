@@ -5,7 +5,12 @@
 //     multi-section move or when the native result fails verification.
 // The real SDK behaviour (does the native move preserve headers/footers and
 // undo/redo?) is verified live in the harness spike; here we pin the routing.
-import { applyReorder, applyReorderTo, ReorderEditor } from '../applyReorder';
+import {
+  applyReorder,
+  applyReorderTo,
+  installReorderUndoBatching,
+  ReorderEditor
+} from '../applyReorder';
 import { SfdtDocument } from '../../bindings/core/sfdtTypes';
 
 const para = (text: string) => ({ inlines: [{ text }] });
@@ -130,6 +135,82 @@ test('native editor: a failed verification falls back to open()', () => {
   expect(editor.cmds).toContain('init'); // native was attempted
   expect(editor.openCount).toBe(1); // …then fell back to open()
   expect(labels(editor.doc)).toEqual(['C', 'A', 'B']);
+});
+
+test('installReorderUndoBatching collapses a tagged gesture into one undo/redo', () => {
+  // A multi-section move applies two native groups sharing one batch action,
+  // sitting on top of an unrelated prior edit.
+  const undoStack: Array<{ action: string }> = [
+    { action: 'Insert' },
+    { action: 'ReorderSections#7' },
+    { action: 'ReorderSections#7' }
+  ];
+  const redoStack: Array<{ action: string }> = [];
+  const editor = {
+    serialize: () => '{}',
+    open: () => undefined,
+    editorHistory: {
+      undoStack,
+      redoStack,
+      undo() {
+        const item = undoStack.pop();
+        if (item) redoStack.push(item);
+      },
+      redo() {
+        const item = redoStack.pop();
+        if (item) undoStack.push(item);
+      }
+    }
+  } as unknown as ReorderEditor;
+
+  installReorderUndoBatching(editor);
+  const hist = (editor as any).editorHistory;
+
+  hist.undo(); // one press drains BOTH reorder groups, leaves the Insert
+  expect(undoStack.map((e) => e.action)).toEqual(['Insert']);
+  expect(redoStack).toHaveLength(2);
+
+  hist.redo(); // one press reapplies BOTH reorder groups
+  expect(undoStack).toHaveLength(3);
+  expect(redoStack).toHaveLength(0);
+
+  hist.undo(); // reorder batch drained again in one press
+  expect(undoStack.map((e) => e.action)).toEqual(['Insert']);
+  hist.undo(); // top is now the plain edit → a single ordinary undo
+  expect(undoStack).toHaveLength(0);
+});
+
+test('installReorderUndoBatching is idempotent and skips editors without undo', () => {
+  const undoStack: Array<{ action: string }> = [{ action: 'ReorderSections#1' }];
+  let undoCalls = 0;
+  const editor = {
+    serialize: () => '{}',
+    open: () => undefined,
+    editorHistory: {
+      undoStack,
+      redoStack: [],
+      undo() {
+        undoCalls += 1;
+        undoStack.pop();
+      },
+      redo() {
+        /* no-op */
+      }
+    }
+  } as unknown as ReorderEditor;
+
+  installReorderUndoBatching(editor);
+  const patched = (editor as any).editorHistory.undo;
+  installReorderUndoBatching(editor); // second call must not re-wrap
+  expect((editor as any).editorHistory.undo).toBe(patched);
+
+  // A fake with no undo/redo verbs is left untouched (test-fake safety).
+  const bare = new NativeEditor(docOf(['A', 'B']));
+  expect(() => installReorderUndoBatching(bare)).not.toThrow();
+
+  patched(); // drains the single tagged group
+  expect(undoCalls).toBe(1);
+  expect(undoStack).toHaveLength(0);
 });
 
 test('a refused move leaves the editor untouched and reports diagnostics', () => {
