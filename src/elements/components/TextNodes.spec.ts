@@ -148,6 +148,20 @@ describe('replaceTextVariables', () => {
       setFieldValues({ rate: 7 });
       expect(replaceTextVariables('{{rate}}')).toBe('7.0%');
     });
+
+    it('puts a negative sign in front of the currency symbol', () => {
+      registerFormatted('amount');
+      setFieldValues({ amount: -1234.5 });
+      expect(replaceTextVariables('total: {{amount}}')).toBe(
+        'total: -$1,234.5'
+      );
+    });
+
+    it('signs each entry of a repeating field individually', () => {
+      registerFormatted('amount');
+      setFieldValues({ amount: [-1234.5, 6] });
+      expect(replaceTextVariables('{{amount}}')).toBe('-$1,234.5, $6');
+    });
   });
 
   it('substitutes the built-in user id token', () => {

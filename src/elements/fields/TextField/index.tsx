@@ -16,6 +16,7 @@ import {
   getDecimalPlaces,
   getNumberMaskProps,
   getTextFieldMask,
+  isSignWithoutMagnitude,
   maxFieldLength
 } from './mask';
 
@@ -160,6 +161,19 @@ function TextField({
 
   const servar = element.servar;
   const options = (servar.metadata.options ?? []).filter((opt: string) => opt);
+
+  // A number field's sign is typed before there is any magnitude to sign, and
+  // that intermediate has no value to store — so let the input hold it rather
+  // than round-tripping it through form state, which would erase it. Only safe
+  // while the field is empty; over an existing value, commit the clear so a
+  // stale number can't survive hidden behind a bare sign.
+  const handleAccept = (value: any, ...rest: any[]) => {
+    if (servar.type === 'integer_field' && isSignWithoutMagnitude(value)) {
+      if (rawValue) onAccept('', ...rest);
+      return;
+    }
+    onAccept(value, ...rest);
+  };
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
@@ -280,7 +294,7 @@ function TextField({
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete === 'on')}
             {...getMaskProps(servar, rawValue, showPassword)}
-            onAccept={onAccept}
+            onAccept={handleAccept}
           />
         </TextAutocomplete>
         {servar.type === 'ssn' && rawValue && (

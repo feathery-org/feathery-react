@@ -111,10 +111,28 @@ export function showsFormatInText(servar: any) {
 }
 
 /**
+ * The literal text a format wraps around the number. Returned unescaped —
+ * callers building an imask pattern escape them for the mask grammar.
+ */
+function getFormatAffixes(servar: any) {
+  const meta = servar?.metadata ?? {};
+  switch (servar?.format) {
+    case 'currency':
+      return { prefix: getCurrencyPrefix(meta.currency), suffix: '' };
+    case 'percentage':
+      return { prefix: '', suffix: '%' };
+    case 'custom':
+      return { prefix: meta.prefix ?? '', suffix: meta.suffix ?? '' };
+    default:
+      return { prefix: '', suffix: '' };
+  }
+}
+
+/**
  * Renders a stored number the way this field's own input mask renders it, for
  * consumers outside that input. Mirrors getNumberMaskProps: same precision,
- * grouping, zero-padding, and affixes, so a value never reads one way in the
- * field and another way in a text variable pointed at it.
+ * grouping, zero-padding, affixes, and sign placement, so a value never reads
+ * one way in the field and another way in a text variable pointed at it.
  */
 export function formatNumberValue(servar: any, value: any) {
   if (value === '' || value === null || value === undefined) return '';
@@ -124,24 +142,38 @@ export function formatNumberValue(servar: any, value: any) {
 
   const meta = servar?.metadata ?? {};
   const scale = getDecimalPlaces(servar);
+  // Format the magnitude, so the sign can go outside the affixes below.
   const body = new Intl.NumberFormat('en-US', {
     useGrouping: meta.thousands_separator !== false,
     // imask only pads when padFractionalZeros is set; otherwise it shows just
     // the digits present, which is a floor of 0 fraction digits.
     minimumFractionDigits: meta.pad_decimals === true ? scale : 0,
     maximumFractionDigits: scale
-  }).format(num);
+  }).format(Math.abs(num));
 
-  // imask keeps its mask literals outside the number block, so a negative
-  // currency value renders as "$-1,234.56" in the input. Concatenate the same
-  // way rather than using Intl's currency style, which would render
-  // "-$1,234.56" and disagree with the field the value came from.
-  if (servar?.format === 'currency')
-    return `${getCurrencyPrefix(meta.currency)}${body}`;
-  if (servar?.format === 'percentage') return `${body}%`;
-  if (servar?.format === 'custom')
-    return `${meta.prefix ?? ''}${body}${meta.suffix ?? ''}`;
-  return body;
+  const { prefix, suffix } = getFormatAffixes(servar);
+  // The sign goes outside the prefix — "-$100", not "$-100" — matching the
+  // input mask and how money reads everywhere else. A value that rounds away
+  // to zero at this precision has no sign left to show, which is also what the
+  // input renders once imask commits the rounding.
+  const sign = num < 0 && /[1-9]/.test(body) ? '-' : '';
+  return `${sign}${prefix}${body}${suffix}`;
+}
+
+// A sign the user has typed before any magnitude exists: "-", "-0", "-0.".
+// imask reports these as soon as the key lands, but they carry no number to
+// store.
+const SIGN_WITHOUT_MAGNITUDE = /^-0*\.?0*$/;
+
+/**
+ * Whether a number field's in-progress value is only a sign. Form casts
+ * integer_field values with parseFloat, so "-" becomes NaN and "-0"
+ * stringifies back as "0"; either way, feeding one of these through form state
+ * re-renders the controlled input without the sign the user just typed. Hold
+ * the sign in the input instead, until a magnitude arrives.
+ */
+export function isSignWithoutMagnitude(value: any) {
+  return typeof value === 'string' && SIGN_WITHOUT_MAGNITUDE.test(value);
 }
 
 // imask discards the radix character entirely at scale 0, which would rewrite a
@@ -154,41 +186,104 @@ export function roundToDecimalPlaces(value: any, scale: number) {
   return String(Number(num.toFixed(scale)));
 }
 
+// `{}` marks a mask literal that stays in the *unmasked* value, so a sign
+// carried by the pattern rather than by the number block still reaches the
+// stored value.
+const SIGN_LITERAL = '{-}';
+
+// Whether a negative value is actually in range. imask derives a number
+// block's own allowNegative from its bounds, so a floor at or above zero means
+// there is no sign to render or accept.
+function allowsNegative(servar: any) {
+  if (servar.metadata?.allow_negative !== true) return false;
+  return !(typeof servar.min_length === 'number' && servar.min_length >= 0);
+}
+
+// Bounds for a number block that holds the whole signed value.
+function getValueBounds(servar: any) {
+  return {
+    // Larger numbers get converted to scientific notation when sent to backend
+    max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
+    // A negative min is what enables imask's leading "-" (allowNegative is
+    // derived from min < 0 || max < 0). `??` so a configured 0 is honored.
+    min: allowsNegative(servar)
+      ? servar.min_length ?? -Number.MAX_SAFE_INTEGER
+      : Math.max(0, servar.min_length ?? 0)
+  };
+}
+
+// Bounds for a number block whose sign has been pulled out into the pattern,
+// leaving the block a magnitude. For the negative variant the value is -m, so
+// min <= -m <= max is the same as -max <= m <= -min: the bounds invert and
+// swap. Clamped at 0 because a magnitude is never negative.
+function getMagnitudeBounds(servar: any, negative: boolean) {
+  const low = servar.min_length ?? -Number.MAX_SAFE_INTEGER;
+  const high = servar.max_length ?? Number.MAX_SAFE_INTEGER;
+  const [min, max] = negative ? [-high, -low] : [low, high];
+  return { min: Math.max(0, min), max: Math.max(0, max) };
+}
+
 export function getNumberMaskProps(servar: any, value: any) {
   const meta = servar.metadata ?? {};
   const scale = getDecimalPlaces(servar);
-  const allowNegative = meta.allow_negative === true;
+  const affixes = getFormatAffixes(servar);
+  // escapeMaskLiterals rather than escapeDefinitionChars for both affixes: it
+  // is a superset, it leaves every currency symbol we render untouched, and an
+  // unescaped `{` in an affix would otherwise leak into the stored value.
+  const prefix = escapeMaskLiterals(affixes.prefix);
+  const suffix = escapeMaskLiterals(affixes.suffix);
+  const pattern = `${prefix}num${suffix}`;
 
-  let mask = 'num';
-  if (servar.format === 'currency')
-    mask = `${escapeDefinitionChars(getCurrencyPrefix(meta.currency))}num`;
-  else if (servar.format === 'percentage') mask = 'num%';
-  else if (servar.format === 'custom')
-    mask = `${escapeMaskLiterals(meta.prefix)}num${escapeMaskLiterals(
-      meta.suffix
-    )}`;
-
-  return {
-    mask,
-    blocks: {
-      num: {
-        mask: Number,
-        radix: '.',
-        thousandsSeparator: meta.thousands_separator === false ? '' : ',',
-        scale,
-        padFractionalZeros: meta.pad_decimals === true,
-        // Larger numbers get converted to scientific notation when sent to backend
-        max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
-        // A negative min is what enables imask's leading "-" (allowNegative is
-        // derived from min < 0 || max < 0). `??` so a configured 0 is honored.
-        min: allowNegative
-          ? servar.min_length ?? -Number.MAX_SAFE_INTEGER
-          : Math.max(0, servar.min_length ?? 0)
-      }
-    },
+  const numberBlock = {
+    mask: Number,
+    radix: '.',
+    thousandsSeparator: meta.thousands_separator === false ? '' : ',',
+    scale,
+    padFractionalZeros: meta.pad_decimals === true
+  };
+  const props = {
     value: roundToDecimalPlaces(value, scale),
     // Number values must stay numeric downstream; saving the mask would make
     // parseFloat('$1,234.56') NaN.
     unmask: true
+  };
+
+  // A prefix is a mask literal and imask keeps a number block's sign inside
+  // that block, so "$num" renders -100 as "$-100". Where a prefix and negative
+  // values meet, split the sign out as its own literal ahead of the prefix and
+  // switch between the two patterns as the value's sign changes, so it reads
+  // "-$100" the way money is written everywhere else.
+  if (prefix && allowsNegative(servar))
+    return {
+      ...props,
+      mask: [
+        {
+          mask: pattern,
+          blocks: {
+            num: { ...numberBlock, ...getMagnitudeBounds(servar, false) }
+          },
+          lazy: false
+        },
+        {
+          mask: `${SIGN_LITERAL}${pattern}`,
+          blocks: {
+            num: { ...numberBlock, ...getMagnitudeBounds(servar, true) }
+          },
+          lazy: false
+        }
+      ],
+      // A "-" typed at any caret position means the value is negative, and
+      // dispatching on that is what moves the sign to the front. lazy has to be
+      // set per variant above: MaskedDynamic does not pass it down.
+      dispatch: (appended: string, dynamicMasked: any) =>
+        dynamicMasked.compiledMasks[
+          (dynamicMasked.value + appended).includes('-') ? 1 : 0
+        ]
+    };
+
+  return {
+    ...props,
+    mask: pattern,
+    blocks: { num: { ...numberBlock, ...getValueBounds(servar) } }
   };
 }

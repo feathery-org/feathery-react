@@ -245,11 +245,139 @@ describe('getNumberMaskProps', () => {
       );
       expect(props.blocks.num.min).toBe(0);
     });
+
+    it('leaves the sign inside the block when a min of 0 blocks negatives', () => {
+      // Nothing to split out: no negative value is in range, so this stays the
+      // single-pattern mask rather than growing an unreachable variant.
+      const props = getNumberMaskProps(
+        numberServar(
+          { allow_negative: true },
+          { format: 'currency', min_length: 0 }
+        ),
+        ''
+      );
+      expect(props.mask).toBe('$num');
+    });
   });
 
   it('passes max_length through as the mask max', () => {
     const props = getNumberMaskProps(numberServar({}, { max_length: 100 }), '');
     expect(props.blocks.num.max).toBe(100);
+  });
+
+  // The sign has to sit in front of a prefix, and imask keeps a number block's
+  // own sign inside the block. So a prefixed field that allows negatives gets
+  // two patterns and dispatches between them on the sign.
+  describe('negative values with a prefix', () => {
+    const negativeProps = (metadata: any = {}, servar: any = {}) =>
+      getNumberMaskProps(
+        numberServar(
+          { allow_negative: true, ...metadata },
+          { format: 'currency', ...servar }
+        ),
+        ''
+      ) as any;
+
+    const dispatched = (props: any, value: string, appended = '') =>
+      props.dispatch(appended, {
+        value,
+        compiledMasks: ['positive', 'negative']
+      });
+
+    it('offers a signed variant ahead of the currency symbol', () => {
+      expect(negativeProps().mask.map((m: any) => m.mask)).toEqual([
+        '$num',
+        '{-}$num'
+      ]);
+    });
+
+    it('offers a signed variant ahead of a custom prefix, suffix intact', () => {
+      const props = negativeProps(
+        { prefix: '~', suffix: ' kg' },
+        { format: 'custom' }
+      );
+      expect(props.mask.map((m: any) => m.mask)).toEqual([
+        '~num kg',
+        '{-}~num kg'
+      ]);
+    });
+
+    it.each([
+      ['', 'percentage'],
+      ['', '']
+    ])('stays a single pattern with no prefix (%p, %p)', (_p, format) => {
+      // The number block can hold the sign itself here, and already renders it
+      // in front: "-1,234.56%".
+      const props = getNumberMaskProps(
+        numberServar({ allow_negative: true }, { format }),
+        ''
+      );
+      expect(typeof props.mask).toBe('string');
+      expect(props.blocks.num.min).toBe(-Number.MAX_SAFE_INTEGER);
+    });
+
+    it('keeps the sign out of both number blocks', () => {
+      // Each block only ever holds a magnitude, so imask cannot render a
+      // second "-" after the symbol.
+      negativeProps().mask.forEach((variant: any) =>
+        expect(variant.blocks.num.min).toBeGreaterThanOrEqual(0)
+      );
+    });
+
+    it('carries the sign into the unmasked value', () => {
+      // `{}` is what keeps a pattern literal in the unmasked value; without it
+      // the stored number would silently lose its sign.
+      expect(negativeProps().mask[1].mask.startsWith('{-}')).toBe(true);
+      expect(negativeProps().unmask).toBe(true);
+    });
+
+    it('sets lazy per variant, since MaskedDynamic does not pass it down', () => {
+      negativeProps().mask.forEach((variant: any) =>
+        expect(variant.lazy).toBe(false)
+      );
+    });
+
+    it('maps a negative min to a magnitude ceiling on the signed variant', () => {
+      // min -50 means the value can reach -50, so the magnitude can reach 50.
+      const props = negativeProps({}, { min_length: -50 });
+      expect(props.mask[1].blocks.num.max).toBe(50);
+      expect(props.mask[1].blocks.num.min).toBe(0);
+    });
+
+    it('maps max_length to the unsigned variant only', () => {
+      const props = negativeProps({}, { max_length: 100 });
+      expect(props.mask[0].blocks.num.max).toBe(100);
+      // A ceiling of 100 constrains no magnitude on the negative side.
+      expect(props.mask[1].blocks.num.min).toBe(0);
+    });
+
+    it('carries precision and grouping into both variants', () => {
+      const props = negativeProps({
+        decimal_places: 1,
+        pad_decimals: true,
+        thousands_separator: false
+      });
+      props.mask.forEach((variant: any) =>
+        expect(variant.blocks.num).toMatchObject({
+          scale: 1,
+          padFractionalZeros: true,
+          thousandsSeparator: ''
+        })
+      );
+    });
+
+    it.each([
+      ['', '-', 'negative'],
+      ['$1,234', '-', 'negative'],
+      ['-$1,234', '', 'negative'],
+      ['', '1', 'positive'],
+      ['$1,234', '5', 'positive'],
+      ['', '', 'positive']
+    ])('dispatches %p + %p to the %s pattern', (value, appended, expected) => {
+      // Typed anywhere, including after the digits, a "-" selects the signed
+      // pattern — which is what moves the sign in front of the symbol.
+      expect(dispatched(negativeProps(), value, appended)).toBe(expected);
+    });
   });
 });
 
@@ -326,12 +454,89 @@ describe('formatNumberValue', () => {
       ).toBe('~1,234.56 {kg}');
     });
 
-    it('places a currency symbol before the sign, matching the input mask', () => {
-      // imask keeps mask literals outside the number block, so the field itself
-      // shows "$-1,234.56". Intl's currency style would say "-$1,234.56".
-      expect(
-        formatNumberValue(numberServar({}, { format: 'currency' }), -1234.56)
-      ).toBe('$-1,234.56');
+    describe('negative values', () => {
+      // The sign is outermost in every format, matching the input mask.
+      it.each([
+        [{}, '-1,234.56'],
+        [{ format: 'currency' }, '-$1,234.56'],
+        [{ format: 'percentage' }, '-1,234.56%'],
+        [{ format: 'custom' }, '-1,234.56']
+      ])('renders %p as %p', (servar, expected) => {
+        expect(formatNumberValue(numberServar({}, servar), -1234.56)).toBe(
+          expected
+        );
+      });
+
+      it('puts the sign before a multi-character currency symbol', () => {
+        expect(
+          formatNumberValue(
+            numberServar({ currency: 'CAD' }, { format: 'currency' }),
+            -1234.56
+          )
+        ).toBe('-CA$1,234.56');
+      });
+
+      it('puts the sign before a custom prefix, outside both affixes', () => {
+        expect(
+          formatNumberValue(
+            numberServar({ prefix: '~', suffix: ' kg' }, { format: 'custom' }),
+            -1234.56
+          )
+        ).toBe('-~1,234.56 kg');
+      });
+
+      it('keeps the sign outside the symbol when padding decimals', () => {
+        expect(
+          formatNumberValue(
+            numberServar({ pad_decimals: true }, { format: 'currency' }),
+            -1234.5
+          )
+        ).toBe('-$1,234.50');
+      });
+
+      it('keeps the sign outside the symbol without a separator', () => {
+        expect(
+          formatNumberValue(
+            numberServar(
+              { thousands_separator: false },
+              { format: 'currency' }
+            ),
+            -1234.56
+          )
+        ).toBe('-$1234.56');
+      });
+
+      it.each([
+        [-0.004, 2],
+        [-0.4, 0]
+      ])('drops the sign when %p rounds away at %p places', (value, places) => {
+        // The input shows "$0" for these too, since imask commits the rounding
+        // before rendering. A bare "-$0" would read as a real negative.
+        expect(
+          formatNumberValue(
+            numberServar({ decimal_places: places }, { format: 'currency' }),
+            value
+          )
+        ).toBe('$0');
+      });
+
+      it('keeps the sign when rounding leaves a nonzero digit', () => {
+        expect(
+          formatNumberValue(
+            numberServar({ decimal_places: 2 }, { format: 'currency' }),
+            -0.005
+          )
+        ).toBe('-$0.01');
+      });
+
+      it('renders a negative string value the same as a number', () => {
+        expect(
+          formatNumberValue(
+            numberServar({}, { format: 'currency' }),
+            '-1234.56'
+          )
+        ).toBe('-$1,234.56');
+      });
     });
   });
 
