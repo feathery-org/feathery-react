@@ -1,10 +1,21 @@
 // Bridge from a chosen section move to the live Syncfusion editor.
 //
-// The reorder is a whole-document rewrite: serialize -> permute sections[] ->
-// open() the result. open() is the only way we currently re-render a structural
-// change reliably (a select-all + paste path was tried for native undo/redo but
-// did not reliably replace a multi-section document; that needs a live spike).
-// This preserves what open() throws away (view, bindings) around it.
+// A reorder is decided in pure JSON (moveWordSection/reorderSections) and then
+// APPLIED to the live editor. We prefer a NATIVE replay — for a single-section
+// relocation, we drive the SDK's own commands (delete + insertSectionBreak +
+// pasteContents + section-format/header-footer re-apply) inside ONE
+// complex-history group, so the whole reorder is a single native undo/redo unit
+// (Ctrl+Z / the toolbar work). Verified in the spike:
+//   - single-section move: correct, headers/footers + page setup preserved,
+//     clean undo AND redo;
+//   - multi-section move: EJ2 redo throws on the multi-step group, so we do not
+//     go native for those.
+//
+// After the native attempt we VERIFY the result (order + moved section's body,
+// headers/footers, and copied page-setup). If anything is off — a multi-move,
+// an unsupported header variant, a thrown SDK call, or a fidelity mismatch — we
+// fall back to editor.open() of the target SFDT: fully correct, but it clears
+// native history (no undo for that move). So we never silently lose fidelity.
 //
 // A refused move (the mutate step returns the input identity-equal) never
 // touches the editor — its diagnostics are surfaced and nothing is written.
@@ -12,7 +23,10 @@
 import {
   Diagnostic,
   isOptimizedSfdt,
-  SfdtDocument
+  SfdtBlock,
+  SfdtDocument,
+  SfdtInline,
+  SfdtSection
 } from '../bindings/core/sfdtTypes';
 import { reconcileBoundDocument } from '../bindings/reconcileRegistry';
 import {
@@ -29,6 +43,24 @@ export interface ReorderEditor {
   selection?: {
     startOffset?: string;
     select?: (start: string, end: string) => void;
+    /** Settable page-setup properties for the section holding the caret. */
+    sectionFormat?: Record<string, unknown>;
+    goToHeader?: () => void;
+    goToFooter?: () => void;
+    closeHeaderFooter?: () => void;
+  };
+  /** The Editor module — `documentEditor.editor`. */
+  editor?: {
+    delete?: () => void;
+    insertSectionBreak?: () => void;
+    pasteContents?: (sfdt: object) => void;
+    /** Starts a complex-history group; lives on the Editor module. */
+    initComplexHistory?: (action: string) => void;
+  };
+  /** The history module — `documentEditor.editorHistory`. */
+  editorHistory?: {
+    updateComplexHistory?: () => void;
+    currentHistoryInfo?: unknown;
   };
   documentHelper?: {
     viewerContainer?: { scrollTop: number; scrollLeft: number } | null;
@@ -36,7 +68,7 @@ export interface ReorderEditor {
 }
 
 export interface ApplyReorderCallbacks {
-  /** Mark the document dirty — the paste/open may not fire a gated contentChange. */
+  /** Mark the document dirty — the SDK writes may not fire a gated contentChange. */
   markDirty?: () => void;
   /** Every move's diagnostics (refusal errors, or warnings on a move). */
   onDiagnostics?: (diagnostics: Diagnostic[]) => void;
@@ -46,6 +78,9 @@ export interface ApplyReorderResult {
   moved: boolean;
   diagnostics: Diagnostic[];
 }
+
+// Hierarchical-index offset large enough to clamp to a paragraph's end.
+const END_OFFSET = 2147483647;
 
 const errorResult = (
   code: string,
@@ -74,24 +109,277 @@ function captureScroll(editor: ReorderEditor): ViewSnapshot {
   return {};
 }
 
-// Write a full SFDT string back to the editor and put it in a sane place:
-// rebuild the binding index, then reveal the moved section — or, when there is
-// nothing to reveal, restore the old scroll.
-function commitDocument(
+/* ---------------- native single-section move ---------------- */
+
+// First run of text anywhere in a block's inlines, recursing into content
+// controls (a heading wrapped in a content control keeps its text one level
+// down).
+const inlineText = (inlines: SfdtInline[] | undefined): string => {
+  for (const inl of inlines || []) {
+    if (typeof inl?.text === 'string' && inl.text) return inl.text;
+    if (Array.isArray(inl?.inlines)) {
+      const nested = inlineText(inl.inlines);
+      if (nested) return nested;
+    }
+  }
+  return '';
+};
+
+const firstText = (section: SfdtSection | undefined): string => {
+  for (const b of section?.blocks || []) {
+    const t = inlineText(b?.inlines);
+    if (t) return t;
+  }
+  return '';
+};
+
+const countTables = (blocks: SfdtBlock[] | undefined): number => {
+  let n = 0;
+  for (const b of blocks || []) {
+    if (Array.isArray(b?.rows)) n += 1;
+    if (Array.isArray(b?.blocks)) n += countTables(b.blocks);
+  }
+  return n;
+};
+
+// True when a section carries any non-empty header/footer variant.
+const hasHeadersFooters = (section: SfdtSection | undefined): boolean => {
+  const hf = (section?.headersFooters || {}) as Record<
+    string,
+    { blocks?: unknown[] } | undefined
+  >;
+  return Object.values(hf).some(
+    (variant) =>
+      !!variant && Array.isArray(variant.blocks) && variant.blocks.length > 0
+  );
+};
+
+const hfText = (variant: { blocks?: SfdtBlock[] } | undefined): string => {
+  let t = '';
+  for (const b of variant?.blocks || []) t += inlineText(b?.inlines);
+  return t;
+};
+
+// A signature of the section order that survives the paste round-trip: leading
+// text + table count per section. NOT block count — pasteContents can leave a
+// trailing empty paragraph, which must not fail verification.
+const orderSignature = (sections: SfdtSection[]): string =>
+  sections.map((s) => `${firstText(s)}#${countTables(s.blocks)}`).join('');
+
+function lastBlockIndex(editor: ReorderEditor, sectionIndex: number): number {
+  const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+  const blocks = (doc.sections?.[sectionIndex]?.blocks || []) as SfdtBlock[];
+  return Math.max(0, blocks.length - 1);
+}
+
+// The single relocation needed to turn identity order into `targetOrder`, or
+// null when it isn't exactly one section move (0 or ≥2). Selection-sort: the
+// common case (a single-section drag or a chevron) is exactly one move.
+function singleRelocation(
+  targetOrder: number[]
+): { from: number; to: number; orig: number } | null {
+  const n = targetOrder.length;
+  const cur = Array.from({ length: n }, (_, i) => i);
+  const moves: { from: number; to: number; orig: number }[] = [];
+  for (let p = 0; p < n; p++) {
+    const desired = targetOrder[p];
+    const from = cur.indexOf(desired);
+    if (from === p) continue;
+    moves.push({ from, to: p, orig: desired });
+    cur.splice(from, 1);
+    cur.splice(p, 0, desired);
+    if (moves.length > 1) return null;
+  }
+  return moves.length === 1 ? moves[0] : null;
+}
+
+function nativeEditorReady(editor: ReorderEditor): boolean {
+  const sel = editor.selection;
+  const ed = editor.editor;
+  return !!(
+    sel?.select &&
+    ed?.delete &&
+    ed?.insertSectionBreak &&
+    ed?.pasteContents &&
+    ed?.initComplexHistory &&
+    editor.editorHistory?.updateComplexHistory
+  );
+}
+
+// Perform the one section move via SDK commands, grouped as one undo unit.
+// Throws on any SDK failure (the caller falls back to open()).
+function nativeSingleMove(
   editor: ReorderEditor,
-  sfdtString: string,
+  from: number,
+  to: number,
+  source: SfdtSection,
+  n: number
+): void {
+  const sel = editor.selection as NonNullable<ReorderEditor['selection']>;
+  const ed = editor.editor as NonNullable<ReorderEditor['editor']>;
+  const hist = editor.editorHistory as NonNullable<
+    ReorderEditor['editorHistory']
+  >;
+  // nativeEditorReady() guaranteed these exist. BIND each to its owner — the SDK
+  // methods use `this` internally, so an unbound `const f = ed.delete; f()` call
+  // throws ("Cannot read properties of undefined").
+  const select = (sel.select as (a: string, b: string) => void).bind(sel);
+  const del = (ed.delete as () => void).bind(ed);
+  const insertBreak = (ed.insertSectionBreak as () => void).bind(ed);
+  const paste = (ed.pasteContents as (sfdt: object) => void).bind(ed);
+  const beginGroup = (ed.initComplexHistory as (action: string) => void).bind(
+    ed
+  );
+  const endGroup = (hist.updateComplexHistory as () => void).bind(hist);
+
+  beginGroup('ReorderSections');
+  try {
+    // 1. Delete the source section (whole section incl. its break).
+    if (from < n - 1) {
+      select(`${from};0;0`, `${from + 1};0;0`);
+    } else {
+      const prev = from - 1;
+      select(
+        `${prev};${lastBlockIndex(editor, prev)};${END_OFFSET}`,
+        `${from};${lastBlockIndex(editor, from)};${END_OFFSET}`
+      );
+    }
+    del();
+
+    // 2. Create an empty section at the destination.
+    const lenAfter = n - 1;
+    if (to < lenAfter) {
+      select(`${to};0;0`, `${to};0;0`);
+    } else {
+      const last = lenAfter - 1;
+      const at = `${last};${lastBlockIndex(editor, last)};${END_OFFSET}`;
+      select(at, at);
+    }
+    insertBreak();
+
+    // 3. Fill it with the source body.
+    select(`${to};0;0`, `${to};0;0`);
+    paste({ sections: [{ blocks: source.blocks || [] }] });
+
+    // 4. Re-apply page setup (pasteContents carries body only).
+    const format = sel.sectionFormat;
+    if (format) {
+      select(`${to};0;0`, `${to};0;0`);
+      const srcSF = (source.sectionFormat || {}) as Record<string, unknown>;
+      for (const key of Object.keys(srcSF)) {
+        const value = srcSF[key];
+        if (
+          typeof value === 'string' ||
+          typeof value === 'number' ||
+          typeof value === 'boolean'
+        ) {
+          try {
+            format[key] = value;
+          } catch {
+            /* unsettable key — verify() will fall back if it mattered */
+          }
+        }
+      }
+    }
+
+    // NOTE: headers/footers are intentionally NOT reproduced natively — driving
+    // goToHeader()+pasteContents() corrupts the header widget tree and crashes
+    // the next layout. Sections that HAVE per-section headers/footers skip the
+    // native path entirely (see tryNativeReplay) and go through open().
+  } finally {
+    endGroup();
+  }
+}
+
+// Confirm the native move produced exactly the target — correct order, and the
+// moved section's body length, headers/footers, and copied page-setup all match
+// the source. A mismatch means we must fall back to open().
+function verifyNative(
+  editor: ReorderEditor,
+  toIndex: number,
+  source: SfdtSection,
+  targetSignature: string
+): boolean {
+  let after: SfdtDocument;
+  try {
+    after = JSON.parse(editor.serialize()) as SfdtDocument;
+  } catch {
+    return false;
+  }
+  const secs = after.sections || [];
+  if (orderSignature(secs) !== targetSignature) return false;
+  const moved = secs[toIndex];
+  if (!moved) return false;
+
+  const srcHF = (source.headersFooters || {}) as Record<string, any>;
+  const gotHF = (moved.headersFooters || {}) as Record<string, any>;
+  for (const key of Object.keys(srcHF)) {
+    if (hfText(srcHF[key]) !== hfText(gotHF[key])) return false;
+  }
+  const srcSF = (source.sectionFormat || {}) as Record<string, unknown>;
+  const gotSF = (moved.sectionFormat || {}) as Record<string, unknown>;
+  for (const key of Object.keys(srcSF)) {
+    const value = srcSF[key];
+    if (
+      (typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean') &&
+      gotSF[key] !== value
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Try to apply the reorder natively (single-section relocation only). Returns
+// true only when it applied AND verified; false means the caller should open().
+function tryNativeReplay(
+  editor: ReorderEditor,
+  originalSfdt: SfdtDocument,
+  targetSfdt: SfdtDocument
+): boolean {
+  const origSecs = originalSfdt.sections || [];
+  const targetSecs = targetSfdt.sections || [];
+  const n = origSecs.length;
+  if (n < 2 || targetSecs.length !== n) return false;
+  if (!nativeEditorReady(editor)) return false;
+
+  // reorderSections/moveWordSection share section objects by identity, so the
+  // permutation is recoverable by object identity.
+  const targetOrder = targetSecs.map((s) => origSecs.indexOf(s));
+  if (targetOrder.some((i) => i < 0)) return false;
+
+  const move = singleRelocation(targetOrder);
+  if (!move) return false; // 0 or ≥2 moves → open() (multi-move redo is unsafe)
+
+  const source = origSecs[move.orig];
+  // Sections with per-section headers/footers can't be moved natively — the
+  // native re-render of the header widget tree crashes. Fall back to open()
+  // (full fidelity, no undo for that move).
+  if (hasHeadersFooters(source)) return false;
+
+  const targetSignature = orderSignature(targetSecs);
+  try {
+    nativeSingleMove(editor, move.from, move.to, source, n);
+  } catch {
+    return false;
+  }
+  return verifyNative(editor, move.to, source, targetSignature);
+}
+
+/* ---------------- commit ---------------- */
+
+function revealAndSettle(
+  editor: ReorderEditor,
+  view: ViewSnapshot,
   revealSection: number | null
 ): void {
-  const view = captureScroll(editor);
-  editor.open(sfdtString);
   // Moving whole sections shifts every ['sections', s, ...] path, so the
-  // binding index must be rebuilt from the reordered document. flush()
-  // re-serializes and re-scans; a pure reorder is a fixed point so no values
-  // change. No-op when the document has no bindings.
+  // binding index must be rebuilt. No-op when the document has no bindings.
   reconcileBoundDocument(editor);
   if (revealSection != null && editor.selection?.select) {
     try {
-      // "section;block;offset" — start of the moved section's first block.
       const at = `${revealSection};0;0`;
       editor.selection.select(at, at);
       return;
@@ -110,16 +398,30 @@ function commitDocument(
   }
 }
 
-// Shared commit path: serialize → run `mutate` → on change, re-open + reveal +
-// rebuild bindings + mark dirty. A refusal (mutate returns the input
-// identity-equal) surfaces its diagnostics and leaves the editor untouched.
+// Apply the target document. Native replay when possible (single-section move,
+// full fidelity) → native undo/redo; otherwise open() (clears history).
+function commitDocument(
+  editor: ReorderEditor,
+  originalSfdt: SfdtDocument,
+  targetSfdt: SfdtDocument,
+  revealSection: number | null
+): void {
+  const view = captureScroll(editor);
+  const applied = tryNativeReplay(editor, originalSfdt, targetSfdt);
+  if (!applied) editor.open(JSON.stringify(targetSfdt));
+  revealAndSettle(editor, view, revealSection);
+}
+
+// Shared commit path: serialize → run `mutate` → on change, apply + mark dirty.
+// A refusal (mutate returns the input identity-equal) surfaces its diagnostics
+// and leaves the editor untouched.
 function commit(
   editor: ReorderEditor,
   mutate: (sfdt: SfdtDocument) => MoveResult,
   { markDirty, onDiagnostics }: ApplyReorderCallbacks
 ): ApplyReorderResult {
   // Fold in anything the user typed but has not committed before we serialize,
-  // so the reopen cannot drop it. No-op without bindings.
+  // so applying the reorder cannot drop it. No-op without bindings.
   reconcileBoundDocument(editor);
 
   let raw: string;
@@ -161,7 +463,7 @@ function commit(
     return { moved: false, diagnostics: result.diagnostics };
   }
 
-  commitDocument(editor, JSON.stringify(result.sfdt), result.movedTo);
+  commitDocument(editor, sfdt, result.sfdt, result.movedTo);
   markDirty?.();
   onDiagnostics?.(result.diagnostics);
   return { moved: true, diagnostics: result.diagnostics };
