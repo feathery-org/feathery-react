@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
+import { CheckIcon, CloseIcon } from './icons';
 import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import TrackedChangeGroups from './TrackedChangeGroups';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
@@ -152,6 +153,15 @@ function DocxEditor({
   const dirtyRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Brief feedback shown after an explicit Save — the button otherwise gives
+  // no sign of whether the document actually persisted.
+  const [saveToast, setSaveToast] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const saveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined
+  );
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   // Shared by the panel's drawer handle, its ✕, and clicking an inline
@@ -248,11 +258,32 @@ function DocxEditor({
     }
   };
 
+  // Flash a save toast and auto-dismiss it. Re-showing while one is already up
+  // resets the timer so a second save reads as fresh feedback. Errors linger a
+  // little longer than the success confirmation.
+  const flashSaveToast = (type: 'success' | 'error', message: string) => {
+    setSaveToast({ type, message });
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    saveToastTimer.current = setTimeout(
+      () => setSaveToast(null),
+      type === 'error' ? 5000 : 2500
+    );
+  };
+
+  useEffect(
+    () => () => {
+      if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    },
+    []
+  );
+
   const handleSave = async () => {
     if (!readyToExport()) return;
     try {
       await saveCurrentDocument(await exportDoc());
+      flashSaveToast('success', 'Document saved');
     } catch (err) {
+      flashSaveToast('error', 'Could not save document');
       onError?.((err as Error).message || String(err));
     }
   };
@@ -452,6 +483,67 @@ function DocxEditor({
           </RailErrorBoundary>
         )}
       </div>
+      {/* Save feedback. Positioned over the editor, bottom-center, and
+          auto-dismissed. Styled to match the Feathery dashboard toast: white
+          surface, thin zinc border, dark text, fixed width. The tick sits at
+          the far left (task-view style) while the copy stays centered. */}
+      {saveToast && (
+        <div
+          role='status'
+          aria-live={saveToast.type === 'error' ? 'assertive' : 'polite'}
+          css={{
+            position: 'absolute',
+            bottom: 40,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 356,
+            maxWidth: 'calc(100% - 32px)',
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: 12,
+            borderRadius: 6,
+            background: '#fff',
+            color: '#27272a',
+            border: '1px solid #e4e4e7',
+            fontSize: 14,
+            fontWeight: 400,
+            lineHeight: 1.4,
+            boxShadow:
+              '0 0 0 1px rgb(0 9 50 / 3%), 0 12px 32px -16px rgb(0 9 50 / 12%)',
+            zIndex: 20,
+            pointerEvents: 'none'
+          }}
+        >
+          {saveToast.type === 'success' ? (
+            <CheckIcon
+              width={16}
+              height={16}
+              css={{
+                position: 'absolute',
+                left: 12,
+                top: '50%',
+                transform: 'translateY(-50%)'
+              }}
+            />
+          ) : (
+            <CloseIcon
+              width={16}
+              height={16}
+              css={{
+                position: 'absolute',
+                left: 12,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#ef4444'
+              }}
+            />
+          )}
+          {saveToast.message}
+        </div>
+      )}
     </div>
   );
 }
