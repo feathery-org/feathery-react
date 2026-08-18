@@ -342,21 +342,6 @@ export function moveWordSection(
     return noop();
   }
 
-  // A reorder is not representable as one tracked revision, so refuse rather
-  // than silently drop attribution — accept/reject pending changes first.
-  const revisions = (sfdt as { revisions?: unknown[] }).revisions;
-  if (
-    (sfdt as { trackChanges?: boolean }).trackChanges === true ||
-    (Array.isArray(revisions) && revisions.length > 0)
-  ) {
-    fail(
-      diagnostics,
-      'tracked-changes-present',
-      'document has tracked changes; accept or reject them before reordering sections'
-    );
-    return noop();
-  }
-
   let to: number;
   if (targetIndex != null) {
     if (!(targetIndex >= 0 && targetIndex < n)) {
@@ -498,19 +483,6 @@ export function reorderSections(
   }
   // No net change: return the document untouched (a silent no-op).
   if (order.every((v, i) => v === i)) return noop();
-
-  const revisions = (sfdt as { revisions?: unknown[] }).revisions;
-  if (
-    (sfdt as { trackChanges?: boolean }).trackChanges === true ||
-    (Array.isArray(revisions) && revisions.length > 0)
-  ) {
-    fail(
-      diagnostics,
-      'tracked-changes-present',
-      'document has tracked changes; accept or reject them before reordering sections'
-    );
-    return noop();
-  }
 
   const blocking = reorderSplitDiagnostics(sections, order);
   diagnostics.push(...blocking);

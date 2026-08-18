@@ -436,18 +436,17 @@ function DocxEditor({
           {loading && !error && <div css={overlay}>Loading document…</div>}
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
         </div>
-        {/* Shared "Document" panel (Suggested changes · Sections tabs). Stays
-            mounted while review is on so its pending count keeps the edge-rail
-            badge live; collapses to zero width when no tab is open. */}
+        {/* Shared side panel; its title follows the rail icon that opened it
+            (Suggested changes · Sections). Stays mounted while review is on so
+            its pending count keeps the edge-rail badge live; collapses to zero
+            width when no panel is open. */}
         {editor && (
           <DocumentPanel
             editor={editor}
             open={activePanel !== null}
             tab={activePanel ?? 'sections'}
-            onTab={setActivePanel}
             onClose={() => setActivePanel(null)}
             reviewChanges={!!reviewChanges}
-            changesCount={changesCount}
             onChangesCount={setChangesCount}
             markDirty={markDirty}
             boundaryKey={`${railGeneration}:${openNonce ?? 0}`}

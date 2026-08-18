@@ -6,99 +6,38 @@ import { INK, INK_3, LINE, PANEL, PANEL_2 } from './TrackedChangeGroups/styles';
 
 export type PanelTab = 'changes' | 'sections';
 
-// Shared right-hand "Document" panel: a header, a tab bar (Suggested changes ·
-// Sections), and the active tab's body. Collapses to zero width when closed but
-// stays mounted so the tracked-changes tab keeps reporting its pending count for
-// the edge-rail badge.
+// Shared right-hand side panel. The slim edge rail decides which panel is open;
+// this component just shows the active one with a matching title (no in-panel
+// tabs). Collapses to zero width when closed but stays mounted so the
+// tracked-changes body keeps reporting its pending count for the rail badge.
 
 const PANEL_WIDTH = 341;
-const TAB_ACTIVE = '#2e63d1';
-const TAB_INACTIVE = '#5a6372';
+
+const TITLES: Record<PanelTab, string> = {
+  changes: 'Suggested changes',
+  sections: 'Sections'
+};
 
 interface Props {
   editor: any;
   open: boolean;
+  /** Which panel the rail has open; also drives the header title. */
   tab: PanelTab;
-  onTab: (tab: PanelTab) => void;
   onClose: () => void;
-  /** Show the Suggested changes tab + keep its rail mounted for the count. */
+  /** Show the Suggested changes panel + keep its body mounted for the count. */
   reviewChanges: boolean;
-  changesCount: number;
   onChangesCount: (count: number) => void;
   markDirty?: () => void;
-  /** Remounts the tab bodies' error boundaries on editor/document changes. */
+  /** Remounts the panel bodies' error boundaries on editor/document changes. */
   boundaryKey: string;
-}
-
-function Tab({
-  label,
-  active,
-  onClick,
-  badge,
-  disabled
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  badge?: number;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type='button'
-      role='tab'
-      aria-selected={active}
-      disabled={disabled}
-      onClick={disabled ? undefined : onClick}
-      css={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 7,
-        border: 'none',
-        background: 'transparent',
-        padding: '9px 2px',
-        marginRight: 18,
-        fontSize: 13.5,
-        fontWeight: active ? 600 : 500,
-        color: active ? TAB_ACTIVE : TAB_INACTIVE,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.4 : 1,
-        borderBottom: `2px solid ${active ? TAB_ACTIVE : 'transparent'}`,
-        marginBottom: -1,
-        '&:hover': disabled ? {} : { color: active ? TAB_ACTIVE : INK }
-      }}
-    >
-      {label}
-      {badge != null && badge > 0 && (
-        <span
-          css={{
-            minWidth: 18,
-            height: 18,
-            padding: '0 5px',
-            borderRadius: 9,
-            background: '#6b7276',
-            color: '#fff',
-            fontSize: 11,
-            fontWeight: 600,
-            lineHeight: '18px',
-            textAlign: 'center'
-          }}
-        >
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
-    </button>
-  );
 }
 
 export default function DocumentPanel({
   editor,
   open,
   tab,
-  onTab,
   onClose,
   reviewChanges,
-  changesCount,
   onChangesCount,
   markDirty,
   boundaryKey
@@ -125,17 +64,18 @@ export default function DocumentPanel({
           minHeight: 0
         }}
       >
-        {/* Header */}
+        {/* Header — title reflects the panel the rail opened */}
         <div
           css={{
             display: 'flex',
             alignItems: 'center',
-            padding: '10px 12px 0',
+            padding: '10px 12px',
+            borderBottom: `1px solid ${LINE}`,
             flex: '0 0 auto'
           }}
         >
           <span css={{ flex: 1, fontSize: 15, fontWeight: 600, color: INK }}>
-            Document
+            {TITLES[tab]}
           </span>
           <button
             type='button'
@@ -157,33 +97,6 @@ export default function DocumentPanel({
           >
             ✕
           </button>
-        </div>
-
-        {/* Tabs */}
-        <div
-          role='tablist'
-          css={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '0 12px',
-            borderBottom: `1px solid ${LINE}`,
-            flex: '0 0 auto'
-          }}
-        >
-          {reviewChanges && (
-            <Tab
-              label='Suggested changes'
-              active={tab === 'changes'}
-              onClick={() => onTab('changes')}
-              badge={changesCount}
-              disabled={changesCount === 0}
-            />
-          )}
-          <Tab
-            label='Sections'
-            active={tab === 'sections'}
-            onClick={() => onTab('sections')}
-          />
         </div>
 
         {/* Bodies */}

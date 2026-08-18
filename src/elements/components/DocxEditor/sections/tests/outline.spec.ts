@@ -149,13 +149,12 @@ test('reorderSections rejects a non-permutation', () => {
   expect(result.diagnostics.map((d) => d.code)).toEqual(['outline-move-mismatch']);
 });
 
-test('reorderSections refuses while tracked changes are present', () => {
+test('reorderSections proceeds when tracked changes are present', () => {
   const doc = { ...sixSections(), trackChanges: true } as unknown as SfdtDocument;
   const result = reorderSections(doc, [5, 0, 1, 2, 3, 4]);
-  expect(result.sfdt).toBe(doc);
-  expect(result.diagnostics.map((d) => d.code)).toEqual([
-    'tracked-changes-present'
-  ]);
+  expect(result.sfdt).not.toBe(doc);
+  expect(codes(result.diagnostics)).toEqual([]);
+  expect(labels(result.sfdt)[0]).toBe('Signatures');
 });
 
 test('reorderSections refuses a permutation that splits a cross-section bookmark', () => {
@@ -313,17 +312,20 @@ test('refuses a move that would split an editable range across sections', () => 
   expect(refuse(doc, { index: 0, delta: 1 })).toEqual(['split-edit-range']);
 });
 
-test('refuses while tracked changes are present (flag or revisions)', () => {
+test('moves even when tracked changes are present (flag or revisions)', () => {
   const withFlag = { ...sixSections(), trackChanges: true } as unknown as SfdtDocument;
-  expect(refuse(withFlag, { index: 0, delta: 1 })).toEqual(['tracked-changes-present']);
+  const a = moveWordSection(withFlag, { index: 0, delta: 1 });
+  expect(a.sfdt).not.toBe(withFlag);
+  expect(codes(a.diagnostics)).toEqual([]);
+  expect(labels(a.sfdt)[0]).toBe('Scope of work');
 
   const withRevisions = {
     ...sixSections(),
     revisions: [{ revisionId: 'r1', revisionType: 'Insertion' }]
   } as unknown as SfdtDocument;
-  expect(refuse(withRevisions, { index: 0, delta: 1 })).toEqual([
-    'tracked-changes-present'
-  ]);
+  const b = moveWordSection(withRevisions, { index: 0, delta: 1 });
+  expect(b.sfdt).not.toBe(withRevisions);
+  expect(codes(b.diagnostics)).toEqual([]);
 });
 
 test('hasBlockingErrors reflects error-severity diagnostics', () => {

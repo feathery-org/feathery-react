@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react';
 import { readSections, SectionNode } from './outline';
 import { applyReorderTo, installReorderUndoBatching } from './applyReorder';
 import { isAssistantWriting } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
@@ -17,8 +23,9 @@ import {
 // ⌘/ctrl = toggle); the grip is the drag handle. Dragging reorders the list
 // live and the dragged card(s) preview translucent at the target slot; the move
 // commits on drop. Both drag and the chevrons funnel through the apply layer,
-// which serializes → permutes → re-opens the document. A refused move (e.g.
-// tracked changes present) leaves the document untouched and shows its reason.
+// which serializes → permutes → re-opens the document. A refused move (e.g. one
+// that would split a cross-section bookmark) leaves the document untouched and
+// shows its reason. Reordering is only locked while the assistant is working.
 
 interface Props {
   editor: any;
@@ -129,6 +136,38 @@ export default function SectionList({ editor, markDirty }: Props) {
   // The panel root; focused on card selection so keyboard undo/redo lands on our
   // handler (not the browser) even though the cards sit outside the editor.
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // A floating "popped out" copy of the grabbed card that follows the cursor
+  // during a drag. Its LEFT is pinned to the card's original x (captured on
+  // grab), so it never drifts sideways — only its top tracks the pointer. Moved
+  // by direct style writes (ref) to stay smooth, so a drag re-renders nothing.
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const dragMeta = useRef<{
+    offsetY: number;
+    left: number;
+    width: number;
+    startY: number;
+  } | null>(null);
+  const [ghostInfo, setGhostInfo] = useState<{
+    label: string;
+    summary: string;
+    count: number;
+  } | null>(null);
+
+  const positionGhost = useCallback((clientY: number) => {
+    const g = ghostRef.current;
+    const m = dragMeta.current;
+    if (!g || !m) return;
+    g.style.top = `${clientY - m.offsetY}px`;
+    g.style.left = `${m.left}px`;
+    g.style.width = `${m.width}px`;
+  }, []);
+
+  // Place the ghost the instant it mounts (before the first dragover) so it
+  // never flashes at the top-left corner.
+  useLayoutEffect(() => {
+    if (ghostInfo) positionGhost(dragMeta.current?.startY ?? 0);
+  }, [ghostInfo, positionGhost]);
 
   // Prime the transparent drag image on mount so it's decoded before the first
   // drag — otherwise the browser shows its default (globe) ghost that once.
@@ -243,11 +282,10 @@ export default function SectionList({ editor, markDirty }: Props) {
   // The debounced contentChange refresh reconciles any drift afterwards. This
   // keeps the drop instant instead of paying for another full serialize.
   const applyOrder = (finalOrder: number[]) => {
-    const result = applyReorderTo(editor, finalOrder, {
-      markDirty,
-      onDiagnostics: setDiagnostics
-    });
-    if (!result.moved) return;
+    const base = nodes.map((n) => n.index);
+    if (sameOrder(finalOrder, base)) return; // dropped in place — nothing to do
+
+    // Settle the list optimistically and immediately so the drop feels instant.
     setSelected([]);
     setAnchor(null);
     setNodes((prev) =>
@@ -260,6 +298,25 @@ export default function SectionList({ editor, markDirty }: Props) {
         })
         .filter((n): n is SectionNode => !!n)
     );
+
+    // Defer the heavy editor apply (serialize + native SDK replay) one frame so
+    // the browser paints the settled list first — running it synchronously on
+    // drop is what caused the small drop lag. finalOrder is relative to the
+    // current display order and the editor is kept in that same order, so
+    // successive deferred applies compose correctly. On a refusal/no-op, re-sync
+    // the list from the editor's real state.
+    const runApply = () => {
+      const result = applyReorderTo(editor, finalOrder, {
+        markDirty,
+        onDiagnostics: setDiagnostics
+      });
+      if (!result.moved) readNow();
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(runApply);
+    } else {
+      setTimeout(runApply, 0);
+    }
   };
 
   const moveOne = (index: number, delta: number) => {
@@ -286,6 +343,25 @@ export default function SectionList({ editor, markDirty }: Props) {
     }
     setDraggingSet(set);
     setOrder(nodes.map((n) => n.index));
+    // Capture the card's on-screen box so the floating ghost aligns under the
+    // cursor and keeps the card's original left (x stays fixed for the drag).
+    const cardEl = (event.currentTarget as HTMLElement).closest(
+      '[data-card]'
+    ) as HTMLElement | null;
+    const rect = cardEl?.getBoundingClientRect();
+    if (rect) {
+      dragMeta.current = {
+        offsetY: event.clientY - rect.top,
+        left: rect.left,
+        width: rect.width,
+        startY: event.clientY
+      };
+      setGhostInfo({
+        label: node.label,
+        summary: node.summary,
+        count: set.length
+      });
+    }
     try {
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', String(node.index));
@@ -328,6 +404,8 @@ export default function SectionList({ editor, markDirty }: Props) {
     const finalOrder = order;
     setDraggingSet(null);
     setOrder(null);
+    setGhostInfo(null);
+    dragMeta.current = null;
     if (finalOrder) applyOrder(finalOrder);
   };
 
@@ -378,26 +456,6 @@ export default function SectionList({ editor, markDirty }: Props) {
           headings, tables, and paragraph blocks.
         </p>
 
-        {locked && (
-          <div
-            title={LOCK_TITLE}
-            css={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              margin: '0 0 10px',
-              padding: '7px 9px',
-              borderRadius: 7,
-              background: PANEL_3,
-              color: INK_3,
-              fontSize: 12
-            }}
-          >
-            <LockIcon />
-            Reordering is locked while the assistant is working.
-          </div>
-        )}
-
         {nodes.length === 0 && (
           <div css={{ color: INK_3, fontSize: 12.5 }}>
             No sections to reorder.
@@ -409,7 +467,14 @@ export default function SectionList({ editor, markDirty }: Props) {
           </div>
         )}
 
-        <div css={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div
+          onDragOver={(e) => {
+            if (!draggingSet) return;
+            e.preventDefault();
+            positionGhost(e.clientY);
+          }}
+          css={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+        >
           {displayNodes.map((node) => {
             const isDragging = !!draggingSet?.includes(node.index);
             const isSelected = selected.includes(node.index);
@@ -491,32 +556,42 @@ export default function SectionList({ editor, markDirty }: Props) {
                   css={{
                     display: 'flex',
                     flexDirection: 'column',
-                    flex: 'none'
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flex: 'none',
+                    color: KIND
                   }}
+                  title={locked ? LOCK_TITLE : undefined}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <button
-                    type='button'
-                    aria-label={`Move ${node.label} up`}
-                    title={locked ? LOCK_TITLE : undefined}
-                    disabled={locked || !node.movable || node.index === 0}
-                    onClick={() => moveOne(node.index, -1)}
-                    css={moveBtn}
-                  >
-                    <Chevron dir='up' />
-                  </button>
-                  <button
-                    type='button'
-                    aria-label={`Move ${node.label} down`}
-                    title={locked ? LOCK_TITLE : undefined}
-                    disabled={
-                      locked || !node.movable || node.index === nodes.length - 1
-                    }
-                    onClick={() => moveOne(node.index, 1)}
-                    css={moveBtn}
-                  >
-                    <Chevron dir='down' />
-                  </button>
+                  {locked ? (
+                    // While the assistant is working, the chevrons are inert —
+                    // show a padlock here so each card reads as locked.
+                    <LockIcon size={14} />
+                  ) : (
+                    <>
+                      <button
+                        type='button'
+                        aria-label={`Move ${node.label} up`}
+                        disabled={!node.movable || node.index === 0}
+                        onClick={() => moveOne(node.index, -1)}
+                        css={moveBtn}
+                      >
+                        <Chevron dir='up' />
+                      </button>
+                      <button
+                        type='button'
+                        aria-label={`Move ${node.label} down`}
+                        disabled={
+                          !node.movable || node.index === nodes.length - 1
+                        }
+                        onClick={() => moveOne(node.index, 1)}
+                        css={moveBtn}
+                      >
+                        <Chevron dir='down' />
+                      </button>
+                    </>
+                  )}
                 </span>
               </div>
             );
@@ -544,6 +619,78 @@ export default function SectionList({ editor, markDirty }: Props) {
               {d.message}
             </div>
           ))}
+        </div>
+      )}
+
+      {ghostInfo && (
+        <div
+          ref={ghostRef}
+          css={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            pointerEvents: 'none',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 9,
+            background: PAPER,
+            border: `1px solid ${SELECT_BORDER}`,
+            borderRadius: 9,
+            padding: '9px 10px',
+            boxShadow: '0 8px 22px rgba(17,24,39,0.22)',
+            transform: 'scale(1.03)',
+            opacity: 0.97
+          }}
+        >
+          <span css={{ color: KIND, display: 'flex', flex: 'none' }}>
+            <Grip />
+          </span>
+          <span css={{ flex: 1, minWidth: 0 }}>
+            <span
+              css={{
+                display: 'block',
+                fontSize: 13,
+                fontWeight: 600,
+                color: INK,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}
+            >
+              {ghostInfo.label}
+            </span>
+            <span
+              css={{
+                display: 'block',
+                fontSize: 11.5,
+                fontWeight: 400,
+                color: TEXT_MUTED,
+                marginTop: 1
+              }}
+            >
+              {ghostInfo.summary}
+            </span>
+          </span>
+          {ghostInfo.count > 1 && (
+            <span
+              css={{
+                flex: 'none',
+                minWidth: 18,
+                height: 18,
+                padding: '0 5px',
+                borderRadius: 9,
+                background: SELECT_BORDER,
+                color: '#fff',
+                fontSize: 11,
+                fontWeight: 600,
+                lineHeight: '18px',
+                textAlign: 'center'
+              }}
+            >
+              {ghostInfo.count}
+            </span>
+          )}
         </div>
       )}
     </div>
