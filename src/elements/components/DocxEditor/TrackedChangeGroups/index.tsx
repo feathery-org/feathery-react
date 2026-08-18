@@ -135,6 +135,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
+  // Group card elements, keyed by group.key — the scroll effect aligns to a
+  // card's TOP (header included) instead of its first chip's row.
+  const groupRefs = useRef(new Map<string, HTMLDivElement>());
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
 
@@ -190,6 +193,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
+        // Shown once in the group header instead of on every chip. Untagged
+        // groups already show it as the title, so leave theirs unset.
+        author: view.untagged ? undefined : view.items[0]?.author,
         chips: view.items.map((item) => ({
           revision: item.revision,
           revisions: item.revisions,
@@ -318,12 +324,23 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
     const row = rowRefs.current.get(primary);
     const box = scrollBoxRef.current;
     if (!row || !box || box.scrollHeight <= box.clientHeight) return;
-    const rowTop =
-      row.getBoundingClientRect().top -
+    const offsetTop = (el: HTMLElement) =>
+      el.getBoundingClientRect().top -
       box.getBoundingClientRect().top +
       box.scrollTop;
-    const rowBottom = rowTop + row.offsetHeight;
-    if (rowTop < box.scrollTop) box.scrollTop = rowTop;
+    // When the active chip is its group's FIRST, scrolling the chip row to the
+    // top hides the group header just above it. Align to the card's top so the
+    // heading of the change you clicked stays in view.
+    const ownerGroup = groups.find(
+      (mem) =>
+        mem.chips[0] &&
+        (mem.chips[0].revision === primary || mem.chips[0].partner === primary)
+    );
+    const card = ownerGroup && groupRefs.current.get(ownerGroup.key);
+    const topTarget = card ?? row;
+    const revealTop = offsetTop(topTarget);
+    const rowBottom = offsetTop(row) + row.offsetHeight;
+    if (revealTop < box.scrollTop) box.scrollTop = revealTop;
     else if (rowBottom > box.scrollTop + box.clientHeight)
       box.scrollTop = rowBottom - box.clientHeight;
   });
@@ -548,6 +565,10 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
               <GroupCard
                 key={mem.key}
                 group={mem}
+                cardRef={(el) => {
+                  if (el) groupRefs.current.set(mem.key, el);
+                  else groupRefs.current.delete(mem.key);
+                }}
                 isOpen={!!expanded[mem.key]}
                 onToggle={() =>
                   setExpanded((prev) => ({

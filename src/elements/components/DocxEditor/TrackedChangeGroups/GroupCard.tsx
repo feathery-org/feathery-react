@@ -26,6 +26,8 @@ const caretSvg = (
 
 interface Props {
   group: GroupView;
+  /** Registers the card element so the rail can scroll its header into view. */
+  cardRef: (el: HTMLDivElement | null) => void;
   isOpen: boolean;
   onToggle: () => void;
   /** Navigate the document to the group's first edit without expanding. */
@@ -43,6 +45,7 @@ interface Props {
 // expands/collapses the chip list, the title navigates without expanding.
 export default function GroupCard({
   group,
+  cardRef,
   isOpen,
   onToggle,
   onNavigateFirst,
@@ -54,6 +57,7 @@ export default function GroupCard({
 }: Props) {
   return (
     <div
+      ref={cardRef}
       css={{
         position: 'relative',
         flex: 'none',
@@ -122,6 +126,21 @@ export default function GroupCard({
           <b css={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35 }}>
             {group.title}
           </b>
+          {group.author && (
+            <span
+              css={{
+                flex: 'none',
+                fontSize: 11,
+                color: INK_3,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                minWidth: 0
+              }}
+            >
+              {group.author}
+            </span>
+          )}
           <span
             css={{
               flex: 'none',

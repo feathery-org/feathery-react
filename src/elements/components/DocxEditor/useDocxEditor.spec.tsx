@@ -8,7 +8,8 @@ import { dynamicImport } from '../../../integrations/utils';
 import {
   configureTrackedChangeReview,
   resizeDocxEditor,
-  useDocxEditor
+  useDocxEditor,
+  washAlphaFor
 } from './useDocxEditor';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
@@ -23,6 +24,30 @@ jest.mock('../../../utils/documentEditorPrimitives', () => ({
 jest.mock('../../../integrations/utils', () => ({
   dynamicImport: jest.fn()
 }));
+
+describe('washAlphaFor (highlight muting when an edit is selected)', () => {
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+
+  it('paints everything full opacity when nothing is selected', () => {
+    expect(washAlphaFor(null, a)).toBe(1);
+    expect(washAlphaFor(new Set(), a)).toBe(1);
+    expect(washAlphaFor(undefined, a)).toBe(1);
+  });
+
+  it('keeps the selected edit full opacity', () => {
+    expect(washAlphaFor(new Set([a]), a)).toBe(1);
+  });
+
+  it('counts a replace counterpart as part of the selection', () => {
+    // Either half of a replace passed in keeps the wash full.
+    expect(washAlphaFor(new Set([a]), null, a)).toBe(1);
+  });
+
+  it('mutes edits that are not the selection', () => {
+    expect(washAlphaFor(new Set([a]), b)).toBeLessThan(1);
+  });
+});
 
 describe('configureTrackedChangeReview', () => {
   beforeEach(() => jest.clearAllMocks());

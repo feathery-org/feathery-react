@@ -111,6 +111,7 @@ export default function ChangeChip({
         }}
       />
       <div css={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        {/* Author is shown once on the group header, not per chip. */}
         <span
           css={{
             flex: 'none',
@@ -127,20 +128,6 @@ export default function ChangeChip({
         >
           {badge.label}
         </span>
-        {chip.author && (
-          <span
-            css={{
-              fontSize: 10.5,
-              color: INK_3,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              minWidth: 0
-            }}
-          >
-            {chip.author}
-          </span>
-        )}
       </div>
       <div
         css={{

@@ -183,19 +183,23 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Ayesha')).toBeInTheDocument();
     expect(screen.getByText('1 edit')).toBeInTheDocument();
 
-    // Expanding shows the edit with its author attribution.
+    // Expanding shows the edit itself. The author is the card title, not
+    // repeated on each chip, so it still appears exactly once.
     fireEvent.click(screen.getByRole('button', { name: 'Expand Ayesha' }));
     expect(screen.getByText('A human tracked edit.')).toBeInTheDocument();
-    expect(screen.getAllByText('Ayesha').length).toBeGreaterThan(1);
+    expect(screen.getAllByText('Ayesha')).toHaveLength(1);
   });
 
-  it('shows the author on assistant chips too', () => {
-    const editor = makeEditor([makeRevision()]);
+  it('shows the assistant author once on the group header, not per chip', () => {
+    const editor = makeEditor([makeRevision(), makeRevision()]);
     render(<TrackedChangeGroups editor={editor} />);
+    // Visible on the header before expanding.
+    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+    // Still exactly one after expanding two chips — no per-chip repetition.
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
-    expect(screen.getByText('Robin (assistant)')).toBeInTheDocument();
+    expect(screen.getAllByText('Robin (assistant)')).toHaveLength(1);
   });
 
   it('keeps every review control from submitting the surrounding form', () => {
@@ -1006,6 +1010,50 @@ describe('TrackedChangeGroups', () => {
     expect(scrollBox.scrollTop).toBe(0);
     expect(viewport.scrollTop).toBe(8742);
     expect(container).toContainElement(row as HTMLElement);
+  });
+
+  it('scrolls to the group card top so the heading stays in view', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    render(<TrackedChangeGroups editor={editor} />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    const card = scrollBox.children[0] as HTMLElement;
+    const row = screen
+      .getByText('$6,000')
+      .closest('[role="button"]') as HTMLElement;
+
+    // Scrolled well past the card; the effect must bring it back up.
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 3000 },
+      scrollTop: { configurable: true, writable: true, value: 2000 }
+    });
+    Object.defineProperty(row, 'offsetHeight', {
+      configurable: true,
+      value: 40
+    });
+    jest
+      .spyOn(scrollBox, 'getBoundingClientRect')
+      .mockReturnValue({ top: 100, bottom: 700 } as DOMRect);
+    // Both are scrolled above the viewport (top < box top); the card header
+    // sits just above its first chip row.
+    jest
+      .spyOn(card, 'getBoundingClientRect')
+      .mockReturnValue({ top: 50, bottom: 300 } as DOMRect);
+    jest
+      .spyOn(row, 'getBoundingClientRect')
+      .mockReturnValue({ top: 90, bottom: 130 } as DOMRect);
+
+    editor.selection.getCurrentRevision.mockReturnValue([revision]);
+    act(() => editor.emit('selectionChange'));
+
+    // Card top offset = 50 - 100 + 2000 = 1950 (not the row's 1990), so the
+    // group heading of the clicked change remains visible.
+    expect(scrollBox.scrollTop).toBe(1950);
   });
 
   it('every rail button is type=button so clicks never submit the host form', () => {
