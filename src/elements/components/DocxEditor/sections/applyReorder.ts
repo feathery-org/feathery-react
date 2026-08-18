@@ -172,15 +172,23 @@ function lastBlockIndex(editor: ReorderEditor, sectionIndex: number): number {
   return Math.max(0, blocks.length - 1);
 }
 
-// The single relocation needed to turn identity order into `targetOrder`, or
-// null when it isn't exactly one section move (0 or ≥2). Selection-sort: the
-// common case (a single-section drag or a chevron) is exactly one move.
-function singleRelocation(
-  targetOrder: number[]
-): { from: number; to: number; orig: number } | null {
+interface SectionMove {
+  /** Live index of the section to move at the time this move runs. */
+  from: number;
+  /** Live index it moves to. */
+  to: number;
+  /** Its ORIGINAL index (into the pre-reorder sections array). */
+  orig: number;
+}
+
+// The sequence of single-section relocations that turns identity order into
+// `targetOrder` (selection-sort). A single drag / chevron is one move; a
+// multi-section selection is several. Each `from`/`to` is a LIVE index at the
+// point that move runs, so the moves can be replayed on the editor in order.
+function movePlan(targetOrder: number[]): SectionMove[] {
   const n = targetOrder.length;
   const cur = Array.from({ length: n }, (_, i) => i);
-  const moves: { from: number; to: number; orig: number }[] = [];
+  const moves: SectionMove[] = [];
   for (let p = 0; p < n; p++) {
     const desired = targetOrder[p];
     const from = cur.indexOf(desired);
@@ -188,9 +196,8 @@ function singleRelocation(
     moves.push({ from, to: p, orig: desired });
     cur.splice(from, 1);
     cur.splice(p, 0, desired);
-    if (moves.length > 1) return null;
   }
-  return moves.length === 1 ? moves[0] : null;
+  return moves;
 }
 
 function nativeEditorReady(editor: ReorderEditor): boolean {
@@ -291,26 +298,13 @@ function nativeSingleMove(
   }
 }
 
-// Confirm the native move produced exactly the target — correct order, and the
-// moved section's body length, headers/footers, and copied page-setup all match
-// the source. A mismatch means we must fall back to open().
-function verifyNative(
-  editor: ReorderEditor,
-  toIndex: number,
-  source: SfdtSection,
-  targetSignature: string
+// A moved section keeps fidelity: its headers/footers (there should be none —
+// HF sections skip native) and its copied page-setup match the source.
+function sectionFidelityOK(
+  moved: SfdtSection | undefined,
+  source: SfdtSection
 ): boolean {
-  let after: SfdtDocument;
-  try {
-    after = JSON.parse(editor.serialize()) as SfdtDocument;
-  } catch {
-    return false;
-  }
-  const secs = after.sections || [];
-  if (orderSignature(secs) !== targetSignature) return false;
-  const moved = secs[toIndex];
   if (!moved) return false;
-
   const srcHF = (source.headersFooters || {}) as Record<string, any>;
   const gotHF = (moved.headersFooters || {}) as Record<string, any>;
   for (const key of Object.keys(srcHF)) {
@@ -332,8 +326,11 @@ function verifyNative(
   return true;
 }
 
-// Try to apply the reorder natively (single-section relocation only). Returns
-// true only when it applied AND verified; false means the caller should open().
+// Try to apply the reorder natively. Every relocation runs as its OWN
+// complex-history group (a single multi-step group breaks EJ2 redo), so a
+// multi-section move is several native undo units — but each undoes/redoes
+// cleanly. Returns true only when every move applied AND the final document
+// verifies; false means the caller should open().
 function tryNativeReplay(
   editor: ReorderEditor,
   originalSfdt: SfdtDocument,
@@ -350,22 +347,36 @@ function tryNativeReplay(
   const targetOrder = targetSecs.map((s) => origSecs.indexOf(s));
   if (targetOrder.some((i) => i < 0)) return false;
 
-  const move = singleRelocation(targetOrder);
-  if (!move) return false; // 0 or ≥2 moves → open() (multi-move redo is unsafe)
+  const moves = movePlan(targetOrder);
+  if (moves.length === 0) return false;
 
-  const source = origSecs[move.orig];
-  // Sections with per-section headers/footers can't be moved natively — the
-  // native re-render of the header widget tree crashes. Fall back to open()
-  // (full fidelity, no undo for that move).
-  if (hasHeadersFooters(source)) return false;
+  // Any moved section with per-section headers/footers crashes the native
+  // header re-render → fall back to open() for the whole reorder.
+  if (moves.some((m) => hasHeadersFooters(origSecs[m.orig]))) return false;
 
-  const targetSignature = orderSignature(targetSecs);
   try {
-    nativeSingleMove(editor, move.from, move.to, source, n);
+    for (const m of moves) {
+      nativeSingleMove(editor, m.from, m.to, origSecs[m.orig], n);
+    }
   } catch {
     return false;
   }
-  return verifyNative(editor, move.to, source, targetSignature);
+
+  // Verify the final document: order + each moved section's fidelity (at its
+  // final position, targetOrder.indexOf(orig)).
+  let after: SfdtDocument;
+  try {
+    after = JSON.parse(editor.serialize()) as SfdtDocument;
+  } catch {
+    return false;
+  }
+  const secs = after.sections || [];
+  if (orderSignature(secs) !== orderSignature(targetSecs)) return false;
+  for (const m of moves) {
+    const finalIndex = targetOrder.indexOf(m.orig);
+    if (!sectionFidelityOK(secs[finalIndex], origSecs[m.orig])) return false;
+  }
+  return true;
 }
 
 /* ---------------- commit ---------------- */

@@ -110,14 +110,14 @@ test('native editor: a single-section move goes native, no open()', () => {
   expect(markDirty).toHaveBeenCalledTimes(1);
 });
 
-test('native editor: a multi-section move falls back to open() untouched', () => {
+test('native editor: a multi-section move goes native as several groups', () => {
   const editor = new NativeEditor(docOf(['A', 'B', 'C', 'D']));
   editor.target = docOf(['C', 'D', 'A', 'B']);
-  // moving a contiguous block [C,D] to the front is 2 relocations → not native
+  // moving the block [C,D] to the front is 2 relocations → 2 native groups.
   const result = applyReorderTo(editor, [2, 3, 0, 1]);
   expect(result.moved).toBe(true);
-  expect(editor.openCount).toBe(1);
-  expect(editor.cmds).not.toContain('init'); // never attempted the native path
+  expect(editor.openCount).toBe(0); // native, not open()
+  expect(editor.groupsClosed).toBe(2); // one complex-history unit per move
   expect(labels(editor.doc)).toEqual(['C', 'D', 'A', 'B']);
 });
 
