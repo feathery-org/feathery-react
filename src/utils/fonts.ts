@@ -36,7 +36,7 @@ export function isFontDeclaredByHost(
   weight = '400',
   style = 'normal'
 ): boolean {
-  const fonts = featheryDoc().fonts;
+  const fonts: FontFaceSet | undefined = featheryDoc().fonts;
   if (!fonts) return false;
   const targetFamily = family.trim().toLowerCase();
   const targetWeight =
