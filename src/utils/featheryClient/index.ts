@@ -403,7 +403,7 @@ export default class FeatheryClient extends IntegrationClient {
         // Skip variants the host page already declared in document.fonts
         if (isFontDeclaredByHost(family, `${weight}`, `${style}`)) return;
         const loadFont = (url: string) =>
-          new FontFace(family, `url(${url})`, { style, weight })
+          new FontFace(family, `url(${url})`, { style, weight: `${weight}` })
             .load()
             .then((font) => featheryDoc().fonts.add(font));
         loadFont(source).catch(() => {

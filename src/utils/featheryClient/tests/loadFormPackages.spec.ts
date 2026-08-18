@@ -64,8 +64,8 @@ describe('FeatheryClient._loadFormPackages uploaded fonts', () => {
 
     // Assert
     expect(created).toEqual([
-      { family: 'Inter', style: 'normal', weight: 400 },
-      { family: 'Inter', style: 'normal', weight: 700 }
+      { family: 'Inter', style: 'normal', weight: '400' },
+      { family: 'Inter', style: 'normal', weight: '700' }
     ]);
   });
 
@@ -96,7 +96,7 @@ describe('FeatheryClient._loadFormPackages uploaded fonts', () => {
 
     // Assert
     expect(created).toEqual([
-      { family: 'Inter', style: 'normal', weight: 700 }
+      { family: 'Inter', style: 'normal', weight: '700' }
     ]);
   });
 });
