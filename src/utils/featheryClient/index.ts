@@ -1017,7 +1017,8 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         agent_id: agentId,
-        fuser_key: userId
+        fuser_key: userId,
+        panel_key: this.formKey
       })
     };
     const res = await this._fetch(url, reqOptions, false);
