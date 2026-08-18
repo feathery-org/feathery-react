@@ -118,6 +118,68 @@ describe('loadGoogleFonts', () => {
     expect(getFontLinks()).toHaveLength(1);
   });
 
+  it('does not treat a host face whose download failed as coverage', () => {
+    // Arrange — errored faces stay in document.fonts but never render
+    (featheryDoc() as any).fonts = new Set([
+      { family: 'Bitter', weight: '400', style: 'normal', status: 'error' }
+    ]);
+
+    // Act
+    loadGoogleFonts(['Bitter:400']);
+
+    // Assert — the broken host declaration must not suppress our own load
+    const [link] = getFontLinks();
+    expect(link.href).toEqual(
+      'https://fonts.googleapis.com/css?family=Bitter:400&display=swap'
+    );
+    delete (featheryDoc() as any).fonts;
+  });
+
+  it('treats a host oblique face as covering an italic request', () => {
+    // Arrange
+    (featheryDoc() as any).fonts = new Set([
+      { family: 'Cabin', weight: '400', style: 'oblique 10deg' }
+    ]);
+
+    // Act
+    loadGoogleFonts(['Cabin:400italic']);
+
+    // Assert
+    expect(getFontLinks()).toHaveLength(0);
+    delete (featheryDoc() as any).fonts;
+  });
+
+  it('parses keyword variants like regular and italic', () => {
+    // Arrange
+    (featheryDoc() as any).fonts = new Set([
+      { family: 'Arvo', weight: '400', style: 'normal' }
+    ]);
+
+    // Act — 'regular' is 400 normal (covered); 'italic' is 400 italic
+    loadGoogleFonts(['Arvo:regular,italic']);
+
+    // Assert
+    const [link] = getFontLinks();
+    expect(link.href).toEqual(
+      'https://fonts.googleapis.com/css?family=Arvo:italic&display=swap'
+    );
+    delete (featheryDoc() as any).fonts;
+  });
+
+  it('covers the inclusive boundaries of a variable-font weight range', () => {
+    // Arrange
+    (featheryDoc() as any).fonts = new Set([
+      { family: 'Sora', weight: '100 900', style: 'normal' }
+    ]);
+
+    // Act
+    loadGoogleFonts(['Sora:100,900']);
+
+    // Assert
+    expect(getFontLinks()).toHaveLength(0);
+    delete (featheryDoc() as any).fonts;
+  });
+
   it('re-requests a host-covered variant after the host declaration is removed', () => {
     // Arrange — host declares the font, e.g. via a route-scoped stylesheet
     (featheryDoc() as any).fonts = new Set([
