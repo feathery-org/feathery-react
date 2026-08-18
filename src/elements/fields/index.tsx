@@ -12,6 +12,10 @@ type VisiblePositions = Record<string, boolean[]>;
 const fieldLoaders = {
   AddressLine1: () =>
     import(/* webpackChunkName: "AddressField" */ './AddressLine1Field'),
+  AudioRecordingField: () =>
+    import(
+      /* webpackChunkName: "AudioRecordingField" */ './AudioRecordingField'
+    ),
   ButtonGroupField: () =>
     import(/* webpackChunkName: "ButtonGroupField" */ './ButtonGroupField'),
   CheckboxField: () =>
@@ -98,6 +102,9 @@ const createPreloadableField = (load: () => Promise<any>): PreloadableField => {
 };
 
 const AddressLine1 = createPreloadableField(fieldLoaders.AddressLine1);
+const AudioRecordingField = createPreloadableField(
+  fieldLoaders.AudioRecordingField
+);
 const ButtonGroupField = createPreloadableField(fieldLoaders.ButtonGroupField);
 const CheckboxField = createPreloadableField(fieldLoaders.CheckboxField);
 const CheckboxGroupField = createPreloadableField(
@@ -132,6 +139,7 @@ const TextArea = createPreloadableField(fieldLoaders.TextArea);
 
 const preloadableFields = {
   AddressLine1,
+  AudioRecordingField,
   ButtonGroupField,
   CheckboxField,
   CheckboxGroupField,
@@ -169,6 +177,8 @@ const getFieldComponentKey = (servarType?: string): FieldComponentKey => {
       return 'CustomField';
     case 'file_upload':
       return 'FileUploadField';
+    case 'audio_recording':
+      return 'AudioRecordingField';
     case 'button_group':
       return 'ButtonGroupField';
     case 'checkbox':
@@ -241,7 +251,8 @@ const defaultBorderFields = [
   'hex_color',
   'select',
   'signature',
-  'file_upload'
+  'file_upload',
+  'audio_recording'
 ];
 
 export const DROPDOWN_Z_INDEX = 10;
@@ -321,6 +332,7 @@ function applyFieldStyles(field: any, styles: any) {
 
   switch (type) {
     case 'signature':
+    case 'audio_recording':
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
