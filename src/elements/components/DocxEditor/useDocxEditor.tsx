@@ -79,6 +79,19 @@ const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
 const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
+// While an edit is selected, every OTHER edit's wash paints at this fraction of
+// its opacity so the selected one stands out among many highlights.
+const MUTED_WASH_ALPHA = 0.4;
+// 1 when nothing is selected or one of `revs` IS the selection; the muted
+// fraction otherwise. `active` is the current selection set (or null/empty).
+// Exported for tests.
+export const washAlphaFor = (
+  active: Set<any> | null | undefined,
+  ...revs: any[]
+) =>
+  active && active.size > 0 && !revs.some((rev) => rev && active.has(rev))
+    ? MUTED_WASH_ALPHA
+    : 1;
 // Deleted GLYPHS render in the palette's red; added text keeps the
 // document's own font color.
 const DELETION_TEXT_COLOR = '#b0302b';
@@ -259,7 +272,19 @@ export function installRevisionHighlightRendering(ed: any) {
         const ctx = renderer.pageContext;
         ctx.fillStyle =
           info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
-        ctx.fillRect(box.x, box.y, box.w, box.h);
+        const alpha = washAlphaFor(
+          ed[ACTIVE_REVISION_KEY],
+          info.revision,
+          info.counterpart
+        );
+        if (alpha < 1) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillRect(box.x, box.y, box.w, box.h);
+          ctx.restore();
+        } else {
+          ctx.fillRect(box.x, box.y, box.w, box.h);
+        }
       } catch {
         // Highlight is decoration only; the text itself must still render.
       }
@@ -330,7 +355,10 @@ export function installRevisionHighlightRendering(ed: any) {
       }
       // Same choice the engine makes: the row's LAST revision decides.
       let wash = INSERTION_HIGHLIGHT;
+      const rowRevisions: any[] = [];
       try {
+        for (let i = 0; i < count; i++)
+          rowRevisions.push(rowFormat.getRevision?.(i));
         const type = rowFormat.getRevision?.(count - 1)?.revisionType;
         if (type === 'Deletion' || type === 'MoveFrom')
           wash = DELETION_HIGHLIGHT;
@@ -373,12 +401,18 @@ export function installRevisionHighlightRendering(ed: any) {
           const width =
             cellWidget.width + leftMargin + rightMargin + lineWidth / 2;
           ctx.fillStyle = wash;
+          const alpha = washAlphaFor(ed[ACTIVE_REVISION_KEY], ...rowRevisions);
+          if (alpha < 1) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+          }
           ctx.fillRect(
             renderer.getScaledValue(left, 1),
             renderer.getScaledValue(top, 2),
             renderer.getScaledValue(width),
             renderer.getScaledValue(height)
           );
+          if (alpha < 1) ctx.restore();
         } catch {
           // Wash is decoration only; the cell already painted its shading.
         }

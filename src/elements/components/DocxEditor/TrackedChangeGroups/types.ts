@@ -19,5 +19,8 @@ export interface GroupView extends RevisionGroupIdentity {
   title: string;
   /** One author's manual edits rather than an assistant accept group. */
   untagged?: boolean;
+  /** The group's author, shown once in the header. Omitted for untagged
+   *  groups, where the title already IS the author name. */
+  author?: string;
   chips: ChipView[];
 }
