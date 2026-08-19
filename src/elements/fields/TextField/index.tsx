@@ -163,6 +163,8 @@ function TextField({
   // toggling this on focus would do exactly that. Nothing needs a render of its
   // own here, since committing the rounded value already causes one.
   const editingRef = useRef(false);
+  // A bare sign the input is holding on form state's behalf — see handleAccept.
+  const heldSignRef = useRef('');
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError,
@@ -181,16 +183,27 @@ function TextField({
 
   // A number field's sign is typed before there is any magnitude to sign, and
   // that intermediate has no value to store — so let the input hold it rather
-  // than round-tripping it through form state, which would erase it. Only safe
-  // while the field is empty; over an existing value, commit the clear so a
-  // stale number can't survive hidden behind a bare sign.
+  // than round-tripping it through form state, which would erase it. Over an
+  // existing value the clear is still committed, so a stale number can't
+  // survive hidden behind a bare sign, but the sign itself is remembered here
+  // and rendered back as the input's value: committing the clear re-renders
+  // this controlled input, and pushing the emptied value down would wipe the
+  // sign along with it — backspacing the last digit off "-0.1" would blank the
+  // field instead of leaving "-0.".
   const handleAccept = (value: any, ...rest: any[]) => {
     if (servar.type === 'integer_field' && isSignWithoutMagnitude(value)) {
+      heldSignRef.current = value;
       if (rawValue) onAccept('', ...rest);
       return;
     }
+    heldSignRef.current = '';
     onAccept(value, ...rest);
   };
+  // The sign to render in place of the empty stored value. Exactly what imask
+  // last reported as its unmasked value, so react-imask — which compares the
+  // value prop against that — finds them equal and leaves the input alone,
+  // keeping a typed radix that the unmasked value alone would not carry.
+  const heldSign = rawValue ? '' : heldSignRef.current;
   // Snap to the field's configured precision when editing ends. Anything finer
   // was only ever accepted so the radix could be typed at all.
   const commitPrecision = () => {
@@ -307,6 +320,9 @@ function TextField({
             }}
             onBlur={(e: any) => {
               editingRef.current = false;
+              // Nothing was stored for a held sign, so stop rendering one: the
+              // next render of an untouched field should show it as empty.
+              heldSignRef.current = '';
               commitPrecision();
               if (
                 e.relatedTarget &&
@@ -329,9 +345,11 @@ function TextField({
             {...getInputProps(servar, options, autoComplete === 'on')}
             {...getMaskProps(
               servar,
-              rawValue,
+              heldSign || rawValue,
               showPassword,
-              editingRef.current
+              // A held sign is mid-entry by definition, so it is never rounded
+              // — rounding "-0." would push "0" down and overwrite the sign.
+              editingRef.current || Boolean(heldSign)
             )}
             onAccept={handleAccept}
           />
