@@ -79,33 +79,37 @@ const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
 const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
-// While an edit is selected, every OTHER edit's wash paints at this fraction of
-// its opacity so the selected one stands out among many highlights.
+// The SELECTED edit paints a bolder wash of the same hue so it stands out
+// without a border box; every OTHER edit dims to the muted fraction.
+const INSERTION_HIGHLIGHT_STRONG = 'rgba(14, 122, 77, 0.4)';
+const DELETION_HIGHLIGHT_STRONG = 'rgba(176, 48, 43, 0.4)';
 const MUTED_WASH_ALPHA = 0.4;
-// 1 when nothing is selected or one of `revs` IS the selection; the muted
-// fraction otherwise. `active` is the current selection set (or null/empty).
+// The wash a run paints, given the current selection set: a bolder fill when
+// this run IS the selection, the muted fraction of the base fill when some
+// OTHER edit is selected, and the plain base fill when nothing is selected.
 // Exported for tests.
-export const washAlphaFor = (
+export const washFor = (
   active: Set<any> | null | undefined,
+  kind: 'add' | 'del',
   ...revs: any[]
-) =>
-  active && active.size > 0 && !revs.some((rev) => rev && active.has(rev))
-    ? MUTED_WASH_ALPHA
-    : 1;
+): { fillStyle: string; alpha: number } => {
+  const base = kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
+  if (!active || active.size === 0) return { fillStyle: base, alpha: 1 };
+  if (revs.some((rev) => rev && active.has(rev))) {
+    return {
+      fillStyle:
+        kind === 'del' ? DELETION_HIGHLIGHT_STRONG : INSERTION_HIGHLIGHT_STRONG,
+      alpha: 1
+    };
+  }
+  return { fillStyle: base, alpha: MUTED_WASH_ALPHA };
+};
 // Deleted GLYPHS render in the palette's red; added text keeps the
 // document's own font color.
 const DELETION_TEXT_COLOR = '#b0302b';
-// Boundary ring on the active edit: a bold, saturated selection color (not a
-// muted gray) so the selected edit reads as clearly picked out from the green/
-// red edit washes around it. A soft same-color glow adds prominence.
-const RING_LINE = '#2563eb';
-const RING_GLOW = 'rgba(37, 99, 235, 0.45)';
-const RING_WIDTH = 2.5;
-const RING_RADIUS = 4;
 
 // Editor-instance keys shared with the review UI and overlays.
 const ACTIVE_REVISION_KEY = '__robinActiveRevision';
-const ACTIVE_BOXES_KEY = '__robinActiveBoxes';
 const REVISION_RECTS_KEY = '__robinRevisionRects';
 const AFTER_RENDER_KEY = '__robinAfterRender';
 // Opening a document plants Syncfusion's default caret, firing a
@@ -272,13 +276,13 @@ export function installRevisionHighlightRendering(ed: any) {
       };
       try {
         const ctx = renderer.pageContext;
-        ctx.fillStyle =
-          info.kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
-        const alpha = washAlphaFor(
+        const { fillStyle, alpha } = washFor(
           ed[ACTIVE_REVISION_KEY],
+          info.kind,
           info.revision,
           info.counterpart
         );
+        ctx.fillStyle = fillStyle;
         if (alpha < 1) {
           ctx.save();
           ctx.globalAlpha = alpha;
@@ -309,24 +313,6 @@ export function installRevisionHighlightRendering(ed: any) {
     } else {
       out = originalRenderText(elementBox, left, top, underlineY);
     }
-    if (info && box) {
-      try {
-        // Active-edit boxes (either replace half counts) are rung ONCE at
-        // page end so touching runs share a merged ring; `line` scopes them.
-        const active: Set<any> | null = ed[ACTIVE_REVISION_KEY];
-        if (
-          active &&
-          (active.has(info.revision) || active.has(info.counterpart))
-        ) {
-          (ed[ACTIVE_BOXES_KEY] ?? (ed[ACTIVE_BOXES_KEY] = [])).push({
-            ...box,
-            line: elementBox.line
-          });
-        }
-      } catch {
-        // Decoration only; never break text rendering.
-      }
-    }
     return out;
   };
 
@@ -356,14 +342,13 @@ export function installRevisionHighlightRendering(ed: any) {
         );
       }
       // Same choice the engine makes: the row's LAST revision decides.
-      let wash = INSERTION_HIGHLIGHT;
+      let kind: 'add' | 'del' = 'add';
       const rowRevisions: any[] = [];
       try {
         for (let i = 0; i < count; i++)
           rowRevisions.push(rowFormat.getRevision?.(i));
         const type = rowFormat.getRevision?.(count - 1)?.revisionType;
-        if (type === 'Deletion' || type === 'MoveFrom')
-          wash = DELETION_HIGHLIGHT;
+        if (type === 'Deletion' || type === 'MoveFrom') kind = 'del';
       } catch {
         // Unreadable revision: keep the insertion wash.
       }
@@ -402,8 +387,12 @@ export function installRevisionHighlightRendering(ed: any) {
             (cellWidget.margin.top - cellWidget.containerWidget.topBorderWidth);
           const width =
             cellWidget.width + leftMargin + rightMargin + lineWidth / 2;
-          ctx.fillStyle = wash;
-          const alpha = washAlphaFor(ed[ACTIVE_REVISION_KEY], ...rowRevisions);
+          const { fillStyle, alpha } = washFor(
+            ed[ACTIVE_REVISION_KEY],
+            kind,
+            ...rowRevisions
+          );
+          ctx.fillStyle = fillStyle;
           if (alpha < 1) {
             ctx.save();
             ctx.globalAlpha = alpha;
@@ -423,88 +412,10 @@ export function installRevisionHighlightRendering(ed: any) {
     };
   }
 
-  // Active-edit boundary ring, drawn after page content. Boxes group by LINE
-  // (the ±1px fudge overlaps adjacent lines vertically — cross-line unions
-  // would ring the whole paragraph) and only TOUCHING runs merge within a
-  // line, so a replace rings as one while disjoint runs ring separately.
-  const drawActiveRing = (fromIndex: number) => {
-    const boxes: Array<{
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      line: any;
-    }> = (ed[ACTIVE_BOXES_KEY] ?? []).slice(fromIndex);
-    if (!boxes.length) return;
-    const byLine = new Map<any, typeof boxes>();
-    for (const b of boxes) {
-      // Fall back to a coarse y-bucket if the line widget is unavailable.
-      const key = b.line ?? `y:${Math.round(b.y / 8)}`;
-      const group = byLine.get(key);
-      if (group) group.push(b);
-      else byLine.set(key, [b]);
-    }
-    const unions: Array<{
-      x: number;
-      y: number;
-      right: number;
-      bottom: number;
-    }> = [];
-    const TOUCH_GAP = 3;
-    for (const group of byLine.values()) {
-      const lineUnions: typeof unions = [];
-      for (const b of group.sort((a, z) => a.x - z.x)) {
-        const u = lineUnions[lineUnions.length - 1];
-        if (u && b.x <= u.right + TOUCH_GAP) {
-          u.x = Math.min(u.x, b.x);
-          u.y = Math.min(u.y, b.y);
-          u.right = Math.max(u.right, b.x + b.w);
-          u.bottom = Math.max(u.bottom, b.y + b.h);
-        } else {
-          lineUnions.push({
-            x: b.x,
-            y: b.y,
-            right: b.x + b.w,
-            bottom: b.y + b.h
-          });
-        }
-      }
-      unions.push(...lineUnions);
-    }
-    try {
-      const ctx = renderer.pageContext;
-      ctx.save();
-      ctx.strokeStyle = RING_LINE;
-      ctx.lineWidth = RING_WIDTH;
-      // Soft outer glow so the selected edit pops without a heavier line.
-      ctx.shadowColor = RING_GLOW;
-      ctx.shadowBlur = 5;
-      // Strokes straddle the path: inset by half the width so the ring's
-      // OUTER edge lands on the highlight boundary (no gap, no bleed).
-      const inset = RING_WIDTH / 2;
-      for (const u of unions) {
-        const x = u.x + inset;
-        const y = u.y + inset;
-        const w = u.right - u.x - RING_WIDTH;
-        const h = u.bottom - u.y - RING_WIDTH;
-        if (w <= 0 || h <= 0) continue;
-        if (typeof ctx.roundRect === 'function') {
-          ctx.beginPath();
-          ctx.roundRect(x, y, w, h, RING_RADIUS);
-          ctx.stroke();
-        } else {
-          ctx.strokeRect(x, y, w, h);
-        }
-      }
-      ctx.restore();
-    } catch {
-      // Decoration only.
-    }
-  };
-
-  // Per-page hook (renderWidgets renders ONE page): reset collections on the
-  // first visible page, ring each page after its content, publish after the
-  // last. Hooking the renderer — not the viewer — survives every render path.
+  // Per-page hook (renderWidgets renders ONE page): reset the revision-rect
+  // map on the first visible page and publish after the last. Hooking the
+  // renderer — not the viewer — survives every render path. The selected edit
+  // is shown by a bolder wash (see washFor), so there is no boundary ring.
   const originalRenderWidgets = renderer.renderWidgets.bind(renderer);
   renderer.renderWidgets = (
     page: any,
@@ -516,11 +427,8 @@ export function installRevisionHighlightRendering(ed: any) {
     const visible: any[] = ed.viewer?.visiblePages ?? [];
     if (!visible.length || visible[0] === page) {
       ed[REVISION_RECTS_KEY] = new Map();
-      ed[ACTIVE_BOXES_KEY] = [];
     }
-    const startCount = (ed[ACTIVE_BOXES_KEY] ?? []).length;
     const out = originalRenderWidgets(page, left, top, width, height);
-    drawActiveRing(startCount);
     if (!visible.length || visible[visible.length - 1] === page) {
       try {
         ed[AFTER_RENDER_KEY]?.();

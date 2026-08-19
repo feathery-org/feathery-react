@@ -9,7 +9,7 @@ import {
   configureTrackedChangeReview,
   resizeDocxEditor,
   useDocxEditor,
-  washAlphaFor
+  washFor
 } from './useDocxEditor';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
@@ -25,27 +25,39 @@ jest.mock('../../../integrations/utils', () => ({
   dynamicImport: jest.fn()
 }));
 
-describe('washAlphaFor (highlight muting when an edit is selected)', () => {
+describe('washFor (selected edit gets a bolder wash, others mute)', () => {
   const a = { id: 'a' };
   const b = { id: 'b' };
 
-  it('paints everything full opacity when nothing is selected', () => {
-    expect(washAlphaFor(null, a)).toBe(1);
-    expect(washAlphaFor(new Set(), a)).toBe(1);
-    expect(washAlphaFor(undefined, a)).toBe(1);
+  it('uses the plain base wash at full opacity when nothing is selected', () => {
+    const add = washFor(null, 'add', a);
+    expect(add.alpha).toBe(1);
+    expect(add.fillStyle).toBe('rgba(14, 122, 77, 0.15)');
+    expect(washFor(new Set(), 'del', a).alpha).toBe(1);
+    expect(washFor(undefined, 'add', a).alpha).toBe(1);
   });
 
-  it('keeps the selected edit full opacity', () => {
-    expect(washAlphaFor(new Set([a]), a)).toBe(1);
+  it('gives the selected edit a bolder wash than the base', () => {
+    const sel = washFor(new Set([a]), 'add', a);
+    expect(sel.alpha).toBe(1);
+    expect(sel.fillStyle).toBe('rgba(14, 122, 77, 0.4)');
+    // Deletion selection uses the strong red.
+    expect(washFor(new Set([a]), 'del', a).fillStyle).toBe(
+      'rgba(176, 48, 43, 0.4)'
+    );
   });
 
   it('counts a replace counterpart as part of the selection', () => {
-    // Either half of a replace passed in keeps the wash full.
-    expect(washAlphaFor(new Set([a]), null, a)).toBe(1);
+    // Either half of a replace passed in gets the strong wash.
+    expect(washFor(new Set([a]), 'add', null, a).fillStyle).toBe(
+      'rgba(14, 122, 77, 0.4)'
+    );
   });
 
-  it('mutes edits that are not the selection', () => {
-    expect(washAlphaFor(new Set([a]), b)).toBeLessThan(1);
+  it('mutes edits that are not the selection (base wash, reduced alpha)', () => {
+    const other = washFor(new Set([a]), 'add', b);
+    expect(other.alpha).toBeLessThan(1);
+    expect(other.fillStyle).toBe('rgba(14, 122, 77, 0.15)');
   });
 });
 
