@@ -65,9 +65,28 @@ export function getTextFieldMask(servar: any) {
 // Capped at 2 because submitted values land in a DecimalField(decimal_places=2)
 // column, not because of any UI constraint.
 const VALID_DECIMAL_PLACES = [0, 1, 2];
+// imask rejects the radix outright at scale 0, and a rejected radix silently
+// folds the fraction digits into the integer part: "12.5" becomes 125, "-0.4"
+// becomes -4. Dropping the radix also drops the user's intent for the digits
+// that follow it, so blocking the keystroke cannot help — the mask has to
+// accept a decimal, and precision is applied on commit instead.
+const MIN_ENTRY_SCALE = 1;
 const DEFAULT_DECIMAL_PLACES = 2;
 const DEFAULT_CURRENCY = 'USD';
 const FALLBACK_CURRENCY_SYMBOL = '$';
+
+/**
+ * Decimal places the *input* accepts, as opposed to the precision the value is
+ * stored at. Only ever wider than the configured precision, and only for
+ * whole-number fields — see MIN_ENTRY_SCALE.
+ */
+export function getEntryDecimalPlaces(servar: any) {
+  // Only whole-number fields are widened, and only by the one place needed to
+  // make the radix typeable. Fields that already accept decimals keep their
+  // exact entry behaviour, so this change cannot alter them.
+  const scale = getDecimalPlaces(servar);
+  return scale === 0 ? MIN_ENTRY_SCALE : scale;
+}
 
 // Defaults to 2 so number fields saved before decimal_places existed (metadata
 // is `{}`) keep rendering exactly as they do today.
@@ -176,6 +195,10 @@ export function isSignWithoutMagnitude(value: any) {
   return typeof value === 'string' && SIGN_WITHOUT_MAGNITUDE.test(value);
 }
 
+function stringifyValue(value: any) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
 // imask discards the radix character entirely at scale 0, which would rewrite a
 // stored 1234.56 as 123456 and echo that back through onAccept on mount. Snap
 // to the configured precision first so the value only ever rounds.
@@ -240,9 +263,10 @@ function isNegative(dynamicMasked: any, appended: string) {
   return String(dynamicMasked.unmaskedValue ?? '').includes('-');
 }
 
-export function getNumberMaskProps(servar: any, value: any) {
+export function getNumberMaskProps(servar: any, value: any, editing = false) {
   const meta = servar.metadata ?? {};
   const scale = getDecimalPlaces(servar);
+  const entryScale = getEntryDecimalPlaces(servar);
   const affixes = getFormatAffixes(servar);
   // escapeMaskLiterals rather than escapeDefinitionChars for both affixes: it
   // is a superset, it leaves every currency symbol we render untouched, and an
@@ -255,11 +279,15 @@ export function getNumberMaskProps(servar: any, value: any) {
     mask: Number,
     radix: '.',
     thousandsSeparator: meta.thousands_separator === false ? '' : ',',
-    scale,
-    padFractionalZeros: meta.pad_decimals === true
+    scale: entryScale,
+    // Guarded on the configured scale, not the entry scale, so a whole-number
+    // field never renders "13.0".
+    padFractionalZeros: meta.pad_decimals === true && scale > 0
   };
   const props = {
-    value: roundToDecimalPlaces(value, scale),
+    // Rounding mid-entry would erase the radix the moment it is typed, so the
+    // display only snaps to the configured precision once editing stops.
+    value: editing ? stringifyValue(value) : roundToDecimalPlaces(value, scale),
     // Number values must stay numeric downstream; saving the mask would make
     // parseFloat('$1,234.56') NaN.
     unmask: true

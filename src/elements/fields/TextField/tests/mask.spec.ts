@@ -157,12 +157,38 @@ describe('getNumberMaskProps', () => {
 
   describe('decimal_places', () => {
     it.each([
-      [0, 0],
+      // The mask's scale is the *entry* precision, which is one place wider
+      // than a whole-number field stores. At scale 0 imask rejects the radix
+      // outright, and a rejected radix folds the fraction into the integer:
+      // "12.5" submits as 125. Precision is applied on commit instead.
+      [0, 1],
       [1, 1],
       [2, 2]
-    ])('sets scale to %p', (decimal_places, expected) => {
+    ])('sets the entry scale for %p configured places', (
+      decimal_places,
+      expected
+    ) => {
       const props = getNumberMaskProps(numberServar({ decimal_places }), '');
       expect(props.blocks.num.scale).toBe(expected);
+    });
+
+    it('never leaves the mask unable to accept a radix', () => {
+      [0, 1, 2].forEach((decimal_places) =>
+        expect(
+          getNumberMaskProps(numberServar({ decimal_places }), '').blocks.num
+            .scale
+        ).toBeGreaterThan(0)
+      );
+    });
+
+    it('does not pad a whole-number field to its entry scale', () => {
+      // padFractionalZeros pads to the block's scale, which is 1 here, so
+      // guarding on the configured scale is what keeps "13" from being "13.0".
+      const props = getNumberMaskProps(
+        numberServar({ decimal_places: 0, pad_decimals: true }),
+        ''
+      );
+      expect(props.blocks.num.padFractionalZeros).toBe(false);
     });
 
     it('rounds the incoming value to the configured scale', () => {

@@ -17,16 +17,22 @@ import {
   getNumberMaskProps,
   getTextFieldMask,
   isSignWithoutMagnitude,
-  maxFieldLength
+  maxFieldLength,
+  roundToDecimalPlaces
 } from './mask';
 
-function getMaskProps(servar: any, value: any, showPassword: boolean) {
+function getMaskProps(
+  servar: any,
+  value: any,
+  showPassword: boolean,
+  editing: boolean
+) {
   let maskProps;
   // Max length included in mask for validation of typed inputs
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
-      maskProps = getNumberMaskProps(servar, value);
+      maskProps = getNumberMaskProps(servar, value, editing);
       break;
     case 'ssn':
       maskProps = {
@@ -148,6 +154,15 @@ function TextField({
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   // Hide SSNs by default
   const [showPassword, setShowPassword] = useState(false);
+  // A number field accepts more decimals than it stores, so that a typed radix
+  // is never dropped. While editing, the value is left at whatever precision
+  // the user has typed; it snaps to the field's precision on the way out.
+  //
+  // A ref, not state: the sign a user types is held in the DOM until a
+  // magnitude arrives, so any re-render during that hold erases it — and
+  // toggling this on focus would do exactly that. Nothing needs a render of its
+  // own here, since committing the rounded value already causes one.
+  const editingRef = useRef(false);
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError,
@@ -158,6 +173,8 @@ function TextField({
   const inputRef = useRef<{ element?: HTMLInputElement }>(null);
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
+  const rawValueRef = useRef(rawValue);
+  rawValueRef.current = rawValue;
 
   const servar = element.servar;
   const options = (servar.metadata.options ?? []).filter((opt: string) => opt);
@@ -174,6 +191,18 @@ function TextField({
     }
     onAccept(value, ...rest);
   };
+  // Snap to the field's configured precision when editing ends. Anything finer
+  // was only ever accepted so the radix could be typed at all.
+  const commitPrecision = () => {
+    if (servar.type !== 'integer_field') return;
+    // Through the ref: react-imask keeps the handler it was given on mount, so
+    // reading rawValue from this closure would see the value as it was then.
+    const current = rawValueRef.current;
+    if (isSignWithoutMagnitude(current)) return;
+    const rounded = roundToDecimalPlaces(current, getDecimalPlaces(servar));
+    if (rounded !== current) onAccept(rounded, {});
+  };
+
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
@@ -277,6 +306,8 @@ function TextField({
               }
             }}
             onBlur={(e: any) => {
+              editingRef.current = false;
+              commitPrecision();
               if (
                 e.relatedTarget &&
                 listItemRef.current.some(
@@ -290,10 +321,18 @@ function TextField({
                 setTimeout(() => setShowAutocomplete(false), EXIT_DELAY_TIME);
               }
             }}
-            onFocus={iosScrollOnFocus}
+            onFocus={(e: any) => {
+              editingRef.current = true;
+              iosScrollOnFocus(e);
+            }}
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete === 'on')}
-            {...getMaskProps(servar, rawValue, showPassword)}
+            {...getMaskProps(
+              servar,
+              rawValue,
+              showPassword,
+              editingRef.current
+            )}
             onAccept={handleAccept}
           />
         </TextAutocomplete>
