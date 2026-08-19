@@ -278,9 +278,12 @@ describe('getNumberMaskProps', () => {
         ''
       ) as any;
 
+    // unmaskedValue is what dispatch reads; value is the rendered string and
+    // is supplied only to prove it is *not* consulted.
     const dispatched = (props: any, value: string, appended = '') =>
       props.dispatch(appended, {
         value,
+        unmaskedValue: value.replace(/[^\d.-]/g, ''),
         compiledMasks: ['positive', 'negative']
       });
 

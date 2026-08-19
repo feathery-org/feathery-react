@@ -223,6 +223,23 @@ function getMagnitudeBounds(servar: any, negative: boolean) {
   return { min: Math.max(0, min), max: Math.max(0, max) };
 }
 
+/**
+ * Whether the split-sign mask should use its signed variant.
+ *
+ * Reads the unmasked value, never the rendered one: the rendered value carries
+ * the prefix, so a prefix like "-" or "US-" would read back as a sign, select
+ * the signed variant, and have its `{-}` literal poison the stored number —
+ * self-sustaining once it happens, since the sign then really is in the
+ * unmasked value. The unmasked value is the user's number alone, and a sign the
+ * user entered reaches it through the `{-}` literal by design.
+ */
+function isNegative(dynamicMasked: any, appended: string) {
+  // A sign arriving as this keystroke is not in the value yet. Leading-only, so
+  // pasting "US-100" into a "US-" field is not read as negative.
+  if (appended.startsWith('-')) return true;
+  return String(dynamicMasked.unmaskedValue ?? '').includes('-');
+}
+
 export function getNumberMaskProps(servar: any, value: any) {
   const meta = servar.metadata ?? {};
   const scale = getDecimalPlaces(servar);
@@ -276,9 +293,7 @@ export function getNumberMaskProps(servar: any, value: any) {
       // dispatching on that is what moves the sign to the front. lazy has to be
       // set per variant above: MaskedDynamic does not pass it down.
       dispatch: (appended: string, dynamicMasked: any) =>
-        dynamicMasked.compiledMasks[
-          (dynamicMasked.value + appended).includes('-') ? 1 : 0
-        ]
+        dynamicMasked.compiledMasks[isNegative(dynamicMasked, appended) ? 1 : 0]
     };
 
   return {
