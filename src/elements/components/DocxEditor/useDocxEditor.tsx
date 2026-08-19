@@ -79,30 +79,23 @@ const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
 const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
-// The SELECTED edit paints a bolder wash of the same hue so it stands out
-// without a border box; every OTHER edit dims to the muted fraction.
-const INSERTION_HIGHLIGHT_STRONG = 'rgba(14, 122, 77, 0.4)';
-const DELETION_HIGHLIGHT_STRONG = 'rgba(176, 48, 43, 0.4)';
-const MUTED_WASH_ALPHA = 0.4;
-// The wash a run paints, given the current selection set: a bolder fill when
-// this run IS the selection, the muted fraction of the base fill when some
-// OTHER edit is selected, and the plain base fill when nothing is selected.
-// Exported for tests.
+// When an edit is selected every OTHER edit's wash dims to this fraction, so
+// only the selected edit reads. The selected edit itself keeps the SAME base
+// wash a whole-group selection shows — selection scopes the highlight, it does
+// not recolor it.
+const MUTED_WASH_ALPHA = 0.25;
+// The wash a run paints, given the current selection set: the plain base fill
+// when this run IS the selection (or nothing is selected), dimmed to the muted
+// fraction when some OTHER edit is selected. Exported for tests.
 export const washFor = (
   active: Set<any> | null | undefined,
   kind: 'add' | 'del',
   ...revs: any[]
 ): { fillStyle: string; alpha: number } => {
-  const base = kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
-  if (!active || active.size === 0) return { fillStyle: base, alpha: 1 };
-  if (revs.some((rev) => rev && active.has(rev))) {
-    return {
-      fillStyle:
-        kind === 'del' ? DELETION_HIGHLIGHT_STRONG : INSERTION_HIGHLIGHT_STRONG,
-      alpha: 1
-    };
-  }
-  return { fillStyle: base, alpha: MUTED_WASH_ALPHA };
+  const fillStyle = kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
+  if (!active || active.size === 0) return { fillStyle, alpha: 1 };
+  const selected = revs.some((rev) => rev && active.has(rev));
+  return { fillStyle, alpha: selected ? 1 : MUTED_WASH_ALPHA };
 };
 // Deleted GLYPHS render in the palette's red; added text keeps the
 // document's own font color.
