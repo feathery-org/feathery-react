@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckIcon, CloseIcon } from '../icons';
 import { ChipView } from './types';
 import {
   ADD,
@@ -164,7 +165,7 @@ export default function ChangeChip({
             onResolve(true);
           }}
         >
-          Accept
+          <CheckIcon width={14} height={14} />
         </button>
         <button
           type='button'
@@ -175,7 +176,7 @@ export default function ChangeChip({
             onResolve(false);
           }}
         >
-          Reject
+          <CloseIcon width={14} height={14} />
         </button>
       </div>
     </div>
