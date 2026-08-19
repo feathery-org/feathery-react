@@ -439,7 +439,7 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
-    showFileUploadProgress: false,
+    showFileUploadProgress: true,
     showDocumentProgress: true,
     completionBehavior: '',
     globalStyles: {},
@@ -1751,12 +1751,14 @@ function Form({
             );
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
-        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
+        const mappedSettings = mapFormSettingsResponse(res);
+        setFormSettings({ ...formSettings, ...mappedSettings });
         // The upload tracker is keyed by formKey since upload reporting
-        // happens in FeatheryClient, outside React state
+        // happens in FeatheryClient, outside React state. Read the mapped
+        // setting rather than the raw response so the default lives in one place
         setUploadIndicatorEnabled(
           newClient.formKey,
-          Boolean(res.show_file_upload_progress)
+          mappedSettings.showFileUploadProgress
         );
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);

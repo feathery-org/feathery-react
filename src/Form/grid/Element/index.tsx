@@ -19,6 +19,7 @@ import {
   ACTION_NEXT
 } from '../../../utils/elementActions';
 import {
+  fileFieldShouldSubmit,
   getInlineError,
   handleCheckboxGroupChange,
   handleCheckboxGroupSelectAllChange,
@@ -387,7 +388,7 @@ const Element = ({ node: el, form }: any) => {
               onChange({
                 valueRepeatIndex: fieldIndex,
                 submitData:
-                  autosubmit && !el.properties.multiple && files.length > 0
+                  autosubmit && fileFieldShouldSubmit(servar, files, fieldIndex)
               });
             }}
             initialFiles={fieldVal}

@@ -357,15 +357,15 @@ describe('formHelperFunctions', () => {
   });
 
   describe('mapFormSettingsResponse', () => {
-    it('defaults showFileUploadProgress to false when absent', () => {
-      expect(mapFormSettingsResponse({}).showFileUploadProgress).toBe(false);
+    it('defaults showFileUploadProgress to true when absent', () => {
+      expect(mapFormSettingsResponse({}).showFileUploadProgress).toBe(true);
     });
 
-    it('maps show_file_upload_progress when set', () => {
+    it('maps show_file_upload_progress when turned off', () => {
       expect(
-        mapFormSettingsResponse({ show_file_upload_progress: true })
+        mapFormSettingsResponse({ show_file_upload_progress: false })
           .showFileUploadProgress
-      ).toBe(true);
+      ).toBe(false);
     });
 
     it('defaults showDocumentProgress to true when absent', () => {
