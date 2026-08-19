@@ -25,7 +25,7 @@ jest.mock('../../../integrations/utils', () => ({
   dynamicImport: jest.fn()
 }));
 
-describe('washFor (selected edit gets a bolder wash, others mute)', () => {
+describe('washFor (selected edit keeps the base wash, others mute)', () => {
   const a = { id: 'a' };
   const b = { id: 'b' };
 
@@ -37,24 +37,21 @@ describe('washFor (selected edit gets a bolder wash, others mute)', () => {
     expect(washFor(undefined, 'add', a).alpha).toBe(1);
   });
 
-  it('gives the selected edit a bolder wash than the base', () => {
+  it('gives the selected edit the SAME base wash a group selection shows', () => {
     const sel = washFor(new Set([a]), 'add', a);
     expect(sel.alpha).toBe(1);
-    expect(sel.fillStyle).toBe('rgba(14, 122, 77, 0.4)');
-    // Deletion selection uses the strong red.
+    expect(sel.fillStyle).toBe('rgba(14, 122, 77, 0.15)');
     expect(washFor(new Set([a]), 'del', a).fillStyle).toBe(
-      'rgba(176, 48, 43, 0.4)'
+      'rgba(176, 48, 43, 0.15)'
     );
   });
 
   it('counts a replace counterpart as part of the selection', () => {
-    // Either half of a replace passed in gets the strong wash.
-    expect(washFor(new Set([a]), 'add', null, a).fillStyle).toBe(
-      'rgba(14, 122, 77, 0.4)'
-    );
+    // Either half of a replace passed in stays at full opacity.
+    expect(washFor(new Set([a]), 'add', null, a).alpha).toBe(1);
   });
 
-  it('mutes edits that are not the selection (base wash, reduced alpha)', () => {
+  it('mutes edits that are not the selection (same fill, reduced alpha)', () => {
     const other = washFor(new Set([a]), 'add', b);
     expect(other.alpha).toBeLessThan(1);
     expect(other.fillStyle).toBe('rgba(14, 122, 77, 0.15)');
