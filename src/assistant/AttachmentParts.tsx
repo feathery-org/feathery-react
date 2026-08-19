@@ -82,7 +82,12 @@ export const LazyPdfThumbnail = memo(function LazyPdfThumbnail({
         return;
       }
       try {
-        const doc = await pdfjs.getDocument({ url }).promise;
+        // standardFontDataUrl lets pdf.js draw base-14 font glyphs (e.g.
+        // ZapfDingbats checkmarks) that have no embedded font program.
+        const doc = await pdfjs.getDocument({
+          url,
+          standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`
+        }).promise;
         const page = await doc.getPage(1);
         const base = page.getViewport({ scale: 1 });
         const viewport = page.getViewport({ scale: width / base.width });

@@ -13,7 +13,15 @@
 // takes linkService/annotationStorage in the constructor, not in render();
 // see DocumentCanvas.tsx).
 const PDFJS_VERSION = '5.4.296';
-const PDFJS_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build`;
+const PDFJS_PACKAGE_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}`;
+const PDFJS_CDN = `${PDFJS_PACKAGE_CDN}/build`;
+
+// Base-14 PDF fonts (Helvetica, ZapfDingbats, ...) carry no embedded font
+// program, so pdf.js can only draw glyphs set in them if it can fetch its
+// substitute font files. Without this, checkboxes whose checked state is drawn
+// as ZapfDingbats text in the widget appearance (e.g. Quik-generated Schwab
+// forms) render blank. Pass to every getDocument() call.
+export const PDFJS_STANDARD_FONT_DATA_URL = `${PDFJS_PACKAGE_CDN}/standard_fonts/`;
 
 let pdfjsPromise: Promise<any> | null = null;
 
