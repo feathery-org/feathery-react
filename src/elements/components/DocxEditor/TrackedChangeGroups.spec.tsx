@@ -139,7 +139,7 @@ function destroyRealEditor(editor: DocumentEditor): void {
 }
 
 function acceptOnlyGroup(): void {
-  fireEvent.click(screen.getByRole('button', { name: /^Accept \d+$/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 }
 
 // Single-edit groups carry no group-wide card button, so the rail-wide action
@@ -417,7 +417,7 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
 
     // Every member resolved exactly once — a native accept on one member
     // would instead resolve whatever is contiguous to it.
@@ -441,7 +441,7 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reject 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
 
     expect(deletion.reject).toHaveBeenCalledTimes(1);
     expect(insertion.reject).toHaveBeenCalledTimes(1);
@@ -543,7 +543,8 @@ describe('TrackedChangeGroups', () => {
     const editor = makeEditor(revisions);
     render(<TrackedChangeGroups editor={editor} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept 2' }));
+    // Two groups each render an 'Accept' button; the first is 'Update premium'.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Accept' })[0]);
 
     // Without suppression, "untouched"'s group would now be force-expanded
     // with its chip marked current, even though the user never touched it.
@@ -753,12 +754,8 @@ describe('TrackedChangeGroups', () => {
 
     // Group-wide actions are visible up front — no need to expand or focus a
     // chip.
-    expect(
-      screen.getByRole('button', { name: 'Accept 1' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Reject 1' })
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
@@ -1054,6 +1051,30 @@ describe('TrackedChangeGroups', () => {
     // Card top offset = 50 - 100 + 2000 = 1950 (not the row's 1990), so the
     // group heading of the clicked change remains visible.
     expect(scrollBox.scrollTop).toBe(1950);
+  });
+
+  it('leaves the rail scroll in place when a group is merely expanded', () => {
+    const revision = makeRevision();
+    const editor = makeEditor([revision]);
+    render(<TrackedChangeGroups editor={editor} />);
+    const panel = screen.getByLabelText('Assistant tracked changes');
+    const scrollBox = panel.children[1] as HTMLElement;
+    Object.defineProperties(scrollBox, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 3000 },
+      scrollTop: { configurable: true, writable: true, value: 1234 }
+    });
+
+    // Expanding/collapsing the group changes no selection, so the scroll
+    // effect must not run — the rail stays exactly where the user left it.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Update premium' })
+    );
+    expect(scrollBox.scrollTop).toBe(1234);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Collapse Update premium' })
+    );
+    expect(scrollBox.scrollTop).toBe(1234);
   });
 
   it('every rail button is type=button so clicks never submit the host form', () => {
@@ -1541,9 +1562,7 @@ describe('RailErrorBoundary', () => {
 
       act(() => editor.editorHistory.undo());
       expect(editor.revisions.length).toBeGreaterThan(0);
-      expect(
-        screen.getByRole('button', { name: /^Accept \d+$/ })
-      ).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
       acceptOnlyGroup();
       expect(editor.revisions.length).toBe(0);
     } finally {

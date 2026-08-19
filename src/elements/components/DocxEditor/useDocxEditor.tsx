@@ -76,8 +76,10 @@ function loadAccentOverride() {
 // `checkRevisionType()` (sole source of native revision styling) and paint
 // our own decoration; also rings the active edit and records edit geometry.
 const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
-// The add/del washes from the design mockup's light palette.
-const INSERTION_HIGHLIGHT = '#dbebe4';
+// The add/del washes from the design mockup's light palette. The insertion
+// wash is #dbebe4 applied as a tint (partial opacity) so a shaded table cell's
+// own background still shows through instead of being fully covered.
+const INSERTION_HIGHLIGHT = 'rgba(219, 235, 228, 0.6)';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
 // The wash a run paints, given the current selection set. With nothing
 // selected every edit shows its base wash. Once an edit IS selected, only that

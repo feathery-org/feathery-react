@@ -112,8 +112,8 @@ export default function GroupCard({
             flex: 1,
             minWidth: 0,
             display: 'flex',
-            alignItems: 'baseline',
-            gap: 7,
+            flexDirection: 'column',
+            gap: 3,
             padding: '11px 11px 11px 0',
             border: 'none',
             background: 'none',
@@ -123,13 +123,51 @@ export default function GroupCard({
             cursor: 'pointer'
           }}
         >
-          <b css={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35 }}>
-            {group.title}
-          </b>
-          {group.author && (
+          {/* Line 1: title, then the edit tally pushed clear of the title. */}
+          <span
+            css={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 12,
+              minWidth: 0
+            }}
+          >
+            <b
+              css={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: 12.5,
+                fontWeight: 600,
+                lineHeight: 1.35,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {group.title}
+            </b>
             <span
               css={{
                 flex: 'none',
+                fontFamily: MONO,
+                fontSize: 10,
+                color: INK_3,
+                background: PANEL_2,
+                border: `1px solid ${LINE}`,
+                borderRadius: 99,
+                padding: '1px 6px',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {`${group.chips.length} ${
+                group.chips.length === 1 ? 'edit' : 'edits'
+              }`}
+            </span>
+          </span>
+          {/* Line 2: author, under the title. */}
+          {group.author && (
+            <span
+              css={{
                 fontSize: 11,
                 color: INK_3,
                 whiteSpace: 'nowrap',
@@ -141,35 +179,18 @@ export default function GroupCard({
               {group.author}
             </span>
           )}
-          <span
-            css={{
-              flex: 'none',
-              fontFamily: MONO,
-              fontSize: 10,
-              color: INK_3,
-              background: PANEL_2,
-              border: `1px solid ${LINE}`,
-              borderRadius: 99,
-              padding: '1px 6px',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {`${group.chips.length} ${
-              group.chips.length === 1 ? 'edit' : 'edits'
-            }`}
-          </span>
         </button>
       </div>
       <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
         <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
-          Accept {group.chips.length}
+          Accept
         </button>
         <button
           type='button'
           css={rejectBtn}
           onClick={() => onResolveGroup(false)}
         >
-          Reject {group.chips.length}
+          Reject
         </button>
       </div>
       {isOpen && (
