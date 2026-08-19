@@ -53,7 +53,9 @@ jest.mock('../../utils/array', () => ({
 jest.mock('../../utils/repeat', () => ({
   getContainerById: () => undefined,
   getFieldsInRepeat: () => [],
-  getRepeatedContainer: () => undefined
+  getMaxRepeatsFieldReferences: () => new Set(),
+  getRepeatedContainer: () => undefined,
+  resolveMaxRepeats: () => null
 }));
 
 // Hide and repeats
