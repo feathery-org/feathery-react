@@ -77,7 +77,7 @@ function loadAccentOverride() {
 // our own decoration; also rings the active edit and records edit geometry.
 const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
-const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
+const INSERTION_HIGHLIGHT = '#dbebe4';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
 // The wash a run paints, given the current selection set. With nothing
 // selected every edit shows its base wash. Once an edit IS selected, only that
