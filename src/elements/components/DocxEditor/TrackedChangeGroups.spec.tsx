@@ -494,12 +494,12 @@ describe('TrackedChangeGroups', () => {
 
     const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
     const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-    expect(acceptAllBtn.querySelector('svg')).toBeNull();
+    expect(acceptAllBtn.querySelector('circle')).toBeNull();
     fireEvent.click(acceptAllBtn);
     // The resolve itself hasn't run yet (still queued) — the spinner is up
     // and BOTH bulk buttons are disabled so the two can't race each other.
     expect(revision.accept).not.toHaveBeenCalled();
-    expect(acceptAllBtn.querySelector('svg')).not.toBeNull();
+    expect(acceptAllBtn.querySelector('circle')).not.toBeNull();
     expect(acceptAllBtn).toBeDisabled();
     expect(rejectAllBtn).toBeDisabled();
 
@@ -519,10 +519,10 @@ describe('TrackedChangeGroups', () => {
 
     const acceptAllBtn = screen.getByRole('button', { name: 'Accept all' });
     const rejectAllBtn = screen.getByRole('button', { name: 'Reject all' });
-    expect(rejectAllBtn.querySelector('svg')).toBeNull();
+    expect(rejectAllBtn.querySelector('circle')).toBeNull();
     fireEvent.click(rejectAllBtn);
     expect(revision.reject).not.toHaveBeenCalled();
-    expect(rejectAllBtn.querySelector('svg')).not.toBeNull();
+    expect(rejectAllBtn.querySelector('circle')).not.toBeNull();
     expect(rejectAllBtn).toBeDisabled();
     expect(acceptAllBtn).toBeDisabled();
 

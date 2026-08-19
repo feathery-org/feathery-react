@@ -67,22 +67,23 @@ export const groupSecondaryBtn = {
   '&:hover': { background: PANEL_3, color: INK }
 };
 
-// A2 per-edit-row actions: quiet text buttons (Accept neutral, Reject red).
+// A2 per-edit-row actions: quiet icon buttons — a green check to accept, a
+// red ✕ to reject.
 export const rowAcceptBtn = {
   border: 'none',
   background: 'transparent',
-  color: INK_2,
-  fontSize: 12,
-  fontWeight: 600,
-  padding: '4px 9px',
+  color: ADD,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 5,
   borderRadius: 6,
   cursor: 'pointer',
-  whiteSpace: 'nowrap' as const,
-  '&:hover': { background: PANEL_3, color: INK }
+  '&:hover': { background: ADD_WASH }
 };
 
 export const rowRejectBtn = {
   ...rowAcceptBtn,
   color: DEL,
-  '&:hover': { background: DEL_WASH, color: DEL }
+  '&:hover': { background: DEL_WASH }
 };
