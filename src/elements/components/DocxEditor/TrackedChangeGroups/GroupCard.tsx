@@ -169,6 +169,7 @@ export default function GroupCard({
             <span
               css={{
                 fontSize: 11,
+                fontWeight: 600,
                 color: INK_3,
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -181,7 +182,7 @@ export default function GroupCard({
           )}
         </button>
       </div>
-      <div css={{ display: 'flex', gap: 6, padding: '0 11px 10px 31px' }}>
+      <div css={{ display: 'flex', gap: 6, padding: '8px 11px 10px 31px' }}>
         <button type='button' css={btn} onClick={() => onResolveGroup(true)}>
           Accept
         </button>
