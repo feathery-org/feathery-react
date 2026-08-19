@@ -79,14 +79,12 @@ const REVISION_RENDER_PATCH = '__featheryGitHubRevisionRendering';
 // The add/del washes from the design mockup's light palette.
 const INSERTION_HIGHLIGHT = 'rgba(14, 122, 77, 0.15)';
 const DELETION_HIGHLIGHT = 'rgba(176, 48, 43, 0.15)';
-// When an edit is selected every OTHER edit's wash dims to this fraction, so
-// only the selected edit reads. The selected edit itself keeps the SAME base
-// wash a whole-group selection shows — selection scopes the highlight, it does
-// not recolor it.
-const MUTED_WASH_ALPHA = 0.25;
-// The wash a run paints, given the current selection set: the plain base fill
-// when this run IS the selection (or nothing is selected), dimmed to the muted
-// fraction when some OTHER edit is selected. Exported for tests.
+// The wash a run paints, given the current selection set. With nothing
+// selected every edit shows its base wash. Once an edit IS selected, only that
+// edit keeps its wash (the SAME base wash a whole-group selection shows — the
+// selection scopes the highlight, it does not recolor it); every OTHER edit
+// paints nothing (alpha 0), so a selected edit inside a group/table is the only
+// highlight on screen. Exported for tests.
 export const washFor = (
   active: Set<any> | null | undefined,
   kind: 'add' | 'del',
@@ -95,7 +93,7 @@ export const washFor = (
   const fillStyle = kind === 'del' ? DELETION_HIGHLIGHT : INSERTION_HIGHLIGHT;
   if (!active || active.size === 0) return { fillStyle, alpha: 1 };
   const selected = revs.some((rev) => rev && active.has(rev));
-  return { fillStyle, alpha: selected ? 1 : MUTED_WASH_ALPHA };
+  return { fillStyle, alpha: selected ? 1 : 0 };
 };
 // Deleted GLYPHS render in the palette's red; added text keeps the
 // document's own font color.
@@ -275,14 +273,18 @@ export function installRevisionHighlightRendering(ed: any) {
           info.revision,
           info.counterpart
         );
-        ctx.fillStyle = fillStyle;
-        if (alpha < 1) {
-          ctx.save();
-          ctx.globalAlpha = alpha;
-          ctx.fillRect(box.x, box.y, box.w, box.h);
-          ctx.restore();
-        } else {
-          ctx.fillRect(box.x, box.y, box.w, box.h);
+        // alpha 0 = a non-selected edit while something else is selected: paint
+        // nothing so only the selected edit is highlighted.
+        if (alpha > 0) {
+          ctx.fillStyle = fillStyle;
+          if (alpha < 1) {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillRect(box.x, box.y, box.w, box.h);
+            ctx.restore();
+          } else {
+            ctx.fillRect(box.x, box.y, box.w, box.h);
+          }
         }
       } catch {
         // Highlight is decoration only; the text itself must still render.
@@ -385,18 +387,23 @@ export function installRevisionHighlightRendering(ed: any) {
             kind,
             ...rowRevisions
           );
-          ctx.fillStyle = fillStyle;
-          if (alpha < 1) {
-            ctx.save();
-            ctx.globalAlpha = alpha;
+          // alpha 0 = a non-selected row while another edit is selected: the
+          // native tint is already hidden, so painting nothing leaves the row
+          // with no revision highlight at all.
+          if (alpha > 0) {
+            ctx.fillStyle = fillStyle;
+            if (alpha < 1) {
+              ctx.save();
+              ctx.globalAlpha = alpha;
+            }
+            ctx.fillRect(
+              renderer.getScaledValue(left, 1),
+              renderer.getScaledValue(top, 2),
+              renderer.getScaledValue(width),
+              renderer.getScaledValue(height)
+            );
+            if (alpha < 1) ctx.restore();
           }
-          ctx.fillRect(
-            renderer.getScaledValue(left, 1),
-            renderer.getScaledValue(top, 2),
-            renderer.getScaledValue(width),
-            renderer.getScaledValue(height)
-          );
-          if (alpha < 1) ctx.restore();
         } catch {
           // Wash is decoration only; the cell already painted its shading.
         }
