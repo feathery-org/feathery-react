@@ -138,6 +138,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   // Group card elements, keyed by group.key — the scroll effect aligns to a
   // card's TOP (header included) instead of its first chip's row.
   const groupRefs = useRef(new Map<string, HTMLDivElement>());
+  // The primary revision the rail last scrolled to; lets the scroll effect
+  // no-op on renders that didn't change the selection (e.g. expand/collapse).
+  const lastScrolledPrimaryRef = useRef<any>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
 
@@ -318,8 +321,15 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
 
   // Scroll only the rail's own scrollbox: scrollIntoView walks every
   // scrollable ancestor and would yank the whole form viewport.
+  //
+  // This effect has no dep array (it must run after the DOM settles), so it
+  // fires on EVERY render — including a plain expand/collapse, which changes no
+  // selection. Gate on the primary revision actually changing so toggling a
+  // group open/closed leaves the rail scroll exactly where it was.
   useEffect(() => {
     const primary = activeRevisions[0];
+    if (primary === lastScrolledPrimaryRef.current) return;
+    lastScrolledPrimaryRef.current = primary ?? null;
     if (!primary) return;
     const row = rowRefs.current.get(primary);
     const box = scrollBoxRef.current;
