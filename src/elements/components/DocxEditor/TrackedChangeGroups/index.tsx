@@ -135,6 +135,12 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
   const activeRevisionRef = useRef<any>(null);
   const ignoreSelectionRef = useRef(false);
   const rowRefs = useRef(new Map<any, HTMLDivElement>());
+  // Group card elements, keyed by group.key — the scroll effect aligns to a
+  // card's TOP (header included) instead of its first chip's row.
+  const groupRefs = useRef(new Map<string, HTMLDivElement>());
+  // The primary revision the rail last scrolled to; lets the scroll effect
+  // no-op on renders that didn't change the selection (e.g. expand/collapse).
+  const lastScrolledPrimaryRef = useRef<any>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
 
@@ -190,6 +196,9 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
         // A human view's "group" IS the author name; keep it verbatim.
         title: view.untagged ? view.group : humanizeGroupId(view.group),
         untagged: view.untagged,
+        // Shown once in the group header instead of on every chip. Untagged
+        // groups already show it as the title, so leave theirs unset.
+        author: view.untagged ? undefined : view.items[0]?.author,
         chips: view.items.map((item) => ({
           revision: item.revision,
           revisions: item.revisions,
@@ -312,18 +321,36 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
 
   // Scroll only the rail's own scrollbox: scrollIntoView walks every
   // scrollable ancestor and would yank the whole form viewport.
+  //
+  // This effect has no dep array (it must run after the DOM settles), so it
+  // fires on EVERY render — including a plain expand/collapse, which changes no
+  // selection. Gate on the primary revision actually changing so toggling a
+  // group open/closed leaves the rail scroll exactly where it was.
   useEffect(() => {
     const primary = activeRevisions[0];
+    if (primary === lastScrolledPrimaryRef.current) return;
+    lastScrolledPrimaryRef.current = primary ?? null;
     if (!primary) return;
     const row = rowRefs.current.get(primary);
     const box = scrollBoxRef.current;
     if (!row || !box || box.scrollHeight <= box.clientHeight) return;
-    const rowTop =
-      row.getBoundingClientRect().top -
+    const offsetTop = (el: HTMLElement) =>
+      el.getBoundingClientRect().top -
       box.getBoundingClientRect().top +
       box.scrollTop;
-    const rowBottom = rowTop + row.offsetHeight;
-    if (rowTop < box.scrollTop) box.scrollTop = rowTop;
+    // When the active chip is its group's FIRST, scrolling the chip row to the
+    // top hides the group header just above it. Align to the card's top so the
+    // heading of the change you clicked stays in view.
+    const ownerGroup = groups.find(
+      (mem) =>
+        mem.chips[0] &&
+        (mem.chips[0].revision === primary || mem.chips[0].partner === primary)
+    );
+    const card = ownerGroup && groupRefs.current.get(ownerGroup.key);
+    const topTarget = card ?? row;
+    const revealTop = offsetTop(topTarget);
+    const rowBottom = offsetTop(row) + row.offsetHeight;
+    if (revealTop < box.scrollTop) box.scrollTop = revealTop;
     else if (rowBottom > box.scrollTop + box.clientHeight)
       box.scrollTop = rowBottom - box.clientHeight;
   });
@@ -389,12 +416,22 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
       if (typeof selection?.selectRevision === 'function') {
         selection.selectRevision(revision, undefined, undefined, true);
         // Explicit scroll too: some host/layout combos suppress the implicit
-        // one while focus stays in the rail.
-        if (selection.start && selection.end) {
+        // one while focus stays in the rail. Scroll to the START of the edit
+        // (both args = start) so a long edit lands with its beginning in view,
+        // not its tail.
+        if (selection.start) {
           editor.documentHelper?.scrollToPosition?.(
             selection.start,
-            selection.end
+            selection.start
           );
+        }
+        // selectRevision leaves the whole edit SELECTED, so Syncfusion paints
+        // its selection shading over our revision wash and it reads darker than
+        // the same edit clicked in the document (a caret, no range). Collapse
+        // to the start so only our wash shows — matching an in-document click.
+        const at = selection.startOffset;
+        if (typeof at === 'string' && typeof selection.select === 'function') {
+          selection.select(at, at);
         }
       } else {
         revision?.select?.();
@@ -548,6 +585,10 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
               <GroupCard
                 key={mem.key}
                 group={mem}
+                cardRef={(el) => {
+                  if (el) groupRefs.current.set(mem.key, el);
+                  else groupRefs.current.delete(mem.key);
+                }}
                 isOpen={!!expanded[mem.key]}
                 onToggle={() =>
                   setExpanded((prev) => ({

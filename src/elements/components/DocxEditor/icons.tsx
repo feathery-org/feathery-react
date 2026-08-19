@@ -12,6 +12,32 @@ const Svg = (props: SVGProps<SVGSVGElement>) => (
   />
 );
 
+// Stroked check / ✕ for the tracked-changes accept/reject actions. Use
+// currentColor so the caller sets the color.
+export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
+    <path
+      d='m5 13 4 4L19 7'
+      stroke='currentColor'
+      strokeWidth='2.2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
+    <path
+      d='M18 6 6 18M6 6l12 12'
+      stroke='currentColor'
+      strokeWidth='2.2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
 export const UndoIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d='M9.707 3.707a1 1 0 0 0-1.414-1.414l-5 5a1 1 0 0 0 0 1.414l5 5a1 1 0 0 0 1.414-1.414L6.414 9H14.5a4.5 4.5 0 0 1 0 9H11a1 1 0 1 0 0 2h3.5a6.499 6.499 0 1 0 0-13H6.414l3.293-3.293Z' />
