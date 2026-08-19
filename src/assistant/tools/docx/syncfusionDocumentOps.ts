@@ -11605,7 +11605,6 @@ interface BindingTableRoute {
 
 interface BindingRuntime {
   surface: BindingCommandSurface;
-  sfdt: any;
   index: BindingIndex;
   occurrencesByTag: Map<string, Occurrence[]>;
   tablesByAnchor: Map<string, BindingTableRoute>;
@@ -11791,7 +11790,7 @@ function bindingRuntime(editor: LiveEditor, sfdt: any): BindingRuntime | null {
       table
     });
   }
-  return { surface, sfdt, index, occurrencesByTag, tablesByAnchor };
+  return { surface, index, occurrencesByTag, tablesByAnchor };
 }
 
 function requireBindingRuntime(
@@ -12127,62 +12126,23 @@ function independentFieldDetails(fields: IndependentDocumentField[]): string[] {
   );
 }
 
-function anchorForBindingOccurrence(
-  runtime: BindingRuntime,
-  blocksByTag: Map<string, FlatBlock[]>,
-  occurrence: Occurrence
-): string | undefined {
-  const blocks = blocksByTag.get(occurrence.tag) ?? [];
-  const table = containingBindingTable(runtime.index, occurrence);
-  if (table) {
-    const tableAnchor = [...runtime.tablesByAnchor.values()].find(
-      (route) => route.tableId === table.tableId
-    )?.anchor;
-    return blocks.find((block) => tableAnchorForBlock(block) === tableAnchor)
-      ?.anchor;
-  }
-  const documentOccurrences = (
-    runtime.occurrencesByTag.get(occurrence.tag) ?? []
-  ).filter((candidate) => !containingBindingTable(runtime.index, candidate));
-  const ordinal = documentOccurrences.findIndex(
-    (candidate) => candidate.key === occurrence.key
-  );
-  const documentBlocks = blocks.filter((block) => {
-    const tableAnchor = tableAnchorForBlock(block);
-    return !tableAnchor || !runtime.tablesByAnchor.has(tableAnchor);
-  });
-  return documentBlocks[ordinal]?.anchor;
-}
-
 function bindingInstanceChoice(
-  runtime: BindingRuntime,
-  blocksByTag: Map<string, FlatBlock[]>,
+  index: BindingIndex,
   field: IndependentDocumentField
 ): BindingInstanceChoice {
   return {
     instanceId: field.name,
     identity: { id: field.name, global: false },
     occurrences: field.occurrences.map((occurrence) => {
-      const table = containingBindingTable(runtime.index, occurrence);
+      const table = containingBindingTable(index, occurrence);
       const location = table
         ? `table "${table.tableId}"`
         : `document path ${occurrence.path.join('/')}`;
-      const anchor = anchorForBindingOccurrence(
-        runtime,
-        blocksByTag,
-        occurrence
-      );
-      if (!anchor)
-        throw new OpError(
-          'binding_occurrence_unaddressable',
-          `Binding occurrence "${field.name}" at ${location} has no writable inventory anchor. Nothing was written.`
-        );
       return {
         occurrenceId: `${field.name}@${occurrence.path.join('/')}`,
         bindingId: field.name,
         value: occurrence.text,
         location,
-        anchor,
         ...(table ? { tableId: table.tableId } : {}),
         documentPath: occurrence.path.join('/')
       };
@@ -12195,15 +12155,8 @@ function bindingWriteAmbiguity(
   target: Occurrence,
   fields: IndependentDocumentField[]
 ): BindingWriteAmbiguity {
-  const blocksByTag = new Map<string, FlatBlock[]>();
-  for (const block of flattenSfdt(runtime.sfdt)) {
-    if (!block.boundTag) continue;
-    const bucket = blocksByTag.get(block.boundTag);
-    if (bucket) bucket.push(block);
-    else blocksByTag.set(block.boundTag, [block]);
-  }
   const instances = fields
-    .map((field) => bindingInstanceChoice(runtime, blocksByTag, field))
+    .map((field) => bindingInstanceChoice(runtime.index, field))
     .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
   const signature = instances.map((instance) => ({
     id: instance.instanceId,
@@ -12359,18 +12312,6 @@ function boundInputTextPlan(
       `The chosen instance id ${JSON.stringify(
         resolution.instanceId
       )} is not one of the live choices.`,
-      ambiguity
-    );
-  if (
-    ambiguity &&
-    resolution?.choice === 'one' &&
-    resolution.instanceId !== occurrence.name
-  )
-    throw new OpError(
-      'binding_resolution_target_mismatch',
-      `The operation targets binding instance "${occurrence.name}", but the user chose "${resolution.instanceId}". Re-send set_cell_text at an occurrence of the chosen instance; nothing was written.`,
-      independentFieldDetails(independent),
-      undefined,
       ambiguity
     );
   if (

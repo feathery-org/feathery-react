@@ -420,17 +420,6 @@ describe('duplicate_table over bound tables', () => {
         .map((occurrence) => occurrence.tableId)
         .sort()
     ).toEqual(['costs', 'expenses', 'expenses_copy']);
-    expect(
-      ambiguity.instances
-        .flatMap((instance) => instance.occurrences)
-        .every((occurrence) => typeof occurrence.anchor === 'string')
-    ).toBe(true);
-    expect(
-      ambiguity.instances.find(
-        (instance) => instance.instanceId === 'expenses_copy_tax_rate'
-      )?.occurrences[0].anchor
-    ).toBe(copyTax!.anchor);
-
     const stale = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
         {
@@ -484,7 +473,7 @@ describe('duplicate_table over bound tables', () => {
     ).toEqual(['8%']);
   });
 
-  it('applies only the chosen independent instance after prompting', () => {
+  it('applies the chosen independent instance while reusing the original anchor', () => {
     const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
     });
@@ -530,7 +519,7 @@ describe('duplicate_table over bound tables', () => {
           bindingResolution: {
             ambiguityId: ambiguity.ambiguityId,
             choice: 'one',
-            instanceId: 'expenses_copy_tax_rate'
+            instanceId: 'tax_rate'
           }
         }
       ]
@@ -538,18 +527,18 @@ describe('duplicate_table over bound tables', () => {
     expect(resolved.results[0]).toMatchObject({
       ok: true,
       route: 'engine',
-      details: ['user confirmed only binding instance "expenses_copy_tax_rate"']
+      details: ['user confirmed only binding instance "tax_rate"']
     });
     expect(
       indexOf(editor)
         .fields.get('tax_rate')
         ?.map((entry) => entry.text)
-    ).toEqual(['0%', '0%']);
+    ).toEqual(['8%', '8%']);
     expect(
       indexOf(editor)
         .fields.get('expenses_copy_tax_rate')
         ?.map((entry) => entry.text)
-    ).toEqual(['8%']);
+    ).toEqual(['0%']);
   });
 
   it('materializes replacement rows through the engine and recomputes formulas', () => {

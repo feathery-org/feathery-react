@@ -8,8 +8,9 @@
  * document. After the user chooses, ai-services resends one `set_cell_text`
  * operation with the returned ambiguity id and a `BindingWriteResolution`;
  * the client revalidates that id against the live document before applying the
- * selected instance or all listed instances atomically. For `choice: 'one'`,
- * the operation anchor must name an occurrence of that `instanceId`.
+ * selected instance or all listed instances atomically. The original operation
+ * anchor identifies the ambiguous field family; `instanceId` identifies the
+ * instance selected by the user.
  */
 
 export interface BindingWireIdentity {
@@ -26,8 +27,6 @@ export interface BindingOccurrenceChoice {
   value: string;
   /** Human-readable placement suitable for a disambiguation prompt. */
   location: string;
-  /** Writable inventory anchor for a confirmed `choice: 'one'` call. */
-  anchor: string;
   tableId?: string;
   documentPath: string;
 }

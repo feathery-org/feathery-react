@@ -5,6 +5,7 @@
 //   [[name=project.name]]                                     text field
 //   [[name=unit_cost|type=currency|row=r-1]]                  currency cell
 //   [[name=line_total|expr=mul(quantity,unit_cost)|row=r-1]]  row formula
+//   [[name=tax_rate|type=percent|del=keep]]                   shared number
 //   [[name=tax_rate|type=percent|global=true]]                global number
 //   [[table=costs]]                                           table marker
 //
