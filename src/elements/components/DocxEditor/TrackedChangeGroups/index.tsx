@@ -413,11 +413,13 @@ function TrackedChangeGroups({
       if (typeof selection?.selectRevision === 'function') {
         selection.selectRevision(revision, undefined, undefined, true);
         // Explicit scroll too: some host/layout combos suppress the implicit
-        // one while focus stays in the rail.
-        if (selection.start && selection.end) {
+        // one while focus stays in the rail. Scroll to the START of the edit
+        // (both args = start) so a long edit lands with its beginning in view,
+        // not its tail.
+        if (selection.start) {
           editor.documentHelper?.scrollToPosition?.(
             selection.start,
-            selection.end
+            selection.start
           );
         }
       } else {

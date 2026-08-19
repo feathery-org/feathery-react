@@ -95,10 +95,12 @@ export const washAlphaFor = (
 // Deleted GLYPHS render in the palette's red; added text keeps the
 // document's own font color.
 const DELETION_TEXT_COLOR = '#b0302b';
-// Boundary ring on the active edit (mockup's `.chg.on`): a single line drawn
-// fully INSIDE the highlight box, flush with its edge.
-const RING_LINE = 'rgba(43, 49, 52, 0.34)';
-const RING_WIDTH = 2;
+// Boundary ring on the active edit: a bold, saturated selection color (not a
+// muted gray) so the selected edit reads as clearly picked out from the green/
+// red edit washes around it. A soft same-color glow adds prominence.
+const RING_LINE = '#2563eb';
+const RING_GLOW = 'rgba(37, 99, 235, 0.45)';
+const RING_WIDTH = 2.5;
 const RING_RADIUS = 4;
 
 // Editor-instance keys shared with the review UI and overlays.
@@ -474,6 +476,9 @@ export function installRevisionHighlightRendering(ed: any) {
       ctx.save();
       ctx.strokeStyle = RING_LINE;
       ctx.lineWidth = RING_WIDTH;
+      // Soft outer glow so the selected edit pops without a heavier line.
+      ctx.shadowColor = RING_GLOW;
+      ctx.shadowBlur = 5;
       // Strokes straddle the path: inset by half the width so the ring's
       // OUTER edge lands on the highlight boundary (no gap, no bleed).
       const inset = RING_WIDTH / 2;
