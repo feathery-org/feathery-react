@@ -425,6 +425,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
             selection.start
           );
         }
+        // selectRevision leaves the whole edit SELECTED, so Syncfusion paints
+        // its selection shading over our revision wash and it reads darker than
+        // the same edit clicked in the document (a caret, no range). Collapse
+        // to the start so only our wash shows — matching an in-document click.
+        const at = selection.startOffset;
+        if (typeof at === 'string' && typeof selection.select === 'function') {
+          selection.select(at, at);
+        }
       } else {
         revision?.select?.();
       }
