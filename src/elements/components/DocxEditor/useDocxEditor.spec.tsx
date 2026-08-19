@@ -51,10 +51,8 @@ describe('washFor (selected edit keeps the base wash, others mute)', () => {
     expect(washFor(new Set([a]), 'add', null, a).alpha).toBe(1);
   });
 
-  it('mutes edits that are not the selection (same fill, reduced alpha)', () => {
-    const other = washFor(new Set([a]), 'add', b);
-    expect(other.alpha).toBeLessThan(1);
-    expect(other.fillStyle).toBe('rgba(14, 122, 77, 0.15)');
+  it('hides edits that are not the selection (alpha 0 = not painted)', () => {
+    expect(washFor(new Set([a]), 'add', b).alpha).toBe(0);
   });
 });
 
