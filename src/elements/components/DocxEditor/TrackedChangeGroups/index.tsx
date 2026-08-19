@@ -18,7 +18,7 @@ import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
 import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
-import { ACCENT_LINE, INK, LINE, PANEL } from './styles';
+import { ACCENT_LINE, INK, PANEL } from './styles';
 
 // Review rail for pending tracked changes: one card per assistant accept
 // group (plus one per human author), expanding to −/+ diff "chips" with
@@ -528,7 +528,6 @@ function TrackedChangeGroups({
             right: 0,
             bottom: 0,
             left: 0,
-            borderLeft: `1px solid ${LINE}`,
             background: PANEL,
             display: 'flex',
             flexDirection: 'column',

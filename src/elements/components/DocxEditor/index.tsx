@@ -402,6 +402,11 @@ function DocxEditor({
             css={{
               width: '100%',
               height: '100%',
+              // The theme gives the editor root its own 1px border; the side
+              // panel / edge rail draw the right-hand seam themselves, so the
+              // editor's copy would double it (visibly thicker when the panel
+              // is collapsed and the rail sits flush against the editor).
+              '& .e-de-ctn': { borderRight: 'none' },
               // Syncfusion's status-bar page control renders the "Page" label,
               // the number input, and "of N" on a line but the input box is
               // taller than the text and sits low. Flex-center the whole

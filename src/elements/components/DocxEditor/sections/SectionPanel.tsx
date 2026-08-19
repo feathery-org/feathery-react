@@ -20,7 +20,8 @@ import {
 
 // The Sections tab body: a hint line, then one draggable card per Word section
 // (grip · name · kind · move chevrons). Click to select (shift = range,
-// ⌘/ctrl = toggle); the grip is the drag handle. Dragging reorders the list
+// ⌘/ctrl = toggle); the whole card is the drag handle (the grip is just the
+// visual cue). Dragging reorders the list
 // live and the dragged card(s) preview translucent at the target slot; the move
 // commits on drop. Both drag and the chevrons funnel through the apply layer,
 // which serializes → permutes → re-opens the document. A refused move (e.g. one
@@ -229,7 +230,23 @@ export default function SectionList({ editor, markDirty }: Props) {
 
   const reveal = useCallback(
     (index: number) => {
-      guard(() => editor.selection?.select?.(`${index};0;0`, `${index};0;0`));
+      guard(() => {
+        const helper = editor.documentHelper;
+        // Skip select()'s default scroll: when the target is below the
+        // viewport it parks the section at the viewport BOTTOM.
+        if (helper) helper.skipScrollToPosition = true;
+        try {
+          editor.selection?.select?.(`${index};0;0`, `${index};0;0`);
+        } finally {
+          if (helper) helper.skipScrollToPosition = false;
+        }
+        // isBookmark=true takes Syncfusion's bookmark-navigation branch, which
+        // scrolls the target near the TOP of the viewer instead.
+        const sel = editor.selection;
+        if (helper?.scrollToPosition && sel?.start && sel?.end) {
+          helper.scrollToPosition(sel.start, sel.end, false, true);
+        }
+      });
     },
     [editor]
   );
@@ -327,7 +344,7 @@ export default function SectionList({ editor, markDirty }: Props) {
     applyOrder(base);
   };
 
-  /* ---------------- drag (grip handle, multi-select aware) ---------------- */
+  /* ---------------- drag (whole card, multi-select aware) ---------------- */
 
   const startDrag = (event: React.DragEvent, node: SectionNode) => {
     if (!node.movable || locked) return;
@@ -483,6 +500,9 @@ export default function SectionList({ editor, markDirty }: Props) {
                 key={node.id}
                 data-card
                 title={locked ? LOCK_TITLE : undefined}
+                draggable={node.movable && !locked}
+                onDragStart={(e) => startDrag(e, node)}
+                onDragEnd={endDrag}
                 onDragOver={(e) => dragOverRow(e, node.index)}
                 onDrop={(e) => e.preventDefault()}
                 onClick={(e) => {
@@ -498,30 +518,18 @@ export default function SectionList({ editor, markDirty }: Props) {
                   borderRadius: 9,
                   padding: '9px 10px',
                   userSelect: 'none',
-                  opacity: isDragging ? 0.45 : locked ? 0.6 : 1
+                  opacity: isDragging ? 0.45 : locked ? 0.6 : 1,
+                  cursor: locked
+                    ? 'not-allowed'
+                    : node.movable
+                    ? 'grab'
+                    : 'default',
+                  '&:active': {
+                    cursor: node.movable && !locked ? 'grabbing' : undefined
+                  }
                 }}
               >
-                <span
-                  draggable={node.movable && !locked}
-                  onDragStart={(e) => startDrag(e, node)}
-                  onDragEnd={endDrag}
-                  aria-label={`Drag ${node.label}`}
-                  title={locked ? LOCK_TITLE : undefined}
-                  css={{
-                    color: KIND,
-                    display: 'flex',
-                    flex: 'none',
-                    cursor: locked
-                      ? 'not-allowed'
-                      : node.movable
-                      ? 'grab'
-                      : 'default',
-                    '&:active': {
-                      cursor:
-                        node.movable && !locked ? 'grabbing' : 'not-allowed'
-                    }
-                  }}
-                >
+                <span css={{ color: KIND, display: 'flex', flex: 'none' }}>
                   <Grip />
                 </span>
 
@@ -563,6 +571,11 @@ export default function SectionList({ editor, markDirty }: Props) {
                   }}
                   title={locked ? LOCK_TITLE : undefined}
                   onClick={(e) => e.stopPropagation()}
+                  // A press-drag on the move buttons must not start a card drag.
+                  onDragStart={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
                 >
                   {locked ? (
                     // While the assistant is working, the chevrons are inert —
