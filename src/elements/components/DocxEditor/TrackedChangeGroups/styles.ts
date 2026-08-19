@@ -41,3 +41,48 @@ export const rejectBtn = {
   ...btn,
   '&:hover': { borderColor: '#d08984', color: DEL, background: DEL_WASH }
 };
+
+// A2 group-header actions: a solid primary (Accept) and an outlined secondary
+// (Reject), sitting at the top-right of the card.
+export const groupPrimaryBtn = {
+  height: 30,
+  border: 'none',
+  borderRadius: 8,
+  background: INK,
+  color: PAPER,
+  fontSize: 12.5,
+  fontWeight: 600,
+  padding: '0 16px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap' as const,
+  '&:hover': { background: '#000' },
+  '&:disabled': { opacity: 0.4, cursor: 'default' }
+};
+
+export const groupSecondaryBtn = {
+  ...groupPrimaryBtn,
+  border: `1px solid ${LINE_STRONG}`,
+  background: PAPER,
+  color: INK_2,
+  '&:hover': { background: PANEL_3, color: INK }
+};
+
+// A2 per-edit-row actions: quiet text buttons (Accept neutral, Reject red).
+export const rowAcceptBtn = {
+  border: 'none',
+  background: 'transparent',
+  color: INK_2,
+  fontSize: 12,
+  fontWeight: 600,
+  padding: '4px 9px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap' as const,
+  '&:hover': { background: PANEL_3, color: INK }
+};
+
+export const rowRejectBtn = {
+  ...rowAcceptBtn,
+  color: DEL,
+  '&:hover': { background: DEL_WASH, color: DEL }
+};

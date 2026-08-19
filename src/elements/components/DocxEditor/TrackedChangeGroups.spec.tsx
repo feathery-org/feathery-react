@@ -1,7 +1,7 @@
 import 'jest-canvas-mock';
 import { randomFillSync } from 'crypto';
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import {
   DocumentEditor,
   Editor,
@@ -181,7 +181,7 @@ describe('TrackedChangeGroups', () => {
     render(<TrackedChangeGroups editor={editor} />);
     // Card titled by the author, tally as usual.
     expect(screen.getByText('Ayesha')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
 
     // Expanding shows the edit itself. The author is the card title, not
     // repeated on each chip, so it still appears exactly once.
@@ -250,8 +250,8 @@ describe('TrackedChangeGroups', () => {
     expect(screen.getByText('Update premium')).toBeInTheDocument();
     expect(screen.getByText('Fix effective date')).toBeInTheDocument();
     // Two pending edits in the premium group, one in the date group.
-    expect(screen.getByText('2 edits')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('2 changes')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('3 pending')).toBeInTheDocument();
   });
 
@@ -283,7 +283,12 @@ describe('TrackedChangeGroups', () => {
     expect(
       screen.getByText('$5,500').closest('[aria-current="true"]')
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Accept this edit')).toBeInTheDocument();
+    // Every row shows its own Accept/Reject; scope to the focused chip's row.
+    expect(
+      within(
+        screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
+      ).getByLabelText('Accept this edit')
+    ).toBeInTheDocument();
 
     // Collapse hides the chips again.
     fireEvent.click(
@@ -392,7 +397,11 @@ describe('TrackedChangeGroups', () => {
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
     fireEvent.click(screen.getByText('$5,500'));
-    fireEvent.click(screen.getByLabelText('Accept this edit'));
+    fireEvent.click(
+      within(
+        screen.getByText('$5,500').closest('[role="button"]') as HTMLElement
+      ).getByLabelText('Accept this edit')
+    );
 
     expect(deletion.accept).toHaveBeenCalledTimes(1);
     expect(insertion.accept).not.toHaveBeenCalled();
@@ -400,7 +409,7 @@ describe('TrackedChangeGroups', () => {
     // The resolved chip is gone; its group sibling stays pending.
     expect(screen.queryByText('$5,500')).not.toBeInTheDocument();
     expect(screen.getByText('$6,000')).toBeInTheDocument();
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     expect(screen.getByText('1 pending')).toBeInTheDocument();
   });
 
@@ -697,7 +706,11 @@ describe('TrackedChangeGroups', () => {
     );
     fireEvent.click(screen.getByText('$6,000'));
     expect(panel).toHaveFocus();
-    fireEvent.click(screen.getByRole('button', { name: 'Accept this edit' }));
+    fireEvent.click(
+      within(
+        screen.getByText('$6,000').closest('[role="button"]') as HTMLElement
+      ).getByRole('button', { name: 'Accept this edit' })
+    );
     expect(insertion.accept).toHaveBeenCalledTimes(1);
     expect(panel).toHaveFocus();
   });
@@ -836,7 +849,7 @@ describe('TrackedChangeGroups', () => {
     const { container } = render(<TrackedChangeGroups editor={editor} />);
 
     // ONE edit, not two.
-    expect(screen.getByText('1 edit')).toBeInTheDocument();
+    expect(screen.getByText('1 change')).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Expand Update premium' })
     );
