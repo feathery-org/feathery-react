@@ -15,6 +15,9 @@ export interface PopupOptions {
 export type Trigger = {
   id: string;
   _servarId?: string;
+  // Other servars changed by the same interaction, e.g. the city/state/country
+  // an address autocomplete fills alongside the address line.
+  _relatedServarIds?: string[];
   text?: string;
   type:
     | 'button'

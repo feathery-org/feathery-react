@@ -1,3 +1,4 @@
+import { stateFieldHasNoOptions } from './addressState';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { fieldValues } from './init';
@@ -175,6 +176,23 @@ const getPositionKey = (node: any) => {
 
 export type VisiblePositions = Record<string, boolean[]>;
 
+/**
+ * Hides a state field whose country has no states to offer. Visibility is
+ * recomputed every render, so this follows the country without a logic rule,
+ * including when address autocomplete sets it.
+ */
+function shouldHideStateWithoutOptions(step: any, element: any) {
+  const servar = element.servar;
+  // Opt out, not in: fields predating the setting have no key, and draft step
+  // blobs carry their own servar snapshots that would drop a backfilled one
+  if (
+    servar?.type !== 'gmap_state' ||
+    servar.metadata?.hide_without_states === false
+  )
+    return false;
+  return stateFieldHasNoOptions(element, step, fieldValues);
+}
+
 function _collectHideFlags(
   step: any,
   element: any,
@@ -193,13 +211,15 @@ function _collectHideFlags(
 
   const curRepeats = repeatKey ? numRepeats : 1;
 
+  // A state field set to hide without options is evaluated once per element,
+  // not per repetition: the controlling country lookup is not repeat-aware
+  const hiddenForNoStates = shouldHideStateWithoutOptions(step, element);
+
   const visible: boolean[] = [];
   for (let i = 0; i < curRepeats; i++) {
-    let shouldHide = shouldElementHide(
-      element,
-      repeatKey ? i : undefined,
-      internalId
-    );
+    let shouldHide =
+      hiddenForNoStates ||
+      shouldElementHide(element, repeatKey ? i : undefined, internalId);
     if (shouldHide) {
       if (!(elKey in hiddenPositions)) hiddenPositions[elKey] = [];
       hiddenPositions[elKey].push(i);
