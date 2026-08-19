@@ -57,7 +57,9 @@ import {
 import {
   getContainerById,
   getFieldsInRepeat,
-  getRepeatedContainer
+  getMaxRepeatsFieldReferences,
+  getRepeatedContainer,
+  resolveMaxRepeats
 } from '../utils/repeat';
 import {
   getHideIfReferences,
@@ -864,11 +866,14 @@ function Form({
     setViewElements(onViewElements);
   }, [onViewElements.length]);
 
-  // Figure out which fields are used in hide rules so that observed changes can be used
-  // to trigger rerenders
+  // Figure out which fields are used in hide rules, or referenced by a dynamic
+  // max-repeats setting, so that observed changes can be used to trigger
+  // rerenders (which re-clamp repeat counts to the referenced field's value).
   const hideIfFieldReferences = useMemo(() => {
-    if (activeStep) return getHideIfReferences(getAllElements(activeStep));
-    return new Set<string>();
+    if (!activeStep) return new Set<string>();
+    const refs = getHideIfReferences(getAllElements(activeStep));
+    getMaxRepeatsFieldReferences(activeStep).forEach((key) => refs.add(key));
+    return refs;
   }, [activeStep?.id]);
 
   useEffect(() => {
@@ -903,7 +908,10 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
       if (limit && val && Array.isArray(val) && val.length >= limit) return val;
@@ -2649,7 +2657,10 @@ function Form({
 
       if (type === ACTION_ADD_REPEATED_ROW) {
         const container = getContainerById(activeStep, action.repeat_container);
-        addRepeatedRow(container, action.max_repeats);
+        // Resolve the max-repeats cap live: a static number, or the current
+        // value of a referenced hidden/number field. resolveMaxRepeats returns
+        // null when there is no valid limit (matches legacy "unlimited").
+        addRepeatedRow(container, resolveMaxRepeats(action));
       } else if (type === ACTION_REMOVE_REPEATED_ROW) {
         const container = getContainerById(activeStep, action.repeat_container);
         removeRepeatedRow(element, container);

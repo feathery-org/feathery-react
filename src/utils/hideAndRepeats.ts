@@ -2,6 +2,7 @@ import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { TEXT_VARIABLE_PATTERN } from '../elements/components/TextNodes';
 import { fieldValues } from './init';
 import {
+  getDynamicContainerRepeatCap,
   getRepeatedContainer,
   getRepeatedContainers,
   getServarRepeatNum,
@@ -160,15 +161,22 @@ function _collectHideFlags(
   visiblePositions: VisiblePositions,
   hiddenPositions: Record<string, number[]>,
   repeatKeys: string[],
-  internalId: string
+  internalId: string,
+  repeatCaps: Record<string, number | null>
 ) {
   const elKey = getPositionKey(element);
   const repeatKey = repeatKeys.find((key) => inRepeat(elKey, key, true));
-  const numRepeats = Math.max(
+  let numRepeats = Math.max(
     repeatCountByFields(step, repeatKey),
     repeatCountByTextVariables(step, repeatKey),
     1
   );
+  // Clamp the data-driven repeat count to the container's dynamic (field-based)
+  // max-repeats cap, so the rendered count follows the referenced field's value
+  // when it changes. Static maxes deliberately don't clamp rendering (null cap),
+  // preserving legacy behavior. Always keep at least one repeat.
+  const cap = repeatKey ? repeatCaps[repeatKey] : null;
+  if (cap != null) numRepeats = Math.max(Math.min(numRepeats, cap), 1);
 
   const curRepeats = repeatKey ? numRepeats : 1;
 
@@ -209,6 +217,13 @@ function getVisiblePositions(step: any, internalId: string) {
   const repeatKeys = repeatGrids.map(getPositionKey);
   const visiblePositions: VisiblePositions = {};
 
+  // Resolve each repeat container's dynamic (field-referenced) max-repeats cap
+  // once, keyed by the container's position key. Static maxes return null here.
+  const repeatCaps: Record<string, number | null> = {};
+  repeatGrids.forEach((grid) => {
+    repeatCaps[getPositionKey(grid)] = getDynamicContainerRepeatCap(step, grid);
+  });
+
   // Efficient data structure for tracking hidden elements
   const hiddenPositions: Record<string, number[]> = {};
 
@@ -223,7 +238,8 @@ function getVisiblePositions(step: any, internalId: string) {
         visiblePositions,
         hiddenPositions,
         repeatKeys,
-        internalId
+        internalId,
+        repeatCaps
       );
     });
 
@@ -239,7 +255,8 @@ function getVisiblePositions(step: any, internalId: string) {
         visiblePositions,
         hiddenPositions,
         repeatKeys,
-        internalId
+        internalId,
+        repeatCaps
       );
     });
   });
