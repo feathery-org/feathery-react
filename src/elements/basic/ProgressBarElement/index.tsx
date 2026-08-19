@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useReducer } from 'react';
 import { isNum } from '../../../utils/primitives';
 import { ACTION_NEXT } from '../../../utils/elementActions';
 import { loadCompletedSteps } from '../../../utils/init';
+import { getViewport } from '../../styles';
 import SmoothBar from './components/SmoothBar';
 import SegmentBar from './components/SegmentBar';
 import StepperBar from './components/StepperBar';
@@ -52,6 +53,15 @@ function ProgressBarElement({
 
   const vertical = element.styles.bar_direction === 'vertical';
 
+  // percent_text_layout drives a JS branch rather than a CSS declaration, so
+  // ResponsiveStyles' media-query merge cannot express a mobile override for
+  // it. Resolve it per viewport here instead.
+  const textPlacement =
+    getViewport(styles.getMobileBreakpoint()) === 'mobile'
+      ? element.mobile_styles?.percent_text_layout ??
+        element.styles.percent_text_layout
+      : element.styles.percent_text_layout;
+
   const containerProps = {
     css: {
       display: 'flex',
@@ -90,7 +100,7 @@ function ProgressBarElement({
           styles={styles}
           stepConfigs={stepConfigs}
           stepKey={stepKey}
-          textPlacement={element.styles.percent_text_layout}
+          textPlacement={textPlacement}
           onStepClick={onStepClick}
           allowAllNavigation={allowAllNavigation}
           resetCompletionOnBack={resetCompletionOnBack}
@@ -115,7 +125,6 @@ function ProgressBarElement({
     ? userProgress
     : Math.round((100 * (curDepth + 1)) / ((maxDepth || 1) + 1));
 
-  const textPlacement = element.styles.percent_text_layout;
   const showText = textPlacement && textPlacement !== 'none';
 
   const BarComponent = userSegments ? SegmentBar : SmoothBar;
