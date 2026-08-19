@@ -151,11 +151,12 @@ export default function GroupCard({
                 flex: 'none',
                 fontFamily: MONO,
                 fontSize: 10,
+                lineHeight: 1.5,
                 color: INK_3,
                 background: PANEL_2,
                 border: `1px solid ${LINE}`,
-                borderRadius: 99,
-                padding: '1px 6px',
+                borderRadius: 4,
+                padding: '0 5px',
                 whiteSpace: 'nowrap'
               }}
             >
