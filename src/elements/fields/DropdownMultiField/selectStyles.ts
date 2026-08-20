@@ -1,11 +1,16 @@
 import type { StylesConfig } from 'react-select';
 
+import { MULTISELECT_CHEVRON_RESERVE } from '../../styles';
 import type ResponsiveStyles from '../../styles';
 
 import type { DropdownSelectProps, OptionData } from './types';
 
 type SelectStylesParams = {
-  chevronPosition: number;
+  // Only a themed alignment distributes free space across the line. Left as
+  // it comes, the chips pack from the start and a trailing caret changes
+  // nothing. Passed in resolved for the current viewport, since these styles
+  // are applied in JS where a media query cannot pick the value.
+  aligned: boolean;
   fontColor: string;
   menuZIndex: number;
   responsiveStyles: ResponsiveStyles;
@@ -13,7 +18,7 @@ type SelectStylesParams = {
 };
 
 export function createSelectStyles({
-  chevronPosition,
+  aligned,
   fontColor,
   menuZIndex,
   responsiveStyles,
@@ -22,7 +27,6 @@ export function createSelectStyles({
   const styles = {
     control: (baseStyles) => ({
       ...baseStyles,
-      ...responsiveStyles.getTarget('field'),
       width: '100%',
       height: '100%',
       minHeight: 'inherit',
@@ -31,10 +35,16 @@ export function createSelectStyles({
       backgroundColor: 'transparent',
       backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${fontColor}'/></svg>")`,
       backgroundRepeat: 'no-repeat',
-      backgroundPosition: `${
+      // Split from the shorthand, and the target spread last, so the themed
+      // vertical placement survives -- the chevron rides the chips' line. The
+      // inline offset is the custom property the theme emits, so a mobile
+      // padding override moves the glyph with the chips.
+      backgroundPositionX: `${
         rightToLeft ? 'left' : 'right'
-      } ${chevronPosition}px center`,
-      position: 'relative'
+      } var(--fe-chevron-x, 10px)`,
+      backgroundPositionY: 'center',
+      position: 'relative',
+      ...responsiveStyles.getTarget('field')
     }),
     container: (baseStyles) => ({
       ...baseStyles,
@@ -63,12 +73,15 @@ export function createSelectStyles({
       return {
         ...baseStyles,
         ...paddingBlock,
-        paddingInlineEnd: 28,
+        paddingInlineEnd: MULTISELECT_CHEVRON_RESERVE,
         display: 'flex',
         minWidth: 0,
         flexWrap: shouldWrap ? 'wrap' : 'nowrap',
         alignItems: shouldWrap ? 'flex-start' : 'center',
         alignContent: shouldWrap ? 'flex-start' : 'center',
+        // Themed inner padding and content alignment win over the defaults
+        // above; absent from the theme, this contributes nothing.
+        ...responsiveStyles.getTarget('valueContainer'),
         ...(selectProps.collapseSelected
           ? {
               '& .rs-collapsed-chip': {
@@ -135,7 +148,12 @@ export function createSelectStyles({
       return {
         ...baseStyles,
         maxWidth: '100%',
-        minWidth: 0,
+        // A chip holds its natural width rather than being squeezed narrower
+        // than its label. Squeezed, the label wrapped to two or three lines and
+        // the row of chips read as unreadable stacks -- and inner padding, which
+        // takes its width out of the same space, made that the common case.
+        // The count indicator absorbs the ones that no longer fit instead.
+        flexShrink: 0,
         overflow: 'hidden',
         marginInline: '2px',
         borderRadius: baseStyles.borderRadius ?? 2
@@ -144,9 +162,35 @@ export function createSelectStyles({
     input: (baseStyles, state) => {
       const selectProps = state.selectProps as DropdownSelectProps & {
         inputHidden?: boolean;
+        inputValue?: string;
       };
 
       if (!selectProps.collapseSelected || !selectProps.inputHidden) {
+        // The caret is a flex item on the last line, so a themed alignment
+        // centres the chips *and* it -- invisible while empty, but wide enough
+        // to push them off centre, and wider still once react-select lets it
+        // fill the line. Keep an empty one out of the arithmetic; typing gives
+        // it its width back, where it is earning the space.
+        if (aligned && !selectProps.inputValue)
+          return {
+            ...baseStyles,
+            flexGrow: 0,
+            flexBasis: 'auto',
+            // A 1px sliver rather than zero width, so the caret stays
+            // visible while focused -- and the descendant rule to actually
+            // constrain the inner input, whose width react-select sets
+            // inline.
+            maxWidth: '1px',
+            width: '1px',
+            minWidth: '1px',
+            overflow: 'hidden',
+            margin: 0,
+            padding: 0,
+            '> input': {
+              width: '1px',
+              minWidth: '1px'
+            }
+          };
         return baseStyles;
       }
 
