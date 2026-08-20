@@ -927,6 +927,10 @@ function Form({
     const isInsideContainer = Boolean(insideContainer);
     const curRepeatContainer = insideContainer || repeatContainer;
 
+    // Containers that opt into being emptied let the user delete the last row
+    // instead of resetting it to a blank one.
+    const allowEmpty = Boolean(curRepeatContainer?.properties?.allow_empty);
+
     const removeServars: Record<string, null> = {};
     let curIndex = index;
     const getNewVal = (field: any) => {
@@ -937,7 +941,9 @@ function Form({
 
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
-      return newRepeatedValues.length === 0 ? defaultValue : newRepeatedValues;
+      return newRepeatedValues.length === 0 && !allowEmpty
+        ? defaultValue
+        : newRepeatedValues;
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
