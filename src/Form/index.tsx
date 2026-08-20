@@ -430,7 +430,6 @@ function Form({
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: false,
-    assistantVoiceEnabled: false,
     assistantColor: '#6b7280',
     assistantWorkflowActions: [],
     assistantStepSettings: {} as AssistantStepSettings
@@ -3629,7 +3628,6 @@ function Form({
                 : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
             }
             color={formSettings.assistantColor}
-            voiceEnabled={formSettings.assistantVoiceEnabled}
             workflowActions={formSettings.assistantWorkflowActions}
             stepSettings={formSettings.assistantStepSettings}
             activeStepId={activeStep?.id}
