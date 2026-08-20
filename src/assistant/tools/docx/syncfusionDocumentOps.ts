@@ -7593,9 +7593,10 @@ function copyPasteSegments(
       ? !!firstTableBlockIn(rawSectionBlocks(sfdt, address.section)[address.block])
       : false;
   };
-  const at = target.appendParagraphAt
-    ? sequence.length
-    : sequenceIndexOf(sequence, target.address);
+  const resolved = sequenceIndexOf(sequence, target.address);
+  // One past the last block of the document - the tail destination.
+  const at =
+    target.appendParagraphAt || resolved < 0 ? sequence.length : resolved;
   const composed: any[] = [];
   for (const block of cloned) {
     if (firstTableBlockIn(block)) {
@@ -7655,10 +7656,12 @@ function pasteBlocksAsTrackedSegments(
     callEditor(editor, 'insertText', '\n');
   }
   let pastedSfdt = target.appendParagraphAt ? serializeSfdt(editor) : preSfdt;
-  const pasteAt = sequenceIndexOf(
-    topLevelSequence(pastedSfdt),
-    target.address
-  );
+  const pasteAt = (() => {
+    const sequence = topLevelSequence(pastedSfdt);
+    const index = sequenceIndexOf(sequence, target.address);
+    // One past the last block of the document - the tail destination.
+    return index < 0 ? sequence.length : index;
+  })();
   let caret = target.anchor;
   let added = 0;
   for (const segment of segments) {
@@ -8111,43 +8114,6 @@ function prunePayloadRows(payload: string, keep: number[]): string {
       'split_table_payload_not_a_table',
       'SyncFusion returned no table for the range this split captured, so there is nothing to divide. Nothing was written.'
     );
-  return JSON.stringify(parsed);
-}
-
-/**
- * A live clipboard copy of a table, resolved to what the user currently sees.
- *
- * Pending deletions are omitted, pending insertions are kept, and the source's
- * revision ids are removed before paste: the paste authors one fresh tracked
- * insertion for the duplicate instead of making an older review card span both
- * tables. The leading empty paragraph keeps Word from coalescing the source and
- * copy into one table; the optional trailing one does the same when another
- * table immediately follows the source.
- */
-function duplicateTablePayload(
-  payload: string,
-  documentSfdt: any,
-  trailingSeparator: boolean
-): string {
-  const parsed = clonedWithoutRevisions(documentSfdt, JSON.parse(payload));
-  // Clipboard SFDT carries the selected revisions table as well as references
-  // from the selected content. Once the references are stripped, carrying the
-  // now-unreachable records into the paste would only duplicate metadata.
-  delete parsed.revisions;
-  delete parsed.r;
-  const sections = pick(parsed, 'sections', 'sec');
-  if (!Array.isArray(sections)) return payload;
-  const section = sections.find((candidate) =>
-    getBlocks(candidate).some((block) => !!getRows(block))
-  );
-  if (!section)
-    throw new OpError(
-      'duplicate_table_payload_not_a_table',
-      'SyncFusion returned no table for the range this duplicate captured, so nothing was written.'
-    );
-  const blocks = getBlocks(section);
-  blocks.unshift(emptyParagraphBlock(parsed));
-  if (trailingSeparator) blocks.push(emptyParagraphBlock(parsed));
   return JSON.stringify(parsed);
 }
 
@@ -8613,26 +8579,22 @@ export const ANCHORED_OP_HANDLERS: {
         `No table answers to "${tableAnchor}". Nothing was written.`
       );
     const sourceAddress = topLevelAddress(source.blocks[0].anchor);
-    const trailingSeparator = !!firstTableBlockIn(
-      container.blocks[container.blockIndex + 1]
-    );
-    const { paste, pastedSfdt } = relocateBlockRange(
+    // The paste point is the first caret after the table: the next body
+    // paragraph's start. Unlike a model-supplied relocation target, it is
+    // derived from the already-resolved source and cannot land inside its
+    // cells. The block preceding it is the source table itself, so the
+    // segment builder's adjacency rule supplies the separator paragraph that
+    // keeps Word from rendering source and copy as one table.
+    const target: PasteTarget = {
+      anchor: source.endAnchor,
+      address: { ...sourceAddress, block: sourceAddress.block + 1 }
+    };
+    const clone = clonedWithoutRevisions(sfdt, container.block);
+    const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
       sfdt,
-      source,
-      {
-        // The range end is the first caret after the table: the next body
-        // paragraph's start. Unlike a model-supplied relocation target,
-        // it is derived from the already-resolved source and cannot land inside
-        // its cells.
-        anchor: source.endAnchor,
-        address: { ...sourceAddress, block: sourceAddress.block + 1 }
-      },
-      {
-        removeSource: false,
-        transformPayload: (payload) =>
-          duplicateTablePayload(payload, sfdt, trailingSeparator)
-      }
+      copyPasteSegments([clone], sfdt, target),
+      target
     );
     const anchor = assertPastedTableMatches(
       pastedSfdt,
