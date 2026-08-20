@@ -4450,7 +4450,14 @@ function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
   };
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   for (const section of sections) {
-    for (const block of getBlocks(section)) {
+    // Block content controls are transparent to addressing (see
+    // `expandBlockContentControls`) and must be transparent here too: a table
+    // wrapped in one otherwise projects as a single untracked empty paragraph,
+    // which hides every tracked row inside it from both projections - so a
+    // fully tracked paste of a wrapped table read as irreversible, and a write
+    // into a wrapped table's cell was proven reversible vacuously.
+    for (const entry of expandBlockContentControls(getBlocks(section))) {
+      const block = entry.block;
       const rows = getRows(block);
       if (rows) {
         for (const row of rows) {
@@ -7545,6 +7552,182 @@ function resolveRelocationTarget(
   };
 }
 
+/** A clone of the range's raw blocks, resolved to what the user currently sees. */
+function clonedRangeBlocks(sfdt: any, range: BlockRange): any[] {
+  return clonedWithoutRevisions(sfdt, rawBlocksInRange(sfdt, range));
+}
+
+/** A table wrapped in a block-level content control - the one paste-hostile shape. */
+function isBlockWrappedTable(block: any): boolean {
+  return (
+    !!block &&
+    pick(block, 'contentControlProperties', 'ccp') !== undefined &&
+    !getRows(block) &&
+    !!firstTableBlockIn(block)
+  );
+}
+
+/**
+ * The cloned blocks partitioned into the pastes SyncFusion executes completely.
+ *
+ * A multi-block payload is truncated - blocks silently lost - whenever it holds
+ * a table wrapped in a block-level content control, while the SAME wrapped
+ * table pasted alone lands intact (it is the payload the table duplicate has
+ * always pasted). So each wrapped table becomes its own paste and the maximal
+ * runs between them paste as one payload each.
+ *
+ * Word renders two adjacent tables as ONE table, so an empty separator
+ * paragraph is added wherever a cloned table would land flush against another
+ * table - a neighbour inside the clone, or the document block on either side
+ * of the paste point - the same adjacency rule the table duplicate encodes.
+ */
+function copyPasteSegments(
+  cloned: any[],
+  sfdt: any,
+  target: PasteTarget
+): any[][] {
+  const sequence = topLevelSequence(sfdt);
+  const tableAt = (index: number): boolean => {
+    const address = sequence[index];
+    return address
+      ? !!firstTableBlockIn(rawSectionBlocks(sfdt, address.section)[address.block])
+      : false;
+  };
+  const at = target.appendParagraphAt
+    ? sequence.length
+    : sequenceIndexOf(sequence, target.address);
+  const composed: any[] = [];
+  for (const block of cloned) {
+    if (firstTableBlockIn(block)) {
+      const previous = composed[composed.length - 1];
+      if (previous ? firstTableBlockIn(previous) : tableAt(at - 1))
+        composed.push(emptyParagraphBlock(sfdt));
+    }
+    composed.push(block);
+  }
+  if (
+    firstTableBlockIn(composed[composed.length - 1]) &&
+    !target.appendParagraphAt &&
+    tableAt(at)
+  )
+    composed.push(emptyParagraphBlock(sfdt));
+  const segments: any[][] = [];
+  let run: any[] = [];
+  for (const block of composed) {
+    if (isBlockWrappedTable(block)) {
+      if (run.length) segments.push(run);
+      run = [];
+      segments.push([block]);
+    } else run.push(block);
+  }
+  if (run.length) segments.push(run);
+  return segments;
+}
+
+/**
+ * Paste the segments at the target, sequentially, as parts of one tracked
+ * insertion run - the precedent for several pastes in one revision group is
+ * `swap_sections`.
+ *
+ * The measured paste physics this encodes: a payload's LAST paragraph merges
+ * into the block the caret sits in, so every paragraph-final segment is sent
+ * with a trailing empty merge-guard paragraph, which the merge absorbs. A
+ * table cannot merge, so a table-final segment needs no guard. With the guard
+ * in place each paste adds exactly its content blocks, all of them BEFORE the
+ * caret block - so the caret block's own measured position is where the next
+ * segment continues, and a normalized-away paragraph cannot skew the run.
+ *
+ * Returns the aggregate effect over the whole run plus the document as pasted,
+ * in the same shape `relocateBlockRange` reports a single paste.
+ */
+function pasteBlocksAsTrackedSegments(
+  editor: LiveEditor,
+  preSfdt: any,
+  segments: any[][],
+  target: PasteTarget
+): { paste: PasteEffect; pastedSfdt: any } {
+  // The destination past the document's last paragraph mark has no caret until
+  // one is made - a tracked insertion inside this same card, exactly as
+  // `relocateBlockRange` creates it. Measured AFTER the landing paragraph
+  // exists, so the aggregate covers pasted content only.
+  if (target.appendParagraphAt) {
+    editor.selection.select(target.appendParagraphAt, target.appendParagraphAt);
+    callEditor(editor, 'insertText', '\n');
+  }
+  let pastedSfdt = target.appendParagraphAt ? serializeSfdt(editor) : preSfdt;
+  const pasteAt = sequenceIndexOf(
+    topLevelSequence(pastedSfdt),
+    target.address
+  );
+  let caret = target.anchor;
+  let added = 0;
+  for (const segment of segments) {
+    const lengthBefore = topLevelSequence(pastedSfdt).length;
+    const guarded = firstTableBlockIn(segment[segment.length - 1])
+      ? segment
+      : [...segment, emptyParagraphBlock(pastedSfdt)];
+    editor.selection.select(caret, caret);
+    // The envelope must speak the document's own key convention: the paste
+    // parser reads a payload in one dialect only, and blocks in the other one
+    // are silently dropped rather than refused.
+    callEditor(
+      editor,
+      'paste',
+      JSON.stringify(
+        pastedSfdt?.sections !== undefined
+          ? { sections: [{ blocks: guarded, headersFooters: {} }] }
+          : { optimizeSfdt: true, sec: [{ b: guarded, hf: {} }] }
+      )
+    );
+    pastedSfdt = serializeSfdt(editor);
+    added += topLevelSequence(pastedSfdt).length - lengthBefore;
+    const next = topLevelSequence(pastedSfdt)[pasteAt + added];
+    if (next) caret = `${next.section};${next.block};0`;
+  }
+  return { paste: { at: pasteAt, blocks: added }, pastedSfdt };
+}
+
+/**
+ * The pasted run, read back from the document and compared against what was
+ * sent. `ok: true` from a paste only means the paste did not throw; this is
+ * the integrity backstop that turns a silently truncated copy into a refusal
+ * that rolls the whole group back - the same discipline `shiftedRange` applies
+ * to a relocation's source and `assertPastedTableMatches` to a table copy.
+ */
+function assertPastedRangeMatches(
+  pastedSfdt: any,
+  paste: PasteEffect,
+  source: BlockRange,
+  expectedBlocks: any[]
+): void {
+  const sequence = topLevelSequence(pastedSfdt);
+  const window = new Set<string>();
+  for (let index = paste.at; index < paste.at + paste.blocks; index++) {
+    const address = sequence[index];
+    if (address) window.add(`${address.section};${address.block}`);
+  }
+  const copied = flattenSfdt(pastedSfdt).filter((block) => {
+    const parts = block.anchor.split(';');
+    return window.has(`${parts[0]};${parts[1]}`);
+  });
+  const expected = rangeIdentity(
+    flattenSfdt({ sections: [{ blocks: expectedBlocks }] })
+  );
+  const actual = rangeIdentity(copied);
+  if (expected !== actual)
+    throw new OpError(
+      'relocation_copy_lost',
+      `The copy of the section at ${JSON.stringify(
+        source.anchor
+      )} is not readable at the position it was pasted into, so the engine refused to keep an incomplete copy. Nothing of this change set was kept.`,
+      [
+        `paste of ${paste.blocks} block(s) at sequence index ${paste.at}`,
+        `expected blocks reading ${JSON.stringify(expected.slice(0, 200))}`,
+        `found blocks reading ${JSON.stringify(actual.slice(0, 200))}`
+      ]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // split_table - one table becomes two, and the engine writes no content
 //
@@ -8221,33 +8404,35 @@ export const ANCHORED_OP_HANDLERS: {
   },
   /**
    * A copy is not a move: the duplicate must not inherit the original's binding
-   * identities. The payload is given its own identities before the paste, so
-   * placement, list continuation, section properties and revision grouping stay
-   * entirely the concern of the relocation itself.
+   * identities. The copy is built from the document's own SFDT - cloned,
+   * resolved to what the user sees, given identities of its own - and pasted
+   * through the native tracked paste in wrapper-safe segments, then read back
+   * and verified before the group is allowed to stand.
    */
   copy_section: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
     const sfdt = serializeSfdt(editor);
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
-    const sourceIndex = scanReadableBindings(sfdt);
     // Neither source-side refusal applies to a duplication: nothing is deleted,
     // so there is no document-tail delete to crash `acceptAll` and no pending
     // edit of anyone else's that rejecting could take away. The target-side
     // refusals are the same ones a move gets, from the same resolver.
-    relocateBlockRange(
+    const target = resolveRelocationTarget(blocks, op, source);
+    const clone = clonedRangeBlocks(sfdt, source);
+    const sourceIndex = scanReadableBindings(sfdt);
+    if (sourceIndex) rewriteCloneIdentities(clone, sourceIndex);
+    const segments = copyPasteSegments(clone, sfdt, target);
+    const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
       sfdt,
+      segments,
+      target
+    );
+    assertPastedRangeMatches(
+      pastedSfdt,
+      paste,
       source,
-      resolveRelocationTarget(blocks, op, source),
-      {
-        removeSource: false,
-        ...(sourceIndex
-          ? {
-              transformPayload: (payload: string) =>
-                rewriteClonedBindingsInPayload(payload, sfdt, sourceIndex)
-            }
-          : {})
-      }
+      segments.flat()
     );
   },
   swap_sections: ({ editor, op, block, byAnchor }) => {
@@ -12992,8 +13177,8 @@ function cloneIdentityRewrite(
   index: BindingIndex,
   /**
    * The bindings being cloned. A table duplicate filters the document index by
-   * path; a section copy reads them out of the captured clipboard payload, whose
-   * paths do not correspond to the source document at all.
+   * path; a section copy reads them out of its cloned blocks, which carry no
+   * document paths at all.
    */
   cloned: Iterable<{ name: string; tableId: string | null; isGlobal: boolean }>,
   freshName: (name: string, used: Set<string>) => string
@@ -13018,7 +13203,7 @@ function cloneIdentityRewrite(
 }
 
 /**
- * Give a captured clipboard payload its own binding identities before it is
+ * Give a clone of document blocks its own binding identities before it is
  * pasted, using the same rule a bound table duplicate uses: a global binding
  * keeps its name so the copy joins that document-wide identity, every other
  * binding gets a fresh one, each bound table gets a fresh table id and fresh row
@@ -13027,25 +13212,12 @@ function cloneIdentityRewrite(
  * `copyRows: true` keeps the values the user can see: a copy of a line reading
  * 5% reads 5%, not the tag's `default`.
  */
-function rewriteClonedBindingsInPayload(
-  payload: string,
-  documentSfdt: any,
+function rewriteCloneIdentities(
+  cloned: any[],
   sourceIndex: BindingIndex
-): string {
-  let parsed: any;
-  try {
-    parsed = clonedWithoutRevisions(documentSfdt, JSON.parse(payload));
-  } catch {
-    return payload;
-  }
-  // Clipboard SFDT carries the selected revisions table and the references into
-  // it. Stripped of those references, the records are unreachable, and carrying
-  // them into the paste leaves content the paste's own revisions do not cover -
-  // so rejecting the copy would not restore the document.
-  delete parsed.revisions;
-  delete parsed.r;
-  const { bindings, tableIds: clonedTableIds } = bindingsInPayload(parsed);
-  if (!bindings.length && !clonedTableIds.size) return JSON.stringify(parsed);
+): void {
+  const { bindings, tableIds: clonedTableIds } = clonedBindingTags(cloned);
+  if (!bindings.length && !clonedTableIds.size) return;
   const tableIds = new Map<string, string>();
   const rowIds = new Map<string, string>();
   for (const oldTableId of clonedTableIds) {
@@ -13061,23 +13233,22 @@ function rewriteClonedBindingsInPayload(
     bindings,
     (name, used) => uniqueBindingName(name, used)
   );
-  rewriteBindingsInClone(parsed, {
+  rewriteBindingsInClone(cloned, {
     tableIds,
     rowIds,
     renameDocBindings,
     preservedDocBindings,
     copyRows: true
   });
-  return JSON.stringify(parsed);
 }
 
 /**
- * Every binding tag inside a captured clipboard payload, flattened to what the
+ * Every binding tag inside a cloned block tree, flattened to what the
  * identity rule needs. `tableId` is non-null only for a table-SCOPED binding,
  * which `rewriteBindingsInClone` re-scopes through the table map instead of
  * renaming - matching the document-index rule exactly.
  */
-function bindingsInPayload(
+function clonedBindingTags(
   node: any,
   out: Array<{ name: string; tableId: string | null; isGlobal: boolean }> = [],
   tableIdsSeen: Set<string> = new Set(),
@@ -13088,7 +13259,7 @@ function bindingsInPayload(
 } {
   if (Array.isArray(node)) {
     node.forEach((entry) =>
-      bindingsInPayload(entry, out, tableIdsSeen, insideTable)
+      clonedBindingTags(entry, out, tableIdsSeen, insideTable)
     );
     return { bindings: out, tableIds: tableIdsSeen };
   }
@@ -13115,7 +13286,7 @@ function bindingsInPayload(
     }
   }
   for (const value of Object.values(node))
-    bindingsInPayload(value, out, tableIdsSeen, scope);
+    clonedBindingTags(value, out, tableIdsSeen, scope);
   return { bindings: out, tableIds: tableIdsSeen };
 }
 

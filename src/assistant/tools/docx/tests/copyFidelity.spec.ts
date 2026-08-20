@@ -35,6 +35,7 @@ import {
   parseTag
 } from '../../../../elements/components/DocxEditor/bindings/core/tagDsl';
 import { scanBindings } from '../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
+import { listRevisionGroups } from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -664,44 +665,132 @@ describe('a copied section gets its own binding identities', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The known limit, pinned: a range containing a block-wrapped table refuses.
+// Block-wrapped tables: the shape a multi-block paste used to silently lose.
 // ---------------------------------------------------------------------------
 
 describe('copy_section over a block-wrapped table', () => {
-  it('refuses as an untracked write, recoverable by rejecting what is pending', () => {
-    const editor = makeEditor(buildCostsFixture());
+  const runWrapped = (
+    doc: any,
+    edit: EditOp,
+    assert: (editor: DocumentEditor) => void
+  ) => {
+    const editor = makeEditor(doc);
     const attached: AttachedBindings = attachBindings(
       editor as unknown as SyncfusionEditorLike,
       { convertTokensOnOpen: false }
     );
     try {
       const before = editor.serialize();
-      const result = apply(
-        editor,
-        [
-          {
-            op: 'copy_section',
-            anchor: '0;0',
-            expect: 'Project cost estimate',
-            targetAnchor: '0;8',
-            position: 'after'
-          }
-        ],
-        'copy-wrapped-table'
-      );
+      const result = apply(editor, [edit], 'copy-wrapped');
       expect(result.results[0]).toMatchObject({
-        ok: false,
+        ok: true,
         op: 'copy_section',
-        error: 'untracked_write'
+        route: 'editor'
       });
-      // A refusal, never a corruption: whatever the failed paste left behind
-      // is pending tracked content, and rejecting it restores the document
-      // byte for byte.
+      expect(result.changeSet?.groups).toHaveLength(1);
+      assert(editor);
+      // One rail card covers the whole copy, and rejecting the pending
+      // revisions restores the document byte for byte.
+      expect(listRevisionGroups(editor as unknown as LiveEditor)).toHaveLength(
+        1
+      );
       rejectAll(editor);
+      expect(editor.revisions.length).toBe(0);
       expect(editor.serialize()).toBe(before);
     } finally {
       attached.dispose();
       destroy(editor);
     }
+  };
+
+  it.each([
+    ['to the document tail', { targetAnchor: '0;8', position: 'after' }, 10],
+    ['to a mid-document target', { targetAnchor: '0;5', position: 'before' }, 5]
+  ] as Array<[string, any, number]>)(
+    'copies the whole section %s, renaming what it carries',
+    (_name, target, copyAt) => {
+      runWrapped(
+        buildCostsFixture(),
+        { op: 'copy_section', anchor: '0;0', ...target },
+        (editor) => {
+          // Block for block, wrapped table included: the copy reads exactly
+          // what the source section reads.
+          expect(flatTextsOf(editor, copyAt, 5)).toEqual(
+            flatTextsOf(editor, 0, 5)
+          );
+          const index = scanBindings(parsed(editor));
+          // The copied table is a table of its own: fresh id, fresh row ids.
+          expect(index.tables.get('costs')).toBeDefined();
+          expect(
+            index.tables.get('costs_copy')?.rows.map((row) => row.rowId)
+          ).toEqual(['costs_copy_r1', 'costs_copy_r2']);
+          // The copied non-global field is ONE fresh identity covering both
+          // copied occurrences; formulas follow the renames.
+          expect(index.fields.get('project.name_2')).toHaveLength(2);
+          expect(index.formulas.get('costs_tax_2')?.[0].def).toMatchObject({
+            expression: 'mul(costs_subtotal_2,tax_rate_2)'
+          });
+        }
+      );
+    }
+  );
+
+  it('keeps a global field shared across the copy', () => {
+    runWrapped(
+      buildCostsFixture({ globalTaxRate: true }),
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;8', position: 'after' },
+      (editor) => {
+        const index = scanBindings(parsed(editor));
+        const occurrences = index.fields.get('tax_rate');
+        expect(occurrences).toHaveLength(3);
+        expect(occurrences?.every((entry) => entry.def.isGlobal)).toBe(true);
+        // The copied formula still references the one shared identity.
+        expect(index.formulas.get('costs_tax_2')?.[0].def).toMatchObject({
+          expression: 'mul(costs_subtotal_2,tax_rate)'
+        });
+      }
+    );
+  });
+
+  it('separates two adjacent wrapped tables copied in one range', () => {
+    // Both wrapped tables in one section unit, directly adjacent - the copy
+    // must arrive with a separator paragraph between them, or Word renders
+    // them as one table.
+    const doc = buildCostsFixture();
+    const blocks = doc.sections[0].blocks as any[];
+    doc.sections[0].blocks = [
+      blocks[0], // heading
+      blocks[1], // "Project: ..."
+      blocks[2], // wrapped costs table
+      blocks[6], // wrapped expenses table, flush against it
+      blocks[8], // "Combined total ..."
+      blocks[5], // "Expenses" heading, now bounding the unit from below
+      blocks[9]
+    ];
+    runWrapped(
+      doc,
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;5', position: 'after' },
+      (editor) => {
+        expect(blockPattern(editor, 7, 6)).toBe('PPWPWP');
+        const index = scanBindings(parsed(editor));
+        expect(index.tables.has('costs_copy')).toBe(true);
+        expect(index.tables.has('expenses_copy')).toBe(true);
+      }
+    );
+  });
+
+  it('copies a range that ENDS in a wrapped table', () => {
+    const doc = buildCostsFixture();
+    (doc.sections[0].blocks as any[]).splice(3, 2);
+    runWrapped(
+      doc,
+      { op: 'copy_section', anchor: '0;0', targetAnchor: '0;6', position: 'after' },
+      (editor) => {
+        expect(blockPattern(editor, 8, 3)).toBe('PPW');
+        expect(scanBindings(parsed(editor)).tables.has('costs_copy')).toBe(
+          true
+        );
+      }
+    );
   });
 });
