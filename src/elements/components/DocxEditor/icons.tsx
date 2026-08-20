@@ -542,3 +542,42 @@ export const SaveIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d='M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z' />
   </Svg>
 );
+
+// Stacked blocks — the reorderable "sections" list. Placeholder glyph; freely
+// swappable for the reference artifact's icon.
+export const SectionsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <rect x='4' y='4' width='16' height='4' rx='1.5' />
+    <rect x='4' y='10' width='16' height='4' rx='1.5' />
+    <rect x='4' y='16' width='11' height='4' rx='1.5' />
+  </Svg>
+);
+
+// Notebook — the reorderable document "sections".
+export const NotebookIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path
+      d='M7 4h10a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 17 20H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.7'
+      strokeLinejoin='round'
+    />
+    <path d='M8.5 4v16' fill='none' stroke='currentColor' strokeWidth='1.7' />
+    <path
+      d='M11.5 9h4M11.5 12.5h4'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.7'
+      strokeLinecap='round'
+    />
+  </Svg>
+);
+
+// Review/tracked-changes glyph: lines of text with a diff caret.
+export const ChangesIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M4 6a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h5a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z' />
+    <path d='M18 9.5a1 1 0 0 1 1 1V13h2.5a1 1 0 1 1 0 2H19v2.5a1 1 0 1 1-2 0V15h-2.5a1 1 0 1 1 0-2H17v-2.5a1 1 0 0 1 1-1Z' />
+  </Svg>
+);

@@ -1,11 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { CheckIcon, CloseIcon } from './icons';
 import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
-import TrackedChangeGroups from './TrackedChangeGroups';
+import DocumentPanel, { PanelTab } from './DocumentPanel';
+import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
 import { DocxSource } from './types';
+
+// Re-exported for tests that import it from this module.
+export { RailErrorBoundary } from './RailErrorBoundary';
+
+type ActivePanel = PanelTab | null;
 
 export interface DocxEditorProps {
   /** Document to open. `buffer` when the host already fetched the bytes (e.g.
@@ -68,58 +74,6 @@ const overlay = {
   color: '#3f3f46'
 };
 
-// One retry per failure, twice at most: enough for a transient fault to clear,
-// too few to loop or flicker if the fault is real and immediate.
-const RAIL_RETRY_LIMIT = 2;
-const RAIL_RETRY_DELAY_MS = 250;
-
-// The review rail is an overlay on the document — no failure inside it may
-// take down the host form. Without this, a teardown race against a destroyed
-// Syncfusion instance (step navigation, remount) escapes to the form's own
-// boundary and ejects the user from their step. Exported for tests.
-//
-// Hiding the rail is the containment, but hiding it FOREVER is a defect of its
-// own: one transient read - an instance destroyed under a mid-flight refresh -
-// used to cost the reviewer their review surface for the rest of the session,
-// with the pending changes still in the document and no way to see them. So a
-// failure is retried, briefly and a bounded number of times. A fault that
-// reproduces re-latches on the retry and stays hidden; the retry budget is
-// restored whenever the rail is remounted for a new editor or a reopened
-// document (see the `key` at the render site).
-export class RailErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { failed: boolean }
-> {
-  state = { failed: false };
-  private retries = 0;
-  private retryTimer: ReturnType<typeof setTimeout> | undefined;
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  componentDidCatch(error: unknown) {
-    console.warn(
-      'Feathery: tracked-changes panel failed and was hidden.',
-      error
-    );
-    if (this.retries >= RAIL_RETRY_LIMIT) return;
-    this.retries++;
-    this.retryTimer = setTimeout(
-      () => this.setState({ failed: false }),
-      RAIL_RETRY_DELAY_MS
-    );
-  }
-
-  componentWillUnmount() {
-    if (this.retryTimer) clearTimeout(this.retryTimer);
-  }
-
-  render() {
-    return this.state.failed ? null : this.props.children;
-  }
-}
-
 // Reusable Syncfusion DOCX editor: custom toolbar + inline editing in one unit
 // that fills its container and manages its own overflow. Syncfusion loads from
 // the CDN at runtime (no bundle bloat) and renders directly in the page (no
@@ -164,9 +118,23 @@ function DocxEditor({
   );
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
-  // Shared by the panel's drawer handle, its ✕, and clicking an inline
-  // tracked change (which re-shows the panel).
-  const [changesPanelHidden, setChangesPanelHidden] = useState(false);
+  // The single right-rail slot shows at most one panel, toggled from the
+  // toolbar's two buttons (Changes / Sections).
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  // Pending tracked-change count, reported by the (always-mounted) rail; drives
+  // the toolbar's Changes badge and whether that button is offered at all.
+  const [changesCount, setChangesCount] = useState(0);
+
+  // A single dirty transition. Shared by ordinary edits (via the hook's
+  // onDirty) and the section reorder, whose programmatic open() does not
+  // reliably fire the gated contentChange.
+  const markDirty = useCallback(() => {
+    if (!dirtyRef.current) {
+      dirtyRef.current = true;
+      setDirty(true);
+      onChange?.(true);
+    }
+  }, [onChange]);
 
   const {
     containerRef,
@@ -185,16 +153,16 @@ function DocxEditor({
     openNonce,
     onReady,
     onEditorReady,
-    onDirty: () => {
-      if (!dirtyRef.current) {
-        dirtyRef.current = true;
-        setDirty(true);
-        onChange?.(true);
-      }
-    },
+    onDirty: markDirty,
     onError,
     bindings
   });
+
+  // The Changes button is only offered while changes are pending; if they all
+  // resolve while its panel is open, close it so the empty slot doesn't linger.
+  useEffect(() => {
+    if (activePanel === 'changes' && changesCount === 0) setActivePanel(null);
+  }, [activePanel, changesCount]);
 
   /**
    * Reconcile anything uncommitted before bytes leave the editor, and refuse to
@@ -434,6 +402,11 @@ function DocxEditor({
             css={{
               width: '100%',
               height: '100%',
+              // The theme gives the editor root its own 1px border; the side
+              // panel / edge rail draw the right-hand seam themselves, so the
+              // editor's copy would double it (visibly thicker when the panel
+              // is collapsed and the rail sits flush against the editor).
+              '& .e-de-ctn': { borderRight: 'none' },
               // Syncfusion's status-bar page control renders the "Page" label,
               // the number input, and "of N" on a line but the input box is
               // taller than the text and sits low. Flex-center the whole
@@ -468,19 +441,33 @@ function DocxEditor({
           {loading && !error && <div css={overlay}>Loading document…</div>}
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
         </div>
-        {/* Grouped review cards for assistant-authored tracked changes.
-            Read-only hosts cannot resolve revisions, so no panel there. */}
-        {editor && reviewChanges && (
-          // Keyed on the editor generation and the open nonce: a new instance or
-          // a reopened document is a different situation from the one that
-          // failed, so the boundary starts clean with its retries back.
-          <RailErrorBoundary key={`${railGeneration}:${openNonce ?? 0}`}>
-            <TrackedChangeGroups
-              editor={editor}
-              hidden={changesPanelHidden}
-              onHiddenChange={setChangesPanelHidden}
-            />
-          </RailErrorBoundary>
+        {/* Shared side panel; its title follows the rail icon that opened it
+            (Suggested changes · Sections). Stays mounted while review is on so
+            its pending count keeps the edge-rail badge live; collapses to zero
+            width when no panel is open. */}
+        {editor && (
+          <DocumentPanel
+            editor={editor}
+            open={activePanel !== null}
+            tab={activePanel ?? 'sections'}
+            onClose={() => setActivePanel(null)}
+            reviewChanges={!!reviewChanges}
+            onChangesCount={setChangesCount}
+            markDirty={markDirty}
+            boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
+          />
+        )}
+        {/* Slim edge rail on the far right: one icon per side panel. Always
+            present so a panel is one click away and future panels can slot in. */}
+        {editor && (
+          <PanelRail
+            activePanel={activePanel}
+            showChanges={!!reviewChanges}
+            changesCount={changesCount}
+            onToggle={(panel) =>
+              setActivePanel((p) => (p === panel ? null : panel))
+            }
+          />
         )}
       </div>
       {/* Save feedback. Positioned over the editor, bottom-center, and
