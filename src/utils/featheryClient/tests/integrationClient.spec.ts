@@ -126,7 +126,7 @@ describe('FeatheryClient listDocuments', () => {
     await new FeatheryClient('form-key').listDocuments();
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toContain('document/templates/');
+    expect(url).toContain('document/template/list/');
     expect(url).not.toContain('form_key');
     expect(url).not.toContain('tags=');
   });
