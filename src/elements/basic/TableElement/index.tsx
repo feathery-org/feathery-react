@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
+import classNames from 'classnames';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
@@ -23,6 +30,12 @@ import {
   sortIconContainerStyle,
   toolbarStyle,
   addRowButtonStyle,
+  toolbarActionsStyle,
+  dirtyIndicatorStyle,
+  resetButtonStyle,
+  saveButtonStyle,
+  errorBannerStyle,
+  dirtyCellStyle,
   deleteColumnStyle,
   deleteIconStyle
 } from './styles';
@@ -139,7 +152,9 @@ function TableElement({
 
   const tableId = element?.id;
 
-  const canEdit = enableEditing && !isTransposed;
+  const canEdit =
+    enableEditing && !isTransposed && !(isHub && (hub.loading || hub.saving));
+  const showHubSaveControls = isHub && enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddDeleteRows;
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
@@ -249,7 +264,7 @@ function TableElement({
   ]);
 
   const showEmptyState = !hasData || !hasSearchResults;
-  const showToolbar = enableSearch || showAddRow;
+  const showToolbar = enableSearch || showAddRow || showHubSaveControls;
 
   return (
     <div
@@ -261,21 +276,71 @@ function TableElement({
     >
       {showToolbar && (
         <div className={TABLE_CLASS.toolbar} css={toolbarStyle}>
-          {enableSearch ? (
-            <Search searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-          ) : (
-            <div />
-          )}
-          {showAddRow && (
-            <button
-              type='button'
-              className={TABLE_CLASS.addRowButton}
-              css={addRowButtonStyle}
-              onClick={wrappedHandleAddRow}
-            >
-              + Add Row
-            </button>
-          )}
+          <div css={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {enableSearch && (
+              <Search
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+              />
+            )}
+            {showHubSaveControls && hub.isDirty && (
+              <span
+                className={TABLE_CLASS.dirtyIndicator}
+                css={dirtyIndicatorStyle}
+              >
+                Unsaved changes
+              </span>
+            )}
+          </div>
+          <div css={toolbarActionsStyle}>
+            {showAddRow && (
+              <button
+                type='button'
+                className={TABLE_CLASS.addRowButton}
+                css={addRowButtonStyle}
+                onClick={wrappedHandleAddRow}
+              >
+                + Add Row
+              </button>
+            )}
+            {showHubSaveControls && (
+              <>
+                <button
+                  type='button'
+                  className={TABLE_CLASS.resetButton}
+                  css={resetButtonStyle}
+                  disabled={hub.loading || hub.saving}
+                  onClick={() => {
+                    setEditingCell(null);
+                    hub.reset().catch(() => {});
+                  }}
+                >
+                  Reset
+                </button>
+                <button
+                  type='button'
+                  className={TABLE_CLASS.saveButton}
+                  css={saveButtonStyle}
+                  disabled={!hub.isDirty || hub.loading || hub.saving}
+                  onClick={() => {
+                    setEditingCell(null);
+                    hub.save().catch(() => {});
+                  }}
+                >
+                  {hub.saving ? 'Saving...' : 'Save'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {isHub && hub.errors.length > 0 && (
+        <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>
+          <ul>
+            {hub.errors.map((error, index) => (
+              <li key={`${error}-${index}`}>{error}</li>
+            ))}
+          </ul>
         </div>
       )}
       {showEmptyState ? (
@@ -401,6 +466,10 @@ function TableElement({
                           };
 
                       const CellElement = isFirstColInTranspose ? 'th' : 'td';
+                      const isDirtyCell =
+                        isHub &&
+                        !isFirstColInTranspose &&
+                        hub.isCellDirty(column.field_key, rowIndex);
 
                       const handleCellClick = (e: React.MouseEvent) => {
                         if (isSortable) {
@@ -448,13 +517,20 @@ function TableElement({
                       return (
                         <CellElement
                           key={colIndex}
-                          className={
+                          className={classNames(
                             isFirstColInTranspose
                               ? TABLE_CLASS.headerCell
-                              : TABLE_CLASS.cell
-                          }
+                              : TABLE_CLASS.cell,
+                            {
+                              [TABLE_CLASS.dirtyCell]: isDirtyCell
+                            }
+                          )}
                           data-feathery-field={cellFieldKey}
-                          css={cellCss}
+                          data-dirty={isDirtyCell || undefined}
+                          css={{
+                            ...cellCss,
+                            ...(isDirtyCell ? dirtyCellStyle : {})
+                          }}
                           onClick={handleCellClick}
                           {...(isFirstColInTranspose ? { scope: 'row' } : {})}
                         >
