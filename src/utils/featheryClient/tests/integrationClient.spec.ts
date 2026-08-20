@@ -120,20 +120,20 @@ describe('FeatheryClient listDocuments', () => {
     (global.fetch as jest.Mock).mockClear();
   });
 
-  it('requests the org templates endpoint with no query when no tags', async () => {
+  it('requests the org templates endpoint scoped to the current form key', async () => {
     (global.fetch as jest.Mock).mockResolvedValue(okResponse([]));
 
     await new FeatheryClient('form-key').listDocuments();
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toContain('document/template/list/');
-    expect(url).not.toContain('form_key');
+    expect(url).toContain('form_key=form-key');
     expect(url).not.toContain('tags=');
   });
 
-  it('joins tags into a single comma-separated query param', async () => {
+  it('sends each tag as its own query param for backend AND semantics', async () => {
     (global.fetch as jest.Mock).mockResolvedValue(
-      okResponse([{ id: 'd1', name: 'Cover' }])
+      okResponse([{ id: 'd1', name: 'Cover', tags: ['Cover Letter'] }])
     );
 
     const result = await new FeatheryClient('form-key').listDocuments({
@@ -141,8 +141,11 @@ describe('FeatheryClient listDocuments', () => {
     });
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toContain('tags=Cover+Letter%2COnboarding');
-    expect(url).not.toContain('form_key');
-    expect(result).toEqual([{ id: 'd1', name: 'Cover' }]);
+    expect(url).toContain('tags=Cover+Letter');
+    expect(url).toContain('tags=Onboarding');
+    // Not comma-joined into a single param
+    expect(url).not.toContain('tags=Cover+Letter%2COnboarding');
+    expect(url).toContain('form_key=form-key');
+    expect(result).toEqual([{ id: 'd1', name: 'Cover', tags: ['Cover Letter'] }]);
   });
 });

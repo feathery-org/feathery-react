@@ -1190,7 +1190,7 @@ export default class FeatheryClient extends IntegrationClient {
 
   async listDocuments({ tags }: { tags?: string[] } = {}) {
     const { sdkKey } = initInfo();
-    return apiListDocumentTemplates({ sdkKey, tags });
+    return apiListDocumentTemplates({ sdkKey, formKey: this.formKey, tags });
   }
 
   async resetPendingFileUploads(fieldKeys: string[]) {
