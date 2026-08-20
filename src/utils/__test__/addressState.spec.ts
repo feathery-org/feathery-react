@@ -92,3 +92,31 @@ describe('stateFieldHasNoOptions', () => {
     ).toBe(true);
   });
 });
+
+describe('repeating country and state fields', () => {
+  const abbrevCountry = field('gmap_country', 'country', 'servar-country', [3]);
+  abbrevCountry.servar.metadata = { store_abbreviation: true } as any;
+  const step = { servar_fields: [state, abbrevCountry] };
+  const values = { country: ['US', 'NL', 'CA'] };
+
+  it('pairs each row with the country in the same row', () => {
+    expect(getControllingCountryCode(state, step, values, 0)).toEqual('US');
+    expect(getControllingCountryCode(state, step, values, 1)).toEqual('NL');
+    expect(getControllingCountryCode(state, step, values, 2)).toEqual('CA');
+  });
+
+  it('hides only the rows whose country has no states', () => {
+    expect(stateFieldHasNoOptions(state, step, values, 0)).toBe(false);
+    expect(stateFieldHasNoOptions(state, step, values, 1)).toBe(true);
+    expect(stateFieldHasNoOptions(state, step, values, 2)).toBe(false);
+  });
+
+  // A non-repeating state field alongside a repeating country has no row of
+  // its own, and a row the user hasn't filled in yet should not read as blank
+  it('falls back to the first entry with no index or an empty row', () => {
+    expect(getControllingCountryCode(state, step, values)).toEqual('US');
+    expect(
+      getControllingCountryCode(state, step, { country: ['US', ''] }, 1)
+    ).toEqual('US');
+  });
+});

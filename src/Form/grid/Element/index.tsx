@@ -438,7 +438,12 @@ const Element = ({ node: el, form }: any) => {
       case 'gmap_state':
       case 'gmap_country':
         if (servar.type === 'gmap_state')
-          countryCode = getControllingCountryCode(el, activeStep, fieldValues);
+          countryCode = getControllingCountryCode(
+            el,
+            activeStep,
+            fieldValues,
+            index ?? undefined
+          );
         return (
           <Elements.DropdownField
             {...fieldProps}

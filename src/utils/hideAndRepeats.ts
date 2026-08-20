@@ -181,7 +181,11 @@ export type VisiblePositions = Record<string, boolean[]>;
  * recomputed every render, so this follows the country without a logic rule,
  * including when address autocomplete sets it.
  */
-function shouldHideStateWithoutOptions(step: any, element: any) {
+function shouldHideStateWithoutOptions(
+  step: any,
+  element: any,
+  repeatIndex?: number
+) {
   const servar = element.servar;
   // Opt out, not in: fields predating the setting have no key, and draft step
   // blobs carry their own servar snapshots that would drop a backfilled one
@@ -190,7 +194,7 @@ function shouldHideStateWithoutOptions(step: any, element: any) {
     servar.metadata?.hide_without_states === false
   )
     return false;
-  return stateFieldHasNoOptions(element, step, fieldValues);
+  return stateFieldHasNoOptions(element, step, fieldValues, repeatIndex);
 }
 
 function _collectHideFlags(
@@ -211,15 +215,12 @@ function _collectHideFlags(
 
   const curRepeats = repeatKey ? numRepeats : 1;
 
-  // A state field set to hide without options is evaluated once per element,
-  // not per repetition: the controlling country lookup is not repeat-aware
-  const hiddenForNoStates = shouldHideStateWithoutOptions(step, element);
-
   const visible: boolean[] = [];
   for (let i = 0; i < curRepeats; i++) {
+    const rowIndex = repeatKey ? i : undefined;
     let shouldHide =
-      hiddenForNoStates ||
-      shouldElementHide(element, repeatKey ? i : undefined, internalId);
+      shouldHideStateWithoutOptions(step, element, rowIndex) ||
+      shouldElementHide(element, rowIndex, internalId);
     if (shouldHide) {
       if (!(elKey in hiddenPositions)) hiddenPositions[elKey] = [];
       hiddenPositions[elKey].push(i);

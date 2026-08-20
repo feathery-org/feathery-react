@@ -10,7 +10,8 @@ import { numMatchingItems } from './primitives';
 export const getControllingCountryCode = (
   stateElement: any,
   activeStep: any,
-  fieldValues: any
+  fieldValues: any,
+  repeatIndex?: number
 ) => {
   const field = activeStep.servar_fields
     .filter((field: any) => field.servar.type === 'gmap_country')
@@ -29,9 +30,9 @@ export const getControllingCountryCode = (
   if (!field) return '';
 
   let value = fieldValues[field.servar.key] as string | string[];
-  // Hacky patch for repeating country fields
-  // TODO: fix
-  if (Array.isArray(value)) value = value[0];
+  // A repeating country pairs with the state field's row; fall back to the
+  // first entry when the state isn't repeated or the row has no country yet.
+  if (Array.isArray(value)) value = value[repeatIndex ?? 0] || value[0];
   if (!value) return '';
 
   return field.servar.metadata.store_abbreviation
@@ -45,14 +46,20 @@ export const getControllingCountryCode = (
 export const stateFieldHasNoOptions = (
   stateElement: any,
   activeStep: any,
-  fieldValues: any
+  fieldValues: any,
+  repeatIndex?: number
 ) => {
   const metadata = stateElement.servar.metadata ?? {};
   // Salesforce-synced fields are populated by the integration, not our data
   if (metadata.salesforce_sync) return false;
 
   const code = (
-    getControllingCountryCode(stateElement, activeStep, fieldValues) ||
+    getControllingCountryCode(
+      stateElement,
+      activeStep,
+      fieldValues,
+      repeatIndex
+    ) ||
     metadata.default_country ||
     'us'
   ).toLowerCase();
