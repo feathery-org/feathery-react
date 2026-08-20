@@ -65,13 +65,6 @@ export default {
         // CI/build environment value without committing it to source.
         __SYNCFUSION_LICENSE_KEY__: JSON.stringify(
           process.env.SYNCFUSION_LICENSE_KEY || ''
-        ),
-        // Bake the SDK's target backend into the bundle. Matches the webpack
-        // dev build (webpack.development.js DefinePlugin); rollup consumers
-        // (yarn-linked development, published npm package) fall back to
-        // 'production' when unset.
-        'process.env.BACKEND_ENV': JSON.stringify(
-          process.env.BACKEND_ENV || 'production'
         )
       }
     }),
