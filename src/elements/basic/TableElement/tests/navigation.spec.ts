@@ -1,4 +1,4 @@
-import { getNextEditableCell } from '../utils';
+import { getAdjacentCell, getNextEditableCell } from '../utils';
 
 // Three visible rows (data indices not necessarily contiguous), 2 columns.
 const ROWS = [0, 1, 2];
@@ -61,6 +61,55 @@ describe('getNextEditableCell - edge cases', () => {
   it('returns null when there are no columns', () => {
     expect(
       getNextEditableCell(ROWS, 0, { rowIndex: 0, colIndex: 0 }, false)
+    ).toBeNull();
+  });
+});
+
+describe('getAdjacentCell - arrow-key selection movement', () => {
+  it('moves right within a row', () => {
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 0, colIndex: 0 }, 'right')
+    ).toEqual({ rowIndex: 0, colIndex: 1 });
+  });
+
+  it('moves left within a row', () => {
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 0, colIndex: 1 }, 'left')
+    ).toEqual({ rowIndex: 0, colIndex: 0 });
+  });
+
+  it('moves down by visible-row order, not raw row index', () => {
+    const rows = [5, 2, 8];
+    expect(
+      getAdjacentCell(rows, COLS, { rowIndex: 5, colIndex: 1 }, 'down')
+    ).toEqual({ rowIndex: 2, colIndex: 1 });
+  });
+
+  it('moves up by visible-row order', () => {
+    const rows = [5, 2, 8];
+    expect(
+      getAdjacentCell(rows, COLS, { rowIndex: 8, colIndex: 0 }, 'up')
+    ).toEqual({ rowIndex: 2, colIndex: 0 });
+  });
+
+  it('clamps at every edge instead of wrapping', () => {
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 0, colIndex: 0 }, 'left')
+    ).toBeNull();
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 0, colIndex: 0 }, 'up')
+    ).toBeNull();
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 2, colIndex: 1 }, 'right')
+    ).toBeNull();
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 2, colIndex: 1 }, 'down')
+    ).toBeNull();
+  });
+
+  it('returns null for an unknown current row', () => {
+    expect(
+      getAdjacentCell(ROWS, COLS, { rowIndex: 99, colIndex: 0 }, 'down')
     ).toBeNull();
   });
 });

@@ -16,6 +16,7 @@ export const TABLE_CLASS = {
   sortIcon: 'feathery-table-sort-icon',
   body: 'feathery-table-body',
   row: 'feathery-table-row',
+  rowNumber: 'feathery-table-row-number',
   cell: 'feathery-table-cell',
   editableCell: 'feathery-table-editable-cell',
   cellInput: 'feathery-table-cell-input',

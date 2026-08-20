@@ -21,6 +21,13 @@ type EditableCellProps = {
   onStartEdit: () => void;
   onStopEdit: () => void;
   onNavigate: (backward: boolean) => void;
+  // Spreadsheet mode: replace the cell content with this draft when the
+  // editor opens (type-to-edit), instead of seeding from the current value
+  seedValue?: string | null;
+  // Spreadsheet mode sets this false: a click selects the cell instead of
+  // opening the editor (editing starts via double-click or keyboard)
+  clickToEdit?: boolean;
+  onEnterCommit?: () => void;
 };
 
 export function EditableCell({
@@ -31,7 +38,10 @@ export function EditableCell({
   onEdit,
   onStartEdit,
   onStopEdit,
-  onNavigate
+  onNavigate,
+  seedValue = null,
+  clickToEdit = true,
+  onEnterCommit
 }: EditableCellProps) {
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -46,13 +56,23 @@ export function EditableCell({
   // Seed the draft value the moment this cell becomes the active editor, before
   // paint, so the textarea shows the right content on first render (no flash).
   const prevEditingRef = useRef(false);
-  if (isEditing && !prevEditingRef.current) setEditValue(displayValue);
+  const seededRef = useRef(false);
+  if (isEditing && !prevEditingRef.current) {
+    seededRef.current = seedValue != null;
+    setEditValue(seedValue ?? displayValue);
+  }
   prevEditingRef.current = isEditing;
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select();
+      if (seededRef.current) {
+        // Type-to-edit: keep typing after the seeded character
+        const len = inputRef.current.value.length;
+        inputRef.current.setSelectionRange(len, len);
+      } else {
+        inputRef.current.select();
+      }
     }
   }, [isEditing]);
 
@@ -84,6 +104,7 @@ export function EditableCell({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       inputRef.current?.blur();
+      onEnterCommit?.();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       shouldSaveRef.current = false;
@@ -115,6 +136,9 @@ export function EditableCell({
   }
 
   if (isEmpty) {
+    if (!clickToEdit) {
+      return <span className={TABLE_CLASS.editableCell} />;
+    }
     return (
       <span
         className={TABLE_CLASS.editableCell}
@@ -129,8 +153,11 @@ export function EditableCell({
   return (
     <div className={TABLE_CLASS.editableCell} css={editableCellContentStyle}>
       <span
-        css={{ ...editableCellTextStyle, cursor: 'pointer' }}
-        onClick={startEditing}
+        css={{
+          ...editableCellTextStyle,
+          ...(clickToEdit ? { cursor: 'pointer' } : {})
+        }}
+        onClick={clickToEdit ? startEditing : undefined}
       >
         {displayValue}
       </span>
