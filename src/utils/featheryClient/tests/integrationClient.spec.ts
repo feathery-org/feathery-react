@@ -100,3 +100,49 @@ describe('IntegrationClient account connect', () => {
     expect(JSON.parse(options.body).create).toBe('New Folder');
   });
 });
+
+describe('FeatheryClient listDocuments', () => {
+  const okResponse = (payload: any) => ({
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve(payload)
+  });
+
+  beforeEach(() => {
+    (initInfo as jest.Mock).mockReturnValue({
+      sdkKey: 'sdkKey',
+      userId: 'userId'
+    });
+    global.fetch = jest.fn();
+  });
+
+  afterEach(() => {
+    (global.fetch as jest.Mock).mockClear();
+  });
+
+  it('requests the org templates endpoint with no query when no tags', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue(okResponse([]));
+
+    await new FeatheryClient('form-key').listDocuments();
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toContain('document/templates/');
+    expect(url).not.toContain('form_key');
+    expect(url).not.toContain('tags=');
+  });
+
+  it('joins tags into a single comma-separated query param', async () => {
+    (global.fetch as jest.Mock).mockResolvedValue(
+      okResponse([{ id: 'd1', name: 'Cover' }])
+    );
+
+    const result = await new FeatheryClient('form-key').listDocuments({
+      tags: ['Cover Letter', 'Onboarding']
+    });
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toContain('tags=Cover+Letter%2COnboarding');
+    expect(url).not.toContain('form_key');
+    expect(result).toEqual([{ id: 'd1', name: 'Cover' }]);
+  });
+});

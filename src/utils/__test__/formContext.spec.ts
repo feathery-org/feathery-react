@@ -147,3 +147,27 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 });
+
+describe('feathery.listDocuments logic-rule method routing', () => {
+  const uuid = 'formContext-list-documents';
+  let client: any;
+
+  beforeEach(() => {
+    client = { listDocuments: jest.fn().mockResolvedValue([]) };
+    setFormInternalState(uuid, { fields: {}, client } as any);
+  });
+
+  it('forwards tags to the client method', async () => {
+    await getFormContext(uuid).listDocuments({ tags: ['Cover Letter'] });
+
+    expect(client.listDocuments).toHaveBeenCalledWith({
+      tags: ['Cover Letter']
+    });
+  });
+
+  it('defaults tags when called with none', async () => {
+    await getFormContext(uuid).listDocuments();
+
+    expect(client.listDocuments).toHaveBeenCalledWith({ tags: undefined });
+  });
+});
