@@ -158,7 +158,9 @@ describe('feathery.listDocumentTemplates logic-rule method routing', () => {
   });
 
   it('forwards tags to the client method', async () => {
-    await getFormContext(uuid).listDocumentTemplates({ tags: ['Cover Letter'] });
+    await getFormContext(uuid).listDocumentTemplates({
+      tags: ['Cover Letter']
+    });
 
     expect(client.listDocumentTemplates).toHaveBeenCalledWith({
       tags: ['Cover Letter']
@@ -168,6 +170,8 @@ describe('feathery.listDocumentTemplates logic-rule method routing', () => {
   it('defaults tags when called with none', async () => {
     await getFormContext(uuid).listDocumentTemplates();
 
-    expect(client.listDocumentTemplates).toHaveBeenCalledWith({ tags: undefined });
+    expect(client.listDocumentTemplates).toHaveBeenCalledWith({
+      tags: undefined
+    });
   });
 });
