@@ -4,13 +4,16 @@ import { CloseIcon, DocumentIcon, SpinnerIcon } from './icons';
 import { featheryDoc } from '../utils/browser';
 import { AssistantAttachment, isImageType } from './attachments';
 import { getAttachmentIcon } from './attachmentIcon';
+import {
+  PDFJS_PACKAGE_CDN,
+  PDFJS_STANDARD_FONT_DATA_URL
+} from '../elements/components/DocumentViewer/pdfjsLoader';
 
 // pdf.js loads from the CDN at runtime, never bundled (the UMD build and
-// consumer bundlers choke on pdfjs-dist's ESM), same version pin as the
-// dashboard document editor, new Function hides the import from bundlers
-const PDFJS_VERSION = '5.4.296';
-const PDFJS_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`;
-const PDFJS_WORKER_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+// consumer bundlers choke on pdfjs-dist's ESM); the version pin comes from
+// pdfjsLoader, and new Function hides the import from bundlers
+const PDFJS_CDN = `${PDFJS_PACKAGE_CDN}/build/pdf.min.mjs`;
+const PDFJS_WORKER_CDN = `${PDFJS_PACKAGE_CDN}/build/pdf.worker.min.mjs`;
 
 // eslint-disable-next-line no-new-func
 const importFromCdn = new Function('url', 'return import(url)') as (
@@ -86,7 +89,7 @@ export const LazyPdfThumbnail = memo(function LazyPdfThumbnail({
         // ZapfDingbats checkmarks) that have no embedded font program.
         const doc = await pdfjs.getDocument({
           url,
-          standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`
+          standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL
         }).promise;
         const page = await doc.getPage(1);
         const base = page.getViewport({ scale: 1 });

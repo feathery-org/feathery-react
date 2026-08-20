@@ -13,7 +13,7 @@
 // takes linkService/annotationStorage in the constructor, not in render();
 // see DocumentCanvas.tsx).
 const PDFJS_VERSION = '5.4.296';
-const PDFJS_PACKAGE_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}`;
+export const PDFJS_PACKAGE_CDN = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}`;
 const PDFJS_CDN = `${PDFJS_PACKAGE_CDN}/build`;
 
 // Base-14 PDF fonts (Helvetica, ZapfDingbats, ...) carry no embedded font
