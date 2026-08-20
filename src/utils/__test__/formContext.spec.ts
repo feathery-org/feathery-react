@@ -147,3 +147,31 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
     expect(client.generateDocuments).not.toHaveBeenCalled();
   });
 });
+
+describe('feathery.listDocumentTemplates logic-rule method routing', () => {
+  const uuid = 'formContext-list-document-templates';
+  let client: any;
+
+  beforeEach(() => {
+    client = { listDocumentTemplates: jest.fn().mockResolvedValue([]) };
+    setFormInternalState(uuid, { fields: {}, client } as any);
+  });
+
+  it('forwards tags to the client method', async () => {
+    await getFormContext(uuid).listDocumentTemplates({
+      tags: ['Cover Letter']
+    });
+
+    expect(client.listDocumentTemplates).toHaveBeenCalledWith({
+      tags: ['Cover Letter']
+    });
+  });
+
+  it('defaults tags when called with none', async () => {
+    await getFormContext(uuid).listDocumentTemplates();
+
+    expect(client.listDocumentTemplates).toHaveBeenCalledWith({
+      tags: undefined
+    });
+  });
+});

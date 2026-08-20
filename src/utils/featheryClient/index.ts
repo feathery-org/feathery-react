@@ -45,6 +45,7 @@ import {
   getStaticUrl,
   HubActionOptions,
   inviteFormCollaborator as apiInviteFormCollaborator,
+  listDocumentTemplates as apiListDocumentTemplates,
   setTaskStatus as apiSetTaskStatus,
   PageSelectionInput,
   parseAPIError,
@@ -1194,6 +1195,11 @@ export default class FeatheryClient extends IntegrationClient {
     const files = payload?.files;
     if (download) await downloadAllFileUrls(files, zipName);
     return { files };
+  }
+
+  async listDocumentTemplates({ tags }: { tags?: string[] } = {}) {
+    const { sdkKey } = initInfo();
+    return apiListDocumentTemplates({ sdkKey, formKey: this.formKey, tags });
   }
 
   async resetPendingFileUploads(fieldKeys: string[]) {
