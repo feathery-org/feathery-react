@@ -148,26 +148,26 @@ describe('feathery.generateDocuments logic-rule method routing', () => {
   });
 });
 
-describe('feathery.listDocuments logic-rule method routing', () => {
-  const uuid = 'formContext-list-documents';
+describe('feathery.listDocumentTemplates logic-rule method routing', () => {
+  const uuid = 'formContext-list-document-templates';
   let client: any;
 
   beforeEach(() => {
-    client = { listDocuments: jest.fn().mockResolvedValue([]) };
+    client = { listDocumentTemplates: jest.fn().mockResolvedValue([]) };
     setFormInternalState(uuid, { fields: {}, client } as any);
   });
 
   it('forwards tags to the client method', async () => {
-    await getFormContext(uuid).listDocuments({ tags: ['Cover Letter'] });
+    await getFormContext(uuid).listDocumentTemplates({ tags: ['Cover Letter'] });
 
-    expect(client.listDocuments).toHaveBeenCalledWith({
+    expect(client.listDocumentTemplates).toHaveBeenCalledWith({
       tags: ['Cover Letter']
     });
   });
 
   it('defaults tags when called with none', async () => {
-    await getFormContext(uuid).listDocuments();
+    await getFormContext(uuid).listDocumentTemplates();
 
-    expect(client.listDocuments).toHaveBeenCalledWith({ tags: undefined });
+    expect(client.listDocumentTemplates).toHaveBeenCalledWith({ tags: undefined });
   });
 });

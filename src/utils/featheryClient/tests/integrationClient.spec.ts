@@ -101,7 +101,7 @@ describe('IntegrationClient account connect', () => {
   });
 });
 
-describe('FeatheryClient listDocuments', () => {
+describe('FeatheryClient listDocumentTemplates', () => {
   const okResponse = (payload: any) => ({
     ok: true,
     status: 200,
@@ -123,7 +123,7 @@ describe('FeatheryClient listDocuments', () => {
   it('requests the org templates endpoint scoped to the current form key', async () => {
     (global.fetch as jest.Mock).mockResolvedValue(okResponse([]));
 
-    await new FeatheryClient('form-key').listDocuments();
+    await new FeatheryClient('form-key').listDocumentTemplates();
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0];
     expect(url).toContain('document/template/list/');
@@ -136,7 +136,7 @@ describe('FeatheryClient listDocuments', () => {
       okResponse([{ id: 'd1', name: 'Cover', tags: ['Cover Letter'] }])
     );
 
-    const result = await new FeatheryClient('form-key').listDocuments({
+    const result = await new FeatheryClient('form-key').listDocumentTemplates({
       tags: ['Cover Letter', 'Onboarding']
     });
 

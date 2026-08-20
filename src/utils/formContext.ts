@@ -340,8 +340,8 @@ export const getFormContext = (formUuid: string) => {
         zipName
       });
     },
-    listDocuments: ({ tags }: { tags?: string[] } = {}) =>
-      formState.client.listDocuments({ tags }),
+    listDocumentTemplates: ({ tags }: { tags?: string[] } = {}) =>
+      formState.client.listDocumentTemplates({ tags }),
     getQuikForms: (props: { dealerNames: string[] }) =>
       formState.client.getQuikForms(props),
     getQuikFormRoles: (props: { formIds: number[] }) =>
