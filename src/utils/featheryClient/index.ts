@@ -90,6 +90,22 @@ export const updateRegionApiUrls = (region: string) => {
  */
 const SUBMIT_CUSTOM_DEBOUNCE_WINDOW = 1000;
 
+/**
+ * The invite endpoint hands its error body back as unparsed text, so a friendly
+ * `{"message": ...}` 400 would otherwise be shown to the user as raw JSON.
+ * Anything we can't read a message out of falls back to the body as-is.
+ */
+export function parseInviteError(body?: string) {
+  if (!body) return 'Failed to invite collaborators';
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.message === 'string') return parsed.message;
+  } catch (e) {
+    // Not JSON - fall through to the raw body
+  }
+  return body;
+}
+
 export default class FeatheryClient extends IntegrationClient {
   /**
    * Used to aggregate field value updates for successive calls to
@@ -1094,7 +1110,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     if (res && res.ok) {
       return res;
-    } else throw Error(parseAPIError(res));
+    } else throw Error(parseInviteError(res?.error));
   }
 
   async rewindCollaboration(templateId: string, rewindEmailKey: string) {

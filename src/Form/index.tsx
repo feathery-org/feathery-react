@@ -2926,12 +2926,19 @@ function Form({
       } else if (type === ACTION_INVITE_COLLABORATOR) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         // Invited collaborators is a mixed list of emails and/or user group names (comma sep or array)
-        const val = fieldValues[action.email_field_key];
-        if (!val) {
+        // An unfilled repeat row leaves a blank entry behind (`''`, or `null` for
+        // select/signature fields), and a trailing comma does the same for the CSV
+        // form. Those aren't invitees, so drop them before the required check -
+        // otherwise a filled field reads as non-empty and we send the blank on.
+        const invitees = toList(fieldValues[action.email_field_key], true)
+          .map((invitee: any) =>
+            typeof invitee === 'string' ? invitee.trim() : invitee
+          )
+          .filter(Boolean);
+        if (!invitees.length) {
           setElementError('Collaborators required');
           break;
         }
-        const invitees = toList(val, true);
         // BE validates emails and user groups
         try {
           const res = await client.inviteCollaborator(
