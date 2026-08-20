@@ -843,13 +843,13 @@ export function useDocxEditor({
           headers: headers || [],
           height: '100%',
           // Syncfusion minifies serialized SFDT by default, renaming every key
-          // the binding engine reads - a bound document would come back looking
-          // like it had no bindings at all. Construction is the only place this
-          // reliably takes effect, and it is scoped to bound editors so nothing
-          // else pays for the larger payload.
-          ...(bindingsEnabled
-            ? { documentEditorSettings: { optimizeSfdt: false } }
-            : {})
+          // the binding engine AND the section-outline reader rely on - a
+          // document would come back looking like it had no bindings and no
+          // sections at all. Construction is the only place this reliably takes
+          // effect. Set unconditionally: section reordering is always available,
+          // so every editor must serialize verbose keys (the only cost is a
+          // slightly larger serialize payload on save/export).
+          documentEditorSettings: { optimizeSfdt: false }
         });
         // Wait until Syncfusion finishes creating the inner DocumentEditor —
         // opening a doc before `created` leaves a blank default document.

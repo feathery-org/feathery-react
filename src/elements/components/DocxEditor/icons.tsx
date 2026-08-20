@@ -12,6 +12,41 @@ const Svg = (props: SVGProps<SVGSVGElement>) => (
   />
 );
 
+// Green "saved" tick — matches the task-view completion check in the assistant
+// (stroked polyline, emerald). Not the fill-based toolbar Svg helper.
+export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
+    <polyline
+      points='20 6 9 17 4 12'
+      stroke='#10b981'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
+// "✕" — matches the task-view error mark in the assistant (stroked, uses
+// currentColor so the caller sets the red).
+export const CloseIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg width='14' height='14' viewBox='0 0 24 24' fill='none' {...p}>
+    <path
+      d='M18 6 6 18'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+    <path
+      d='m6 6 12 12'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'
+    />
+  </svg>
+);
+
 export const UndoIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d='M9.707 3.707a1 1 0 0 0-1.414-1.414l-5 5a1 1 0 0 0 0 1.414l5 5a1 1 0 0 0 1.414-1.414L6.414 9H14.5a4.5 4.5 0 0 1 0 9H11a1 1 0 1 0 0 2h3.5a6.499 6.499 0 1 0 0-13H6.414l3.293-3.293Z' />
@@ -505,5 +540,44 @@ export const SpinnerIcon = (p: SVGProps<SVGSVGElement>) => (
 export const SaveIcon = (p: SVGProps<SVGSVGElement>) => (
   <Svg {...p}>
     <path d='M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z' />
+  </Svg>
+);
+
+// Stacked blocks — the reorderable "sections" list. Placeholder glyph; freely
+// swappable for the reference artifact's icon.
+export const SectionsIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <rect x='4' y='4' width='16' height='4' rx='1.5' />
+    <rect x='4' y='10' width='16' height='4' rx='1.5' />
+    <rect x='4' y='16' width='11' height='4' rx='1.5' />
+  </Svg>
+);
+
+// Notebook — the reorderable document "sections".
+export const NotebookIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path
+      d='M7 4h10a1.5 1.5 0 0 1 1.5 1.5v13A1.5 1.5 0 0 1 17 20H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.7'
+      strokeLinejoin='round'
+    />
+    <path d='M8.5 4v16' fill='none' stroke='currentColor' strokeWidth='1.7' />
+    <path
+      d='M11.5 9h4M11.5 12.5h4'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.7'
+      strokeLinecap='round'
+    />
+  </Svg>
+);
+
+// Review/tracked-changes glyph: lines of text with a diff caret.
+export const ChangesIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M4 6a1 1 0 0 1 1-1h9a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5a1 1 0 0 1 1-1h5a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z' />
+    <path d='M18 9.5a1 1 0 0 1 1 1V13h2.5a1 1 0 1 1 0 2H19v2.5a1 1 0 1 1-2 0V15h-2.5a1 1 0 1 1 0-2H17v-2.5a1 1 0 0 1 1-1Z' />
   </Svg>
 );

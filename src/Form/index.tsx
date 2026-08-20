@@ -431,7 +431,6 @@ function Form({
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: false,
-    assistantVoiceEnabled: false,
     assistantColor: '#6b7280',
     assistantWorkflowActions: [],
     assistantStepSettings: {} as AssistantStepSettings
@@ -1514,7 +1513,13 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
-        getDocusignBrands: () => client.getDocusignBrands(),
+        getDocusignBrands: async () => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.getDocusignBrands();
+        },
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,
@@ -3666,7 +3671,6 @@ function Form({
                 : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
             }
             color={formSettings.assistantColor}
-            voiceEnabled={formSettings.assistantVoiceEnabled}
             workflowActions={formSettings.assistantWorkflowActions}
             stepSettings={formSettings.assistantStepSettings}
             activeStepId={activeStep?.id}
