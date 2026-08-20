@@ -62,6 +62,7 @@ import {
 import {
   getHideIfReferences,
   getPositionKey,
+  getTextVariableReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import {
@@ -870,6 +871,15 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Same idea for fields interpolated as {{key}} into text, buttons, tooltips,
+  // etc. Without this, typing only rerenders on the empty -> non-empty
+  // transition, so the interpolated value appears to lag by a whole value.
+  const textVariableFieldReferences = useMemo(() => {
+    if (activeStep)
+      return getTextVariableReferences(getAllElements(activeStep));
+    return new Set<string>();
+  }, [activeStep?.id]);
+
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (!shouldScrollToTop || autoscroll === 'none') return;
@@ -963,7 +973,20 @@ function Form({
   // Need to rate limit re-renders here for performance reasons.
   const debouncedRerender = useCallback(
     debounce(() => setRender((render) => ({ ...render })), 500),
-    [setRender, render]
+    [setRender]
+  );
+
+  // Text variables render into visible copy, so this repaint has to feel
+  // immediate rather than share the 500ms hideIf budget. A hideIf change can
+  // add/remove elements and recompute visible positions; interpolation only
+  // re-runs over an already-mounted tree. Leading edge paints the first
+  // keystroke, maxWait bounds a fast typist.
+  const debouncedTextVariableRerender = useCallback(
+    debounce(() => setRender((render) => ({ ...render })), 100, {
+      leading: true,
+      maxWait: 100
+    }),
+    [setRender]
   );
 
   const getAssistantTargets = useCallback(() => {
@@ -992,6 +1015,11 @@ function Form({
       debouncedRerender.cancel();
     };
   }, [debouncedRerender]);
+  useEffect(() => {
+    return () => {
+      debouncedTextVariableRerender.cancel();
+    };
+  }, [debouncedTextVariableRerender]);
 
   // Central place to update field values, with smart rerenders and error management.
   // Normalizes null values in arrays to empty strings (prevents null from appearing in repeated fields).
@@ -1008,6 +1036,10 @@ function Form({
     const empty = entries.some(([key, val]) => !val || !fieldValues[key]);
     const hideIfDependenciesChanged = entries.some(
       ([key, val]) => fieldValues[key] !== val && hideIfFieldReferences.has(key)
+    );
+    const textVariableDependenciesChanged = entries.some(
+      ([key, val]) =>
+        fieldValues[key] !== val && textVariableFieldReferences.has(key)
     );
 
     const fields = internalState[_internalId]?.fields;
@@ -1034,7 +1066,12 @@ function Form({
     // its dependencies have changed. The field that changed needs to immediately
     // rerender if specified, but hideIf rerenders can be debounced
     if (rerender || empty) setRender((render) => ({ ...render }));
-    else if (hideIfDependenciesChanged) debouncedRerender();
+    else {
+      // Not exclusive: a key can drive both a hideIf rule and a text variable,
+      // and the text variable needs the faster repaint either way.
+      if (hideIfDependenciesChanged) debouncedRerender();
+      if (textVariableDependenciesChanged) debouncedTextVariableRerender();
+    }
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt
     if (autoValidate && triggerErrors) debouncedValidate(setInlineErrors);

@@ -12,88 +12,27 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
 import { IMaskInput } from 'react-imask';
+import {
+  getDecimalPlaces,
+  getNumberMaskProps,
+  getTextFieldMask,
+  isSignWithoutMagnitude,
+  maxFieldLength,
+  roundToDecimalPlaces
+} from './mask';
 
-const DEFAULT_LENGTH = 1024; // Default limit on backend
-const MAX_FIELD_LENGTHS: Record<string, number> = {
-  text_area: 16384, // Max storage limit on backend column
-  url: 256,
-  gmap_zip: 10
-};
-
-const maxFieldLength = (type: string) =>
-  MAX_FIELD_LENGTHS[type] ?? DEFAULT_LENGTH;
-
-function escapeDefinitionChars(str: string | undefined) {
-  return (str ?? '')
-    .replaceAll('0', '\\0')
-    .replaceAll('a', '\\a')
-    .replaceAll('b', '\\b')
-    .replaceAll('*', '\\*');
-}
-
-function constraintChar(allowed: any) {
-  switch (allowed) {
-    case 'letters':
-      return 'a';
-    case 'alphanumeric':
-      return 'b';
-    case 'alphaspace':
-      return 'c';
-    case 'digits':
-      return '0';
-    default:
-      return '*';
-  }
-}
-
-function getTextFieldMask(servar: any) {
-  const data = servar.metadata;
-  const prefix = escapeDefinitionChars(data.prefix);
-  const suffix = escapeDefinitionChars(data.suffix);
-
-  let mask = '';
-  if (data.mask) mask = data.mask;
-  else {
-    let allowed = data.allowed_characters;
-    if (servar.type === 'gmap_zip' && !allowed) allowed = 'alphaspace';
-    const definitionChar = constraintChar(allowed);
-
-    let numOptional =
-      maxFieldLength(servar.type) - prefix.length - suffix.length;
-    if (servar.max_length)
-      numOptional = Math.min(servar.max_length, numOptional);
-
-    mask = `[${definitionChar.repeat(numOptional)}]`;
-  }
-
-  // Approximate dynamic input by making each character optional
-  return `${prefix}${mask}${suffix}`;
-}
-
-function getMaskProps(servar: any, value: any, showPassword: boolean) {
+function getMaskProps(
+  servar: any,
+  value: any,
+  showPassword: boolean,
+  editing: boolean
+) {
   let maskProps;
   // Max length included in mask for validation of typed inputs
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
     case 'integer_field':
-      maskProps = {
-        mask: 'num',
-        blocks: {
-          num: {
-            mask: Number,
-            radix: '.',
-            thousandsSeparator: ',',
-            scale: 2,
-            // Larger numbers get converted to scientific notation when sent to backend
-            max: servar.max_length ?? Number.MAX_SAFE_INTEGER,
-            min: Math.max(0, servar.min_length ?? 0)
-          }
-        },
-        value: value.toString()
-      };
-      if (servar.format === 'currency') {
-        maskProps.mask = '$num';
-      }
+      maskProps = getNumberMaskProps(servar, value, editing);
       break;
     case 'ssn':
       maskProps = {
@@ -125,11 +64,10 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
       };
       break;
   }
-  return {
-    lazy: false,
-    unmask: !servar.metadata.save_mask,
-    ...maskProps
-  };
+  // Spread the defaults rather than inlining them so a per-type maskProps can
+  // override them (the number mask forces unmask).
+  const defaults = { lazy: false, unmask: !servar.metadata.save_mask };
+  return { ...defaults, ...maskProps };
 }
 
 function getInputProps(servar: any, options: any[], autoComplete: boolean) {
@@ -145,7 +83,13 @@ function getInputProps(servar: any, options: any[], autoComplete: boolean) {
   const meta = servar.metadata;
   switch (servar.type) {
     case 'integer_field':
-      return { inputMode: 'decimal' as any };
+      // Offering a decimal point on a whole-number field is the main way users
+      // hit imask's scale-0 behavior, where "12.5" resolves to 125.
+      return {
+        inputMode: (getDecimalPlaces(servar) === 0
+          ? 'numeric'
+          : 'decimal') as any
+      };
     case 'email':
       if (autoComplete && !constraints.autoComplete) {
         constraints.autoComplete = 'email';
@@ -210,6 +154,17 @@ function TextField({
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   // Hide SSNs by default
   const [showPassword, setShowPassword] = useState(false);
+  // A number field accepts more decimals than it stores, so that a typed radix
+  // is never dropped. While editing, the value is left at whatever precision
+  // the user has typed; it snaps to the field's precision on the way out.
+  //
+  // A ref, not state: the sign a user types is held in the DOM until a
+  // magnitude arrives, so any re-render during that hold erases it — and
+  // toggling this on focus would do exactly that. Nothing needs a render of its
+  // own here, since committing the rounded value already causes one.
+  const editingRef = useRef(false);
+  // A bare sign the input is holding on form state's behalf — see handleAccept.
+  const heldSignRef = useRef('');
   const { borderStyles, customBorder, borderId } = useBorder({
     element,
     error: inlineError,
@@ -220,9 +175,47 @@ function TextField({
   const inputRef = useRef<{ element?: HTMLInputElement }>(null);
   const { value: fieldVal } = getFieldValue(element);
   const rawValue = stringifyWithNull(fieldVal);
+  const rawValueRef = useRef(rawValue);
+  rawValueRef.current = rawValue;
 
   const servar = element.servar;
   const options = (servar.metadata.options ?? []).filter((opt: string) => opt);
+
+  // A number field's sign is typed before there is any magnitude to sign, and
+  // that intermediate has no value to store — so let the input hold it rather
+  // than round-tripping it through form state, which would erase it. Over an
+  // existing value the clear is still committed, so a stale number can't
+  // survive hidden behind a bare sign, but the sign itself is remembered here
+  // and rendered back as the input's value: committing the clear re-renders
+  // this controlled input, and pushing the emptied value down would wipe the
+  // sign along with it — backspacing the last digit off "-0.1" would blank the
+  // field instead of leaving "-0.".
+  const handleAccept = (value: any, ...rest: any[]) => {
+    if (servar.type === 'integer_field' && isSignWithoutMagnitude(value)) {
+      heldSignRef.current = value;
+      if (rawValue) onAccept('', ...rest);
+      return;
+    }
+    heldSignRef.current = '';
+    onAccept(value, ...rest);
+  };
+  // The sign to render in place of the empty stored value. Exactly what imask
+  // last reported as its unmasked value, so react-imask — which compares the
+  // value prop against that — finds them equal and leaves the input alone,
+  // keeping a typed radix that the unmasked value alone would not carry.
+  const heldSign = rawValue ? '' : heldSignRef.current;
+  // Snap to the field's configured precision when editing ends. Anything finer
+  // was only ever accepted so the radix could be typed at all.
+  const commitPrecision = () => {
+    if (servar.type !== 'integer_field') return;
+    // Through the ref: react-imask keeps the handler it was given on mount, so
+    // reading rawValue from this closure would see the value as it was then.
+    const current = rawValueRef.current;
+    if (isSignWithoutMagnitude(current)) return;
+    const rounded = roundToDecimalPlaces(current, getDecimalPlaces(servar));
+    if (rounded !== current) onAccept(rounded, {});
+  };
+
   const spacing = element.properties.tooltipText ? 30 : 8;
   return (
     <div
@@ -326,6 +319,11 @@ function TextField({
               }
             }}
             onBlur={(e: any) => {
+              editingRef.current = false;
+              // Nothing was stored for a held sign, so stop rendering one: the
+              // next render of an untouched field should show it as empty.
+              heldSignRef.current = '';
+              commitPrecision();
               if (
                 e.relatedTarget &&
                 listItemRef.current.some(
@@ -339,11 +337,21 @@ function TextField({
                 setTimeout(() => setShowAutocomplete(false), EXIT_DELAY_TIME);
               }
             }}
-            onFocus={iosScrollOnFocus}
+            onFocus={(e: any) => {
+              editingRef.current = true;
+              iosScrollOnFocus(e);
+            }}
             inputRef={setRef}
             {...getInputProps(servar, options, autoComplete === 'on')}
-            {...getMaskProps(servar, rawValue, showPassword)}
-            onAccept={onAccept}
+            {...getMaskProps(
+              servar,
+              heldSign || rawValue,
+              showPassword,
+              // A held sign is mid-entry by definition, so it is never rounded
+              // — rounding "-0." would push "0" down and overwrite the sign.
+              editingRef.current || Boolean(heldSign)
+            )}
+            onAccept={handleAccept}
           />
         </TextAutocomplete>
         {servar.type === 'ssn' && rawValue && (
