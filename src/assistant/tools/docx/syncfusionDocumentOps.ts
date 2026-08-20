@@ -8219,10 +8219,17 @@ export const ANCHORED_OP_HANDLERS: {
       resolveRelocationTarget(blocks, op, source)
     );
   },
+  /**
+   * A copy is not a move: the duplicate must not inherit the original's binding
+   * identities. The payload is given its own identities before the paste, so
+   * placement, list continuation, section properties and revision grouping stay
+   * entirely the concern of the relocation itself.
+   */
   copy_section: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
     const sfdt = serializeSfdt(editor);
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    const sourceIndex = scanReadableBindings(sfdt);
     // Neither source-side refusal applies to a duplication: nothing is deleted,
     // so there is no document-tail delete to crash `acceptAll` and no pending
     // edit of anyone else's that rejecting could take away. The target-side
@@ -8232,7 +8239,15 @@ export const ANCHORED_OP_HANDLERS: {
       sfdt,
       source,
       resolveRelocationTarget(blocks, op, source),
-      { removeSource: false }
+      {
+        removeSource: false,
+        ...(sourceIndex
+          ? {
+              transformPayload: (payload: string) =>
+                rewriteClonedBindingsInPayload(payload, sfdt, sourceIndex)
+            }
+          : {})
+      }
     );
   },
   swap_sections: ({ editor, op, block, byAnchor }) => {
@@ -12690,10 +12705,14 @@ function uniqueTableId(base: string, index: BindingIndex): string {
   return candidate;
 }
 
+/**
+ * `tableIds` maps each table id in the cloned range to the id its copy takes.
+ * A range can hold several bound tables, and a table absent from the map is not
+ * part of this clone, so its references are left alone.
+ */
 function rewriteBindingExpression(
   expression: string,
-  oldTableId: string,
-  newTableId: string,
+  tableIds: Map<string, string>,
   renamedDocBindings: Map<string, string>,
   preservedDocBindings: Set<string>
 ): string {
@@ -12705,8 +12724,11 @@ function rewriteBindingExpression(
       const renamed = renamedDocBindings.get(token);
       if (renamed) return renamed;
       if (preservedDocBindings.has(token)) return token;
-      if (token.startsWith(`${oldTableId}.`))
-        return `${newTableId}.${token.slice(oldTableId.length + 1)}`;
+      const dot = token.indexOf('.');
+      if (dot > 0) {
+        const mapped = tableIds.get(token.slice(0, dot));
+        if (mapped) return `${mapped}${token.slice(dot)}`;
+      }
       return token;
     }
   );
@@ -12764,8 +12786,8 @@ function freshRowIdsFor(
 function rewriteBindingsInClone(
   node: any,
   options: {
-    oldTableId: string;
-    newTableId: string;
+    /** OLD table id -> new table id, for every bound table in this clone. */
+    tableIds: Map<string, string>;
     rowIds: Map<string, string>;
     renameDocBindings: Map<string, string>;
     preservedDocBindings: Set<string>;
@@ -12785,8 +12807,10 @@ function rewriteBindingsInClone(
     } catch {
       def = null;
     }
-    if (def?.kind === 'table' && def.tableId === options.oldTableId) {
-      def.tableId = options.newTableId;
+    const mappedTableId =
+      def?.kind === 'table' ? options.tableIds.get(def.tableId) : undefined;
+    if (def?.kind === 'table' && mappedTableId) {
+      def.tableId = mappedTableId;
       node.contentControlProperties = { ...props, tag: formatTag(def) };
     } else if (def && (def.kind === 'field' || def.kind === 'formula')) {
       let changed = false;
@@ -12815,8 +12839,7 @@ function rewriteBindingsInClone(
       if (def.kind === 'formula' && !def.isGlobal) {
         const nextExpression = rewriteBindingExpression(
           def.expression,
-          options.oldTableId,
-          options.newTableId,
+          options.tableIds,
           options.renameDocBindings,
           options.preservedDocBindings
         );
@@ -12950,6 +12973,152 @@ function duplicateRowLiteralNumbers(
   return out;
 }
 
+/**
+ * The identity rule for a CLONE of any block range, in one place.
+ *
+ * A global binding keeps its name, so the copy joins the same document-wide
+ * identity and shows its live value. Every other document-scoped binding inside
+ * the range gets a fresh unique name, so the copy is an independent field.
+ * Table-SCOPED bindings are skipped here: `rewriteBindingsInClone` re-scopes
+ * those through the table id, and renaming them twice would break their
+ * formulas.
+ *
+ * `containsPath` decides what "inside the range" means - a single table marker
+ * for a table duplicate, any block in the range for a section copy - and
+ * `freshName` decides how a copy is named, so a table duplicate can namespace
+ * against its new table id while a section copy simply uniquifies the original.
+ */
+function cloneIdentityRewrite(
+  index: BindingIndex,
+  /**
+   * The bindings being cloned. A table duplicate filters the document index by
+   * path; a section copy reads them out of the captured clipboard payload, whose
+   * paths do not correspond to the source document at all.
+   */
+  cloned: Iterable<{ name: string; tableId: string | null; isGlobal: boolean }>,
+  freshName: (name: string, used: Set<string>) => string
+): {
+  renameDocBindings: Map<string, string>;
+  preservedDocBindings: Set<string>;
+} {
+  const usedNames = new Set(index.occurrences.map((occurrence) => occurrence.name));
+  const renameDocBindings = new Map<string, string>();
+  for (const binding of cloned) {
+    if (binding.tableId) continue;
+    if (binding.isGlobal) continue;
+    if (!renameDocBindings.has(binding.name))
+      renameDocBindings.set(binding.name, freshName(binding.name, usedNames));
+  }
+  const preservedDocBindings = new Set(
+    [...index.fields.keys(), ...index.formulas.keys()].filter(
+      (name) => !renameDocBindings.has(name)
+    )
+  );
+  return { renameDocBindings, preservedDocBindings };
+}
+
+/**
+ * Give a captured clipboard payload its own binding identities before it is
+ * pasted, using the same rule a bound table duplicate uses: a global binding
+ * keeps its name so the copy joins that document-wide identity, every other
+ * binding gets a fresh one, each bound table gets a fresh table id and fresh row
+ * ids, and formulas are rewritten to follow.
+ *
+ * `copyRows: true` keeps the values the user can see: a copy of a line reading
+ * 5% reads 5%, not the tag's `default`.
+ */
+function rewriteClonedBindingsInPayload(
+  payload: string,
+  documentSfdt: any,
+  sourceIndex: BindingIndex
+): string {
+  let parsed: any;
+  try {
+    parsed = clonedWithoutRevisions(documentSfdt, JSON.parse(payload));
+  } catch {
+    return payload;
+  }
+  // Clipboard SFDT carries the selected revisions table and the references into
+  // it. Stripped of those references, the records are unreachable, and carrying
+  // them into the paste leaves content the paste's own revisions do not cover -
+  // so rejecting the copy would not restore the document.
+  delete parsed.revisions;
+  delete parsed.r;
+  const { bindings, tableIds: clonedTableIds } = bindingsInPayload(parsed);
+  if (!bindings.length && !clonedTableIds.size) return JSON.stringify(parsed);
+  const tableIds = new Map<string, string>();
+  const rowIds = new Map<string, string>();
+  for (const oldTableId of clonedTableIds) {
+    const newTableId = uniqueTableId(oldTableId, sourceIndex);
+    tableIds.set(oldTableId, newTableId);
+    const entry = sourceIndex.tables.get(oldTableId);
+    if (entry)
+      for (const [oldRowId, newRowId] of freshRowIdsFor(entry, newTableId))
+        rowIds.set(oldRowId, newRowId);
+  }
+  const { renameDocBindings, preservedDocBindings } = cloneIdentityRewrite(
+    sourceIndex,
+    bindings,
+    (name, used) => uniqueBindingName(name, used)
+  );
+  rewriteBindingsInClone(parsed, {
+    tableIds,
+    rowIds,
+    renameDocBindings,
+    preservedDocBindings,
+    copyRows: true
+  });
+  return JSON.stringify(parsed);
+}
+
+/**
+ * Every binding tag inside a captured clipboard payload, flattened to what the
+ * identity rule needs. `tableId` is non-null only for a table-SCOPED binding,
+ * which `rewriteBindingsInClone` re-scopes through the table map instead of
+ * renaming - matching the document-index rule exactly.
+ */
+function bindingsInPayload(
+  node: any,
+  out: Array<{ name: string; tableId: string | null; isGlobal: boolean }> = [],
+  tableIdsSeen: Set<string> = new Set(),
+  insideTable: string | null = null
+): {
+  bindings: Array<{ name: string; tableId: string | null; isGlobal: boolean }>;
+  tableIds: Set<string>;
+} {
+  if (Array.isArray(node)) {
+    node.forEach((entry) =>
+      bindingsInPayload(entry, out, tableIdsSeen, insideTable)
+    );
+    return { bindings: out, tableIds: tableIdsSeen };
+  }
+  if (!node || typeof node !== 'object')
+    return { bindings: out, tableIds: tableIdsSeen };
+  let scope = insideTable;
+  const raw = node.contentControlProperties?.tag;
+  if (typeof raw === 'string' && raw) {
+    let def: Definition | null = null;
+    try {
+      def = parseTag(raw);
+    } catch {
+      def = null;
+    }
+    if (def?.kind === 'table') {
+      tableIdsSeen.add(def.tableId);
+      scope = def.tableId;
+    } else if (def && (def.kind === 'field' || def.kind === 'formula')) {
+      out.push({
+        name: def.name,
+        tableId: def.options.table ?? (def.options.row ? scope : null),
+        isGlobal: !!def.isGlobal
+      });
+    }
+  }
+  for (const value of Object.values(node))
+    bindingsInPayload(value, out, tableIdsSeen, scope);
+  return { bindings: out, tableIds: tableIdsSeen };
+}
+
 function boundDuplicateTablePlan(
   index: number,
   op: EditOp,
@@ -12987,28 +13156,24 @@ function boundDuplicateTablePlan(
         getAt(state.sfdt, markerPath)
       );
       const newTableId = uniqueTableId(tableRoute.tableId, state.index);
-      const usedNames = new Set(
-        state.index.occurrences.map((occurrence) => occurrence.name)
-      );
-      const renameDocBindings = new Map<string, string>();
-      for (const occurrence of state.index.occurrences) {
-        if (occurrence.tableId) continue;
-        if (!pathHasPrefix(markerPath, occurrence.path)) continue;
-        if (occurrence.def.isGlobal) continue;
-        if (!renameDocBindings.has(occurrence.name)) {
-          const suffix = occurrence.name.startsWith(`${tableRoute.tableId}_`)
-            ? occurrence.name.slice(tableRoute.tableId.length + 1)
-            : occurrence.name;
-          renameDocBindings.set(
-            occurrence.name,
-            uniqueBindingName(`${newTableId}_${suffix}`, usedNames)
-          );
+      // One bound table in this clone, so a single-entry map. A section copy
+      // builds the same map with one entry per bound table in its range.
+      const tableIds = new Map([[tableRoute.tableId, newTableId]]);
+      const { renameDocBindings, preservedDocBindings } = cloneIdentityRewrite(
+        state.index,
+        state.index.occurrences
+          .filter((occurrence) => pathHasPrefix(markerPath, occurrence.path))
+          .map((occurrence) => ({
+            name: occurrence.name,
+            tableId: occurrence.tableId,
+            isGlobal: !!occurrence.def.isGlobal
+          })),
+        (name, used) => {
+          const suffix = name.startsWith(`${tableRoute.tableId}_`)
+            ? name.slice(tableRoute.tableId.length + 1)
+            : name;
+          return uniqueBindingName(`${newTableId}_${suffix}`, used);
         }
-      }
-      const preservedDocBindings = new Set(
-        [...state.index.fields.keys(), ...state.index.formulas.keys()].filter(
-          (name) => !renameDocBindings.has(name)
-        )
       );
       const rowIds = freshRowIdsFor(liveTable, newTableId);
       if (replacementRows) {
@@ -13045,8 +13210,7 @@ function boundDuplicateTablePlan(
         const dataRows = suppliedRowIds.map((newRowId) => {
           const rowClone = clonedWithoutRevisions(state.sfdt, prototype);
           rewriteBindingsInClone(rowClone, {
-            oldTableId: tableRoute.tableId,
-            newTableId,
+            tableIds,
             rowIds: new Map([[prototypeEntry.rowId as string, newRowId]]),
             renameDocBindings,
             preservedDocBindings,
@@ -13061,8 +13225,7 @@ function boundDuplicateTablePlan(
         ];
       }
       rewriteBindingsInClone(clone, {
-        oldTableId: tableRoute.tableId,
-        newTableId,
+        tableIds,
         rowIds,
         renameDocBindings,
         preservedDocBindings,

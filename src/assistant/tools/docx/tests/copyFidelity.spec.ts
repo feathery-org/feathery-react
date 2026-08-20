@@ -34,6 +34,7 @@ import {
   formatTag,
   parseTag
 } from '../../../../elements/components/DocxEditor/bindings/core/tagDsl';
+import { scanBindings } from '../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
 
 DocumentEditor.Inject(
   Editor,
@@ -533,6 +534,132 @@ describe('a copy landing in another Word section adopts its geometry', () => {
     } finally {
       destroy(editor);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Binding identity: a copy is not a move, so it gets identities of its own.
+// ---------------------------------------------------------------------------
+
+/** Multiset of every binding tag in the document, tag -> occurrence count. */
+function tagCounts(node: any, out: Map<string, number> = new Map()): Map<string, number> {
+  if (Array.isArray(node)) {
+    node.forEach((entry) => tagCounts(entry, out));
+    return out;
+  }
+  if (!node || typeof node !== 'object') return out;
+  const tag = node.contentControlProperties?.tag;
+  if (typeof tag === 'string' && tag.startsWith('[['))
+    out.set(tag, (out.get(tag) ?? 0) + 1);
+  for (const value of Object.values(node)) tagCounts(value, out);
+  return out;
+}
+
+describe('a copied section gets its own binding identities', () => {
+  // The costs fixture without its tables: a heading, "Project: <project.name>
+  // ... " and "Amount due for <project.name>: <grand_total>." - so the copied
+  // unit `0;0` (blocks 0..2) holds a repeated non-global field and a formula,
+  // and the out-of-range `combined_total` formula references the original.
+  const proseFixture = () => {
+    const sfdt = buildCostsFixture();
+    const blocks = sfdt.sections[0].blocks as any[];
+    sfdt.sections[0].blocks = [
+      blocks[0],
+      blocks[1],
+      blocks[4],
+      blocks[5],
+      blocks[8],
+      blocks[9]
+    ];
+    return sfdt;
+  };
+  const copyToTail: EditOp[] = [
+    { op: 'copy_section', anchor: '0;0', targetAnchor: '0;3', position: 'after' }
+  ];
+
+  const run = (doc: any, assert: (editor: DocumentEditor, before: Map<string, number>) => void) => {
+    const editor = makeEditor(doc);
+    const attached: AttachedBindings = attachBindings(
+      editor as unknown as SyncfusionEditorLike,
+      { convertTokensOnOpen: false }
+    );
+    try {
+      const serialized = editor.serialize();
+      const before = tagCounts(JSON.parse(serialized));
+      const result = apply(editor, copyToTail, 'copy-identity');
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        op: 'copy_section',
+        route: 'editor'
+      });
+      assert(editor, before);
+      rejectAll(editor);
+      expect(editor.serialize()).toBe(serialized);
+    } finally {
+      attached.dispose();
+      destroy(editor);
+    }
+  };
+
+  it('renames a non-global field once, carrying its current value', () => {
+    run(proseFixture(), (editor, before) => {
+      const index = scanBindings(parsed(editor));
+      // The original identity is untouched; the copy is ONE fresh identity
+      // covering both copied occurrences, showing the value the user saw.
+      expect(index.fields.get('project.name')).toHaveLength(2);
+      expect(
+        index.fields.get('project.name_2')?.map((entry) => entry.text)
+      ).toEqual(['Website relaunch', 'Website relaunch']);
+      // The copied formula follows the same rule and keeps its expression:
+      // its references were not part of the copy, so they are preserved.
+      expect(index.formulas.get('grand_total')).toHaveLength(1);
+      expect(index.formulas.get('grand_total_2')?.[0].def).toMatchObject({
+        kind: 'formula',
+        expression: 'sum(costs_subtotal,costs_tax)'
+      });
+      // The document's other formula still references the ORIGINAL - a copy
+      // must never steal references that pointed at its source.
+      expect(index.formulas.get('combined_total')?.[0].def).toMatchObject({
+        expression: 'sum(grand_total,expenses_total)'
+      });
+      // Tag multiset: nothing the source had was lost or mutated; the copy
+      // only ADDED tags, every one wearing a fresh name.
+      const after = tagCounts(parsed(editor));
+      for (const [tag, count] of before) expect(after.get(tag)).toBe(count);
+      const added = [...after].filter(([tag]) => !before.has(tag));
+      expect(added.map(([tag]) => tag).sort()).toEqual([
+        expect.stringContaining('name=grand_total_2'),
+        expect.stringContaining('name=project.name_2')
+      ]);
+    });
+  });
+
+  it('keeps a global field on its shared name, occurrences rising', () => {
+    run(withGlobal(proseFixture(), 'project.name'), (editor, before) => {
+      const index = scanBindings(parsed(editor));
+      const occurrences = index.fields.get('project.name');
+      expect(occurrences).toHaveLength(4);
+      expect(occurrences?.every((entry) => entry.def.isGlobal)).toBe(true);
+      expect(index.fields.has('project.name_2')).toBe(false);
+      // Multiset, not membership: the global tag's COUNT is what rises.
+      const globalTag = [...before.keys()].find((tag) =>
+        tag.includes('name=project.name')
+      )!;
+      expect(tagCounts(parsed(editor)).get(globalTag)).toBe(
+        before.get(globalTag)! + 2
+      );
+    });
+  });
+
+  it('transfers del=keep onto the fresh identity', () => {
+    run(withDelKeep(proseFixture(), 'project.name'), (editor) => {
+      const index = scanBindings(parsed(editor));
+      const copied = index.fields.get('project.name_2');
+      expect(copied).toHaveLength(2);
+      expect(
+        copied?.every((entry) => entry.def.isDeletable === false)
+      ).toBe(true);
+    });
   });
 });
 

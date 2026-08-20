@@ -1,6 +1,14 @@
 /**
  * Shared frontend/ai-services contract for document-binding writes.
  *
+ * This repo OWNS these shapes; ai-services re-declares them as Zod in
+ * `src/modules/assistant/schema.ts` and parses the payloads at its tool
+ * boundary. The two copies are kept in step by hand, so adding, renaming, or
+ * removing a field here is a breaking wire change that must land with the
+ * matching schema edit. Both sides are pinned by tests - `boundDuplicateTable`
+ * here, `bindingWriteContract.test.ts` there - so drift fails a build rather
+ * than a customer conversation.
+ *
  * Inventory reads expose `BindingWireIdentity`: only `global: true` proves that
  * several occurrences deliberately share one document-wide identity. Equal
  * labels or related non-global ids are not permission to update them together.

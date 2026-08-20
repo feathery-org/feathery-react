@@ -420,6 +420,30 @@ describe('duplicate_table over bound tables', () => {
         .map((occurrence) => occurrence.tableId)
         .sort()
     ).toEqual(['costs', 'expenses', 'expenses_copy']);
+
+    // Cross-repo contract pin. ai-services re-declares this payload as Zod in
+    // `src/modules/assistant/schema.ts` and parses it, so an added, renamed, or
+    // dropped key here is a breaking wire change even though nothing in this
+    // repo would fail. Keep this list and that schema in step, and note that
+    // occurrences carry no `anchor`: the original write's anchor identifies the
+    // ambiguous family and `instanceId` selects the instance.
+    expect(
+      Object.keys(ambiguity.instances[0]).sort()
+    ).toEqual(['identity', 'instanceId', 'occurrences']);
+    for (const occurrence of ambiguity.instances.flatMap(
+      (instance) => instance.occurrences
+    )) {
+      expect(Object.keys(occurrence).sort()).toEqual(
+        [
+          'bindingId',
+          'documentPath',
+          'location',
+          'occurrenceId',
+          'value',
+          ...(occurrence.tableId === undefined ? [] : ['tableId'])
+        ].sort()
+      );
+    }
     const stale = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
         {
