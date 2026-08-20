@@ -7371,14 +7371,13 @@ function shiftedRange(
 }
 
 /**
- * The primitive behind all three relocation ops: put a copy of a resolved range
- * at a target caret, tracked, and optionally remove the original.
- *
- * `removeSource: false` IS the copy - a copy is this relocation without its
- * delete, which is why there is one routine and three entry points rather than a
- * second code path to keep correct. It also means a copy cannot be affected by
- * the post-paste source re-resolution at all: nothing is deleted, so there is
- * nothing to find again.
+ * The primitive behind the MOVING relocations - move_section, swap_sections
+ * and split_table: capture a resolved range through the live selection, paste
+ * it at a target caret, tracked, and optionally remove the original. The pure
+ * copies (copy_section, duplicate_table) do not capture at all: they build
+ * their payload from the document's own SFDT and paste it through
+ * `pasteBlocksAsTrackedSegments`, which is what lets them carry a
+ * block-wrapped table a multi-block selection paste silently loses.
  *
  * Returns the paste's measured effect on block positions, which is what a caller
  * relocating a SECOND range needs in order to find it again, and the document as
@@ -7743,9 +7742,9 @@ function assertPastedRangeMatches(
 // selective one; both normalize to one row set on the way in, so there is one
 // code path rather than two.
 //
-// The mechanism is `copy_section`'s: capture the WHOLE TABLE, narrow the captured
-// payload to the header band plus the extracted rows, paste that at the target,
-// and delete the extracted rows from the source. Capturing the whole table is
+// The mechanism: capture the WHOLE TABLE through the live selection, narrow the
+// captured payload to the header band plus the extracted rows, paste that at the
+// target, and delete the extracted rows from the source. Capturing the whole table is
 // what makes the row indices trivially correspond - payload row i is source row i
 // - and narrowing before the paste rather than pruning the pasted copy afterwards
 // is forced by a SyncFusion defect: `deleteRow` on a row that is itself an
@@ -11043,8 +11042,8 @@ export const TRACKED_TEXT_OPS = new Set([
   'move_section',
   'swap_sections',
   'copy_section',
-  // `split_table` is `copy_section`'s mechanism - capture, paste the narrowed
-  // payload, delete the extracted rows from the source - so it carries the same
+  // `split_table` moves content the same way - paste a copy, delete the
+  // extracted rows from the source - so it carries the same
   // requirement and was simply missed. Being in neither tracked set meant
   // `assertTrackedMutation` returned on its first branch and the op was never
   // checked at all. The docstring beside `resolveRelocationTarget` that tells
