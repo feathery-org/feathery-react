@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CloseIcon, MicrophoneIcon } from '../../components/icons';
 import ErrorInput from '../../components/ErrorInput';
+import { imgMaxSizeStyles } from '../../styles';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 import { AudioRecordingTranslations, defaultTranslations } from './translation';
 import AudioPlayer from './AudioPlayer';
@@ -26,6 +27,10 @@ const EXTENSION_MAP: Record<string, string> = {
 };
 
 const RECORDING_COLOR = '#E53935';
+
+// Clips this short are stray taps, not speech; on a repeating field each one
+// would also spawn a row
+const MIN_TAKE_SECONDS = 0.4;
 
 // Activating one of these ends a recording; scrolls and stray taps don't
 const INTERACTIVE_SELECTOR =
@@ -54,6 +59,8 @@ function AudioRecordingField({
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [playbackUrl, setPlaybackUrl] = useState('');
+  // Chrome reports Infinity for a fresh recording, so time it ourselves
+  const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [message, setMessage] = useState('');
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,11 +76,15 @@ function AudioRecordingField({
   const startingRef = useRef(false);
   // Set on unmount so an in-flight recording is dropped instead of saved
   const discardRef = useRef(false);
+  // Distinguishes our own echo from a value set from outside
+  const emittedRef = useRef<any>(null);
 
   // Adopt external values; recording emits the promise it stores, so its
   // own echo is a no-op set
   useEffect(() => {
     setRawFile(initialFile ?? null);
+    // Our echo carries the length we timed; anything else invalidates it
+    if (initialFile !== emittedRef.current) setRecordedSeconds(0);
   }, [initialFile]);
 
   useEffect(() => {
@@ -263,7 +274,8 @@ function AudioRecordingField({
       const blob = new Blob(chunksRef.current, { type: mimeType });
       chunksRef.current = [];
       if (discardRef.current) return;
-      if (blob.size === 0) {
+      const seconds = (Date.now() - startTimeRef.current) / 1000;
+      if (blob.size === 0 || seconds < MIN_TAKE_SECONDS) {
         setMessage(t.empty);
         return;
       }
@@ -275,6 +287,8 @@ function AudioRecordingField({
       // Emit the promise we hold, so the echo through initialFile doesn't
       // churn the object URL behind the player
       const filePromise = Promise.resolve(file);
+      emittedRef.current = filePromise;
+      setRecordedSeconds(seconds);
       setRawFile(filePromise);
       customOnChange(filePromise);
     };
@@ -295,6 +309,18 @@ function AudioRecordingField({
     setMessage('');
     setRawFile(null);
     customOnChange(null);
+  };
+
+  const themedImg: any = responsiveStyles.getTarget('img') ?? {};
+  // An unset theme width resolves to a junk string ('px', 'undefinedpx'), which
+  // <svg width> silently ignores before expanding to fill its container
+  const iconWidth = /^\d/.test(String(themedImg.width ?? ''))
+    ? themedImg.width
+    : undefined;
+  const imgStyles: any = {
+    ...imgMaxSizeStyles,
+    ...themedImg,
+    width: iconWidth
   };
 
   // role='button' divs get no keyboard activation for free
@@ -365,6 +391,7 @@ function AudioRecordingField({
             src={playbackUrl}
             playLabel={t.play}
             pauseLabel={t.pause}
+            knownDuration={recordedSeconds}
           />
         )}
         {/* A read-only field shouldn't offer to delete the recording */}
@@ -412,11 +439,19 @@ function AudioRecordingField({
           maxWidth: '100%'
         }}
       >
-        <MicrophoneIcon
-          width='20px'
-          style={{ flexShrink: 0 }}
-          color={message ? RECORDING_COLOR : undefined}
-        />
+        {element.properties.icon ? (
+          <img
+            src={element.properties.icon}
+            style={{ ...imgStyles, maxHeight: '100%', flexShrink: 0 }}
+            alt=''
+          />
+        ) : (
+          <MicrophoneIcon
+            width={iconWidth ?? '20px'}
+            style={{ flexShrink: 0 }}
+            color={message ? RECORDING_COLOR : undefined}
+          />
+        )}
         <span
           role={message ? 'status' : undefined}
           css={{
@@ -426,7 +461,7 @@ function AudioRecordingField({
             ...(message ? { color: RECORDING_COLOR } : {})
           }}
         >
-          {message || t.record}
+          {message || element.properties.placeholder || t.record}
         </span>
       </div>
     );

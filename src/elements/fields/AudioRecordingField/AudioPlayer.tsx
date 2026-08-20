@@ -7,43 +7,33 @@ import { formatDuration } from './format';
 function AudioPlayer({
   src,
   playLabel,
-  pauseLabel
+  pauseLabel,
+  // Chrome reports Infinity for a fresh recording, so the recorder passes the
+  // length it timed. Never seek to discover it: that parks playback at the end.
+  knownDuration = 0
 }: {
   src: string;
   playLabel: string;
   pauseLabel: string;
+  knownDuration?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const probedRef = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [reportedDuration, setReportedDuration] = useState(0);
 
   useEffect(() => {
     setPlaying(false);
     setCurrent(0);
-    setDuration(0);
-    probedRef.current = false;
+    setReportedDuration(0);
   }, [src]);
 
   const onLoaded = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (isFinite(audio.duration)) {
-      setDuration(audio.duration);
-      return;
-    }
-    // A live-recorded blob ships without a duration; seeking past the end
-    // makes the browser compute one. Once per source, or it would loop.
-    if (probedRef.current) return;
-    probedRef.current = true;
-    const onSeeked = () => {
-      audio.removeEventListener('seeked', onSeeked);
-      audio.currentTime = 0;
-    };
-    audio.addEventListener('seeked', onSeeked);
-    audio.currentTime = 1e7;
+    const value = audioRef.current?.duration ?? 0;
+    setReportedDuration(isFinite(value) ? value : 0);
   };
+
+  const duration = reportedDuration || knownDuration;
 
   const toggle = () => {
     const audio = audioRef.current;

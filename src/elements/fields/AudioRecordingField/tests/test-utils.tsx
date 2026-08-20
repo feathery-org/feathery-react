@@ -19,7 +19,8 @@ export const createAudioRecordingElement = (metadata: any = {}) =>
     'test-audio',
     'audio_recording',
     { ...metadata },
-    { aria_label: 'Audio recording field' }
+    // Mirrors the backend defaults: no placeholder, no custom icon
+    { aria_label: 'Audio recording field', placeholder: '', icon: '' }
   );
 
 export const createAudioRecordingProps = (

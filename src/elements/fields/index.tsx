@@ -332,12 +332,21 @@ function applyFieldStyles(field: any, styles: any) {
 
   switch (type) {
     case 'signature':
+      styles.applyHeight('sub-fc');
+      styles.applyColor('field', 'background_color', 'backgroundColor');
+      styles.applyCorners('field');
+      styles.applyBorders({ target: 'field' });
+      styles.applyBoxShadow('field');
+      break;
     case 'audio_recording':
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
+      styles.addTargets('img');
+      styles.applyWidth('img', 'image_');
+      styles.applyMargin('img', 'image_');
       break;
     case 'file_upload':
       styles.addTargets('ac', 'add');

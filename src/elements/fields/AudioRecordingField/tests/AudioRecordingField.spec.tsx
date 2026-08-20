@@ -18,6 +18,14 @@ describe('AudioRecordingField', () => {
     mocks = installAudioMocks();
   });
 
+  afterEach(() => jest.restoreAllMocks());
+
+  // A take must clear MIN_TAKE_SECONDS to count, so move the clock on
+  const advanceClock = (seconds: number) => {
+    const base = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(base + seconds * 1000);
+  };
+
   const startRecording = async () => {
     await act(async () => {
       fireEvent.click(
@@ -59,6 +67,7 @@ describe('AudioRecordingField', () => {
     );
 
     await startRecording();
+    advanceClock(2);
     await act(async () => {
       fireEvent.click(screen.getByLabelText('Stop recording'));
     });
@@ -95,6 +104,7 @@ describe('AudioRecordingField', () => {
     );
 
     await startRecording();
+    advanceClock(2);
     expect(MockMediaRecorder.instances[0].mimeType).toBe(
       'audio/mp4;codecs=mp4a.40.2'
     );
@@ -133,6 +143,7 @@ describe('AudioRecordingField', () => {
     );
 
     await startRecording();
+    advanceClock(2);
     await act(async () => {
       fireEvent.click(screen.getByLabelText('Stop recording'));
     });
@@ -191,6 +202,7 @@ describe('AudioRecordingField', () => {
         />
       );
       await startRecording();
+      advanceClock(2);
       return onChange;
     };
 
@@ -263,6 +275,7 @@ describe('AudioRecordingField', () => {
     );
 
     await startRecording();
+    advanceClock(2);
     // The unmount guard must be re-armed on remount, or this never starts
     expect(screen.getByLabelText('Stop recording')).toBeTruthy();
     await act(async () => {
@@ -291,6 +304,7 @@ describe('AudioRecordingField', () => {
     render(<Host />);
 
     await startRecording();
+    advanceClock(2);
     await act(async () => {
       fireEvent.click(screen.getByLabelText('Stop recording'));
     });
@@ -302,6 +316,7 @@ describe('AudioRecordingField', () => {
     expect(screen.getByText('Record audio')).toBeTruthy();
 
     await startRecording();
+    advanceClock(2);
     await act(async () => {
       fireEvent.click(screen.getByLabelText('Stop recording'));
     });
@@ -310,6 +325,80 @@ describe('AudioRecordingField', () => {
     // The second take must be its own file, not the first one replayed
     expect(second).not.toBe(first);
     expect(second.size).toBeGreaterThan(first.size);
+  });
+
+  it('never seeks the element when the browser reports no duration', async () => {
+    const onChange = jest.fn();
+    const element = createAudioRecordingElement();
+    const { container } = render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { onChange })}
+      />
+    );
+
+    await startRecording();
+    advanceClock(2);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+    const audio = await waitFor(() => {
+      const el = container.querySelector('audio');
+      expect(el).not.toBeNull();
+      return el as HTMLAudioElement;
+    });
+
+    // Seeking to discover the real duration parks playback at the end
+    const seeks: number[] = [];
+    Object.defineProperty(audio, 'duration', {
+      configurable: true,
+      get: () => Infinity
+    });
+    Object.defineProperty(audio, 'currentTime', {
+      configurable: true,
+      get: () => 0,
+      set: (value: number) => seeks.push(value)
+    });
+    await act(async () => {
+      fireEvent.loadedMetadata(audio);
+      fireEvent.durationChange(audio);
+    });
+
+    expect(seeks).toEqual([]);
+    expect(screen.getByText(/0:0\d \/ 0:0\d/)).toBeTruthy();
+  });
+
+  it('uses a builder-set button text and icon', async () => {
+    const element = createAudioRecordingElement();
+    element.properties.placeholder = 'Leave a voice message';
+    element.properties.icon = 'https://cdn.example.com/mic.png';
+    const { container } = render(
+      <AudioRecordingField {...createAudioRecordingProps(element)} />
+    );
+
+    expect(screen.getByText('Leave a voice message')).toBeTruthy();
+    expect(screen.queryByText('Record audio')).toBeNull();
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      'https://cdn.example.com/mic.png'
+    );
+  });
+
+  it('discards a stray tap instead of banking a fractional-second take', async () => {
+    const onChange = jest.fn();
+    const element = createAudioRecordingElement();
+    render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { onChange })}
+      />
+    );
+
+    // Start and stop immediately, as a mis-click would
+    await startRecording();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Stop recording'));
+    });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText('Nothing was recorded. Please try again')).toBeTruthy();
   });
 
   it('shows an error message when microphone permission is denied', async () => {
