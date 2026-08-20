@@ -75,9 +75,12 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
   // Max length included in mask for validation of typed inputs
   let maxLength = servar.max_length ?? maxFieldLength(servar.type);
   switch (servar.type) {
-    case 'integer_field':
+    case 'integer_field': {
+      const prefix = escapeDefinitionChars(servar.metadata.prefix);
+      const suffix = escapeDefinitionChars(servar.metadata.suffix);
+      const currency = servar.format === 'currency' ? '$' : '';
       maskProps = {
-        mask: 'num',
+        mask: `${prefix}${currency}num${suffix}`,
         blocks: {
           num: {
             mask: Number,
@@ -91,10 +94,8 @@ function getMaskProps(servar: any, value: any, showPassword: boolean) {
         },
         value: value.toString()
       };
-      if (servar.format === 'currency') {
-        maskProps.mask = '$num';
-      }
       break;
+    }
     case 'ssn':
       maskProps = {
         // mask uses ∗ character which is like * but centered in inputs
