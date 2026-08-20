@@ -8,6 +8,7 @@ import {
   FormConflictError
 } from '@feathery/client-utils';
 import { handleFormConflict } from './featheryClient/utils';
+import { completeUpload, failUpload, startUpload } from './fileUploadProgress';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -128,12 +129,22 @@ export const untrackUnload = (force = false) => {
     );
 };
 
-export const markFileUploadRetrySuccess = (fieldKey?: string) => {
-  if (fieldKey) fileRetryStatus[fieldKey] = true;
+export const markFileUploadRetrySuccess = (
+  fieldKey?: string,
+  formKey?: string
+) => {
+  if (!fieldKey) return;
+  fileRetryStatus[fieldKey] = true;
+  if (formKey) completeUpload(formKey, fieldKey);
 };
 
-export const markFileUploadRetryFailure = (fieldKey?: string) => {
-  if (fieldKey) fileRetryStatus[fieldKey] = false;
+export const markFileUploadRetryFailure = (
+  fieldKey?: string,
+  formKey?: string
+) => {
+  if (!fieldKey) return;
+  fileRetryStatus[fieldKey] = false;
+  if (formKey) failUpload(formKey, fieldKey);
 };
 
 export function useOfflineRequestHandler(client: FeatheryClient) {
@@ -281,6 +292,11 @@ export class OfflineRequestHandler {
    * 2. If online BUT requests are queued/replaying: wait for queue to clear, then execute
    * 3. If request fails with network error: queue it and start replay process
    * 4. If offline: immediately queue the request
+   *
+   * Resolves with run()'s response, or undefined when the request was
+   * queued offline instead of executed. onQueued fires in that queued case —
+   * a falsy response doesn't imply it, since run() also resolves undefined on
+   * auth and conflict failures that no replay will ever report.
    */
   public async runOrSaveRequest(
     run: any,
@@ -288,8 +304,9 @@ export class OfflineRequestHandler {
     options: any,
     type: string,
     stepKey?: string,
-    metadata?: RequestMetadata
-  ): Promise<void> {
+    metadata?: RequestMetadata,
+    onQueued?: () => void
+  ): Promise<any> {
     if (await verifyConnectivity()) {
       // Prevent page unload while processing requests to avoid data loss
       trackUnload();
@@ -322,6 +339,7 @@ export class OfflineRequestHandler {
         // This catches scenarios like timeouts, resolution failures, etc.
         if (e instanceof TypeError) {
           await this.saveRequest(url, options, type, stepKey, metadata);
+          onQueued?.();
           // Don't immediately trigger replay - this can cause infinite loops
           // when the same request keeps failing. Instead, rely on:
           // 1. The 'online' event listener to trigger replay when connectivity returns
@@ -333,6 +351,7 @@ export class OfflineRequestHandler {
       }
     } else {
       await this.saveRequest(url, options, type, stepKey, metadata);
+      onQueued?.();
     }
   }
 
@@ -526,24 +545,30 @@ export class OfflineRequestHandler {
 
         const attemptRequest = async () => {
           let attempts = request.retryAttempts ?? 0;
+          const fieldKey = request.metadata?.fieldKey;
 
           // Ensure exhausted retries are marked as failed before being skipped
           if (attempts >= this.maxRetryAttempts) {
-            markFileUploadRetryFailure(request.metadata?.fieldKey);
+            markFileUploadRetryFailure(fieldKey, this.formKey);
             return;
           }
+
+          // Surface replayed file uploads (e.g. after a reload) in the
+          // progress toast; no-ops unless the form's setting is on
+          if (fieldKey && url.includes('panel/step/submit/file'))
+            startUpload(this.formKey, fieldKey);
 
           while (attempts < this.maxRetryAttempts) {
             try {
               const response = await fetch(url, fetchOptions);
               await checkResponseSuccess(response);
-              markFileUploadRetrySuccess(request.metadata?.fieldKey);
+              markFileUploadRetrySuccess(fieldKey, this.formKey);
               await this.removeRequest(key);
               return;
             } catch (error: any) {
               if (error instanceof FormConflictError) {
                 handleFormConflict();
-                markFileUploadRetrySuccess(request.metadata?.fieldKey);
+                markFileUploadRetrySuccess(fieldKey, this.formKey);
                 await this.removeRequest(key);
                 return;
               }
@@ -554,12 +579,12 @@ export class OfflineRequestHandler {
                 const nextDelay = this.getExponentialDelay(attempts);
                 if (attempts >= this.maxRetryAttempts) {
                   // Skip alerting when a specific field upload already surfaces its own retry error
-                  if (this.errorCallback && !request.metadata?.fieldKey) {
+                  if (this.errorCallback && !fieldKey) {
                     this.errorCallback(
                       `Failed to submit after ${this.maxRetryAttempts} attempts. Please check your connection and try again.`
                     );
                   }
-                  markFileUploadRetryFailure(request.metadata?.fieldKey);
+                  markFileUploadRetryFailure(fieldKey, this.formKey);
                   return;
                 }
                 await this.delay(nextDelay);

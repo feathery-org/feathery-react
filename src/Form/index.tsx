@@ -5,7 +5,8 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  useSyncExternalStore
 } from 'react';
 
 import debounce from 'lodash.debounce';
@@ -243,6 +244,12 @@ import {
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
+import FileUploadToast from './components/FileUploadToast';
+import {
+  getUploadToastHeight,
+  setUploadIndicatorEnabled,
+  subscribeToUploads
+} from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
@@ -269,6 +276,12 @@ const DocumentViewer = React.lazy(
 // container entry points have no index, so they announce under their own ids.
 const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
+
+// Bottom-right overlays stack rather than overlap: each one clears the boxes
+// already sitting below it, plus a gap. An absent box contributes nothing.
+const BOTTOM_RIGHT_STACK_GAP = 10;
+const stackAbove = (height: number) =>
+  height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -426,6 +439,8 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    showFileUploadProgress: false,
+    showDocumentProgress: true,
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
@@ -742,8 +757,15 @@ function Form({
 
   // Reset height when toast data becomes empty
   const actionToastData = useMemo(
-    () => [...currentActionExtractions, ...currentEnvelopeGeneration],
-    [currentActionExtractions, currentEnvelopeGeneration]
+    () =>
+      formSettings.showDocumentProgress
+        ? [...currentActionExtractions, ...currentEnvelopeGeneration]
+        : [],
+    [
+      currentActionExtractions,
+      currentEnvelopeGeneration,
+      formSettings.showDocumentProgress
+    ]
   );
 
   useEffect(() => {
@@ -768,6 +790,21 @@ function Form({
       actionToastObserverRef.current = observer;
     }
   }, []);
+
+  // The file upload box is page-level and may be rendered by another form
+  // instance, so its height comes from the shared tracker rather than a ref
+  const fileUploadToastHeight = useSyncExternalStore(
+    subscribeToUploads,
+    getUploadToastHeight,
+    getUploadToastHeight
+  );
+
+  // The Feathery badge sits in the bottom-right corner, so overlays there start
+  // above it
+  const bottomRightBase =
+    formSettings.showBrand && formSettings.brandPosition === 'bottom_right'
+      ? 67
+      : 20;
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -1715,6 +1752,12 @@ function Form({
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
         setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
+        // The upload tracker is keyed by formKey since upload reporting
+        // happens in FeatheryClient, outside React state
+        setUploadIndicatorEnabled(
+          newClient.formKey,
+          Boolean(res.show_file_upload_progress)
+        );
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
@@ -3610,23 +3653,22 @@ function Form({
         <ActionToast
           ref={setActionToastRef}
           data={actionToastData}
-          bottom={
-            formSettings.showBrand &&
-            formSettings.brandPosition === 'bottom_right'
-              ? 67
-              : 20
-          }
+          bottom={bottomRightBase}
         />
+        <FileUploadToast
+          instanceId={_internalId}
+          bottom={bottomRightBase + stackAbove(actionToastHeight)}
+        />
+
         {formSettings.assistantEnabled && (
           <AssistantChat
             instanceId={_internalId}
             baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
             getTargets={getAssistantTargets}
             bottom={
-              (formSettings.showBrand &&
-              formSettings.brandPosition === 'bottom_right'
-                ? 67
-                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+              bottomRightBase +
+              stackAbove(actionToastHeight) +
+              stackAbove(fileUploadToastHeight)
             }
             color={formSettings.assistantColor}
             voiceEnabled={formSettings.assistantVoiceEnabled}
