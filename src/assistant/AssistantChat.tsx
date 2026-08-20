@@ -308,7 +308,6 @@ export type AssistantChatProps = {
   getJwt?: () => string;
   bottom?: number;
   color?: string;
-  voiceEnabled?: boolean;
   workflowActions?: WorkflowAction[];
   allowedModes?: AssistantMode[];
   stepSettings?: AssistantStepSettings;
@@ -323,7 +322,6 @@ const AssistantChat = ({
   baseUrl,
   bottom = 20,
   color,
-  voiceEnabled = false,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
   stepSettings = {},
@@ -2035,7 +2033,7 @@ const AssistantChat = ({
           >
             <CloseIcon />
           </button>
-        ) : !voiceEnabled || input.trim() || attachments.length > 0 ? (
+        ) : input.trim() || attachments.length > 0 ? (
           <button
             type='button'
             onClick={handleSend}
