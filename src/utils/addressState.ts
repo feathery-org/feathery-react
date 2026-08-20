@@ -40,9 +40,8 @@ export const getControllingCountryCode = (
     : findCountryByID(value, 'name')?.countryCode ?? '';
 };
 
-// A state field whose country has no states in our data has nothing to offer -
-// an empty dropdown, which a required field can never satisfy. Resolves the
-// country the way DropdownField does, so the two never disagree.
+// Resolves the country the way DropdownField does, so the two never disagree
+// about whether the dropdown has anything in it.
 export const stateFieldHasNoOptions = (
   stateElement: any,
   activeStep: any,
@@ -64,4 +63,21 @@ export const stateFieldHasNoOptions = (
     'us'
   ).toLowerCase();
   return !stateMap[code]?.length;
+};
+
+// A state field whose country has no states renders an empty dropdown. Forms
+// disable it instead; validation skips it too, since it can never be filled.
+export const stateFieldIsOptionless = (
+  element: any,
+  activeStep: any,
+  fieldValues: any,
+  repeatIndex?: number
+) => {
+  const servar = element?.servar;
+  if (
+    servar?.type !== 'gmap_state' ||
+    servar.metadata?.disable_without_states === false
+  )
+    return false;
+  return stateFieldHasNoOptions(element, activeStep, fieldValues, repeatIndex);
 };

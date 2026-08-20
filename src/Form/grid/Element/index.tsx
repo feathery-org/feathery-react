@@ -34,7 +34,10 @@ import {
   getChangedAddressServarIds,
   getRelatedAddressValues
 } from './utils/address';
-import { getControllingCountryCode } from '../../../utils/addressState';
+import {
+  getControllingCountryCode,
+  stateFieldIsOptionless
+} from '../../../utils/addressState';
 
 const Element = ({ node: el, form }: any) => {
   const { type } = el;
@@ -279,7 +282,10 @@ const Element = ({ node: el, form }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled: el.properties.disabled || readOnly,
+      disabled:
+        el.properties.disabled ||
+        readOnly ||
+        stateFieldIsOptionless(el, activeStep, fieldValues, index ?? undefined),
       onEnter,
       required
     };
