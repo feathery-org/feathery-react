@@ -157,6 +157,49 @@ describe('TableElement targetable class names', () => {
     }
   });
 
+  async function renderWithStyles(styles: Record<string, any>) {
+    const TableElement = (await import('../TableElement')).default;
+    return render(
+      <TableElement
+        element={{
+          id: 'tbl',
+          properties: { columns: baseColumns, actions: [], pagination: 0 },
+          styles
+        }}
+        responsiveStyles={mockResponsiveStyles}
+        editMode
+      />
+    );
+  }
+
+  it('emits an unsized colgroup for equal columns', async () => {
+    const { container } = await renderWithStyles({ column_sizing: 'equal' });
+
+    let colgroup: Element | null = null;
+    await waitFor(() => {
+      colgroup = container.querySelector('colgroup');
+      expect(colgroup).toBeTruthy();
+    });
+
+    // No explicit widths -> table-layout: fixed shares the space equally.
+    const cols = colgroup!.querySelectorAll('col');
+    expect(cols.length).toBe(2);
+    cols.forEach((col) => expect((col as HTMLElement).style.width).toBe(''));
+  });
+
+  it('does not render a colgroup in the default (auto) sizing', async () => {
+    const { container } = await renderTable({
+      columns: baseColumns,
+      actions: [],
+      pagination: 0
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(`.${TABLE_CLASS.table}`)).toBeTruthy();
+    });
+    expect(container.querySelector('colgroup')).toBeFalsy();
+  });
+
   it('applies the empty state class when there is no data', async () => {
     // Form mode with no field values renders the empty state.
     const { container } = await renderTable(

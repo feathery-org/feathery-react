@@ -203,6 +203,11 @@ function TableElement({
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;
 
+  // 'equal' uses a fixed layout so data columns share the width evenly; any
+  // other value keeps the content-driven auto layout. Not supported transposed.
+  const useFixedColumns =
+    element.styles?.column_sizing === 'equal' && !isTransposed;
+
   return (
     <div
       className={TABLE_CLASS.container}
@@ -238,9 +243,21 @@ function TableElement({
             className={TABLE_CLASS.table}
             css={{
               ...(tableStyle as any),
+              ...(useFixedColumns ? { tableLayout: 'fixed' as const } : {}),
               ...styles.getTarget('table')
             }}
           >
+            {useFixedColumns && (
+              <colgroup>
+                {columns.map((col: any) => (
+                  <col key={col.field_key} />
+                ))}
+                {actions.length > 0 && <col style={{ width: '80px' }} />}
+                {showStandaloneDeleteColumn && (
+                  <col style={{ width: '40px' }} />
+                )}
+              </colgroup>
+            )}
             {!isTransposed && (
               <thead className={TABLE_CLASS.header} css={theadStyle}>
                 <tr>
