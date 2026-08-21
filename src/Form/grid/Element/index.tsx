@@ -18,6 +18,10 @@ import {
   ACTION_NEXT
 } from '../../../utils/elementActions';
 import {
+  connectionFieldKey,
+  hasEmailIdentity
+} from '../../../integrations/connectAccount/providers';
+import {
   fileFieldShouldSubmit,
   getInlineError,
   handleCheckboxGroupChange,
@@ -172,17 +176,19 @@ const Element = ({ node: el, form }: any) => {
     // their own label with text variables (e.g.
     // {{feathery.connections.box.email}}), which already resolve on their
     // own. No connection yet -> nothing to show, so the builder's text wins
-    // regardless.
+    // regardless - as it also does for a provider that reports no account
+    // identity to display (Schwab).
     const connectAccountAction = (el.properties.actions ?? []).find(
       (action: any) => action.type === ACTION_CONNECT_ACCOUNT
     );
     let buttonElement = el;
     if (
       connectAccountAction &&
-      connectAccountAction.manage_button_label !== false
+      connectAccountAction.manage_button_label !== false &&
+      hasEmailIdentity(connectAccountAction.provider)
     ) {
       const accountEmail = fieldValues[
-        `feathery.connections.${connectAccountAction.provider}.email`
+        connectionFieldKey(connectAccountAction.provider)
       ] as string | undefined;
       if (accountEmail) {
         buttonElement = {
