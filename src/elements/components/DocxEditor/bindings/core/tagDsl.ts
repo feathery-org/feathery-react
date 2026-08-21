@@ -6,6 +6,7 @@
 //   [[name=unit_cost|type=currency|row=r-1]]                  currency cell
 //   [[name=line_total|expr=mul(quantity,unit_cost)|row=r-1]]  row formula
 //   [[name=tax_rate|type=percent|del=keep]]                   shared number
+//   [[name=tax_rate|type=percent|global=true]]                global number
 //   [[table=costs]]                                           table marker
 //
 // Kind is inferred: an `expr` key makes it a formula (read-only, non-deletable,
@@ -33,6 +34,7 @@ const KEYS = new Set([
   'expr',
   'type',
   'del',
+  'global',
   'value',
   'default',
   'label',
@@ -75,6 +77,8 @@ export interface FieldDefinition {
   fieldType: FieldType;
   isEditable: boolean;
   isDeletable: boolean;
+  /** True when table duplication must preserve this document-wide identity. */
+  isGlobal: boolean;
   options: TagOptions;
 }
 
@@ -86,6 +90,8 @@ export interface FormulaDefinition {
   expression: string;
   isEditable: boolean;
   isDeletable: boolean;
+  /** True when table duplication must preserve this document-wide identity. */
+  isGlobal: boolean;
   options: TagOptions;
 }
 
@@ -134,6 +140,13 @@ export const KEY_REFERENCE: KeyReferenceEntry[] = [
     required: 'no',
     default: 'delete (fields); formulas are always keep',
     meaning: 'delete = occurrence may be removed; keep = protected'
+  },
+  {
+    key: 'global',
+    required: 'no',
+    default: 'false',
+    meaning:
+      'true = preserve one document-wide identity when its containing table is duplicated'
   },
   {
     key: 'value',
@@ -332,6 +345,7 @@ function parseLegacyV1(fields: string[], tag: string): Definition {
       fieldType: parseType(type, tag),
       isEditable: true,
       isDeletable: del === 'delete',
+      isGlobal: false,
       options: parseLegacyOptions(rest, tag)
     };
   }
@@ -351,6 +365,7 @@ function parseLegacyV1(fields: string[], tag: string): Definition {
       expression: decodeValue(expression),
       isEditable: false,
       isDeletable: false,
+      isGlobal: false,
       options: parseLegacyOptions(rest, tag)
     };
   }
@@ -397,6 +412,13 @@ export function parseTag(tag: unknown): Definition | null {
   if (pairs.name === undefined) fail('missing name', tag);
   if (!NAME_RE.test(pairs.name))
     fail(`invalid name ${JSON.stringify(pairs.name)}`, tag);
+  if (
+    pairs.global !== undefined &&
+    pairs.global !== 'true' &&
+    pairs.global !== 'false'
+  )
+    fail('global must be true or false', tag);
+  const isGlobal = pairs.global === 'true';
 
   const options: TagOptions = {};
   for (const key of TEXT_OPTION_KEYS) {
@@ -404,6 +426,8 @@ export function parseTag(tag: unknown): Definition | null {
   }
   if (options.row !== undefined && !ID_RE.test(options.row))
     fail('row id must be [A-Za-z0-9_-]+', tag);
+  if (isGlobal && options.row !== undefined)
+    fail('global bindings cannot be row-scoped', tag);
 
   if (pairs.expr !== undefined) {
     const expression = decodeValue(pairs.expr);
@@ -421,6 +445,7 @@ export function parseTag(tag: unknown): Definition | null {
       expression,
       isEditable: false,
       isDeletable: false,
+      isGlobal,
       options
     };
   }
@@ -438,6 +463,7 @@ export function parseTag(tag: unknown): Definition | null {
         : DEFAULT_FIELD_TYPE(),
     isEditable: true,
     isDeletable: del === 'delete',
+    isGlobal,
     options
   };
 }
@@ -448,6 +474,8 @@ export function parseTag(tag: unknown): Definition | null {
  */
 export function formatTag(def: Definition): string {
   if (def.kind === 'table') return `[[table=${def.tableId}]]`;
+  if (def.isGlobal && def.options?.row !== undefined)
+    throw new TagError('global bindings cannot be row-scoped');
   const parts = [`name=${def.name}`];
   if (def.kind === 'formula') {
     parts.push(`expr=${encodeValue(def.expression)}`);
@@ -462,6 +490,7 @@ export function formatTag(def: Definition): string {
       `cannot format kind ${JSON.stringify((def as Definition).kind)}`
     );
   }
+  if (def.isGlobal) parts.push('global=true');
   for (const key of TEXT_OPTION_KEYS) {
     const value = def.options?.[key];
     if (value !== undefined) parts.push(`${key}=${encodeValue(value)}`);

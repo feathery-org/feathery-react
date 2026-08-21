@@ -43,7 +43,7 @@ if (!(window.SVGElement.prototype as any).getBBox) {
     ({ x: 0, y: 0, width: 0, height: 0 } as DOMRect);
 }
 
-function makeEditor(): DocumentEditor {
+function makeEditor(sfdt = buildCostsFixture()): DocumentEditor {
   const host = document.createElement('div');
   host.style.width = '900px';
   host.style.height = '700px';
@@ -59,7 +59,7 @@ function makeEditor(): DocumentEditor {
     documentEditorSettings: { optimizeSfdt: false }
   });
   editor.appendTo(host);
-  editor.open(JSON.stringify(buildCostsFixture()));
+  editor.open(JSON.stringify(sfdt));
   return editor;
 }
 
@@ -169,6 +169,7 @@ describe('duplicate_table over bound tables', () => {
     expect(JSON.stringify(cloneTable)).toContain('[[table=expenses_copy]]');
     expect(JSON.stringify(cloneTable)).toContain('expenses_copy_subtotal');
     expect(JSON.stringify(cloneTable)).toContain('sum(expenses_copy.amount)');
+    expect(JSON.stringify(cloneTable)).not.toContain('global=');
 
     const editCopy = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
@@ -209,6 +210,144 @@ describe('duplicate_table over bound tables', () => {
     expect(textAt(editor, '0;8;5;1;0')).toBe('$1,800.00');
   });
 
+  it('keeps a global field shared across the copy and tracks its full dependency update as one rejectable group', () => {
+    attached.dispose();
+    destroy(editor);
+    editor = makeEditor(buildCostsFixture({ globalTaxRate: true }));
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+
+    const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
+    });
+    expect(duplicate.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    editor.revisions.acceptAll();
+    attached.controller.flush({ mode: 'self-heal' });
+
+    const duplicated = indexOf(editor);
+    expect(duplicated.fields.get('tax_rate')).toHaveLength(3);
+    expect(duplicated.fields.has('expenses_copy_tax_rate')).toBe(false);
+    expect(
+      duplicated.fields
+        .get('tax_rate')
+        ?.every((occurrence) => occurrence.def.isGlobal)
+    ).toBe(true);
+    expect(
+      duplicated.formulas.get('expenses_copy_tax')?.[0].def.kind === 'formula'
+        ? duplicated.formulas.get('expenses_copy_tax')?.[0].def.expression
+        : null
+    ).toBe('mul(expenses_copy_subtotal,tax_rate)');
+
+    const beforeWrite = editor.serialize();
+    const copyTax = flattenSfdt(parsed(editor)).find(
+      (block) =>
+        block.anchor.startsWith('0;8;') &&
+        block.boundTag === '[[name=tax_rate|type=percent|del=keep|global=true]]'
+    );
+    expect(copyTax).toBeDefined();
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'global-tax-rate',
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: copyTax!.anchor,
+          text: '8%',
+          literal: true
+        },
+        {
+          op: 'set_cell_text',
+          anchor: '0;2;0;3;0',
+          text: '8%',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
+    expect(result.results[0].details).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('updated global identity "tax_rate" across 3')
+      ])
+    );
+    expect(result.results[1]).toMatchObject({
+      ok: true,
+      route: 'engine',
+      details: [
+        'global identity "tax_rate" was resolved once for this change set'
+      ]
+    });
+    expect(result.results[0].details ?? []).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('independent instances')])
+    );
+    const updated = indexOf(editor);
+    expect(updated.fields.get('tax_rate')?.map((entry) => entry.text)).toEqual([
+      '8%',
+      '8%',
+      '8%'
+    ]);
+    expect(updated.formulas.get('costs_tax')?.[0].text).toBe('$624.00');
+    expect(updated.formulas.get('grand_total')?.[0].text).toBe('$8,424.00');
+    expect(updated.formulas.get('expenses_tax')?.[0].text).toBe('$136.00');
+    expect(updated.formulas.get('expenses_total')?.[0].text).toBe('$1,836.00');
+    expect(updated.formulas.get('expenses_copy_tax')?.[0].text).toBe('$136.00');
+    expect(updated.formulas.get('expenses_copy_total')?.[0].text).toBe(
+      '$1,836.00'
+    );
+
+    const revisions = Array.from(
+      { length: editor.revisions.length },
+      (_, revisionIndex) => editor.revisions.get(revisionIndex)
+    );
+    expect(revisions.length).toBeGreaterThan(0);
+    expect(revisions.every((revision) => revision.author === 'Robin')).toBe(
+      true
+    );
+    expect(new Set(revisions.map((revision) => revision.customData)).size).toBe(
+      1
+    );
+
+    rejectAllRevisions(editor);
+    attached.controller.flush({ mode: 'self-heal' });
+    expect(editor.revisions.length).toBe(0);
+    expect(editor.serialize()).toBe(beforeWrite);
+  });
+
+  it('refuses conflicting writes to one global identity before changing anything', () => {
+    attached.dispose();
+    destroy(editor);
+    editor = makeEditor(buildCostsFixture({ globalTaxRate: true }));
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+    const before = editor.serialize();
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: '0;2;0;3;0',
+          text: '8%',
+          literal: true
+        },
+        {
+          op: 'set_cell_text',
+          anchor: '0;6;0;1;0',
+          text: '9%',
+          literal: true
+        }
+      ]
+    });
+
+    expect(result.results.map((entry) => entry.ok)).toEqual([false, false]);
+    expect(result.results[1]).toMatchObject({
+      route: 'engine',
+      error: 'global_binding_conflicting_writes'
+    });
+    expect(editor.serialize()).toBe(before);
+  });
+
   it('creates one rejectable structural revision for a bound table duplicate', () => {
     const before = editor.serialize();
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
@@ -236,7 +375,7 @@ describe('duplicate_table over bound tables', () => {
     expect(editor.serialize()).toBe(before);
   });
 
-  it('writes every independent instance of a duplicated document field', () => {
+  it('writes every independent instance only after an explicit all choice', () => {
     const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
     });
@@ -246,7 +385,7 @@ describe('duplicate_table over bound tables', () => {
     );
     expect(copyTax).toBeDefined();
 
-    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+    const ambiguous = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [
         {
           op: 'set_cell_text',
@@ -257,10 +396,69 @@ describe('duplicate_table over bound tables', () => {
       ]
     });
 
+    expect(ambiguous.results[0]).toMatchObject({
+      ok: false,
+      route: 'engine',
+      error: 'independent_binding_instances_ambiguous',
+      ambiguity: {
+        kind: 'binding_write',
+        field: 'tax_rate',
+        instanceCount: 2,
+        occurrenceCount: 3,
+        instances: expect.arrayContaining([
+          expect.objectContaining({ instanceId: 'tax_rate' }),
+          expect.objectContaining({ instanceId: 'expenses_copy_tax_rate' })
+        ])
+      }
+    });
+    expect(editor.serialize()).not.toContain('8%');
+
+    const ambiguity = ambiguous.results[0].ambiguity!;
+    expect(
+      ambiguity.instances
+        .flatMap((instance) => instance.occurrences)
+        .map((occurrence) => occurrence.tableId)
+        .sort()
+    ).toEqual(['costs', 'expenses', 'expenses_copy']);
+    const stale = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: copyTax!.anchor,
+          text: '8%',
+          literal: true,
+          bindingResolution: {
+            ambiguityId: `${ambiguity.ambiguityId}:stale`,
+            choice: 'all'
+          }
+        }
+      ]
+    });
+    expect(stale.results[0]).toMatchObject({
+      ok: false,
+      error: 'independent_binding_instances_ambiguous',
+      ambiguity: { ambiguityId: ambiguity.ambiguityId }
+    });
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: copyTax!.anchor,
+          text: '8%',
+          literal: true,
+          bindingResolution: {
+            ambiguityId: ambiguity.ambiguityId,
+            choice: 'all'
+          }
+        }
+      ]
+    });
+
     expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
     expect(result.results[0].details).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('updated 2 independent instances')
+        expect.stringContaining('user confirmed all 2 independent instances')
       ])
     );
     expect(
@@ -275,7 +473,7 @@ describe('duplicate_table over bound tables', () => {
     ).toEqual(['8%']);
   });
 
-  it('refuses an ambiguous transform across independent field instances', () => {
+  it('applies the chosen independent instance while reusing the original anchor', () => {
     const duplicate = applyDocumentEdits(editor as unknown as LiveEditor, {
       edits: [{ op: 'duplicate_table', anchor: '0;6;0;0;0', rows: 'copy' }]
     });
@@ -309,6 +507,38 @@ describe('duplicate_table over bound tables', () => {
       ])
     );
     expect(editor.serialize()).toBe(before);
+
+    const ambiguity = result.results[0].ambiguity!;
+    const resolved = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'set_cell_text',
+          anchor: copyTax!.anchor,
+          text: '8%',
+          literal: true,
+          bindingResolution: {
+            ambiguityId: ambiguity.ambiguityId,
+            choice: 'one',
+            instanceId: 'tax_rate'
+          }
+        }
+      ]
+    });
+    expect(resolved.results[0]).toMatchObject({
+      ok: true,
+      route: 'engine',
+      details: ['user confirmed only binding instance "tax_rate"']
+    });
+    expect(
+      indexOf(editor)
+        .fields.get('tax_rate')
+        ?.map((entry) => entry.text)
+    ).toEqual(['8%', '8%']);
+    expect(
+      indexOf(editor)
+        .fields.get('expenses_copy_tax_rate')
+        ?.map((entry) => entry.text)
+    ).toEqual(['0%']);
   });
 
   it('materializes replacement rows through the engine and recomputes formulas', () => {
