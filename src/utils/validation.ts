@@ -3,7 +3,7 @@ import { setFormElementError } from './formHelperFunctions';
 import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 
 import React from 'react';
-import { stateFieldIsOptionless } from './addressState';
+import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
@@ -64,7 +64,7 @@ function validateElements({
         return errors;
       }
       // A state field disabled for want of states can never be filled in
-      if (stateFieldIsOptionless(element, step, fieldValues, repeat)) {
+      if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
         return errors;
       }
       type = element.servar.type;

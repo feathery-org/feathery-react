@@ -40,44 +40,26 @@ export const getControllingCountryCode = (
     : findCountryByID(value, 'name')?.countryCode ?? '';
 };
 
-// Resolves the country the way DropdownField does, so the two never disagree
-// about whether the dropdown has anything in it.
+// True when a state field has nothing to offer: its country has no states in
+// our data, so the dropdown would render empty. Resolves the country the way
+// DropdownField does, so the two never disagree.
 export const stateFieldHasNoOptions = (
-  stateElement: any,
-  activeStep: any,
-  fieldValues: any,
-  repeatIndex?: number
-) => {
-  const metadata = stateElement.servar.metadata ?? {};
-  // Salesforce-synced fields are populated by the integration, not our data
-  if (metadata.salesforce_sync) return false;
-
-  const code = (
-    getControllingCountryCode(
-      stateElement,
-      activeStep,
-      fieldValues,
-      repeatIndex
-    ) ||
-    metadata.default_country ||
-    'us'
-  ).toLowerCase();
-  return !stateMap[code]?.length;
-};
-
-// A state field whose country has no states renders an empty dropdown. Forms
-// disable it instead; validation skips it too, since it can never be filled.
-export const stateFieldIsOptionless = (
   element: any,
   activeStep: any,
   fieldValues: any,
   repeatIndex?: number
 ) => {
   const servar = element?.servar;
-  if (
-    servar?.type !== 'gmap_state' ||
-    servar.metadata?.disable_without_states === false
-  )
-    return false;
-  return stateFieldHasNoOptions(element, activeStep, fieldValues, repeatIndex);
+  if (servar?.type !== 'gmap_state') return false;
+
+  const metadata = servar.metadata ?? {};
+  // Salesforce-synced fields are populated by the integration, not our data
+  if (metadata.salesforce_sync) return false;
+
+  const code = (
+    getControllingCountryCode(element, activeStep, fieldValues, repeatIndex) ||
+    metadata.default_country ||
+    'us'
+  ).toLowerCase();
+  return !stateMap[code]?.length;
 };

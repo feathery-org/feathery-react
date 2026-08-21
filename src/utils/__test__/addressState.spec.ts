@@ -120,3 +120,10 @@ describe('repeating country and state fields', () => {
     ).toEqual('US');
   });
 });
+
+describe('stateFieldHasNoOptions guards', () => {
+  it('ignores anything that is not a state field', () => {
+    expect(stateFieldHasNoOptions(country, activeStep, {})).toBe(false);
+    expect(stateFieldHasNoOptions({}, activeStep, {})).toBe(false);
+  });
+});

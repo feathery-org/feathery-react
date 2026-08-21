@@ -36,7 +36,7 @@ import {
 } from './utils/address';
 import {
   getControllingCountryCode,
-  stateFieldIsOptionless
+  stateFieldHasNoOptions
 } from '../../../utils/addressState';
 
 const Element = ({ node: el, form }: any) => {
@@ -285,7 +285,7 @@ const Element = ({ node: el, form }: any) => {
       disabled:
         el.properties.disabled ||
         readOnly ||
-        stateFieldIsOptionless(el, activeStep, fieldValues, index ?? undefined),
+        stateFieldHasNoOptions(el, activeStep, fieldValues, index ?? undefined),
       onEnter,
       required
     };
