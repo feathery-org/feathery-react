@@ -79,9 +79,13 @@ export function getContainerById(
 export function getServarRepeatNum(field: any, fieldValue: unknown): number {
   if (!Array.isArray(fieldValue)) return 0;
   const servar = field?.servar ?? {};
+  const defaultValue = getDefaultFieldValue(field);
+  const lastValue = fieldValue[fieldValue.length - 1];
+  // updateFieldValues rewrites null entries to '', so a null-defaulting field
+  // would look filled here and get a second trailing row
   const hasDefaultLastValue =
     fieldValue.length > 0 &&
-    fieldValue[fieldValue.length - 1] === getDefaultFieldValue(field);
+    (lastValue === defaultValue || (defaultValue === null && lastValue === ''));
   return servar.repeat_trigger === 'set_value' && !hasDefaultLastValue
     ? fieldValue.length + 1
     : fieldValue.length;

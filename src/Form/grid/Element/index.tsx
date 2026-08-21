@@ -399,6 +399,18 @@ const Element = ({ node: el, form }: any) => {
             initialFiles={fieldVal}
           />
         );
+      case 'audio_recording':
+        return (
+          <Elements.AudioRecordingField
+            {...fieldProps}
+            onChange={(newFile: Promise<File> | null) => {
+              clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
+              changeValue(newFile, el, index);
+              onChange();
+            }}
+            initialFile={fieldVal}
+          />
+        );
       case 'button_group':
         return (
           <Elements.ButtonGroupField
