@@ -24,5 +24,24 @@ export const CONFIG_COMPONENTS: Record<
 };
 
 export const PROVIDER_LABELS: Record<string, string> = {
-  box: 'Box'
+  box: 'Box',
+  'charles-schwab': 'Charles Schwab'
 };
+
+/** The field under `feathery.connections.<provider>.` whose presence means
+ *  "this respondent has connected an account". Most providers report the
+ *  connected account's email; a provider whose API exposes no identity for the
+ *  authorizing user (Schwab) records only that a connection exists. */
+const PROVIDER_CONNECTION_FIELD: Record<string, string> = {
+  'charles-schwab': 'connected'
+};
+
+export const connectionFieldKey = (provider: string) =>
+  `feathery.connections.${provider}.${
+    PROVIDER_CONNECTION_FIELD[provider] ?? 'email'
+  }`;
+
+/** Whether a connection's stored value is the account's email, and so worth
+ *  showing as the button's label. */
+export const hasEmailIdentity = (provider: string) =>
+  !(provider in PROVIDER_CONNECTION_FIELD);

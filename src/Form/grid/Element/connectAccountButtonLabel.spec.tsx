@@ -18,6 +18,7 @@ jest.mock('../../../elements', () => ({
 }));
 
 const EMAIL_KEY = 'feathery.connections.box.email';
+const SCHWAB_KEY = 'feathery.connections.charles-schwab.connected';
 
 const baseForm = {
   elementProps: {},
@@ -32,7 +33,10 @@ const baseForm = {
   onViewElements: []
 };
 
-const buildButtonNode = (manageButtonLabel: boolean | undefined) => ({
+const buildButtonNode = (
+  manageButtonLabel: boolean | undefined,
+  provider = 'box'
+) => ({
   id: 'btn-1',
   type: 'button',
   styles: {},
@@ -42,7 +46,7 @@ const buildButtonNode = (manageButtonLabel: boolean | undefined) => ({
     actions: [
       {
         type: ACTION_CONNECT_ACCOUNT,
-        provider: 'box',
+        provider,
         ...(manageButtonLabel === undefined
           ? {}
           : { manage_button_label: manageButtonLabel })
@@ -54,6 +58,7 @@ const buildButtonNode = (manageButtonLabel: boolean | undefined) => ({
 describe('connect_account button label management', () => {
   afterEach(() => {
     delete (fieldValues as any)[EMAIL_KEY];
+    delete (fieldValues as any)[SCHWAB_KEY];
   });
 
   it('shows the connected account when managed and a connection exists', () => {
@@ -74,6 +79,19 @@ describe('connect_account button label management', () => {
 
   it("shows the builder's text when managed but no connection exists yet", () => {
     render(<Element node={buildButtonNode(undefined)} form={baseForm} />);
+
+    expect(screen.getByTestId('btn-text').textContent).toBe("Builder's label");
+  });
+
+  it("keeps the builder's text for a provider with no account identity", () => {
+    // Schwab's connection value is a flag, not something to show on a button.
+    (fieldValues as any)[SCHWAB_KEY] = 'true';
+    render(
+      <Element
+        node={buildButtonNode(undefined, 'charles-schwab')}
+        form={baseForm}
+      />
+    );
 
     expect(screen.getByTestId('btn-text').textContent).toBe("Builder's label");
   });
