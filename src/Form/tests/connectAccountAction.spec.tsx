@@ -77,6 +77,7 @@ jest.mock('../../integrations/connectAccount/ConnectAccountModal', () => ({
 const mockedRunOAuthPopup = runOAuthPopup as jest.Mock;
 
 const EMAIL_KEY = 'feathery.connections.box.email';
+const SCHWAB_KEY = 'feathery.connections.charles-schwab.connected';
 
 describe('connect_account action', () => {
   let fakePopup: { close: jest.Mock };
@@ -90,6 +91,7 @@ describe('connect_account action', () => {
     changeAccountOutcome.status = 'idle';
     changeAccountOutcome.value = undefined;
     delete (fieldValues as any)[EMAIL_KEY];
+    delete (fieldValues as any)[SCHWAB_KEY];
 
     fakePopup = { close: jest.fn() };
     BrowserMod._spies.open.mockReturnValue(fakePopup);
@@ -140,6 +142,36 @@ describe('connect_account action', () => {
     );
     await waitFor(() => expect(modalState.props?.show).toBe(true));
     expect((fieldValues as any)[EMAIL_KEY]).toBe('connected@example.com');
+  });
+
+  it('marks a provider with no account identity as connected', async () => {
+    // Schwab reports no email, so the connection is recorded on its own
+    // field - otherwise every click would re-run OAuth.
+    GridMod._spies.actions = [
+      { type: 'connect_account', provider: 'charles-schwab' }
+    ];
+    mockedRunOAuthPopup.mockResolvedValue({ account_email: '' });
+
+    render(<JSForm formId='f1' _internalId='iid-connect-schwab' />);
+    await clickTrigger();
+
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect((fieldValues as any)[SCHWAB_KEY]).toBe('true');
+    expect((fieldValues as any)[EMAIL_KEY]).toBeUndefined();
+    expect(modalState.props.accountEmail).toBe('');
+  });
+
+  it('skips OAuth for an already-connected identity-less provider', async () => {
+    GridMod._spies.actions = [
+      { type: 'connect_account', provider: 'charles-schwab' }
+    ];
+    (fieldValues as any)[SCHWAB_KEY] = 'true';
+
+    render(<JSForm formId='f1' _internalId='iid-connect-schwab-again' />);
+    await clickTrigger();
+
+    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
   });
 
   it('surfaces a popup-blocked error without calling the API', async () => {

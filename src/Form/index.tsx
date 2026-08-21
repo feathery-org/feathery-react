@@ -221,6 +221,10 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
 import {
+  connectionFieldKey,
+  hasEmailIdentity
+} from '../integrations/connectAccount/providers';
+import {
   ACCOUNT_CONNECT_POPUP_NAME,
   getPopupFeatures,
   runOAuthPopup
@@ -2754,14 +2758,20 @@ function Form({
         const popup = preOpenedWindows.get(i) ?? null;
         preOpenedWindows.delete(i);
         const provider = action.provider;
-        const emailKey = `feathery.connections.${provider}.email`;
+        // Not always an email: a provider with no user identity records only
+        // that a connection exists. Either way a value here means connected.
+        const connectionKey = connectionFieldKey(provider);
 
         try {
-          if (fieldValues[emailKey]) {
+          if (fieldValues[connectionKey]) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
-            updateFieldValues({ [emailKey]: result.account_email ?? '' });
+            updateFieldValues({
+              [connectionKey]: hasEmailIdentity(provider)
+                ? result.account_email ?? ''
+                : 'true'
+            });
           }
           // The flow advances from the modal's onSaved, not here - the
           // respondent has not finished configuring the account yet.
@@ -3694,9 +3704,11 @@ function Form({
             provider={connectAccountModal.provider}
             client={client}
             accountEmail={
-              fieldValues[
-                `feathery.connections.${connectAccountModal.provider}.email`
-              ] as string
+              hasEmailIdentity(connectAccountModal.provider)
+                ? (fieldValues[
+                    connectionFieldKey(connectAccountModal.provider)
+                  ] as string)
+                : ''
             }
             onChangeAccount={async () => {
               // window.open must stay the first statement: the modal's
@@ -3719,8 +3731,10 @@ function Form({
                   popup
                 );
                 updateFieldValues({
-                  [`feathery.connections.${connectAccountModal.provider}.email`]:
-                    result.account_email ?? ''
+                  [connectionFieldKey(connectAccountModal.provider)]:
+                    hasEmailIdentity(connectAccountModal.provider)
+                      ? result.account_email ?? ''
+                      : 'true'
                 });
               } catch (error) {
                 return error instanceof Error
