@@ -10,7 +10,11 @@ import { getRepeatedContainer } from '../../utils/repeat';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { validateRepeatIndex } from './utils';
 
-const UNWRITABLE_TYPES = new Set(['file_upload', 'signature']);
+const UNWRITABLE_TYPES = new Set([
+  'file_upload',
+  'signature',
+  'audio_recording'
+]);
 const TEXT_TYPES = new Set([
   'text_field',
   'text_area',

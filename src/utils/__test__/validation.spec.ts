@@ -176,6 +176,33 @@ describe('validation', () => {
       });
     });
 
+    describe('audio_recording validation', () => {
+      it('detects null as empty', () => {
+        // Arrange
+        const val = null;
+        const servar = { required: true, type: 'audio_recording' };
+        const expected = 'This is a required field';
+
+        // Act
+        const actual = getStandardFieldError(val, servar, null);
+
+        // Assert
+        expect(actual).toEqual(expected);
+      });
+
+      it('allows valid audio file Promise', () => {
+        // Arrange
+        const val = Promise.resolve(new File(['content'], 'audio.webm'));
+        const servar = { required: true, type: 'audio_recording' };
+
+        // Act
+        const actual = getStandardFieldError(val, servar, null);
+
+        // Assert
+        expect(actual).toEqual('');
+      });
+    });
+
     describe('button_group validation', () => {
       it('detects [null] as empty for button_group', () => {
         // Arrange

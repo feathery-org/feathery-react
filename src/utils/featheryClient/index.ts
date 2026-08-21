@@ -212,6 +212,8 @@ export default class FeatheryClient extends IntegrationClient {
       fileValue = servar.file_upload;
     } else if ('signature' in servar) {
       fileValue = servar.signature;
+    } else if ('audio_recording' in servar) {
+      fileValue = servar.audio_recording;
     }
 
     if (!fileValue) return null;
@@ -863,7 +865,9 @@ export default class FeatheryClient extends IntegrationClient {
     gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
-      ['file_upload', 'signature'].some((type) => type in servar);
+      ['file_upload', 'signature', 'audio_recording'].some(
+        (type) => type in servar
+      );
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 
