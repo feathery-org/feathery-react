@@ -97,13 +97,17 @@ export function canRunAction(
   )
     return true;
 
-  if (
-    event === 'change' &&
-    logicRule.elements.includes(
-      (props as ContextOnChange | ContextOnAction).trigger._servarId ?? ''
-    )
-  )
-    return true;
+  if (event === 'change') {
+    const trigger = (props as ContextOnChange | ContextOnAction).trigger;
+    // A single interaction can change more than the field it touched, so match
+    // on every servar the event reports as changed, not just the primary one.
+    const changedServarIds = [
+      trigger._servarId ?? '',
+      ...(trigger._relatedServarIds ?? [])
+    ];
+    if (changedServarIds.some((id) => logicRule.elements.includes(id)))
+      return true;
+  }
 
   return (
     event === 'action' &&

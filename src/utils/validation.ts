@@ -3,6 +3,7 @@ import { setFormElementError } from './formHelperFunctions';
 import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 
 import React from 'react';
+import { stateFieldHasNoOptions } from './addressState';
 import { fieldValues, initInfo } from './init';
 import { getVisibleElements } from './hideAndRepeats';
 import { Trigger } from '../types/Form';
@@ -60,6 +61,10 @@ function validateElements({
     if (elementType === 'servar_fields') {
       if (element.servar.repeat_trigger === 'set_value' && last && repeat) {
         // Skip validation on last repeat since it might be default value
+        return errors;
+      }
+      // A state field disabled for want of states can never be filled in
+      if (stateFieldHasNoOptions(element, step, fieldValues, repeat)) {
         return errors;
       }
       type = element.servar.type;

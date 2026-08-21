@@ -3414,6 +3414,9 @@ function Form({
       triggerType = 'field',
       submitData = false,
       integrationData = {},
+      // Other servars changed by the same interaction, e.g. the city/state/
+      // country an address autocomplete fills in alongside the address line
+      relatedServarIds = [],
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
@@ -3423,6 +3426,7 @@ function Form({
             trigger: {
               id: fieldKey,
               _servarId: servarId,
+              _relatedServarIds: relatedServarIds,
               repeatIndex: elementRepeatIndex,
               type: triggerType
             },
