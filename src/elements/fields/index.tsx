@@ -265,7 +265,7 @@ function applyLabelFontStyles(styles: any) {
   styles.applyFontStyles('fieldLabel', false, true, 'label_', true);
 }
 
-function applyFieldStyles(field: any, styles: any) {
+export function applyFieldStyles(field: any, styles: any) {
   const type = field.servar.type;
   styles.addTargets(
     'fc',
@@ -344,9 +344,11 @@ function applyFieldStyles(field: any, styles: any) {
       styles.applyCorners('field');
       styles.applyBorders({ target: 'field' });
       styles.applyBoxShadow('field');
-      styles.addTargets('img');
+      styles.addTargets('img', 'ac', 'bar');
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyFlexDirection('ac');
+      styles.applyColor('bar', 'bar_color', 'backgroundColor');
       break;
     case 'file_upload':
       styles.addTargets('ac', 'add');

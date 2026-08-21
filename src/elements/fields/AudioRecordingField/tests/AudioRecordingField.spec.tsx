@@ -1,6 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import AudioRecordingField from '../index';
+import { applyFieldStyles } from '../../index';
+import ResponsiveStyles from '../../../styles';
 import {
   createAudioRecordingElement,
   createAudioRecordingProps,
@@ -535,5 +537,71 @@ describe('AudioRecordingField', () => {
       nowSpy.mockRestore();
       jest.useRealTimers();
     }
+  });
+
+  describe('themed styles', () => {
+    // The builder's Image and Recorder sections write these; applyFieldStyles
+    // is what turns them into the targets the field reads
+    const targetsFor = (styles: any) => {
+      const field = createAudioRecordingElement();
+      field.styles = styles;
+      return applyFieldStyles(field, new ResponsiveStyles(field, [], false));
+    };
+
+    it('maps the image width and position onto the icon and its row', () => {
+      const applied = targetsFor({
+        image_width: 32,
+        image_width_unit: 'px',
+        flex_direction: 'column'
+      });
+
+      expect(applied.getTarget('img').width).toBe('32px');
+      expect(applied.getTarget('ac').flexDirection).toBe('column');
+    });
+
+    it('maps bar_color onto the progress bar', () => {
+      expect(targetsFor({ bar_color: '00FF00FF' }).getTarget('bar')).toEqual({
+        backgroundColor: '#00FF00FF'
+      });
+    });
+
+    it('leaves the bar unstyled when no color is set, so it follows the font', () => {
+      expect(targetsFor({}).getTarget('bar').backgroundColor).toBeUndefined();
+    });
+  });
+
+  it('advances the progress readout between timeupdate events', async () => {
+    const frames: FrameRequestCallback[] = [];
+    jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((cb: FrameRequestCallback) => {
+        frames.push(cb);
+        return frames.length;
+      });
+    jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+
+    const element = createAudioRecordingElement();
+    const file = Promise.resolve(new File(['audio'], 'take.webm'));
+    render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { initialFile: file })}
+      />
+    );
+    await waitFor(() => screen.getByRole('button', { name: 'Play recording' }));
+
+    const audio = document.querySelector('audio') as any;
+    Object.defineProperty(audio, 'duration', { value: 10, configurable: true });
+    await act(async () => {
+      fireEvent.durationChange(audio);
+      fireEvent.play(audio);
+    });
+
+    // No timeupdate here: only the frame loop should move the readout
+    audio.currentTime = 4;
+    await act(async () => {
+      frames.splice(0).forEach((frame) => frame(0));
+    });
+
+    expect(screen.getByText('0:04 / 0:10')).toBeTruthy();
   });
 });

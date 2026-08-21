@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { featheryWindow } from '../../../utils/browser';
 import { formatDuration } from './format';
 
 // Native <audio controls> can't be themed and collapses its scrubber at field
@@ -10,12 +11,14 @@ function AudioPlayer({
   pauseLabel,
   // Chrome reports Infinity for a fresh recording, so the recorder passes the
   // length it timed. Never seek to discover it: that parks playback at the end.
-  knownDuration = 0
+  knownDuration = 0,
+  barColor
 }: {
   src: string;
   playLabel: string;
   pauseLabel: string;
   knownDuration?: number;
+  barColor?: string;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -34,6 +37,20 @@ function AudioPlayer({
   };
 
   const duration = reportedDuration || knownDuration;
+  // Unset bar_color leaves the bar on the field's font color
+  const fill = barColor || 'currentColor';
+
+  // timeupdate only fires a few times a second, which visibly steps the bar;
+  // follow the clock per frame while playing instead
+  useEffect(() => {
+    if (!playing) return;
+    const win = featheryWindow();
+    let frame = win.requestAnimationFrame(function tick() {
+      setCurrent(audioRef.current?.currentTime ?? 0);
+      frame = win.requestAnimationFrame(tick);
+    });
+    return () => win.cancelAnimationFrame(frame);
+  }, [playing]);
 
   const toggle = () => {
     const audio = audioRef.current;
@@ -132,7 +149,7 @@ function AudioPlayer({
               width: '100%',
               height: '100%',
               borderRadius: '2px',
-              backgroundColor: 'currentColor',
+              backgroundColor: fill,
               opacity: 0.25
             }}
           />
@@ -143,7 +160,7 @@ function AudioPlayer({
               left: 0,
               height: '100%',
               borderRadius: '2px',
-              backgroundColor: 'currentColor',
+              backgroundColor: fill,
               width: `${progress * 100}%`
             }}
           />

@@ -311,6 +311,10 @@ function AudioRecordingField({
     customOnChange(null);
   };
 
+  const themedAc: any = responsiveStyles.getTarget('ac') ?? {};
+  // Stacked layouts put the icon on the main axis, where flex-shrink: 0 would
+  // push the content past the field height instead of fitting it
+  const stacked = String(themedAc.flexDirection ?? '').startsWith('column');
   const themedImg: any = responsiveStyles.getTarget('img') ?? {};
   // An unset theme width resolves to a junk string ('px', 'undefinedpx'), which
   // <svg width> silently ignores before expanding to fill its container
@@ -392,6 +396,7 @@ function AudioRecordingField({
             playLabel={t.play}
             pauseLabel={t.pause}
             knownDuration={recordedSeconds}
+            barColor={responsiveStyles.getTarget('bar')?.backgroundColor}
           />
         )}
         {/* A read-only field shouldn't offer to delete the recording */}
@@ -436,19 +441,31 @@ function AudioRecordingField({
           justifyContent: 'center',
           gap: '8px',
           cursor: 'pointer',
-          maxWidth: '100%'
+          maxWidth: '100%',
+          height: '100%',
+          minHeight: 0,
+          // Image position is a flex direction, same as file upload
+          ...themedAc
         }}
       >
         {element.properties.icon ? (
           <img
             src={element.properties.icon}
-            style={{ ...imgStyles, maxHeight: '100%', flexShrink: 0 }}
+            style={{
+              ...imgStyles,
+              maxHeight: '100%',
+              flexShrink: stacked ? 1 : 0
+            }}
             alt=''
           />
         ) : (
           <MicrophoneIcon
             width={iconWidth ?? '20px'}
-            style={{ flexShrink: 0 }}
+            style={{
+              ...imgStyles,
+              maxHeight: '100%',
+              flexShrink: stacked ? 1 : 0
+            }}
             color={message ? RECORDING_COLOR : undefined}
           />
         )}
