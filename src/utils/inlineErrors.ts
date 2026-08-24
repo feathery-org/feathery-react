@@ -43,3 +43,36 @@ export function firstInlineErrorMessage(
   if (entry.message) return entry.message;
   return Object.values(entry.byIndex ?? {}).find((d) => d?.message)?.message;
 }
+
+// Apply one (message, index) write to the map, mutating it in place.
+// An empty message clears rather than stores:
+//   - non-indexed empty write  -> clear the whole field (message + all rows)
+//   - indexed empty write       -> clear only that row
+// Entries left with no message and no rows are removed, so the aggregate
+// "any error?" check and per-row display never see a stale/empty entry.
+export function applyInlineError(
+  inlineErrors: InlineErrors,
+  fieldKey: string,
+  message: string,
+  index?: number | null
+): void {
+  if (!fieldKey) return;
+  const existing = inlineErrors[fieldKey] ?? {};
+
+  if (Number.isInteger(index)) {
+    const byIndex = { ...(existing.byIndex ?? {}) };
+    if (message) byIndex[index as number] = { message };
+    else delete byIndex[index as number];
+
+    const entry: InlineErrorEntry = {};
+    if (existing.message) entry.message = existing.message;
+    if (Object.keys(byIndex).length) entry.byIndex = byIndex;
+
+    if (entry.message || entry.byIndex) inlineErrors[fieldKey] = entry;
+    else delete inlineErrors[fieldKey];
+  } else if (message) {
+    inlineErrors[fieldKey] = { ...existing, message };
+  } else {
+    delete inlineErrors[fieldKey];
+  }
+}

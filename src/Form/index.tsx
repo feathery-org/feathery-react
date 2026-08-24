@@ -975,7 +975,9 @@ function Form({
           if (idx === curIndex) return;
           shifted[idx > curIndex ? idx - 1 : idx] = data;
         });
-        next[key] = { ...entry, byIndex: shifted };
+        if (entry.message || Object.keys(shifted).length)
+          next[key] = { ...entry, byIndex: shifted };
+        else delete next[key];
       });
       return next;
     });
