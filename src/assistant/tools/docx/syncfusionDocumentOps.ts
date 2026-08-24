@@ -13241,7 +13241,7 @@ function clonedBindingTags(
     } else if (def && (def.kind === 'field' || def.kind === 'formula')) {
       out.push({
         name: def.name,
-        tableId: def.options.table ?? (def.options.row ? scope : null),
+        tableId: def.options.row ? scope : null,
         isGlobal: !!def.isGlobal
       });
     }
