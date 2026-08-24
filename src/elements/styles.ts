@@ -5,6 +5,7 @@ import {
   objectFromEntries,
   startsEndsWithQuotes
 } from '../utils/primitives';
+import { getFontFallback, isGenericFamily } from '../utils/fonts';
 import { isDirectionColumn } from '../utils/styles';
 import { CSSProperties } from 'react';
 
@@ -438,27 +439,37 @@ export default class ResponsiveStyles {
     });
   }
 
-  transformFontFamilies(families: string) {
-    families = families.replace(/"/g, "'");
-    families = families
+  transformFontFamilies(families: string, fallback = '') {
+    const parsed = families
+      .replace(/"/g, "'")
       .split(',')
-      .map((family) => {
-        family = family.trim();
-        if (family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)) {
-          // Font families with spaces must be quoted
-          return `'${families}'`;
-        }
-        return family;
-      })
-      .join(', ');
-    return families;
+      .map((family) => family.trim())
+      .filter(Boolean);
+    if (!parsed.length) return families;
+
+    const stack = parsed.map((family) =>
+      // Font families with spaces must be quoted
+      family.indexOf(' ') >= 0 && !startsEndsWithQuotes(family)
+        ? `'${family}'`
+        : family
+    );
+    // Without a generic family the browser renders its own default while the
+    // font downloads, so a serif font flashes as whatever the page inherits
+    const generic = fallback || getFontFallback(parsed[0]);
+    if (generic && !isGenericFamily(parsed[parsed.length - 1]))
+      stack.push(generic);
+    return stack.join(', ');
   }
 
   applyFontFamily(target: string, prefix = '') {
-    this.apply(target, `${prefix}font_family`, (a: string) => {
-      if (!a) return {};
-      return { fontFamily: this.transformFontFamilies(a) };
-    });
+    this.apply(
+      target,
+      [`${prefix}font_family`, `${prefix}font_fallback`],
+      (family: string, fallback: string) => {
+        if (!family) return {};
+        return { fontFamily: this.transformFontFamilies(family, fallback) };
+      }
+    );
   }
 
   getRichFontStyles(attrs: any) {
@@ -484,7 +495,13 @@ export default class ResponsiveStyles {
     let attr = attrs[`${p}font_size`];
     if (attr) styles.fontSize = `${attr}px`;
     attr = attrs[`${p}font_family`];
-    if (attr) styles.fontFamily = this.transformFontFamilies(attr);
+    // Rich text runs carry their own family but inherit the element's fallback
+    if (attr)
+      styles.fontFamily = this.transformFontFamilies(
+        attr,
+        (isMobile ? this.mobileStyles?.font_fallback : '') ||
+          this.styles?.font_fallback
+      );
     attr = attrs[`${p}font_color`];
     if (attr) styles.color = `#${attr}`;
     attr = attrs[`${p}font_weight`];

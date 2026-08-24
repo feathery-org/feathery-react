@@ -1,5 +1,6 @@
 import ResponsiveStyles, { DEFAULT_MOBILE_BREAKPOINT } from '../styles';
 import { LABEL_TEXT_ALIGN_DEFAULT } from '../utils/labelStyleResolver';
+import { setFontFallbacks } from '../../utils/fonts';
 
 const TEST_COLOR_BACKGROUND = 'dddddd';
 const mockElement = {
@@ -190,6 +191,50 @@ describe('responsiveStyles', () => {
     it('uses an explicit label_text_align over the default', () => {
       const actual = buildFieldLabelTarget({ label_text_align: 'center' });
       expect(actual.textAlign).toBe('center');
+    });
+  });
+
+  describe('font family fallbacks', () => {
+    const stylesFor = (styles) =>
+      new ResponsiveStyles({ styles }, ['field'], false);
+
+    beforeAll(() => {
+      setFontFallbacks({ 'Playfair Display': 'serif', Inter: 'sans-serif' });
+    });
+
+    it('appends the generic family the font belongs to', () => {
+      const rs = stylesFor({ font_family: 'Playfair Display' });
+      rs.applyFontFamily('field');
+      expect(rs.getTarget('field').fontFamily).toEqual(
+        "'Playfair Display', serif"
+      );
+    });
+
+    it('prefers an explicit font_fallback override', () => {
+      const rs = stylesFor({ font_family: 'Inter', font_fallback: 'serif' });
+      rs.applyFontFamily('field');
+      expect(rs.getTarget('field').fontFamily).toEqual('Inter, serif');
+    });
+
+    it('quotes each spaced family and keeps an existing generic', () => {
+      const rs = stylesFor({ font_family: 'Basis Grotesque, sans-serif' });
+      rs.applyFontFamily('field');
+      expect(rs.getTarget('field').fontFamily).toEqual(
+        "'Basis Grotesque', sans-serif"
+      );
+    });
+
+    it('leaves unknown fonts without a fallback', () => {
+      const rs = stylesFor({ font_family: 'Uploaded Font' });
+      rs.applyFontFamily('field');
+      expect(rs.getTarget('field').fontFamily).toEqual("'Uploaded Font'");
+    });
+
+    it('applies the element fallback to rich text runs', () => {
+      const rs = stylesFor({ font_fallback: 'monospace' });
+      expect(
+        rs.getRichFontStyles({ font_family: 'Uploaded Font' }).fontFamily
+      ).toEqual("'Uploaded Font', monospace");
     });
   });
 });
