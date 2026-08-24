@@ -1,6 +1,7 @@
 import { createRoot, Root } from 'react-dom/client';
 import Elements from './elements';
 import Form, { JSForm, Props as FormProps, StyledContainer } from './Form';
+import { connectAccountButtonLabel } from './integrations/connectAccount/providers';
 import {
   init,
   updateUserId,
@@ -89,7 +90,8 @@ export {
   AssistantChat,
   Feathery,
   StyledContainer,
-  DocxEditor
+  DocxEditor,
+  connectAccountButtonLabel
 };
 
 export type { OPERATOR_CODE, FormContext, DocxEditorProps };
