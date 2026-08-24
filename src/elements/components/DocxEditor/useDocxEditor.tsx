@@ -491,6 +491,28 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     return out;
   };
+
+  // SyncFusion paints a repeat header on continuation pages from a throwaway
+  // table clone and re-registers the clone's revisions on every paint. With a
+  // pending revision in a repeat-header row that walk throws mid-paint and
+  // every later page stays blank, so registration is off while the painter runs
+  if (typeof renderer.renderHeader === 'function') {
+    const originalRenderHeader = renderer.renderHeader.bind(renderer);
+    renderer.renderHeader = (page: any, widget: any, header: any) => {
+      const editorModule = ed.editorModule ?? ed.editor;
+      if (!editorModule) return originalRenderHeader(page, widget, header);
+      const constructForTable = editorModule.constructRevisionsForTable;
+      const constructFromID = editorModule.constructRevisionFromID;
+      editorModule.constructRevisionsForTable = () => {};
+      editorModule.constructRevisionFromID = () => {};
+      try {
+        return originalRenderHeader(page, widget, header);
+      } finally {
+        editorModule.constructRevisionsForTable = constructForTable;
+        editorModule.constructRevisionFromID = constructFromID;
+      }
+    };
+  }
 }
 
 // Keep every shared-surface review customization behind the same predicate as
