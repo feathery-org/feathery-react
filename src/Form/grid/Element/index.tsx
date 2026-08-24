@@ -8,7 +8,6 @@ import { getFieldValue } from '../../../utils/fieldHelperFunctions';
 import {
   isNum,
   isObjectEmpty,
-  numMatchingItems,
   stringifyWithNull
 } from '../../../utils/primitives';
 import { justRemove } from '../../../utils/array';
@@ -30,12 +29,16 @@ import {
 } from './utils/utils';
 import { getVisibleElements } from '../../../utils/hideAndRepeats';
 import debounce from 'lodash.debounce';
-import { findCountryByID } from '../../../elements/components/data/countries';
 import { isMobile } from '../../../utils/browser';
 import {
   clearNonCountryAddressFields,
+  getChangedAddressServarIds,
   getRelatedAddressValues
 } from './utils/address';
+import {
+  getControllingCountryCode,
+  stateFieldHasNoOptions
+} from '../../../utils/addressState';
 
 const Element = ({ node: el, form }: any) => {
   const { type } = el;
@@ -280,7 +283,10 @@ const Element = ({ node: el, form }: any) => {
       elementProps: elementProps[servar.key],
       autoComplete: formSettings.autocomplete,
       rightToLeft: formSettings.rightToLeft,
-      disabled: el.properties.disabled || readOnly,
+      disabled:
+        el.properties.disabled ||
+        readOnly ||
+        stateFieldHasNoOptions(el, activeStep, fieldValues, index ?? undefined),
       onEnter,
       required
     };
@@ -394,6 +400,18 @@ const Element = ({ node: el, form }: any) => {
             initialFiles={fieldVal}
           />
         );
+      case 'audio_recording':
+        return (
+          <Elements.AudioRecordingField
+            {...fieldProps}
+            onChange={(newFile: Promise<File> | null) => {
+              clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
+              changeValue(newFile, el, index);
+              onChange();
+            }}
+            initialFile={fieldVal}
+          />
+        );
       case 'button_group':
         return (
           <Elements.ButtonGroupField
@@ -438,35 +456,13 @@ const Element = ({ node: el, form }: any) => {
       case 'dropdown':
       case 'gmap_state':
       case 'gmap_country':
-        if (servar.type === 'gmap_state') {
-          const field = activeStep.servar_fields
-            .filter((field: any) => field.servar.type === 'gmap_country')
-            .sort((a: any, b: any) => {
-              // Assume the closest country field to
-              // the state field is controlling it
-              const aMatching = numMatchingItems(el.position, a.position);
-              const bMatching = numMatchingItems(el.position, b.position);
-              if (aMatching < bMatching) return 1;
-              if (aMatching > bMatching) return -1;
-              const aNext = a.position[aMatching];
-              const bNext = b.position[bMatching];
-              const elNext = el.position[aMatching];
-              return Math.abs(elNext - aNext) > Math.abs(elNext - bNext)
-                ? 1
-                : -1;
-            })[0];
-          if (field) {
-            let value = fieldValues[field.servar.key] as string | string[];
-            // Hacky patch for repeating country fields
-            // TODO: fix
-            if (Array.isArray(value)) value = value[0];
-            if (value) {
-              if (field.servar.metadata.store_abbreviation) countryCode = value;
-              else
-                countryCode = findCountryByID(value, 'name')?.countryCode ?? '';
-            } else countryCode = '';
-          }
-        }
+        if (servar.type === 'gmap_state')
+          countryCode = getControllingCountryCode(
+            el,
+            activeStep,
+            fieldValues,
+            index ?? undefined
+          );
         return (
           <Elements.DropdownField
             {...fieldProps}
@@ -478,12 +474,13 @@ const Element = ({ node: el, form }: any) => {
               changeValue(val, el, index);
 
               // Clear related address fields when country changes
+              let clearedServarIds: string[] = [];
               if (
                 servar.type === 'gmap_country' &&
                 servar.metadata.clear_address_on_change &&
                 val !== previousVal
               ) {
-                clearNonCountryAddressFields(
+                clearedServarIds = clearNonCountryAddressFields(
                   el,
                   activeStep,
                   fieldValues,
@@ -492,7 +489,10 @@ const Element = ({ node: el, form }: any) => {
                 );
               }
 
-              onChange({ submitData: autosubmit && val });
+              onChange({
+                submitData: autosubmit && val,
+                relatedServarIds: clearedServarIds
+              });
             }}
             countryCode={countryCode}
             setRef={(ref: any) => {
@@ -682,9 +682,19 @@ const Element = ({ node: el, form }: any) => {
               );
 
               if (!isObjectEmpty(addrValues)) {
+                // Must be read before updateFieldValues overwrites fieldValues
+                const relatedServarIds = getChangedAddressServarIds(
+                  el,
+                  activeStep,
+                  fieldValues,
+                  addrValues,
+                  index
+                ).filter((servarId) => servarId !== servar.id);
+
                 updateFieldValues(addrValues);
                 debouncedOnChange({
                   triggerType: 'addressSelect',
+                  relatedServarIds,
                   integrationData: {
                     id: addressId,
                     addressComponents: address.address_components,

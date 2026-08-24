@@ -4,8 +4,19 @@ import Delta from 'quill-delta';
 import useTextEdit from './useTextEdit';
 import { fieldValues, initInfo, initState } from '../../utils/init';
 import { ACTION_NEXT } from '../../utils/elementActions';
+import { formatNumberValue } from '../fields/TextField/mask';
 
 export const TEXT_VARIABLE_PATTERN = /{{.*?}}/g;
+
+/**
+ * Renders one interpolated value. Number fields that opted into showing their
+ * format carry their units and precision here; everything else stringifies
+ * exactly as it always has.
+ */
+function renderValue(key: string, value: any) {
+  const servar = initState.textVariableFormats[key];
+  return servar ? formatNumberValue(servar, value) : stringifyWithNull(value);
+}
 
 export function replaceTextVariables(text: string, repeat?: any) {
   if (!text) return '';
@@ -19,13 +30,13 @@ export function replaceTextVariables(text: string, repeat?: any) {
         if (pVal.length === 0) {
           return '';
         } else if (isNaN(repeat)) {
-          return pVal.join(', ');
+          return pVal.map((entry) => renderValue(pStr, entry)).join(', ');
         } else if (repeat >= pVal.length) {
-          return stringifyWithNull(pVal[0]);
+          return renderValue(pStr, pVal[0]);
         } else {
-          return stringifyWithNull(pVal[repeat]);
+          return renderValue(pStr, pVal[repeat]);
         }
-      } else return stringifyWithNull(pVal);
+      } else return renderValue(pStr, pVal);
     }
     // A real field the user hasn't filled renders empty, while a name that
     // matches no field stays literal so authors see what they typed.

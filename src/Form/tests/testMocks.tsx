@@ -41,12 +41,15 @@ jest.mock('../../utils/array', () => ({
   },
   justRemove: (arr: any[], idx: number) =>
     arr.filter((_: any, i: number) => i !== idx),
-  toList: (v: any) =>
-    Array.isArray(v)
-      ? v
-      : String(v)
-          .split(',')
-          .map((s) => s.trim())
+  // Mirrors the real toList: arrays pass through, null/undefined become [],
+  // and only coerceCSV callers get a comma split.
+  toList: (v: any, coerceCSV = false) => {
+    if (Array.isArray(v)) return v;
+    if ([null, undefined].includes(v)) return [];
+    if (coerceCSV && typeof v === 'string')
+      return v.split(',').map((s: string) => s.trim());
+    return [v];
+  }
 }));
 
 // Repeat utils
@@ -59,6 +62,7 @@ jest.mock('../../utils/repeat', () => ({
 // Hide and repeats
 jest.mock('../../utils/hideAndRepeats', () => ({
   getHideIfReferences: () => new Set(),
+  getTextVariableReferences: () => new Set(),
   getPositionKey: () => 'k',
   getVisiblePositions: () => ({})
 }));
@@ -339,6 +343,10 @@ jest.mock('../../hooks/usePollFuserData', () => ({
 
 // FeatheryClient mock with a REAL step so activeStep renders and Grid appears
 jest.mock('../../utils/featheryClient', () => {
+  const inviteCollaboratorSpy = jest
+    .fn()
+    .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
+
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
     fetchForm = async () => ({
@@ -380,10 +388,15 @@ jest.mock('../../utils/featheryClient', () => {
     flushCustomFields = jest.fn();
     startAccountConnect = jest.fn();
     getAccountConnectStatus = jest.fn();
+    inviteCollaborator = inviteCollaboratorSpy;
     offlineRequestHandler = { dbHasRequest: async () => false };
   }
 
-  return { __esModule: true, default: MockClient };
+  return {
+    __esModule: true,
+    default: MockClient,
+    _spies: { inviteCollaborator: inviteCollaboratorSpy }
+  };
 });
 
 // ReactPortal passthrough
@@ -496,3 +509,7 @@ export const ValidationMod: any = jest.requireMock('../../utils/validation');
 export const FormHelperMod: any = jest.requireMock(
   '../../utils/formHelperFunctions'
 );
+
+// Exposes the mocked client's collaborator invite call for assertions.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ClientMod: any = jest.requireMock('../../utils/featheryClient');

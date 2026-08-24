@@ -772,6 +772,45 @@ describe('FeatheryClient - using api helpers', () => {
       );
     });
 
+    it('surfaces the backend message when the error body is JSON', async () => {
+      // Arrange
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 400,
+        text: jest.fn().mockResolvedValue(
+          JSON.stringify({
+            message: 'At least one collaborator email or user group is required'
+          })
+        )
+      });
+
+      // Act & Assert: the body arrives as text, so without parsing the user
+      // would be shown the raw JSON inline on the form
+      await expect(
+        featheryClient.inviteCollaborator(
+          ['group1@example.com'],
+          'template_123'
+        )
+      ).rejects.toThrow(
+        'At least one collaborator email or user group is required'
+      );
+    });
+
+    it('falls back to the raw body when the error is not JSON', async () => {
+      // Arrange
+      (global.fetch as jest.Mock).mockResolvedValue({
+        status: 400,
+        text: jest.fn().mockResolvedValue('Invalid email')
+      });
+
+      // Act & Assert
+      await expect(
+        featheryClient.inviteCollaborator(
+          ['group1@example.com'],
+          'template_123'
+        )
+      ).rejects.toThrow('Invalid email');
+    });
+
     it('handles undefined collaboratorId', async () => {
       // Arrange
       const usersGroups = ['group1@example.com'];

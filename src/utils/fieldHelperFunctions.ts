@@ -181,6 +181,7 @@ export function getDefaultFieldValue(field: any) {
     case 'select':
     case 'signature':
     case 'file_upload':
+    case 'audio_recording':
       return null;
     case 'dropdown_multi':
     case 'button_group':

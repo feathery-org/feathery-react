@@ -400,7 +400,6 @@ export function mapFormSettingsResponse(res: any) {
     showDocumentProgress: res.show_document_progress ?? true,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: res.ai_assistant_settings?.enabled,
-    assistantVoiceEnabled: res.ai_assistant_settings?.voice_enabled ?? false,
     assistantColor: res.ai_assistant_settings?.color
       ? `#${res.ai_assistant_settings.color}`
       : '#6b7280',

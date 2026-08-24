@@ -17,6 +17,13 @@ describe('canRunAction', () => {
     metadata: {}
   });
 
+  const changeRule = (elements: string[]) => ({
+    trigger_event: 'change',
+    steps: [],
+    elements,
+    metadata: {}
+  });
+
   describe('action rules', () => {
     const props = (triggerId: string, beforeClickActions = true) => ({
       trigger: { id: triggerId, type: 'tab' },
@@ -75,6 +82,63 @@ describe('canRunAction', () => {
       expect(
         canRunAction(rule, STEP_ID, props('tab-el-1', false), 'link-abc')
       ).toBe(true);
+    });
+  });
+
+  describe('change rules', () => {
+    const props = (servarId: string, relatedServarIds?: string[]) => ({
+      trigger: {
+        id: 'address_line_1',
+        _servarId: servarId,
+        _relatedServarIds: relatedServarIds,
+        type: 'addressSelect'
+      }
+    });
+
+    it('matches on the servar the user interacted with', () => {
+      expect(
+        canRunAction(
+          changeRule(['servar-line-1']),
+          STEP_ID,
+          props('servar-line-1'),
+          undefined
+        )
+      ).toBe(true);
+    });
+
+    // An address autocomplete writes country/state/city at the same time as the
+    // address line, so a rule bound to any of those must still run
+    it('matches on a related servar changed by the same interaction', () => {
+      expect(
+        canRunAction(
+          changeRule(['servar-country']),
+          STEP_ID,
+          props('servar-line-1', ['servar-city', 'servar-country']),
+          undefined
+        )
+      ).toBe(true);
+    });
+
+    it('does not match a servar that did not change', () => {
+      expect(
+        canRunAction(
+          changeRule(['servar-state']),
+          STEP_ID,
+          props('servar-line-1', ['servar-city', 'servar-country']),
+          undefined
+        )
+      ).toBe(false);
+    });
+
+    it('handles a missing related servar list', () => {
+      expect(
+        canRunAction(
+          changeRule(['servar-country']),
+          STEP_ID,
+          props('servar-line-1'),
+          undefined
+        )
+      ).toBe(false);
     });
   });
 

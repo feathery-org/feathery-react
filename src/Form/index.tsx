@@ -63,6 +63,7 @@ import {
 import {
   getHideIfReferences,
   getPositionKey,
+  getTextVariableReferences,
   getVisiblePositions
 } from '../utils/hideAndRepeats';
 import {
@@ -445,7 +446,6 @@ function Form({
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: false,
-    assistantVoiceEnabled: false,
     assistantColor: '#6b7280',
     assistantWorkflowActions: [],
     assistantStepSettings: {} as AssistantStepSettings
@@ -532,7 +532,9 @@ function Form({
       const found = getServarAndStepByFieldKey(fieldKey);
       if (!found) continue;
       const { servar, step } = found;
-      if (servar.type !== 'file_upload' && servar.type !== 'signature')
+      if (
+        !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
+      )
         continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
       fileEntries.push({
@@ -553,7 +555,9 @@ function Form({
         if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
-        if (servar.type !== 'file_upload' && servar.type !== 'signature')
+        if (
+          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
+        )
           return pending;
         if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
         pending.push(fieldKey);
@@ -908,6 +912,15 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Same idea for fields interpolated as {{key}} into text, buttons, tooltips,
+  // etc. Without this, typing only rerenders on the empty -> non-empty
+  // transition, so the interpolated value appears to lag by a whole value.
+  const textVariableFieldReferences = useMemo(() => {
+    if (activeStep)
+      return getTextVariableReferences(getAllElements(activeStep));
+    return new Set<string>();
+  }, [activeStep?.id]);
+
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (!shouldScrollToTop || autoscroll === 'none') return;
@@ -1001,7 +1014,20 @@ function Form({
   // Need to rate limit re-renders here for performance reasons.
   const debouncedRerender = useCallback(
     debounce(() => setRender((render) => ({ ...render })), 500),
-    [setRender, render]
+    [setRender]
+  );
+
+  // Text variables render into visible copy, so this repaint has to feel
+  // immediate rather than share the 500ms hideIf budget. A hideIf change can
+  // add/remove elements and recompute visible positions; interpolation only
+  // re-runs over an already-mounted tree. Leading edge paints the first
+  // keystroke, maxWait bounds a fast typist.
+  const debouncedTextVariableRerender = useCallback(
+    debounce(() => setRender((render) => ({ ...render })), 100, {
+      leading: true,
+      maxWait: 100
+    }),
+    [setRender]
   );
 
   const getAssistantTargets = useCallback(() => {
@@ -1030,6 +1056,11 @@ function Form({
       debouncedRerender.cancel();
     };
   }, [debouncedRerender]);
+  useEffect(() => {
+    return () => {
+      debouncedTextVariableRerender.cancel();
+    };
+  }, [debouncedTextVariableRerender]);
 
   // Central place to update field values, with smart rerenders and error management.
   // Normalizes null values in arrays to empty strings (prevents null from appearing in repeated fields).
@@ -1046,6 +1077,10 @@ function Form({
     const empty = entries.some(([key, val]) => !val || !fieldValues[key]);
     const hideIfDependenciesChanged = entries.some(
       ([key, val]) => fieldValues[key] !== val && hideIfFieldReferences.has(key)
+    );
+    const textVariableDependenciesChanged = entries.some(
+      ([key, val]) =>
+        fieldValues[key] !== val && textVariableFieldReferences.has(key)
     );
 
     const fields = internalState[_internalId]?.fields;
@@ -1072,7 +1107,12 @@ function Form({
     // its dependencies have changed. The field that changed needs to immediately
     // rerender if specified, but hideIf rerenders can be debounced
     if (rerender || empty) setRender((render) => ({ ...render }));
-    else if (hideIfDependenciesChanged) debouncedRerender();
+    else {
+      // Not exclusive: a key can drive both a hideIf rule and a text variable,
+      // and the text variable needs the faster repaint either way.
+      if (hideIfDependenciesChanged) debouncedRerender();
+      if (textVariableDependenciesChanged) debouncedTextVariableRerender();
+    }
 
     // Only validate on each field change if auto validate is enabled due to prev submit attempt
     if (autoValidate && triggerErrors) debouncedValidate(setInlineErrors);
@@ -1514,7 +1554,13 @@ function Form({
           client.getDocusignEnvelope(params),
         updateDocusignEnvelope: (params: UpdateDocusignEnvelopeParams) =>
           client.updateDocusignEnvelope(params),
-        getDocusignBrands: () => client.getDocusignBrands(),
+        getDocusignBrands: async () => {
+          await Promise.all([
+            client.flushCustomFields(),
+            defaultClient.flushCustomFields()
+          ]);
+          return client.getDocusignBrands();
+        },
         fillQuikForms: async ({
           fillType,
           docusignConnectionId,
@@ -2929,12 +2975,19 @@ function Form({
       } else if (type === ACTION_INVITE_COLLABORATOR) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
         // Invited collaborators is a mixed list of emails and/or user group names (comma sep or array)
-        const val = fieldValues[action.email_field_key];
-        if (!val) {
+        // An unfilled repeat row leaves a blank entry behind (`''`, or `null` for
+        // select/signature fields), and a trailing comma does the same for the CSV
+        // form. Those aren't invitees, so drop them before the required check -
+        // otherwise a filled field reads as non-empty and we send the blank on.
+        const invitees = toList(fieldValues[action.email_field_key], true)
+          .map((invitee: any) =>
+            typeof invitee === 'string' ? invitee.trim() : invitee
+          )
+          .filter(Boolean);
+        if (!invitees.length) {
           setElementError('Collaborators required');
           break;
         }
-        const invitees = toList(val, true);
         // BE validates emails and user groups
         try {
           const res = await client.inviteCollaborator(
@@ -3410,6 +3463,9 @@ function Form({
       triggerType = 'field',
       submitData = false,
       integrationData = {},
+      // Other servars changed by the same interaction, e.g. the city/state/
+      // country an address autocomplete fills in alongside the address line
+      relatedServarIds = [],
       // Multi-file upload is not a repeated row but a repeated field
       valueRepeatIndex = null
     } = {}) => {
@@ -3419,6 +3475,7 @@ function Form({
             trigger: {
               id: fieldKey,
               _servarId: servarId,
+              _relatedServarIds: relatedServarIds,
               repeatIndex: elementRepeatIndex,
               type: triggerType
             },
@@ -3673,7 +3730,6 @@ function Form({
               stackAbove(fileUploadToastHeight)
             }
             color={formSettings.assistantColor}
-            voiceEnabled={formSettings.assistantVoiceEnabled}
             workflowActions={formSettings.assistantWorkflowActions}
             stepSettings={formSettings.assistantStepSettings}
             activeStepId={activeStep?.id}

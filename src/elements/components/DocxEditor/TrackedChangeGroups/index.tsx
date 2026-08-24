@@ -18,7 +18,7 @@ import BookmarkTab from './BookmarkTab';
 import RailHead from './RailHead';
 import GroupCard from './GroupCard';
 import { ChipView, GroupView } from './types';
-import { ACCENT_LINE, INK, LINE, PANEL } from './styles';
+import { ACCENT_LINE, INK, PANEL } from './styles';
 
 // Review rail for pending tracked changes: one card per assistant accept
 // group (plus one per human author), expanding to −/+ diff "chips" with
@@ -35,6 +35,8 @@ interface Props {
    *  stays mounted while hidden so the listeners keep running. */
   hidden?: boolean;
   onHiddenChange?: (hidden: boolean) => void;
+  /** Reports the pending tracked-change count whenever it changes. */
+  onPendingCountChange?: (count: number) => void;
 }
 
 // contentChange fires once per keystroke; one trailing refresh after typing
@@ -116,7 +118,12 @@ const itemRevisions = (item: RevisionGroupItem) => [
   ...(item.partnerRevisions ?? [])
 ];
 
-function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
+function TrackedChangeGroups({
+  editor,
+  hidden,
+  onHiddenChange,
+  onPendingCountChange
+}: Props) {
   // Only live (pending) revisions render; a resolved edit disappears from
   // the rail and reappears if the resolution is undone.
   const [groups, setGroups] = useState<GroupView[]>([]);
@@ -424,6 +431,14 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
 
   const allChips = groups.flatMap((group) => group.chips);
 
+  // Report the pending count to the host (drives the toolbar's Changes badge).
+  // Via a ref so an inline callback prop cannot re-fire the effect.
+  const onPendingCountChangeRef = useRef(onPendingCountChange);
+  onPendingCountChangeRef.current = onPendingCountChange;
+  useEffect(() => {
+    onPendingCountChangeRef.current?.(allChips.length);
+  }, [allChips.length]);
+
   // O(1) chip lookups: a group-title click puts a whole group's revisions in
   // here, and every chip of every card checks membership per render.
   const activeRevisionSet = useMemo(
@@ -513,7 +528,6 @@ function TrackedChangeGroups({ editor, hidden, onHiddenChange }: Props) {
             right: 0,
             bottom: 0,
             left: 0,
-            borderLeft: `1px solid ${LINE}`,
             background: PANEL,
             display: 'flex',
             flexDirection: 'column',
