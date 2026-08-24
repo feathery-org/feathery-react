@@ -1,5 +1,6 @@
 import {
   validateElement,
+  validateElements,
   ResolvedCustomValidation,
   getStandardFieldError,
   loadPhoneValidator,
@@ -80,6 +81,66 @@ describe('validation', () => {
 
       // Assert
       expect(actual).toEqual('');
+    });
+  });
+
+  describe('validateElements matrix inline storage', () => {
+    const matrixServar = (repeated: boolean) => ({
+      key: 'matrix',
+      type: 'matrix',
+      required: true,
+      repeated,
+      metadata: { questions: [{ id: 'q0' }, { id: 'q1' }] }
+    });
+    const run = (step: any, visiblePositions: any) =>
+      validateElements({
+        step,
+        visiblePositions,
+        triggerErrors: true,
+        errorType: 'inline',
+        formRef: { current: null } as any,
+        setInlineErrors: jest.fn()
+      });
+
+    it('stores a non-repeat matrix error under the real servar key (not the question-suffixed key)', () => {
+      Object.assign(fieldValues, { matrix: {} });
+      const field = {
+        servar: matrixServar(false),
+        position: [0],
+        validations: []
+      };
+      const step = { servar_fields: [field], buttons: [], subgrids: [] };
+
+      const { inlineErrors } = run(step, { '0': [true] }) as any;
+
+      // Renderer reads inlineErrors[servar.key], so it must live under 'matrix'.
+      expect(inlineErrors.matrix?.message).toBe('This is a required field');
+      // Must NOT be stored under the HTML5 question-suffixed key.
+      expect(inlineErrors['matrix-0']).toBeUndefined();
+    });
+
+    it('stores repeated matrix errors per row under the real servar key', () => {
+      Object.assign(fieldValues, { matrix: [{}, {}] });
+      const field = {
+        servar: matrixServar(true),
+        position: [0, 1],
+        validations: []
+      };
+      const step = {
+        servar_fields: [field],
+        buttons: [],
+        subgrids: [{ position: [0], repeated: true, id: 'sg' }]
+      };
+
+      const { inlineErrors } = run(step, { '0,1': [true, true] }) as any;
+
+      expect(inlineErrors.matrix?.byIndex?.[0]?.message).toBe(
+        'This is a required field'
+      );
+      expect(inlineErrors.matrix?.byIndex?.[1]?.message).toBe(
+        'This is a required field'
+      );
+      expect(inlineErrors['matrix-0']).toBeUndefined();
     });
   });
 

@@ -89,8 +89,11 @@ function validateElements({
 
     if (message && !invalid) invalid = true;
 
-    if (type === 'matrix' && message) {
-      // Get question index where error is
+    if (type === 'matrix' && message && errorType === 'html5') {
+      // The `${key}-${questionIndex}` suffix targets the specific unanswered
+      // matrix question's DOM control, so it is only for HTML5 targeting.
+      // Inline storage must keep the real servar key, otherwise the renderer
+      // (which reads inlineErrors[servar.key]) never finds the message.
       let fieldValue: any = fieldValues[key];
       // handle repeated matrix fields
       if (repeat != null && Array.isArray(fieldValue))

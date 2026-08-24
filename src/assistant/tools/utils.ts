@@ -1,6 +1,5 @@
 import internalState from '../../utils/internalState';
 import { getPositionKey } from '../../utils/hideAndRepeats';
-import { firstInlineErrorMessage } from '../../utils/inlineErrors';
 
 export const getLiveStepKey = (state: any): string | undefined =>
   state.latestStepName ?? state.currentStep?.key;
@@ -9,8 +8,17 @@ export const snapshotInlineErrors = (state: any): Record<string, string> => {
   const out: Record<string, string> = {};
   const inlineErrors = state?.inlineErrors ?? {};
   for (const key of Object.keys(inlineErrors)) {
-    const message = firstInlineErrorMessage(inlineErrors[key]);
-    if (typeof message === 'string' && message.length > 0) out[key] = message;
+    const entry = inlineErrors[key] ?? {};
+    // Preserve per-row identity so a diff detects a NEW error on a different
+    // repeat row (e.g. row 0 already has an error and row 1 gains one). A
+    // field-wide error keeps the plain key; per-row errors expose their row as
+    // `${key}[${index}]`.
+    if (typeof entry.message === 'string' && entry.message.length > 0)
+      out[key] = entry.message;
+    for (const [idx, data] of Object.entries<any>(entry.byIndex ?? {})) {
+      if (typeof data?.message === 'string' && data.message.length > 0)
+        out[`${key}[${idx}]`] = data.message;
+    }
   }
   return out;
 };

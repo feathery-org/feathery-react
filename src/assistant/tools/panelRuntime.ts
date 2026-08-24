@@ -377,7 +377,15 @@ export const getPanelRuntimeSnapshot = (
         ? resolveText(props.tooltipText)
         : undefined;
     // A field's error may be field-wide or on any repeat row (byIndex).
-    const error = firstInlineErrorMessage(inlineErrors[field.servar.key]);
+    const errorEntry = inlineErrors[field.servar.key];
+    const error = firstInlineErrorMessage(errorEntry);
+    // Expose which repeat row(s) own errors so per-row state isn't collapsed.
+    const errorRows: Record<string, string> = {};
+    for (const [idx, data] of Object.entries<any>(errorEntry?.byIndex ?? {})) {
+      if (typeof data?.message === 'string' && data.message.length > 0)
+        errorRows[idx] = data.message;
+    }
+    const hasErrorRows = Object.keys(errorRows).length > 0;
     const servar = field.servar ?? {};
     const meta = servar.metadata ?? {};
     const repeated = !!servar.repeated;
@@ -470,6 +478,7 @@ export const getPanelRuntimeSnapshot = (
       ...(placeholder ? { placeholder } : {}),
       ...(tooltip ? { tooltip } : {}),
       ...(error ? { error } : {}),
+      ...(hasErrorRows ? { errorRows } : {}),
       ...(options ? { options } : {}),
       ...(rowOptions ? { rowOptions } : {}),
       ...(questions ? { questions } : {}),
