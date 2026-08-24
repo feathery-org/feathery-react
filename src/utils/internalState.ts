@@ -4,6 +4,7 @@ import {
   FieldStyles
 } from './fieldHelperFunctions';
 import Field from './entities/Field';
+import { InlineErrors } from './inlineErrors';
 import SimplifiedProduct from '../integrations/stripe/SimplifiedProduct';
 import Cart from '../integrations/stripe/Cart';
 import Collaborator from './entities/Collaborator';
@@ -131,10 +132,8 @@ export interface FormInternalState {
     props1?: Record<string, unknown>
   ) => (props2?: Record<string, unknown>) => Promise<boolean>;
   navigate: any;
-  inlineErrors: Record<string, { message: string; index: number }>;
-  setInlineErrors: React.Dispatch<
-    React.SetStateAction<Record<string, { message: string; index: number }>>
-  >;
+  inlineErrors: InlineErrors;
+  setInlineErrors: React.Dispatch<React.SetStateAction<InlineErrors>>;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   steps: any;
   setStepKey: (key: string) => void;

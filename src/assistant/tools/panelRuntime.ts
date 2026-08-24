@@ -11,6 +11,7 @@ import {
 } from '../../utils/repeat';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { getDefaultFieldValue } from '../../utils/fieldHelperFunctions';
+import { firstInlineErrorMessage } from '../../utils/inlineErrors';
 import { isButtonDisabled } from '../../utils/button';
 import { ACTION_BACK, ACTION_NEXT } from '../../utils/elementActions';
 import { getPrevStepKey, nextStepKey } from '../../utils/stepHelperFunctions';
@@ -375,22 +376,8 @@ export const getPanelRuntimeSnapshot = (
       typeof props.tooltipText === 'string' && props.tooltipText.trim()
         ? resolveText(props.tooltipText)
         : undefined;
-    // Errors on repeated fields are keyed by `${servarKey}-${repeatIndex}`, so
-    // fall back to scanning indexed keys when there's no plain-key error.
-    let error = inlineErrors[field.servar.key]?.message;
-    if (!error) {
-      const prefix = `${field.servar.key}-`;
-      for (const k of Object.keys(inlineErrors)) {
-        if (
-          k.startsWith(prefix) &&
-          /^\d+$/.test(k.slice(prefix.length)) &&
-          inlineErrors[k]?.message
-        ) {
-          error = inlineErrors[k].message;
-          break;
-        }
-      }
-    }
+    // A field's error may be field-wide or on any repeat row (byIndex).
+    const error = firstInlineErrorMessage(inlineErrors[field.servar.key]);
     const servar = field.servar ?? {};
     const meta = servar.metadata ?? {};
     const repeated = !!servar.repeated;

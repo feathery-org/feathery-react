@@ -1,6 +1,7 @@
 import { fieldValues } from '../../../../utils/init';
 import { getFieldValue } from '../../../../utils/fieldHelperFunctions';
 import { justInsert } from '../../../../utils/array';
+import { resolveInlineErrorMessage } from '../../../../utils/inlineErrors';
 
 /**
  * Return inline error object
@@ -9,16 +10,9 @@ import { justInsert } from '../../../../utils/array';
  */
 export function getInlineError(field: any, inlineErrors: any) {
   const baseKey = field.servar ? field.servar.key : field.id;
-  // Repeated-field errors are stored under `${key}-${repeatIndex}`; fall back to
-  // the plain key for non-repeat errors (and field-wide errors set via the
-  // setFieldErrors API without an index).
-  const key = Number.isInteger(field.repeat)
-    ? `${baseKey}-${field.repeat}`
-    : baseKey;
-  const data = inlineErrors[key] ?? inlineErrors[baseKey];
-  if (!data) return;
-  if (Number.isInteger(data.index) && data.index !== field.repeat) return;
-  return data.message;
+  // Errors are keyed only by the real field key; per-row errors live in the
+  // entry's `byIndex` map, with a field-wide `message` as fallback.
+  return resolveInlineErrorMessage(inlineErrors[baseKey], field.repeat);
 }
 
 export function textFieldShouldSubmit(servar: any, value: any) {

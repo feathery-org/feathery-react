@@ -79,6 +79,7 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
+import { InlineErrors } from '../utils/inlineErrors';
 import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -453,9 +454,7 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
-  const [inlineErrors, setInlineErrors] = useState<
-    Record<string, { message: string; index: number }>
-  >({});
+  const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
@@ -960,28 +959,23 @@ function Form({
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
 
-    // Inline errors are keyed by `${servarKey}-${repeatIndex}`. Drop the removed
-    // row's error and shift higher-indexed rows down so each remaining row keeps
-    // its own error instead of inheriting a neighbor's.
+    // Inline errors for a repeated field live in its `byIndex` map. Drop the
+    // removed row's entry and shift higher-indexed rows down so each remaining
+    // row keeps its own error instead of inheriting a neighbor's. Operating on
+    // `byIndex` (not string keys) means a literal field like `foo-0` is never
+    // mistaken for a row of `foo`.
     setInlineErrors((prev) => {
-      const next: Record<string, { message: string; index: number }> = {
-        ...prev
-      };
+      const next: InlineErrors = { ...prev };
       Object.keys(removeServars).forEach((key) => {
-        const prefix = `${key}-`;
-        const entries: Array<{ idx: number; data: any }> = [];
-        Object.keys(next).forEach((k) => {
-          if (!k.startsWith(prefix)) return;
-          const suffix = k.slice(prefix.length);
-          if (!/^\d+$/.test(suffix)) return;
-          entries.push({ idx: Number(suffix), data: next[k] });
-          delete next[k];
-        });
-        entries.forEach(({ idx, data }) => {
+        const entry = next[key];
+        if (!entry?.byIndex) return;
+        const shifted: Record<number, { message: string }> = {};
+        Object.entries(entry.byIndex).forEach(([idxStr, data]) => {
+          const idx = Number(idxStr);
           if (idx === curIndex) return;
-          const newIdx = idx > curIndex ? idx - 1 : idx;
-          next[`${key}-${newIdx}`] = { ...data, index: newIdx };
+          shifted[idx > curIndex ? idx - 1 : idx] = data;
         });
+        next[key] = { ...entry, byIndex: shifted };
       });
       return next;
     });
