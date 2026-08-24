@@ -45,3 +45,15 @@ export const connectionFieldKey = (provider: string) =>
  *  showing as the button's label. */
 export const hasEmailIdentity = (provider: string) =>
   !(provider in PROVIDER_CONNECTION_FIELD);
+
+/** The label a Feathery-managed Connect Account button shows. Reports status in
+ *  both directions: which account is attached, or that none is yet. A provider
+ *  with no account identity (Schwab) has only its name to report. */
+export const connectAccountButtonLabel = (
+  provider: string,
+  connectionValue?: string
+) => {
+  const label = PROVIDER_LABELS[provider] ?? provider;
+  if (!connectionValue) return `Connect your ${label} account`;
+  return hasEmailIdentity(provider) ? connectionValue : `${label} connected`;
+};

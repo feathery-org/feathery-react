@@ -77,13 +77,15 @@ describe('connect_account button label management', () => {
     expect(screen.getByTestId('btn-text').textContent).toBe("Builder's label");
   });
 
-  it("shows the builder's text when managed but no connection exists yet", () => {
+  it('prompts to connect when managed and no connection exists yet', () => {
     render(<Element node={buildButtonNode(undefined)} form={baseForm} />);
 
-    expect(screen.getByTestId('btn-text').textContent).toBe("Builder's label");
+    expect(screen.getByTestId('btn-text').textContent).toBe(
+      'Connect your Box account'
+    );
   });
 
-  it("keeps the builder's text for a provider with no account identity", () => {
+  it('reports the provider name for a connection with no account identity', () => {
     // Schwab's connection value is a flag, not something to show on a button.
     (fieldValues as any)[SCHWAB_KEY] = 'true';
     render(
@@ -93,6 +95,21 @@ describe('connect_account button label management', () => {
       />
     );
 
-    expect(screen.getByTestId('btn-text').textContent).toBe("Builder's label");
+    expect(screen.getByTestId('btn-text').textContent).toBe(
+      'Charles Schwab connected'
+    );
+  });
+
+  it('prompts to connect an identity-less provider before it is connected', () => {
+    render(
+      <Element
+        node={buildButtonNode(undefined, 'charles-schwab')}
+        form={baseForm}
+      />
+    );
+
+    expect(screen.getByTestId('btn-text').textContent).toBe(
+      'Connect your Charles Schwab account'
+    );
   });
 });
