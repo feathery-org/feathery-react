@@ -915,7 +915,7 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
     expect(statusOf('noResponse')).toEqual('complete');
   });
 
-  it('leaves the row pending when the request is queued for replay', async () => {
+  it('marks the row queued when the request is saved for replay', async () => {
     stubHandler(async (onQueued) => {
       onQueued();
       return undefined;
@@ -925,7 +925,8 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
     settle();
 
     expect(onQueuedArg).toEqual(expect.any(Function));
-    expect(statusOf('queued')).toEqual('uploading');
+    // Pending, but waiting on connectivity rather than mid-upload
+    expect(statusOf('queued')).toEqual('queued');
   });
 
   it('fails the row when the request throws without being queued', async () => {
@@ -941,7 +942,7 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
     expect(statusOf('threw')).toEqual('error');
   });
 
-  it('leaves the row pending when a throwing request was queued for replay', async () => {
+  it('leaves a throwing-but-queued row waiting rather than failed', async () => {
     stubHandler(async (onQueued) => {
       onQueued();
       throw new TypeError('offline');
@@ -952,6 +953,7 @@ describe('FeatheryClient - _submitFileData upload progress', () => {
     ).rejects.toThrow('offline');
     settle();
 
-    expect(statusOf('queuedThrew')).toEqual('uploading');
+    // The replay engine still owns this row, so it must not read as an error
+    expect(statusOf('queuedThrew')).toEqual('queued');
   });
 });

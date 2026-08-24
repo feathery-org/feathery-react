@@ -3,16 +3,24 @@
 // Feeds the consolidated FileUploadToast so exactly one progress box renders
 // per page regardless of how many forms are mounted.
 
-export type FileUploadStatus = 'uploading' | 'complete' | 'error';
+// 'queued' means the request is saved for replay and is waiting on
+// connectivity, which is pending rather than resolved.
+export type FileUploadStatus = 'uploading' | 'queued' | 'complete' | 'error';
 
 export interface FileUploadEntry {
   id: string;
   formKey: string;
   fieldKey: string;
   fileNames: string[];
+  // Number of files in the request. Not always equal to fileNames.length —
+  // a signature blob has no usable name, so it is counted but not named.
+  fileCount: number;
   status: FileUploadStatus;
   startedAt: number;
 }
+
+export const isPendingUpload = (status: FileUploadStatus) =>
+  status === 'uploading' || status === 'queued';
 
 // A fast upload would otherwise flip to a checkmark within ~80ms, which reads
 // as a glitch rather than as confirmation that the file was sent. Hold the
@@ -22,6 +30,7 @@ export const MIN_UPLOADING_MS = 900;
 const enabledForms = new Set<string>();
 const uploads = new Map<string, FileUploadEntry>();
 const listeners = new Set<() => void>();
+const heightListeners = new Set<() => void>();
 // Insertion-ordered form instance ids; the first is the leader that renders
 // the consolidated toast.
 const toastHosts: string[] = [];
@@ -56,7 +65,8 @@ export const isUploadIndicatorEnabled = (formKey: string) =>
 export const startUpload = (
   formKey: string,
   fieldKey: string,
-  fileNames: string[] = []
+  fileNames: string[] = [],
+  fileCount = fileNames.length
 ) => {
   if (!enabledForms.has(formKey)) return;
   const id = entryId(formKey, fieldKey);
@@ -68,6 +78,7 @@ export const startUpload = (
     fieldKey,
     // A replayed request may not know its file names; keep the old ones
     fileNames: fileNames.length ? fileNames : existing?.fileNames ?? [],
+    fileCount: fileCount || existing?.fileCount || 0,
     status: 'uploading',
     startedAt: Date.now()
   });
@@ -79,6 +90,15 @@ export const completeUpload = (formKey: string, fieldKey: string) =>
 
 export const failUpload = (formKey: string, fieldKey: string) =>
   finishUpload(formKey, fieldKey, 'error');
+
+// The request was saved for replay. Applied immediately rather than through
+// finishUpload, since the minimum spinner dwell exists to make a *resolution*
+// perceptible and this row has not resolved.
+export const queueUpload = (formKey: string, fieldKey: string) => {
+  const id = entryId(formKey, fieldKey);
+  cancelPendingFinish(id);
+  applyStatus(id, 'queued');
+};
 
 const finishUpload = (
   formKey: string,
@@ -118,10 +138,27 @@ const cancelPendingFinish = (id: string) => {
   pendingFinishes.delete(id);
 };
 
-export const clearFinishedUploads = () => {
+// Drops successful rows once they have been shown long enough. Errors are
+// deliberately left behind: a failure that disappears on its own is the exact
+// case this box exists to surface. They clear when a retry supersedes them
+// (startUpload overwrites the row) or when the user dismisses the box.
+export const clearCompletedUploads = () => {
   let changed = false;
   uploads.forEach((entry, id) => {
-    if (entry.status !== 'uploading') {
+    if (entry.status === 'complete') {
+      uploads.delete(id);
+      changed = true;
+    }
+  });
+  if (changed) notify();
+};
+
+// User dismissal: drop every resolved row, errors included. Rows still in
+// flight stay, since hiding them would lose the only report of their outcome.
+export const dismissResolvedUploads = () => {
+  let changed = false;
+  uploads.forEach((entry, id) => {
+    if (!isPendingUpload(entry.status)) {
       uploads.delete(id);
       changed = true;
     }
@@ -132,7 +169,9 @@ export const clearFinishedUploads = () => {
 export const setUploadToastHeight = (height: number) => {
   if (height === toastHeight) return;
   toastHeight = height;
-  notify();
+  // Height-only listeners, so a resize does not rebuild the uploads snapshot
+  // and re-render every subscriber that only cares about the rows.
+  heightListeners.forEach((listener) => listener());
 };
 
 export const getUploadToastHeight = () => toastHeight;
@@ -141,6 +180,13 @@ export const subscribeToUploads = (listener: () => void) => {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+  };
+};
+
+export const subscribeToUploadToastHeight = (listener: () => void) => {
+  heightListeners.add(listener);
+  return () => {
+    heightListeners.delete(listener);
   };
 };
 
@@ -165,6 +211,7 @@ export const _resetFileUploadProgress = () => {
   enabledForms.clear();
   uploads.clear();
   listeners.clear();
+  heightListeners.clear();
   toastHosts.length = 0;
   pendingFinishes.forEach((timeout) => clearTimeout(timeout));
   pendingFinishes.clear();

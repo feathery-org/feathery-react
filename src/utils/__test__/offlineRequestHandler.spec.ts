@@ -16,6 +16,12 @@ import {
   markFileUploadRetrySuccess
 } from '../offlineRequestHandler';
 import { fileRetryStatus as mockFileRetryStatus } from '../init';
+import {
+  _resetFileUploadProgress,
+  getUploadsSnapshot,
+  setUploadIndicatorEnabled,
+  startUpload
+} from '../fileUploadProgress';
 
 // Mock init module
 jest.mock('../init', () => {
@@ -771,6 +777,68 @@ describe('OfflineRequestHandler - Integration Tests', () => {
       expect(mockFileRetryStatus.FileUpload1).toBeUndefined();
       markFileUploadRetrySuccess('FileUpload1');
       expect(mockFileRetryStatus.FileUpload1).toBe(true);
+    });
+  });
+
+  describe('Upload progress reporting while queued', () => {
+    const FILE_URL =
+      'https://api.feathery.io/api/panel/step/submit/file/user-1/';
+
+    beforeEach(() => {
+      _resetFileUploadProgress();
+      setUploadIndicatorEnabled('test-form', true);
+    });
+
+    afterEach(() => _resetFileUploadProgress());
+
+    it('fires onQueued when a network error queues the request', async () => {
+      startUpload('test-form', 'FileUpload1', ['resume.pdf']);
+      expect(getUploadsSnapshot()[0].status).toBe('uploading');
+
+      // A TypeError is the network-failure path that queues for replay
+      const onQueued = jest.fn();
+      await expect(
+        handler.runOrSaveRequest(
+          jest.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+          FILE_URL,
+          { method: 'POST', headers: {}, body: '{}' },
+          'submit',
+          undefined,
+          { fieldKey: 'FileUpload1' },
+          onQueued
+        )
+      ).rejects.toThrow('Failed to fetch');
+
+      // The row is not this handler's to resolve any more — it belongs to the
+      // replay engine, which is what onQueued tells the caller
+      expect(onQueued).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires onQueued when the request is saved because we are offline', async () => {
+      startUpload('test-form', 'FileUpload1', ['resume.pdf']);
+      const originalOnLine = global.navigator.onLine;
+      Object.defineProperty(global.navigator, 'onLine', {
+        value: false,
+        configurable: true
+      });
+
+      const onQueued = jest.fn();
+      await handler.runOrSaveRequest(
+        jest.fn(),
+        FILE_URL,
+        { method: 'POST', headers: {}, body: '{}' },
+        'submit',
+        undefined,
+        { fieldKey: 'FileUpload1' },
+        onQueued
+      );
+
+      expect(onQueued).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(global.navigator, 'onLine', {
+        value: originalOnLine,
+        configurable: true
+      });
     });
   });
 

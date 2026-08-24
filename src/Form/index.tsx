@@ -249,7 +249,7 @@ import FileUploadToast from './components/FileUploadToast';
 import {
   getUploadToastHeight,
   setUploadIndicatorEnabled,
-  subscribeToUploads
+  subscribeToUploadToastHeight
 } from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
@@ -798,7 +798,7 @@ function Form({
   // The file upload box is page-level and may be rendered by another form
   // instance, so its height comes from the shared tracker rather than a ref
   const fileUploadToastHeight = useSyncExternalStore(
-    subscribeToUploads,
+    subscribeToUploadToastHeight,
     getUploadToastHeight,
     getUploadToastHeight
   );
@@ -3716,6 +3716,7 @@ function Form({
         />
         <FileUploadToast
           instanceId={_internalId}
+          enabled={formSettings.showFileUploadProgress}
           bottom={bottomRightBase + stackAbove(actionToastHeight)}
         />
 

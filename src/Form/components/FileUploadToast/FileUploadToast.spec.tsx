@@ -4,8 +4,10 @@ import FileUploadToast from './index';
 import {
   _resetFileUploadProgress,
   completeUpload,
+  failUpload,
   getUploadToastHeight,
   MIN_UPLOADING_MS,
+  queueUpload,
   setUploadIndicatorEnabled,
   startUpload
 } from '../../../utils/fileUploadProgress';
@@ -60,7 +62,7 @@ describe('FileUploadToast', () => {
   });
 
   it('renders nothing when no uploads are tracked', () => {
-    render(<FileUploadToast instanceId='form-1' bottom={20} />);
+    render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
     expect(screen.queryByText('Uploading File')).toBeNull();
   });
 
@@ -70,8 +72,8 @@ describe('FileUploadToast', () => {
 
     render(
       <>
-        <FileUploadToast instanceId='form-1' bottom={20} />
-        <FileUploadToast instanceId='form-2' bottom={20} />
+        <FileUploadToast instanceId='form-1' enabled bottom={20} />
+        <FileUploadToast instanceId='form-2' enabled bottom={20} />
       </>
     );
     act(() => {
@@ -84,30 +86,118 @@ describe('FileUploadToast', () => {
     expect(screen.getByText('id.png')).toBeInTheDocument();
   });
 
-  it('falls back to the field key when file names are unknown', () => {
+  it('falls back to a file count rather than leaking the field key', () => {
     setUploadIndicatorEnabled('a', true);
-    render(<FileUploadToast instanceId='form-1' bottom={20} />);
+    render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
     act(() => startUpload('a', 'signature-field'));
-    expect(screen.getByText('signature-field')).toBeInTheDocument();
+    expect(screen.getByText('1 file')).toBeInTheDocument();
+    expect(screen.queryByText('signature-field')).toBeNull();
+  });
+
+  it('counts unnamed files in the fallback label', () => {
+    setUploadIndicatorEnabled('a', true);
+    render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
+    act(() => startUpload('a', 'photos', [], 3));
+    expect(screen.getByText('3 files')).toBeInTheDocument();
+  });
+
+  describe('the setting gates rendering, not just reporting', () => {
+    it('renders nothing when this form has the setting off', () => {
+      setUploadIndicatorEnabled('a', true);
+      render(
+        <FileUploadToast instanceId='form-1' enabled={false} bottom={20} />
+      );
+      act(() => startUpload('a', 'field-1', ['resume.pdf']));
+      expect(screen.queryByText('resume.pdf')).toBeNull();
+    });
+
+    it('a form with the setting off never wins leadership from one with it on', () => {
+      setUploadIndicatorEnabled('a', true);
+      render(
+        <>
+          <FileUploadToast instanceId='off-form' enabled={false} bottom={20} />
+          <FileUploadToast instanceId='on-form' enabled bottom={20} />
+        </>
+      );
+      act(() => startUpload('a', 'field-1', ['resume.pdf']));
+
+      // The off form mounted first, but the on form hosts the only box
+      expect(screen.getAllByText('resume.pdf')).toHaveLength(1);
+    });
+  });
+
+  describe('failures and dismissal', () => {
+    it('keeps a failed row up instead of auto-clearing it', () => {
+      setUploadIndicatorEnabled('a', true);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
+      act(() => startUpload('a', 'field-1', ['resume.pdf']));
+      act(() => failUpload('a', 'field-1'));
+      settle();
+
+      expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+      advance(30000);
+      expect(screen.getByText('Upload Failed')).toBeInTheDocument();
+    });
+
+    it('a retry replaces the failed row', () => {
+      setUploadIndicatorEnabled('a', true);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
+      act(() => startUpload('a', 'field-1', ['resume.pdf']));
+      act(() => failUpload('a', 'field-1'));
+      settle();
+
+      act(() => startUpload('a', 'field-1'));
+      expect(screen.getByText('Uploading File')).toBeInTheDocument();
+    });
+
+    it('the dismiss control clears a failure the user has seen', () => {
+      setUploadIndicatorEnabled('a', true);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
+      act(() => startUpload('a', 'field-1', ['resume.pdf']));
+      act(() => failUpload('a', 'field-1'));
+      settle();
+
+      act(() => screen.getByLabelText('Dismiss').click());
+      expect(screen.queryByText('Upload Failed')).toBeNull();
+    });
+
+    it('offers no dismiss control while every row is still in flight', () => {
+      setUploadIndicatorEnabled('a', true);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
+      act(() => startUpload('a', 'field-1', ['resume.pdf']));
+      expect(screen.queryByLabelText('Dismiss')).toBeNull();
+    });
+  });
+
+  it('reports a queued upload as waiting rather than uploading', () => {
+    setUploadIndicatorEnabled('a', true);
+    render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
+    act(() => startUpload('a', 'field-1', ['resume.pdf']));
+    act(() => queueUpload('a', 'field-1'));
+
+    expect(screen.getByText('File Waiting to Upload')).toBeInTheDocument();
+    // A queued row is pending, so it is not cleared by the completion timer
+    advance(30000);
+    expect(screen.getByText('File Waiting to Upload')).toBeInTheDocument();
   });
 
   it('hands leadership to the remaining instance when the leader unmounts', () => {
     setUploadIndicatorEnabled('a', true);
     const { rerender } = render(
       <>
-        <FileUploadToast instanceId='form-1' bottom={20} />
-        <FileUploadToast instanceId='form-2' bottom={20} />
+        <FileUploadToast instanceId='form-1' enabled bottom={20} />
+        <FileUploadToast instanceId='form-2' enabled bottom={20} />
       </>
     );
     act(() => startUpload('a', 'field-1', ['resume.pdf']));
 
-    rerender(<FileUploadToast instanceId='form-2' bottom={20} />);
+    rerender(<FileUploadToast instanceId='form-2' enabled bottom={20} />);
     expect(screen.getAllByText('resume.pdf')).toHaveLength(1);
   });
 
   it('auto-clears after all uploads finish', () => {
     setUploadIndicatorEnabled('a', true);
-    render(<FileUploadToast instanceId='form-1' bottom={20} />);
+    render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
     act(() => startUpload('a', 'field-1', ['resume.pdf']));
     act(() => completeUpload('a', 'field-1'));
     settle();
@@ -119,14 +209,14 @@ describe('FileUploadToast', () => {
 
   describe('height published for the bottom-right stack', () => {
     it('reports zero while no box is rendered', () => {
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       expect(getUploadToastHeight()).toEqual(0);
       expect(observedNodes).toHaveLength(0);
     });
 
     it('measures the box so overlays can clear it', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() => startUpload('a', 'field-1', ['resume.pdf']));
 
       expect(getUploadToastHeight()).toEqual(TOAST_HEIGHT);
@@ -135,7 +225,7 @@ describe('FileUploadToast', () => {
 
     it('reports zero again once the box clears', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() => startUpload('a', 'field-1', ['resume.pdf']));
       act(() => completeUpload('a', 'field-1'));
       settle();
@@ -148,13 +238,13 @@ describe('FileUploadToast', () => {
       setUploadIndicatorEnabled('a', true);
       const { rerender } = render(
         <>
-          <FileUploadToast instanceId='form-1' bottom={20} />
-          <FileUploadToast instanceId='form-2' bottom={20} />
+          <FileUploadToast instanceId='form-1' enabled bottom={20} />
+          <FileUploadToast instanceId='form-2' enabled bottom={20} />
         </>
       );
       act(() => startUpload('a', 'field-1', ['resume.pdf']));
 
-      rerender(<FileUploadToast instanceId='form-2' bottom={20} />);
+      rerender(<FileUploadToast instanceId='form-2' enabled bottom={20} />);
       expect(getUploadToastHeight()).toEqual(TOAST_HEIGHT);
     });
   });
@@ -167,7 +257,7 @@ describe('FileUploadToast', () => {
 
     it('shows one bottom-right spinner for several images in one field', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() =>
         startUpload('a', 'photos', ['one.png', 'two.png', 'three.png'])
       );
@@ -184,7 +274,7 @@ describe('FileUploadToast', () => {
 
     it('pluralizes the header on file count, not row count', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() => startUpload('a', 'photos', ['one.png', 'two.png']));
 
       expect(screen.getByText('Uploading Files')).toBeVisible();
@@ -195,7 +285,7 @@ describe('FileUploadToast', () => {
 
     it('shows a spinner per field while several image fields upload', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() => {
         startUpload('a', 'front', ['front.jpg']);
         startUpload('a', 'back', ['back.jpg']);
@@ -206,7 +296,7 @@ describe('FileUploadToast', () => {
 
     it('keeps a spinner for the field still uploading after another finishes', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() => {
         startUpload('a', 'front', ['front.jpg']);
         startUpload('a', 'back', ['back.jpg']);
@@ -220,7 +310,7 @@ describe('FileUploadToast', () => {
 
     it('holds the spinner briefly even when the upload returns instantly', () => {
       setUploadIndicatorEnabled('a', true);
-      render(<FileUploadToast instanceId='form-1' bottom={20} />);
+      render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
       act(() => {
         startUpload('a', 'photos', ['tiny.png']);
         completeUpload('a', 'photos');
@@ -236,7 +326,7 @@ describe('FileUploadToast', () => {
 
   it('keeps the box up while any upload is still in flight', () => {
     setUploadIndicatorEnabled('a', true);
-    render(<FileUploadToast instanceId='form-1' bottom={20} />);
+    render(<FileUploadToast instanceId='form-1' enabled bottom={20} />);
     act(() => {
       startUpload('a', 'field-1', ['resume.pdf']);
       startUpload('a', 'field-2', ['id.png']);

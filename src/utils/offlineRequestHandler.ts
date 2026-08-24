@@ -8,7 +8,12 @@ import {
   FormConflictError
 } from '@feathery/client-utils';
 import { handleFormConflict } from './featheryClient/utils';
-import { completeUpload, failUpload, startUpload } from './fileUploadProgress';
+import {
+  completeUpload,
+  failUpload,
+  queueUpload,
+  startUpload
+} from './fileUploadProgress';
 
 // Constants for the IndexedDB database
 const DB_NAME = 'requestsDB';
@@ -589,6 +594,10 @@ export class OfflineRequestHandler {
                 }
                 await this.delay(nextDelay);
               } else {
+                // Connectivity dropped again. The row goes back to waiting
+                // rather than spinning for as long as the user stays offline;
+                // the next replay re-announces it as uploading.
+                if (fieldKey) queueUpload(this.formKey, fieldKey);
                 await this.onlineAndReplayed();
                 return;
               }

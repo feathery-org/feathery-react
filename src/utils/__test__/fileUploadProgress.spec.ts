@@ -1,7 +1,8 @@
 import {
   _resetFileUploadProgress,
-  clearFinishedUploads,
+  clearCompletedUploads,
   completeUpload,
+  dismissResolvedUploads,
   failUpload,
   getUploadsSnapshot,
   isLeaderToastHost,
@@ -9,6 +10,7 @@ import {
   MIN_UPLOADING_MS,
   registerToastHost,
   setUploadIndicatorEnabled,
+  queueUpload,
   startUpload,
   subscribeToUploads,
   unregisterToastHost
@@ -53,6 +55,7 @@ describe('fileUploadProgress', () => {
           formKey: 'form-a',
           fieldKey: 'field-1',
           fileNames: ['doc.pdf'],
+          fileCount: 1,
           status: 'uploading',
           startedAt: expect.any(Number)
         }
@@ -120,6 +123,7 @@ describe('fileUploadProgress', () => {
           formKey: 'form-a',
           fieldKey: 'field-1',
           fileNames: ['a.pdf'],
+          fileCount: 1,
           status: 'uploading',
           startedAt: expect.any(Number)
         }
@@ -135,13 +139,82 @@ describe('fileUploadProgress', () => {
       expect(getUploadsSnapshot()[0].status).toBe('uploading');
     });
 
-    it('clears only finished uploads', () => {
-      startUpload('form-a', 'field-1');
-      startUpload('form-a', 'field-2');
-      completeUpload('form-a', 'field-1');
+    it('reports the file count separately from the names', () => {
+      // A signature blob has no usable name but still counts
+      startUpload('form-a', 'field-1', ['a.pdf'], 3);
+      const [entry] = getUploadsSnapshot();
+      expect(entry.fileNames).toEqual(['a.pdf']);
+      expect(entry.fileCount).toBe(3);
+    });
+
+    it('a replayed request keeps the original file count', () => {
+      startUpload('form-a', 'field-1', ['a.pdf', 'b.pdf']);
       settle();
-      clearFinishedUploads();
-      expect(getUploadsSnapshot().map((e) => e.fieldKey)).toEqual(['field-2']);
+      failUpload('form-a', 'field-1');
+      // Replay engine knows neither names nor count
+      startUpload('form-a', 'field-1');
+      expect(getUploadsSnapshot()[0].fileCount).toBe(2);
+    });
+
+    it('queues a row without waiting for the minimum spinner hold', () => {
+      startUpload('form-a', 'field-1', ['a.pdf']);
+      queueUpload('form-a', 'field-1');
+      // Queueing is not a resolution, so it applies right away
+      expect(getUploadsSnapshot()[0].status).toBe('queued');
+    });
+
+    it('a replay re-announces a queued row as uploading', () => {
+      startUpload('form-a', 'field-1', ['a.pdf']);
+      queueUpload('form-a', 'field-1');
+      startUpload('form-a', 'field-1');
+      expect(getUploadsSnapshot()[0].status).toBe('uploading');
+    });
+
+    it('queueing cancels a held status flip', () => {
+      startUpload('form-a', 'field-1', ['a.pdf']);
+      failUpload('form-a', 'field-1');
+      queueUpload('form-a', 'field-1');
+      settle();
+      expect(getUploadsSnapshot()[0].status).toBe('queued');
+    });
+  });
+
+  describe('clearing rows', () => {
+    beforeEach(() => setUploadIndicatorEnabled('form-a', true));
+
+    it('clears completed uploads but keeps errors and pending rows', () => {
+      startUpload('form-a', 'done');
+      startUpload('form-a', 'failed');
+      startUpload('form-a', 'inflight');
+      startUpload('form-a', 'waiting');
+      completeUpload('form-a', 'done');
+      failUpload('form-a', 'failed');
+      queueUpload('form-a', 'waiting');
+      settle();
+
+      clearCompletedUploads();
+      expect(getUploadsSnapshot().map((e) => e.fieldKey)).toEqual([
+        'failed',
+        'inflight',
+        'waiting'
+      ]);
+    });
+
+    it('dismissal drops errors too, but never a row still in flight', () => {
+      startUpload('form-a', 'done');
+      startUpload('form-a', 'failed');
+      startUpload('form-a', 'inflight');
+      startUpload('form-a', 'waiting');
+      completeUpload('form-a', 'done');
+      failUpload('form-a', 'failed');
+      queueUpload('form-a', 'waiting');
+      settle();
+
+      dismissResolvedUploads();
+      expect(getUploadsSnapshot().map((e) => e.fieldKey)).toEqual([
+        'inflight',
+        'waiting'
+      ]);
     });
   });
 

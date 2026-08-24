@@ -29,7 +29,12 @@ import { authState } from '../../auth/LoginForm';
 import { loadQRScanner } from '../../elements/fields/QRScanner/qrLoader';
 import { gatherTrustedFormFields } from '../../integrations/trustedform';
 import { RequestOptions } from '../offlineRequestHandler';
-import { completeUpload, failUpload, startUpload } from '../fileUploadProgress';
+import {
+  completeUpload,
+  failUpload,
+  queueUpload,
+  startUpload
+} from '../fileUploadProgress';
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
@@ -332,9 +337,16 @@ export default class FeatheryClient extends IntegrationClient {
 
     fileDeduplicationCount[servar.key] = numFiles;
 
-    // Don't surface field-clearing requests in the upload progress toast
+    // Don't surface field-clearing requests in the upload progress toast.
+    // numFiles is passed separately from the names because a value with no
+    // usable name (a signature blob) still counts toward the row's label.
     if (numFiles > 0)
-      startUpload(this.formKey, servar.key, getUploadFileNames(fileValue));
+      startUpload(
+        this.formKey,
+        servar.key,
+        getUploadFileNames(fileValue),
+        numFiles
+      );
 
     formData.set('__feathery_form_key', this.formKey);
     formData.set('__feathery_step_key', stepKey);
@@ -370,6 +382,8 @@ export default class FeatheryClient extends IntegrationClient {
         },
         () => {
           queuedForReplay = true;
+          // Waiting on connectivity, not stalled mid-upload
+          queueUpload(this.formKey, servar.key);
         }
       );
       // Mark as successful upload - will block duplicate attempts
