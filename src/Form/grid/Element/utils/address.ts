@@ -30,7 +30,20 @@ export const getRelatedAddressFields = (element: any, activeStep: any) => {
   return addrFields;
 };
 
-// Clears address fields when country is changed
+// Compares a field's old and new value, accounting for repeated fields where
+// only the entry at `index` is being written.
+export const addressValueChanged = (
+  prevVal: any,
+  newVal: any,
+  index: number | null
+) => {
+  if (index === null) return prevVal !== newVal;
+  return (prevVal ?? [])[index] !== (newVal ?? [])[index];
+};
+
+// Clears address fields when country is changed.
+// Returns the servar IDs that were actually cleared so the caller can report
+// them as part of the change event.
 export const clearNonCountryAddressFields = (
   countryElement: any,
   activeStep: any,
@@ -41,6 +54,7 @@ export const clearNonCountryAddressFields = (
   const addrFields: any = getRelatedAddressFields(countryElement, activeStep);
 
   const clearedValues: any = {};
+  const clearedServarIds: string[] = [];
   Object.entries(addrFields).forEach(([fieldType, field]: any) => {
     // skip country fields
     if (fieldType === 'gmap_country') return;
@@ -52,11 +66,21 @@ export const clearNonCountryAddressFields = (
       index === null
         ? emptyVal
         : justInsert(fieldValues[servar.key] || [], emptyVal, index);
+    if (
+      addressValueChanged(
+        fieldValues[servar.key],
+        clearedValues[servar.key],
+        index
+      )
+    )
+      clearedServarIds.push(servar.id);
   });
 
   if (!isObjectEmpty(clearedValues)) {
     updateFieldValues(clearedValues);
   }
+
+  return clearedServarIds;
 };
 
 // Calculates the new field values for address fields when address is autocompleted
@@ -101,4 +125,29 @@ export const getRelatedAddressValues = (
   }
 
   return addrValues;
+};
+
+// An address autocomplete writes several fields at once but only some move.
+// Returns the servar IDs whose value changed, so change rules bound to any of
+// them still run even though the user only touched the address line.
+export const getChangedAddressServarIds = (
+  addressElement: any,
+  activeStep: any,
+  fieldValues: any,
+  addrValues: Record<string, any>,
+  index: any
+) => {
+  const servarIdsByKey: Record<string, string> = {};
+  Object.values(
+    getRelatedAddressFields(addressElement, activeStep) as Record<string, any>
+  ).forEach((field: any) => {
+    servarIdsByKey[field.servar.key] = field.servar.id;
+  });
+
+  return Object.entries(addrValues)
+    .filter(
+      ([key, val]) =>
+        servarIdsByKey[key] && addressValueChanged(fieldValues[key], val, index)
+    )
+    .map(([key]) => servarIdsByKey[key]);
 };

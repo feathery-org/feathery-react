@@ -9,6 +9,7 @@ import {
   initState,
   markStepCompleted,
   registerKnownFieldKeys,
+  registerTextVariableFormats,
   setFieldValues
 } from '../init';
 import { dataURLToFile, isBase64Image } from '../image';
@@ -88,6 +89,22 @@ export const updateRegionApiUrls = (region: string) => {
  * The number of milliseconds waited until another submitCustom call
  */
 const SUBMIT_CUSTOM_DEBOUNCE_WINDOW = 1000;
+
+/**
+ * The invite endpoint hands its error body back as unparsed text, so a friendly
+ * `{"message": ...}` 400 would otherwise be shown to the user as raw JSON.
+ * Anything we can't read a message out of falls back to the body as-is.
+ */
+export function parseInviteError(body?: string) {
+  if (!body) return 'Failed to invite collaborators';
+  try {
+    const parsed = JSON.parse(body);
+    if (typeof parsed?.message === 'string') return parsed.message;
+  } catch (e) {
+    // Not JSON - fall through to the raw body
+  }
+  return body;
+}
 
 export default class FeatheryClient extends IntegrationClient {
   /**
@@ -195,6 +212,8 @@ export default class FeatheryClient extends IntegrationClient {
       fileValue = servar.file_upload;
     } else if ('signature' in servar) {
       fileValue = servar.signature;
+    } else if ('audio_recording' in servar) {
+      fileValue = servar.audio_recording;
     }
 
     if (!fileValue) return null;
@@ -492,6 +511,7 @@ export default class FeatheryClient extends IntegrationClient {
       // Documents button action that targets it. Otherwise formSchemas is only
       // populated via init({ preloadForms }), which hosted forms don't use.
       if (res.steps) initState.formSchemas[this.formKey] = res;
+      registerTextVariableFormats(res);
       return res;
     });
   }
@@ -845,7 +865,9 @@ export default class FeatheryClient extends IntegrationClient {
     gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
-      ['file_upload', 'signature'].some((type) => type in servar);
+      ['file_upload', 'signature', 'audio_recording'].some(
+        (type) => type in servar
+      );
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 
@@ -1025,7 +1047,8 @@ export default class FeatheryClient extends IntegrationClient {
       method: 'POST',
       body: JSON.stringify({
         agent_id: agentId,
-        fuser_key: userId
+        fuser_key: userId,
+        panel_key: this.formKey
       })
     };
     const res = await this._fetch(url, reqOptions, false);
@@ -1091,7 +1114,7 @@ export default class FeatheryClient extends IntegrationClient {
 
     if (res && res.ok) {
       return res;
-    } else throw Error(parseAPIError(res));
+    } else throw Error(parseInviteError(res?.error));
   }
 
   async rewindCollaboration(templateId: string, rewindEmailKey: string) {
