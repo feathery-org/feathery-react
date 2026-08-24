@@ -188,12 +188,15 @@ const Element = ({ node: el, form }: any) => {
           | string
           | undefined
       );
+      // Keep the first run's attributes: they carry the label's font styling,
+      // and a bare insert would render the managed label unstyled.
+      const [firstRun] = el.properties.text_formatted ?? [];
       buttonElement = {
         ...el,
         properties: {
           ...el.properties,
           text,
-          text_formatted: [{ insert: text }]
+          text_formatted: [{ ...firstRun, insert: text }]
         }
       };
     }

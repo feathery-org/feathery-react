@@ -12,7 +12,12 @@ jest.mock('../../../elements', () => ({
   __esModule: true,
   default: {
     ButtonElement: ({ element }: any) => (
-      <div data-testid='btn-text'>{element.properties.text}</div>
+      <div
+        data-testid='btn-text'
+        data-formatted={JSON.stringify(element.properties.text_formatted)}
+      >
+        {element.properties.text}
+      </div>
     )
   }
 }));
@@ -33,6 +38,12 @@ const baseForm = {
   onViewElements: []
 };
 
+const LABEL_STYLES = {
+  font_size: 24,
+  font_color: 'FF0000FF',
+  font_weight: 700
+};
+
 const buildButtonNode = (
   manageButtonLabel: boolean | undefined,
   provider = 'box'
@@ -42,7 +53,9 @@ const buildButtonNode = (
   styles: {},
   properties: {
     text: "Builder's label",
-    text_formatted: [{ insert: "Builder's label" }],
+    text_formatted: [
+      { insert: "Builder's label", attributes: { ...LABEL_STYLES } }
+    ],
     actions: [
       {
         type: ACTION_CONNECT_ACCOUNT,
@@ -111,5 +124,29 @@ describe('connect_account button label management', () => {
     expect(screen.getByTestId('btn-text').textContent).toBe(
       'Connect your Charles Schwab account'
     );
+  });
+
+  it("keeps the builder's font styling on the managed label", () => {
+    // The delta run's attributes carry the font styles; replacing the run with
+    // a bare insert would render the managed label unstyled.
+    (fieldValues as any)[EMAIL_KEY] = 'respondent@example.com';
+    render(<Element node={buildButtonNode(undefined)} form={baseForm} />);
+
+    const formatted = JSON.parse(
+      screen.getByTestId('btn-text').getAttribute('data-formatted') as string
+    );
+    expect(formatted).toEqual([
+      { insert: 'respondent@example.com', attributes: LABEL_STYLES }
+    ]);
+  });
+
+  it('styles the disconnected prompt the same way', () => {
+    render(<Element node={buildButtonNode(undefined)} form={baseForm} />);
+
+    const formatted = JSON.parse(
+      screen.getByTestId('btn-text').getAttribute('data-formatted') as string
+    );
+    expect(formatted[0].attributes).toEqual(LABEL_STYLES);
+    expect(formatted[0].insert).toBe('Connect your Box account');
   });
 });
