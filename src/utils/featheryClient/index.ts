@@ -271,18 +271,15 @@ export default class FeatheryClient extends IntegrationClient {
         fileValue.map((f, i) => resolveFile(f, i))
       );
 
-      const successfulFiles = results
-        .filter(
-          (r) =>
-            r.status === 'fulfilled' &&
-            r.value !== null &&
-            r.value !== undefined
-        )
-        .map((r) => (r as PromiseFulfilledResult<any>).value);
+      // Keep every position: a repeat row with no file stays null so its index
+      // survives to the wire instead of the later files shifting up.
+      const resolved = results.map((r) =>
+        r.status === 'fulfilled' && r.value !== undefined ? r.value : null
+      );
 
-      // If user tried to upload files but ALL failed, throw error
-      const hadFiles = fileValue.length > 0;
-      const allFailed = successfulFiles.length === 0;
+      const isRealEntry = (v: any) => v !== null && v !== undefined && v !== '';
+      const hadFiles = fileValue.some(isRealEntry);
+      const allFailed = !resolved.some(isRealEntry);
 
       if (hadFiles && allFailed) {
         const firstError = results.find((r) => r.status === 'rejected');
@@ -293,7 +290,7 @@ export default class FeatheryClient extends IntegrationClient {
         throw new Error(errorMessage);
       }
 
-      return successfulFiles;
+      return resolved;
     } else {
       return await resolveFile(fileValue, null, { rethrowOnFailure: true });
     }
@@ -307,12 +304,22 @@ export default class FeatheryClient extends IntegrationClient {
     const fileValue = await this._getFileValue(servar);
 
     let numFiles = 0;
+    const keepIndices: number[] = [];
+    const newIndices: number[] = [];
 
     if (fileValue || fileValue === '') {
       if (Array.isArray(fileValue)) {
-        const validFiles = fileValue.filter((file) => !!file && file !== '');
-        validFiles.forEach((file) => formData.append(servar.key, file));
-        numFiles = validFiles.length;
+        // Only real files go on the wire; their repeat indices travel alongside
+        // so the backend can rebuild the holes.
+        fileValue.forEach((file, index) => {
+          if (!file || file === '') return;
+          formData.append(servar.key, file);
+          // A string is an S3 path the backend should keep, anything else is a
+          // fresh upload. request.data merges those two sources, so they are
+          // indexed separately.
+          (typeof file === 'string' ? keepIndices : newIndices).push(index);
+        });
+        numFiles = keepIndices.length + newIndices.length;
       } else if (fileValue !== '') {
         formData.append(servar.key, fileValue);
         numFiles = 1;
@@ -350,6 +357,12 @@ export default class FeatheryClient extends IntegrationClient {
         servar.key,
         getUploadFileNames(fileValue),
         numFiles
+      );
+
+    if (numFiles > 0 && Array.isArray(fileValue))
+      formData.set(
+        '__feathery_file_indices',
+        JSON.stringify({ [servar.key]: { keep: keepIndices, new: newIndices } })
       );
 
     formData.set('__feathery_form_key', this.formKey);

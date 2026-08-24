@@ -22,6 +22,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
   updateCustomCSS,
@@ -47,8 +48,11 @@ import {
   FieldStyles,
   formatStepFields,
   getAllFields,
+  FILE_FIELD_TYPES,
   getDefaultFieldValue,
   getDefaultFormFieldValue,
+  normalizeRepeatArrayValue,
+  stripEmptyRepeatEntries,
   getFieldValue,
   saveInitialValuesAndUrlParams,
   updateStepFieldOptions,
@@ -927,6 +931,19 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Servar type per field key. updateFieldValues runs on every keystroke, so
+  // this avoids going through the Field entity, whose type getter warns when
+  // the field is not on the active form.
+  const servarTypeByKey = useMemo(() => {
+    const types = new Map<string, string>();
+    Object.values(steps).forEach((step: any) =>
+      (step.servar_fields ?? []).forEach((field: any) =>
+        types.set(field.servar.key, field.servar.type)
+      )
+    );
+    return types;
+  }, [steps]);
+
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (!shouldScrollToTop || autoscroll === 'none') return;
@@ -990,6 +1007,11 @@ function Form({
       curIndex = !isInsideContainer ? vals.length - 1 : index;
 
       removeServars[field.servar.key] = null;
+
+      // filePathMap is indexed by repeat row, so it has to lose the same slot
+      // or the surviving files resolve to the removed row's uploaded path.
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
@@ -1097,7 +1119,7 @@ function Form({
       (acc, [key, value]) => {
         const field = fields?.[key];
         if (Array.isArray(value) && field && !field.isHiddenField) {
-          acc[key] = value.map((item) => (item === null ? '' : item));
+          acc[key] = normalizeRepeatArrayValue(value, servarTypeByKey.get(key));
         } else {
           acc[key] = value;
         }
@@ -2076,7 +2098,7 @@ function Form({
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
       let newVal = val.value as any;
       newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => ![null, undefined].includes(v))
+        ? stripEmptyRepeatEntries(newVal, val.type)
         : newVal;
       return { key, [val.type]: newVal };
     });

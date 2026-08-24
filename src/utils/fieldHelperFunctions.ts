@@ -209,6 +209,25 @@ export function getDefaultFieldValue(field: any) {
   }
 }
 
+// Field types whose repeated value is one file per repeat row. An empty row
+// must stay in the array so its index keeps lining up with the other fields
+// in the same repeat container.
+export const FILE_FIELD_TYPES = ['file_upload', 'signature'];
+
+// Repeated values render '' rather than 'null' for a cleared row, but a file
+// row has no text to render and needs its hole left alone.
+export function normalizeRepeatArrayValue(value: any[], servarType?: string) {
+  if (servarType && FILE_FIELD_TYPES.includes(servarType)) return value;
+  return value.map((item) => (item === null ? '' : item));
+}
+
+// Drops cleared entries from a repeated value before submit. File rows keep
+// their holes so the repeat index survives to the wire.
+export function stripEmptyRepeatEntries(value: any[], servarType?: string) {
+  if (servarType && FILE_FIELD_TYPES.includes(servarType)) return value;
+  return value.filter((v) => ![null, undefined].includes(v));
+}
+
 export function getDefaultFormFieldValue(field: any) {
   // Default value is null for file_upload, but value should always be an
   // array regardless if repeated or not
