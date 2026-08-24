@@ -1,4 +1,5 @@
 import {
+  connectAccountButtonLabel,
   connectionFieldKey,
   hasEmailIdentity,
   PROVIDER_LABELS
@@ -27,5 +28,38 @@ describe('provider connection fields', () => {
 
   it('labels every provider it can connect', () => {
     expect(PROVIDER_LABELS['charles-schwab']).toBe('Charles Schwab');
+  });
+});
+
+describe('managed button label', () => {
+  it('prompts to connect when nothing is connected', () => {
+    expect(connectAccountButtonLabel('box', '')).toBe(
+      'Connect your Box account'
+    );
+    expect(connectAccountButtonLabel('box', undefined)).toBe(
+      'Connect your Box account'
+    );
+    expect(connectAccountButtonLabel('charles-schwab')).toBe(
+      'Connect your Charles Schwab account'
+    );
+  });
+
+  it('shows the account for a provider that reports one', () => {
+    expect(connectAccountButtonLabel('box', 'user@example.com')).toBe(
+      'user@example.com'
+    );
+  });
+
+  it('names the provider when the connection carries no identity', () => {
+    // Schwab stores a flag, so 'true' must never reach the button.
+    expect(connectAccountButtonLabel('charles-schwab', 'true')).toBe(
+      'Charles Schwab connected'
+    );
+  });
+
+  it('falls back to the raw provider name when unlabelled', () => {
+    expect(connectAccountButtonLabel('whoever')).toBe(
+      'Connect your whoever account'
+    );
   });
 });

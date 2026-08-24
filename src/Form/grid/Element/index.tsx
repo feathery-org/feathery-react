@@ -18,8 +18,8 @@ import {
   ACTION_NEXT
 } from '../../../utils/elementActions';
 import {
-  connectionFieldKey,
-  hasEmailIdentity
+  connectAccountButtonLabel,
+  connectionFieldKey
 } from '../../../integrations/connectAccount/providers';
 import {
   fileFieldShouldSubmit,
@@ -169,37 +169,33 @@ const Element = ({ node: el, form }: any) => {
     if (isNum(loaderData?.repeat) && loaderData.repeat !== el.repeat)
       loaderData = null;
 
-    // "Managed by Feathery" (the builder default): once this button has
-    // connected an account, show the connected account instead of the
-    // builder's static label, so the respondent can see which account is
-    // attached. `manage_button_label: false` opts out - the builder composes
-    // their own label with text variables (e.g.
-    // {{feathery.connections.box.email}}), which already resolve on their
-    // own. No connection yet -> nothing to show, so the builder's text wins
-    // regardless - as it also does for a provider that reports no account
-    // identity to display (Schwab).
+    // "Managed by Feathery" (the builder default): the button reports the
+    // connection's status - which account is attached, or that none is yet -
+    // instead of the builder's static label. `manage_button_label: false` opts
+    // out, leaving the builder to compose their own with text variables (e.g.
+    // {{feathery.connections.box.email}}), which resolve on their own.
     const connectAccountAction = (el.properties.actions ?? []).find(
       (action: any) => action.type === ACTION_CONNECT_ACCOUNT
     );
     let buttonElement = el;
     if (
       connectAccountAction &&
-      connectAccountAction.manage_button_label !== false &&
-      hasEmailIdentity(connectAccountAction.provider)
+      connectAccountAction.manage_button_label !== false
     ) {
-      const accountEmail = fieldValues[
-        connectionFieldKey(connectAccountAction.provider)
-      ] as string | undefined;
-      if (accountEmail) {
-        buttonElement = {
-          ...el,
-          properties: {
-            ...el.properties,
-            text: accountEmail,
-            text_formatted: [{ insert: accountEmail }]
-          }
-        };
-      }
+      const text = connectAccountButtonLabel(
+        connectAccountAction.provider,
+        fieldValues[connectionFieldKey(connectAccountAction.provider)] as
+          | string
+          | undefined
+      );
+      buttonElement = {
+        ...el,
+        properties: {
+          ...el.properties,
+          text,
+          text_formatted: [{ insert: text }]
+        }
+      };
     }
 
     return (
