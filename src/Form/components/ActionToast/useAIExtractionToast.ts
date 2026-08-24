@@ -31,6 +31,8 @@ interface FileSource {
 export type DataItem = {
   status: 'complete' | 'incomplete' | 'error' | 'queued';
   type?: 'ai-extraction' | 'envelope-generation';
+  // When set, rendered directly as the row label instead of derived text
+  label?: string;
   extractionKey?: string;
   extractionVariantKey?: string | null;
   children?: DataItem[];
