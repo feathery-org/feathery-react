@@ -160,7 +160,9 @@ function ConnectAccountModal({
               paddingBottom: '20px'
             }}
           >
-            <span>{accountEmail}</span>
+            <span>
+              {accountEmail || `Your ${providerLabel} account is connected`}
+            </span>
             <button
               type='button'
               onClick={handleChangeAccount}
