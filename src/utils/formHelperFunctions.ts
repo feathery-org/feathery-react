@@ -244,7 +244,16 @@ export async function setFormElementError({
     }
     invalid = !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
-    if (fieldKey) inlineErrors[fieldKey] = { message };
+    // Key repeated-field errors by `${key}-${index}` so an error validated on
+    // one repeat row is scoped to that row and doesn't bleed onto other rows
+    // (including freshly added, untouched ones). Non-repeat fields (index is
+    // null/undefined) keep the plain key.
+    if (fieldKey) {
+      const errorKey = Number.isInteger(index)
+        ? `${fieldKey}-${index}`
+        : fieldKey;
+      inlineErrors[errorKey] = { message, index };
+    }
     if (triggerErrors)
       setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
     invalid = Object.values(inlineErrors).some((data) => (data as any).message);

@@ -375,7 +375,22 @@ export const getPanelRuntimeSnapshot = (
       typeof props.tooltipText === 'string' && props.tooltipText.trim()
         ? resolveText(props.tooltipText)
         : undefined;
-    const error = inlineErrors[field.servar.key]?.message;
+    // Errors on repeated fields are keyed by `${servarKey}-${repeatIndex}`, so
+    // fall back to scanning indexed keys when there's no plain-key error.
+    let error = inlineErrors[field.servar.key]?.message;
+    if (!error) {
+      const prefix = `${field.servar.key}-`;
+      for (const k of Object.keys(inlineErrors)) {
+        if (
+          k.startsWith(prefix) &&
+          /^\d+$/.test(k.slice(prefix.length)) &&
+          inlineErrors[k]?.message
+        ) {
+          error = inlineErrors[k].message;
+          break;
+        }
+      }
+    }
     const servar = field.servar ?? {};
     const meta = servar.metadata ?? {};
     const repeated = !!servar.repeated;

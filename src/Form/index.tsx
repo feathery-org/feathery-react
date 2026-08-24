@@ -913,7 +913,12 @@ function Form({
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
-    updateFieldValues(updatedValues);
+    // Adding/removing a repeat row is a structural change, not user input on a
+    // field. Don't auto-validate here: a brand-new, untouched row must not show
+    // a required error (inline or browser-native) until the user actually
+    // submits. Submit still validates every row via its own validateElements
+    // call, so validation is not weakened.
+    updateFieldValues(updatedValues, { triggerErrors: false });
   }
 
   function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
@@ -954,6 +959,32 @@ function Form({
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+
+    // Inline errors are keyed by `${servarKey}-${repeatIndex}`. Drop the removed
+    // row's error and shift higher-indexed rows down so each remaining row keeps
+    // its own error instead of inheriting a neighbor's.
+    setInlineErrors((prev) => {
+      const next: Record<string, { message: string; index: number }> = {
+        ...prev
+      };
+      Object.keys(removeServars).forEach((key) => {
+        const prefix = `${key}-`;
+        const entries: Array<{ idx: number; data: any }> = [];
+        Object.keys(next).forEach((k) => {
+          if (!k.startsWith(prefix)) return;
+          const suffix = k.slice(prefix.length);
+          if (!/^\d+$/.test(suffix)) return;
+          entries.push({ idx: Number(suffix), data: next[k] });
+          delete next[k];
+        });
+        entries.forEach(({ idx, data }) => {
+          if (idx === curIndex) return;
+          const newIdx = idx > curIndex ? idx - 1 : idx;
+          next[`${key}-${newIdx}`] = { ...data, index: newIdx };
+        });
+      });
+      return next;
+    });
   }
 
   // Debouncing the validateElements call to rate limit calls

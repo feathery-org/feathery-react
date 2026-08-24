@@ -8,7 +8,14 @@ import { justInsert } from '../../../../utils/array';
  * @param inlineErrors
  */
 export function getInlineError(field: any, inlineErrors: any) {
-  const data = inlineErrors[field.servar ? field.servar.key : field.id];
+  const baseKey = field.servar ? field.servar.key : field.id;
+  // Repeated-field errors are stored under `${key}-${repeatIndex}`; fall back to
+  // the plain key for non-repeat errors (and field-wide errors set via the
+  // setFieldErrors API without an index).
+  const key = Number.isInteger(field.repeat)
+    ? `${baseKey}-${field.repeat}`
+    : baseKey;
+  const data = inlineErrors[key] ?? inlineErrors[baseKey];
   if (!data) return;
   if (Number.isInteger(data.index) && data.index !== field.repeat) return;
   return data.message;

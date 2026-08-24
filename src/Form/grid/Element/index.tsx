@@ -718,6 +718,7 @@ const Element = ({ node: el, form }: any) => {
                 formRef,
                 fieldKey: el.servar.key,
                 message,
+                index: el.repeat,
                 errorType: formSettings.errorType,
                 servarType: el.servar.type,
                 inlineErrors: { ...inlineErrors },
