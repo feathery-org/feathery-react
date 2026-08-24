@@ -214,10 +214,17 @@ export async function dispatchClickElement(
     if (errorsAfter[key] !== errorsBefore[key])
       fieldErrors[key] = errorsAfter[key];
   }
-  // SDK keys submit-time button errors by element.id, only on the button path.
+  // SDK keys submit-time button errors by element.id; the inline snapshot
+  // qualifies a repeat row as `${id}[${index}]`. Select the matching key so a
+  // repeated button's own error is returned as buttonError (not leaked into
+  // fieldErrors), matching the non-repeated button contract.
+  const ownErrorKey =
+    typeof repeatIndex === 'number'
+      ? `${elementId}[${repeatIndex}]`
+      : elementId;
   const buttonError =
-    found.elementType === 'button' ? fieldErrors[elementId] : undefined;
-  delete fieldErrors[elementId];
+    found.elementType === 'button' ? fieldErrors[ownErrorKey] : undefined;
+  delete fieldErrors[ownErrorKey];
 
   return {
     ok: true,
