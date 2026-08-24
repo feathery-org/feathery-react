@@ -7589,7 +7589,9 @@ function copyPasteSegments(
   const tableAt = (index: number): boolean => {
     const address = sequence[index];
     return address
-      ? !!firstTableBlockIn(rawSectionBlocks(sfdt, address.section)[address.block])
+      ? !!firstTableBlockIn(
+          rawSectionBlocks(sfdt, address.section)[address.block]
+        )
       : false;
   };
   const resolved = sequenceIndexOf(sequence, target.address);
@@ -8393,12 +8395,7 @@ export const ANCHORED_OP_HANDLERS: {
       segments,
       target
     );
-    assertPastedRangeMatches(
-      pastedSfdt,
-      paste,
-      source,
-      segments.flat()
-    );
+    assertPastedRangeMatches(pastedSfdt, paste, source, segments.flat());
   },
   swap_sections: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
@@ -13147,7 +13144,9 @@ function cloneIdentityRewrite(
   renameDocBindings: Map<string, string>;
   preservedDocBindings: Set<string>;
 } {
-  const usedNames = new Set(index.occurrences.map((occurrence) => occurrence.name));
+  const usedNames = new Set(
+    index.occurrences.map((occurrence) => occurrence.name)
+  );
   const renameDocBindings = new Map<string, string>();
   for (const binding of cloned) {
     if (binding.tableId) continue;
