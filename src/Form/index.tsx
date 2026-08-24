@@ -1996,7 +1996,6 @@ function Form({
       metadata.elementType
     );
     trigger.repeatIndex = repeat;
-    const newInlineErrors: any = {};
 
     if (
       activeStep.servar_fields.find(
@@ -2013,7 +2012,9 @@ function Form({
           message: errorMessage,
           servarType: errorField.servar.type,
           errorType: formSettings.errorType,
-          inlineErrors: newInlineErrors,
+          // Merge into the current error map rather than a fresh one, so
+          // surfacing a payment error doesn't wipe other fields' errors.
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
           triggerErrors: true
         });
@@ -2410,7 +2411,13 @@ function Form({
             formRef,
             fieldKey: button.id,
             message,
+            // Scope to the clicked button's repeat row, and merge into the
+            // current error map (read fresh from internalState, since this runs
+            // async) so a failure in one repeated row doesn't render on every
+            // row or wipe unrelated field errors.
+            index: button.repeat,
             errorType: formSettings.errorType,
+            inlineErrors: internalState[_internalId]?.inlineErrors,
             setInlineErrors,
             triggerErrors: true
           }),
@@ -2574,16 +2581,20 @@ function Form({
         await client.resetPendingFileUploads(pendingFileKeys);
       }
 
-      // Clear any previous button error before re-validation
-      // This allows retry after file upload errors
+      // Clear any previous button error before re-validation (allows retry
+      // after e.g. file upload errors). Scope the clear to this button's repeat
+      // row and merge into the current map, and publish it (triggerErrors) so
+      // the cleared state actually reaches the UI.
       if (submit && elementType === 'button') {
         setFormElementError({
           formRef,
           fieldKey: element.id,
           message: '', // Empty message clears the error
+          index: element.repeat,
           errorType: formSettings.errorType,
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
-          triggerErrors: false
+          triggerErrors: true
         });
       }
 
