@@ -272,8 +272,16 @@ export interface InventoryEntry {
   kind: string;
   text: string;
   format?: DocFormat;
-  /** Present only when this block's text is a document binding's value. */
-  binding?: BindingFact;
+  /**
+   * Every document binding this block carries, in document order.
+   *
+   * A list rather than a single fact because Word lets any number of inline
+   * content controls share one paragraph - "Effective [date], quoted at
+   * [tax_rate] tax." is two. Reporting only the first left every later bound
+   * value invisible to the model, and a bound value the model cannot see is a
+   * bound value it cannot change.
+   */
+  bindings?: BindingFact[];
 }
 
 export interface IndexBlock {
@@ -1932,11 +1940,11 @@ function toInventoryEntry(
   };
   if (b.format) entry.format = b.format;
   const tableAnchor = tableAnchorForBlock(b);
-  const binding = bindingFactFromTag(
-    b.boundTag,
+  const bindings = bindingFactsOf(
+    b,
     tableAnchor ? tables.get(tableAnchor)?.tableId : undefined
   );
-  if (binding) entry.binding = binding;
+  if (bindings.length) entry.bindings = bindings;
   return entry;
 }
 
@@ -2102,6 +2110,41 @@ function bindingFactFromTag(
   } catch {
     return undefined;
   }
+}
+
+/** The binding name a tag declares, or `''` when the tag is not a field. */
+function bindingNameOfTag(tag: string | undefined): string {
+  if (!tag) return '';
+  try {
+    const def = parseTag(tag);
+    return def && def.kind !== 'table' ? def.name : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Every binding a block carries, in document order and deduplicated by
+ * identity, so one global value appearing twice in a sentence reads as the one
+ * identity it is.
+ *
+ * `bindingRanges` is the complete truth the flatten already computes; the
+ * single `boundTag` is only its first entry, kept as the fallback for a block
+ * whose binding wraps it rather than sitting inside its runs.
+ */
+function bindingFactsOf(block: FlatBlock, table?: string): BindingFact[] {
+  const tags = block.bindingRanges?.length
+    ? block.bindingRanges.map((range) => range.tag)
+    : [block.boundTag];
+  const facts: BindingFact[] = [];
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    const fact = bindingFactFromTag(tag, table);
+    if (!fact || seen.has(fact.identity.id)) continue;
+    seen.add(fact.identity.id);
+    facts.push(fact);
+  }
+  return facts;
 }
 
 // `sfdt` is optional because the fixture-driven read path may not have it;
@@ -6600,15 +6643,69 @@ function requestedTextRange(
   return { start: 0, end: block.length };
 }
 
+/** Whether a requested text range touches a binding's range. */
+function rangeTouchesBinding(
+  requested: { start: number; end: number },
+  range: { start: number; end: number }
+): boolean {
+  return requested.start === requested.end
+    ? requested.start > range.start && requested.start < range.end
+    : requested.start < range.end && requested.end > range.start;
+}
+
 function targetsBindingRange(op: EditOp, block: FlatBlock): boolean {
   const ranges = block.bindingRanges ?? [];
   if (!ranges.length) return !!block.boundTag;
   const requested = requestedTextRange(op, block);
   if (!requested) return true;
-  return ranges.some((range) =>
-    requested.start === requested.end
-      ? requested.start > range.start && requested.start < range.end
-      : requested.start < range.end && requested.end > range.start
+  return ranges.some((range) => rangeTouchesBinding(requested, range));
+}
+
+/**
+ * WHICH binding in this block the write means.
+ *
+ * A block may carry several, so "the block's binding" is not an answer. The op
+ * may name one with `field` - identity, which survives the text moving - and
+ * otherwise the range it asks to write picks one out. When neither settles it,
+ * refusing while naming the candidates is the only honest reply: silently
+ * writing the first one is how a request to change the tax rate rewrote the
+ * effective date.
+ */
+function bindingTagForOp(op: EditOp, block: FlatBlock): string | undefined {
+  const ranges = block.bindingRanges ?? [];
+  // Only a write has to choose. Formatting and every other op treats the block
+  // as a whole, so asking them to name a field would refuse work that is not
+  // ambiguous at all.
+  if (ranges.length < 2 || !BOUND_WRITE_OPS.has(op.op)) return block.boundTag;
+
+  const named = ranges.filter((range) => bindingNameOfTag(range.tag));
+  const choices = [...new Set(named.map((range) => bindingNameOfTag(range.tag)))];
+  const wanted = typeof (op as any).field === 'string' ? (op as any).field : '';
+  if (wanted) {
+    const hit = named.find((range) => bindingNameOfTag(range.tag) === wanted);
+    if (hit) return hit.tag;
+    throw new OpError(
+      'binding_write_unroutable',
+      `${op.op} names the field "${wanted}", which ${block.anchor} does not hold. It holds ${choices
+        .map((name) => `"${name}"`)
+        .join(' and ')}.`,
+      [`anchor: ${block.anchor}`, `fields: ${choices.join(', ')}`],
+      'never'
+    );
+  }
+
+  const requested = requestedTextRange(op, block);
+  const hits = requested
+    ? named.filter((range) => rangeTouchesBinding(requested, range))
+    : named;
+  const distinct = [...new Set(hits.map((range) => bindingNameOfTag(range.tag)))];
+  if (distinct.length === 1) return hits[0].tag;
+  throw new OpError(
+    'binding_ambiguous_field',
+    `${op.op} at ${block.anchor} does not say which bound value it means: this text holds ${choices
+      .map((name) => `"${name}"`)
+      .join(' and ')}. Send the same op again with \`field\` set to the one you mean.`,
+    [`anchor: ${block.anchor}`, `fields: ${choices.join(', ')}`]
   );
 }
 
@@ -12033,12 +12130,15 @@ function requireBindingRuntime(
 
 function occurrenceForBlock(
   runtime: BindingRuntime,
-  block: FlatBlock
+  block: FlatBlock,
+  op: EditOp
 ): Occurrence | undefined {
-  if (!block.boundTag) return undefined;
-  const occurrences = runtime.occurrencesByTag.get(block.boundTag) ?? [];
+  // WHICH binding, before which occurrence of it: a block may hold several.
+  const tag = bindingTagForOp(op, block);
+  if (!tag) return undefined;
+  const occurrences = runtime.occurrencesByTag.get(tag) ?? [];
   if (occurrences.length <= 1) return occurrences[0];
-  const def = parseTag(block.boundTag);
+  const def = parseTag(tag);
   if (!def || def.kind === 'table') return occurrences[0];
   const tableAnchor = tableAnchorForBlock(block);
   const tableId = tableAnchor
@@ -13718,7 +13818,7 @@ function planBindingRoutedOp(
   if (!target.boundTag) return null;
   const runtime =
     maybeRuntime ?? requireBindingRuntime(editor, sfdt, op, target);
-  const occurrence = occurrenceForBlock(runtime, target);
+  const occurrence = occurrenceForBlock(runtime, target, op);
   if (!occurrence) return null;
   if (occurrence.def.kind === 'formula' && BOUND_WRITE_OPS.has(op.op))
     throw formulaRedirect(op, occurrence);
