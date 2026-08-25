@@ -7583,6 +7583,29 @@ function resolveRelocationTarget(
 }
 
 /** A clone of the range's raw blocks, resolved to what the user currently sees. */
+/**
+ * The block to clone when duplicating ONE table.
+ *
+ * A content control can wrap a table together with sibling paragraphs, and
+ * cloning the whole container duplicates those siblings as well - reported as a
+ * successful table duplicate, because the read-back afterwards verifies only
+ * the table's own blocks and never looks at what else came along. Keep the
+ * wrapper, because the table needs it, and carry only the addressed table
+ * inside it.
+ *
+ * Used by both duplication routes. A bound table duplicates through the binding
+ * engine and an unbound one through the editor, and a rule that only one of
+ * them obeys is how the two drift apart.
+ */
+function containerCarryingOnlyTable(container: any, table: any): any {
+  if (!container || !table || getRows(container)) return container;
+  const children = pick(container, 'blocks', 'b');
+  if (!Array.isArray(children) || children.length <= 1) return container;
+  return 'blocks' in container
+    ? { ...container, blocks: [table] }
+    : { ...container, b: [table] };
+}
+
 function clonedRangeBlocks(sfdt: any, range: BlockRange): any[] {
   return clonedWithoutRevisions(sfdt, rawBlocksInRange(sfdt, range));
 }
@@ -8616,7 +8639,10 @@ export const ANCHORED_OP_HANDLERS: {
       anchor: source.endAnchor,
       address: { ...sourceAddress, block: sourceAddress.block + 1 }
     };
-    const clone = clonedWithoutRevisions(sfdt, container.block);
+    const clone = clonedWithoutRevisions(
+      sfdt,
+      containerCarryingOnlyTable(container.block, tableBlockAt(sfdt, tableAnchor))
+    );
     const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
       sfdt,
@@ -13334,9 +13360,13 @@ function boundDuplicateTablePlan(
           'duplicate_table_unroutable',
           `duplicate_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
         );
+      const markerBlock = getAt(state.sfdt, markerPath);
       const clone = clonedWithoutRevisions(
         state.sfdt,
-        getAt(state.sfdt, markerPath)
+        containerCarryingOnlyTable(
+          markerBlock,
+          getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
+        )
       );
       const newTableId = uniqueTableId(tableRoute.tableId, state.index);
       // One bound table in this clone, so a single-entry map. A section copy
