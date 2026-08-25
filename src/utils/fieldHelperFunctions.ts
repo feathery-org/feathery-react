@@ -209,22 +209,35 @@ export function getDefaultFieldValue(field: any) {
   }
 }
 
-// Field types whose repeated value is one file per repeat row. An empty row
-// must stay in the array so its index keeps lining up with the other fields
-// in the same repeat container.
+// Field types whose value is a file rather than something renderable as text.
 export const FILE_FIELD_TYPES = ['file_upload', 'signature'];
+
+// Only a *repeated* file field has meaningful holes. It holds one file per
+// repeat row, so an empty row has to keep its index to stay lined up with the
+// other fields in the same repeat container. A non-repeated multi-file field
+// is just a list of files whose positions mean nothing, so compacting it is
+// correct and it must not send repeat indices.
+export function isRepeatedFileField(servar?: any) {
+  return Boolean(servar?.repeated && FILE_FIELD_TYPES.includes(servar.type));
+}
 
 // Repeated values render '' rather than 'null' for a cleared row, but a file
 // row has no text to render and needs its hole left alone.
-export function normalizeRepeatArrayValue(value: any[], servarType?: string) {
-  if (servarType && FILE_FIELD_TYPES.includes(servarType)) return value;
+export function normalizeRepeatArrayValue(value: any[], servar?: any) {
+  // An unknown key is on no step of this form, so nothing renders it and it
+  // needs no display normalization. Leaving it alone is also the safer default
+  // of the two: rewriting a file hole to '' loses the row's index, while
+  // 'null' in a field nobody draws costs nothing.
+  if (!servar || isRepeatedFileField(servar)) return value;
   return value.map((item) => (item === null ? '' : item));
 }
 
-// Drops cleared entries from a repeated value before submit. File rows keep
-// their holes so the repeat index survives to the wire.
-export function stripEmptyRepeatEntries(value: any[], servarType?: string) {
-  if (servarType && FILE_FIELD_TYPES.includes(servarType)) return value;
+// Drops cleared entries from a repeated value before submit. A repeated file
+// field keeps its holes so the repeat index survives to the wire. Every caller
+// builds its servar from a step field, so an absent one is not the unknown-key
+// case above — it compacts, which is the long-standing behavior.
+export function stripEmptyRepeatEntries(value: any[], servar?: any) {
+  if (isRepeatedFileField(servar)) return value;
   return value.filter((v) => ![null, undefined].includes(v));
 }
 

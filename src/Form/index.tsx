@@ -544,7 +544,11 @@ function Form({
         continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
       fileEntries.push({
-        servar: { key: servar.key, [servar.type]: fieldValues[fieldKey] },
+        servar: {
+          key: servar.key,
+          [servar.type]: fieldValues[fieldKey],
+          repeated: Boolean(servar.repeated)
+        },
         stepKey: step.key
       });
     }
@@ -931,17 +935,18 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
-  // Servar type per field key. updateFieldValues runs on every keystroke, so
-  // this avoids going through the Field entity, whose type getter warns when
-  // the field is not on the active form.
-  const servarTypeByKey = useMemo(() => {
-    const types = new Map<string, string>();
+  // Servar per field key. updateFieldValues runs on every keystroke, so this
+  // avoids both the linear scan in getServarByFieldKey and the Field entity,
+  // whose type getter warns when the field is not on the active form. The whole
+  // servar is stored because callers need `repeated` as well as `type`.
+  const servarByKey = useMemo(() => {
+    const servars = new Map<string, any>();
     Object.values(steps).forEach((step: any) =>
       (step.servar_fields ?? []).forEach((field: any) =>
-        types.set(field.servar.key, field.servar.type)
+        servars.set(field.servar.key, field.servar)
       )
     );
-    return types;
+    return servars;
   }, [steps]);
 
   useEffect(() => {
@@ -1119,7 +1124,7 @@ function Form({
       (acc, [key, value]) => {
         const field = fields?.[key];
         if (Array.isArray(value) && field && !field.isHiddenField) {
-          acc[key] = normalizeRepeatArrayValue(value, servarTypeByKey.get(key));
+          acc[key] = normalizeRepeatArrayValue(value, servarByKey.get(key));
         } else {
           acc[key] = value;
         }
@@ -2096,11 +2101,18 @@ function Form({
     if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
+      const servar = servarByKey.get(key);
       let newVal = val.value as any;
       newVal = Array.isArray(newVal)
-        ? stripEmptyRepeatEntries(newVal, val.type)
+        ? stripEmptyRepeatEntries(newVal, servar)
         : newVal;
-      return { key, [val.type]: newVal };
+      const field: Record<string, any> = { key, [val.type]: newVal };
+      // Only the file submit path reads this. Setting it on every field would
+      // change the shape of the JSON submit body, which carries these objects
+      // verbatim.
+      if (FILE_FIELD_TYPES.includes(val.type))
+        field.repeated = Boolean(servar?.repeated);
+      return field;
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);

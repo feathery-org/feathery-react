@@ -106,12 +106,15 @@ describe('repeatable file upload wire format', () => {
     expect(indicesOf(body)).toBeNull();
   });
 
-  it('sends dense indices for a non-repeated multi-file field', async () => {
+  it('sends no indices for a non-repeated multi-file field', async () => {
+    // Its entries are a flat list, not repeat rows. Indexing it would move the
+    // field off the legacy dense representation on almost every submission.
     const client = newClient();
     await client._submitFileData(
       {
         key: 'f',
         type: 'file_upload',
+        repeated: false,
         file_upload: [
           Promise.resolve(new Blob(['a'])),
           Promise.resolve(new Blob(['b']))
@@ -119,8 +122,38 @@ describe('repeatable file upload wire format', () => {
       },
       'step'
     );
-    expect(indicesOf(bodyOf(client))).toBe(
-      JSON.stringify({ f: { keep: [], new: [0, 1] } })
+    const body = bodyOf(client);
+    expect(body.getAll('f')).toHaveLength(2);
+    expect(indicesOf(body)).toBeNull();
+  });
+
+  it('sends no indices for a single non-repeated upload', async () => {
+    const client = newClient();
+    await client._submitFileData(
+      {
+        key: 'f',
+        type: 'file_upload',
+        repeated: false,
+        file_upload: [Promise.resolve(new Blob(['a']))]
+      },
+      'step'
     );
+    expect(indicesOf(bodyOf(client))).toBeNull();
+  });
+
+  it('indexes a repeated signature the same way as a file upload', async () => {
+    const client = newClient();
+    await client._submitFileData(
+      {
+        key: 'f',
+        type: 'signature',
+        repeated: true,
+        signature: [null, Promise.resolve(new Blob(['sig']))]
+      },
+      'step'
+    );
+    const body = bodyOf(client);
+    expect(body.getAll('f')).toHaveLength(1);
+    expect(indicesOf(body)).toBe(JSON.stringify({ f: { keep: [], new: [1] } }));
   });
 });

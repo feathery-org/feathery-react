@@ -359,7 +359,11 @@ export default class FeatheryClient extends IntegrationClient {
         numFiles
       );
 
-    if (numFiles > 0 && Array.isArray(fileValue))
+    // Only a repeated file field has repeat rows to index. A non-repeated
+    // multi-file field is a flat list, so sending indices for it would flip its
+    // rows off the legacy dense representation for no gain, and would do so on
+    // nearly every file submission.
+    if (numFiles > 0 && servar.repeated && Array.isArray(fileValue))
       formData.set(
         '__feathery_file_indices',
         JSON.stringify({ [servar.key]: { keep: keepIndices, new: newIndices } })

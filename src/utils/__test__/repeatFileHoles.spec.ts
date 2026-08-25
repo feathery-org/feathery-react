@@ -9,6 +9,7 @@
 import { justInsert } from '../array';
 import {
   getDefaultFieldValue,
+  isRepeatedFileField,
   normalizeRepeatArrayValue,
   stripEmptyRepeatEntries
 } from '../fieldHelperFunctions';
@@ -41,20 +42,76 @@ describe('repeatable file_upload empty indices', () => {
   it('updateFieldValues must not rewrite file holes to empty string', () => {
     const stored = justInsert([], file, 3, fileField);
     expect(
-      normalizeRepeatArrayValue(stored, 'file_upload').slice(0, 3)
+      normalizeRepeatArrayValue(stored, fileField.servar).slice(0, 3)
     ).toEqual([null, null, null]);
     // A text repeat still shows '' rather than 'null' for a cleared row.
-    expect(normalizeRepeatArrayValue([null, 'a'], 'text_field')).toEqual([
-      '',
-      'a'
+    expect(
+      normalizeRepeatArrayValue([null, 'a'], {
+        type: 'text_field',
+        repeated: true
+      })
+    ).toEqual(['', 'a']);
+  });
+
+  it('leaves an unknown key alone rather than destroying its holes', () => {
+    // A key on no step of this form is rendered by nothing, so there is no
+    // display to normalize -- and guessing wrong here would collapse a file
+    // field's repeat indices.
+    const stored = justInsert([], file, 3, fileField);
+    expect(normalizeRepeatArrayValue(stored, undefined).slice(0, 3)).toEqual([
+      null,
+      null,
+      null
     ]);
   });
 
   it('submitStep must not compact file holes out of the array', () => {
     const stored = justInsert([], file, 3, fileField);
-    expect(stripEmptyRepeatEntries(stored, 'file_upload')).toHaveLength(4);
+    expect(stripEmptyRepeatEntries(stored, fileField.servar)).toHaveLength(4);
     // Non-file repeats keep compacting, as before.
-    expect(stripEmptyRepeatEntries([null, 'a'], 'text_field')).toEqual(['a']);
+    expect(
+      stripEmptyRepeatEntries([null, 'a'], {
+        type: 'text_field',
+        repeated: true
+      })
+    ).toEqual(['a']);
+  });
+
+  it('only a repeated file field has holes worth keeping', () => {
+    expect(isRepeatedFileField(fileField.servar)).toBe(true);
+    expect(isRepeatedFileField({ type: 'signature', repeated: true })).toBe(
+      true
+    );
+    // A non-repeated multi-file field is a flat list; its positions mean
+    // nothing, so it keeps compacting and sends no repeat indices.
+    expect(isRepeatedFileField({ type: 'file_upload', repeated: false })).toBe(
+      false
+    );
+    expect(isRepeatedFileField({ type: 'text_field', repeated: true })).toBe(
+      false
+    );
+    expect(isRepeatedFileField(undefined)).toBe(false);
+  });
+
+  it('a non-repeated multi-file field still compacts', () => {
+    const servar = { type: 'file_upload', repeated: false };
+    expect(stripEmptyRepeatEntries([null, file], servar)).toEqual([file]);
+  });
+
+  it('a repeated signature keeps its holes like a file upload', () => {
+    const sigField = {
+      servar: {
+        key: 'my_sigs',
+        type: 'signature',
+        repeated: true,
+        metadata: {}
+      }
+    };
+    expect(getDefaultFieldValue(sigField)).toBeNull();
+    const stored = justInsert([], file, 2, sigField);
+    expect(stored).toHaveLength(3);
+    expect(normalizeRepeatArrayValue(stored, sigField.servar)).toHaveLength(3);
+    expect(stripEmptyRepeatEntries(stored, sigField.servar)).toHaveLength(3);
   });
 
   it('getServarRepeatNum does not add a phantom trailing row', () => {
