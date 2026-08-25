@@ -1281,22 +1281,13 @@ export default class FeatheryClient extends IntegrationClient {
   // ID field, the current user's key is the batch value - stamped into that
   // field server-side - so a pending import survives reloads without a
   // dedicated backend column.
-  // TODO: Drop the local option extension once @feathery/client-utils ships
-  // the verification fields on HubActionOptions.
-  async dataHubAction(
-    options: Omit<HubActionOptions, 'data'> & {
-      data?: Record<string, any> | Record<string, any>[];
-      verification?: 'verified' | 'unverified' | 'all';
-      idFieldId?: string;
-      idValue?: string;
-    }
-  ) {
+  async dataHubAction(options: HubActionOptions) {
     const { sdkKey, userId } = initInfo();
     const resolved =
       options.operation === 'create' && options.idFieldId && !options.idValue
         ? { ...options, idValue: userId }
         : options;
-    return apiDataHubAction(sdkKey, resolved as HubActionOptions, this.formKey);
+    return apiDataHubAction(sdkKey, resolved, this.formKey);
   }
 
   async getHubSchemas(hubIds: string[]) {

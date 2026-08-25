@@ -221,11 +221,7 @@ export const getFormContext = (formUuid: string) => {
       data,
       where,
       verification
-    }: // TODO: Use HubActionOptions directly once client-utils ships
-    // verification on it.
-    HubActionOptions & {
-      verification?: 'verified' | 'unverified' | 'all';
-    }) =>
+    }: HubActionOptions) =>
       formState.client.dataHubAction({
         hubId,
         operation,
