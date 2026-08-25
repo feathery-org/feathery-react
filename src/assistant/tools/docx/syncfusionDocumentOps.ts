@@ -1174,7 +1174,13 @@ function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   const section = sections[Number(parts[0])];
   if (!section) return found;
-  let block: any = getBlocks(section)[Number(parts[1])];
+  // Anchors count EXPANDED blocks: a block-level content control holding N
+  // blocks contributes N entries. Raw indices diverge from anchors the moment
+  // such a control holds anything but exactly one block - which is precisely
+  // what a bound document has - so resolve the same way `tableContainerAt` does.
+  let block: any = expandBlockContentControls(getBlocks(section))[
+    Number(parts[1])
+  ];
   if (!block) return found;
   if (parts.length >= 5) {
     const rows = getRows(block) ?? getRows(getBlocks(block).find((b: any) => getRows(b)));
@@ -5447,6 +5453,21 @@ function normalizeParagraphBreaks(text: string): string {
 // the complete block span implied by the payload rather than re-reading only
 // the pre-write anchor. Reversibility remains the separate reject-projection
 // invariant in assertTrackedMutation.
+/**
+ * Write `replacement` over the current selection, deleting when it is empty.
+ *
+ * An empty replacement is a DELETION, and it cannot go through `insertText`:
+ * SyncFusion returns immediately for the empty string, so the selection is left
+ * untouched and the op silently writes nothing. `delete()` is the tracked
+ * deletion primitive, and it is safe here for the same reason it is safe on the
+ * live-story path - the selection is exactly the searched range, with no
+ * paragraph mark in it.
+ */
+function writeOverSelection(editor: LiveEditor, replacement: string): void {
+  if (replacement) replaceSelectedText(editor, replacement);
+  else editor.editor.delete();
+}
+
 function verifyTextWrite(
   editor: LiveEditor,
   target: {
@@ -7555,11 +7576,15 @@ function assertTableHasNoBindings(
   // Ask the binding scan what is bound - it is the one owner of that answer.
   // Reading raw SFDT for tag-shaped strings would be a second, weaker source of
   // truth that drifts the moment the grammar changes.
-  const bound = (flattenSfdt(sfdt) as FlatBlock[]).filter(
+  const bound = flattenSfdt(sfdt).filter(
     (candidate) =>
       !!candidate.boundTag && candidate.anchor.startsWith(`${tableAnchor};`)
   );
-  if (!bound.length) return;
+  // A table can be bound by its own table-scope marker while no individual cell
+  // carries a field tag - a bound repeating table with no data rows yet. Ask the
+  // binding index about the table itself, not only its cells.
+  const boundTable = bindingTablesByAnchor(sfdt).has(tableAnchor);
+  if (!bound.length && !boundTable) return;
   throw new OpError(
     'structural_op_would_destroy_bindings',
     `${opName} cannot restructure the table at ${JSON.stringify(
@@ -8612,7 +8637,7 @@ export const ANCHORED_OP_HANDLERS: {
       // Test doubles and older integrations without SyncFusion Search retain
       // their legacy selected-range replacement primitive. Production search
       // is required and always takes the guarded delete/read/insert path.
-      editor.editor.insertText(String(replacement ?? ''));
+      writeOverSelection(editor, String(replacement ?? ''));
       return {
         postWriteSfdt: verifyTextWrite(editor, {
           startAnchor: block.anchor,
@@ -8621,7 +8646,7 @@ export const ANCHORED_OP_HANDLERS: {
         })
       };
     }
-    replaceSelectedText(editor, String(replacement ?? ''));
+    writeOverSelection(editor, String(replacement ?? ''));
     return {
       postWriteSfdt: verifyTextWrite(editor, {
         startAnchor: block.anchor,
@@ -18745,6 +18770,14 @@ function applyDocumentEditsMeasured(
   // the same reason `groupNewRevisions` diffs by `revisionID` after a reload.
   const preExistingRevisionIds = new Set(
     snapshotRevisions(editor)
+      // Only somebody ELSE's pending work is off limits. The assistant's own
+      // revisions from an earlier change set are ordinary iterative editing -
+      // "now also tweak that paragraph" before the last card is accepted - and
+      // re-authoring our own revision loses nothing the user decided.
+      .filter(
+        (revision) =>
+          !!revision.author && revision.author !== ASSISTANT_DOCUMENT_AUTHOR
+      )
       .map((revision) => revision.revisionID)
       .filter((id): id is string => typeof id === 'string' && !!id)
   );
@@ -18969,9 +19002,10 @@ function applyDocumentEditsMeasured(
       // it reached this bucket. An edit landing inside a user's pending
       // Insertion splits it into a fresh-id replacement that KEEPS their
       // author, and rejecting that would delete text the user wrote.
+      // Explicitly ours, or not ours to reject. An author-less revision is
+      // KEPT: guessing wrong in that direction deletes somebody's text.
       (revision) =>
-        live.has(revision) &&
-        (!revision.author || revision.author === ASSISTANT_DOCUMENT_AUTHOR)
+        live.has(revision) && revision.author === ASSISTANT_DOCUMENT_AUTHOR
     );
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
