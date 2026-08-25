@@ -19,7 +19,10 @@ import {
   isStoreFieldValueAction,
   updateSessionValues
 } from '../formHelperFunctions';
-import { getDefaultFormFieldValue } from '../fieldHelperFunctions';
+import {
+  FILE_FIELD_TYPES,
+  getDefaultFormFieldValue
+} from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
 import {
   isFontDeclaredByHost,
@@ -928,9 +931,7 @@ export default class FeatheryClient extends IntegrationClient {
     gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
-      ['file_upload', 'signature', 'audio_recording'].some(
-        (type) => type in servar
-      );
+      FILE_FIELD_TYPES.some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 

@@ -538,10 +538,7 @@ function Form({
       const found = getServarAndStepByFieldKey(fieldKey);
       if (!found) continue;
       const { servar, step } = found;
-      if (
-        !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-      )
-        continue;
+      if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
       fileEntries.push({
         servar: {
@@ -565,10 +562,7 @@ function Form({
         if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
-        if (
-          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-        )
-          return pending;
+        if (!FILE_FIELD_TYPES.includes(servar.type)) return pending;
         if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
         pending.push(fieldKey);
         return pending;

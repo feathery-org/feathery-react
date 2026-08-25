@@ -210,7 +210,9 @@ export function getDefaultFieldValue(field: any) {
 }
 
 // Field types whose value is a file rather than something renderable as text.
-export const FILE_FIELD_TYPES = ['file_upload', 'signature'];
+// All three share the multipart submit path, the indexed filePathMap and the
+// same repeat semantics, so this is the one list; do not inline a copy.
+export const FILE_FIELD_TYPES = ['file_upload', 'signature', 'audio_recording'];
 
 // Only a *repeated* file field has meaningful holes. It holds one file per
 // repeat row, so an empty row has to keep its index to stay lined up with the

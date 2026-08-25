@@ -141,6 +141,22 @@ describe('repeatable file upload wire format', () => {
     expect(indicesOf(bodyOf(client))).toBeNull();
   });
 
+  it('indexes a repeated audio recording the same way as a file upload', async () => {
+    const client = newClient();
+    await client._submitFileData(
+      {
+        key: 'f',
+        type: 'audio_recording',
+        repeated: true,
+        audio_recording: [Promise.resolve(new Blob(['clip'])), null, null]
+      },
+      'step'
+    );
+    const body = bodyOf(client);
+    expect(body.getAll('f')).toHaveLength(1);
+    expect(indicesOf(body)).toBe(JSON.stringify({ f: { keep: [], new: [0] } }));
+  });
+
   it('indexes a repeated signature the same way as a file upload', async () => {
     const client = newClient();
     await client._submitFileData(
