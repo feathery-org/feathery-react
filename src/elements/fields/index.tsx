@@ -352,6 +352,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
       styles.applyFlexDirection('ac');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.applyColor('bar', 'bar_color', 'backgroundColor');
       break;
     case 'file_upload':
@@ -374,6 +375,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyFlexDirection('ac');
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
+      styles.applyColor('img', 'icon_color', 'color');
       styles.apply(
         'ac',
         [

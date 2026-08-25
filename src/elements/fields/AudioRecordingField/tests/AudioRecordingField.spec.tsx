@@ -49,6 +49,29 @@ describe('AudioRecordingField', () => {
     expect(screen.getByText('Record audio')).toBeTruthy();
   });
 
+  it('renders a stored glyph with the authored icon color', () => {
+    const element = createAudioRecordingElement();
+    element.properties.icon_glyph = {
+      variant: 'outline',
+      nodes: [['path', { d: 'M12 5l0 14' }]]
+    };
+    element.styles.icon_color = 'F5A623';
+    const responsiveStyles = applyFieldStyles(
+      element,
+      new ResponsiveStyles(element, [], false)
+    );
+
+    const { container } = render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { responsiveStyles })}
+      />
+    );
+
+    const icon = container.querySelector('svg');
+    expect(icon).toHaveAttribute('stroke', 'currentColor');
+    expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
+  });
+
   it('starts recording on click and shows the stop control', async () => {
     const element = createAudioRecordingElement();
     render(<AudioRecordingField {...createAudioRecordingProps(element)} />);
