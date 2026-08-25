@@ -1162,6 +1162,83 @@ function getRows(block: any): any[] | undefined {
   return Array.isArray(rows) ? rows : undefined;
 }
 
+/**
+ * Revision ids carried by the inlines of one anchored block.
+ *
+ * Anchors are `section;block` for body paragraphs and
+ * `section;block;row;cell;para` inside a table.
+ */
+function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
+  const found = new Set<string>();
+  const parts = String(anchor).split(';');
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const section = sections[Number(parts[0])];
+  if (!section) return found;
+  let block: any = getBlocks(section)[Number(parts[1])];
+  if (!block) return found;
+  if (parts.length >= 5) {
+    const rows = getRows(block) ?? getRows(getBlocks(block).find((b: any) => getRows(b)));
+    const row = rows?.[Number(parts[2])];
+    const cells = pick(row, 'cells', 'c');
+    const cell = Array.isArray(cells) ? cells[Number(parts[3])] : undefined;
+    block = getBlocks(cell)[Number(parts[4])] ?? cell;
+  }
+  const collect = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(collect);
+    const ids = pick(node, 'revisionIds', 'rids');
+    if (Array.isArray(ids)) for (const id of ids) found.add(String(id));
+    for (const value of Object.values(node)) collect(value);
+  };
+  collect(block);
+  return found;
+}
+
+/** The revisions that already existed when this change set began. */
+const PRE_EXISTING_REVISIONS_KEY = '__fmPreExistingRevisionIds';
+
+/**
+ * Refuse to overwrite text that carries somebody else's pending tracked change.
+ *
+ * SyncFusion's tracked delete does not leave such a revision alone: for an
+ * element already carrying a pending Deletion it UNLINKS that revision, authors
+ * a replacement under the current user, and drops the original from the
+ * collection. The user's deletion silently becomes the assistant's - so a later
+ * reject of the assistant's work resurrects text the USER deleted, and a failed
+ * op's rollback does the same immediately. Neither is recoverable afterwards,
+ * because by then the user's revision no longer exists in any form.
+ *
+ * So this refuses before the write, the same stance every other op takes toward
+ * a range it cannot address safely.
+ */
+function assertNoForeignPendingRevisions(
+  editor: LiveEditor,
+  block: FlatBlock,
+  op: EditOp
+): void {
+  const preExisting: Set<string> | undefined = (editor as any)[
+    PRE_EXISTING_REVISIONS_KEY
+  ];
+  if (!preExisting || !preExisting.size) return;
+  let touched: string[] = [];
+  try {
+    const ids = revisionIdsAtAnchor(serializeSfdt(editor), block.anchor);
+    touched = [...ids].filter((id) => preExisting.has(id));
+  } catch {
+    return;
+  }
+  if (!touched.length) return;
+  throw new OpError(
+    'pending_revision_in_range',
+    `${op.op} would overwrite text at "${block.anchor}" that carries ${touched.length} pending tracked change${touched.length === 1 ? '' : 's'} made before this edit. Rewriting it re-authors that change as the assistant's, so accepting or rejecting it later would no longer do what its author intended. Nothing was written.`,
+    [
+      `anchor: ${block.anchor}`,
+      `pending revisions in range: ${touched.join(', ')}`,
+      'Accept or reject the existing tracked changes first, or target a range that does not overlap them.'
+    ]
+  );
+}
+
 // SyncFusion serializes a revision type as a number in optimized SFDT and as a
 // string in full SFDT: Insertion is 1/"Insertion", Deletion is 2/"Deletion".
 function revisionIdsOfType(sfdt: any, code: number, name: string): Set<string> {
@@ -8430,6 +8507,7 @@ export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
   replace_text: ({ editor, op, block, liveText }) => {
+    assertNoForeignPendingRevisions(editor, block, op);
     const find = op.find != null ? String(op.find) : '';
     const replacement = op.replace ?? op.text ?? op.newText;
     if (!find) {
@@ -8534,6 +8612,7 @@ export const ANCHORED_OP_HANDLERS: {
     };
   },
   delete_text: ({ editor, op, block, liveText }) => {
+    assertNoForeignPendingRevisions(editor, block, op);
     const find = String(op.find ?? '');
     if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
     const idx = liveText.indexOf(find);
@@ -8931,6 +9010,7 @@ export const ANCHORED_OP_HANDLERS: {
     );
   },
   set_cell_text: ({ editor, op, block }) => {
+    assertNoForeignPendingRevisions(editor, block, op);
     // Overwrite the (cell) block's content.
     selectBlock(editor, block);
     const replacement = String(op.text ?? '');
@@ -8948,6 +9028,7 @@ export const ANCHORED_OP_HANDLERS: {
   set_column_formula: ({ editor, op, block, byAnchor }) =>
     runColumnFormulaWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
+    assertNoForeignPendingRevisions(editor, block, op);
     const replacement = changeCase(liveText, String(op.caseType ?? ''));
     selectBlock(editor, block);
     editor.editor.insertText(replacement);
@@ -18608,6 +18689,22 @@ function applyDocumentEditsMeasured(
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSet(edits, columnTouches);
+  // Rollback undoes a write by REJECTING the revisions it created, and ownership
+  // is recorded as an object-identity diff. That is not durable: when a tracked
+  // write lands inside a range that already carries a pending revision,
+  // SyncFusion re-authors that revision, and the diff then counts somebody
+  // else's edit as ours. Measured: a refused change_case rejected the user's own
+  // pending Deletion, resurrecting deleted text as ordinary content.
+  //
+  // A revision that existed BEFORE this change set is not ours to reject, however
+  // the bucket came to contain it. Persisted ids are the stable identity here -
+  // the same reason `groupNewRevisions` diffs by `revisionID` after a reload.
+  const preExistingRevisionIds = new Set(
+    snapshotRevisions(editor)
+      .map((revision) => revision.revisionID)
+      .filter((id): id is string => typeof id === 'string' && !!id)
+  );
+  (editor as any)[PRE_EXISTING_REVISIONS_KEY] = preExistingRevisionIds;
   const priorCurrentUser = editor.currentUser;
   // enableTrackChanges flips to true only inside the protected try below
   // (which forces it off in `finally` so later user typing is never tracked).
@@ -18823,7 +18920,14 @@ function applyDocumentEditsMeasured(
     }
     const live = new Set(snapshotRevisions(editor));
     const revisions = [...(revisionsByAppliedGroup.get(groupId) ?? [])].filter(
-      (revision) => live.has(revision)
+      // `currentUser` is pinned to the assistant for the whole batch, so a
+      // revision authored by anyone else can never be ours to reject - however
+      // it reached this bucket. An edit landing inside a user's pending
+      // Insertion splits it into a fresh-id replacement that KEEPS their
+      // author, and rejecting that would delete text the user wrote.
+      (revision) =>
+        live.has(revision) &&
+        (!revision.author || revision.author === ASSISTANT_DOCUMENT_AUTHOR)
     );
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
