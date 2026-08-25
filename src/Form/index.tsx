@@ -167,6 +167,7 @@ import {
   ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
   ACTION_OAUTH_LOGIN,
+  ACTION_START_DATA_MAPPING,
   ACTION_PURCHASE_PRODUCTS,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
@@ -233,6 +234,7 @@ import {
   isDocusignSignAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
+import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
@@ -593,6 +595,10 @@ function Form({
 
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
+  const [dataMappingState, setDataMappingState] = useState<{
+    show: boolean;
+    hubs: any[];
+  }>({ show: false, hubs: [] });
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
@@ -1470,6 +1476,7 @@ function Form({
         inlineErrors,
         setInlineErrors,
         setUserProgress,
+        setDataMappingState,
         steps,
         setStepKey,
         updateFieldOptions: (
@@ -3436,6 +3443,8 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
+      } else if (type === ACTION_START_DATA_MAPPING) {
+        setDataMappingState({ show: true, hubs: action.mapping_hubs ?? [] });
       }
     }
 
@@ -3651,6 +3660,14 @@ function Form({
           <QuikFormViewer
             html={quikHTMLPayload}
             setShow={setShowQuikFormViewer}
+          />
+        )}
+        {dataMappingState.show && (
+          <DataMappingModal
+            hubs={dataMappingState.hubs}
+            client={client}
+            responsiveStyles={globalCSS}
+            onClose={() => setDataMappingState((p) => ({ ...p, show: false }))}
           />
         )}
         {reviewViewerPayload && (
