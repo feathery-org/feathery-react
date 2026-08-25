@@ -134,6 +134,9 @@ export interface FormInternalState {
   navigate: any;
   inlineErrors: InlineErrors;
   setInlineErrors: React.Dispatch<React.SetStateAction<InlineErrors>>;
+  // Resolves once an asynchronously-published inline error (e.g. a button
+  // submit error) has been written, so programmatic callers can await it.
+  pendingInlineErrorPublish?: Promise<void>;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
   steps: any;
   setStepKey: (key: string) => void;

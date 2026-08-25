@@ -4,8 +4,11 @@ import { getRepeatedContainer } from '../../utils/repeat';
 import { getPositionKey } from '../../utils/hideAndRepeats';
 import { isButtonDisabled } from '../../utils/button';
 import {
+  awaitPendingInlineErrors,
+  diffInlineErrorSnapshots,
   findClickableAncestorSubgrids,
   getLiveStepKey,
+  InlineErrorReport,
   snapshotInlineErrors,
   validateRepeatIndex
 } from './utils';
@@ -26,7 +29,7 @@ type ClickResult =
       ok: true;
       navigated: { fromStepKey: string; toStepKey: string } | null;
       buttonError?: string;
-      fieldErrors?: Record<string, string>;
+      fieldErrors?: InlineErrorReport[];
     }
   | {
       ok: false;
@@ -207,29 +210,26 @@ export async function dispatchClickElement(
   }
 
   const toStepKey = getLiveStepKey(state) ?? fromStepKey;
+  // A button's submit error is published on a timer by the producer; await that
+  // publication so the snapshot below can't run before the error exists.
+  await awaitPendingInlineErrors(state);
   const errorsAfter = snapshotInlineErrors(state);
 
-  const fieldErrors: Record<string, string> = {};
-  for (const key of Object.keys(errorsAfter)) {
-    if (errorsAfter[key] !== errorsBefore[key])
-      fieldErrors[key] = errorsAfter[key];
-  }
-  // SDK keys submit-time button errors by element.id; the inline snapshot
-  // qualifies a repeat row as `${id}[${index}]`. Select the matching key so a
-  // repeated button's own error is returned as buttonError (not leaked into
-  // fieldErrors), matching the non-repeated button contract.
-  const ownErrorKey =
-    typeof repeatIndex === 'number'
-      ? `${elementId}[${repeatIndex}]`
-      : elementId;
-  const buttonError =
-    found.elementType === 'button' ? fieldErrors[ownErrorKey] : undefined;
-  delete fieldErrors[ownErrorKey];
+  const newErrors = diffInlineErrorSnapshots(errorsBefore, errorsAfter);
+  // The SDK keys a button's submit error by element.id, scoped to the clicked
+  // repeat row. Match on (key, repeatIndex) as separate fields so it is
+  // returned as buttonError rather than leaking into fieldErrors.
+  const isOwnError = (e: InlineErrorReport) =>
+    found.elementType === 'button' &&
+    e.key === elementId &&
+    (e.repeatIndex === undefined || e.repeatIndex === repeatIndex);
+  const buttonError = newErrors.find(isOwnError)?.message;
+  const fieldErrors = newErrors.filter((e) => !isOwnError(e));
 
   return {
     ok: true,
     navigated: toStepKey !== fromStepKey ? { fromStepKey, toStepKey } : null,
     ...(buttonError ? { buttonError } : {}),
-    ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {})
+    ...(fieldErrors.length > 0 ? { fieldErrors } : {})
   };
 }

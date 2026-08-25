@@ -3,8 +3,72 @@ import {
   firstInlineErrorMessage,
   inlineEntryHasMessage,
   InlineErrors,
-  resolveInlineErrorMessage
+  resolveInlineErrorMessage,
+  shiftInlineErrorRows
 } from './inlineErrors';
+
+describe('shiftInlineErrorRows', () => {
+  it('drops the removed row and shifts higher rows down', () => {
+    const errors: InlineErrors = {
+      f: {
+        byIndex: {
+          0: { message: 'r0' },
+          1: { message: 'r1' },
+          2: { message: 'r2' }
+        }
+      }
+    };
+
+    const next = shiftInlineErrorRows(errors, ['f'], 1);
+
+    // r1 removed; r2 shifted down into slot 1; r0 untouched.
+    expect(next.f).toEqual({
+      byIndex: { 0: { message: 'r0' }, 1: { message: 'r2' } }
+    });
+  });
+
+  it('shifts BUTTON errors too, not just servar fields', () => {
+    // Removing row 0 must not leave the button error sitting on the new row 0.
+    const errors: InlineErrors = {
+      btn: { byIndex: { 0: { message: 'row 0 failed' } } },
+      name: { byIndex: { 1: { message: 'row 1 required' } } }
+    };
+
+    const next = shiftInlineErrorRows(errors, ['name', 'btn'], 0);
+
+    // The removed row's button error is gone entirely.
+    expect(next.btn).toBeUndefined();
+    // The servar error from row 1 moved down to row 0.
+    expect(next.name).toEqual({
+      byIndex: { 0: { message: 'row 1 required' } }
+    });
+  });
+
+  it('shifts higher button rows down when a lower row is removed', () => {
+    const errors: InlineErrors = {
+      btn: { byIndex: { 1: { message: 'b1' }, 2: { message: 'b2' } } }
+    };
+
+    const next = shiftInlineErrorRows(errors, ['btn'], 0);
+
+    expect(next.btn).toEqual({
+      byIndex: { 0: { message: 'b1' }, 1: { message: 'b2' } }
+    });
+  });
+
+  it('preserves a field-wide message and leaves untouched owners alone', () => {
+    const errors: InlineErrors = {
+      f: { message: 'field-wide', byIndex: { 0: { message: 'r0' } } },
+      other: { byIndex: { 0: { message: 'keep' } } }
+    };
+
+    const next = shiftInlineErrorRows(errors, ['f'], 0);
+
+    expect(next.f).toEqual({ message: 'field-wide' });
+    // Not in ownerKeys => untouched.
+    expect(next.other).toEqual({ byIndex: { 0: { message: 'keep' } } });
+  });
+});
 
 describe('applyInlineError', () => {
   it('stores a field-wide message and clears the whole field when emptied', () => {

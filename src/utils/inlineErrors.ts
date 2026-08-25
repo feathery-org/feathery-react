@@ -44,6 +44,35 @@ export function firstInlineErrorMessage(
   return Object.values(entry.byIndex ?? {}).find((d) => d?.message)?.message;
 }
 
+// Remove a repeat row: drop each owner's error for that row and shift
+// higher-indexed rows down, so remaining rows keep their own errors instead of
+// inheriting a neighbour's. `ownerKeys` must cover EVERY element in the repeat
+// container that can own a per-row error -- servar fields plus buttons and
+// containers, which key submit/action failures by element id.
+export function shiftInlineErrorRows(
+  inlineErrors: InlineErrors,
+  ownerKeys: Iterable<string>,
+  removedIndex: number
+): InlineErrors {
+  const next: InlineErrors = { ...inlineErrors };
+  for (const key of new Set(ownerKeys)) {
+    const existing = next[key];
+    if (!existing?.byIndex) continue;
+    const shifted: Record<number, { message: string }> = {};
+    for (const [idxStr, data] of Object.entries(existing.byIndex)) {
+      const idx = Number(idxStr);
+      if (idx === removedIndex) continue;
+      shifted[idx > removedIndex ? idx - 1 : idx] = data;
+    }
+    const entry: InlineErrorEntry = {};
+    if (existing.message) entry.message = existing.message;
+    if (Object.keys(shifted).length) entry.byIndex = shifted;
+    if (entry.message || entry.byIndex) next[key] = entry;
+    else delete next[key];
+  }
+  return next;
+}
+
 // Apply one (message, index) write to the map, mutating it in place.
 // An empty message clears rather than stores:
 //   - non-indexed empty write  -> clear the whole field (message + all rows)

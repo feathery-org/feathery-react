@@ -57,7 +57,8 @@ import {
 import {
   getContainerById,
   getFieldsInRepeat,
-  getRepeatedContainer
+  getRepeatedContainer,
+  getRepeatErrorOwnerIds
 } from '../utils/repeat';
 import {
   getHideIfReferences,
@@ -79,7 +80,7 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import { InlineErrors } from '../utils/inlineErrors';
+import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
 import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -959,28 +960,24 @@ function Form({
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
 
-    // Inline errors for a repeated field live in its `byIndex` map. Drop the
+    // Inline errors for a repeated element live in its `byIndex` map. Drop the
     // removed row's entry and shift higher-indexed rows down so each remaining
     // row keeps its own error instead of inheriting a neighbor's. Operating on
     // `byIndex` (not string keys) means a literal field like `foo-0` is never
     // mistaken for a row of `foo`.
-    setInlineErrors((prev) => {
-      const next: InlineErrors = { ...prev };
-      Object.keys(removeServars).forEach((key) => {
-        const entry = next[key];
-        if (!entry?.byIndex) return;
-        const shifted: Record<number, { message: string }> = {};
-        Object.entries(entry.byIndex).forEach(([idxStr, data]) => {
-          const idx = Number(idxStr);
-          if (idx === curIndex) return;
-          shifted[idx > curIndex ? idx - 1 : idx] = data;
-        });
-        if (entry.message || Object.keys(shifted).length)
-          next[key] = { ...entry, byIndex: shifted };
-        else delete next[key];
-      });
-      return next;
-    });
+    // Every element in the container can own a per-row error, not just servar
+    // fields: buttons (and containers) store submit/action failures under their
+    // element id, so they must be shifted too.
+    setInlineErrors((prev) =>
+      shiftInlineErrorRows(
+        prev,
+        [
+          ...Object.keys(removeServars),
+          ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
+        ],
+        curIndex
+      )
+    );
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -2404,25 +2401,43 @@ function Form({
       // Clear loaders before setting errors since buttons are disabled
       // when loaders are showing
       clearLoaders();
-      // Set asynchronously since loaders need to unrender first
-      setTimeout(
-        () =>
-          setFormElementError({
-            formRef,
-            fieldKey: button.id,
-            message,
-            // Scope to the clicked button's repeat row, and merge into the
-            // current error map (read fresh from internalState, since this runs
-            // async) so a failure in one repeated row doesn't render on every
-            // row or wipe unrelated field errors.
-            index: button.repeat,
-            errorType: formSettings.errorType,
-            inlineErrors: internalState[_internalId]?.inlineErrors,
-            setInlineErrors,
-            triggerErrors: true
-          }),
-        10
-      );
+      // Set asynchronously since loaders need to unrender first. Publish the
+      // pending write on internalState so programmatic callers (assistant
+      // tools) can await it instead of racing the timer.
+      const publication = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          // Promise.resolve tolerates a non-promise return (e.g. a mocked
+          // setFormElementError) so the publication always settles.
+          Promise.resolve(
+            setFormElementError({
+              formRef,
+              fieldKey: button.id,
+              message,
+              // Scope to the clicked button's repeat row, and merge into the
+              // current error map (read fresh from internalState, since this
+              // runs async) so a failure in one repeated row doesn't render on
+              // every row or wipe unrelated field errors.
+              index: button.repeat,
+              errorType: formSettings.errorType,
+              inlineErrors: internalState[_internalId]?.inlineErrors,
+              setInlineErrors,
+              triggerErrors: true
+            })
+          )
+            .catch(() => {})
+            .then(() => resolve());
+        }, 10);
+      });
+      const state = internalState[_internalId];
+      if (state) {
+        state.pendingInlineErrorPublish = publication;
+        // Stop awaiting a settled publication on later calls.
+        publication.then(() => {
+          if (state.pendingInlineErrorPublish === publication)
+            state.pendingInlineErrorPublish = undefined;
+        });
+      }
+      return publication;
     };
 
     try {
