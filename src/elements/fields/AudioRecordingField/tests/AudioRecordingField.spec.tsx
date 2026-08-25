@@ -1,5 +1,11 @@
 import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor
+} from '@testing-library/react';
 import AudioRecordingField from '../index';
 import { applyFieldStyles } from '../../index';
 import ResponsiveStyles from '../../../styles';
@@ -41,6 +47,29 @@ describe('AudioRecordingField', () => {
     render(<AudioRecordingField {...createAudioRecordingProps(element)} />);
 
     expect(screen.getByText('Record audio')).toBeTruthy();
+  });
+
+  it('renders a stored glyph with the authored icon color', () => {
+    const element = createAudioRecordingElement();
+    element.properties.icon_glyph = {
+      variant: 'outline',
+      nodes: [['path', { d: 'M12 5l0 14' }]]
+    };
+    element.styles.icon_color = 'F5A623';
+    const responsiveStyles = applyFieldStyles(
+      element,
+      new ResponsiveStyles(element, [], false)
+    );
+
+    const { container } = render(
+      <AudioRecordingField
+        {...createAudioRecordingProps(element, { responsiveStyles })}
+      />
+    );
+
+    const icon = container.querySelector('svg');
+    expect(icon).toHaveAttribute('stroke', 'currentColor');
+    expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
   });
 
   it('starts recording on click and shows the stop control', async () => {
@@ -151,7 +180,9 @@ describe('AudioRecordingField', () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByText('Nothing was recorded. Please try again')).toBeTruthy();
+    expect(
+      screen.getByText('Nothing was recorded. Please try again')
+    ).toBeTruthy();
   });
 
   it('releases the microphone when unmounted mid-recording', async () => {
@@ -400,7 +431,9 @@ describe('AudioRecordingField', () => {
     });
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByText('Nothing was recorded. Please try again')).toBeTruthy();
+    expect(
+      screen.getByText('Nothing was recorded. Please try again')
+    ).toBeTruthy();
   });
 
   it('shows an error message when microphone permission is denied', async () => {
