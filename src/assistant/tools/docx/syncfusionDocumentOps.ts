@@ -12287,15 +12287,35 @@ function containingBindingTable(
  * to `tax_rate` can see the independent `expenses_copy_tax_rate` instance the
  * duplicate created without conflating unrelated fields elsewhere.
  */
+/**
+ * The family a document field belongs to, with the marks a COPY adds stripped
+ * off - so a copy and its source are recognised as instances of one thing.
+ *
+ * Copies are marked two different ways, and only one of them was handled here.
+ * A table duplicate namespaces its fields with the new table's id
+ * (`costs_copy_tax`), and a section copy appends a numeric suffix instead
+ * (`project.name_2`, from `uniqueBindingName`). Recognising only the prefix
+ * meant a section copy and its source read as unrelated fields, so the
+ * ambiguity flow - the thing that asks the user WHICH instance they meant -
+ * never fired for exactly the case that produces two instances.
+ *
+ * The suffix is the allocator's own spelling, matched as it is written, so this
+ * cannot drift from it silently.
+ */
 function documentFieldIdentity(
   index: BindingIndex,
   occurrence: Occurrence
 ): string {
   const owner = containingBindingTable(index, occurrence);
   const prefix = owner ? `${owner.tableId}_` : '';
-  return prefix && occurrence.name.startsWith(prefix)
-    ? occurrence.name.slice(prefix.length)
-    : occurrence.name;
+  const withoutPrefix =
+    prefix && occurrence.name.startsWith(prefix)
+      ? occurrence.name.slice(prefix.length)
+      : occurrence.name;
+  const withoutCopySuffix = withoutPrefix.replace(/_\d+$/, '');
+  // A name that is ONLY a suffix has no family to belong to; keep it whole
+  // rather than collapsing it to nothing.
+  return withoutCopySuffix || withoutPrefix;
 }
 
 function independentDocumentFields(
