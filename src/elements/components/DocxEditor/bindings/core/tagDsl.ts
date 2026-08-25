@@ -38,11 +38,18 @@ const KEYS = new Set([
   'value',
   'default',
   'label',
-  'row'
+  'row',
+  'copyOf'
 ]);
 
 /** Free-text option values: percent-encoded, and decoded on the way in. */
-const TEXT_OPTION_KEYS = ['value', 'default', 'label', 'row'] as const;
+const TEXT_OPTION_KEYS = [
+  'value',
+  'default',
+  'label',
+  'row',
+  'copyOf'
+] as const;
 
 export type TagVersion = 1 | 2;
 
@@ -62,6 +69,17 @@ export interface TagOptions {
   default?: string;
   label?: string;
   row?: string;
+  /**
+   * The field this binding was copied FROM, recorded when the copy is made.
+   *
+   * Whether a binding is a copy is a fact known at that moment. Reconstructing
+   * it afterwards from the shape of the name can only guess - a template author
+   * may write `revenue_2024` for reasons that have nothing to do with copying -
+   * and a wrong guess joins two unrelated fields into one family.
+   *
+   * A copy of a copy keeps pointing at the original, so a family has one root.
+   */
+  copyOf?: string;
 }
 
 export interface TableDefinition {

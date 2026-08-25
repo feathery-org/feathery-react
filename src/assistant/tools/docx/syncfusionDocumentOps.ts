@@ -12425,10 +12425,13 @@ function documentFieldIdentity(
     prefix && occurrence.name.startsWith(prefix)
       ? occurrence.name.slice(prefix.length)
       : occurrence.name;
-  const withoutCopySuffix = withoutPrefix.replace(/_\d+$/, '');
-  // A name that is ONLY a suffix has no family to belong to; keep it whole
-  // rather than collapsing it to nothing.
-  return withoutCopySuffix || withoutPrefix;
+  // The family this binding belongs to, as recorded when it was copied. A
+  // trailing number is not proof of being a copy: `revenue_2024` and `q_1` are
+  // names an author chooses, and stripping their digits made them claim
+  // membership in `revenue`'s and `q`'s families - so a write to one offered
+  // the other as an instance of itself, and confirming "all" would have fanned
+  // that write onto a field the user never named.
+  return occurrence.def.options?.copyOf ?? withoutPrefix;
 }
 
 function independentDocumentFields(
@@ -13182,6 +13185,14 @@ function rewriteBindingsInClone(
         ? undefined
         : options.renameDocBindings.get(def.name);
       if (renamed) {
+        // Provenance is a fact known HERE, at the moment the copy is made.
+        // Recording it is what lets a copy and its source be recognised as one
+        // family later without guessing from the shape of the name. A copy of a
+        // copy keeps pointing at the original, so a family has a single root.
+        def.options = {
+          ...def.options,
+          copyOf: def.options?.copyOf ?? def.name
+        };
         def.name = renamed;
         changed = true;
       }
