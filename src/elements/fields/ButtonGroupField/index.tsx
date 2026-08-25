@@ -124,7 +124,10 @@ function ButtonGroupField({
                       ...responsiveStyles.getTarget('active'),
                       ...borderStyles.active
                     }
-                  : {}
+                  : {},
+                // Keep the option div itself as the click target reported to
+                // TrustedForm, instead of whichever decorative child got hit
+                '& > *': { pointerEvents: 'none' }
               }}
             >
               {customBorder}
@@ -133,8 +136,7 @@ function ButtonGroupField({
                   src={imageUrl}
                   css={{
                     ...imgMaxSizeStyles,
-                    ...responsiveStyles.getTargets('img'),
-                    pointerEvents: 'none'
+                    ...responsiveStyles.getTargets('img')
                   }}
                 />
               )}
@@ -145,22 +147,25 @@ function ButtonGroupField({
                     maxWidth: '100%',
                     ...responsiveStyles.getTargets('label'),
                     // Do not highlight text when clicking the button
-                    ...noTextSelectStyles,
-                    pointerEvents: 'none'
+                    ...noTextSelectStyles
                   }}
                 >
                   {label}
                 </div>
               )}
               {tooltip && (
-                <InlineTooltip
-                  containerRef={containerRef}
-                  id={`${element.id}-${label}`}
-                  text={tooltip}
-                  responsiveStyles={responsiveStyles}
-                  absolute={false}
-                  repeat={element.repeat}
-                />
+                // Re-enable pointer events so the tooltip's own hover/click
+                // handling still works despite the blanket rule above
+                <div css={{ pointerEvents: 'auto' }}>
+                  <InlineTooltip
+                    containerRef={containerRef}
+                    id={`${element.id}-${label}`}
+                    text={tooltip}
+                    responsiveStyles={responsiveStyles}
+                    absolute={false}
+                    repeat={element.repeat}
+                  />
+                </div>
               )}
             </div>
           );
