@@ -6679,14 +6679,18 @@ function bindingTagForOp(op: EditOp, block: FlatBlock): string | undefined {
   if (ranges.length < 2 || !BOUND_WRITE_OPS.has(op.op)) return block.boundTag;
 
   const named = ranges.filter((range) => bindingNameOfTag(range.tag));
-  const choices = [...new Set(named.map((range) => bindingNameOfTag(range.tag)))];
+  const choices = [
+    ...new Set(named.map((range) => bindingNameOfTag(range.tag)))
+  ];
   const wanted = typeof (op as any).field === 'string' ? (op as any).field : '';
   if (wanted) {
     const hit = named.find((range) => bindingNameOfTag(range.tag) === wanted);
     if (hit) return hit.tag;
     throw new OpError(
       'binding_write_unroutable',
-      `${op.op} names the field "${wanted}", which ${block.anchor} does not hold. It holds ${choices
+      `${op.op} names the field "${wanted}", which ${
+        block.anchor
+      } does not hold. It holds ${choices
         .map((name) => `"${name}"`)
         .join(' and ')}.`,
       [`anchor: ${block.anchor}`, `fields: ${choices.join(', ')}`],
@@ -6698,13 +6702,19 @@ function bindingTagForOp(op: EditOp, block: FlatBlock): string | undefined {
   const hits = requested
     ? named.filter((range) => rangeTouchesBinding(requested, range))
     : named;
-  const distinct = [...new Set(hits.map((range) => bindingNameOfTag(range.tag)))];
+  const distinct = [
+    ...new Set(hits.map((range) => bindingNameOfTag(range.tag)))
+  ];
   if (distinct.length === 1) return hits[0].tag;
   throw new OpError(
     'binding_ambiguous_field',
-    `${op.op} at ${block.anchor} does not say which bound value it means: this text holds ${choices
+    `${op.op} at ${
+      block.anchor
+    } does not say which bound value it means: this text holds ${choices
       .map((name) => `"${name}"`)
-      .join(' and ')}. Send the same op again with \`field\` set to the one you mean.`,
+      .join(
+        ' and '
+      )}. Send the same op again with \`field\` set to the one you mean.`,
     [`anchor: ${block.anchor}`, `fields: ${choices.join(', ')}`]
   );
 }
@@ -8738,7 +8748,10 @@ export const ANCHORED_OP_HANDLERS: {
     };
     const clone = clonedWithoutRevisions(
       sfdt,
-      containerCarryingOnlyTable(container.block, tableBlockAt(sfdt, tableAnchor))
+      containerCarryingOnlyTable(
+        container.block,
+        tableBlockAt(sfdt, tableAnchor)
+      )
     );
     const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
