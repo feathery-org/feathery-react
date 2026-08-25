@@ -7006,14 +7006,45 @@ function pasteAtRangeStart(range: BlockRange): PasteTarget {
 }
 
 /** Every raw block a range covers, for the reads flattening cannot answer. */
+/**
+ * The RAW block index an EXPANDED address refers to.
+ *
+ * Anchors count blocks the way a reader sees them, so a block-level content
+ * control wrapping N blocks contributes N addresses while occupying ONE raw
+ * slot. Indexing raw blocks with an expanded number therefore drifts by one per
+ * extra child: in a section reading One / [wrapper: WrapA, WrapB] / Four /
+ * Five, the anchor "0;3" means Four but selects raw block 3, which is Five -
+ * and "0;4" runs off the end. A copy spanning such a wrapper took the wrong
+ * blocks, and the read-back compared against that same wrong clone, so nothing
+ * caught it.
+ */
+function rawIndexForExpanded(
+  raw: any[],
+  expandedIndex: number
+): number | undefined {
+  let seen = 0;
+  for (let index = 0; index < raw.length; index++) {
+    const contributed = expandBlockContentControls([raw[index]]).length || 1;
+    if (expandedIndex < seen + contributed) return index;
+    seen += contributed;
+  }
+  return undefined;
+}
+
 function rawBlocksInRange(sfdt: any, range: BlockRange): any[] {
   const first = topLevelAddress(range.blocks[0].anchor);
   const last = topLevelAddress(range.blocks[range.blocks.length - 1].anchor);
   const out: any[] = [];
   for (let section = first.section; section <= last.section; section++) {
     const blocks = rawSectionBlocks(sfdt, section);
-    const from = section === first.section ? first.block : 0;
-    const to = section === last.section ? last.block : blocks.length - 1;
+    const from =
+      section === first.section
+        ? rawIndexForExpanded(blocks, first.block) ?? first.block
+        : 0;
+    const to =
+      section === last.section
+        ? rawIndexForExpanded(blocks, last.block) ?? last.block
+        : blocks.length - 1;
     for (let index = from; index <= to; index++)
       if (blocks[index]) out.push(blocks[index]);
   }
@@ -12837,14 +12868,30 @@ function uniqueBindingName(base: string, used: Set<string>): string {
   return candidate;
 }
 
-function uniqueTableId(base: string, index: BindingIndex): string {
+/**
+ * `taken` carries the ids allocated EARLIER IN THE SAME COPY, which the index
+ * cannot know about yet.
+ *
+ * Sanitizing collapses distinct ids onto one candidate - `costs-us` and
+ * `costs_us` both want `costs_us_copy` - so a range holding both tables gave
+ * their copies the same id and merged two tables into one identity. Checking
+ * only the existing index cannot see that, because neither copy is in it yet.
+ * The binding-NAME allocator beside this one already reserves as it goes; this
+ * one did not, and that was the whole difference.
+ */
+function uniqueTableId(
+  base: string,
+  index: BindingIndex,
+  taken: Set<string> = new Set()
+): string {
   const cleanBase = `${base}_copy`.replace(/[^A-Za-z0-9_]/g, '_');
   let candidate = cleanBase;
   let suffix = 2;
-  while (index.tables.has(candidate)) {
+  while (index.tables.has(candidate) || taken.has(candidate)) {
     candidate = `${cleanBase}_${suffix}`;
     suffix++;
   }
+  taken.add(candidate);
   return candidate;
 }
 
@@ -13180,8 +13227,13 @@ function rewriteCloneIdentities(
   if (!bindings.length && !clonedTableIds.size) return;
   const tableIds = new Map<string, string>();
   const rowIds = new Map<string, string>();
+  const allocatedTableIds = new Set<string>();
   for (const oldTableId of clonedTableIds) {
-    const newTableId = uniqueTableId(oldTableId, sourceIndex);
+    const newTableId = uniqueTableId(
+      oldTableId,
+      sourceIndex,
+      allocatedTableIds
+    );
     tableIds.set(oldTableId, newTableId);
     const entry = sourceIndex.tables.get(oldTableId);
     if (entry)
