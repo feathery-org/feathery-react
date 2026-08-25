@@ -394,6 +394,10 @@ export function mapFormSettingsResponse(res: any) {
     globalStyles: res.global_styles,
     saveHideIfFields: res.save_hide_if_fields,
     clearHideIfFields: res.clear_hide_if_fields,
+    // Both default on, so a cached payload from before the settings existed
+    // keeps reporting progress
+    showFileUploadProgress: res.show_file_upload_progress ?? true,
+    showDocumentProgress: res.show_document_progress ?? true,
     mobileBreakpoint: res.mobile_breakpoint ?? DEFAULT_MOBILE_BREAKPOINT,
     assistantEnabled: res.ai_assistant_settings?.enabled,
     assistantColor: res.ai_assistant_settings?.color

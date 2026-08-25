@@ -5,7 +5,8 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  useSyncExternalStore
 } from 'react';
 
 import debounce from 'lodash.debounce';
@@ -166,6 +167,7 @@ import {
   ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
   ACTION_OAUTH_LOGIN,
+  ACTION_START_DATA_MAPPING,
   ACTION_PURCHASE_PRODUCTS,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
@@ -232,6 +234,7 @@ import {
   isDocusignSignAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
+import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
@@ -244,6 +247,12 @@ import {
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
+import FileUploadToast from './components/FileUploadToast';
+import {
+  getUploadToastHeight,
+  setUploadIndicatorEnabled,
+  subscribeToUploadToastHeight
+} from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
@@ -270,6 +279,12 @@ const DocumentViewer = React.lazy(
 // container entry points have no index, so they announce under their own ids.
 const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
+
+// Bottom-right overlays stack rather than overlap: each one clears the boxes
+// already sitting below it, plus a gap. An absent box contributes nothing.
+const BOTTOM_RIGHT_STACK_GAP = 10;
+const stackAbove = (height: number) =>
+  height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -427,6 +442,8 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    showFileUploadProgress: true,
+    showDocumentProgress: true,
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
@@ -578,6 +595,10 @@ function Form({
 
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
+  const [dataMappingState, setDataMappingState] = useState<{
+    show: boolean;
+    hubs: any[];
+  }>({ show: false, hubs: [] });
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
@@ -746,8 +767,15 @@ function Form({
 
   // Reset height when toast data becomes empty
   const actionToastData = useMemo(
-    () => [...currentActionExtractions, ...currentEnvelopeGeneration],
-    [currentActionExtractions, currentEnvelopeGeneration]
+    () =>
+      formSettings.showDocumentProgress
+        ? [...currentActionExtractions, ...currentEnvelopeGeneration]
+        : [],
+    [
+      currentActionExtractions,
+      currentEnvelopeGeneration,
+      formSettings.showDocumentProgress
+    ]
   );
 
   useEffect(() => {
@@ -772,6 +800,21 @@ function Form({
       actionToastObserverRef.current = observer;
     }
   }, []);
+
+  // The file upload box is page-level and may be rendered by another form
+  // instance, so its height comes from the shared tracker rather than a ref
+  const fileUploadToastHeight = useSyncExternalStore(
+    subscribeToUploadToastHeight,
+    getUploadToastHeight,
+    getUploadToastHeight
+  );
+
+  // The Feathery badge sits in the bottom-right corner, so overlays there start
+  // above it
+  const bottomRightBase =
+    formSettings.showBrand && formSettings.brandPosition === 'bottom_right'
+      ? 67
+      : 20;
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -1433,6 +1476,7 @@ function Form({
         inlineErrors,
         setInlineErrors,
         setUserProgress,
+        setDataMappingState,
         steps,
         setStepKey,
         updateFieldOptions: (
@@ -1760,7 +1804,15 @@ function Form({
             );
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
-        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
+        const mappedSettings = mapFormSettingsResponse(res);
+        setFormSettings({ ...formSettings, ...mappedSettings });
+        // The upload tracker is keyed by formKey since upload reporting
+        // happens in FeatheryClient, outside React state. Read the mapped
+        // setting rather than the raw response so the default lives in one place
+        setUploadIndicatorEnabled(
+          newClient.formKey,
+          mappedSettings.showFileUploadProgress
+        );
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
@@ -3391,6 +3443,8 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
+      } else if (type === ACTION_START_DATA_MAPPING) {
+        setDataMappingState({ show: true, hubs: action.mapping_hubs ?? [] });
       }
     }
 
@@ -3608,6 +3662,14 @@ function Form({
             setShow={setShowQuikFormViewer}
           />
         )}
+        {dataMappingState.show && (
+          <DataMappingModal
+            hubs={dataMappingState.hubs}
+            client={client}
+            responsiveStyles={globalCSS}
+            onClose={() => setDataMappingState((p) => ({ ...p, show: false }))}
+          />
+        )}
         {reviewViewerPayload && (
           <React.Suspense fallback={null}>
             <DocumentViewer
@@ -3667,23 +3729,23 @@ function Form({
         <ActionToast
           ref={setActionToastRef}
           data={actionToastData}
-          bottom={
-            formSettings.showBrand &&
-            formSettings.brandPosition === 'bottom_right'
-              ? 67
-              : 20
-          }
+          bottom={bottomRightBase}
         />
+        <FileUploadToast
+          instanceId={_internalId}
+          enabled={formSettings.showFileUploadProgress}
+          bottom={bottomRightBase + stackAbove(actionToastHeight)}
+        />
+
         {formSettings.assistantEnabled && (
           <AssistantChat
             instanceId={_internalId}
             baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
             getTargets={getAssistantTargets}
             bottom={
-              (formSettings.showBrand &&
-              formSettings.brandPosition === 'bottom_right'
-                ? 67
-                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+              bottomRightBase +
+              stackAbove(actionToastHeight) +
+              stackAbove(fileUploadToastHeight)
             }
             color={formSettings.assistantColor}
             workflowActions={formSettings.assistantWorkflowActions}

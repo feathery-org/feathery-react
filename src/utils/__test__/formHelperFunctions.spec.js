@@ -1,7 +1,8 @@
 import {
   getABVariant,
   httpHelpers,
-  lookUpTrigger
+  lookUpTrigger,
+  mapFormSettingsResponse
 } from '../formHelperFunctions';
 import { initInfo, setFieldValues } from '../init';
 import FeatheryClient, { STATIC_URL } from '../featheryClient';
@@ -352,6 +353,30 @@ describe('formHelperFunctions', () => {
         entryIndex: 1,
         text: 'Pricing'
       });
+    });
+  });
+
+  describe('mapFormSettingsResponse', () => {
+    it('defaults showFileUploadProgress to true when absent', () => {
+      expect(mapFormSettingsResponse({}).showFileUploadProgress).toBe(true);
+    });
+
+    it('maps show_file_upload_progress when turned off', () => {
+      expect(
+        mapFormSettingsResponse({ show_file_upload_progress: false })
+          .showFileUploadProgress
+      ).toBe(false);
+    });
+
+    it('defaults showDocumentProgress to true when absent', () => {
+      expect(mapFormSettingsResponse({}).showDocumentProgress).toBe(true);
+    });
+
+    it('maps show_document_progress when turned off', () => {
+      expect(
+        mapFormSettingsResponse({ show_document_progress: false })
+          .showDocumentProgress
+      ).toBe(false);
     });
   });
 });

@@ -136,6 +136,7 @@ export interface FormInternalState {
     React.SetStateAction<Record<string, { message: string; index: number }>>
   >;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
+  setDataMappingState?: (state: { show: boolean; hubs: any[] }) => void;
   steps: any;
   setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions, repeatIndex?: number) => void;
