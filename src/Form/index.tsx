@@ -223,6 +223,7 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
 import {
+  CONFIG_COMPONENTS,
   connectionFieldKey,
   hasEmailIdentity
 } from '../integrations/connectAccount/providers';
@@ -2808,6 +2809,9 @@ function Form({
         // first trigger's flow-advance closure. Ignore this trigger instead;
         // the shared post-loop cleanup below still releases its click lock
         // and closes its own pre-opened popup.
+        // Only covers triggers that open a modal: the ref is set by
+        // openConnectAccountModal, so a provider that connects without one
+        // races here exactly as it did before the modal existed.
         if (connectAccountModalRef.current) break;
 
         await Promise.all([submitPromise, client.flushCustomFields()]);
@@ -2818,8 +2822,10 @@ function Form({
         // that a connection exists. Either way a value here means connected.
         const connectionKey = connectionFieldKey(provider);
 
+        const alreadyConnected = !!fieldValues[connectionKey];
+        let connected = false;
         try {
-          if (fieldValues[connectionKey]) {
+          if (alreadyConnected) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
@@ -2829,13 +2835,7 @@ function Form({
                 : 'true'
             });
           }
-          // The flow advances from the modal's onSaved, not here - the
-          // respondent has not finished configuring the account yet.
-          openConnectAccountModal({
-            provider,
-            onFlowSuccess: flowOnSuccess(i),
-            onAsyncEnd
-          });
+          connected = true;
         } catch (error) {
           elementClicks[id] = false;
           clearButtonActionState();
@@ -2845,6 +2845,30 @@ function Form({
               : 'Unable to connect your account.'
           );
           onAsyncEnd();
+        }
+        // Deliberately outside the try: the modal's setup UI is what advances
+        // the flow, and advancing runs every remaining action in the chain.
+        // A failure in one of those is that action's error, not a failure to
+        // connect, so it must not land in the catch above and get relabelled
+        // "Unable to connect your account."
+        if (connected) {
+          // A repeat click on an already-connected button still opens the
+          // modal - it is the only route to "Change account". On a fresh
+          // connect the modal is worth showing only for a provider with setup
+          // to collect; otherwise connecting is the whole job and the flow
+          // continues straight away.
+          if (alreadyConnected || CONFIG_COMPONENTS[provider]) {
+            // The flow advances from the modal's onSaved, which only a
+            // provider's config component calls - the respondent has not
+            // finished configuring the account yet.
+            openConnectAccountModal({
+              provider,
+              onFlowSuccess: flowOnSuccess(i),
+              onAsyncEnd
+            });
+          } else {
+            await flowOnSuccess(i)();
+          }
         }
         break;
       } else if (type === ACTION_URL) {

@@ -10,6 +10,7 @@ import {
 import { JSForm } from '..';
 import { fieldValues } from '../../utils/init';
 import { runOAuthPopup } from '../../integrations/connectAccount/oauthPopup';
+import { verifyAlloyId } from '../../integrations/alloy';
 
 // Mocked at the same boundary as the other third-party integrations (plaid,
 // persona, flinks, ...) in testMocks.tsx: Form only needs to know it calls
@@ -75,6 +76,7 @@ jest.mock('../../integrations/connectAccount/ConnectAccountModal', () => ({
 }));
 
 const mockedRunOAuthPopup = runOAuthPopup as jest.Mock;
+const mockedVerifyAlloyId = verifyAlloyId as jest.Mock;
 
 const EMAIL_KEY = 'feathery.connections.box.email';
 const SCHWAB_KEY = 'feathery.connections.charles-schwab.connected';
@@ -144,24 +146,61 @@ describe('connect_account action', () => {
     expect((fieldValues as any)[EMAIL_KEY]).toBe('connected@example.com');
   });
 
-  it('marks a provider with no account identity as connected', async () => {
+  it('finishes a fresh connect without a modal when the provider has no setup', async () => {
     // Schwab reports no email, so the connection is recorded on its own
-    // field - otherwise every click would re-run OAuth.
+    // field - otherwise every click would re-run OAuth. With no config UI to
+    // show, the modal would just be an empty dialog, so the flow advances
+    // straight to the next action.
     GridMod._spies.actions = [
-      { type: 'connect_account', provider: 'charles-schwab' }
+      { type: 'connect_account', provider: 'charles-schwab' },
+      {
+        type: 'url',
+        url: 'https://example.com/after-connect',
+        open_tab: false
+      }
     ];
     mockedRunOAuthPopup.mockResolvedValue({ account_email: '' });
 
     render(<JSForm formId='f1' _internalId='iid-connect-schwab' />);
     await clickTrigger();
 
-    await waitFor(() => expect(modalState.props?.show).toBe(true));
+    await waitFor(() =>
+      expect(BrowserMod._spies.location.href).toBe(
+        'https://example.com/after-connect'
+      )
+    );
     expect((fieldValues as any)[SCHWAB_KEY]).toBe('true');
     expect((fieldValues as any)[EMAIL_KEY]).toBeUndefined();
-    expect(modalState.props.accountEmail).toBe('');
+    expect(modalState.props?.show).not.toBe(true);
   });
 
-  it('skips OAuth for an already-connected identity-less provider', async () => {
+  it("does not relabel a later action's failure as a connect failure", async () => {
+    // The modal-less path advances the chain from inside this action's own
+    // branch, so a throw from a later action must not be caught by the
+    // connect error handler and reported as "Unable to connect your account."
+    GridMod._spies.actions = [
+      { type: 'connect_account', provider: 'charles-schwab' },
+      { type: 'alloy_verify_id' }
+    ];
+    mockedRunOAuthPopup.mockResolvedValue({ account_email: '' });
+    mockedVerifyAlloyId.mockRejectedValue(new Error('Alloy is down'));
+
+    render(<JSForm formId='f1' _internalId='iid-connect-downstream-error' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(FormHelperMod.setFormElementError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Error: Alloy is down' })
+      )
+    );
+    expect(FormHelperMod.setFormElementError).not.toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Unable to connect your account.' })
+    );
+    // The connect itself still succeeded and was recorded.
+    expect((fieldValues as any)[SCHWAB_KEY]).toBe('true');
+  });
+
+  it('offers Change account when an already-connected setup-less button is clicked again', async () => {
     GridMod._spies.actions = [
       { type: 'connect_account', provider: 'charles-schwab' }
     ];
@@ -172,6 +211,9 @@ describe('connect_account action', () => {
 
     await waitFor(() => expect(modalState.props?.show).toBe(true));
     expect(mockedRunOAuthPopup).not.toHaveBeenCalled();
+    // The stored value is the bare 'true' flag, so Form must not pass it
+    // through as an email - the modal would render it as the account.
+    expect(modalState.props.accountEmail).toBe('');
   });
 
   it('surfaces a popup-blocked error without calling the API', async () => {
