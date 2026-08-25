@@ -370,8 +370,6 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyFlexDirection('ac');
       styles.applyWidth('img', 'image_');
       styles.applyMargin('img', 'image_');
-      // Icon upload glyphs: icon_color -> CSS color (currentColor)
-      styles.applyColor('img', 'icon_color', 'color');
       styles.apply(
         'ac',
         [
