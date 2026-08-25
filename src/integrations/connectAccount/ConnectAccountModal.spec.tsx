@@ -81,9 +81,10 @@ describe('ConnectAccountModal', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders a fallback when the provider has no config component', () => {
+  it('shows only the change-account row when the provider has no config component', () => {
     render(<ConnectAccountModal {...baseProps} provider='unmapped' />);
-    expect(screen.getByText(/no additional setup/i)).toBeTruthy();
+    expect(screen.getByText('Change account')).toBeTruthy();
+    expect(screen.queryByText('Trigger error')).toBeNull();
   });
 
   it('calls onClose from the close control', () => {

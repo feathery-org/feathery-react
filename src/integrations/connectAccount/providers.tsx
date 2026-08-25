@@ -15,7 +15,9 @@ export type ProviderConfigProps = {
 };
 
 /** Providers whose post-connect setup needs its own UI. A provider absent from
- *  this map connects and closes with no further configuration. */
+ *  this map connects with no further configuration and never shows the modal on
+ *  a fresh connect - only on a repeat click, where the modal's sole purpose is
+ *  the "Change account" option. */
 export const CONFIG_COMPONENTS: Record<
   string,
   React.ComponentType<ProviderConfigProps>
