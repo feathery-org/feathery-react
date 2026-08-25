@@ -1,5 +1,6 @@
 import { getWeightedBoolean } from './random';
 import { justRemove } from './array';
+import { applyInlineError, inlineEntryHasMessage } from './inlineErrors';
 import {
   fieldValues,
   filePathMap,
@@ -251,10 +252,17 @@ export async function setFormElementError({
     }
     invalid = !formRef.current.checkValidity();
   } else if (errorType === 'inline') {
-    if (fieldKey) inlineErrors[fieldKey] = { message };
+    // Scope a repeated-field error to its row via a nested `byIndex` map under
+    // the real field key, so an error validated on one repeat row doesn't bleed
+    // onto other rows (including freshly added, untouched ones) and can never
+    // collide with a literal field key such as `foo-0`. An empty message clears
+    // (whole field for a non-indexed write, only that row for an indexed one).
+    applyInlineError(inlineErrors, fieldKey, message, index);
     if (triggerErrors)
       setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
-    invalid = Object.values(inlineErrors).some((data) => (data as any).message);
+    invalid = Object.values(inlineErrors).some((data) =>
+      inlineEntryHasMessage(data as any)
+    );
   }
   if (message) {
     await errorCallback({

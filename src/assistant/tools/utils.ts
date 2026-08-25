@@ -4,14 +4,66 @@ import { getPositionKey } from '../../utils/hideAndRepeats';
 export const getLiveStepKey = (state: any): string | undefined =>
   state.latestStepName ?? state.currentStep?.key;
 
-export const snapshotInlineErrors = (state: any): Record<string, string> => {
-  const out: Record<string, string> = {};
+// One reported error, with the field key and repeat row kept as SEPARATE
+// fields. Never encode the row into the key string: field keys are
+// unrestricted, so a literal field named `f[0]` would collide with row 0 of a
+// repeated field `f` -- the exact collision this structure exists to avoid.
+export interface InlineErrorReport {
+  key: string;
+  repeatIndex?: number;
+  message: string;
+}
+
+// Structured snapshot: field key -> { field-wide message, per-row messages }.
+export type InlineErrorSnapshot = Map<
+  string,
+  { message?: string; byIndex: Map<number, string> }
+>;
+
+export const snapshotInlineErrors = (state: any): InlineErrorSnapshot => {
+  const out: InlineErrorSnapshot = new Map();
   const inlineErrors = state?.inlineErrors ?? {};
   for (const key of Object.keys(inlineErrors)) {
-    const message = inlineErrors[key]?.message;
-    if (typeof message === 'string' && message.length > 0) out[key] = message;
+    const entry = inlineErrors[key] ?? {};
+    const byIndex = new Map<number, string>();
+    for (const [idx, data] of Object.entries<any>(entry.byIndex ?? {})) {
+      if (typeof data?.message === 'string' && data.message.length > 0)
+        byIndex.set(Number(idx), data.message);
+    }
+    const message =
+      typeof entry.message === 'string' && entry.message.length > 0
+        ? entry.message
+        : undefined;
+    if (message || byIndex.size) out.set(key, { message, byIndex });
   }
   return out;
+};
+
+// Errors present in `after` that weren't in `before` (new or changed), keeping
+// each error's (key, repeatIndex) identity intact.
+export const diffInlineErrorSnapshots = (
+  before: InlineErrorSnapshot,
+  after: InlineErrorSnapshot
+): InlineErrorReport[] => {
+  const out: InlineErrorReport[] = [];
+  after.forEach((entry, key) => {
+    const prev = before.get(key);
+    if (entry.message && entry.message !== prev?.message)
+      out.push({ key, message: entry.message });
+    entry.byIndex.forEach((message, repeatIndex) => {
+      if (message !== prev?.byIndex.get(repeatIndex))
+        out.push({ key, repeatIndex, message });
+    });
+  });
+  return out;
+};
+
+// A button's submit error is published asynchronously (loaders must unrender
+// first), so programmatic callers must await the producer's pending
+// publication before snapshotting, rather than guessing with a fixed wait.
+export const awaitPendingInlineErrors = async (state: any): Promise<void> => {
+  const pending = state?.pendingInlineErrorPublish;
+  if (pending) await pending;
 };
 
 // Subgrids whose position is a strict prefix of `position` (callers pre-filter to those whose handler does anything), innermost first.
