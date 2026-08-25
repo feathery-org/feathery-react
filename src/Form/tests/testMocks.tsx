@@ -164,7 +164,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   mapFormSettingsResponse: () => ({ shared_codes: [] }),
   nextStepKey: () => undefined,
   recurseProgressDepth: () => [0, 1],
-  setUrlStepHash: () => {}
+  setUrlStepHash: jest.fn()
 }));
 
 // Grid mock: no out of scope captures, only uses props
@@ -523,3 +523,9 @@ export const FormHelperMod: any = jest.requireMock(
 // Exposes the mocked client's collaborator invite call for assertions.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ClientMod: any = jest.requireMock('../../utils/featheryClient');
+
+// Lets tests assert what the form passed to setUrlStepHash.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const StepHelperMod: any = jest.requireMock(
+  '../../utils/stepHelperFunctions'
+);

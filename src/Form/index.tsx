@@ -1908,8 +1908,10 @@ function Form({
         // Go to first step if origin fails
         const data = await formPromise;
         const newKey = (getOrigin as any)(data).key;
-        if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
-        else setStepKey(newKey);
+        // Mirrors the success path above: `steps` state is still {} inside this
+        // effect's closure, and the hash branch has to set the key too.
+        if (trackHashes.current) setUrlStepHash(navigate, data, newKey);
+        setStepKey(newKey);
       });
   }, [activeStep, setSteps, updateFieldValues]);
 

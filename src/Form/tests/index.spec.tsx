@@ -3,6 +3,7 @@ import {
   CheckButtonActionMod,
   ClientMod,
   GridMod,
+  StepHelperMod,
   ValidationMod
 } from './testMocks';
 import {
@@ -225,6 +226,54 @@ describe('session fetch failure fallback', () => {
       Promise.reject(new Error('Too many sessions'));
 
     render(<JSForm formId='f1' _internalId='iid-session-reject' />);
+
+    expect(await screen.findByTestId('btn')).toBeInTheDocument();
+  });
+
+  // The hash branch reached for the outer `steps` state, which this effect
+  // captured as {} on first render, so it hashed nothing and selected nothing.
+  it('selects the origin step when hash navigation is on', async () => {
+    ClientMod._spies.overrides.fetchForm = async () => ({
+      steps: [
+        originStep,
+        { ...originStep, key: 'step-2', id: 's2', origin: false }
+      ],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: [],
+      track_hashes: true
+    });
+    ClientMod._spies.overrides.fetchSession = () =>
+      Promise.reject(new Error('Too many sessions'));
+
+    render(<JSForm formId='f1' _internalId='iid-session-reject-hash' />);
+
+    expect(await screen.findByTestId('btn')).toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ 'step-1': expect.anything() }),
+      'step-1'
+    );
+  });
+
+  // A one-step form never gets a hash, so the hash branch has to fall through
+  // to setStepKey or nothing renders at all.
+  it('selects the origin step on a single-step form with hash navigation', async () => {
+    ClientMod._spies.overrides.fetchForm = async () => ({
+      steps: [originStep],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: [],
+      track_hashes: true
+    });
+    ClientMod._spies.overrides.fetchSession = () =>
+      Promise.reject(new Error('Too many sessions'));
+
+    render(<JSForm formId='f1' _internalId='iid-session-reject-hash-1' />);
 
     expect(await screen.findByTestId('btn')).toBeInTheDocument();
   });
