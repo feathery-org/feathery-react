@@ -1906,7 +1906,7 @@ function Form({
       .catch(async (error: any) => {
         console.warn(error);
         // Go to first step if origin fails
-        const [data] = await formPromise;
+        const data = await formPromise;
         const newKey = (getOrigin as any)(data).key;
         if (trackHashes.current) setUrlStepHash(navigate, steps, newKey);
         else setStepKey(newKey);
