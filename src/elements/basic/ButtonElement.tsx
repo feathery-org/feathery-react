@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 
 import TextNodes from '../components/TextNodes';
+import { hasIconGlyph, IconGlyph } from '../components/icons/iconGlyph';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import { isFit } from '../../utils/hydration';
@@ -13,6 +14,19 @@ import { managedConnectAccountElement } from '../../integrations/connectAccount/
 // taken from the button's padding on purpose: that would tie the loader's size
 // back to the content box, which is what collapsed it on an empty label.
 const LOADER_BORDER_GAP = 2;
+
+const BUTTON_IMAGE_SELECTOR = 'img, [data-feathery-button-icon]';
+
+const getButtonImageFilterStyles = (color: string) => {
+  if (!color) return {};
+  const level = color === 'black' ? 0 : 100;
+  return {
+    [BUTTON_IMAGE_SELECTOR]: {
+      webkitFilter: `brightness(${level}%)`,
+      filter: `brightness(${level}%)`
+    }
+  };
+};
 
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
@@ -66,6 +80,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   );
   responsiveStyles.applyWidth('img', 'image_');
   responsiveStyles.applyMargin('img', 'image_');
+  responsiveStyles.applyColor('img', 'icon_color', 'color');
 
   if (element.styles.hover_background_color) {
     responsiveStyles.applyColor(
@@ -82,16 +97,11 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
     });
   }
   responsiveStyles.applySpanSelectorStyles('buttonHover', 'hover_');
-  responsiveStyles.apply('buttonHover', 'hover_image_color', (a: string) => {
-    if (!a) return {};
-    const level = a === 'black' ? 0 : 100;
-    return {
-      img: {
-        webkitFilter: `brightness(${level}%)`,
-        filter: `brightness(${level}%)`
-      }
-    };
-  });
+  responsiveStyles.apply(
+    'buttonHover',
+    'hover_image_color',
+    getButtonImageFilterStyles
+  );
 
   responsiveStyles.applyColor(
     'buttonActive',
@@ -103,16 +113,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply(
     'buttonActive',
     'selected_image_color',
-    (a: string) => {
-      if (!a) return {};
-      const level = a === 'black' ? 0 : 100;
-      return {
-        img: {
-          webkitFilter: `brightness(${level}%)`,
-          filter: `brightness(${level}%)`
-        }
-      };
-    }
+    getButtonImageFilterStyles
   );
 
   responsiveStyles.apply('buttonDisabled', 'background_color', (a: any) => {
@@ -125,16 +126,7 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.apply(
     'buttonDisabled',
     'disabled_image_color',
-    (a: string) => {
-      if (!a) return {};
-      const level = a === 'black' ? 0 : 100;
-      return {
-        img: {
-          webkitFilter: `brightness(${level}%)`,
-          filter: `brightness(${level}%)`
-        }
-      };
-    }
+    getButtonImageFilterStyles
   );
   responsiveStyles.applySpanSelectorStyles('buttonDisabled', 'disabled_');
   responsiveStyles.applyColor(
@@ -220,14 +212,34 @@ function ButtonElement({
 
   const buttonContent = (
     <>
-      {element.properties.image && (
-        <img
-          src={element.properties.image}
+      {hasIconGlyph(element.properties.icon_glyph) ? (
+        <span
+          data-feathery-button-icon={element.properties.icon_source}
           css={{
+            display: 'inline-flex',
+            alignItems: 'center',
             ...imgMaxSizeStyles,
+            ...responsiveStyles.getRichFontStyles(
+              element.properties.text_formatted?.[0]?.attributes ?? {}
+            ),
             ...responsiveStyles.getTargets('img')
           }}
-        />
+        >
+          <IconGlyph
+            glyph={element.properties.icon_glyph}
+            size={element.styles.image_width ? '100%' : '1em'}
+          />
+        </span>
+      ) : (
+        element.properties.image && (
+          <img
+            src={element.properties.image}
+            css={{
+              ...imgMaxSizeStyles,
+              ...responsiveStyles.getTargets('img')
+            }}
+          />
+        )
       )}
       {/* Keep labels mounted for icon-only and emptied editable buttons. */}
       {(labelElement.properties.text ||
@@ -244,7 +256,10 @@ function ButtonElement({
           focused={focused}
           textCallbacks={textCallbacks}
           featheryContext={featheryContext}
-          expand={!element.properties.image}
+          expand={
+            !element.properties.image &&
+            !hasIconGlyph(element.properties.icon_glyph)
+          }
         />
       )}
     </>
