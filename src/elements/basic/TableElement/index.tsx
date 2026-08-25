@@ -203,10 +203,22 @@ function TableElement({
   const showEmptyState = !hasData || !hasSearchResults;
   const showToolbar = enableSearch || showAddRow;
 
-  // 'equal' uses a fixed layout so data columns share the width evenly; any
-  // other value keeps the content-driven auto layout. Not supported transposed.
+  // Column sizing: 'equal' uses a fixed table layout so data columns share the
+  // width evenly. Resolved through the responsive style path so desktop
+  // (`styles`) and mobile (`mobile_styles`) can differ via a media query; never
+  // applied to transposed tables. The colgroup keeps the action/delete columns
+  // at fixed widths while data columns stay unsized, so only the data columns
+  // split. It's rendered whenever either viewport is equal, since the DOM
+  // structure can't itself be media-queried.
+  if (!isTransposed) {
+    styles.apply('table', 'column_sizing', (columnSizing: any) => ({
+      tableLayout: columnSizing === 'equal' ? 'fixed' : 'auto'
+    }));
+  }
   const useFixedColumns =
-    element.styles?.column_sizing === 'equal' && !isTransposed;
+    !isTransposed &&
+    (element.styles?.column_sizing === 'equal' ||
+      element.mobile_styles?.column_sizing === 'equal');
 
   return (
     <div
@@ -243,7 +255,6 @@ function TableElement({
             className={TABLE_CLASS.table}
             css={{
               ...(tableStyle as any),
-              ...(useFixedColumns ? { tableLayout: 'fixed' as const } : {}),
               ...styles.getTarget('table')
             }}
           >

@@ -1,10 +1,12 @@
 import { render, waitFor, fireEvent } from '@testing-library/react';
 import { TABLE_CLASS } from '../TableElement/classNames';
+import ResponsiveStyles from '../../styles';
 
 const mockResponsiveStyles = {
   addTargets: jest.fn().mockReturnThis(),
   applyCorners: jest.fn(),
   applyWidth: jest.fn(),
+  apply: jest.fn(),
   getTarget: jest.fn().mockReturnValue({})
 };
 
@@ -198,6 +200,70 @@ describe('TableElement targetable class names', () => {
       expect(container.querySelector(`.${TABLE_CLASS.table}`)).toBeTruthy();
     });
     expect(container.querySelector('colgroup')).toBeFalsy();
+  });
+
+  const MOBILE_MEDIA = '@media (max-width: 478px)';
+
+  // Uses a real ResponsiveStyles so the per-viewport table-layout is resolved
+  // through the responsive style path (desktop value + a mobile media query),
+  // exactly as it renders in a live form.
+  async function renderResponsive(
+    styles: Record<string, any>,
+    mobileStyles: Record<string, any>
+  ) {
+    const TableElement = (await import('../TableElement')).default;
+    const responsiveStyles = new ResponsiveStyles(
+      { styles, mobile_styles: mobileStyles },
+      ['container', 'table'],
+      true
+    );
+    const result = render(
+      <TableElement
+        element={{
+          id: 'tbl',
+          properties: { columns: baseColumns, actions: [], pagination: 0 },
+          styles,
+          mobile_styles: mobileStyles
+        }}
+        responsiveStyles={responsiveStyles}
+        editMode
+      />
+    );
+    await waitFor(() => {
+      expect(
+        result.container.querySelector(`.${TABLE_CLASS.table}`)
+      ).toBeTruthy();
+    });
+    return { ...result, responsiveStyles };
+  }
+
+  it('keeps desktop equal fixed while mobile auto resets it via media query', async () => {
+    const { container, responsiveStyles } = await renderResponsive(
+      { column_sizing: 'equal' },
+      { column_sizing: 'auto' }
+    );
+
+    // Colgroup renders because at least one viewport is equal.
+    expect(container.querySelector('colgroup')).toBeTruthy();
+
+    const table = responsiveStyles.getTarget('table');
+    expect(table.tableLayout).toBe('fixed');
+    expect(table[MOBILE_MEDIA].tableLayout).toBe('auto');
+  });
+
+  it('enables fixed layout on mobile even when desktop is auto', async () => {
+    const { container, responsiveStyles } = await renderResponsive(
+      { column_sizing: 'auto' },
+      { column_sizing: 'equal' }
+    );
+
+    // Previously desktop-auto skipped fixed layout entirely, so mobile equal
+    // was ignored; the colgroup and the mobile media query must both appear.
+    expect(container.querySelector('colgroup')).toBeTruthy();
+
+    const table = responsiveStyles.getTarget('table');
+    expect(table.tableLayout).toBe('auto');
+    expect(table[MOBILE_MEDIA].tableLayout).toBe('fixed');
   });
 
   it('applies the empty state class when there is no data', async () => {
