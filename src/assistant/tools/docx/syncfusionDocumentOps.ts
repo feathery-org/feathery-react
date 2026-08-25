@@ -5424,8 +5424,10 @@ function verifyTextWrite(
       .join('\r')
   );
   const matches = target.exact
-    ? span === normalizedExpected
-    : span.includes(normalizedExpected);
+    ? span === normalizedExpected ||
+      spacingOnlyDifference(span, normalizedExpected)
+    : span.includes(normalizedExpected) ||
+      collapseSpacing(span).includes(collapseSpacing(normalizedExpected));
   if (!matches)
     throw new OpError(
       'text_verification_failed',
@@ -5440,6 +5442,39 @@ function verifyTextWrite(
       ]
     );
   return sfdt;
+}
+
+/**
+ * Collapse runs of spaces and tabs WITHIN each paragraph, leaving paragraph
+ * marks untouched.
+ *
+ * `\s` is deliberately not used: it matches `\r`, and collapsing paragraph
+ * marks would let a change in paragraph COUNT pass verification, which is a
+ * structural change rather than a spacing one.
+ */
+function collapseSpacing(value: string): string {
+  return value
+    .split('\r')
+    .map((paragraph) => paragraph.replace(/[^\S\r\n]+/g, ' ').trim())
+    .join('\r');
+}
+
+/**
+ * True when two projections carry identical content and differ only in how
+ * spacing is represented.
+ *
+ * Removing a run of text leaves a result that naive string surgery and the
+ * serialized document disagree about: the document format normalizes spacing on
+ * write - a lone leading space is dropped, an internal run collapses - while the
+ * expected value is built by slicing the pre-write string. Without this,
+ * `delete_text` and `replace_text` with an empty replacement can never verify,
+ * because their expected value always carries the spacing the write removed.
+ *
+ * This tolerates that difference and nothing else: every non-space character
+ * must still appear, in the same order, in the same paragraph.
+ */
+function spacingOnlyDifference(actual: string, expected: string): boolean {
+  return collapseSpacing(actual) === collapseSpacing(expected);
 }
 
 // SyncFusion's table structure methods default a missing/invalid count to 1.
@@ -7291,6 +7326,34 @@ const DOCUMENT_TAIL_TABLE_REASON =
  *
  * A copy never deletes its source, so this does not apply to one.
  */
+/**
+ * A relocation must move blocks that all live in ONE Word section.
+ *
+ * A section unit runs to the next heading of the same or shallower level, so in
+ * a document with no headings it runs to the END of the document - straight
+ * across any Word section break on the way. Relocating such a range cannot be
+ * authored as a rejectable revision, and the op discovers that only AFTER it has
+ * already moved blocks: the refusal then arrives with the first section's text
+ * destroyed and nothing restored. Refuse before anything is written.
+ */
+function assertRangeWithinOneSection(range: BlockRange): void {
+  const sections = new Set(
+    range.blocks.map((entry) => String(entry.anchor).split(';')[0])
+  );
+  if (sections.size <= 1) return;
+  throw new OpError(
+    'relocation_spans_section_break',
+    `Refusing to relocate the section at ${JSON.stringify(
+      range.anchor
+    )}: the range it resolves to crosses a section break, and a section break cannot be relocated as a tracked change. Nothing was written.`,
+    [
+      `anchor: ${range.anchor}`,
+      `sections covered: ${[...sections].join(', ')}`,
+      'Anchor a heading whose section unit ends before the break, or move the blocks in smaller pieces.'
+    ]
+  );
+}
+
 function assertRangeIsRemovable(blocks: FlatBlock[], range: BlockRange): void {
   const last = range.blocks[range.blocks.length - 1];
   const tail = documentTailTableLastRow(blocks);
@@ -7986,6 +8049,39 @@ function resolveTableRange(
  * omitting it made every merge span invisible in production once already while
  * long-key fixtures kept the spec green.
  */
+/**
+ * A plain-language account of a table's merged cells, or null when it has none.
+ *
+ * `insert_row` next to a vertical merge refuses through a generic post-write
+ * formatting failure that never mentions merges, so a model reading it cannot
+ * tell what to change. `split_table` already names the exact span it would tear;
+ * this brings the row insert up to that standard. Message only - nothing about
+ * which inserts are allowed changes.
+ */
+function describeTableMerges(tableBlock: any): string | null {
+  const spans = verticalSpans(tableBlock);
+  const rows = getRows(tableBlock) ?? [];
+  let gridSpans = 0;
+  for (const row of rows) {
+    const cells = pick(row, 'cells', 'c');
+    if (!Array.isArray(cells)) continue;
+    for (const cell of cells) {
+      const format = pick(cell, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const span = Number(pick(format, 'gridSpan', 'gs') ?? 1);
+      if (Number.isFinite(span) && span > 1) gridSpans++;
+    }
+  }
+  if (!spans.length && !gridSpans) return null;
+  const parts: string[] = [];
+  for (const { row, span } of spans)
+    parts.push(`rows ${row}..${row + span - 1} are vertically merged`);
+  if (gridSpans)
+    parts.push(
+      `${gridSpans} cell${gridSpans === 1 ? ' spans' : 's span'} more than one column`
+    );
+  return parts.join('; ');
+}
+
 function verticalSpans(tableBlock: any): Array<{ row: number; span: number }> {
   const out: Array<{ row: number; span: number }> = [];
   const rows = getRows(tableBlock);
@@ -8363,7 +8459,14 @@ export const ANCHORED_OP_HANDLERS: {
       ? block.text.indexOf(find)
       : liveText.indexOf(find);
     if (idx < 0)
-      throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+      throw new OpError(
+        'text_not_found',
+        `"${find}" not found at anchor.`,
+        [
+          `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
+          'Copy `find` from the block\'s CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set.'
+        ]
+      );
     const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
     // A field paragraph has two valid projections: serialized SFDT includes
     // its field instructions while Selection exposes the rendered result.
@@ -8435,7 +8538,14 @@ export const ANCHORED_OP_HANDLERS: {
     if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
     const idx = liveText.indexOf(find);
     if (idx < 0)
-      throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+      throw new OpError(
+        'text_not_found',
+        `"${find}" not found at anchor.`,
+        [
+          `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
+          'Copy `find` from the block\'s CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set.'
+        ]
+      );
     const next = block.text.slice(0, idx) + block.text.slice(idx + find.length);
     selectRange(editor, block.anchor, idx, idx + find.length);
     editor.editor.delete();
@@ -8498,6 +8608,24 @@ export const ANCHORED_OP_HANDLERS: {
         `${block.anchor};0`,
         markInclusiveRangeEnd(next, block)
       );
+    else if (previous && previous.offsetsUntrusted)
+      // The preceding paragraph's live caret positions count content-control
+      // boundary markers that its serialized length does not, so
+      // `${previous.anchor};${previous.length}` is NOT the end of that
+      // paragraph in the live document - it lands earlier, and the selection
+      // runs from there to the end of the document. Deleting it wiped every
+      // block on four of eight real shapes while reporting success. There is no
+      // exact range to take here, so refuse, as every other op does when it
+      // cannot address a bound range precisely.
+      throw new OpError(
+        'paragraph_mark_unaddressable',
+        `The paragraph at "${block.anchor}" can only be removed by consuming the paragraph mark of "${previous.anchor}", and that block sits alongside a document binding whose live offsets this engine cannot address exactly. Deleting it could remove far more than the paragraph. Nothing was written.`,
+        [
+          `anchor: ${block.anchor}`,
+          `preceding block: ${previous.anchor}`,
+          'Clear the content with delete_text or replace_text if the paragraph should stay in place but read empty.'
+        ]
+      );
     else if (previous)
       editor.selection.select(
         `${previous.anchor};${previous.length}`,
@@ -8521,6 +8649,7 @@ export const ANCHORED_OP_HANDLERS: {
     // block sequence are both things flattening drops.
     const sfdt = serializeSfdt(editor);
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    assertRangeWithinOneSection(source);
     assertRangeIsRemovable(blocks, source);
     assertRangeHasNoForeignEdits(sfdt, source);
     relocateBlockRange(
@@ -10324,8 +10453,18 @@ function resolveLiveSourceTableAnchor(
     const blocks = getBlocks(sections[section]);
     for (let block = 0; block < blocks.length; block++) {
       const anchor = `${section};${block}`;
-      if (anchor === targetAnchor || !getRows(blocks[block])) continue;
-      const appearance = collectTableAppearance(blocks[block]);
+      if (anchor === targetAnchor) continue;
+      // A BOUND table is wrapped in a block-level content control, so its rows
+      // sit one level down and a raw `getRows` probe skips it entirely - the
+      // sibling being searched for is then invisible and the search fails on
+      // exactly the documents that have one. Resolve through the wrapper, the
+      // same way `tableBlockAt` does.
+      const candidate = blocks[block];
+      const tableBlock = getRows(candidate)
+        ? candidate
+        : getBlocks(candidate).find((inner: any) => getRows(inner));
+      if (!tableBlock) continue;
+      const appearance = collectTableAppearance(tableBlock);
       if (appearance && JSON.stringify(appearance) === JSON.stringify(source))
         return anchor;
     }
@@ -11020,8 +11159,15 @@ function applyCopiedTableAppearance(
       )
     );
     const wantedAt = (row: number, column: number) => wanted[row]?.[column];
+    // A single-cell table has no interior edges, so its whole border box is
+    // outer and SyncFusion keeps it at TABLE level with nothing on the cell.
+    // Reading such a target cell-first reports no borders at all and rejects a
+    // write that in fact landed correctly, so resolve it the same way a uniform
+    // border set is resolved.
+    const singleCellTarget =
+      after.rows.length === 1 && after.rows[0]?.cells.length === 1;
     const actualAt = (row: number, column: number) =>
-      uniformAllBorder
+      uniformAllBorder || singleCellTarget
         ? resolvedCellAppearanceAt(after, row, column)
         : cellAppearanceAt(after, row, column);
     after.rows.forEach((row, rowIndex) => {
@@ -15826,12 +15972,31 @@ function applyInsertInheritance(
         // loudly when the real editor's split did not land where computed.
         if (!(editor as any).element && !(editor as any).documentHelper)
           continue;
+        // A merged table is the known cause: the insert lands inside a span, the
+        // grid the formatting pass expects does not exist, and the generic
+        // message left the caller with nowhere to go.
+        const mergeNote = (() => {
+          try {
+            const tableAnchor = String(paragraph.anchor)
+              .split(';')
+              .slice(0, 2)
+              .join(';');
+            return describeTableMerges(
+              tableBlockAt(serializeSfdt(editor), tableAnchor)
+            );
+          } catch {
+            return null;
+          }
+        })();
         throw new OpError(
           'inherited_paragraph_not_found',
-          `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
+          mergeNote
+            ? `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting, because this table has merged cells: ${mergeNote}. A row cannot be inserted inside a merged span. Anchor a row outside the merged band, or use set_cell_text to write into the rows that already exist.`
+            : `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting. Re-read the table with table_facts and anchor a current data row.`,
           [
             `expected: ${JSON.stringify(paragraph.expectedText)}`,
-            `actual: ${JSON.stringify(target?.text)}`
+            `actual: ${JSON.stringify(target?.text)}`,
+            ...(mergeNote ? [`merged cells: ${mergeNote}`] : [])
           ]
         );
       }
@@ -16318,6 +16483,43 @@ function detectBatchedDuplicateTables(edits: EditOp[]): BatchRefusal | null {
       'Duplicate the table, re-read structure/table_facts, then send follow-up edits against the fresh anchors.'
     ],
     indices: [firstDuplicate, ...laterAnchored]
+  };
+}
+
+/**
+ * `split_table` and `copy_section` both INSERT blocks, so every anchor after them
+ * has moved. `duplicate_table` already refuses a change set that keeps writing
+ * after it; these two did not, and a write aimed at a shifted anchor gets far
+ * enough to change the document before the set fails - leaving the copied
+ * section behind, or silently stripping a binding tag off a cell so its value
+ * stops recomputing. Neither survives the rollback. Refuse in preflight, before
+ * any anchor is resolved, exactly as the duplicate guard does.
+ */
+function detectAnchorShiftingNotLast(edits: EditOp[]): BatchRefusal | null {
+  const shifting = new Set(['split_table', 'copy_section']);
+  const firstShift = edits.findIndex((op) => !!op?.op && shifting.has(op.op));
+  if (firstShift < 0) return null;
+  const laterAnchored = edits
+    .map((op, index) => ({ op, index }))
+    .filter(
+      ({ op, index }) =>
+        index > firstShift &&
+        op?.op &&
+        !ANCHORLESS_OPS.has(op.op) &&
+        op.op !== 'replace_all'
+    )
+    .map(({ index }) => index);
+  if (!laterAnchored.length) return null;
+  const name = edits[firstShift]?.op ?? 'This op';
+  return {
+    code: 'anchor_shifting_op_must_end_change_set',
+    message: `${name} must be the last anchored edit in its change set. It inserts blocks, so every later anchor may have shifted and a write against a moved anchor can alter the document before the set fails. Nothing was written.`,
+    details: [
+      `${name} at edit ${firstShift}`,
+      `later anchored edits: ${laterAnchored.join(', ')}`,
+      'Send this edit alone, re-read structure, then send follow-up edits against the fresh anchors.'
+    ],
+    indices: [firstShift, ...laterAnchored]
   };
 }
 
@@ -18687,6 +18889,7 @@ function applyDocumentEditsMeasured(
     detectInconsistentAggregateRanges(edits) ??
     detectBatchedSplits(edits) ??
     detectBatchedDuplicateTables(edits) ??
+    detectAnchorShiftingNotLast(edits) ??
     detectEmptyInsertedTables(edits) ??
     detectMultilineAuthoredCells(edits) ??
     detectUnsourcedAuthoredFigures(edits) ??
@@ -18993,11 +19196,19 @@ function applyDocumentEditsMeasured(
       op.find != null &&
       !(simulatedTargetText ?? target.text).includes(String(op.find))
     ) {
+      // This preflight short-circuits before the handler, so it has to carry the
+      // handler's guidance itself - otherwise the caller gets a bare code with
+      // no message and no route forward.
       results[index] = {
         ok: false,
         op: name,
         anchor: op.anchor,
-        error: 'text_not_found'
+        error: 'text_not_found',
+        message: `${JSON.stringify(String(op.find))} is not present at "${op.anchor}", so there is nothing to ${name === 'delete_text' ? 'delete' : 'replace'}. Nothing was written.`,
+        details: [
+          `live text at ${op.anchor}: ${JSON.stringify(simulatedTargetText ?? target.text)}`,
+          "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor was already edited in this change set."
+        ]
       };
       return;
     }
