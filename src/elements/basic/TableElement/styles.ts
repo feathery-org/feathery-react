@@ -350,6 +350,70 @@ export const overflowSelectStyle = {
   }
 } as const;
 
+// Spreadsheet mode styles
+
+const gridline = `1px solid ${colors.gray200}`;
+
+export const spreadsheetContainerStyle = {
+  borderRadius: 0,
+  boxShadow: 'none',
+  // Keyboard focus needs a visible indicator; mouse clicks show the
+  // selected-cell outline instead
+  '&:focus-visible': {
+    outline: `2px solid ${colors.blue700}`,
+    outlineOffset: '-2px'
+  }
+} as const;
+
+export const spreadsheetTheadStyle = {
+  position: 'sticky' as const,
+  top: 0,
+  zIndex: 2
+} as const;
+
+export const spreadsheetThStyle = {
+  padding: '6px 10px',
+  fontSize: '13px',
+  backgroundColor: colors.gray50,
+  borderRight: gridline,
+  borderBottom: gridline
+} as const;
+
+export const spreadsheetCellStyle = {
+  padding: '6px 10px',
+  fontSize: '13px',
+  borderRight: gridline,
+  borderBottom: gridline,
+  wordBreak: 'break-word',
+  overflowWrap: 'anywhere'
+} as const;
+
+export const spreadsheetRowStyle = {
+  backgroundColor: colors.white,
+  '&:hover td': {
+    backgroundColor: '#f8fafd'
+  }
+} as const;
+
+export const rowNumberCellStyle = {
+  ...spreadsheetThStyle,
+  width: '36px',
+  minWidth: '36px',
+  textAlign: 'center' as const,
+  fontWeight: '400',
+  color: colors.gray400,
+  fontSize: '12px',
+  userSelect: 'none' as const,
+  position: 'sticky' as const,
+  left: 0,
+  zIndex: 1
+} as const;
+
+export const selectedCellStyle = {
+  outline: `2px solid ${colors.blue700}`,
+  outlineOffset: '-2px'
+} as const;
+
 // Editing styles
 
 export const toolbarStyle = {

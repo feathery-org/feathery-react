@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import {
   thStyle,
+  spreadsheetThStyle,
   sortIconContainerStyle,
   sortArrowStyle,
   sortHeaderContentStyle
@@ -15,6 +16,7 @@ type SortHeaderProps = {
   sortDirection: 'asc' | 'desc';
   onSort: (columnName: string) => void;
   styles: any;
+  spreadsheet?: boolean;
 };
 
 type SortIconProps = {
@@ -59,7 +61,8 @@ export function SortHeader({
   sortColumn,
   sortDirection,
   onSort,
-  styles
+  styles,
+  spreadsheet = false
 }: SortHeaderProps) {
   return (
     <Fragment>
@@ -77,7 +80,11 @@ export function SortHeader({
             onClick={() => isSortable && onSort(column.name)}
             css={{
               ...thStyle,
-              ...(isFirstColumn ? {} : { paddingLeft: 0 }),
+              ...(spreadsheet
+                ? spreadsheetThStyle
+                : isFirstColumn
+                ? {}
+                : { paddingLeft: 0 }),
               ...styles.getTarget('th'),
               ...(isSortable ? { cursor: 'pointer' } : {})
             }}

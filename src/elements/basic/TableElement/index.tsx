@@ -6,7 +6,8 @@ import { Pagination } from './Pagination';
 import { ActionButtons } from './Actions';
 import { EmptyState } from './EmptyState';
 import { EditableCell } from './EditableCell';
-import { getNextEditableCell } from './utils';
+import { getAdjacentCell, getNextEditableCell, MoveDirection } from './utils';
+import { CellCoord } from './types';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
@@ -23,7 +24,14 @@ import {
   toolbarStyle,
   addRowButtonStyle,
   deleteColumnStyle,
-  deleteIconStyle
+  deleteIconStyle,
+  spreadsheetContainerStyle,
+  spreadsheetTheadStyle,
+  spreadsheetThStyle,
+  spreadsheetCellStyle,
+  spreadsheetRowStyle,
+  rowNumberCellStyle,
+  selectedCellStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
@@ -104,6 +112,10 @@ function TableElement({
 
   const tableId = element?.id;
 
+  const isSpreadsheet = element?.properties?.display_mode === 'spreadsheet';
+  // Selection/keyboard interactions only apply to the normal row layout
+  const spreadsheetNav = isSpreadsheet && !isTransposed;
+
   const canEdit = enableEditing && !isTransposed;
   const showAddRow = canEdit && enableAddDeleteRows;
   const canDeleteRows = canEdit && enableAddDeleteRows;
@@ -133,12 +145,25 @@ function TableElement({
     rowIndex: number;
     colIndex: number;
   } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<CellCoord | null>(null);
+  // Type-to-edit: the printable key that opened the editor, replacing content
+  const [editSeed, setEditSeed] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const prevPageRef = useRef(currentPage);
   if (prevPageRef.current !== currentPage) {
     prevPageRef.current = currentPage;
     setDeleteRowIndex(null);
     // A coordinate from the previous page would point at an off-page row.
     setEditingCell(null);
+    setSelectedCell(null);
+  }
+  // A search change can filter out the selected row without a page change,
+  // leaving an invisible stale selection that wedges arrow-key navigation
+  const prevSearchRef = useRef(searchQuery);
+  if (prevSearchRef.current !== searchQuery) {
+    prevSearchRef.current = searchQuery;
+    setEditingCell(null);
+    setSelectedCell(null);
   }
 
   const requestEdit = useCallback(
@@ -146,7 +171,82 @@ function TableElement({
       setEditingCell({ rowIndex, colIndex }),
     []
   );
-  const stopEdit = useCallback(() => setEditingCell(null), []);
+  const stopEdit = useCallback(() => {
+    setEditingCell(null);
+    setEditSeed(null);
+  }, []);
+
+  const moveSelection = useCallback(
+    (direction: MoveDirection) => {
+      setSelectedCell((prev) => {
+        if (!prev) return prev;
+        return (
+          getAdjacentCell(
+            paginatedRowIndices,
+            columns.length,
+            prev,
+            direction
+          ) ?? prev
+        );
+      });
+    },
+    [paginatedRowIndices, columns.length]
+  );
+
+  // Keyboard users can enter the grid by tabbing to it; seed the selection
+  // so arrow-key navigation has a starting point
+  const handleContainerFocus = () => {
+    if (!paginatedRowIndices.length || !columns.length) return;
+    // Functional update: a click focuses the container in the same batch as
+    // it sets the clicked cell, and that selection must win over the seed
+    setSelectedCell(
+      (prev) => prev ?? { rowIndex: paginatedRowIndices[0], colIndex: 0 }
+    );
+  };
+
+  const handleContainerKeyDown = (e: React.KeyboardEvent) => {
+    if (!selectedCell || editingCell) return;
+    // Keystrokes in the search box, cell editor, or buttons are not grid
+    // navigation
+    const target = e.target as HTMLElement;
+    if (target.closest('input, textarea, button, select')) return;
+    const arrows: Record<string, MoveDirection> = {
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      ArrowLeft: 'left',
+      ArrowRight: 'right'
+    };
+    const direction = arrows[e.key];
+    if (direction) {
+      e.preventDefault();
+      moveSelection(direction);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      setSelectedCell(
+        (prev) =>
+          prev &&
+          (getNextEditableCell(
+            paginatedRowIndices,
+            columns.length,
+            prev,
+            e.shiftKey
+          ) ??
+            prev)
+      );
+    } else if (e.key === 'Escape') {
+      setSelectedCell(null);
+    } else if (!canEdit) {
+      // Read-only spreadsheets keep selection/navigation but never edit
+    } else if (e.key === 'Enter' || e.key === 'F2') {
+      e.preventDefault();
+      setEditSeed(null);
+      setEditingCell(selectedCell);
+    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setEditSeed(e.key);
+      setEditingCell(selectedCell);
+    }
+  };
   const navigateEdit = useCallback(
     (rowIndex: number, colIndex: number, backward: boolean) => {
       setEditingCell(
@@ -166,6 +266,9 @@ function TableElement({
 
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
+    // Row indices shift; a kept selection would point at different data
+    setSelectedCell(null);
+    setEditingCell(null);
     handleAddRow();
     setPendingAddRows((prev) => {
       const next = new Set<number>();
@@ -179,6 +282,8 @@ function TableElement({
     (rowIndex: number) => {
       handleDeleteRow(rowIndex);
       setDeleteRowIndex(null);
+      setSelectedCell(null);
+      setEditingCell(null);
     },
     [handleDeleteRow]
   );
@@ -205,9 +310,18 @@ function TableElement({
 
   return (
     <div
+      ref={containerRef}
       className={TABLE_CLASS.container}
+      {...(spreadsheetNav
+        ? {
+            tabIndex: 0,
+            onKeyDown: handleContainerKeyDown,
+            onFocus: handleContainerFocus
+          }
+        : {})}
       css={{
         ...containerStyle,
+        ...(isSpreadsheet ? spreadsheetContainerStyle : {}),
         ...styles.getTarget('container')
       }}
     >
@@ -236,14 +350,28 @@ function TableElement({
         <div css={{ overflowX: 'auto' }}>
           <table
             className={TABLE_CLASS.table}
+            {...(spreadsheetNav ? { role: 'grid' } : {})}
             css={{
               ...(tableStyle as any),
               ...styles.getTarget('table')
             }}
           >
             {!isTransposed && (
-              <thead className={TABLE_CLASS.header} css={theadStyle}>
+              <thead
+                className={TABLE_CLASS.header}
+                css={{
+                  ...theadStyle,
+                  ...(isSpreadsheet ? spreadsheetTheadStyle : {})
+                }}
+              >
                 <tr>
+                  {isSpreadsheet && (
+                    <th
+                      scope='col'
+                      className={TABLE_CLASS.rowNumber}
+                      css={{ ...rowNumberCellStyle, zIndex: 3 }}
+                    />
+                  )}
                   <SortHeader
                     columns={columns}
                     enableSort={enableSort}
@@ -251,6 +379,7 @@ function TableElement({
                     sortDirection={sortDirection}
                     onSort={handleSort}
                     styles={styles}
+                    spreadsheet={isSpreadsheet}
                   />
                   {actions.length > 0 && (
                     <th
@@ -258,7 +387,9 @@ function TableElement({
                       className={TABLE_CLASS.headerCell}
                       css={{
                         ...thStyle,
-                        paddingLeft: 0,
+                        ...(isSpreadsheet
+                          ? spreadsheetThStyle
+                          : { paddingLeft: 0 }),
                         ...styles.getTarget('th')
                       }}
                     >
@@ -271,6 +402,7 @@ function TableElement({
                       className={TABLE_CLASS.headerCell}
                       css={{
                         ...thStyle,
+                        ...(isSpreadsheet ? spreadsheetThStyle : {}),
                         ...deleteColumnStyle,
                         ...styles.getTarget('th')
                       }}
@@ -280,7 +412,7 @@ function TableElement({
               </thead>
             )}
             <tbody className={TABLE_CLASS.body} css={styles.getTarget('tbody')}>
-              {paginatedRowIndices.map((rowIndex) => {
+              {paginatedRowIndices.map((rowIndex, displayIdx) => {
                 const rowData: Record<string, any> = {};
                 if (!isTransposed) {
                   columns.forEach((col) => {
@@ -305,9 +437,21 @@ function TableElement({
                   <tr
                     key={rowIndex}
                     className={TABLE_CLASS.row}
-                    css={{ ...rowStyle, ...styles.getTarget('tr') }}
+                    css={{
+                      ...(isSpreadsheet ? spreadsheetRowStyle : rowStyle),
+                      ...styles.getTarget('tr')
+                    }}
                     onClick={handleRowClick}
                   >
+                    {spreadsheetNav && (
+                      <th
+                        scope='row'
+                        className={TABLE_CLASS.rowNumber}
+                        css={rowNumberCellStyle}
+                      >
+                        {currentPage * rowsPerPage + displayIdx + 1}
+                      </th>
+                    )}
                     {columns.map((column, colIndex) => {
                       const fieldValue = activeFieldValues[column.field_key];
                       const cellValue = Array.isArray(fieldValue)
@@ -327,15 +471,29 @@ function TableElement({
                           ? (column as any).originalRowIndex
                           : undefined;
 
+                      const isSelected =
+                        spreadsheetNav &&
+                        selectedCell?.rowIndex === rowIndex &&
+                        selectedCell?.colIndex === colIndex;
+
                       const cellCss = isFirstColInTranspose
                         ? {
-                            ...thStyle,
+                            ...(isSpreadsheet ? spreadsheetThStyle : thStyle),
                             backgroundColor: '#f9fafb',
                             borderRight: '1px solid #e5e7eb',
                             width: '1px',
                             whiteSpace: 'nowrap',
                             ...styles.getTarget('th'),
                             ...(isSortable ? { cursor: 'pointer' } : {})
+                          }
+                        : isSpreadsheet
+                        ? {
+                            ...(spreadsheetCellStyle as any),
+                            ...(isTransposed && !isFirstColInTranspose
+                              ? { cursor: 'pointer' }
+                              : {}),
+                            ...(isSelected ? selectedCellStyle : {}),
+                            ...styles.getTarget('td')
                           }
                         : {
                             ...(cellStyle as any),
@@ -355,6 +513,10 @@ function TableElement({
                       const CellElement = isFirstColInTranspose ? 'th' : 'td';
 
                       const handleCellClick = (e: React.MouseEvent) => {
+                        if (spreadsheetNav) {
+                          setSelectedCell({ rowIndex, colIndex });
+                          containerRef.current?.focus();
+                        }
                         if (isSortable) {
                           handleTransposedSort(rowIndex);
                         } else if (
@@ -408,6 +570,13 @@ function TableElement({
                           data-feathery-field={cellFieldKey}
                           css={cellCss}
                           onClick={handleCellClick}
+                          {...(isSelected ? { 'aria-selected': true } : {})}
+                          {...(spreadsheetNav && canEdit
+                            ? {
+                                onDoubleClick: () =>
+                                  requestEdit(rowIndex, colIndex)
+                              }
+                            : {})}
                           {...(isFirstColInTranspose ? { scope: 'row' } : {})}
                         >
                           {isFirstColInTranspose && isSortable ? (
@@ -442,6 +611,13 @@ function TableElement({
                               onNavigate={(backward) =>
                                 navigateEdit(rowIndex, colIndex, backward)
                               }
+                              seedValue={editSeed}
+                              clickToEdit={!spreadsheetNav}
+                              onEnterCommit={
+                                spreadsheetNav
+                                  ? () => moveSelection('down')
+                                  : undefined
+                              }
                             />
                           ) : (
                             stringifyWithNull(cellValue) ?? ''
@@ -457,8 +633,9 @@ function TableElement({
                         }}
                         className={TABLE_CLASS.cell}
                         css={{
-                          ...(cellStyle as any),
-                          paddingLeft: 0,
+                          ...(isSpreadsheet
+                            ? (spreadsheetCellStyle as any)
+                            : { ...(cellStyle as any), paddingLeft: 0 }),
                           ...styles.getTarget('td')
                         }}
                       >
@@ -490,6 +667,9 @@ function TableElement({
                       <td
                         className={TABLE_CLASS.cell}
                         css={{
+                          ...(isSpreadsheet
+                            ? (spreadsheetCellStyle as any)
+                            : {}),
                           ...deleteColumnStyle,
                           ...styles.getTarget('td')
                         }}
