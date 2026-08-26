@@ -610,7 +610,12 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     params: {
       address: 'string',
       displayText: 'string?',
-      screenTip: 'string?'
+      screenTip: 'string?',
+      // Where in the anchored paragraph the link goes. Same convention as
+      // insert_text, because this is the same kind of act: an addition at a
+      // point. Adding a link never replaces what the paragraph already says.
+      position: 'enum[before,after,start,end]?',
+      offset: 'int>=0?'
     },
     requiresAnchor: true
   },
@@ -668,7 +673,13 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   {
     // handler: applyAnchoredOp case 'insert_page_number'
     op: 'insert_page_number',
-    params: { numberFormat: 'string?' },
+    params: {
+      numberFormat: 'string?',
+      // As insert_text and insert_hyperlink: a page number is added at a point
+      // in the anchored paragraph, and never replaces its text.
+      position: 'enum[before,after,start,end]?',
+      offset: 'int>=0?'
+    },
     requiresAnchor: true
   },
   {

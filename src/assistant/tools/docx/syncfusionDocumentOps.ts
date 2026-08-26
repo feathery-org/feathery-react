@@ -5740,10 +5740,17 @@ type AnchorlessOpHandler<K extends AnchorlessDocumentOp> = (
   ctx: AnchorlessOpContext<K>
 ) => void;
 
-function insertionPoint(
-  op: TypedEditOp<'insert_text'>,
-  block: FlatBlock
-): number {
+/**
+ * Any op that inserts at a point rather than over a range. Only `position` and
+ * `offset` are read, so every additive op can share one convention instead of
+ * each inventing its own.
+ */
+interface PositionedInsert {
+  position?: unknown;
+  offset?: unknown;
+}
+
+function insertionPoint(op: PositionedInsert, block: FlatBlock): number {
   const position =
     typeof op.position === 'string' ? op.position.toLowerCase() : '';
   if (position === 'after' || position === 'end') return block.length;
@@ -5771,7 +5778,7 @@ function insertionText(op: TypedEditOp<'insert_text'>): string {
 // model; test doubles without those public methods retain the offset fallback.
 function selectInsertionPoint(
   editor: LiveEditor,
-  op: TypedEditOp<'insert_text'>,
+  op: PositionedInsert,
   block: FlatBlock
 ): void {
   const position =
@@ -9230,8 +9237,14 @@ export const ANCHORED_OP_HANDLERS: {
     selectBlock(editor, block);
     callEditor(editor, 'insertBookmark', String(op.name ?? ''));
   },
+  // insertHyperlink REPLACES the current selection. Selecting the whole
+  // paragraph first therefore deleted the paragraph's text and reported
+  // success, and rejecting our revisions did not bring it back: verified in a
+  // real browser, where "Acme Insurance Proposal" became the link. Adding a
+  // link is an ADDITION, so it takes a caret, positioned by the same
+  // position/offset convention every other additive op uses.
   insert_hyperlink: ({ editor, op, block }) => {
-    selectBlock(editor, block);
+    selectInsertionPoint(editor, op, block);
     callEditor(
       editor,
       'insertHyperlink',
@@ -9254,8 +9267,11 @@ export const ANCHORED_OP_HANDLERS: {
     selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertColumnBreak');
   },
+  // Same defect as insert_hyperlink, found by asking which OTHER additive ops
+  // pair a whole-paragraph selection with a consuming SDK call: insertPageNumber
+  // consumes too, verified in the same browser probe.
   insert_page_number: ({ editor, op, block }) => {
-    selectBlock(editor, block);
+    selectInsertionPoint(editor, op, block);
     callEditor(editor, 'insertPageNumber', op.numberFormat);
   },
   // Table structure. These once fell to a generic snake_case->camelCase
@@ -9525,8 +9541,15 @@ export const ANCHORED_OP_HANDLERS: {
       )
     };
   },
+  // This one made no selection call at all, so it wrote over whatever the
+  // dispatcher happened to leave selected - the whole block. The probe says
+  // insertSectionBreak does not consume its selection today, so no text was
+  // lost, but that is the SDK's behaviour rather than this op's intent. Its
+  // siblings insert_page_break and insert_column_break both collapse
+  // explicitly; the asymmetry was the tell.
   insert_section_break: ({ editor, op, block }) => {
     refuseBreakInsideTable('insert_section_break', block);
+    selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
   }
 };
