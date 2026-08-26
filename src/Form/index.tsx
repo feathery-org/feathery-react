@@ -2696,6 +2696,29 @@ function Form({
       );
     }
 
+    // The rest of the chain runs in a nested call over a sliced action array,
+    // so the windows this click pre-opened for those actions have to be handed
+    // across re-keyed to the slice, and dropped from this run's map, which
+    // closes whatever it still owns once the loop ends. Without the handoff the
+    // nested run pre-opens for itself - fine when it resumes from a fresh click
+    // (a modal's save, the Quik viewer's submit), but the connect account chain
+    // resumes straight off the OAuth result with no gesture left, so the browser
+    // blocks the window and the next action reports a popup that was never
+    // actually blocked. Windows already closed mean this run has finished and
+    // the resume is carrying its own gesture, so it is left to open its own.
+    const handOffPreOpenedWindows = (index: number) => {
+      const remaining = new Map<number, Window | null>();
+      let anyOpen = false;
+      preOpenedWindows.forEach((win, idx) => {
+        if (idx <= index) return;
+        remaining.set(idx - index - 1, win);
+        if (win && !win.closed) anyOpen = true;
+      });
+      if (!anyOpen) return undefined;
+      remaining.forEach((_, idx) => preOpenedWindows.delete(idx + index + 1));
+      return remaining;
+    };
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -2710,7 +2733,8 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload
+        triggerPayload,
+        preOpenedWindows: handOffPreOpenedWindows(index)
       });
       if (!running) onAsyncEnd();
     };
