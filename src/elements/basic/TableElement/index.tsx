@@ -22,6 +22,7 @@ import {
   containerStyle,
   rowStyle,
   cellStyle,
+  dataColumnMinWidthStyle,
   tableStyle,
   theadStyle,
   thStyle,
@@ -403,6 +404,7 @@ function TableElement({
                           }
                         : {
                             ...(cellStyle as any),
+                            ...dataColumnMinWidthStyle,
                             ...(isTransposed
                               ? isSecondColumn
                                 ? {}

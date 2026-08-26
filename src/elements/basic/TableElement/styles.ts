@@ -114,7 +114,6 @@ export const searchInputStyle = {
 
 export const tableStyle = {
   width: '100%',
-  maxWidth: '100%',
   fontSize: '14px',
   textAlign: 'left',
   color: colors.gray600,
@@ -128,6 +127,12 @@ export const theadStyle = {
   color: colors.gray600,
   backgroundColor: colors.gray50,
   borderBottom: `1px solid ${colors.gray200}`
+} as const;
+
+// Data columns never shrink below this; the table overflows into the
+// horizontal-scroll wrapper instead of crushing cell content
+export const dataColumnMinWidthStyle = {
+  minWidth: '120px'
 } as const;
 
 export const thStyle = {
