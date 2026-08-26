@@ -34,9 +34,11 @@ const makeElement = (propsOverride: Record<string, any> = {}) => ({
   }
 });
 
-// applyTableStyles only calls addTargets and the render reads getTarget
+// applyTableStyles calls addTargets; the render applies column sizing and reads
+// getTarget.
 const mockStyles = () => ({
   addTargets: jest.fn(),
+  apply: jest.fn(),
   getTarget: jest.fn(() => ({}))
 });
 
