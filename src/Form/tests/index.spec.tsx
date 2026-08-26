@@ -17,6 +17,7 @@ import {
 import { JSForm } from '..';
 import FeatheryClient from '../../utils/featheryClient';
 import internalState from '../../utils/internalState';
+import { initState } from '../../utils/init';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors,
@@ -206,6 +207,8 @@ describe('session fetch failure fallback', () => {
   afterEach(() => {
     delete ClientMod._spies.overrides.fetchForm;
     delete ClientMod._spies.overrides.fetchSession;
+    initState.collaboratorId = '';
+    initState.collaboratorReview = '';
   });
 
   // The session request fails for causes the form is meant to survive: a 400
@@ -276,6 +279,56 @@ describe('session fetch failure fallback', () => {
     render(<JSForm formId='f1' _internalId='iid-session-reject-hash-1' />);
 
     expect(await screen.findByTestId('btn')).toBeInTheDocument();
+  });
+});
+
+describe('session failure fallback stays closed for collaborators', () => {
+  const originStep = {
+    key: 'step-1',
+    id: 's1',
+    origin: true,
+    servar_fields: [],
+    buttons: [],
+    next_conditions: []
+  };
+
+  afterEach(() => {
+    delete ClientMod._spies.overrides.fetchForm;
+    delete ClientMod._spies.overrides.fetchSession;
+    initState.collaboratorId = '';
+    initState.collaboratorReview = '';
+  });
+
+  const rejectSession = () => {
+    ClientMod._spies.overrides.fetchForm = async () => ({
+      steps: [originStep],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: [],
+      track_hashes: false
+    });
+    ClientMod._spies.overrides.fetchSession = () =>
+      Promise.reject(new Error('Too many sessions'));
+  };
+
+  // A collaborator's invalid/completed/direct_submission_disabled status and
+  // their field allow lists only arrive on the session response. Without it the
+  // form must not render, or a restricted collaborator gets an active form.
+  it.each([
+    ['collaboratorId', 'collab-1'],
+    ['collaboratorReview', 'readOnly']
+  ])('renders FormOff when %s is set', async (key, value) => {
+    (initState as any)[key] = value;
+    rejectSession();
+
+    render(<JSForm formId='f1' _internalId={`iid-collab-${key}`} />);
+
+    expect(
+      await screen.findByText("This form isn't currently collecting responses.")
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('btn')).not.toBeInTheDocument();
   });
 });
 

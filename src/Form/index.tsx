@@ -1905,8 +1905,18 @@ function Form({
       })
       .catch(async (error: any) => {
         console.warn(error);
-        // Go to first step if origin fails
         const data = await formPromise;
+        // Collaborator status and field allow lists only ride on the session
+        // response, and nothing else on the client carries them. Fail closed
+        // rather than render a form this collaborator may not be permitted to
+        // fill. Anonymous collaboration is not detectable here — the CDN form
+        // payload carries no collaboration flag.
+        if (initState.collaboratorId || initState.collaboratorReview) {
+          formOffReason.current = CLOSED;
+          setRender((render) => ({ ...render }));
+          return;
+        }
+        // Go to first step if origin fails
         const newKey = (getOrigin as any)(data).key;
         // Mirrors the success path above: `steps` state is still {} inside this
         // effect's closure, and the hash branch has to set the key too.
