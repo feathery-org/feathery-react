@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
+import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import { Column } from './types';
 
 type HubEntry = { id: string; data: Record<string, any> };
@@ -23,9 +24,16 @@ type UseHubTableSourceProps = {
     properties: {
       columns: Column[];
       hub_id?: string;
+      hidden_hub_fields?: string[];
     };
   };
-  client: { dataHubAction?: DataHubAction } | null | undefined;
+  client:
+    | {
+        dataHubAction?: DataHubAction;
+        getHubSchemas?: (hubIds: string[]) => Promise<{ hubs: HubSchema[] }>;
+      }
+    | null
+    | undefined;
   enabled: boolean;
 };
 
@@ -70,11 +78,35 @@ export function useHubTableSource({
   const tableId = element.id;
   const hubId = element.properties?.hub_id;
   const userColumns: Column[] = element.properties?.columns || [];
+  const hiddenHubFields = element.properties?.hidden_hub_fields;
+
+  const [schemaFields, setSchemaFields] = useState<HubFieldSchema[] | null>(
+    null
+  );
+
+  // Columns derive from the live Hub schema minus the hidden (blacklisted)
+  // fields, so fields added to the Hub later show up without republishing the
+  // form. The columns stored on the element are only a fallback until the
+  // schema loads.
+  const resolvedColumns: Column[] = useMemo(() => {
+    if (!schemaFields) return userColumns;
+    const hidden = new Set(hiddenHubFields ?? []);
+    return schemaFields
+      .filter((field) => !hidden.has(field.id))
+      .map((field) => ({
+        name: field.key,
+        field_id: '',
+        field_type: '',
+        field_key: '',
+        hub_field_id: field.id,
+        hub_field_key: field.key
+      }));
+  }, [schemaFields, userColumns, hiddenHubFields]);
 
   // Columns whose runtime storage key points into the Hub-derived value map.
   const { hubColumns, syntheticToHubKey } = useMemo(() => {
     const map: Record<string, string> = {};
-    const cols = userColumns.map((col) => {
+    const cols = resolvedColumns.map((col) => {
       const hubFieldKey = col.hub_field_key || '';
       const key = hubFieldKey
         ? syntheticKey(tableId, hubFieldKey)
@@ -83,7 +115,7 @@ export function useHubTableSource({
       return { ...col, field_key: key };
     });
     return { hubColumns: cols, syntheticToHubKey: map };
-  }, [userColumns, tableId]);
+  }, [resolvedColumns, tableId]);
 
   const [rows, setRows] = useState<HubRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -131,7 +163,16 @@ export function useHubTableSource({
     setLoading(true);
     setErrors([]);
     try {
-      const entries = await client.dataHubAction({ hubId, operation: 'get' });
+      // A schema failure (e.g. a backend without the endpoint yet) falls back
+      // to the columns stored on the element instead of erroring the table.
+      const [schemas, entries] = await Promise.all([
+        client.getHubSchemas
+          ? client.getHubSchemas([hubId]).catch(() => null)
+          : Promise.resolve(null),
+        client.dataHubAction({ hubId, operation: 'get' })
+      ]);
+      const fields = schemas?.hubs?.find((h) => h.id === hubId)?.fields;
+      if (Array.isArray(fields)) setSchemaFields(fields);
       const list: HubEntry[] = Array.isArray(entries) ? [...entries] : [];
       list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       commitRows(

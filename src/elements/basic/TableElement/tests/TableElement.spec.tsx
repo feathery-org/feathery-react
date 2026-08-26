@@ -256,4 +256,75 @@ describe('TableElement - Data Hub autosave', () => {
       })
     );
   });
+
+  it('derives columns from the live Hub schema, minus hidden fields', async () => {
+    const hubField = (id: string, key: string) => ({
+      id,
+      key,
+      type: 'text',
+      required: false,
+      unique: false
+    });
+    const dataHubAction = jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([
+            {
+              id: 'entry1',
+              data: {
+                name: 'Alice',
+                email: 'alice@test.com',
+                phone: '555-0100'
+              }
+            }
+          ])
+        : Promise.resolve(null)
+    );
+    const getHubSchemas = jest.fn(() =>
+      Promise.resolve({
+        hubs: [
+          {
+            id: 'hub1',
+            key: 'people',
+            fields: [
+              hubField('hf1', 'name'),
+              hubField('hf2', 'email'),
+              hubField('hf3', 'phone')
+            ]
+          }
+        ]
+      })
+    );
+    render(
+      <TableElement
+        element={makeHubElement({ hidden_hub_fields: ['hf2'] })}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction, getHubSchemas }}
+      />
+    );
+
+    // `phone` was added to the Hub after the table was configured, so it's
+    // missing from the stored columns but renders anyway; the hidden field
+    // never renders.
+    expect(await screen.findByText('555-0100')).toBeInTheDocument();
+    expect(screen.getByText('phone')).toBeInTheDocument();
+    expect(screen.queryByText('alice@test.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('email')).not.toBeInTheDocument();
+  });
+
+  it('falls back to stored columns when the schema fetch fails', async () => {
+    const dataHubAction = jest.fn(oneEntry);
+    const getHubSchemas = jest.fn(() =>
+      Promise.reject(new Error('unavailable'))
+    );
+    render(
+      <TableElement
+        element={makeHubElement()}
+        responsiveStyles={mockStyles()}
+        client={{ dataHubAction, getHubSchemas }}
+      />
+    );
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument();
+    expect(screen.getByText('alice@test.com')).toBeInTheDocument();
+  });
 });
