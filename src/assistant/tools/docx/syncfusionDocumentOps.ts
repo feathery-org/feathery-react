@@ -8601,6 +8601,33 @@ function assertPastedTableMatches(
 // Exported for the registry parity spec: the spec re-asserts at runtime what
 // the mapped types already guarantee at compile time, guarding the emitted JS
 // against an `as any` regression at the table itself.
+/**
+ * A break inside a table cell is not a change the user can reject.
+ *
+ * Measured: at an ordinary paragraph SyncFusion authors two Insertion
+ * revisions for a page break and rejecting them restores the document. At a
+ * table row it authors NONE, so the break survives its own rejection and
+ * leaves a stray empty element inside the table - the user rejects the card and
+ * the document does not come back, which is the one promise tracked changes
+ * make.
+ *
+ * This has to PREVENT rather than detect. Checking afterwards is what the row
+ * withdrawal already taught: the structural assertion refused after the write
+ * had landed, and the rollback rejects revisions, of which an untracked write
+ * has none - so the engine reported "nothing was written" over a document it
+ * had permanently changed. A refusal that lies is worse than the silent
+ * success it replaced.
+ */
+function refuseBreakInsideTable(op: string, block: FlatBlock): void {
+  if (block.kind !== 'table_cell') return;
+  throw new OpError(
+    'break_inside_table_not_rejectable',
+    `${op} cannot be inserted inside a table cell: this engine cannot make it a tracked change there, so it could not be rejected and the table would keep an empty element the user never asked for. Nothing was written. Insert the break at a body paragraph before or after the table instead.`,
+    [`anchor: ${block.anchor}`],
+    'never'
+  );
+}
+
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
@@ -9218,10 +9245,12 @@ export const ANCHORED_OP_HANDLERS: {
     callEditor(editor, 'removeHyperlink');
   },
   insert_page_break: ({ editor, block }) => {
+    refuseBreakInsideTable('insert_page_break', block);
     selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertPageBreak');
   },
   insert_column_break: ({ editor, block }) => {
+    refuseBreakInsideTable('insert_column_break', block);
     selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertColumnBreak');
   },
@@ -9496,7 +9525,8 @@ export const ANCHORED_OP_HANDLERS: {
       )
     };
   },
-  insert_section_break: ({ editor, op }) => {
+  insert_section_break: ({ editor, op, block }) => {
+    refuseBreakInsideTable('insert_section_break', block);
     callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
   }
 };
