@@ -128,22 +128,24 @@ describe('TableElement - onClick column payload', () => {
   });
 });
 
-describe('TableElement - buffered Data Hub edits', () => {
+describe('TableElement - Data Hub autosave', () => {
   afterEach(() => {
     jest.clearAllMocks();
     sessionStorage.clear();
   });
 
-  it('marks edited cells dirty and only updates Data Hub after Save', async () => {
-    const dataHubAction = jest.fn(({ operation }) => {
-      if (operation === 'get') {
-        return Promise.resolve([
-          { id: 'entry1', data: { name: 'Alice', email: 'alice@test.com' } }
-        ]);
-      }
-      return Promise.resolve({ updated: 1 });
-    });
-    const { container } = render(
+  const oneEntry = ({ operation }: any) => {
+    if (operation === 'get') {
+      return Promise.resolve([
+        { id: 'entry1', data: { name: 'Alice', email: 'alice@test.com' } }
+      ]);
+    }
+    return Promise.resolve({ updated: 1 });
+  };
+
+  it('writes a cell edit straight to the Data Hub', async () => {
+    const dataHubAction = jest.fn(oneEntry);
+    render(
       <TableElement
         element={makeHubElement()}
         responsiveStyles={mockStyles()}
@@ -156,14 +158,6 @@ describe('TableElement - buffered Data Hub edits', () => {
     fireEvent.change(input, { target: { value: 'Alicia' } });
     fireEvent.blur(input);
 
-    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
-    expect(container.querySelector('[data-dirty="true"]')).toHaveTextContent(
-      'Alicia'
-    );
-    expect(dataHubAction).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
     await waitFor(() =>
       expect(dataHubAction).toHaveBeenCalledWith({
         hubId: 'hub1',
@@ -172,19 +166,19 @@ describe('TableElement - buffered Data Hub edits', () => {
         data: { name: 'Alicia' }
       })
     );
-    await waitFor(() =>
-      expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
-    );
+    expect(screen.getByText('Alicia')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull();
   });
 
-  it('restores the latest Data Hub snapshot on Reset', async () => {
+  it('rolls a cell back when the Data Hub rejects the update', async () => {
     const dataHubAction = jest.fn(({ operation }) => {
       if (operation === 'get') {
         return Promise.resolve([
           { id: 'entry1', data: { name: 'Alice', email: 'alice@test.com' } }
         ]);
       }
-      return Promise.resolve(null);
+      return Promise.reject(new Error('Name must be unique'));
     });
     render(
       <TableElement
@@ -198,15 +192,13 @@ describe('TableElement - buffered Data Hub edits', () => {
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Alicia' } });
     fireEvent.blur(input);
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
-    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(await screen.findByText('Name must be unique')).toBeInTheDocument();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
     expect(screen.queryByText('Alicia')).not.toBeInTheDocument();
-    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
-    expect(dataHubAction).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps invalid new rows dirty and displays backend validation errors', async () => {
+  it('creates a new row on its first edit and keeps it on failure', async () => {
     const dataHubAction = jest.fn(({ operation }) => {
       if (operation === 'get') return Promise.resolve([]);
       if (operation === 'create') {
@@ -222,19 +214,15 @@ describe('TableElement - buffered Data Hub edits', () => {
       />
     );
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: '+ Add Row' })
-    );
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Row' }));
     fireEvent.click(screen.getAllByText('Click to edit')[0]);
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Ayesha' } });
     fireEvent.blur(input);
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(
-      await screen.findByText('Row 1: Missing required fields: email')
+      await screen.findByText('Missing required fields: email')
     ).toBeInTheDocument();
-    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
     expect(screen.getByText('Ayesha')).toBeInTheDocument();
     expect(dataHubAction).toHaveBeenCalledWith({
       hubId: 'hub1',
@@ -243,15 +231,8 @@ describe('TableElement - buffered Data Hub edits', () => {
     });
   });
 
-  it('only deletes persisted rows from Data Hub after Save', async () => {
-    const dataHubAction = jest.fn(({ operation }) => {
-      if (operation === 'get') {
-        return Promise.resolve([
-          { id: 'entry1', data: { name: 'Alice', email: 'alice@test.com' } }
-        ]);
-      }
-      return Promise.resolve(null);
-    });
+  it('deletes a persisted row from the Data Hub immediately', async () => {
+    const dataHubAction = jest.fn(oneEntry);
     const { container } = render(
       <TableElement
         element={makeHubElement()}
@@ -262,16 +243,11 @@ describe('TableElement - buffered Data Hub edits', () => {
 
     await screen.findByText('Alice');
     fireEvent.click(
-      container.querySelector(`.feathery-table-delete-button`) as HTMLElement
+      container.querySelector('.feathery-table-delete-button') as HTMLElement
     );
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(screen.queryByText('Alice')).not.toBeInTheDocument();
-    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
-    expect(dataHubAction).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
     await waitFor(() =>
       expect(dataHubAction).toHaveBeenCalledWith({
         hubId: 'hub1',

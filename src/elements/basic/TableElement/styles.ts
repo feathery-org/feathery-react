@@ -8,10 +8,7 @@ const colors = {
   gray600: '#4b5563',
   gray700: '#374151',
   gray900: '#111827',
-  amber50: '#fffbeb',
-  amber500: '#f59e0b',
   blue50: '#eff6ff',
-  blue600: '#2563eb',
   blue700: '#1d4ed8',
   red50: '#fef2f2',
   red500: '#ef4444',
@@ -373,54 +370,6 @@ export const addRowButtonStyle = {
   whiteSpace: 'nowrap' as const
 } as const;
 
-export const toolbarActionsStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-  marginLeft: 'auto'
-} as const;
-
-export const dirtyIndicatorStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '6px',
-  color: colors.gray600,
-  fontSize: '13px',
-  whiteSpace: 'nowrap' as const,
-  '&::before': {
-    content: '""',
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    backgroundColor: colors.amber500
-  }
-} as const;
-
-export const resetButtonStyle = {
-  ...addRowButtonStyle
-} as const;
-
-export const saveButtonStyle = {
-  ...addRowButtonStyle,
-  color: colors.white,
-  backgroundColor: colors.blue600,
-  borderColor: colors.blue600,
-  '&:hover': {
-    color: colors.white,
-    backgroundColor: colors.blue700
-  },
-  '&:disabled': {
-    color: colors.white,
-    backgroundColor: colors.gray400,
-    borderColor: colors.gray400,
-    cursor: 'default'
-  },
-  '&:disabled:hover': {
-    color: colors.white,
-    backgroundColor: colors.gray400
-  }
-} as const;
-
 export const errorBannerStyle = {
   padding: '10px 16px',
   color: colors.red600,
@@ -431,11 +380,6 @@ export const errorBannerStyle = {
     margin: 0,
     paddingLeft: '18px'
   }
-} as const;
-
-export const dirtyCellStyle = {
-  backgroundColor: colors.amber50,
-  boxShadow: `inset 3px 0 0 ${colors.amber500}`
 } as const;
 
 export const clickToEditStyle = {

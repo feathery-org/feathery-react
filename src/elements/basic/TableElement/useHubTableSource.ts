@@ -36,11 +36,7 @@ type UseHubTableSourceReturn = {
   loading: boolean;
   saving: boolean;
   errors: string[];
-  isDirty: boolean;
-  isCellDirty: (fieldKey: string, rowIndex: number) => boolean;
   refetch: () => void;
-  save: () => Promise<void>;
-  reset: () => Promise<void>;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
   handleAddRow: () => void;
   handleDeleteRow: (rowIndex: number) => void;
@@ -48,9 +44,6 @@ type UseHubTableSourceReturn = {
 
 const syntheticKey = (tableId: string, hubFieldKey: string) =>
   `__hub_${tableId}_${hubFieldKey}`;
-
-const valuesEqual = (left: any, right: any) =>
-  left === right || JSON.stringify(left) === JSON.stringify(right);
 
 const errorMessages = (error: any): string[] => {
   const detail = error?.response?.data ?? error?.data;
@@ -93,34 +86,44 @@ export function useHubTableSource({
   }, [userColumns, tableId]);
 
   const [rows, setRows] = useState<HubRow[]>([]);
-  const [baselineEntries, setBaselineEntries] = useState<
-    Record<string, HubEntry>
-  >({});
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
-  const baselineRef = useRef(baselineEntries);
-  baselineRef.current = baselineEntries;
-  const dirtyRef = useRef(false);
-  const savingRef = useRef(false);
+  const pendingRef = useRef(0);
   const nextLocalId = useRef(0);
 
-  const projectEntries = useCallback((entries: HubEntry[]) => {
-    const nextRows = entries.map((entry) => ({
-      localId: `entry:${entry.id}`,
-      entryId: entry.id,
-      data: { ...entry.data }
-    }));
-    const nextBaseline = Object.fromEntries(
-      entries.map((entry) => [entry.id, { ...entry, data: { ...entry.data } }])
-    );
+  const commitRows = useCallback((nextRows: HubRow[]) => {
     rowsRef.current = nextRows;
-    baselineRef.current = nextBaseline;
     setRows(nextRows);
-    setBaselineEntries(nextBaseline);
+  }, []);
+
+  const updateRow = useCallback(
+    (localId: string, change: (row: HubRow) => HubRow) => {
+      commitRows(
+        rowsRef.current.map((row) =>
+          row.localId === localId ? change(row) : row
+        )
+      );
+    },
+    [commitRows]
+  );
+
+  // Writes go out one at a time so a cell edit can never race the create of the
+  // row it belongs to, and so edits land in the order the user made them.
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const enqueue = useCallback((task: () => Promise<void>) => {
+    pendingRef.current += 1;
+    setPending(pendingRef.current);
+    queueRef.current = queueRef.current
+      .then(task)
+      .catch(() => {})
+      .then(() => {
+        pendingRef.current -= 1;
+        setPending(pendingRef.current);
+      });
   }, []);
 
   const loadEntries = useCallback(async () => {
@@ -131,24 +134,32 @@ export function useHubTableSource({
       const entries = await client.dataHubAction({ hubId, operation: 'get' });
       const list: HubEntry[] = Array.isArray(entries) ? [...entries] : [];
       list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-      projectEntries(list);
+      commitRows(
+        list.map((entry) => ({
+          localId: `entry:${entry.id}`,
+          entryId: entry.id,
+          data: { ...entry.data }
+        }))
+      );
     } catch (error) {
       setErrors(errorMessages(error));
     } finally {
       setLoading(false);
     }
-  }, [enabled, hubId, client, projectEntries]);
+  }, [enabled, hubId, client, commitRows]);
 
   const refetch = useCallback(() => {
+    // A reload would drop in-flight writes and rows that have not been created
+    // yet, so only resync when the table has nothing outstanding.
+    if (pendingRef.current > 0) return;
+    if (rowsRef.current.some((row) => row.entryId == null)) return;
     loadEntries().catch(() => {});
   }, [loadEntries]);
 
   useEffect(() => {
     if (!enabled) return;
     refetch();
-    const onFocus = () => {
-      if (!dirtyRef.current && !savingRef.current) refetch();
-    };
+    const onFocus = () => refetch();
     featheryWindow().addEventListener('focus', onFocus);
     return () => featheryWindow().removeEventListener('focus', onFocus);
   }, [enabled, refetch]);
@@ -165,188 +176,110 @@ export function useHubTableSource({
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
 
-  const isCellDirty = useCallback(
-    (fieldKey: string, rowIndex: number) => {
-      const row = rows[rowIndex];
-      const hubFieldKey = syntheticToHubKey[fieldKey];
-      if (!row || !hubFieldKey) return false;
-      const baseline = row.entryId ? baselineEntries[row.entryId] : undefined;
-      return baseline
-        ? !valuesEqual(
-            row.data[hubFieldKey] ?? '',
-            baseline.data[hubFieldKey] ?? ''
-          )
-        : !valuesEqual(row.data[hubFieldKey] ?? '', '');
-    },
-    [rows, baselineEntries, syntheticToHubKey]
-  );
-
-  const isDirty = useMemo(() => {
-    const persistedIds = new Set(
-      rows.flatMap((row) => (row.entryId ? [row.entryId] : []))
-    );
-    if (
-      rows.some((row) => row.entryId == null) ||
-      Object.keys(baselineEntries).some((id) => !persistedIds.has(id))
-    ) {
-      return true;
-    }
-    return rows.some((row, rowIndex) =>
-      hubColumns.some((column) => isCellDirty(column.field_key, rowIndex))
-    );
-  }, [rows, baselineEntries, hubColumns, isCellDirty]);
-  dirtyRef.current = isDirty;
-
   const handleCellEdit = useCallback(
     (fieldKey: string, rowIndex: number, newValue: any) => {
       const hubFieldKey = syntheticToHubKey[fieldKey];
-      if (!hubFieldKey) return;
-      const nextRows = rowsRef.current.map((row, index) =>
-        index === rowIndex
-          ? { ...row, data: { ...row.data, [hubFieldKey]: newValue } }
-          : row
-      );
-      rowsRef.current = nextRows;
-      setRows(nextRows);
+      const target = rowsRef.current[rowIndex];
+      if (!hubFieldKey || !target) return;
+      const { localId } = target;
+      const previousValue = target.data[hubFieldKey];
+
+      updateRow(localId, (row) => ({
+        ...row,
+        data: { ...row.data, [hubFieldKey]: newValue }
+      }));
       setErrors([]);
-    },
-    [syntheticToHubKey]
-  );
 
-  const handleAddRow = useCallback(() => {
-    const data = Object.fromEntries(
-      Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
-    );
-    const nextRows = [
-      {
-        localId: `new:${nextLocalId.current++}`,
-        entryId: null,
-        data
-      },
-      ...rowsRef.current
-    ];
-    rowsRef.current = nextRows;
-    setRows(nextRows);
-    setErrors([]);
-  }, [syntheticToHubKey]);
-
-  const handleDeleteRow = useCallback((rowIndex: number) => {
-    const nextRows = rowsRef.current.filter((_, index) => index !== rowIndex);
-    rowsRef.current = nextRows;
-    setRows(nextRows);
-    setErrors([]);
-  }, []);
-
-  const save = useCallback(async () => {
-    if (!hubId || !client?.dataHubAction || savingRef.current) return;
-    savingRef.current = true;
-    setSaving(true);
-    setErrors([]);
-
-    const snapshotRows = rowsRef.current.map((row) => ({
-      ...row,
-      data: { ...row.data }
-    }));
-    const originalBaseline = baselineRef.current;
-    const nextBaseline: Record<string, HubEntry> = { ...originalBaseline };
-    const nextRows = snapshotRows.map((row) => ({
-      ...row,
-      data: { ...row.data }
-    }));
-    const failures: string[] = [];
-    const currentEntryIds = new Set(
-      snapshotRows.flatMap((row) => (row.entryId ? [row.entryId] : []))
-    );
-    const deletedEntryIds = Object.keys(originalBaseline).filter(
-      (id) => !currentEntryIds.has(id)
-    );
-
-    for (let rowIndex = 0; rowIndex < snapshotRows.length; rowIndex += 1) {
-      const row = snapshotRows[rowIndex];
-      try {
-        if (!row.entryId) {
+      enqueue(async () => {
+        if (!hubId || !client?.dataHubAction) return;
+        const row = rowsRef.current.find((r) => r.localId === localId);
+        if (!row) return;
+        try {
+          if (row.entryId) {
+            await client.dataHubAction({
+              hubId,
+              operation: 'update',
+              where: [{ entryId: row.entryId }],
+              data: { [hubFieldKey]: row.data[hubFieldKey] }
+            });
+            return;
+          }
+          // Rows stay provisional until their first edit, so the first edit is
+          // what creates them (an empty row would just fail required fields).
           const created: HubEntry | null = await client.dataHubAction({
             hubId,
             operation: 'create',
             data: row.data
           });
           if (!created?.id) throw new Error('Data Hub did not return a row ID');
-          const savedData = { ...row.data, ...created.data };
-          nextRows[rowIndex] = {
-            ...row,
+          updateRow(localId, (r) => ({
+            ...r,
             entryId: created.id,
-            data: savedData
-          };
-          nextBaseline[created.id] = { id: created.id, data: savedData };
-          continue;
+            data: { ...r.data, ...created.data }
+          }));
+        } catch (error) {
+          // A failed create keeps the typed value so the user can fix and retry;
+          // a failed update has a stored value to fall back to.
+          if (row.entryId) {
+            updateRow(localId, (r) => ({
+              ...r,
+              data: { ...r.data, [hubFieldKey]: previousValue }
+            }));
+          }
+          setErrors(errorMessages(error));
         }
+      });
+    },
+    [syntheticToHubKey, updateRow, enqueue, hubId, client]
+  );
 
-        const baseline = originalBaseline[row.entryId];
-        const changedData = Object.fromEntries(
-          Object.entries(row.data).filter(
-            ([key, value]) =>
-              !valuesEqual(value ?? '', baseline?.data[key] ?? '')
-          )
-        );
-        if (!Object.keys(changedData).length) continue;
-        await client.dataHubAction({
-          hubId,
-          operation: 'update',
-          where: [{ entryId: row.entryId }],
-          data: changedData
-        });
-        nextBaseline[row.entryId] = {
-          id: row.entryId,
-          data: { ...baseline?.data, ...row.data }
-        };
-      } catch (error) {
-        errorMessages(error).forEach((message) =>
-          failures.push(`Row ${rowIndex + 1}: ${message}`)
-        );
-      }
-    }
+  const handleAddRow = useCallback(() => {
+    const data = Object.fromEntries(
+      Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
+    );
+    commitRows([
+      { localId: `new:${nextLocalId.current++}`, entryId: null, data },
+      ...rowsRef.current
+    ]);
+    setErrors([]);
+  }, [syntheticToHubKey, commitRows]);
 
-    for (const entryId of deletedEntryIds) {
-      try {
-        await client.dataHubAction({
-          hubId,
-          operation: 'delete',
-          where: [{ entryId }]
-        });
-        delete nextBaseline[entryId];
-      } catch (error) {
-        errorMessages(error).forEach((message) =>
-          failures.push(`Deleted row: ${message}`)
-        );
-      }
-    }
+  const handleDeleteRow = useCallback(
+    (rowIndex: number) => {
+      const target = rowsRef.current[rowIndex];
+      if (!target) return;
+      commitRows(rowsRef.current.filter((_, index) => index !== rowIndex));
+      setErrors([]);
+      if (!target.entryId) return;
 
-    rowsRef.current = nextRows;
-    baselineRef.current = nextBaseline;
-    setRows(nextRows);
-    setBaselineEntries(nextBaseline);
-    setErrors(failures);
-    savingRef.current = false;
-    setSaving(false);
-  }, [hubId, client]);
-
-  const reset = useCallback(async () => {
-    if (savingRef.current) return;
-    await loadEntries();
-  }, [loadEntries]);
+      enqueue(async () => {
+        if (!hubId || !client?.dataHubAction) return;
+        try {
+          await client.dataHubAction({
+            hubId,
+            operation: 'delete',
+            where: [{ entryId: target.entryId as string }]
+          });
+        } catch (error) {
+          // Put the row back so the table keeps matching the Hub.
+          const restored = [...rowsRef.current];
+          restored.splice(rowIndex, 0, target);
+          commitRows(restored);
+          setErrors(errorMessages(error));
+        }
+      });
+    },
+    [commitRows, enqueue, hubId, client]
+  );
 
   return {
     hubColumns,
     hubFieldValues,
     entryIds,
     loading,
-    saving,
+    saving: pending > 0,
     errors,
-    isDirty,
-    isCellDirty,
     refetch,
-    save,
-    reset,
     handleCellEdit,
     handleAddRow,
     handleDeleteRow
