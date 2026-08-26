@@ -1,7 +1,9 @@
 import {
   BrowserMod,
   CheckButtonActionMod,
+  ClientMod,
   GridMod,
+  StepHelperMod,
   ValidationMod
 } from './testMocks';
 import {
@@ -188,6 +190,92 @@ describe('ReactForm sharedCodes initialization', () => {
     expect(btn).toBeInTheDocument();
     expect(Array.isArray(sharedCodes)).toBe(true);
     expect(sharedCodes?.length).toBe(0);
+  });
+});
+
+describe('session fetch failure fallback', () => {
+  const originStep = {
+    key: 'step-1',
+    id: 's1',
+    origin: true,
+    servar_fields: [],
+    buttons: [],
+    next_conditions: []
+  };
+
+  afterEach(() => {
+    delete ClientMod._spies.overrides.fetchForm;
+    delete ClientMod._spies.overrides.fetchSession;
+  });
+
+  // The session request fails for causes the form is meant to survive: a 400
+  // when the org is over its daily session cap, or a fetch aborted by the
+  // browser. The form definition still loads from the CDN, so the fallback has
+  // to land the visitor on the origin step instead of rendering nothing.
+  it('renders the origin step when the session request rejects', async () => {
+    ClientMod._spies.overrides.fetchForm = async () => ({
+      steps: [originStep],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: [],
+      track_hashes: false
+    });
+    ClientMod._spies.overrides.fetchSession = () =>
+      Promise.reject(new Error('Too many sessions'));
+
+    render(<JSForm formId='f1' _internalId='iid-session-reject' />);
+
+    expect(await screen.findByTestId('btn')).toBeInTheDocument();
+  });
+
+  // The hash branch reached for the outer `steps` state, which this effect
+  // captured as {} on first render, so it hashed nothing and selected nothing.
+  it('selects the origin step when hash navigation is on', async () => {
+    ClientMod._spies.overrides.fetchForm = async () => ({
+      steps: [
+        originStep,
+        { ...originStep, key: 'step-2', id: 's2', origin: false }
+      ],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: [],
+      track_hashes: true
+    });
+    ClientMod._spies.overrides.fetchSession = () =>
+      Promise.reject(new Error('Too many sessions'));
+
+    render(<JSForm formId='f1' _internalId='iid-session-reject-hash' />);
+
+    expect(await screen.findByTestId('btn')).toBeInTheDocument();
+    expect(StepHelperMod.setUrlStepHash).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ 'step-1': expect.anything() }),
+      'step-1'
+    );
+  });
+
+  // A one-step form never gets a hash, so the hash branch has to fall through
+  // to setStepKey or nothing renders at all.
+  it('selects the origin step on a single-step form with hash navigation', async () => {
+    ClientMod._spies.overrides.fetchForm = async () => ({
+      steps: [originStep],
+      form_name: 'Test Form',
+      completion_behavior: '',
+      formOff: false,
+      logic_rules: [],
+      shared_codes: [],
+      track_hashes: true
+    });
+    ClientMod._spies.overrides.fetchSession = () =>
+      Promise.reject(new Error('Too many sessions'));
+
+    render(<JSForm formId='f1' _internalId='iid-session-reject-hash-1' />);
+
+    expect(await screen.findByTestId('btn')).toBeInTheDocument();
   });
 });
 
