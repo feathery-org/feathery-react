@@ -1275,8 +1275,34 @@ export default class FeatheryClient extends IntegrationClient {
     this.offlineRequestHandler.replayRequests().catch(() => {});
   }
 
+  // Delegates to client-utils so the browser and the server-side lambdas
+  // share one request shape. `create` + verification 'unverified'
+  // stages `rows` as an import batch; when the button action configures an
+  // ID field, the current user's key is the batch value - stamped into that
+  // field server-side - so a pending import survives reloads without a
+  // dedicated backend column.
   async dataHubAction(options: HubActionOptions) {
-    const { sdkKey } = initInfo();
-    return apiDataHubAction(sdkKey, options, this.formKey);
+    const { sdkKey, userId } = initInfo();
+    const resolved =
+      options.operation === 'create' && options.idFieldId && !options.idValue
+        ? { ...options, idValue: userId }
+        : options;
+    return apiDataHubAction(sdkKey, resolved, this.formKey);
+  }
+
+  async getHubSchemas(hubIds: string[]) {
+    const params = new URLSearchParams({ hub_ids: hubIds.join(',') });
+    if (this.formKey) params.set('form_key', this.formKey);
+    const url = `${API_URL}hub/schema/?${params.toString()}`;
+    const res = await this._fetch(
+      url,
+      { headers: { 'Content-Type': 'application/json' }, method: 'GET' },
+      false
+    );
+    if (res) {
+      if (res.ok) return await res.json();
+      throw Error(parseAPIError(await res.json()));
+    }
+    return { hubs: [] };
   }
 }

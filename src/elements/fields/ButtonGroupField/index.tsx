@@ -96,6 +96,7 @@ function ButtonGroupField({
 
           return (
             <div
+              role='button'
               onClick={() => {
                 if (!editMode && !disabled && !loadingDynamicOptions) {
                   onClick(value);
