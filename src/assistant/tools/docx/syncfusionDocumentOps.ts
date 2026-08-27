@@ -4072,6 +4072,43 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
 // to this synchronous transaction: user selection methods are restored before
 // control returns to the host, and the exact viewport is retained as a final
 // safety boundary.
+/**
+ * Make one change set ONE undo step.
+ *
+ * A change set is one act to the person who asked for it - "split this table",
+ * "replace that phrase" - but several operations to the SDK, and SyncFusion
+ * records an undo entry per operation. So Ctrl+Z after a split undid a fragment
+ * of it and left the document in a state nobody asked for and nobody can name:
+ * half-split, with no single further keystroke that gets back to either side.
+ *
+ * beginUndoAction/endUndoAction collapse everything between them into a single
+ * entry. The close is in `finally` because an op that throws still has to close
+ * the group - a change set that failed and rolled back must not leave the
+ * history open, or the NEXT change set silently joins this one and a later undo
+ * reverts both.
+ *
+ * Absent editorHistory is tolerated rather than asserted: the module is
+ * injected by the host, and a document opened without it should still accept
+ * writes - it simply has no undo to group. Losing grouping is a degraded
+ * experience; refusing the write would be a broken one.
+ */
+function withGroupedUndo<T>(editor: LiveEditor, operation: () => T): T {
+  const history = (editor as any).editorHistory;
+  if (typeof history?.beginUndoAction !== 'function') return operation();
+  history.beginUndoAction();
+  try {
+    return operation();
+  } finally {
+    try {
+      history.endUndoAction();
+    } catch {
+      // Closing the group must never mask the operation's own outcome: if the
+      // body threw, that error is what the caller needs to see, not a
+      // secondary failure from the history bookkeeping.
+    }
+  }
+}
+
 function withSilentEditSelections<T>(
   editor: LiveEditor,
   operation: () => T
@@ -19098,15 +19135,17 @@ export function applyDocumentEdits(
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
   try {
     return withSilentEditSelections(editor, () =>
-      withSerializationTiming(editor, serializationTiming, () => {
-        const expansion = expandSectionComposerEdits(editor, input);
-        const result = applyDocumentEditsMeasured(
-          editor,
-          { ...input, edits: expansion.edits },
-          serializationTiming
-        );
-        return collapseSectionComposerResult(result, expansion);
-      })
+      withGroupedUndo(editor, () =>
+        withSerializationTiming(editor, serializationTiming, () => {
+          const expansion = expandSectionComposerEdits(editor, input);
+          const result = applyDocumentEditsMeasured(
+            editor,
+            { ...input, edits: expansion.edits },
+            serializationTiming
+          );
+          return collapseSectionComposerResult(result, expansion);
+        })
+      )
     );
   } finally {
     // Synchronous clear: the session flag owns the gaps between calls.

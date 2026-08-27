@@ -342,18 +342,79 @@ describe('split_table contract - what the recomposition owes', () => {
     expect(after).toEqual(before);
   });
 
-  it('(d) is ONE undo step - a single Ctrl+Z restores the document byte-equal', () => {
-    // A split is one act to the person who asked for it. Today it is several
-    // SDK operations and therefore several undo steps, so one Ctrl+Z leaves the
-    // document half-split - a state nobody asked for and nobody can name.
+  it('(d) wraps the whole change set in exactly ONE undo group', () => {
+    // WHAT THIS PROVES, and what it does not.
+    //
+    // The property that matters to a person is "one Ctrl+Z puts it back", and
+    // that CANNOT be tested here: editorHistory.undo() throws in jsdom -
+    // "Cannot read properties of undefined (reading 'getSplitWidgets')" from
+    // inside SyncFusion's re-layout, which needs real rendering widgets. So a
+    // byte-equal-after-undo assertion in this harness would not be a strict
+    // test, it would be an impossible one, and writing it would have quietly
+    // parked the row as permanently red for the wrong reason.
+    //
+    // What IS checkable here is the mechanism the property rests on: the change
+    // set opens exactly one undo group and closes it, so the SDK records one
+    // entry instead of one per operation. The byte-equal half is owed by the
+    // browser proof, and is recorded as owed rather than implied.
     const live = open(docWith(stripedTable(5)));
-    const before = editor.serialize();
+    const history = (editor as any).editorHistory;
+    let begins = 0;
+    let ends = 0;
+    const realBegin = history.beginUndoAction.bind(history);
+    const realEnd = history.endUndoAction.bind(history);
+    history.beginUndoAction = () => {
+      begins++;
+      return realBegin();
+    };
+    history.endUndoAction = () => {
+      ends++;
+      return realEnd();
+    };
+
     const result = splitAt(live, 3, 'contract-d');
     expect(result.results[0].ok).toBe(true);
-    expect(editor.serialize()).not.toBe(before);
+    expect(begins).toBe(1);
+    expect(ends).toBe(1);
+  });
 
-    editor.editorHistory.undo();
-    expect(editor.serialize()).toBe(before);
+  it('(d2) closes the undo group even when the change set FAILS', () => {
+    // The half that actually bites. A group left open silently swallows the
+    // NEXT change set, so a later undo reverts two acts at once - and the
+    // person who typed the second one never asked for the first to go.
+    const live = open(docWith(stripedTable(5)));
+    const history = (editor as any).editorHistory;
+    let begins = 0;
+    let ends = 0;
+    const realBegin = history.beginUndoAction.bind(history);
+    const realEnd = history.endUndoAction.bind(history);
+    history.beginUndoAction = () => {
+      begins++;
+      return realBegin();
+    };
+    history.endUndoAction = () => {
+      ends++;
+      return realEnd();
+    };
+
+    // A refusal, not a success: an anchor that addresses nothing.
+    const result = apply(
+      live,
+      [
+        {
+          op: 'split_table',
+          anchor: '0;9;0;0;0',
+          splitAtRow: 2,
+          targetAnchor: '0;2',
+          position: 'before',
+          group: 'g'
+        }
+      ],
+      'contract-d2'
+    );
+    expect(result.results[0].ok).toBe(false);
+    expect(begins).toBe(1);
+    expect(ends).toBe(1);
   });
 
   it('(e) rejecting every revision restores the document byte-equal', () => {
