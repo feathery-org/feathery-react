@@ -8977,6 +8977,67 @@ function restripeSplitCopy(
   applyBandingRows(editor, copyAnchor, current, banding, 0);
 }
 
+/**
+ * Refuse a split whose cut would tear a bookmark in half.
+ *
+ * A bookmark is a NAMED RANGE other content points at - a cross-reference, a
+ * contents entry, a link from elsewhere in the document. Splitting between its
+ * start and its end leaves the two markers in different tables, and a range
+ * whose ends are in different tables is not a range: the reference it exists to
+ * serve breaks, and nothing in the document says so.
+ *
+ * Deliberately NARROW. A bookmark lying entirely within the extracted rows, or
+ * entirely within the retained ones, is not torn by the cut and is none of this
+ * guard's business - refusing there would cost a capability to protect
+ * something that was never at risk. Only a name present on BOTH sides is a tear.
+ */
+function assertNoBookmarkSpansTheCut(
+  tableBlock: any,
+  tableAnchor: string,
+  extract: number[]
+): void {
+  // The table block the caller already resolved, not a second resolution of the
+  // same anchor: tableContainerAt returns the CONTAINER, whose rows are one
+  // level down, and reading it here found none - the guard silently did nothing.
+  const rows = getRows(tableBlock);
+  if (!rows) return;
+  const namesIn = (row: any): Set<string> => {
+    const found = new Set<string>();
+    const walk = (node: any): void => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      const name = pick(node, 'name', 'nm');
+      if (pick(node, 'bookmarkType', 'bt') !== undefined && name)
+        found.add(String(name));
+      for (const value of Object.values(node)) walk(value);
+    };
+    walk(row);
+    return found;
+  };
+  const extracted = new Set(extract);
+  const moving = new Set<string>();
+  const staying = new Set<string>();
+  rows.forEach((row: any, index: number) => {
+    const target = extracted.has(index) ? moving : staying;
+    for (const name of namesIn(row)) target.add(name);
+  });
+  const torn = [...moving].filter((name) => staying.has(name));
+  if (!torn.length) return;
+  throw new OpError(
+    'split_table_would_tear_bookmark',
+    `The split at ${JSON.stringify(tableAnchor)} would cut ${
+      torn.length
+    } bookmark${torn.length === 1 ? '' : 's'} in half: ${torn.join(
+      ', '
+    )}. A bookmark is a named range other content refers to, and separating its start from its end breaks every reference to it. Nothing was written.`,
+    [
+      `table: ${tableAnchor}`,
+      `bookmarks spanning the cut: ${torn.join(', ')}`,
+      'Split at a boundary outside the bookmark, or remove the bookmark first if the range is no longer wanted.'
+    ]
+  );
+}
+
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
@@ -9375,6 +9436,7 @@ export const ANCHORED_OP_HANDLERS: {
     // exactly as they do to a move: rejecting this card would fold away a third
     // party's pending edit, and SyncFusion cannot accept a delete of the last
     // row of a document-tail table.
+    assertNoBookmarkSpansTheCut(tableBlock, tableAnchor, plan.extract);
     assertRangeHasNoForeignEdits(sfdt, source);
     assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
     const target = resolveRelocationTarget(blocks, op, source);
