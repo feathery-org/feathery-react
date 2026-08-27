@@ -6,9 +6,10 @@ import {
   DownloadIcon,
   FileUploadIcon
 } from '../../components/icons';
-import { imgMaxSizeStyles } from '../../styles';
+import { imgMaxSizeStyles, unstyledButton } from '../../styles';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { downloadFile, iosScrollOnFocus } from '../../../utils/browser';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 const DEFAULT_FILE_SIZE_LIMIT = 1024 * 1024 * 10;
 const NUM_FILES_LIMIT = 20;
@@ -334,9 +335,23 @@ function FileUploadField({
           ) : null
         )}
       {(allowMoreFiles || hidePreview) && (
-        <div
+        // A real button rather than a div so the drop zone is keyboard
+        // operable and carries a name on TrustedForm certificates. The name is
+        // suffixed so it never collides with the file input below.
+        <button
+          type='button'
+          name={`${servar.key}-add`}
+          // servar.name is rendered as visible text when showLabel is set, and
+          // visible text is the better accessible name (WCAG 2.5.3)
+          aria-label={
+            showLabel
+              ? undefined
+              : `${fieldAriaLabel(element) ?? servar.key} - add file`
+          }
+          aria-disabled={disabled}
           onClick={onClick}
           css={{
+            ...unstyledButton,
             position: 'relative',
             pointerEvents: disabled ? 'none' : 'auto',
             cursor: 'pointer',
@@ -355,7 +370,7 @@ function FileUploadField({
           {showLabel && (
             <div css={responsiveStyles.getTarget('add')}>{servar.name}</div>
           )}
-        </div>
+        </button>
       )}
       {/* Input component must be hidden, and it also remains empty since we track files in state here */}
       {/* Since the input is always empty, we have to check for existing data and ignore the required attribute */}
@@ -369,7 +384,7 @@ function FileUploadField({
         required={required && !hasFiles}
         accept={allowedFileTypes.join(',') || undefined}
         disabled={disabled}
-        aria-label={element.properties.aria_label}
+        aria-label={fieldAriaLabel(element)}
         multiple={isMultiple}
         onFocus={iosScrollOnFocus}
         style={{

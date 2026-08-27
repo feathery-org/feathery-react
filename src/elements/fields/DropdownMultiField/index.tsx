@@ -3,6 +3,7 @@ import useBorder from '../../components/useBorder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
+import HiddenValueInput from '../../components/HiddenValueInput';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 
 import {
@@ -283,6 +284,12 @@ export default function DropdownMultiField({
       >
         {customBorder}
         <SelectComponent {...selectProps} inputValue={inputValue} />
+        {/* react-select's control is built from divs, so the selection is not
+            otherwise readable under the field key by certification scanners */}
+        <HiddenValueInput
+          name={fieldKey}
+          value={selectVal.map((opt: any) => opt.value).join(', ')}
+        />
         <Placeholder
           value={selectVal.length || focused}
           element={element}

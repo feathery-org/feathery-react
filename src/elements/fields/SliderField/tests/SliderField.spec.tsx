@@ -294,3 +294,31 @@ describe('SliderField - Base Functionality', () => {
     });
   });
 });
+
+describe('SliderField - Certification naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('mirrors the value into a named hidden input', () => {
+    const element = createSliderElement('slider');
+    const { container } = render(
+      <SliderField {...createSliderProps(element, { fieldVal: 42 })} />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror).toBeTruthy();
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('42');
+  });
+
+  it('names the drag handle for assistive tech', () => {
+    const element = createSliderElement('slider');
+    render(<SliderField {...createSliderProps(element)} />);
+
+    expect(getSliderHandle()?.getAttribute('aria-label')).toBeTruthy();
+  });
+});

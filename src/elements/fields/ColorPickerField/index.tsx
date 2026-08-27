@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { FORM_Z_INDEX } from '../../../utils/styles';
+import { unstyledButton } from '../../styles';
+import HiddenValueInput from '../../components/HiddenValueInput';
 import Sketch from '@uiw/react-color-sketch';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 function alphaToHex(alpha: number): string {
   const clampedAlpha = Math.max(0, Math.min(1, alpha));
@@ -20,6 +23,7 @@ function ColorPickerField({
   children
 }: any) {
   const [showPicker, setShowPicker] = useState(false);
+  const servar = element.servar;
   return (
     <div
       css={{
@@ -33,12 +37,21 @@ function ColorPickerField({
     >
       {children}
       {fieldLabel}
-      <div
+      {/* A real button rather than a div so the swatch is keyboard operable
+          and carries a name on TrustedForm certificates */}
+      <button
+        type='button'
+        name={servar.key}
+        value={fieldVal}
+        aria-label={fieldAriaLabel(element)}
+        aria-expanded={showPicker}
+        aria-disabled={editMode || disabled}
         css={{
+          ...unstyledButton,
           width: '100%',
-          background: `#${fieldVal}`,
           cursor: 'pointer',
-          ...responsiveStyles.getTarget('field')
+          ...responsiveStyles.getTarget('field'),
+          background: `#${fieldVal}`
         }}
         onClick={() => {
           if (!editMode && !disabled)
@@ -63,7 +76,7 @@ function ColorPickerField({
             onClick={() => setShowPicker(false)}
           />
           <Sketch
-            aria-label={element.properties.aria_label}
+            aria-label={fieldAriaLabel(element)}
             color={`#${fieldVal}`}
             onChange={(color) => {
               const hex = color.hex.substring(1, 7);
@@ -73,6 +86,7 @@ function ColorPickerField({
           />
         </div>
       ) : null}
+      <HiddenValueInput name={servar.key} value={fieldVal} />
     </div>
   );
 }

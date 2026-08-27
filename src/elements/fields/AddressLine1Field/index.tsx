@@ -11,6 +11,7 @@ import { DROPDOWN_Z_INDEX } from '../index';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isKeydownValid } from './utils';
 import useElementSize from '../../../hooks/useElementSize';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 const SEARCH_DELAY_TIME_MS = 500;
 const EXIT_DELAY_TIME_MS = 200;
@@ -113,7 +114,7 @@ function AddressLine1({
           minLength={servar.min_length}
           placeholder=''
           disabled={disabled}
-          aria-label={element.properties.aria_label}
+          aria-label={fieldAriaLabel(element)}
           autoComplete={autoComplete === 'on' ? autocomplete : 'new-password'}
           value={value}
           ref={(ref) => {

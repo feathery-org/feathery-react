@@ -2,6 +2,7 @@ import React, { memo, useMemo } from 'react';
 import Status from './Status';
 import { useCustomComponentIframe } from './useCustomComponentIframe';
 import ErrorInput from '../../components/ErrorInput';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 const CustomField = ({
   element,
@@ -89,7 +90,7 @@ const CustomField = ({
       <ErrorInput
         id={element.servar.key}
         name={element.servar.key}
-        aria-label={element.properties.aria_label}
+        aria-label={fieldAriaLabel(element)}
       />
     </div>
   );

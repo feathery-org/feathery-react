@@ -204,7 +204,10 @@ export async function setFormElementError({
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
           : [singleOrList];
-      elements = elements.filter((e) => e);
+      // Hidden inputs are value mirrors for certification scanners (see
+      // HiddenValueInput) and are barred from constraint validation, so they
+      // must never be targeted for -- or shift the indexing of -- error display.
+      elements = elements.filter((e) => e && (e as any).type !== 'hidden');
 
       if (listIndex !== null && elements.length)
         elements = [elements[listIndex]];

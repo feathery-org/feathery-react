@@ -17,6 +17,19 @@ type ContainerProps = PropsWithChildren & {
   };
 };
 
+const MAX_CONTAINER_NAME_LENGTH = 64;
+
+/**
+ * Best readable name for a clickable container. The key is author-defined and
+ * meaningful ("plan-card-premium"); the id is an opaque uuid fallback.
+ */
+function containerLabel(node: any) {
+  const name = (node.properties?.aria_label || node.key || node.id || '')
+    .toString()
+    .trim();
+  return name ? name.slice(0, MAX_CONTAINER_NAME_LENGTH) : undefined;
+}
+
 /**
  * Container
  * This component adds additional logic to the StyledContainer that is unique
@@ -34,6 +47,10 @@ export const Container = ({
   const [showTooltip, setShowTooltip] = useState(false);
   const additionalCss: any = {};
   let handleClick: any;
+  // Containers that carry actions are operable controls, but they render as
+  // bare divs. Without a role and a name, TrustedForm records every click on
+  // one as "[unnamed div]" and screen readers announce nothing at all.
+  let interactiveProps: Record<string, any> = {};
 
   // Container-level hover tooltips apply only to actual containers. Field
   // elements share the same `tooltipText` property but render their own
@@ -95,6 +112,20 @@ export const Container = ({
     };
 
     Object.assign(additionalCss, selectableStyles);
+
+    if (actions.length > 0) {
+      interactiveProps = {
+        role: 'button',
+        tabIndex: 0,
+        'aria-label': containerLabel(node),
+        onKeyDown: (e: any) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          handleClick(e);
+        }
+      };
+    }
   }
 
   return (
@@ -104,6 +135,7 @@ export const Container = ({
         node={node}
         css={additionalCss}
         onClick={handleClick}
+        {...interactiveProps}
         viewport={viewport}
         breakpoint={form.formSettings.mobileBreakpoint}
         formId={form.formInstanceId}

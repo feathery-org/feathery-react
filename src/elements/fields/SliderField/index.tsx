@@ -3,6 +3,8 @@ import Slider from '@rc-component/slider';
 import { hoverStylesGuard } from '../../../utils/browser';
 
 import SliderStyles from './styles';
+import HiddenValueInput from '../../components/HiddenValueInput';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 export default function SliderField({
   element,
@@ -80,8 +82,12 @@ export default function SliderField({
             setInternalValue(val);
             onChange(val);
           }}
-          aria-label={element.properties.aria_label}
+          // rc-slider does not spread unknown props onto its handle
+          ariaLabelForHandle={fieldAriaLabel(element)}
         />
+        {/* rc-slider is built from divs, so the value is not otherwise
+            readable under the field key by certification scanners */}
+        <HiddenValueInput name={servar.key} value={internalValue} />
       </div>
       <div
         css={{

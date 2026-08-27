@@ -141,3 +141,29 @@ describe('ColorPickerField', () => {
     });
   });
 });
+
+describe('ColorPickerField - Certification naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('exposes the swatch as a named button and mirrors the hex', () => {
+    const element = createColorPickerElement('hex_color');
+    const { container } = render(
+      <ColorPickerField
+        {...createColorPickerProps(element, { fieldVal: 'AABBCCFF' })}
+      />
+    );
+
+    const swatch = container.querySelector('button') as HTMLButtonElement;
+    expect(swatch.name).toBe(element.servar.key);
+    expect(swatch.value).toBe('AABBCCFF');
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('AABBCCFF');
+  });
+});

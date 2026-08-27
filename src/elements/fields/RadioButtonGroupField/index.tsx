@@ -9,6 +9,7 @@ import {
 import InlineTooltip from '../../components/InlineTooltip';
 import { iosScrollOnFocus } from '../../../utils/browser';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 const applyRadioGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('radioGroup');
@@ -126,7 +127,7 @@ function RadioButtonGroupField({
                   disabled={disabled || loadingDynamicOptions}
                   onChange={onChange}
                   onFocus={iosScrollOnFocus}
-                  aria-label={element.properties.aria_label}
+                  aria-label={fieldAriaLabel(element)}
                   value={value}
                   style={{
                     padding: 0,

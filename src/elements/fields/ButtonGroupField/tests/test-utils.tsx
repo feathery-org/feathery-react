@@ -143,12 +143,11 @@ export const getButtonElements = () => {
 
   if (buttonContainers.length === 0) return [];
 
-  // Get the button divs - they are direct children of the flex container
+  // Get the option buttons - they are direct children of the flex container
   const container = buttonContainers[0];
-  const buttons = Array.from(container.children).filter(child => {
-    // Buttons have onClick and are divs
-    return child.tagName === 'DIV';
-  }) as HTMLElement[];
+  const buttons = Array.from(container.children).filter(
+    (child) => child.tagName === 'BUTTON'
+  ) as HTMLElement[];
 
   return buttons;
 };

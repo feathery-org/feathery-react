@@ -154,6 +154,17 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   return responsiveStyles;
 }
 
+const MAX_BUTTON_NAME_LENGTH = 64;
+
+/** Readable, stable name attribute for a button. */
+function buttonName(element: any) {
+  const properties = element.properties ?? {};
+  const label = (properties.text || properties.aria_label || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return label ? label.slice(0, MAX_BUTTON_NAME_LENGTH) : element.id;
+}
+
 function ButtonElement({
   element,
   responsiveStyles,
@@ -213,6 +224,9 @@ function ButtonElement({
     <button
       id={element.id}
       key={element.id}
+      // TrustedForm names buttons on its certificate from this attribute, and
+      // our id is an opaque uuid. Fall back to the id when there is no label.
+      name={buttonName(element)}
       type={element.properties.submit ? 'submit' : 'button'}
       className={active ? 'active' : undefined}
       style={{

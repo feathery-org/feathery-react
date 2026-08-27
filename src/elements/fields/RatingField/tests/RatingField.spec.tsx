@@ -202,3 +202,38 @@ describe('RatingField - Base Functionality', () => {
     });
   });
 });
+
+describe('RatingField - Certification naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('exposes each rating as a named, labelled button', () => {
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField {...createRatingProps(element, { fieldVal: 3 })} />
+    );
+
+    const buttons = Array.from(container.querySelectorAll('button'));
+    expect(buttons.length).toBeGreaterThan(0);
+    buttons.forEach((button, i) => {
+      expect(button.name).toBe(`${element.servar.key}-${i + 1}`);
+      expect(button.value).toBe(String(i + 1));
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+    });
+  });
+
+  it('mirrors the selected rating into a named hidden input', () => {
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField {...createRatingProps(element, { fieldVal: 3 })} />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('3');
+  });
+});

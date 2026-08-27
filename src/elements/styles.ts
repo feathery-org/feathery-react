@@ -618,6 +618,29 @@ export const noTextSelectStyles: CSSProperties = {
   userSelect: 'none' /* Chrome, Firefox, etc. */
 };
 
+/**
+ * Neutralizes user-agent <button> styling so a button can stand in for a div
+ * without changing how it renders. Spread this *before* the designer's own
+ * styles so those still win.
+ */
+export const unstyledButton: CSSProperties = {
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  background: 'none',
+  border: 'none',
+  borderRadius: 0,
+  padding: 0,
+  margin: 0,
+  color: 'inherit',
+  font: 'inherit',
+  letterSpacing: 'inherit',
+  textAlign: 'inherit',
+  textTransform: 'none',
+  minWidth: 0,
+  width: 'auto',
+  height: 'auto'
+};
+
 export const resetStyles: CSSProperties = {
   padding: '0.375rem 0.75rem',
   boxSizing: 'border-box',

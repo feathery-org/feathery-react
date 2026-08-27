@@ -5,6 +5,7 @@ import InlineTooltip from '../../components/InlineTooltip';
 import { resetStyles } from '../../styles';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 function TextArea({
   element,
@@ -72,6 +73,7 @@ function TextArea({
         {customBorder}
         <textarea
           id={servar.key}
+          name={servar.key}
           css={{
             position: 'relative',
             height: '100%',
@@ -87,7 +89,7 @@ function TextArea({
               ? {}
               : { color: 'transparent !important' })
           }}
-          aria-label={element.properties.aria_label}
+          aria-label={fieldAriaLabel(element)}
           maxLength={servar.max_length || 4096}
           minLength={servar.min_length}
           required={required}

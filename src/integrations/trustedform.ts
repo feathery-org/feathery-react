@@ -3,14 +3,40 @@ import { fieldValues } from '../utils/init';
 
 const configMap: Record<string, any> = {};
 
-export async function installTrustedForm(
-  trustedformConfig: any,
-  formKey: string
-) {
-  if (!trustedformConfig) return;
+// TrustedForm scans the page when it starts and will not see a form that is
+// rendered afterwards. Integrations initialize during the session fetch, which
+// is before React has rendered anything, so wait for the form to exist first.
+const FORM_WAIT_TIMEOUT_MS = 10000;
 
-  configMap[formKey] = trustedformConfig;
+function awaitFormElement(): Promise<void> {
+  return new Promise((resolve) => {
+    const doc = featheryDoc();
+    if (!doc.querySelector || doc.querySelector('form.feathery'))
+      return resolve();
 
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const observer = new MutationObserver(() => {
+      if (doc.querySelector('form.feathery')) finish();
+    });
+    observer.observe(doc.body ?? doc.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // Never block certification indefinitely if the form never renders
+    const timer = setTimeout(finish, FORM_WAIT_TIMEOUT_MS);
+  });
+}
+
+function injectTrustedFormScript(trustedformConfig: any) {
   const tf = featheryDoc().createElement('script');
   tf.type = 'text/javascript';
   tf.async = true;
@@ -24,6 +50,19 @@ export async function installTrustedForm(
 
   const s = featheryDoc().getElementsByTagName('script')[0];
   s.parentNode.insertBefore(tf, s);
+}
+
+export async function installTrustedForm(
+  trustedformConfig: any,
+  formKey: string
+) {
+  if (!trustedformConfig) return;
+
+  configMap[formKey] = trustedformConfig;
+
+  // Deliberately not awaited: integration setup blocks the session fetch, and
+  // the form we are waiting for cannot render until that fetch resolves.
+  awaitFormElement().then(() => injectTrustedFormScript(trustedformConfig));
 }
 
 export function gatherTrustedFormFields(existingFields: any, formKey: string) {

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 // Draws a checkmark, similar in dimensions to the default Chrome checkbox, in CSS
 const checkmarkClipPath =
@@ -298,7 +299,7 @@ function CheckboxField({
         disabled={disabled}
         onChange={onChange}
         onFocus={iosScrollOnFocus}
-        aria-label={element.properties.aria_label}
+        aria-label={fieldAriaLabel(element)}
         css={{
           ...composeCheckableInputStyle(styles, disabled),
           ...(!fieldLabel ? { marginRight: 5 } : {}),

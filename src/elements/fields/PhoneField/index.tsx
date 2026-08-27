@@ -15,6 +15,7 @@ import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
 import useElementSize from '../../../hooks/useElementSize';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 const DEFAULT_COUNTRY = 'US';
 
@@ -314,7 +315,7 @@ function PhoneField({
             required={required}
             disabled={disabled}
             placeholder=''
-            aria-label={element.properties.aria_label}
+            aria-label={fieldAriaLabel(element)}
             value={formattedNumber}
             ref={(ref) => {
               inputRef.current = ref;

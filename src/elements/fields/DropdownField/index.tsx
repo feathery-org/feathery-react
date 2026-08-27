@@ -9,6 +9,7 @@ import { css, Global } from '@emotion/react';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { fieldValues } from '../../../utils/init';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 export default function DropdownField({
   element,
@@ -197,10 +198,11 @@ export default function DropdownField({
             position: 'relative'
           }}
           id={servar.key}
+          name={servar.key}
           value={fieldVal ?? ''}
           required={required}
           disabled={disabled || loadingDynamicOptions}
-          aria-label={element.properties.aria_label}
+          aria-label={fieldAriaLabel(element)}
           onChange={onChange}
           onFocus={(event) => {
             setFocused(true);

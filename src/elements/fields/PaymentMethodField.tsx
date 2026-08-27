@@ -13,6 +13,7 @@ import InlineTooltip from '../components/InlineTooltip';
 import { ERROR_COLOR } from '../styles';
 import useBorder from '../components/useBorder';
 import { featheryDoc } from '../../utils/browser';
+import { sensitiveFieldProps } from './shared/certification';
 
 // In order for the stripe card element to operate and show the hybrid fields, stripe must be loaded and
 // initialized with a key.  In a runtime form, it is crucial to use the real key.  However. in
@@ -177,7 +178,10 @@ const CardField = ({
         }}
       >
         {customBorder}
-        <div css={{ width: '100%', position: 'relative' }}>
+        <div
+          css={{ width: '100%', position: 'relative' }}
+          {...sensitiveFieldProps(element)}
+        >
           {/* position an input field under the card element to support html5 errors */}
           <input
             id={element.servar.key}

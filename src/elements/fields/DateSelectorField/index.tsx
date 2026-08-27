@@ -20,6 +20,7 @@ import { useCustomDateLocale } from './useDateLocale';
 import { formatDateString } from './utils';
 import DatePicker from 'react-datepicker';
 import { IMask, IMaskInput } from 'react-imask';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 type InternalDate = Date | null;
 
@@ -279,6 +280,7 @@ function DateSelectorField({
         <DateSelectorStyles />
         <DatePicker
           id={element.servar.key}
+          name={element.servar.key}
           selected={internalDate}
           // Many modern browsers do not support autocomplete="off".
           // In order to avoid the autoComplete, use autocomplete="new-password"
@@ -333,7 +335,6 @@ function DateSelectorField({
           // Open up calendar as a modal in mobile
           withPortal={isMobile}
           portalId={isMobile ? 'feathery-portal' : undefined}
-          aria-label={element.properties.aria_label}
           css={{
             height: '100%',
             width: '100%',
@@ -354,6 +355,9 @@ function DateSelectorField({
             <CustomMaskedInput
               dateMask={dateMask}
               inputMode={isMobile ? 'none' : undefined}
+              // react-datepicker only forwards id/name/aria-labelledby to the
+              // input it clones, so aria-label has to be set here to survive
+              aria-label={fieldAriaLabel(element)}
             />
           }
         />
