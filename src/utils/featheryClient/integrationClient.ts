@@ -1033,7 +1033,33 @@ export default class IntegrationClient {
           name: signer.name,
           sign_method: signer.signMethod,
           routing_order: signer.routingOrder,
-          excluded_documents: signer.excludedDocuments
+          excluded_documents: signer.excludedDocuments,
+          // Omitted rather than nulled: the backend serializer treats a
+          // present `authentication` as a request to challenge the recipient.
+          ...(signer.authentication
+            ? {
+                authentication: {
+                  method: signer.authentication.method,
+                  // Phone entries pass through as E.164 strings; the object
+                  // form is re-keyed to the backend's snake_case.
+                  phone_numbers: signer.authentication.phoneNumbers?.map(
+                    (phone) =>
+                      typeof phone === 'string'
+                        ? phone
+                        : {
+                            country_code: phone.countryCode,
+                            number: phone.number
+                          }
+                  ),
+                  access_code: signer.authentication.accessCode,
+                  add_access_code_to_email:
+                    signer.authentication.addAccessCodeToEmail,
+                  recipient_may_provide_number:
+                    signer.authentication.recipientMayProvideNumber,
+                  workflow_id: signer.authentication.workflowId
+                }
+              }
+            : {})
         })),
         docusign_envelope_id: existingEnvelopeId,
         draft,
