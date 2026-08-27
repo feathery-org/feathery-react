@@ -173,6 +173,25 @@ describe('relocation family, characterized before the slice moves it', () => {
 
   const shapes = corpusShapes();
 
+  /**
+   * The two shapes that carry ANOTHER AUTHOR'S pending tracked changes.
+   *
+   * They are named here because the family law bites hardest on them: a write
+   * that overwrites a block containing somebody's unaccepted insertion can bake
+   * it in as permanent text, which does not destroy content but silently
+   * ACCEPTS a change on their behalf. write_sfdt did exactly that, which is why
+   * it is parked - and the question this file has to answer is whether any
+   * SHIPPED op does the same.
+   */
+  const FOREIGN_PENDING_SHAPES = ['pending-revisions', 'mixed-authors'];
+
+  it('the corpus actually contains the foreign-pending shapes', () => {
+    // Guards the guard: if these shapes vanish, the sweep below passes by
+    // testing nothing, which is this workstream's most repeated failure.
+    const present = shapes.map((s) => s.name);
+    for (const name of FOREIGN_PENDING_SHAPES) expect(present).toContain(name);
+  });
+
   it('has a corpus to characterize against', () => {
     // Guards the guard: if the vendored corpus goes missing this whole file
     // would pass by running nothing, which is the failure mode this workstream
