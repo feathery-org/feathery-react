@@ -413,17 +413,19 @@ describe('relocation invariants beyond the two projections', () => {
         `steps=${steps.join(',')}`
     );
 
-    // MEASURED CONTRACT, and it is a defect recorded rather than a bar met.
+    // MEASURED CONTRACT - and this row has now done the job it was written for.
     //
-    // It takes TWO undos. A move is one reviewable card in the revision group
-    // and TWO entries on the editor's own history, so a person who presses
-    // Ctrl+Z once is left with a half-moved document - which reads as damage,
-    // not as a partial undo.
+    // It used to assert 2, recording a defect rather than a bar: a move was one
+    // reviewable card and TWO entries on the editor's own history, so pressing
+    // Ctrl+Z once left a half-moved document, which reads as damage rather than
+    // as a partial undo. The comment said explicitly that if the recomposition
+    // ever made it 1 this test would fail and someone would read why.
     //
-    // Asserted at 2 rather than 1 because this file characterizes what IS. If
-    // the recomposition makes it 1 this fails and someone reads why, which is
-    // the improvement being noticed; if it becomes 3 it fails too. Either way
-    // the number stops moving silently. The defect itself is filed separately.
-    expect(restoredAt).toBe(2);
+    // That is exactly what happened. withGroupedUndo wraps the change-set seam
+    // in beginUndoAction/endUndoAction, and the measurement is now
+    // restoredAtStep=1, steps=1:RESTORED. Asserted at 1: the defect is fixed,
+    // and if it ever becomes 2 again this fails and the regression is named
+    // instead of drifting back in silence.
+    expect(restoredAt).toBe(1);
   });
 });
