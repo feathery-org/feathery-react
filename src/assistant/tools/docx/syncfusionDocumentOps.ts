@@ -8142,10 +8142,18 @@ function relocateBlockRange(
   // in one caller's helper.
   //
   // Prepended to the payload rather than written separately on purpose: it
-  // arrives in the same paste, so it is one card, one undo entry, and rejecting
-  // the change takes the separator away with everything else. A separator
-  // written as its own edit would survive the rejection of the split it exists
-  // to serve.
+  // arrives in the same paste, so it shares that paste's history entry and its
+  // rejection. A separator written as its own edit would survive the rejection
+  // of the split it exists to serve. (It is NOT one undo entry for the whole
+  // change set - a split is many; see applyDocumentEdits for why grouping was
+  // reverted.)
+  //
+  // PRECEDING SIDE ONLY, and that is a guarantee rather than an unfinished
+  // migration: a separator is considered for the block BEFORE the paste point,
+  // never after. A trailing flush table is unreachable because
+  // resolveRelocationTarget refuses a caret that is not on a paragraph, so a
+  // relocation can never land immediately in front of a table without a
+  // paragraph of its own to sit at.
   const separated = separatorBeforePastedTable(
     payload,
     preSfdt,
@@ -8980,12 +8988,43 @@ function refuseBreakInsideTable(op: string, block: FlatBlock): void {
 function restripeSplitCopy(
   editor: LiveEditor,
   copyAnchor: string,
-  sourceAppearance: TableAppearance
+  sourceAppearance: TableAppearance,
+  headerRows: number
 ): void {
-  const banding = detectTableBanding(sourceAppearance);
-  if (!banding) return;
+  const inferred = detectTableBanding(sourceAppearance);
+  if (!inferred) return;
+  // Header rows come from the PLAN, not from banding inference.
+  //
+  // effectiveHeaderRows is the one owner of "how many rows are the header", and
+  // the plan already asked it. detectTableBanding answers the same question a
+  // second way, from fill evidence, and the two disagree on a header that is
+  // styled rather than filled - or worse, on a header whose fill happens to
+  // equal the band colour, where the inferred count absorbs a body row and every
+  // stripe below it lands one row out of phase.
+  const banding = { ...inferred, headerRows };
   const current = liveTableAppearance(editor, copyAnchor);
   if (!current) return;
+  // The returned `restores` are deliberately DISCARDED here, unlike the two
+  // call sites in the appearance-finalization pass which feed them to `record`
+  // so a reject can put shading back.
+  //
+  // Why that is safe TODAY, stated as an invariant rather than left implied:
+  // SyncFusion authors no revision for a shading change, so a reject can only
+  // restore fills the engine itself recorded. It does not need to here because
+  // the copy is wholly a pending Insertion - assertPastedTableMatches has just
+  // checked the pasted table row-for-row against the rows that were copied, so
+  // every cell this restripe touches belongs to content that a reject removes
+  // outright. There is no surviving cell for a stale fill to sit on.
+  //
+  // What would BREAK it: a paste that merges into existing content rather than
+  // arriving as a whole new table. Then some restriped cells would outlive the
+  // reject wearing a fill nobody chose, and this call would owe its restores.
+  //
+  // Not wired now because it cannot be: this runs inside an op handler, which
+  // has no `record` in scope; the finalizer described in
+  // data/docx-table-structure-design.md section (C) is the seam that gives it
+  // one, and wiring belongs there rather than in a one-off plumb through the
+  // handler signature.
   applyBandingRows(editor, copyAnchor, current, banding, 0);
 }
 
@@ -9495,7 +9534,7 @@ export const ANCHORED_OP_HANDLERS: {
     // so the order is not load-bearing, but it keeps the invariant visible.
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
-    restripeSplitCopy(editor, copyAnchor, appearance);
+    restripeSplitCopy(editor, copyAnchor, appearance, plan.headerRows);
   },
   duplicate_table: ({ editor, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());

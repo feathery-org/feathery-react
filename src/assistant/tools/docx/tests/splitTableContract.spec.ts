@@ -374,6 +374,84 @@ describe('split_table contract - what the recomposition owes', () => {
     expect(isTable(blocks[tableIndexes[0] + 1])).toBe(false);
   });
 
+  it('(a2) NEGATIVE CONTROL: no separator where the tables are NOT flush', () => {
+    // The other half of the separator rule, and the one that says it is a rule
+    // rather than a habit. Row (a) proves a separator appears where two tables
+    // would otherwise land flush. If one also appeared where it is NOT needed,
+    // the "fix" would just be an unconditional blank paragraph, quietly adding
+    // empty paragraphs to every document a relocation touches.
+    //
+    // The document here has an extra paragraph before the table, so the paste
+    // point is preceded by a PARAGRAPH rather than a table. Nothing is flush, so
+    // nothing should be inserted.
+    const live = open({
+      sections: [
+        {
+          sectionFormat: { pageWidth: 612, pageHeight: 792 },
+          blocks: [
+            para('Coverages and Limits'),
+            para('The policy covers the vehicles listed below.'),
+            stripedTable(5),
+            para('Driver Information')
+          ]
+        }
+      ]
+    });
+    const emptyParagraphs = () => {
+      const doc = JSON.parse(editor.serialize());
+      const blocks =
+        (doc.sections ?? doc.sec ?? [])[0].blocks ??
+        (doc.sections ?? doc.sec ?? [])[0].b;
+      return blocks.filter((b: any) => {
+        if (Array.isArray(b.rows ?? b.rw)) return false;
+        return (b.inlines ?? b.i ?? []).length === 0;
+      }).length;
+    };
+    const before = emptyParagraphs();
+
+    const result = apply(
+      live,
+      [
+        {
+          op: 'split_table',
+          anchor: '0;2;0;0;0',
+          splitAtRow: 2,
+          targetAnchor: '0;1',
+          position: 'before',
+          group: 'g'
+        }
+      ],
+      'contract-a2'
+    );
+    expect(result.results[0].ok).toBe(true);
+    expect(emptyParagraphs()).toBe(before);
+  });
+
+  it('(a3) a table is not a valid paste target, which is what makes trailing flush unreachable', () => {
+    // The separator is only ever considered for the PRECEDING side. That is a
+    // guarantee rather than an unfinished job, and this is the row that holds it
+    // up: a relocation cannot land immediately in front of a table, because a
+    // table anchor is not a valid caret. Found while writing (a2) - the first
+    // version of it aimed at the table and was refused rather than
+    // mis-separated.
+    const live = open(docWith(stripedTable(5)));
+    const result = apply(
+      live,
+      [
+        {
+          op: 'split_table',
+          anchor: '0;1;0;0;0',
+          splitAtRow: 2,
+          targetAnchor: '0;1',
+          position: 'before',
+          group: 'g'
+        }
+      ],
+      'contract-a3'
+    );
+    expect(result.results[0].ok).toBe(false);
+  });
+
   it('(b) restarts banding on the new table and re-derives it on the original', () => {
     // THE SPLIT POINT IS THE TEST. Body rows alternate unshaded, stripe,
     // unshaded, stripe, unshaded. Splitting after row 3 extracts rows 3-5,
@@ -487,17 +565,58 @@ describe('split_table contract - what the recomposition owes', () => {
       return realBegin();
     };
 
+    // TWO DOORS. beginUndoAction is the one the reverted wrapper used, but it is
+    // not the only way to group: the editor module's initComplexHistory opens a
+    // named complex action, and it is already used elsewhere in this codebase
+    // for Accept All / Reject All. A tripwire watching one door would let
+    // grouping back in through the other and report green while doing it.
+    //
+    // This door is NOT expected to be shut, and the difference matters. Measured
+    // by capturing the call stack: the one complex action a split opens is
+    // SyncFusion's OWN, named 'Paste', from defaultPaste inside pasteContents -
+    // the SDK grouping the internals of a single paste it was asked to perform.
+    // That is also why a split lands as 13 history entries rather than dozens:
+    // each SDK operation contributes one. Asserting 0 here would fail forever
+    // for something we do not do and cannot fix.
+    //
+    // So the count is PINNED at the SDK's own one. If it rises, something opened
+    // a complex action that SyncFusion did not, and that is the regression this
+    // row exists to catch.
+    const editorModule = (editor as any).editor;
+    const openedActions: string[] = [];
+    if (editorModule && typeof editorModule.initComplexHistory === 'function') {
+      const realInit = editorModule.initComplexHistory.bind(editorModule);
+      editorModule.initComplexHistory = (action: string) => {
+        openedActions.push(action);
+        return realInit(action);
+      };
+    }
+
     const result = splitAt(live, 3, 'contract-d');
     expect(result.results[0].ok).toBe(true);
     expect(begins).toBe(0);
+    expect(openedActions).toEqual(['Paste']);
   });
 
   it('(e) rejecting every revision restores the document byte-equal', () => {
     // The conservation law. If rejecting the whole change set does not give the
     // prior document back, the change was never truly reviewable.
+    //
+    // SPLIT AT 2, NOT 3, AND THE NUMBER IS LOAD-BEARING. Shading is the one
+    // thing a reject cannot undo on its own, because SyncFusion authors no
+    // revision for a fill - so this row is only a real test of conservation if
+    // the restripe actually WROTE something. Measured on stripedTable(5), body
+    // banding `. #E6 . #E6 .`, comparing what the copy would have inherited
+    // against what it ended up with:
+    //   at=2  inherit `#E6 . #E6 .`  ->  got `. #E6 . #E6`   restripe WROTE
+    //   at=3  inherit `. #E6 .`      ->  got `. #E6 .`       restripe wrote NOTHING
+    //   at=4  inherit `#E6 .`        ->  got `. #E6`         restripe WROTE
+    // At 3 the inherited phase already equals the re-derived phase, so the row
+    // passed without the restripe path ever running - green for a reason that
+    // had nothing to do with what it claimed. 2 is the smallest cut that writes.
     const live = open(docWith(stripedTable(5)));
     const before = editor.serialize();
-    const result = splitAt(live, 3, 'contract-e');
+    const result = splitAt(live, 2, 'contract-e');
     expect(result.results[0].ok).toBe(true);
 
     editor.revisions.rejectAll();

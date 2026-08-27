@@ -44,7 +44,7 @@ import {
   rejectProjectionStream,
   ASSISTANT_DOCUMENT_AUTHOR
 } from '../syncfusionDocumentOps';
-import { corpusShapes, readShape } from './corpusShapes';
+import { corpusShapes, readShape, requireShape } from './corpusShapes';
 
 DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
 
@@ -309,11 +309,71 @@ describe('relocation invariants beyond the two projections', () => {
     )
   ];
 
-  // A shape with two headings AND a header story, so a move has somewhere to
-  // come from and something it must leave alone.
-  const shape = corpusShapes().find((s) => s.name === 'headers-footers')
-    ?? corpusShapes().find((s) => s.name === 'headings-bound')
-    ?? corpusShapes()[0];
+  // A shape with two headings, so a move has somewhere to come from.
+  //
+  // This used to reach for a 'headers-footers' shape first and fall through a
+  // `??` chain when it was missing. It was ALWAYS missing - no such shape exists
+  // in either corpus - so every row here silently ran on headings-bound, and the
+  // header-conservation row below compared that shape's empty headersFooters to
+  // itself and passed for that reason. requireShape throws rather than
+  // substituting, so a missing shape can never again masquerade as a passing
+  // test. The header story that row needs is built explicitly, below.
+  const shape = requireShape('headings-bound');
+
+  /**
+   * A document that genuinely HAS header and footer stories.
+   *
+   * Not read from the corpus, deliberately. A captured headers-footers document
+   * exists at browser-only/headers-footers.sfdt.json and cannot be used here:
+   * measured 2026-08-27 with the same probe and harness, headings-bound imports
+   * and serializes in 1.5s while that shape never completes - killed at 150s
+   * after an earlier run was killed at 600s. Vendoring it would hang CI rather
+   * than widen coverage. An inline document exercises the same conservation
+   * question and actually runs.
+   *
+   * The style table is not decoration: a real DocumentEditor keeps a
+   * paragraph's style only when the document declares it, so without this the
+   * fixture normalizes to one flat run of Normal text, `moveTheLastSection`
+   * finds fewer than two headings and returns null, and every row that calls it
+   * returns early while reporting green.
+   */
+  const headerBearingDoc = () => ({
+    sections: [
+      {
+        sectionFormat: { pageWidth: 612, pageHeight: 792 },
+        headersFooters: {
+          header: {
+            blocks: [{ inlines: [{ text: 'Acme Corp - confidential' }] }]
+          },
+          footer: { blocks: [{ inlines: [{ text: 'Page 1 of 2' }] }] }
+        },
+        blocks: [
+          { inlines: [{ text: 'Coverages and Limits' }], paragraphFormat: { styleName: 'Heading 1' } },
+          { inlines: [{ text: 'The policy covers the vehicles listed below.' }] },
+          { inlines: [{ text: 'Driver Information' }], paragraphFormat: { styleName: 'Heading 1' } },
+          { inlines: [{ text: 'Each listed driver must hold a valid licence.' }] }
+        ]
+      }
+    ],
+    styles: [
+      { type: 'Paragraph', name: 'Normal', next: 'Normal', characterFormat: { fontSize: 11 } },
+      {
+        type: 'Paragraph',
+        name: 'Heading 1',
+        basedOn: 'Normal',
+        next: 'Normal',
+        characterFormat: { bold: true, fontSize: 16 },
+        paragraphFormat: { outlineLevel: 'Level1', beforeSpacing: 12 }
+      }
+    ]
+  });
+
+  const headerFooterSignature = (sfdt: any): string =>
+    JSON.stringify(
+      (sfdt.sections ?? sfdt.sec ?? []).map(
+        (s: any) => s.headersFooters ?? s.hf ?? null
+      )
+    );
 
   const moveTheLastSection = () => {
     const blocks = flattenSfdt(JSON.parse(editor.serialize())) as any[];
@@ -355,23 +415,44 @@ describe('relocation invariants beyond the two projections', () => {
     // "Outside the declared range" has to mean the whole document, not the body.
     // A body-only reading is exactly how raw DSL came to be printing in client
     // headers for several releases.
-    const sfdt = readShape(shape);
-    open(sfdt);
+    //
+    // This row ran vacuously for its whole life: it loaded a shape with no
+    // header story at all, so it compared "[{}]" to "[{}]". It now loads a
+    // document that HAS header and footer text, and the row below proves the
+    // comparison can actually fail.
+    open(headerBearingDoc());
     const before = JSON.parse(editor.serialize());
-    const headerFooterBefore = JSON.stringify(
-      (before.sections ?? before.sec ?? []).map(
-        (s: any) => s.headersFooters ?? s.hf ?? null
-      )
-    );
+    const headerFooterBefore = headerFooterSignature(before);
+
+    // The signature must contain real content, or this row is vacuous again.
+    expect(headerFooterBefore).toContain('Acme Corp - confidential');
+    expect(headerFooterBefore).toContain('Page 1 of 2');
+
     const result = moveTheLastSection();
-    if (!result) return;
+    // Not `if (!result) return` - a silent skip is how a green row hides a
+    // fixture that stopped producing two headings.
+    expect(result).not.toBeNull();
+
     const after = JSON.parse(editor.serialize());
-    const headerFooterAfter = JSON.stringify(
-      (after.sections ?? after.sec ?? []).map(
-        (s: any) => s.headersFooters ?? s.hf ?? null
-      )
-    );
-    expect(headerFooterAfter).toBe(headerFooterBefore);
+    expect(headerFooterSignature(after)).toBe(headerFooterBefore);
+  });
+
+  it('(b2) NEGATIVE CONTROL: that comparison detects a mangled header', () => {
+    // The guard on the guard. If headerFooterSignature could not tell a damaged
+    // header from an intact one, row (b) would pass no matter what a relocation
+    // did to the header story, which is precisely the failure it exists to
+    // catch. So damage it deliberately and require the comparison to notice.
+    open(headerBearingDoc());
+    const before = headerFooterSignature(JSON.parse(editor.serialize()));
+
+    const mangled = JSON.parse(editor.serialize());
+    const sections = mangled.sections ?? mangled.sec ?? [];
+    const hf = sections[0].headersFooters ?? sections[0].hf;
+    const headerStory = hf.header ?? hf.h;
+    const firstBlock = (headerStory.blocks ?? headerStory.b)[0];
+    (firstBlock.inlines ?? firstBlock.i)[0].text = 'RAW DSL LEAKED HERE';
+
+    expect(headerFooterSignature(mangled)).not.toBe(before);
   });
 
   it('(c) takes TWO undo steps to restore - one card, two history entries', () => {
@@ -406,12 +487,6 @@ describe('relocation invariants beyond the two projections', () => {
         break;
       }
     }
-
-    // eslint-disable-next-line no-console
-    console.log(
-      `[invariant c] shape=${shape.name} restoredAtStep=${restoredAt} ` +
-        `steps=${steps.join(',')}`
-    );
 
     // MEASURED CHARACTERIZATION - back at 2, and the round trip is the lesson.
     //
