@@ -362,9 +362,29 @@ describe('split_table contract - what the recomposition owes', () => {
     const result = splitAt(live, 2, 'contract-c');
     expect(result.results[0].ok).toBe(true);
 
+    // Judged after ACCEPT, because that is where binding damage has landed
+    // every time we have seen it: the pending view kept all eleven tags on the
+    // HILB document and ten of them died on accept.
+    editor.revisions.acceptAll();
     const after = tagsIn(doc()).sort();
+
     // Conserved: same tags, same count, none destroyed and none invented.
     expect(after).toEqual(before);
+
+    // IDENTITY, which tag conservation alone does not prove. A split RELOCATES
+    // rows; it does not copy them. So each binding must still appear EXACTLY
+    // ONCE - a duplicate would mean the extracted rows were cloned into a second
+    // identity while the originals survived, which is how one value silently
+    // becomes two that drift apart.
+    const counts = new Map<string, number>();
+    for (const tag of after) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    expect([...counts.values()].every((n) => n === 1)).toBe(true);
+
+    // And the rows carry their own row identity across the move rather than
+    // being renumbered into the copy's positions - a formula that referenced
+    // r-2 must still find r-2.
+    expect(after.filter((t) => /row=r-2/.test(t))).toHaveLength(1);
+    expect(after.filter((t) => /row=r-3/.test(t))).toHaveLength(1);
   });
 
   it('(d) wraps the whole change set in exactly ONE undo group', () => {

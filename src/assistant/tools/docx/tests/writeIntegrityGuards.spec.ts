@@ -310,7 +310,16 @@ describe('write-integrity guards', () => {
       ]
     });
 
-    it('DEFECT: refuses to split a bound table, document byte-unchanged', () => {
+    // RETIRED HERE, RESTORED IN THE SLICE. The refusal this asserted was always
+    // explicitly temporary - its own comment read "Until it is composed from the
+    // engine primitives, refuse." The split is now composed from those
+    // primitives (copy rows through the paste seam, then delete the extracted
+    // rows), so the capability is back and the guard is gone. The property that
+    // mattered - a split must not destroy bindings - is now proven by
+    // splitTableContract's row (c), which additionally checks IDENTITY: each
+    // binding still appears exactly once, and rows keep their own row identity
+    // across the move.
+    it('a bound table now SPLITS, conserving every binding', () => {
       const live = open(boundTable());
       const before = serialized();
       const result = apply(
@@ -327,11 +336,24 @@ describe('write-integrity guards', () => {
         ],
         'split-bound'
       );
-      expect(result.results[0].ok).toBe(false);
-      expect(result.results[0].error).toBe('structural_op_would_destroy_bindings');
-      // The bindings are the whole point: a refusal that still moved the
-      // document would have destroyed the very tags it claims to protect.
-      expect(serialized()).toBe(before);
+      expect(result.results[0].ok).toBe(true);
+      // The bindings are the whole point, and they survive the split rather
+      // than the split being refused to protect them.
+      const tagsOf = (text: string): string[] => {
+        const out: string[] = [];
+        const walk = (n: any): void => {
+          if (!n || typeof n !== 'object') return;
+          if (Array.isArray(n)) return n.forEach(walk);
+          const ccp = n.contentControlProperties ?? n.ccp;
+          if (ccp?.tag) out.push(String(ccp.tag));
+          Object.values(n).forEach(walk);
+        };
+        walk(JSON.parse(text));
+        return out.sort();
+      };
+      const tagsBefore = tagsOf(before);
+      editor.revisions.acceptAll();
+      expect(tagsOf(serialized())).toEqual(tagsBefore);
     });
   });
 

@@ -7885,55 +7885,6 @@ function assertTableIsRemovable(
  * A copy leaves the source untouched, so it takes nothing away from anyone and
  * this does not apply to one either.
  */
-/**
- * Refuse a selection-driven structural op over a table whose cells carry
- * bindings.
- *
- * A selection write deletes the content control it lands in - tag and all - and
- * that destruction authors no revision, so the reject-projection check cannot
- * restore it and `rejectRevisions` has nothing to reject. The result measured on
- * a bound costs table: a REFUSED split destroyed seven binding tags including
- * the `sum(costs.line_total)` subtotal, leaving numbers that still render and
- * never recompute again.
- *
- * The engine already has the sound path for bound tables - `insert_row`,
- * `delete_row`, `delete_table` and `duplicate_table` route through the binding
- * engine's mutation plan. `split_table` shares its physical row-delete with
- * `delete_row` but never consults the runtime, so it runs that same destruction
- * unguarded. Until it is composed from the engine primitives, refuse.
- */
-function assertTableHasNoBindings(
-  sfdt: any,
-  tableAnchor: string,
-  opName: string
-): void {
-  // Ask the binding scan what is bound - it is the one owner of that answer.
-  // Reading raw SFDT for tag-shaped strings would be a second, weaker source of
-  // truth that drifts the moment the grammar changes.
-  const bound = flattenSfdt(sfdt).filter(
-    (candidate) =>
-      !!candidate.boundTag && candidate.anchor.startsWith(`${tableAnchor};`)
-  );
-  // A table can be bound by its own table-scope marker while no individual cell
-  // carries a field tag - a bound repeating table with no data rows yet. Ask the
-  // binding index about the table itself, not only its cells.
-  const boundTable = bindingTablesByAnchor(sfdt).has(tableAnchor);
-  if (!bound.length && !boundTable) return;
-  throw new OpError(
-    'structural_op_would_destroy_bindings',
-    `${opName} cannot restructure the table at ${JSON.stringify(
-      tableAnchor
-    )}: its cells carry ${bound.length} binding${
-      bound.length === 1 ? '' : 's'
-    }, and the selection this op uses would delete their content controls outright. That destroys the binding rather than moving it, and rejecting the change cannot bring it back. Nothing was written.`,
-    [
-      `table: ${tableAnchor}`,
-      `bound cells: ${bound.map((candidate) => candidate.anchor).join(', ')}`,
-      'Use insert_row, delete_row or duplicate_table, which the binding engine performs safely, or change values with set_cell_text.'
-    ]
-  );
-}
-
 function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
   const author = foreignPendingAuthor(sfdt, range);
   if (author)
@@ -9396,7 +9347,6 @@ export const ANCHORED_OP_HANDLERS: {
     // the merge spans are all things flattening drops.
     const sfdt = serializeSfdt(editor);
     const tableBlock = tableBlockAt(sfdt, tableAnchor);
-    assertTableHasNoBindings(sfdt, tableAnchor, 'split_table');
     const appearance = collectTableAppearance(tableBlock);
     if (!appearance)
       throw new OpError(
