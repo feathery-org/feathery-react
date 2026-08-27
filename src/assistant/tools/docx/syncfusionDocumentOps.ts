@@ -7519,6 +7519,36 @@ function assertRowsAreRemovable(
  * the SyncFusion half of the reason from the shared constant so the three
  * explanations of one defect cannot drift apart.
  */
+/**
+ * The same document-tail rule, for the copy rather than the deletion.
+ *
+ * A duplicate is not a delete, which is why the family above excluded it - but
+ * it pastes a copy and then deletes rows out of that copy, so the tail-table
+ * rule bites it all the same. It just bit AFTERWARDS: the paste had already
+ * landed when `split_table_copy_lost` refused, and because that residue authors
+ * no revision there was nothing for the rollback to reject. The refusal said
+ * "nothing of this change set was kept" while the document disagreed.
+ *
+ * Asked before the paste instead, the same refusal is true. This is the whole
+ * of the prevent-versus-detect distinction in one case: the guard did not need
+ * to be smarter, it needed to run earlier.
+ */
+function assertTableIsDuplicable(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor) return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to duplicate the table at ${JSON.stringify(
+      tableAnchor
+    )}: it is the document's last block, so the copy has no following paragraph to be readable against and the engine would have to delete rows out of whatever it merged with. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [`table: ${tableAnchor}`, `document tail table last row: ${tail.row}`],
+    'never'
+  );
+}
+
 function assertTableIsRemovable(
   blocks: FlatBlock[],
   tableAnchor: string
@@ -9005,6 +9035,7 @@ export const ANCHORED_OP_HANDLERS: {
         'duplicate_table needs an anchor inside the table, or the table anchor from a structure read.'
       );
     assertDuplicateSourceHasNoForeignEdits(sfdt, tableAnchor);
+    assertTableIsDuplicable(blocks, tableAnchor);
     const source = resolveTableRange(blocks, tableAnchor);
     const container = tableContainerAt(sfdt, tableAnchor);
     if (!container)
