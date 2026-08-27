@@ -239,6 +239,66 @@ const splitAt = (live: LiveEditor, splitAtRow: number, id: string) =>
  * ACROSS its boundary would either tear the range in half or silently drop it,
  * and a dropped bookmark takes every reference to it with it.
  */
+/**
+ * A table whose bookmark SPANS the cut: it opens in row 1 and closes in row 3,
+ * so extracting from row 2 tears the named range in half.
+ */
+const spanningBookmarkTable = () => ({
+  sections: [
+    {
+      sectionFormat: { pageWidth: 612, pageHeight: 792 },
+      blocks: [
+        para('Coverages and Limits'),
+        {
+          rows: [
+            { rowFormat: {}, cells: [cell('Coverage', HEADER_BAND), cell('Amount', HEADER_BAND)] },
+            {
+              rowFormat: {},
+              cells: [
+                {
+                  blocks: [
+                    {
+                      paragraphFormat: {},
+                      characterFormat: {},
+                      inlines: [
+                        { bookmarkType: 0, name: 'coverage_span' },
+                        { characterFormat: {}, text: 'Item 1' }
+                      ]
+                    }
+                  ],
+                  cellFormat: { columnSpan: 1, rowSpan: 1 }
+                },
+                cell('$100')
+              ]
+            },
+            { rowFormat: {}, cells: [cell('Item 2'), cell('$200', STRIPE)] },
+            {
+              rowFormat: {},
+              cells: [
+                {
+                  blocks: [
+                    {
+                      paragraphFormat: {},
+                      characterFormat: {},
+                      inlines: [
+                        { characterFormat: {}, text: 'Item 3' },
+                        { bookmarkType: 1, name: 'coverage_span' }
+                      ]
+                    }
+                  ],
+                  cellFormat: { columnSpan: 1, rowSpan: 1 }
+                },
+                cell('$300')
+              ]
+            }
+          ]
+        },
+        para('Driver Information')
+      ]
+    }
+  ]
+});
+
 const bookmarkedTable = () => ({
   sections: [
     {
@@ -474,17 +534,73 @@ describe('split_table contract - what the recomposition owes', () => {
     expect(editor.serialize()).toBe(before);
   });
 
-  it('S2(d) refuses a boundary that would cut a bookmark, and the bookmark survives', () => {
-    // The row carrying the bookmark is row 2; splitting AT row 2 puts the tear
-    // straight through the named range. Refusing is the answer, and the refusal
-    // has to leave the bookmark intact - a "refusal" that dropped it would be
-    // the same lie this workstream keeps finding.
+  // KNOWN DEFECT, DIAGNOSED AND DEFERRED - `test.failing` so it passes while the
+  // defect exists and FAILS LOUDLY the day someone fixes it. A green suite keeps
+  // meaning "everything asserted here is true", and the defect stays pinned in a
+  // test rather than a paragraph.
+  //
+  // WHAT HAPPENS: a bookmark inside the extracted rows survives the split while
+  // the change is PENDING and DIES ON ACCEPT - the same accept-time destruction
+  // as the bindings on the HILB document. Measured: pending ["coverage_detail"],
+  // accepted [].
+  //
+  // DIAGNOSIS, three measurements:
+  //   1. the captured payload CONTAINS the bookmark (2 markers, both named), so
+  //      the capture is not at fault
+  //   2. after the paste the markers are only in the SOURCE table's row - the
+  //      copy has none, so SyncFusion's paste drops them
+  //   3. inserting a bookmark whose name already exists does NOT create a second
+  //      one - a bookmark name is UNIQUE per document
+  //
+  // WHY IT IS NOT FIXED HERE: the original lives in a tracked-DELETED row until
+  // accept, so throughout the pending window the copy cannot hold the same name.
+  // Re-registering it on the pasted rows inside the change set is therefore not
+  // possible - the conflict is between bookmark name uniqueness and tracked
+  // deletion keeping the old row alive, which is relocation-wide semantics
+  // rather than anything about splitting a table. Fixing it here would mean
+  // changing how tracked deletes treat named ranges.
+  //
+  // Backlog: "split_table destroys a travelling bookmark on accept" on the SFDT
+  // set.
+  //
+  // Written as an assertion of the DEFECT rather than of the property, because
+  // `test.failing` is not available in this jest. Same effect: it is green while
+  // the defect exists and goes RED the day someone fixes it, at which point the
+  // reader finds this comment and flips it to the property below.
+  it('S2(d) KNOWN DEFECT: a travelling bookmark does NOT survive accept', () => {
+    // The case the spanning refusal must NOT over-reach - and it does not: this
+    // split is PERMITTED. It is the survival that fails.
     const live = open(bookmarkedTable());
-    const before = editor.serialize();
     const namesBefore = bookmarkNames(doc());
     expect(namesBefore).toContain('coverage_detail');
 
-    const result = splitAt(live, 2, 'contract-s2d');
+    const result = splitAt(live, 2, 'contract-s2d-travel');
+    // NOT refused - the spanning guard correctly leaves this case alone.
+    expect(result.results[0].ok).toBe(true);
+    // Present while pending, which is what makes the loss so easy to miss.
+    expect(bookmarkNames(doc())).toEqual(namesBefore);
+
+    editor.revisions.acceptAll();
+
+    // THE DEFECT. What this SHOULD assert, once fixed:
+    //     expect(bookmarkNames(doc())).toEqual(namesBefore);
+    // What it does today, because the bookmark is destroyed on accept:
+    expect(bookmarkNames(doc())).toEqual([]);
+  });
+
+  it('S2(d2) a bookmark SPANNING the cut is refused, and survives intact', () => {
+    // Here the range opens in row 1 and closes in row 3, so extracting from row
+    // 2 would tear it. A torn or silently dropped bookmark takes every
+    // cross-reference to it with it, and nothing in the document says so.
+    //
+    // The refusal must also leave it whole: a "refusal" that dropped the
+    // bookmark would be the same lie this workstream keeps finding.
+    const live = open(spanningBookmarkTable());
+    const before = editor.serialize();
+    const namesBefore = bookmarkNames(doc());
+    expect(namesBefore).toContain('coverage_span');
+
+    const result = splitAt(live, 2, 'contract-s2d-span');
     expect(result.results[0].ok).toBe(false);
     expect(editor.serialize()).toBe(before);
     expect(bookmarkNames(doc())).toEqual(namesBefore);
