@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { CheckIcon, CloseIcon } from './icons';
@@ -576,73 +577,120 @@ function DocxEditor({
           />
         )}
       </div>
-      {/* Binding-error prompt: same surface styling as the save toast, but
-          interactive — it stays up until the user picks the Anyway action
-          (proceed despite invalid binding config) or Cancel. */}
-      {gateWarning && (
-        <div
-          role='alertdialog'
-          aria-live='assertive'
-          css={{
-            position: 'absolute',
-            bottom: 40,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 420,
-            maxWidth: 'calc(100% - 32px)',
-            boxSizing: 'border-box',
-            padding: '14px 16px',
-            borderRadius: 6,
-            background: '#fff',
-            color: '#27272a',
-            border: '1px solid #e4e4e7',
-            borderLeft: '3px solid #f59e0b',
-            fontSize: 14,
-            lineHeight: 1.45,
-            boxShadow:
-              '0 0 0 1px rgb(0 9 50 / 3%), 0 12px 32px -16px rgb(0 9 50 / 12%)',
-            zIndex: 21
-          }}
-        >
-          <div css={{ marginBottom: 10 }}>{gateWarning.message}</div>
+      {/* Binding-error prompt: a blocking modal. Portaled to the document body
+          (same pattern as the toolbar menus) so the backdrop covers the whole
+          page — nothing proceeds until the user picks the Anyway action
+          (proceed despite invalid binding config) or cancels (button or Esc).
+          Backdrop clicks are inert on purpose: the choice must be explicit. */}
+      {gateWarning &&
+        createPortal(
           <div
-            css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}
+            css={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10001,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(24, 24, 27, 0.45)'
+            }}
           >
-            <button
-              type='button'
-              onClick={() => setGateWarning(null)}
+            <div
+              role='alertdialog'
+              aria-modal='true'
+              aria-label='Document has binding errors'
+              tabIndex={-1}
+              ref={(node) => node?.focus()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setGateWarning(null);
+              }}
               css={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: '1px solid #e4e4e7',
+                width: 440,
+                maxWidth: 'calc(100% - 48px)',
+                boxSizing: 'border-box',
+                padding: '20px 24px',
+                borderRadius: 10,
                 background: '#fff',
-                color: '#3f3f46',
-                fontSize: 13,
-                cursor: 'pointer'
+                color: '#27272a',
+                border: '1px solid #e4e4e7',
+                fontSize: 14,
+                lineHeight: 1.5,
+                boxShadow:
+                  '0 0 0 1px rgb(0 9 50 / 4%), 0 24px 48px -12px rgb(0 9 50 / 25%)',
+                outline: 'none'
               }}
             >
-              Cancel
-            </button>
-            <button
-              type='button'
-              onClick={gateWarning.proceed}
-              title={gateWarning.confirmTitle}
-              css={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                border: '1px solid transparent',
-                background: FEATHERY_RED,
-                color: '#fff',
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer'
-              }}
-            >
-              {gateWarning.confirmLabel}
-            </button>
-          </div>
-        </div>
-      )}
+              <div
+                css={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                <span
+                  aria-hidden
+                  css={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    flex: '0 0 auto',
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 700
+                  }}
+                >
+                  !
+                </span>
+                Document has binding errors
+              </div>
+              <div css={{ marginBottom: 18, color: '#3f3f46' }}>
+                {gateWarning.message}
+              </div>
+              <div css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  type='button'
+                  onClick={() => setGateWarning(null)}
+                  css={{
+                    padding: '8px 14px',
+                    borderRadius: 6,
+                    border: '1px solid #e4e4e7',
+                    background: '#fff',
+                    color: '#3f3f46',
+                    fontSize: 13,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type='button'
+                  onClick={gateWarning.proceed}
+                  title={gateWarning.confirmTitle}
+                  css={{
+                    padding: '8px 14px',
+                    borderRadius: 6,
+                    border: '1px solid transparent',
+                    background: FEATHERY_RED,
+                    color: '#fff',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {gateWarning.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>,
+          featheryDoc().body
+        )}
       {/* Save feedback. Positioned over the editor, bottom-center, and
           auto-dismissed. Styled to match the Feathery dashboard toast: white
           surface, thin zinc border, dark text, fixed width. The tick sits at
