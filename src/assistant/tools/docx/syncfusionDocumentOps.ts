@@ -1168,20 +1168,29 @@ function getRows(block: any): any[] | undefined {
  * Anchors are `section;block` for body paragraphs and
  * `section;block;row;cell;para` inside a table.
  */
-function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
-  const found = new Set<string>();
+function resolveAnchoredNode(sfdt: any, anchor: string): any {
   const parts = String(anchor).split(';');
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   const section = sections[Number(parts[0])];
-  if (!section) return found;
+  if (!section) return undefined;
   // Anchors count EXPANDED blocks: a block-level content control holding N
   // blocks contributes N entries. Raw indices diverge from anchors the moment
   // such a control holds anything but exactly one block - which is precisely
   // what a bound document has - so resolve the same way `tableContainerAt` does.
-  let block: any = expandBlockContentControls(getBlocks(section))[
+  //
+  // UNWRAP. expandBlockContentControls yields `{ block, insideControl }` pairs,
+  // not raw blocks. The previous caller never unwrapped and got away with it
+  // only because it walked every value looking for revision ids, so it reached
+  // `.block` by accident. A TABLE anchor did not get away with it: getRows on
+  // the wrapper finds nothing, cell resolution collapses to undefined, and the
+  // foreign-revision guard silently found NOTHING for every table-cell anchor -
+  // set_cell_text was unguarded. Unwrapping here fixes that hole too.
+  const entry = expandBlockContentControls(getBlocks(section))[
     Number(parts[1])
   ];
-  if (!block) return found;
+  if (!entry) return undefined;
+  let block: any = entry.block;
+  if (!block) return undefined;
   if (parts.length >= 5) {
     const rows = getRows(block) ?? getRows(getBlocks(block).find((b: any) => getRows(b)));
     const row = rows?.[Number(parts[2])];
@@ -1189,6 +1198,14 @@ function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
     const cell = Array.isArray(cells) ? cells[Number(parts[3])] : undefined;
     block = getBlocks(cell)[Number(parts[4])] ?? cell;
   }
+  return block;
+}
+
+/** Every revision id anywhere in an anchored block, at any depth. */
+function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
+  const found = new Set<string>();
+  const block = resolveAnchoredNode(sfdt, anchor);
+  if (!block) return found;
   const collect = (node: any): void => {
     if (!node || typeof node !== 'object') return;
     if (Array.isArray(node)) return node.forEach(collect);
@@ -1197,6 +1214,142 @@ function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
     for (const value of Object.values(node)) collect(value);
   };
   collect(block);
+  return found;
+}
+
+/**
+ * Where each revision sits, in the SAME offset space `find` resolves against.
+ *
+ * Deliberately the structural twin of `bindingRangesOf` below: same walk, same
+ * skip rule, same offset counter. The two must agree, because both map a
+ * character range onto the live text that `inlineText` projects - and an offset
+ * walk that drifts from the one the caller used is a guard that fires on the
+ * wrong text.
+ *
+ * ONE DELIBERATE DIFFERENCE. `bindingRangesOf` drops an inline whose revisions
+ * are all deletions, because deleted text is not part of the live projection.
+ * This must NOT drop it: a pending deletion is the single most dangerous thing
+ * in the paragraph, since SyncFusion re-authors it under the current user
+ * rather than leaving it alone. It occupies no live width, so it is recorded as
+ * a ZERO-WIDTH marker sitting at the current offset.
+ */
+function revisionRangesOf(
+  inlines: any[],
+  deletedIds: Set<string>
+): Array<{ id: string; start: number; end: number }> {
+  const ranges: Array<{ id: string; start: number; end: number }> = [];
+  let offset = 0;
+  const walk = (items: any[]): void => {
+    for (const inline of items) {
+      if (inline == null) continue;
+      // Two places, not one. A run carries its content revisions directly, and
+      // a TRACKED FORMATTING change is recorded on the run's own
+      // characterFormat. Reading only the first missed the second entirely, so
+      // a foreign tracked formatting change on a run was narrowed straight past
+      // - the same lost-protection shape as the paragraph mark.
+      const raw = pick(inline, 'revisionIds', 'rids');
+      const formatRaw = pick(
+        pick(inline, 'characterFormat', 'cf'),
+        'revisionIds',
+        'rids'
+      );
+      const ids = [
+        ...(Array.isArray(raw) ? raw.map(String) : []),
+        ...(Array.isArray(formatRaw) ? formatRaw.map(String) : [])
+      ];
+      const start = offset;
+      if (ids.length > 0 && ids.every((id) => deletedIds.has(id))) {
+        // CURRENTLY UNREACHABLE for a FOREIGN pending deletion: the guard
+        // detects that case earlier and abandons the narrowing altogether, so
+        // this branch never decides anything for one. It is kept, and kept
+        // correct, because it still runs for the assistant's OWN pending
+        // deletions (which are not in `preExisting` and so are filtered out
+        // downstream), and because it is what the branch must do the day the
+        // liveText projection is fixed and narrowing over deletions becomes
+        // safe again. Deleting it would quietly remove the offset arithmetic
+        // that restoration depends on.
+        for (const id of ids) ranges.push({ id, start, end: start });
+        continue;
+      }
+      const nested = getInlines(inline);
+      if (nested.length) {
+        walk(nested);
+        for (const id of ids) ranges.push({ id, start, end: offset });
+        continue;
+      }
+      const text = pick(inline, 'text', 'tlp');
+      if (typeof text === 'string') offset += text.length;
+      for (const id of ids) ranges.push({ id, start, end: offset });
+    }
+  };
+  walk(inlines);
+  return ranges;
+}
+
+/**
+ * Does a revision's span touch the half-open range [start, end) being written?
+ *
+ * A zero-width marker (a pending deletion) counts when it sits anywhere from
+ * the start boundary to the end boundary INCLUSIVE. That is deliberately
+ * generous: a deletion sitting exactly where the write begins or ends is inside
+ * the text SyncFusion's selected-range delete will walk over, and a guard whose
+ * job is to prevent an unrecoverable re-authoring should err toward refusing.
+ */
+function revisionTouchesRange(
+  revision: { start: number; end: number },
+  start: number,
+  end: number
+): boolean {
+  return revision.start === revision.end
+    ? revision.start >= start && revision.start <= end
+    : revision.start < end && revision.end > start;
+}
+
+/**
+ * Revision ids the character-range walk CANNOT address, at an anchor.
+ *
+ * Two of them, and both were invisible to the narrowing until review caught it:
+ *
+ *   PARAGRAPH MARK  `characterFormat.revisionIds` on the block itself. Deleting
+ *                   a paragraph mark is how a paragraph gets merged into the
+ *                   next one. It is not in any run, so walking inlines never
+ *                   sees it.
+ *   ROW FORMAT      `rowFormat.revisionIds` on a table row - a whole inserted or
+ *                   deleted row. Worse than the paragraph mark: it hangs off the
+ *                   ROW, above the cell's paragraph, so even the block-wide
+ *                   recursion from a cell anchor cannot reach it.
+ *
+ * Neither has a character range, so there is nothing to intersect a write
+ * against - which is exactly why the answer is to stop narrowing rather than to
+ * invent an offset for them.
+ */
+function structuralRevisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
+  const found = new Set<string>();
+  const add = (ids: unknown): void => {
+    if (Array.isArray(ids)) for (const id of ids) found.add(String(id));
+  };
+  const node = resolveAnchoredNode(sfdt, anchor);
+  add(paragraphMarkRevisionIds(node));
+  // A run's own characterFormat revision ids - a tracked FORMATTING change.
+  // Included here as well as in the range walk: a formatting revision covers a
+  // run whose boundaries need not line up with the text being written, so the
+  // safe reading is to treat it as structural and stop narrowing.
+  for (const inline of getInlines(node))
+    add(pick(pick(inline, 'characterFormat', 'cf'), 'revisionIds', 'rids'));
+  const parts = String(anchor).split(';');
+  if (parts.length >= 5) {
+    const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+    const section = sections[Number(parts[0])];
+    const entry = section
+      ? expandBlockContentControls(getBlocks(section))[Number(parts[1])]
+      : undefined;
+    const table = entry?.block;
+    const rows = table
+      ? getRows(table) ??
+        getRows(getBlocks(table).find((b: any) => getRows(b)))
+      : undefined;
+    add(rowRevisionIds(rows?.[Number(parts[2])]));
+  }
   return found;
 }
 
@@ -1220,7 +1373,13 @@ const PRE_EXISTING_REVISIONS_KEY = '__fmPreExistingRevisionIds';
 function assertNoForeignPendingRevisions(
   editor: LiveEditor,
   block: FlatBlock,
-  op: EditOp
+  op: EditOp,
+  // The character range this op will actually overwrite, in the same offset
+  // space `find` was resolved in. Omit it when the op rewrites the WHOLE block
+  // (set_cell_text, change_case, a replace_text with no `find`) - then every
+  // revision in the block genuinely is in range and block granularity is not a
+  // widening, it is the truth.
+  range?: { start: number; end: number }
 ): void {
   const preExisting: Set<string> | undefined = (editor as any)[
     PRE_EXISTING_REVISIONS_KEY
@@ -1228,10 +1387,77 @@ function assertNoForeignPendingRevisions(
   if (!preExisting || !preExisting.size) return;
   let touched: string[] = [];
   try {
-    const ids = revisionIdsAtAnchor(serializeSfdt(editor), block.anchor);
-    touched = [...ids].filter((id) => preExisting.has(id));
-  } catch {
-    return;
+    const sfdt = serializeSfdt(editor);
+    const deletedIds = deletedRevisionIds(sfdt);
+    const node = range ? resolveAnchoredNode(sfdt, block.anchor) : undefined;
+    const ranges = node ? revisionRangesOf(getInlines(node), deletedIds) : [];
+    // A foreign revision on the paragraph mark or on a table row has no
+    // character range, so the range filter below cannot see it and would let
+    // the write through - a protection the block-wide path used to give. When
+    // one is present the narrowing is abandoned, same as for a pending deletion.
+    const structuralIds = structuralRevisionIdsAtAnchor(sfdt, block.anchor);
+    const foreignStructural = [...structuralIds].filter((id) =>
+      preExisting.has(id)
+    );
+    // A foreign pending DELETION in this block makes the caller's offsets
+    // untrustworthy, so the range is discarded and the block-wide check runs.
+    //
+    // MEASURED, and it is an engine defect independent of this guard: with a
+    // pending deletion present, `liveText` comes back as the deletion-INCLUDED
+    // text truncated to the length of the deletion-EXCLUDED text. On
+    // "Alpha beta gamma delta." with "beta " pending-deleted, liveText reads
+    // "Alpha beta gamma d" - a hybrid of two projections that is neither. Any
+    // index resolved in it points at the wrong characters.
+    // Until that is fixed, narrowing here would mean trusting offsets that are
+    // known wrong, so this deliberately gives up the narrowing for these blocks
+    // and keeps the safe answer. The trade is pinned by the deletion cases in
+    // tests/foreignRevisionRange.spec.ts, including a control that fails if the
+    // narrowing is ever lost entirely.
+    const blockCarriesForeignDeletion = ranges.some(
+      (revision) => preExisting.has(revision.id) && deletedIds.has(revision.id)
+    );
+    if (range && !blockCarriesForeignDeletion && !foreignStructural.length) {
+      // Narrow to the range actually being written. Before this, a foreign
+      // revision ANYWHERE in the paragraph refused the op - so a paragraph
+      // carrying one pending change made every other word in it unwritable,
+      // which is a refusal the user cannot act on and cannot understand.
+      touched = [
+        ...new Set(
+          ranges
+            .filter(
+              (revision) =>
+                preExisting.has(revision.id) &&
+                revisionTouchesRange(revision, range.start, range.end)
+            )
+            .map((revision) => revision.id)
+        )
+      ];
+    } else {
+      // `revisionIdsAtAnchor` recurses the block, so it reaches the paragraph
+      // mark - but a row lives ABOVE the cell's paragraph, so rowFormat ids are
+      // unioned in explicitly. Without them a foreign row revision is invisible
+      // on every path.
+      const ids = revisionIdsAtAnchor(sfdt, block.anchor);
+      touched = [
+        ...new Set(
+          [...ids, ...structuralIds].filter((id) => preExisting.has(id))
+        )
+      ];
+    }
+  } catch (error) {
+    // FAIL CLOSED. This used to swallow the error and return, which let a write
+    // proceed unguarded precisely when the document could not be read - the one
+    // moment there is least reason to trust it. Refusing is the same stance the
+    // rest of this file takes toward a range it cannot address safely.
+    throw new OpError(
+      'pending_revision_check_failed',
+      `${op.op} could not verify whether "${block.anchor}" carries somebody else's pending tracked change, so nothing was written.`,
+      [
+        `anchor: ${block.anchor}`,
+        `reason: ${(error as Error)?.message ?? String(error)}`,
+        'Retry the operation; if it keeps failing, re-read the document with getDocumentInventory.'
+      ]
+    );
   }
   if (!touched.length) return;
   throw new OpError(
@@ -5475,6 +5701,18 @@ function verifyTextWrite(
     endAnchor?: string;
     expected: string;
     exact?: boolean;
+    /**
+     * This write REMOVED text, so tolerate the format's spacing normalisation.
+     *
+     * Opt-in, and it has to be: the artefact only exists on removal. Measured in
+     * a real browser, inserts preserve leading, trailing, internal and doubled
+     * spaces EXACTLY, while deleting the first word leaves a lone leading space
+     * that the document drops. Applying the tolerance everywhere - which is what
+     * this did until review caught it - meant an INSERT that silently lost a
+     * space still verified as correct, which is the same class of defect the
+     * rest of this file exists to prevent.
+     */
+    removesText?: boolean;
   }
 ): any {
   const sfdt = serializeSfdt(editor);
@@ -5523,9 +5761,10 @@ function verifyTextWrite(
   );
   const matches = target.exact
     ? span === normalizedExpected ||
-      spacingOnlyDifference(span, normalizedExpected)
+      (!!target.removesText && spacingOnlyDifference(span, normalizedExpected))
     : span.includes(normalizedExpected) ||
-      collapseSpacing(span).includes(collapseSpacing(normalizedExpected));
+      (!!target.removesText &&
+        collapseSpacing(span).includes(collapseSpacing(normalizedExpected)));
   if (!matches)
     throw new OpError(
       'text_verification_failed',
@@ -5544,16 +5783,33 @@ function verifyTextWrite(
 
 /**
  * Collapse runs of spaces and tabs WITHIN each paragraph, leaving paragraph
- * marks untouched.
+ * marks untouched, and tolerate the ONE leading-space artefact the SDK actually
+ * produces.
  *
  * `\s` is deliberately not used: it matches `\r`, and collapsing paragraph
  * marks would let a change in paragraph COUNT pass verification, which is a
  * structural change rather than a spacing one.
+ *
+ * MEASURED, in a real browser, because this used to `.trim()` both ends on the
+ * strength of a comment and that tolerated a defect:
+ *
+ *   inserts                              spacing preserved EXACTLY, both ends,
+ *                                        internal runs included
+ *   delete a middle word                 naive surgery and the document AGREE
+ *   delete the FIRST word, leaving a
+ *     lone leading space                 the document DROPS it - " beta gamma"
+ *                                        reads back as "beta gamma"
+ *   delete the LAST word                 naive surgery and the document AGREE
+ *
+ * So exactly one artefact exists and it is at the START. Trimming the END too
+ * meant a write that genuinely lost a trailing space reported SUCCESS and
+ * nothing caught it. Narrowed to the leading side, which is the only side the
+ * SDK was ever observed to touch.
  */
 function collapseSpacing(value: string): string {
   return value
     .split('\r')
-    .map((paragraph) => paragraph.replace(/[^\S\r\n]+/g, ' ').trim())
+    .map((paragraph) => paragraph.replace(/[^\S\r\n]+/g, ' ').replace(/^ /, ''))
     .join('\r');
 }
 
@@ -8639,13 +8895,15 @@ export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
   replace_text: ({ editor, op, block, liveText }) => {
-    assertNoForeignPendingRevisions(editor, block, op);
     const find = op.find != null ? String(op.find) : '';
     const replacement = op.replace ?? op.text ?? op.newText;
     if (!find) {
       // No `find`: if a full replacement value was given, overwrite the whole
       // anchored block with it. Otherwise the op has no actionable content.
       if (replacement != null) {
+        // No `find`: this overwrites the WHOLE block, so every revision in it
+        // is genuinely in range - block granularity, no range argument.
+        assertNoForeignPendingRevisions(editor, block, op);
         selectBlock(editor, block);
         replaceSelectedText(editor, String(replacement));
         return {
@@ -8677,6 +8935,19 @@ export const ANCHORED_OP_HANDLERS: {
           'Copy `find` from the block\'s CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set.'
         ]
       );
+    // Only the matched substring is overwritten, so only revisions touching it
+    // matter. When offsets are untrusted the index came from a different
+    // projection than the one revisionRangesOf walks, so the range would be
+    // meaningless - fall back to the block-wide check rather than compare two
+    // offset spaces that do not correspond.
+    assertNoForeignPendingRevisions(
+      editor,
+      block,
+      op,
+      block.offsetsUntrusted
+        ? undefined
+        : { start: idx, end: idx + find.length }
+    );
     const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
     // A field paragraph has two valid projections: serialized SFDT includes
     // its field instructions while Selection exposes the rendered result.
@@ -8715,7 +8986,10 @@ export const ANCHORED_OP_HANDLERS: {
       postWriteSfdt: verifyTextWrite(editor, {
         startAnchor: block.anchor,
         expected: next,
-        exact: true
+        exact: true,
+        // Only an EMPTY replacement is a deletion; a substitution writes text
+        // and must be measured exactly, like an insert.
+        removesText: String(replacement ?? '') === ''
       })
     };
   },
@@ -8744,7 +9018,6 @@ export const ANCHORED_OP_HANDLERS: {
     };
   },
   delete_text: ({ editor, op, block, liveText }) => {
-    assertNoForeignPendingRevisions(editor, block, op);
     const find = String(op.find ?? '');
     if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
     const idx = liveText.indexOf(find);
@@ -8757,6 +9030,17 @@ export const ANCHORED_OP_HANDLERS: {
           'Copy `find` from the block\'s CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set.'
         ]
       );
+    // Same narrowing as replace_text: only the matched substring is removed, so
+    // only revisions touching it matter. selectRange below uses exactly these
+    // offsets, so the guard and the write agree on what "the range" is.
+    assertNoForeignPendingRevisions(
+      editor,
+      block,
+      op,
+      block.offsetsUntrusted
+        ? undefined
+        : { start: idx, end: idx + find.length }
+    );
     const next = block.text.slice(0, idx) + block.text.slice(idx + find.length);
     selectRange(editor, block.anchor, idx, idx + find.length);
     editor.editor.delete();
@@ -8764,7 +9048,8 @@ export const ANCHORED_OP_HANDLERS: {
       postWriteSfdt: verifyTextWrite(editor, {
         startAnchor: block.anchor,
         expected: next,
-        exact: true
+        exact: true,
+        removesText: true
       })
     };
   },
@@ -9124,6 +9409,10 @@ export const ANCHORED_OP_HANDLERS: {
         startAnchor: block.anchor,
         expected: next,
         exact: true
+        // No removesText: insert_text only ADDS. Measured in a real browser,
+        // inserts preserve leading, trailing, internal and doubled spaces
+        // exactly, so this path must be verified exactly - tolerating spacing
+        // here would let an insert that silently lost a space pass.
       })
     };
   },
