@@ -8066,6 +8066,43 @@ function shiftedRange(
  * it stood immediately after the paste - every shift is already in it, because
  * the delete that may follow shifts nothing.
  */
+/**
+ * The payload, with a separating paragraph in front of it when it would
+ * otherwise paste a table flush against a table.
+ *
+ * Returns the payload UNCHANGED whenever the question does not arise or cannot
+ * be answered - a non-table payload, a paste at the document head, an
+ * unparseable payload. Failing to add a separator renders two tables as one,
+ * which is bad; adding a spurious empty paragraph to every relocation would be
+ * a different kind of damage, silently applied to callers that never had this
+ * problem. So the rule fires only on the shape that has it.
+ */
+function separatorBeforePastedTable(
+  payload: string,
+  preSfdt: any,
+  sequenceBefore: Array<{ section: number; block: number }>,
+  pasteAt: number
+): string {
+  if (pasteAt <= 0) return payload;
+  const previous = sequenceBefore[pasteAt - 1];
+  if (!previous) return payload;
+  const previousBlock = rawSectionBlocks(preSfdt, previous.section)[
+    previous.block
+  ];
+  if (!firstTableBlockIn(previousBlock)) return payload;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+  const sections: any[] = pick(parsed, 'sections', 'sec') ?? [];
+  const blocks = getBlocks(sections[0]);
+  if (!blocks.length || !firstTableBlockIn(blocks[0])) return payload;
+  blocks.unshift(emptyParagraphBlock(parsed));
+  return JSON.stringify(parsed);
+}
+
 function relocateBlockRange(
   editor: LiveEditor,
   preSfdt: any,
@@ -8133,8 +8170,27 @@ function relocateBlockRange(
     editor.selection.select(target.appendParagraphAt, target.appendParagraphAt);
     callEditor(editor, 'insertText', '\n');
   }
+  // Word renders two adjacent tables as ONE table. The COPY paths already know
+  // this - copyPasteSegments inserts an empty paragraph wherever a cloned table
+  // would land flush against another - but a relocation never went through that
+  // builder, so split_table's new table landed directly after the source and the
+  // pair read as one table with its rows repeated. The rule was right and its
+  // home was wrong: it belongs at the seam EVERY relocation pastes through, not
+  // in one caller's helper.
+  //
+  // Prepended to the payload rather than written separately on purpose: it
+  // arrives in the same paste, so it is one card, one undo entry, and rejecting
+  // the change takes the separator away with everything else. A separator
+  // written as its own edit would survive the rejection of the split it exists
+  // to serve.
+  const separated = separatorBeforePastedTable(
+    payload,
+    preSfdt,
+    sequenceBefore,
+    pasteAt
+  );
   editor.selection.select(target.anchor, target.anchor);
-  callEditor(editor, 'paste', payload);
+  callEditor(editor, 'paste', separated);
   const pastedSfdt = serializeSfdt(editor);
   const paste: PasteEffect = {
     at: pasteAt,
