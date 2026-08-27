@@ -5954,6 +5954,13 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
   liveText: string;
 }
 
+interface PasteEffect {
+  /** Sequence index the pasted run starts at. */
+  at: number;
+  /** How many top-level blocks the paste actually added, measured. */
+  blocks: number;
+}
+
 /**
  * Where a table was, and how to know it is still the same table later.
  *
@@ -5987,8 +5994,40 @@ interface TableFootprint {
   anchor: string;
   /** The bound table's id, when it has one. Identity wins over position. */
   tableId?: string;
-  /** `rangeIdentity` of the table's blocks at record time. */
-  fingerprint: string;
+  /**
+   * The table's index in the WHOLE-DOCUMENT top-level sequence - the coordinate
+   * the runner maintains.
+   *
+   * Not the anchor, because an anchor is a (section, block) pair and a paste
+   * renumbers sections. A whole-document sequence has no such failure mode: the
+   * paste inserts N entries at one position and everything after keeps its
+   * order, which is why the relocation code already reasons in this coordinate.
+   */
+  sequenceIndex: number;
+  /**
+   * The table's SHAPE at record time: row count, column count, header rows.
+   *
+   * Deliberately NOT its content. Two exclusions, and each is a defect this
+   * would otherwise cause:
+   *
+   * CELL TEXT is excluded because ops that write inside a cell - set_cell_text,
+   * set_cell_formula, replace_text, change_case, set_char_format - record no
+   * footprint at all. A text-based fingerprint would therefore stop matching
+   * after an ordinary "split this table and fix that number" change set, and
+   * the finalizer would loudly skip a table it was supposed to stripe. Content
+   * ops cannot invalidate this fingerprint by construction, which is stronger
+   * than requiring every future handler to remember to record one.
+   *
+   * SHADING is excluded because it is the finalizer's own output. A fingerprint
+   * that included what the finalizer writes could be invalidated by the very
+   * work it gates, and appearance ops may legitimately change fills mid-set.
+   *
+   * So the assert means: the same table, of the same shape, at the maintained
+   * anchor. A DIMENSION change with no recorded footprint is then a genuinely
+   * unrecorded structural edit, and skipping loudly is correct rather than a
+   * false alarm.
+   */
+  shapeFingerprint: string;
 }
 
 /**
@@ -6030,6 +6069,15 @@ interface OpSuccessExtras {
    * touches no table returns nothing, so most handlers are unaffected.
    */
   tableFootprints?: TableFootprint[];
+  /**
+   * What this op's paste did to top-level block indices, when it pasted.
+   *
+   * The runner needs it to MAINTAIN footprints recorded by EARLIER ops in the
+   * same change set: only a paste shifts indices - a tracked delete marks its
+   * content and leaves it where it was - so this is the whole of the shift.
+   * Engine-internal, like the footprints themselves.
+   */
+  pasteEffect?: PasteEffect;
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -7437,6 +7485,12 @@ function sequenceIndexOf(
  * without weakening what it proves. The extent that is actually deleted is the
  * re-derived range's own, so a dropped trailing empty cannot leave one behind.
  */
+/*
+ * Content identity. For the STRUCTURAL question - "is this the same table" -
+ * see `tableShapeFingerprint`: two owners, two questions, each named. Using
+ * this one to answer the structural question false-skips the finalizer as soon
+ * as any op edits a cell.
+ */
 function rangeIdentity(blocks: FlatBlock[]): string {
   const texts = blocks.map((block) => block.text);
   while (texts.length > 1 && texts[texts.length - 1] === '') texts.pop();
@@ -7444,29 +7498,53 @@ function rangeIdentity(blocks: FlatBlock[]): string {
 }
 
 /**
+ * The table's shape, composed from the owners that already answer each part.
+ *
+ * `collectTableFacts` owns row and column counts; `headerRows` is supplied by
+ * the caller from `effectiveHeaderRows`, the one owner of that question. No new
+ * derivation is invented here - this only joins three existing answers into one
+ * comparable string.
+ */
+function tableShapeFingerprint(
+  sfdt: any,
+  tableAnchor: string,
+  headerRows: number
+): string | null {
+  const facts = collectTableFacts(flattenSfdt(sfdt), sfdt, tableAnchor);
+  if (!facts) return null;
+  return `rows=${facts.rowCount};cols=${facts.columnCount};header=${headerRows}`;
+}
+
+/**
  * A footprint for the table at `tableAnchor`, as it stands in `sfdt`.
  *
- * The fingerprint is `rangeIdentity` rather than a new hash, deliberately: it is
- * already the identity `assertPastedTableMatches` trusts to prove a pasted table
- * is the right one before deleting rows out of it, and a second identity
- * function would be a second answer to the same question.
- *
- * Returns null when the anchor does not resolve to a table, so a caller can
- * record nothing rather than record a lie.
+ * Returns null when the anchor does not resolve to a table, so a caller records
+ * nothing rather than recording a lie.
  */
 function captureTableFootprint(
   sfdt: any,
   tableAnchor: string,
+  headerRows: number,
   tableId?: string
 ): TableFootprint | null {
   try {
-    if (!collectTableAppearance(tableBlockAt(sfdt, tableAnchor))) return null;
-    const range = resolveTableRange(flattenSfdt(sfdt), tableAnchor);
-    if (!range?.blocks?.length) return null;
+    const shapeFingerprint = tableShapeFingerprint(
+      sfdt,
+      tableAnchor,
+      headerRows
+    );
+    if (!shapeFingerprint) return null;
+    const [section, block] = tableAnchor.split(';').map(Number);
+    const sequenceIndex = sequenceIndexOf(topLevelSequence(sfdt), {
+      section,
+      block
+    });
+    if (sequenceIndex < 0) return null;
     return {
       anchor: tableAnchor,
       ...(tableId ? { tableId } : {}),
-      fingerprint: rangeIdentity(range.blocks)
+      sequenceIndex,
+      shapeFingerprint
     };
   } catch {
     // A footprint is a receipt, never a gate. If the table cannot be read here
@@ -7522,12 +7600,6 @@ interface PasteTarget {
  * indices into `topLevelSequence`, never per-section block numbers - see the
  * note there for the live failure that distinction caused.
  */
-interface PasteEffect {
-  /** Sequence index the pasted run starts at. */
-  at: number;
-  /** How many top-level blocks the paste actually added, measured. */
-  blocks: number;
-}
 
 function relocationAnchorMissing(anchor: string, field: string): OpError {
   return new OpError(
@@ -9621,10 +9693,12 @@ export const ANCHORED_OP_HANDLERS: {
     // change set have shifted everything around them.
     const finalSfdt = serializeSfdt(editor);
     const tableFootprints = [
-      captureTableFootprint(finalSfdt, moved.anchor),
-      captureTableFootprint(finalSfdt, copyAnchor)
+      captureTableFootprint(finalSfdt, moved.anchor, plan.headerRows),
+      captureTableFootprint(finalSfdt, copyAnchor, plan.headerRows)
     ].filter((footprint): footprint is TableFootprint => !!footprint);
-    return tableFootprints.length ? { tableFootprints } : undefined;
+    return tableFootprints.length
+      ? { tableFootprints, pasteEffect: paste }
+      : { pasteEffect: paste };
   },
   duplicate_table: ({ editor, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
@@ -14815,7 +14889,7 @@ function planBindingRoutedOp(
 function collectOpExtras(
   extras: OpSuccessExtras | void,
   record: (restores: AppearanceRestore[]) => void,
-  recordFootprints?: (footprints: TableFootprint[]) => void
+  recordFootprints?: (footprints: TableFootprint[], shift?: PasteEffect) => void
 ): Partial<EditResult> {
   if (!extras) return {};
   const appearanceWrite = extras.appearanceWrite;
@@ -14829,7 +14903,12 @@ function collectOpExtras(
   delete rest.appearanceWrite;
   delete rest.postWriteSfdt;
   delete rest.tableFootprints;
+  delete rest.pasteEffect;
   if (appearanceWrite) record(appearanceWrite.restores);
+  // Order matters: the paste this op performed shifted the footprints recorded
+  // by EARLIER ops, but not the ones this op is recording now - those were
+  // captured after its own paste. So maintain first, then add.
+  if (extras.pasteEffect) recordFootprints?.([], extras.pasteEffect);
   if (footprints?.length) recordFootprints?.(footprints);
   return {
     ...rest,
@@ -19573,7 +19652,24 @@ function applyDocumentEditsMeasured(
    * table. Pushing in order is what makes "last" mean "most recent".
    */
   const tableFootprints: TableFootprint[] = [];
-  const recordTableFootprints = (footprints: TableFootprint[]) => {
+  /**
+   * Maintain what is already recorded, then add what this op recorded.
+   *
+   * The shift IS the maintenance law: only a paste moves top-level indices, it
+   * inserts `blocks` entries at `at`, and everything at or after that position
+   * moves by exactly that much. Footprints from THIS op are already post-paste,
+   * so the shift is applied before they are appended rather than to the whole
+   * list afterwards.
+   */
+  const recordTableFootprints = (
+    footprints: TableFootprint[],
+    shift?: PasteEffect
+  ) => {
+    if (shift) {
+      for (const footprint of tableFootprints)
+        if (shift.at <= footprint.sequenceIndex)
+          footprint.sequenceIndex += shift.blocks;
+    }
     tableFootprints.push(...footprints);
   };
   const recordAppearanceRestores = (
