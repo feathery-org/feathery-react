@@ -253,7 +253,11 @@ function DocxEditor({
   };
 
   const gateDownload = (retry: () => void): boolean =>
-    softGate(retry, 'Download Anyway', 'Saves and downloads the document as-is');
+    softGate(
+      retry,
+      'Download Anyway',
+      'Saves and downloads the document as-is'
+    );
 
   const gateSave = (retry: () => void): boolean =>
     softGate(retry, 'Save Anyway', 'Saves the document as-is');
@@ -675,7 +679,9 @@ function DocxEditor({
                   Fix these errors before signing or sending the document.
                 </div>
               )}
-              <div css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <div
+                css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}
+              >
                 <button
                   type='button'
                   onClick={() => setGateWarning(null)}
