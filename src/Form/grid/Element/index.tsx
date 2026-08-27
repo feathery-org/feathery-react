@@ -13,14 +13,7 @@ import {
 import { justRemove } from '../../../utils/array';
 import { fieldValues, initState } from '../../../utils/init';
 import { isButtonDisabled } from '../../../utils/button';
-import {
-  ACTION_CONNECT_ACCOUNT,
-  ACTION_NEXT
-} from '../../../utils/elementActions';
-import {
-  connectAccountButtonLabel,
-  connectionFieldKey
-} from '../../../integrations/connectAccount/providers';
+import { ACTION_NEXT } from '../../../utils/elementActions';
 import {
   fileFieldShouldSubmit,
   getInlineError,
@@ -169,38 +162,6 @@ const Element = ({ node: el, form }: any) => {
     if (isNum(loaderData?.repeat) && loaderData.repeat !== el.repeat)
       loaderData = null;
 
-    // "Managed by Feathery" (the builder default): the button reports the
-    // connection's status - which account is attached, or that none is yet -
-    // instead of the builder's static label. `manage_button_label: false` opts
-    // out, leaving the builder to compose their own with text variables (e.g.
-    // {{feathery.connections.box.email}}), which resolve on their own.
-    const connectAccountAction = (el.properties.actions ?? []).find(
-      (action: any) => action.type === ACTION_CONNECT_ACCOUNT
-    );
-    let buttonElement = el;
-    if (
-      connectAccountAction &&
-      connectAccountAction.manage_button_label !== false
-    ) {
-      const text = connectAccountButtonLabel(
-        connectAccountAction.provider,
-        fieldValues[connectionFieldKey(connectAccountAction.provider)] as
-          | string
-          | undefined
-      );
-      // Keep the first run's attributes: they carry the label's font styling,
-      // and a bare insert would render the managed label unstyled.
-      const [firstRun] = el.properties.text_formatted ?? [];
-      buttonElement = {
-        ...el,
-        properties: {
-          ...el.properties,
-          text,
-          text_formatted: [{ ...firstRun, insert: text }]
-        }
-      };
-    }
-
     return (
       <Elements.ButtonElement
         active={customClickSelectionState(el)}
@@ -213,7 +174,6 @@ const Element = ({ node: el, form }: any) => {
         }}
         disabled={disabled}
         {...basicProps}
-        element={buttonElement}
       />
     );
   } else if (type === 'field') {
