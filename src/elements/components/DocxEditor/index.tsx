@@ -125,10 +125,13 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   // Brief feedback shown after an explicit Save — the button otherwise gives
   // no sign of whether the document actually persisted.
-  // Binding-error prompt shown when a download hits the export gate: the same
-  // message the hard gate reports, plus a "Download Anyway" escape hatch.
-  const [downloadWarning, setDownloadWarning] = useState<{
+  // Binding-error prompt shown when Save or a download hits the export gate:
+  // the same message the hard gate reports, plus a consented escape hatch
+  // ("Save Anyway" / "Download Anyway"). Sign/send never get one.
+  const [gateWarning, setGateWarning] = useState<{
     message: string;
+    confirmLabel: string;
+    confirmTitle: string;
     proceed: () => void;
   } | null>(null);
   const [saveToast, setSaveToast] = useState<{
@@ -218,24 +221,37 @@ function DocxEditor({
   };
 
   /**
-   * Soft gate for download paths only: same check, but instead of refusing
-   * outright it offers "Download Anyway" - the flush already happened, so
-   * proceeding just means the export carries the invalid binding config.
-   * Signing/sending stays hard-gated.
+   * Soft gate for save and download paths: same check as the hard gate, but
+   * instead of refusing outright it offers an "Anyway" escape hatch - the
+   * flush already happened, so proceeding just means the persisted/exported
+   * document carries the invalid binding config. Signing/sending stays
+   * hard-gated: those are irreversible and leave the platform.
    */
-  const gateDownload = (retry: () => void): boolean => {
+  const softGate = (
+    retry: () => void,
+    confirmLabel: string,
+    confirmTitle: string
+  ): boolean => {
     const block = exportBlockMessage();
     if (block === null) return true;
     setSaveToast(null);
-    setDownloadWarning({
+    setGateWarning({
       message: block,
+      confirmLabel,
+      confirmTitle,
       proceed: () => {
-        setDownloadWarning(null);
+        setGateWarning(null);
         retry();
       }
     });
     return false;
   };
+
+  const gateDownload = (retry: () => void): boolean =>
+    softGate(retry, 'Download Anyway', 'Saves and downloads the document as-is');
+
+  const gateSave = (retry: () => void): boolean =>
+    softGate(retry, 'Save Anyway', 'Saves the document as-is');
 
   // Which editor instance the rail is showing. Derived, not state: a recreation
   // must remount the rail's boundary in the same render that swaps the editor.
@@ -296,8 +312,9 @@ function DocxEditor({
     []
   );
 
-  const handleSave = async () => {
-    if (!readyToExport()) return;
+  const handleSave = async (force = false) => {
+    if (force) bindingsState.commitForSave();
+    else if (!gateSave(() => handleSave(true))) return;
     try {
       await saveCurrentDocument(await exportDoc());
       flashSaveToast('success', 'Document saved');
@@ -445,8 +462,9 @@ function DocxEditor({
         <DocxToolbar
           editor={editor}
           // Save stays visible even alongside a terminal action so users can
-          // persist edits without committing to download/sign.
-          onSave={onSave ? handleSave : undefined}
+          // persist edits without committing to download/sign. Arrow-wrapped:
+          // handleSave takes a force flag a raw click event must not satisfy.
+          onSave={onSave ? () => handleSave() : undefined}
           // Secondary Download only when no terminal action owns downloading.
           // Arrow-wrapped: the handlers take a `force` flag, which a raw DOM
           // click event passed by onClick={fn} would truthily satisfy.
@@ -558,10 +576,10 @@ function DocxEditor({
           />
         )}
       </div>
-      {/* Binding-error download prompt: same surface styling as the save
-          toast, but interactive — it stays up until the user picks Download
-          Anyway (proceed despite invalid binding config) or Cancel. */}
-      {downloadWarning && (
+      {/* Binding-error prompt: same surface styling as the save toast, but
+          interactive — it stays up until the user picks the Anyway action
+          (proceed despite invalid binding config) or Cancel. */}
+      {gateWarning && (
         <div
           role='alertdialog'
           aria-live='assertive'
@@ -586,13 +604,13 @@ function DocxEditor({
             zIndex: 21
           }}
         >
-          <div css={{ marginBottom: 10 }}>{downloadWarning.message}</div>
+          <div css={{ marginBottom: 10 }}>{gateWarning.message}</div>
           <div
             css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}
           >
             <button
               type='button'
-              onClick={() => setDownloadWarning(null)}
+              onClick={() => setGateWarning(null)}
               css={{
                 padding: '6px 12px',
                 borderRadius: 6,
@@ -607,8 +625,8 @@ function DocxEditor({
             </button>
             <button
               type='button'
-              onClick={downloadWarning.proceed}
-              title='Saves and downloads the document as-is'
+              onClick={gateWarning.proceed}
+              title={gateWarning.confirmTitle}
               css={{
                 padding: '6px 12px',
                 borderRadius: 6,
@@ -620,7 +638,7 @@ function DocxEditor({
                 cursor: 'pointer'
               }}
             >
-              Download Anyway
+              {gateWarning.confirmLabel}
             </button>
           </div>
         </div>
