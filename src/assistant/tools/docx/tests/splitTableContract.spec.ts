@@ -450,79 +450,46 @@ describe('split_table contract - what the recomposition owes', () => {
     expect(tagsIn(doc()).sort()).toEqual(before);
   });
 
-  it('(d) wraps the whole change set in exactly ONE undo group', () => {
-    // WHAT THIS PROVES, and what it does not.
+  it('(d) CHARACTERIZATION: the change set opens NO undo group', () => {
+    // This row used to assert the opposite, and the story of why it flipped is
+    // the most useful thing in this file.
     //
-    // The property that matters to a person is "one Ctrl+Z puts it back", and
-    // that CANNOT be tested here: editorHistory.undo() throws in jsdom -
-    // "Cannot read properties of undefined (reading 'getSplitWidgets')" from
-    // inside SyncFusion's re-layout, which needs real rendering widgets. So a
-    // byte-equal-after-undo assertion in this harness would not be a strict
-    // test, it would be an impossible one, and writing it would have quietly
-    // parked the row as permanently red for the wrong reason.
+    // It asserted that the seam opened exactly ONE undo group, and its comment
+    // explained that the property people actually care about - "one Ctrl+Z puts
+    // it back" - could not be tested here, because editorHistory.undo() throws
+    // "Cannot read properties of undefined (reading 'getSplitWidgets')" in
+    // jsdom, from inside SyncFusion's re-layout, which needs real rendering
+    // widgets. That reasoning was WRONG in its second half, and the error was
+    // mine: I read a real defect signature as a harness artifact.
     //
-    // What IS checkable here is the mechanism the property rests on: the change
-    // set opens exactly one undo group and closes it, so the SDK records one
-    // entry instead of one per operation. The byte-equal half is owed by the
-    // browser proof, and is recorded as owed rather than implied.
+    // Measured in the real browser on 2026-08-27, that same throw happens with
+    // full rendering. Grouped, a split_table's 13 history entries collapse to
+    // one; undoing that one group throws in getSplitWidgets partway through
+    // replaying the inverses; the rest are abandoned; and the group has ALREADY
+    // been popped, so the history is empty and ~115K characters of damage are
+    // unreachable by any number of Ctrl+Z presses. Ungrouped, the same split
+    // undoes in 13 clean steps with no error.
+    //
+    // So the grouping wrapper was reverted from applyDocumentEdits - the seam
+    // every change set flows through, where it had been grouping every op on
+    // the evidence of one. The law: grouping is an optimisation, recoverability
+    // is correctness, and only a per-op BROWSER ledger can license it, because
+    // jsdom has no layout to throw from.
+    //
+    // This row is now a tripwire. If someone reintroduces grouping, it fails
+    // here and they read this before shipping a document nobody can undo.
     const live = open(docWith(stripedTable(5)));
     const history = (editor as any).editorHistory;
     let begins = 0;
-    let ends = 0;
     const realBegin = history.beginUndoAction.bind(history);
-    const realEnd = history.endUndoAction.bind(history);
     history.beginUndoAction = () => {
       begins++;
       return realBegin();
-    };
-    history.endUndoAction = () => {
-      ends++;
-      return realEnd();
     };
 
     const result = splitAt(live, 3, 'contract-d');
     expect(result.results[0].ok).toBe(true);
-    expect(begins).toBe(1);
-    expect(ends).toBe(1);
-  });
-
-  it('(d2) closes the undo group even when the change set FAILS', () => {
-    // The half that actually bites. A group left open silently swallows the
-    // NEXT change set, so a later undo reverts two acts at once - and the
-    // person who typed the second one never asked for the first to go.
-    const live = open(docWith(stripedTable(5)));
-    const history = (editor as any).editorHistory;
-    let begins = 0;
-    let ends = 0;
-    const realBegin = history.beginUndoAction.bind(history);
-    const realEnd = history.endUndoAction.bind(history);
-    history.beginUndoAction = () => {
-      begins++;
-      return realBegin();
-    };
-    history.endUndoAction = () => {
-      ends++;
-      return realEnd();
-    };
-
-    // A refusal, not a success: an anchor that addresses nothing.
-    const result = apply(
-      live,
-      [
-        {
-          op: 'split_table',
-          anchor: '0;9;0;0;0',
-          splitAtRow: 2,
-          targetAnchor: '0;2',
-          position: 'before',
-          group: 'g'
-        }
-      ],
-      'contract-d2'
-    );
-    expect(result.results[0].ok).toBe(false);
-    expect(begins).toBe(1);
-    expect(ends).toBe(1);
+    expect(begins).toBe(0);
   });
 
   it('(e) rejecting every revision restores the document byte-equal', () => {

@@ -413,19 +413,36 @@ describe('relocation invariants beyond the two projections', () => {
         `steps=${steps.join(',')}`
     );
 
-    // MEASURED CONTRACT - and this row has now done the job it was written for.
+    // MEASURED CHARACTERIZATION - back at 2, and the round trip is the lesson.
     //
-    // It used to assert 2, recording a defect rather than a bar: a move was one
-    // reviewable card and TWO entries on the editor's own history, so pressing
-    // Ctrl+Z once left a half-moved document, which reads as damage rather than
-    // as a partial undo. The comment said explicitly that if the recomposition
-    // ever made it 1 this test would fail and someone would read why.
+    // Act one. This asserted 2, recording a defect rather than a bar: a move is
+    // one reviewable card and TWO entries on the editor's own history, so
+    // pressing Ctrl+Z once leaves a half-moved document, which reads as damage
+    // rather than as a partial undo. The comment said that if the recomposition
+    // ever made it 1, this test would fail and someone would read why.
     //
-    // That is exactly what happened. withGroupedUndo wraps the change-set seam
-    // in beginUndoAction/endUndoAction, and the measurement is now
-    // restoredAtStep=1, steps=1:RESTORED. Asserted at 1: the defect is fixed,
-    // and if it ever becomes 2 again this fails and the regression is named
-    // instead of drifting back in silence.
-    expect(restoredAt).toBe(1);
+    // Act two. That happened. withGroupedUndo wrapped the change-set seam in
+    // beginUndoAction/endUndoAction, this row measured 1, and it was asserted at
+    // 1 as a fixed defect.
+    //
+    // Act three, and why it is 2 again. That wrapper sat on applyDocumentEdits,
+    // the seam EVERY change set flows through, so it grouped every op on the
+    // evidence of this one. Measured in the real browser on 2026-08-27, a
+    // grouped split_table is not recoverable at all: its 13 history entries
+    // collapse to one, SyncFusion's replay of that group's inverses throws in
+    // getSplitWidgets partway through the table layout, the remaining inverses
+    // are abandoned, and the group has ALREADY been popped - so the history is
+    // empty and ~115K characters of damage cannot be reached by any number of
+    // Ctrl+Z presses. Ungrouped, the same split undoes in 13 clean steps.
+    // Recoverable-in-13 beats stranded-at-1, so the wrapper was reverted from
+    // the seam and this measurement honestly returned to 2.
+    //
+    // The law that came out of it, which is why this comment is long: grouping
+    // is an optimisation, recoverability is correctness. A jsdom pass cannot
+    // license grouping, because jsdom has no layout to throw from - the proof
+    // has to be a browser ledger, per op. When someone re-lands grouping for
+    // move_section alone with that ledger, this row goes back to 1 and act four
+    // gets written here.
+    expect(restoredAt).toBe(2);
   });
 });
