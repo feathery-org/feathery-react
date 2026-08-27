@@ -289,6 +289,10 @@ describe('split_table contract - what the recomposition owes', () => {
     const result = splitAt(live, 3, 'contract-a');
     expect(result.results[0].ok).toBe(true);
 
+    // Judged after accept, like the banding row: what matters is the document
+    // the reader ends up with, not the pending view.
+    editor.revisions.acceptAll();
+
     const blocks = blocksOf();
     const tableIndexes = blocks
       .map((b: any, i: number) => (isTable(b) ? i : -1))
