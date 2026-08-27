@@ -14814,14 +14814,23 @@ function planBindingRoutedOp(
  */
 function collectOpExtras(
   extras: OpSuccessExtras | void,
-  record: (restores: AppearanceRestore[]) => void
+  record: (restores: AppearanceRestore[]) => void,
+  recordFootprints?: (footprints: TableFootprint[]) => void
 ): Partial<EditResult> {
   if (!extras) return {};
   const appearanceWrite = extras.appearanceWrite;
+  const footprints = extras.tableFootprints;
   const rest = { ...extras };
+  // Every engine-internal key is deleted here, and the deletions are the ONLY
+  // thing standing between an internal receipt and the model's result: `rest`
+  // is spread wholesale, so a new field added to OpSuccessExtras reaches the
+  // model unless it is named below. tableFootprints did exactly that when it
+  // was introduced - a split's result came back carrying them.
   delete rest.appearanceWrite;
   delete rest.postWriteSfdt;
+  delete rest.tableFootprints;
   if (appearanceWrite) record(appearanceWrite.restores);
+  if (footprints?.length) recordFootprints?.(footprints);
   return {
     ...rest,
     ...(appearanceWrite ? { appearance: appearanceWrite.report } : {})
@@ -19550,6 +19559,23 @@ function applyDocumentEditsMeasured(
   // sibling group's. Every appearance write in this change set goes through
   // `recordAppearanceRestores`, so neither collection can miss one.
   const appearanceRestoresByGroup = new Map<string, AppearanceRestore[]>();
+  /**
+   * Every table this change set touched, in edit order.
+   *
+   * Collected the same way appearance restores are - engine-internal, never
+   * returned to the model. Nothing consumes it yet; the appearance finalizer
+   * does, resolving each footprint by tableId or maintained anchor and
+   * asserting its fingerprint before writing anything.
+   *
+   * Edit ORDER is the load-bearing property: several footprints can name the
+   * same table in one change set, because a later op legitimately edits a table
+   * an earlier op touched, and the finalizer keeps the LAST record per resolved
+   * table. Pushing in order is what makes "last" mean "most recent".
+   */
+  const tableFootprints: TableFootprint[] = [];
+  const recordTableFootprints = (footprints: TableFootprint[]) => {
+    tableFootprints.push(...footprints);
+  };
   const recordAppearanceRestores = (
     op: EditOp,
     restores: AppearanceRestore[]
@@ -20783,8 +20809,10 @@ function applyDocumentEditsMeasured(
             op: op.op,
             anchor: target.anchor,
             ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
-            ...collectOpExtras(extras, (restores) =>
-              recordAppearanceRestores(op, restores)
+            ...collectOpExtras(
+              extras,
+              (restores) => recordAppearanceRestores(op, restores),
+              (footprints) => recordTableFootprints(footprints)
             ),
             ...(composedDisagreements.has(index)
               ? {
