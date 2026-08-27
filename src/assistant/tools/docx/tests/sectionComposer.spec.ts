@@ -614,11 +614,22 @@ describe('insert_section deterministic composer', () => {
             return new Proxy(liveEditor, {
               get(inner, method, innerReceiver) {
                 const value = Reflect.get(inner, method, innerReceiver);
-                if (method === 'insertTable')
+                // Fail the Nth TABLE CREATED, whichever primitive creates it.
+                // A table arrives either from `insertTable` or from a `paste`
+                // whose payload carries one; aiming the injection at a single
+                // primitive silently stopped injecting anything the moment the
+                // other one was used, and the test then passed by never
+                // failing at all.
+                if (method === 'insertTable' || method === 'paste')
                   return (...args: any[]) => {
-                    insertedTables++;
-                    if (insertedTables === 2)
-                      throw new Error('injected second-table failure');
+                    const createsTable =
+                      method === 'insertTable' ||
+                      /"(rows|r)":\s*\[/.test(String(args[0] ?? ''));
+                    if (createsTable) {
+                      insertedTables++;
+                      if (insertedTables === 2)
+                        throw new Error('injected second-table failure');
+                    }
                     return value.apply(inner, args);
                   };
                 return typeof value === 'function' ? value.bind(inner) : value;
@@ -1101,11 +1112,22 @@ describe('insert_section deterministic composer', () => {
             return new Proxy(liveEditor, {
               get(inner, method, innerReceiver) {
                 const value = Reflect.get(inner, method, innerReceiver);
-                if (method === 'insertTable')
+                // Fail the Nth TABLE CREATED, whichever primitive creates it.
+                // A table arrives either from `insertTable` or from a `paste`
+                // whose payload carries one; aiming the injection at a single
+                // primitive silently stopped injecting anything the moment the
+                // other one was used, and the test then passed by never
+                // failing at all.
+                if (method === 'insertTable' || method === 'paste')
                   return (...args: any[]) => {
-                    insertedTables++;
-                    if (insertedTables === 6)
-                      throw new Error('injected sixth-table failure');
+                    const createsTable =
+                      method === 'insertTable' ||
+                      /"(rows|r)":\s*\[/.test(String(args[0] ?? ''));
+                    if (createsTable) {
+                      insertedTables++;
+                      if (insertedTables === 6)
+                        throw new Error('injected sixth-table failure');
+                    }
                     return value.apply(inner, args);
                   };
                 return typeof value === 'function' ? value.bind(inner) : value;
