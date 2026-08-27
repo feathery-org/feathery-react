@@ -192,7 +192,7 @@ export type { LiveEditor } from '../../../utils/documentEditorPrimitives';
 
 export const FULL_INVENTORY_BLOCK_LIMIT = 800;
 export const SELECTION_TEXT_LIMIT = 500;
-const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
+export const ASSISTANT_DOCUMENT_AUTHOR = 'Robin';
 
 // ---------------------------------------------------------------------------
 // Public types

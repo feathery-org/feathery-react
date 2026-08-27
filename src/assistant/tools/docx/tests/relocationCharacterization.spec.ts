@@ -41,7 +41,8 @@ import {
   applyDocumentEdits,
   flattenSfdt,
   LiveEditor,
-  rejectProjectionStream
+  rejectProjectionStream,
+  ASSISTANT_DOCUMENT_AUTHOR
 } from '../syncfusionDocumentOps';
 import { corpusShapes, readShape } from './corpusShapes';
 
@@ -226,5 +227,184 @@ describe('relocation family, characterized before the slice moves it', () => {
           (shape.local ? ' (local-only shape)' : '')
       );
     });
+  });
+});
+
+/**
+ * The invariants a relocation must hold that the two projections do NOT cover.
+ *
+ * Accept and reject compare what a person READS. These four compare what a
+ * person OWNS: whose changes these are, whether the parts of the document
+ * nobody named were left alone, and whether the edit is one thing to undo.
+ * Each is stated so a recomposition either holds it or visibly does not.
+ *
+ * Recorded now, before behaviour moves, for the same reason as the projections:
+ * a parity claim can only be made against something measured beforehand.
+ */
+describe('relocation invariants beyond the two projections', () => {
+  let editor: DocumentEditor;
+  afterEach(() => {
+    if (!editor) return;
+    const element = editor.element;
+    editor.destroy();
+    element?.remove();
+  });
+
+  const open = (sfdt: any) => {
+    const host = document.createElement('div');
+    host.style.width = '900px';
+    host.style.height = '700px';
+    document.body.appendChild(host);
+    editor = new DocumentEditor({
+      isReadOnly: false,
+      enableEditor: true,
+      enableSelection: true,
+      enableSfdtExport: true,
+      enableEditorHistory: true,
+      enableSearch: true,
+      documentEditorSettings: { optimizeSfdt: false }
+    });
+    editor.appendTo(host);
+    editor.open(JSON.stringify(sfdt));
+    return editor as unknown as LiveEditor;
+  };
+
+  /** Every story's text, not the body's - headers and footers included. */
+  const allStoriesText = (sfdt: any): string => {
+    let text = '';
+    const walk = (node: any) => {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      if (typeof node.text === 'string') text += node.text;
+      Object.values(node).forEach(walk);
+    };
+    walk(sfdt);
+    return text;
+  };
+
+  const authorsOf = (sfdt: any): string[] => [
+    ...new Set(
+      (sfdt.revisions ?? sfdt.r ?? [])
+        .map((revision: any) => String(revision.author ?? ''))
+        .filter(Boolean)
+    )
+  ];
+
+  // A shape with two headings AND a header story, so a move has somewhere to
+  // come from and something it must leave alone.
+  const shape = corpusShapes().find((s) => s.name === 'headers-footers')
+    ?? corpusShapes().find((s) => s.name === 'headings-bound')
+    ?? corpusShapes()[0];
+
+  const moveTheLastSection = () => {
+    const blocks = flattenSfdt(JSON.parse(editor.serialize())) as any[];
+    const headings = blocks.filter((b) => b.isHeading).map((b) => b.anchor);
+    if (headings.length < 2) return null;
+    return applyDocumentEdits(editor as unknown as LiveEditor, {
+      changeSetId: 'invariants-move',
+      edits: [
+        {
+          op: 'move_section',
+          anchor: headings[headings.length - 1],
+          targetAnchor: headings[0],
+          position: 'before',
+          group: 'g'
+        } as any
+      ]
+    }) as any;
+  };
+
+  it('(a) authors every revision it creates as the assistant, and re-authors nobody', () => {
+    const sfdt = readShape(shape);
+    open(sfdt);
+    const authorsBefore = authorsOf(JSON.parse(editor.serialize()));
+    const result = moveTheLastSection();
+    if (!result) return;
+    const after = JSON.parse(editor.serialize());
+    const authorsAfter = authorsOf(after);
+
+    // Anyone who had revisions before still has them: a relocation folds what it
+    // moves into its own card, and re-authoring someone else's pending edit
+    // would make our reject revert their work.
+    for (const author of authorsBefore) expect(authorsAfter).toContain(author);
+    // And any NEW author is us.
+    const added = authorsAfter.filter((a) => !authorsBefore.includes(a));
+    for (const author of added) expect(author).toBe(ASSISTANT_DOCUMENT_AUTHOR);
+  });
+
+  it('(b) leaves every OTHER story byte-unchanged, headers and footers included', () => {
+    // "Outside the declared range" has to mean the whole document, not the body.
+    // A body-only reading is exactly how raw DSL came to be printing in client
+    // headers for several releases.
+    const sfdt = readShape(shape);
+    open(sfdt);
+    const before = JSON.parse(editor.serialize());
+    const headerFooterBefore = JSON.stringify(
+      (before.sections ?? before.sec ?? []).map(
+        (s: any) => s.headersFooters ?? s.hf ?? null
+      )
+    );
+    const result = moveTheLastSection();
+    if (!result) return;
+    const after = JSON.parse(editor.serialize());
+    const headerFooterAfter = JSON.stringify(
+      (after.sections ?? after.sec ?? []).map(
+        (s: any) => s.headersFooters ?? s.hf ?? null
+      )
+    );
+    expect(headerFooterAfter).toBe(headerFooterBefore);
+  });
+
+  it('(c) takes TWO undo steps to restore - one card, two history entries', () => {
+    // A person who presses Ctrl+Z once expects the whole relocation back, not
+    // half of it. This is distinct from rejecting the revision group - undo is
+    // the editor's own history, and the two are separate mechanisms that must
+    // agree about what one edit was.
+    const sfdt = readShape(shape);
+    open(sfdt);
+    const beforeText = allStoriesText(JSON.parse(editor.serialize()));
+    const result = moveTheLastSection();
+    if (!result || !result.results?.[0]?.ok) return;
+    const movedText = allStoriesText(JSON.parse(editor.serialize()));
+    expect(movedText).not.toBe(beforeText);
+
+    // How many steps does it actually take? Measured rather than assumed: I got
+    // the undo story wrong once already by reading one field, so the question
+    // that would disprove "one step" is asked directly.
+    const steps: string[] = [];
+    let restoredAt = -1;
+    for (let step = 1; step <= 8; step++) {
+      try {
+        (editor as any).editorHistory.undo();
+      } catch (error: any) {
+        steps.push(`${step}:threw`);
+        break;
+      }
+      const text = allStoriesText(JSON.parse(editor.serialize()));
+      steps.push(`${step}:${text === beforeText ? 'RESTORED' : 'no'}`);
+      if (text === beforeText) {
+        restoredAt = step;
+        break;
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[invariant c] shape=${shape.name} restoredAtStep=${restoredAt} ` +
+        `steps=${steps.join(',')}`
+    );
+
+    // MEASURED CONTRACT, and it is a defect recorded rather than a bar met.
+    //
+    // It takes TWO undos. A move is one reviewable card in the revision group
+    // and TWO entries on the editor's own history, so a person who presses
+    // Ctrl+Z once is left with a half-moved document - which reads as damage,
+    // not as a partial undo.
+    //
+    // Asserted at 2 rather than 1 because this file characterizes what IS. If
+    // the recomposition makes it 1 this fails and someone reads why, which is
+    // the improvement being noticed; if it becomes 3 it fails too. Either way
+    // the number stops moving silently. The defect itself is filed separately.
+    expect(restoredAt).toBe(2);
   });
 });
