@@ -5955,6 +5955,43 @@ interface AnchoredOpContext<K extends AnchoredDocumentOp> {
 }
 
 /**
+ * Where a table was, and how to know it is still the same table later.
+ *
+ * A finalizer runs after the LAST edit, but the anchors it must write to have
+ * moved by then - a split inserts a table and a separating paragraph, so every
+ * anchor after the cut shifts. Position alone is therefore not an identity, and
+ * writing striping to whatever now sits at a remembered position is how a
+ * relocation comes to edit the wrong table. Measured on the bound relocation
+ * route: `move_section` already fails that way, reporting `relocation_source_lost`
+ * and writing anyway, duplicating nine binding tags in a document it reported
+ * untouched.
+ *
+ * So a footprint carries three things, and the law is one sentence: the runner
+ * MAINTAINS these anchors - every later structural edit knows its own shift, and
+ * that shift is applied to every previously recorded footprint, the same way a
+ * relocation re-derives its own range today.
+ *
+ * At finalize, resolve by `tableId` when there is one, else by the maintained
+ * anchor; ASSERT the fingerprint still matches; and on a mismatch SKIP that
+ * table with a loud error rather than writing to a guess. The verify step is
+ * what makes a maintained position safe where a raw position was not.
+ *
+ * DEDUPE: several footprints can resolve to the same table in one change set -
+ * a split, then a cell write into the copy. The later edit legitimately changed
+ * the content the earlier fingerprint recorded, so finalize keeps the LATEST
+ * record in edit order per resolved table. Without that, an ordinary follow-up
+ * edit would make the finalizer skip a table it was supposed to stripe.
+ */
+interface TableFootprint {
+  /** The table's anchor as of the moment the recording handler finished. */
+  anchor: string;
+  /** The bound table's id, when it has one. Identity wins over position. */
+  tableId?: string;
+  /** `rangeIdentity` of the table's blocks at record time. */
+  fingerprint: string;
+}
+
+/**
  * Extra success payload a handler may attach to its ok result (receipts and
  * structured computation reports). Most handlers return nothing.
  */
@@ -5985,6 +6022,14 @@ interface OpSuccessExtras {
   appearanceWrite?: AppearanceWriteOutcome;
   /** Fresh post-write snapshot reused by the executor's integrity checks. */
   postWriteSfdt?: any;
+  /**
+   * The tables this op touched, for the change-set finalizer.
+   *
+   * Engine-internal, exactly like `appearanceWrite`'s `restores` half: the
+   * executor collects these and the model never sees them. A handler that
+   * touches no table returns nothing, so most handlers are unaffected.
+   */
+  tableFootprints?: TableFootprint[];
 }
 
 type AnchoredOpHandler<K extends AnchoredDocumentOp> = (
@@ -7396,6 +7441,39 @@ function rangeIdentity(blocks: FlatBlock[]): string {
   const texts = blocks.map((block) => block.text);
   while (texts.length > 1 && texts[texts.length - 1] === '') texts.pop();
   return texts.join('\r');
+}
+
+/**
+ * A footprint for the table at `tableAnchor`, as it stands in `sfdt`.
+ *
+ * The fingerprint is `rangeIdentity` rather than a new hash, deliberately: it is
+ * already the identity `assertPastedTableMatches` trusts to prove a pasted table
+ * is the right one before deleting rows out of it, and a second identity
+ * function would be a second answer to the same question.
+ *
+ * Returns null when the anchor does not resolve to a table, so a caller can
+ * record nothing rather than record a lie.
+ */
+function captureTableFootprint(
+  sfdt: any,
+  tableAnchor: string,
+  tableId?: string
+): TableFootprint | null {
+  try {
+    if (!collectTableAppearance(tableBlockAt(sfdt, tableAnchor))) return null;
+    const range = resolveTableRange(flattenSfdt(sfdt), tableAnchor);
+    if (!range?.blocks?.length) return null;
+    return {
+      anchor: tableAnchor,
+      ...(tableId ? { tableId } : {}),
+      fingerprint: rangeIdentity(range.blocks)
+    };
+  } catch {
+    // A footprint is a receipt, never a gate. If the table cannot be read here
+    // the finalizer simply has nothing recorded for it, which is a missed
+    // restripe - not a failed change set.
+    return null;
+  }
 }
 
 /** A resolved, contiguous run of blocks - one section unit, at one moment. */
@@ -9535,6 +9613,18 @@ export const ANCHORED_OP_HANDLERS: {
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
     restripeSplitCopy(editor, copyAnchor, appearance, plan.headerRows);
+
+    // Both tables this op touched, recorded AFTER the last write so each anchor
+    // and fingerprint describes the table as it now stands. Nothing consumes
+    // these yet - the finalizer does, once it exists - but recording them here
+    // is what lets it find these two tables again after later edits in the same
+    // change set have shifted everything around them.
+    const finalSfdt = serializeSfdt(editor);
+    const tableFootprints = [
+      captureTableFootprint(finalSfdt, moved.anchor),
+      captureTableFootprint(finalSfdt, copyAnchor)
+    ].filter((footprint): footprint is TableFootprint => !!footprint);
+    return tableFootprints.length ? { tableFootprints } : undefined;
   },
   duplicate_table: ({ editor, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
