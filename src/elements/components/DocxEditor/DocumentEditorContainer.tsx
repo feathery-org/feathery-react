@@ -61,9 +61,18 @@ function resolveTargetAction(containerId?: string): {
 interface Envelope {
   id: string;
   file: string | null;
+  // Control-bearing docx copy for the editor; `file` is the stripped public
+  // copy. Null/absent for non-docx envelopes and control-free docx.
+  editor_file?: string | null;
   document?: string;
   type: string;
   signed: boolean;
+}
+
+// The editor must open the control-bearing copy when the envelope has one;
+// legacy and control-free envelopes only have the public `file`.
+function envelopeSourceUrl(envelope?: Envelope | null): string | undefined {
+  return envelope?.editor_file ?? envelope?.file ?? undefined;
 }
 
 interface RefreshEventDetail {
@@ -172,8 +181,8 @@ export default function DocumentEditorContainer({
   const [envelope, setEnvelope] = useState<Envelope | null>(
     () => getGeneratedEnvelope(pendingDraft, documentId) ?? null
   );
-  const [sourceUrl, setSourceUrl] = useState<string | undefined>(
-    () => getGeneratedEnvelope(pendingDraft, documentId)?.file ?? undefined
+  const [sourceUrl, setSourceUrl] = useState<string | undefined>(() =>
+    envelopeSourceUrl(getGeneratedEnvelope(pendingDraft, documentId))
   );
   const [loading, setLoading] = useState(!envelope);
   const [error, setError] = useState<string | null>(null);
@@ -210,7 +219,7 @@ export default function DocumentEditorContainer({
       const env = await client.getCurrentEnvelope(documentId);
       const nextEnvelope = env && env.id ? (env as Envelope) : null;
       setEnvelope(nextEnvelope);
-      setSourceUrl(nextEnvelope?.file ?? undefined);
+      setSourceUrl(envelopeSourceUrl(nextEnvelope));
       setError(null);
     } catch (e: any) {
       console.error('Feathery: failed to load current envelope', e);
@@ -231,7 +240,7 @@ export default function DocumentEditorContainer({
     );
     if (pendingEnvelope?.id) {
       setEnvelope(pendingEnvelope);
-      setSourceUrl(pendingEnvelope.file ?? undefined);
+      setSourceUrl(envelopeSourceUrl(pendingEnvelope));
       setLoading(false);
       return;
     }
@@ -253,7 +262,7 @@ export default function DocumentEditorContainer({
       const generatedEnvelope = getGeneratedEnvelope(detail, documentId);
       if (generatedEnvelope?.id) {
         setEnvelope(generatedEnvelope);
-        setSourceUrl(generatedEnvelope.file ?? undefined);
+        setSourceUrl(envelopeSourceUrl(generatedEnvelope));
         setError(null);
         setLoading(false);
         setReloadKey((k) => k + 1);
@@ -313,7 +322,11 @@ export default function DocumentEditorContainer({
       if (updated?.file) {
         setEnvelope((current) =>
           current?.id === envelope.id
-            ? { ...current, file: updated.file }
+            ? {
+                ...current,
+                file: updated.file,
+                editor_file: updated.editor_file ?? null
+              }
             : current
         );
       }
@@ -342,8 +355,7 @@ export default function DocumentEditorContainer({
   );
 
   // Only the signing actions run here; 'download' is handled inside DocxEditor,
-  // which downloads the just-saved bytes rather than re-fetching a cache-stale
-  // envelope URL.
+  // which saves first and then serves the envelope's public (stripped) copy.
   const runSigningAction = useCallback(
     async (draft: boolean) => {
       if (!envelope) return;
@@ -561,6 +573,9 @@ export default function DocumentEditorContainer({
       // Save-to-field flow: the document's destination is a form field (set
       // on every save), not the user's machine — no Download button.
       hideDownload={savesToField}
+      // Downloads serve the stripped public copy, never the editor bytes —
+      // content controls must not leave the platform.
+      downloadUrl={envelope.file}
       bindings={{
         enabled: bindingsEnabled,
         onFieldValues: (values) => {

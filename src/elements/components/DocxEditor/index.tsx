@@ -13,6 +13,15 @@ export { RailErrorBoundary } from './RailErrorBoundary';
 
 type ActivePanel = PanelTab | null;
 
+/** What a host's onSave may resolve with. `file` is the public copy of the
+ *  saved document (content controls stripped server-side) — the only bytes
+ *  downloads are allowed to serve. */
+export interface DocxSaveResult {
+  file?: string | null;
+  editor_file?: string | null;
+  [key: string]: unknown;
+}
+
 export interface DocxEditorProps {
   /** Document to open. `buffer` when the host already fetched the bytes (e.g.
    *  an authenticated download); `url` for the component to fetch directly. */
@@ -34,6 +43,10 @@ export interface DocxEditorProps {
   visible?: boolean;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
+  /** URL of the document's public copy (content controls stripped). When set,
+   *  Download saves current edits, then serves this copy (or the fresher one
+   *  from the save result) — never the raw editor bytes. */
+  downloadUrl?: string | null;
   /** Returns the current document as PDF bytes (converted by the host, e.g.
    *  the Feathery backend). When provided, Download becomes a DOCX/PDF menu.
    *  Current edits are saved via `onSave` before this is called. */
@@ -57,7 +70,9 @@ export interface DocxEditorProps {
   onError?: (error: string) => void;
   /** Persistence boundary: receives the exported .docx. The host decides where
    *  it goes (the component never persists on its own). */
-  onSave?: (blob: Blob) => unknown | Promise<unknown>;
+  onSave?: (
+    blob: Blob
+  ) => DocxSaveResult | void | Promise<DocxSaveResult | void>;
   /** Opt-in document bindings: [[...]] tokens become live fields and formulas
    *  that recalculate as the document is edited. Omitting it changes nothing. */
   bindings?: DocxBindingsConfig;
@@ -89,6 +104,7 @@ function DocxEditor({
   reviewChanges = false,
   visible = true,
   hideDownload,
+  downloadUrl,
   onExportPdf,
   terminalAction,
   onTerminalAction,
@@ -216,7 +232,7 @@ function DocxEditor({
     if (!onSave) return;
     setSaving(true);
     try {
-      const result = await onSave(blob);
+      const result = (await onSave(blob)) as DocxSaveResult | undefined;
       dirtyRef.current = false;
       setDirty(false);
       onChange?.(false);
@@ -256,15 +272,30 @@ function DocxEditor({
     }
   };
 
+  // Re-fetch the saved public copy for download. no-store because saves reuse
+  // the same object key, so the HTTP cache could otherwise serve stale bytes.
+  const fetchDownloadBlob = async (url: string) => {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Could not download the document');
+    return await res.blob();
+  };
+
   const handleDownload = async () => {
     if (!readyToExport()) return;
     try {
-      // Write the current edits to the envelope BEFORE downloading, then hand
-      // back the exact bytes we exported — never a re-fetched (and possibly
-      // cache-stale) file URL.
+      // Save current edits first, then serve the host's public copy — content
+      // controls are stripped server-side on save, so the raw editor bytes
+      // must never be what the user walks away with.
       const blob = await exportDoc();
-      if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
-      triggerDownload(blob);
+      const saveResult =
+        onSave && dirtyRef.current
+          ? await saveCurrentDocument(blob)
+          : undefined;
+      const url = saveResult?.file ?? downloadUrl;
+      // No public copy exists for standalone hosts — their exported bytes are
+      // the only source.
+      if (url) triggerDownload(await fetchDownloadBlob(url));
+      else triggerDownload(blob);
     } catch (err) {
       onError?.((err as Error).message || String(err));
     }
@@ -314,9 +345,12 @@ function DocxEditor({
   const handleTerminalAction = () =>
     saveThenRun(async (blob, saveResult) => {
       if (terminalAction === 'download') {
-        // Download the just-saved bytes directly (avoids the stale-URL issue
-        // of re-fetching an overwritten envelope file).
-        triggerDownload(blob);
+        // Serve the public copy, same as the toolbar Download — the editor
+        // bytes carry content controls that must not leave the platform.
+        const url =
+          (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
+        if (url) triggerDownload(await fetchDownloadBlob(url));
+        else triggerDownload(blob);
       } else {
         await onTerminalAction?.(saveResult);
       }

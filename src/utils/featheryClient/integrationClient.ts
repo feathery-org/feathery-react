@@ -670,8 +670,9 @@ export default class IntegrationClient {
   }
 
   // Replace a generated envelope's file with an edited version, e.g. from the
-  // in-form document editor. Returns { id, file, updated_at } with a fresh
-  // signed file URL.
+  // in-form document editor. Returns { id, file, editor_file, updated_at }
+  // with fresh signed URLs: `file` is the public copy (content controls
+  // stripped server-side), `editor_file` the control-bearing editor copy.
   saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
     const { userId } = initInfo();
     const formData = new FormData();
@@ -750,7 +751,8 @@ export default class IntegrationClient {
   }
 
   // The newest envelope for this submission + document, loaded by the in-form
-  // document editor container. Returns {id, file, type, signed} or {}.
+  // document editor container. Returns {id, file, editor_file, type, signed}
+  // or {} — the editor opens editor_file (controls intact) when present.
   getCurrentEnvelope(documentId: string) {
     const { userId } = initInfo();
     const params = encodeGetParams({
