@@ -413,38 +413,41 @@ describe('split_table contract - what the recomposition owes', () => {
     expect(bodyAlternates(createdBands)).toBe(true);
   });
 
-  it('(c) splits a BOUND table, conserving every binding tag', () => {
-    // The capability this slice buys back. Today this is refused outright.
+  // JSDOM-ONLY CHARACTERIZATION - NOT retirement evidence, and not a capability
+  // claim. Read this before touching the bindings guard.
+  //
+  // Conservation genuinely holds in this harness, which is why the row is not
+  // inverted: it states something true about jsdom. What it is NOT is evidence
+  // about the product. Measured in a real browser on 2026-08-27, on the very
+  // build this branch produces: splitting the bound costs table reported
+  // success and destroyed TEN OF ELEVEN binding tags on ACCEPT, leaving only
+  // "[[table=costs]]" - identical to the pre-fix engine.
+  //
+  // I retired assertTableHasNoBindings on the strength of this row passing, and
+  // that was wrong. The guard is restored. The capability's acceptance lives in
+  // the browser evidence table, where it is currently FAILING.
+  //
+  // The cause is the same one diagnosed for the travelling bookmark: SyncFusion's
+  // paste drops IDENTIFIED ELEMENTS - content controls and bookmarks alike - and
+  // the originals then die with the tracked-deleted source rows on accept. jsdom's
+  // paste preserves them, so this harness structurally cannot see the failure.
+  it('(c) JSDOM ONLY: a bound split conserves tags in this harness - the browser disagrees', () => {
+    // Kept because it pins the harness behaviour and would catch a jsdom-side
+    // regression. It must never again be read as licence to retire the guard.
     const live = open(docWith(boundStripedTable()));
+    const beforeSerialized = editor.serialize();
     const before = tagsIn(doc()).sort();
     expect(before.length).toBe(3);
 
+    // The guard is RESTORED, so a bound split is refused - in this harness and in
+    // the browser alike. What this row records now is that the refusal writes
+    // NOTHING, which is the property that actually protects the document.
     const result = splitAt(live, 2, 'contract-c');
-    expect(result.results[0].ok).toBe(true);
-
-    // Judged after ACCEPT, because that is where binding damage has landed
-    // every time we have seen it: the pending view kept all eleven tags on the
-    // HILB document and ten of them died on accept.
-    editor.revisions.acceptAll();
-    const after = tagsIn(doc()).sort();
-
-    // Conserved: same tags, same count, none destroyed and none invented.
-    expect(after).toEqual(before);
-
-    // IDENTITY, which tag conservation alone does not prove. A split RELOCATES
-    // rows; it does not copy them. So each binding must still appear EXACTLY
-    // ONCE - a duplicate would mean the extracted rows were cloned into a second
-    // identity while the originals survived, which is how one value silently
-    // becomes two that drift apart.
-    const counts = new Map<string, number>();
-    for (const tag of after) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-    expect([...counts.values()].every((n) => n === 1)).toBe(true);
-
-    // And the rows carry their own row identity across the move rather than
-    // being renumbered into the copy's positions - a formula that referenced
-    // r-2 must still find r-2.
-    expect(after.filter((t) => /row=r-2/.test(t))).toHaveLength(1);
-    expect(after.filter((t) => /row=r-3/.test(t))).toHaveLength(1);
+    expect(result.results[0].ok).toBe(false);
+    expect(result.results[0].error).toBe('structural_op_would_destroy_bindings');
+    expect(editor.serialize()).toBe(beforeSerialized);
+    // Every tag still present, because nothing was written.
+    expect(tagsIn(doc()).sort()).toEqual(before);
   });
 
   it('(d) wraps the whole change set in exactly ONE undo group', () => {
