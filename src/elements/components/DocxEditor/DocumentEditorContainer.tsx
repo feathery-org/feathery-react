@@ -298,7 +298,7 @@ export default function DocumentEditorContainer({
   const readOnly = !!envelope?.signed || !!actionReadOnly || finalized;
   // The outcomes this container offers, read from `editor_toolbar_actions` —
   // the same key the overlay editor uses. See containerToolbarOutcomes.
-  const { terminalAction, offersDraft, savesToField } =
+  const { terminalAction, offersDraft, offersDownload, savesToField } =
     containerToolbarOutcomes(targetAction ?? {});
   const reviewChanges = !!assistantEnabled && !readOnly;
 
@@ -570,9 +570,10 @@ export default function DocumentEditorContainer({
       // Without this a failed send is swallowed: DocxEditor routes terminal
       // errors here and there is nothing else listening.
       onError={setError}
-      // Save-to-field flow: the document's destination is a form field (set
-      // on every save), not the user's machine — no Download button.
-      hideDownload={savesToField}
+      // Download shows only when the toolbar config offers it, and never in
+      // the save-to-field flow: there the document's destination is a form
+      // field (set on every save), not the user's machine.
+      hideDownload={savesToField || !offersDownload}
       // Downloads serve the stripped public copy, never the editor bytes —
       // content controls must not leave the platform.
       downloadUrl={envelope.file}

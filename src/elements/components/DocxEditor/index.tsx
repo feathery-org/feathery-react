@@ -126,14 +126,14 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   // Brief feedback shown after an explicit Save — the button otherwise gives
   // no sign of whether the document actually persisted.
-  // Binding-error prompt shown when Save or a download hits the export gate:
-  // the same message the hard gate reports, plus a consented escape hatch
-  // ("Save Anyway" / "Download Anyway"). Sign/send never get one.
+  // Binding-error modal shown when an action hits the export gate. Save and
+  // download offer a consented escape hatch ("Save Anyway" / "Download
+  // Anyway"); sign/send show it without one — informational, Close only.
   const [gateWarning, setGateWarning] = useState<{
     message: string;
-    confirmLabel: string;
-    confirmTitle: string;
-    proceed: () => void;
+    confirmLabel?: string;
+    confirmTitle?: string;
+    proceed?: () => void;
   } | null>(null);
   const [saveToast, setSaveToast] = useState<{
     type: 'success' | 'error';
@@ -209,15 +209,16 @@ function DocxEditor({
   };
 
   /**
-   * Hard gate for save/sign/send: refuse to export a document the engine
-   * considers wrong - an invalid number or an ambiguous edit would otherwise be
-   * persisted as if it were fine. Reported through onError so the host surfaces
-   * it the same way it surfaces every other editor failure.
+   * Hard gate for sign/send: refuse to export a document the engine considers
+   * wrong - an invalid number or an ambiguous edit would otherwise be signed
+   * as if it were fine. Shows the binding-error modal with no escape hatch:
+   * these outcomes are irreversible, so there is no "Sign Anyway".
    */
   const readyToExport = (): boolean => {
     const block = exportBlockMessage();
     if (block === null) return true;
-    onError?.(block);
+    setSaveToast(null);
+    setGateWarning({ message: block });
     return false;
   };
 
@@ -466,14 +467,17 @@ function DocxEditor({
           // persist edits without committing to download/sign. Arrow-wrapped:
           // handleSave takes a force flag a raw click event must not satisfy.
           onSave={onSave ? () => handleSave() : undefined}
-          // Secondary Download only when no terminal action owns downloading.
-          // Arrow-wrapped: the handlers take a `force` flag, which a raw DOM
-          // click event passed by onClick={fn} would truthily satisfy.
+          // Secondary Download hides only when the terminal button IS the
+          // download (one Download, not two) — beside Sign/Draft it stays, so
+          // configuring Sign + Download shows both. Arrow-wrapped: the handlers
+          // take a `force` flag a raw DOM click event would truthily satisfy.
           onDownload={
-            hideDownload || terminalAction ? undefined : () => handleDownload()
+            hideDownload || terminalAction === 'download'
+              ? undefined
+              : () => handleDownload()
           }
           onDownloadPdf={
-            hideDownload || terminalAction || !onExportPdf
+            hideDownload || terminalAction === 'download' || !onExportPdf
               ? undefined
               : () => handleDownloadPdf()
           }
@@ -650,9 +654,19 @@ function DocxEditor({
                 </span>
                 Document has binding errors
               </div>
-              <div css={{ marginBottom: 18, color: '#3f3f46' }}>
+              <div
+                css={{
+                  marginBottom: gateWarning.proceed ? 18 : 8,
+                  color: '#3f3f46'
+                }}
+              >
                 {gateWarning.message}
               </div>
+              {!gateWarning.proceed && (
+                <div css={{ marginBottom: 18, color: '#71717a', fontSize: 13 }}>
+                  Fix these errors before signing or sending the document.
+                </div>
+              )}
               <div css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button
                   type='button'
@@ -667,25 +681,27 @@ function DocxEditor({
                     cursor: 'pointer'
                   }}
                 >
-                  Cancel
+                  {gateWarning.proceed ? 'Cancel' : 'Close'}
                 </button>
-                <button
-                  type='button'
-                  onClick={gateWarning.proceed}
-                  title={gateWarning.confirmTitle}
-                  css={{
-                    padding: '8px 14px',
-                    borderRadius: 6,
-                    border: '1px solid transparent',
-                    background: FEATHERY_RED,
-                    color: '#fff',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {gateWarning.confirmLabel}
-                </button>
+                {gateWarning.proceed && (
+                  <button
+                    type='button'
+                    onClick={gateWarning.proceed}
+                    title={gateWarning.confirmTitle}
+                    css={{
+                      padding: '8px 14px',
+                      borderRadius: 6,
+                      border: '1px solid transparent',
+                      background: FEATHERY_RED,
+                      color: '#fff',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {gateWarning.confirmLabel}
+                  </button>
+                )}
               </div>
             </div>
           </div>,
