@@ -629,6 +629,9 @@ export const unstyledButton: CSSProperties = {
   background: 'none',
   border: 'none',
   borderRadius: 0,
+  // Buttons are border-box in the UA stylesheet but a plain div is content-box.
+  // Components that want border-box already declare it themselves.
+  boxSizing: 'content-box',
   padding: 0,
   margin: 0,
   color: 'inherit',
