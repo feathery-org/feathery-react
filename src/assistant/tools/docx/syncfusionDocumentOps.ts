@@ -4072,43 +4072,6 @@ function offsetParts(offset: string): { anchor: string; offset: number } {
 // to this synchronous transaction: user selection methods are restored before
 // control returns to the host, and the exact viewport is retained as a final
 // safety boundary.
-/**
- * Make one change set ONE undo step.
- *
- * A change set is one act to the person who asked for it - "split this table",
- * "replace that phrase" - but several operations to the SDK, and SyncFusion
- * records an undo entry per operation. So Ctrl+Z after a split undid a fragment
- * of it and left the document in a state nobody asked for and nobody can name:
- * half-split, with no single further keystroke that gets back to either side.
- *
- * beginUndoAction/endUndoAction collapse everything between them into a single
- * entry. The close is in `finally` because an op that throws still has to close
- * the group - a change set that failed and rolled back must not leave the
- * history open, or the NEXT change set silently joins this one and a later undo
- * reverts both.
- *
- * Absent editorHistory is tolerated rather than asserted: the module is
- * injected by the host, and a document opened without it should still accept
- * writes - it simply has no undo to group. Losing grouping is a degraded
- * experience; refusing the write would be a broken one.
- */
-function withGroupedUndo<T>(editor: LiveEditor, operation: () => T): T {
-  const history = (editor as any).editorHistory;
-  if (typeof history?.beginUndoAction !== 'function') return operation();
-  history.beginUndoAction();
-  try {
-    return operation();
-  } finally {
-    try {
-      history.endUndoAction();
-    } catch {
-      // Closing the group must never mask the operation's own outcome: if the
-      // body threw, that error is what the caller needs to see, not a
-      // secondary failure from the history bookkeeping.
-    }
-  }
-}
-
 function withSilentEditSelections<T>(
   editor: LiveEditor,
   operation: () => T
@@ -19287,18 +19250,27 @@ export function applyDocumentEdits(
   ed[ASSISTANT_WRITING_KEY] = true;
   const serializationTiming: SerializationTiming = { count: 0, totalMs: 0 };
   try {
+    // Deliberately NOT wrapped in a grouped undo action. Grouping is an
+    // optimisation; recoverability is correctness. Measured in the real browser
+    // on 2026-08-27: grouping a split_table change set collapses its 13 undo
+    // entries into one, and SyncFusion's replay of that group's inverses throws
+    // in getSplitWidgets partway through the table layout. The throw abandons
+    // the remaining inverses AND the group has already been popped, so the
+    // history is empty and ~115K characters of damage are unreachable by any
+    // number of Ctrl+Z presses. Ungrouped, the same split undoes in 13 clean
+    // steps with no error. Before reintroducing grouping, prove per-op IN THE
+    // BROWSER that the grouped replay does not throw - a passing jsdom test
+    // cannot establish it, because jsdom has no layout to throw from.
     return withSilentEditSelections(editor, () =>
-      withGroupedUndo(editor, () =>
-        withSerializationTiming(editor, serializationTiming, () => {
-          const expansion = expandSectionComposerEdits(editor, input);
-          const result = applyDocumentEditsMeasured(
-            editor,
-            { ...input, edits: expansion.edits },
-            serializationTiming
-          );
-          return collapseSectionComposerResult(result, expansion);
-        })
-      )
+      withSerializationTiming(editor, serializationTiming, () => {
+        const expansion = expandSectionComposerEdits(editor, input);
+        const result = applyDocumentEditsMeasured(
+          editor,
+          { ...input, edits: expansion.edits },
+          serializationTiming
+        );
+        return collapseSectionComposerResult(result, expansion);
+      })
     );
   } finally {
     // Synchronous clear: the session flag owns the gaps between calls.
