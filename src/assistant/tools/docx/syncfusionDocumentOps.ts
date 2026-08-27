@@ -8992,6 +8992,40 @@ function refuseBreakInsideTable(op: string, block: FlatBlock): void {
   );
 }
 
+/**
+ * Re-lay the SOURCE's banding over the copy a split produced.
+ *
+ * The copy carries its rows' own fills, which were correct at the position those
+ * rows used to occupy and are wrong at the position they now occupy: extracting
+ * from a shaded row opens the new table on a stripe. Measured - a split at row 2
+ * of an alternating table produced a copy reading stripe, unshaded, stripe,
+ * unshaded where it should read unshaded first.
+ *
+ * The pattern is detected from the SOURCE, not from the copy. Detecting it from
+ * the copy would read the phase the copy accidentally has and re-apply the very
+ * error being corrected.
+ *
+ * Only the copy is re-laid. The source keeps a PREFIX of its own rows for a
+ * splitAtRow, and a prefix of a correct alternation is still correct - so
+ * touching it would be a write with nothing to fix. `rows` extraction can leave
+ * the source a non-prefix subset, which is a different case and is not claimed
+ * here.
+ *
+ * A table with no detectable banding is left alone: there is no pattern to
+ * restore, and inventing one would impose a style the document never had.
+ */
+function restripeSplitCopy(
+  editor: LiveEditor,
+  copyAnchor: string,
+  sourceAppearance: TableAppearance
+): void {
+  const banding = detectTableBanding(sourceAppearance);
+  if (!banding) return;
+  const current = liveTableAppearance(editor, copyAnchor);
+  if (!current) return;
+  applyBandingRows(editor, copyAnchor, current, banding, 0);
+}
+
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
@@ -9418,7 +9452,7 @@ export const ANCHORED_OP_HANDLERS: {
     // still read back and checked, because `ok: true` from a paste only means the
     // paste did not throw. If the new table is not there reading what it should,
     // this fails and the group rolls back.
-    assertPastedTableMatches(
+    const copyAnchor = assertPastedTableMatches(
       pastedSfdt,
       paste,
       source,
@@ -9436,6 +9470,7 @@ export const ANCHORED_OP_HANDLERS: {
     // so the order is not load-bearing, but it keeps the invariant visible.
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
+    restripeSplitCopy(editor, copyAnchor, appearance);
   },
   duplicate_table: ({ editor, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());

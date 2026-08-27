@@ -167,12 +167,24 @@ const blocksOf = () => {
 const isTable = (b: any) => !!(b?.rows ?? b?.r);
 const tablesIn = () => blocksOf().filter(isTable);
 
-/** The shading of each row's first cell, which is what a reader sees as banding. */
+/**
+ * The shading of each row's first cell, which is what a reader sees as banding.
+ *
+ * "empty" and an ABSENT shading key are the same thing on the page: both render
+ * unshaded. A document that never carried a fill omits the key; one the engine
+ * has explicitly cleared says "empty". Treating those as different made a
+ * correctly re-banded table read as wrong - the same trap the border-colour fix
+ * records, where an unstated border colour and an explicit #000000 both render
+ * black. Normalised here so this test measures what the page shows rather than
+ * which of two encodings the document happens to use.
+ */
+const UNSHADED = 'none';
 const bandsOf = (table: any): string[] =>
   (table.rows ?? table.r).map((r: any) => {
     const c = (r.cells ?? r.c)[0] ?? {};
     const f = c.cellFormat ?? c.cf ?? {};
-    return String(f.shading?.backgroundColor ?? f.shd?.bgc ?? 'none');
+    const raw = String(f.shading?.backgroundColor ?? f.shd?.bgc ?? UNSHADED);
+    return raw === 'empty' ? UNSHADED : raw;
   });
 
 const tagsIn = (node: any): string[] => {
@@ -303,11 +315,20 @@ describe('split_table contract - what the recomposition owes', () => {
   });
 
   it('(b) restarts banding on the new table and re-derives it on the original', () => {
-    // Five body rows, split after 3: the original keeps an ODD 3, and the new
-    // table starts on a row that carried the stripe. Both halves have to be
-    // re-derived, not inherited.
+    // THE SPLIT POINT IS THE TEST. Body rows alternate unshaded, stripe,
+    // unshaded, stripe, unshaded. Splitting after row 3 extracts rows 3-5,
+    // whose first row is ALREADY unshaded - so inherited bands and re-derived
+    // bands look identical and the row proves nothing. That is how this test
+    // passed before it was fixed, and it is exactly the vacuity the captain
+    // warned about: "split after row 3 does not test restriping".
+    //
+    // Splitting after row 2 extracts rows 2-5, whose first row CARRIES THE
+    // STRIPE. Inherited, the new table opens on a shaded row; re-derived, it
+    // opens unshaded. Only this split point can tell the two apart. The
+    // original is left with an odd body count, so its own alternation has to
+    // hold too.
     const live = open(docWith(stripedTable(5)));
-    const result = splitAt(live, 3, 'contract-b');
+    const result = splitAt(live, 2, 'contract-b');
     expect(result.results[0].ok).toBe(true);
 
     // MEASURED AFTER ACCEPT, and that is the whole point of this row. While the
@@ -327,7 +348,7 @@ describe('split_table contract - what the recomposition owes', () => {
 
     // Body alternation starts unshaded on both, and alternates from there.
     const bodyAlternates = (bands: string[]) =>
-      bands.slice(1).every((b, i) => (i % 2 === 0 ? b === 'none' : b === STRIPE));
+      bands.slice(1).every((b, i) => (i % 2 === 0 ? b === UNSHADED : b === STRIPE));
     expect(bodyAlternates(originalBands)).toBe(true);
     expect(bodyAlternates(createdBands)).toBe(true);
   });

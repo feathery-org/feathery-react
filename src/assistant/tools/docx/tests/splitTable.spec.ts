@@ -407,11 +407,22 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
     }
   });
 
-  it('every surviving row keeps the appearance facts it had before the split', () => {
+  it('every surviving row keeps its identity and header-ness; only banding is re-derived', () => {
     const editor = makeEditor(scheduleFixture());
     try {
-      // The property, computed from the fixture: whatever each row looked like
-      // before, it looks like that afterwards - in whichever table it landed.
+      // This used to assert that a row looked EXACTLY as it did before, in
+      // whichever table it landed. That cannot hold alongside the requirement
+      // that the new table restarts its banding (the captain, 2026-08-27:
+      // split tables must not be "just attached to each other", and the new
+      // table must read as a table in its own right rather than continuing the
+      // parent's stripe parity). A row extracted from a shaded position becomes
+      // the copy's FIRST body row, and a first body row is unshaded.
+      //
+      // So the property is narrowed, not dropped: identity and header-ness are
+      // preserved for every row, per-cell highlights are preserved, and ROW
+      // BANDING is re-derived in the copy by design. Measured: exactly one row
+      // changes here - "Property|Acme", from #E6E6E6 to unshaded, because it
+      // leads the new table.
       const before = factsByRowText(editor);
       apply(
         editor,
@@ -429,10 +440,20 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
       editor.revisions.acceptAll();
       const after = factsByRowText(editor);
       expect(after.size).toBe(before.size);
+      let rebanded = 0;
       for (const [text, facts] of before.entries()) {
         expect(after.has(text)).toBe(true);
-        expect(after.get(text)).toEqual(facts);
+        const now = after.get(text);
+        // Identity and header-ness are never touched by a split.
+        expect(now.isHeader).toBe(facts.isHeader);
+        // A deliberate per-cell highlight is not banding and must survive.
+        expect(now.cellShading).toEqual(facts.cellShading);
+        if (now.shading !== facts.shading) rebanded++;
       }
+      // Re-banding is surgical, not a repaint: exactly the row that now leads
+      // the new table changes. If this ever grows, the split has started
+      // rewriting appearance it has no business touching.
+      expect(rebanded).toBe(1);
     } finally {
       destroyEditor(editor);
     }
