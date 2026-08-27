@@ -7,6 +7,7 @@ import { isFit } from '../../utils/hydration';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import ErrorInput from '../components/ErrorInput';
+import { managedConnectAccountElement } from '../../integrations/connectAccount/providers';
 
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
@@ -198,6 +199,13 @@ function ButtonElement({
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
 
+  // A Feathery-managed Connect Account label is computed, so it replaces the
+  // builder's label on the canvas too - and can't be edited in place there.
+  const managedElement = managedConnectAccountElement(element);
+  const labelElement = managedElement ?? element;
+  const labelEditMode =
+    managedElement && editMode === 'editable' ? 'disabled' : editMode;
+
   const buttonDisabled = !editMode && (noActions || loader || disabled);
 
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -268,12 +276,12 @@ function ButtonElement({
               }}
             />
           )}
-          {element.properties.text && (
+          {labelElement.properties.text && (
             <TextNodes
-              element={element}
+              element={labelElement}
               responsiveStyles={responsiveStyles}
               cssTarget='buttonLabel'
-              editMode={editMode}
+              editMode={labelEditMode}
               disabled={disabled}
               focused={focused}
               textCallbacks={textCallbacks}

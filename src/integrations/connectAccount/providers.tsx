@@ -1,5 +1,7 @@
 import React from 'react';
 import BoxFolderPicker from './BoxFolderPicker';
+import { fieldValues } from '../../utils/init';
+import { ACTION_CONNECT_ACCOUNT } from '../../utils/elementActions';
 
 // The modal shell remounts the config component (via a `key` keyed on
 // accountEmail) whenever the connected account changes, so any state a
@@ -58,4 +60,39 @@ export const connectAccountButtonLabel = (
   const label = PROVIDER_LABELS[provider] ?? provider;
   if (!connectionValue) return `Connect your ${label} account`;
   return hasEmailIdentity(provider) ? connectionValue : `${label} connected`;
+};
+
+/**
+ * "Managed by Feathery" (the builder default): the button reports the
+ * connection's status - which account is attached, or that none is yet -
+ * instead of the builder's static label. `manage_button_label: false` opts out,
+ * leaving the builder to compose their own with text variables (e.g.
+ * {{feathery.connections.box.email}}), which resolve on their own.
+ *
+ * Returns a copy of the element carrying the managed label, or null when the
+ * button's label isn't managed. Lives here rather than in the form runtime so
+ * the builder canvas previews the same label a form renders - with no field
+ * values there, that's the disconnected prompt.
+ */
+export const managedConnectAccountElement = (element: any) => {
+  const action = (element.properties?.actions ?? []).find(
+    (a: any) => a.type === ACTION_CONNECT_ACCOUNT
+  );
+  if (!action || action.manage_button_label === false) return null;
+
+  const text = connectAccountButtonLabel(
+    action.provider,
+    fieldValues[connectionFieldKey(action.provider)] as string | undefined
+  );
+  // Keep the first run's attributes: they carry the label's font styling, and
+  // a bare insert would render the managed label unstyled.
+  const [firstRun] = element.properties.text_formatted ?? [];
+  return {
+    ...element,
+    properties: {
+      ...element.properties,
+      text,
+      text_formatted: [{ ...firstRun, insert: text }]
+    }
+  };
 };
