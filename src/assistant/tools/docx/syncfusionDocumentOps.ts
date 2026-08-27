@@ -1192,7 +1192,8 @@ function resolveAnchoredNode(sfdt: any, anchor: string): any {
   let block: any = entry.block;
   if (!block) return undefined;
   if (parts.length >= 5) {
-    const rows = getRows(block) ?? getRows(getBlocks(block).find((b: any) => getRows(b)));
+    const rows =
+      getRows(block) ?? getRows(getBlocks(block).find((b: any) => getRows(b)));
     const row = rows?.[Number(parts[2])];
     const cells = pick(row, 'cells', 'c');
     const cell = Array.isArray(cells) ? cells[Number(parts[3])] : undefined;
@@ -1345,8 +1346,7 @@ function structuralRevisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
       : undefined;
     const table = entry?.block;
     const rows = table
-      ? getRows(table) ??
-        getRows(getBlocks(table).find((b: any) => getRows(b)))
+      ? getRows(table) ?? getRows(getBlocks(table).find((b: any) => getRows(b)))
       : undefined;
     add(rowRevisionIds(rows?.[Number(parts[2])]));
   }
@@ -1462,7 +1462,11 @@ function assertNoForeignPendingRevisions(
   if (!touched.length) return;
   throw new OpError(
     'pending_revision_in_range',
-    `${op.op} would overwrite text at "${block.anchor}" that carries ${touched.length} pending tracked change${touched.length === 1 ? '' : 's'} made before this edit. Rewriting it re-authors that change as the assistant's, so accepting or rejecting it later would no longer do what its author intended. Nothing was written.`,
+    `${op.op} would overwrite text at "${block.anchor}" that carries ${
+      touched.length
+    } pending tracked change${
+      touched.length === 1 ? '' : 's'
+    } made before this edit. Rewriting it re-authors that change as the assistant's, so accepting or rejecting it later would no longer do what its author intended. Nothing was written.`,
     [
       `anchor: ${block.anchor}`,
       `pending revisions in range: ${touched.join(', ')}`,
@@ -7882,7 +7886,9 @@ function assertTableHasNoBindings(
     'structural_op_would_destroy_bindings',
     `${opName} cannot restructure the table at ${JSON.stringify(
       tableAnchor
-    )}: its cells carry ${bound.length} binding${bound.length === 1 ? '' : 's'}, and the selection this op uses would delete their content controls outright. That destroys the binding rather than moving it, and rejecting the change cannot bring it back. Nothing was written.`,
+    )}: its cells carry ${bound.length} binding${
+      bound.length === 1 ? '' : 's'
+    }, and the selection this op uses would delete their content controls outright. That destroys the binding rather than moving it, and rejecting the change cannot bring it back. Nothing was written.`,
     [
       `table: ${tableAnchor}`,
       `bound cells: ${bound.map((candidate) => candidate.anchor).join(', ')}`,
@@ -8515,7 +8521,9 @@ function describeTableMerges(tableBlock: any): string | null {
     parts.push(`rows ${row}..${row + span - 1} are vertically merged`);
   if (gridSpans)
     parts.push(
-      `${gridSpans} cell${gridSpans === 1 ? ' spans' : 's span'} more than one column`
+      `${gridSpans} cell${
+        gridSpans === 1 ? ' spans' : 's span'
+      } more than one column`
     );
   return parts.join('; ');
 }
@@ -8927,14 +8935,10 @@ export const ANCHORED_OP_HANDLERS: {
       ? block.text.indexOf(find)
       : liveText.indexOf(find);
     if (idx < 0)
-      throw new OpError(
-        'text_not_found',
-        `"${find}" not found at anchor.`,
-        [
-          `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
-          'Copy `find` from the block\'s CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set.'
-        ]
-      );
+      throw new OpError('text_not_found', `"${find}" not found at anchor.`, [
+        `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
+        "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set."
+      ]);
     // Only the matched substring is overwritten, so only revisions touching it
     // matter. When offsets are untrusted the index came from a different
     // projection than the one revisionRangesOf walks, so the range would be
@@ -9022,14 +9026,10 @@ export const ANCHORED_OP_HANDLERS: {
     if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
     const idx = liveText.indexOf(find);
     if (idx < 0)
-      throw new OpError(
-        'text_not_found',
-        `"${find}" not found at anchor.`,
-        [
-          `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
-          'Copy `find` from the block\'s CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set.'
-        ]
-      );
+      throw new OpError('text_not_found', `"${find}" not found at anchor.`, [
+        `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
+        "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set."
+      ]);
     // Same narrowing as replace_text: only the matched substring is removed, so
     // only revisions touching it matter. selectRange below uses exactly these
     // offsets, so the guard and the write agree on what "the range" is.
@@ -19759,9 +19759,15 @@ function applyDocumentEditsMeasured(
         op: name,
         anchor: op.anchor,
         error: 'text_not_found',
-        message: `${JSON.stringify(String(op.find))} is not present at "${op.anchor}", so there is nothing to ${name === 'delete_text' ? 'delete' : 'replace'}. Nothing was written.`,
+        message: `${JSON.stringify(String(op.find))} is not present at "${
+          op.anchor
+        }", so there is nothing to ${
+          name === 'delete_text' ? 'delete' : 'replace'
+        }. Nothing was written.`,
         details: [
-          `live text at ${op.anchor}: ${JSON.stringify(simulatedTargetText ?? target.text)}`,
+          `live text at ${op.anchor}: ${JSON.stringify(
+            simulatedTargetText ?? target.text
+          )}`,
           "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor was already edited in this change set."
         ]
       };
