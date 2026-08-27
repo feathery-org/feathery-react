@@ -4779,7 +4779,7 @@ export function rejectProjectionStream(sfdt: any): string {
 // inspection can establish either: a write that inserts the replacement beside
 // an untouched target creates a perfectly rejectable Insertion and leaves the
 // document reading "Innovation LearningInnovation Learning LLC".
-function acceptProjectionStream(sfdt: any): string {
+export function acceptProjectionStream(sfdt: any): string {
   return revisionProjectionStream(sfdt, deletedRevisionIds(sfdt));
 }
 
