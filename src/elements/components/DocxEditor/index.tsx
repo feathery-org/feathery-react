@@ -144,6 +144,9 @@ function DocxEditor({
   );
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  // Debounces the DOCX download: a double-click must not race two exports
+  // and two PATCH saves of the same bytes.
+  const [downloading, setDownloading] = useState(false);
   // The single right-rail slot shows at most one panel, toggled from the
   // toolbar's two buttons (Changes / Sections).
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
@@ -335,8 +338,10 @@ function DocxEditor({
   };
 
   const handleDownload = async (force = false) => {
+    if (downloading) return;
     if (force) bindingsState.commitForSave();
     else if (!gateDownload(() => handleDownload(true))) return;
+    setDownloading(true);
     try {
       // Save current edits first, then serve the host's public copy — content
       // controls are stripped server-side on save, so the raw editor bytes
@@ -353,11 +358,13 @@ function DocxEditor({
       else triggerDownload(blob);
     } catch (err) {
       onError?.((err as Error).message || String(err));
+    } finally {
+      setDownloading(false);
     }
   };
 
   const handleDownloadPdf = async (force = false) => {
-    if (!onExportPdf) return;
+    if (!onExportPdf || exportingPdf) return;
     if (force) bindingsState.commitForSave();
     else if (!gateDownload(() => handleDownloadPdf(true))) return;
     setExportingPdf(true);
@@ -382,6 +389,7 @@ function DocxEditor({
     // sign/send stay hard-gated. The flush still runs so typed edits commit.
     bypassGate = false
   ) => {
+    if (terminalRunning) return;
     if (bypassGate) bindingsState.commitForSave();
     // Gated here rather than per-handler: this is the single funnel every
     // terminal action goes through, so a document the binding engine considers
@@ -481,7 +489,7 @@ function DocxEditor({
               ? undefined
               : () => handleDownloadPdf()
           }
-          downloadBusy={exportingPdf}
+          downloadBusy={exportingPdf || downloading}
           terminalAction={terminalAction}
           onTerminalAction={
             onTerminalAction ? () => handleTerminalAction() : undefined
