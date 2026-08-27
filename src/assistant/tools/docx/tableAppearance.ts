@@ -239,9 +239,24 @@ function readBorder(raw: any): BorderFacts | undefined {
   };
 }
 
+// An unstated border colour is not "no colour" - it renders black, which is
+// exactly what an explicit #000000 renders as. Whether a given document happens
+// to spell the default out is a serialization detail, so the two must compare
+// equal or an appearance that landed correctly reads as a mismatch. Normalized
+// here rather than in readColor, because that reader also supplies the values
+// written back, and writing the default out explicitly would state something
+// the document never carried.
+const AUTO_BORDER_COLOR = '#000000';
+const borderColorOf = (border: BorderFacts): string =>
+  border.color ?? AUTO_BORDER_COLOR;
+
 function sameBorder(a?: BorderFacts, b?: BorderFacts): boolean {
   if (!a || !b) return !a && !b;
-  return a.style === b.style && a.width === b.width && a.color === b.color;
+  return (
+    a.style === b.style &&
+    a.width === b.width &&
+    borderColorOf(a) === borderColorOf(b)
+  );
 }
 
 function readBorders(
