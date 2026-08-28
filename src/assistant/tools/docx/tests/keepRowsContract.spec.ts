@@ -268,3 +268,84 @@ describe('duplicate_table keepRows', () => {
     expect(itemsOf(editor, 'costs')).toEqual(['Development']);
   });
 });
+
+/**
+ * What insert_row does against an ITEMLESS bound table.
+ *
+ * Not a corner case: "move ALL the items into a new table" leaves the SOURCE
+ * itemless, so this state is reachable by an ordinary request. An itemless
+ * bound table has no prototype data row, and insert_row patterns a new row on
+ * one - so this measures whether the absence is handled or merely unencountered.
+ *
+ * The rule being applied is the same one that governed the anchor-shifting
+ * lift: the admitted set must equal the proven set. If this behaves sanely the
+ * evidence is recorded; if it corrupts or throws raw, that is a refusal to add
+ * rather than a surprise to leave in place.
+ */
+describe('insert_row against an itemless bound table', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+
+  beforeEach(() => {
+    editor = makeEditor();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+  });
+
+  it('either inserts a usable row or refuses by name, never corrupting', () => {
+    // Make an itemless copy, then aim insert_row at it.
+    expect(duplicateKeeping(editor, []).results[0].ok).toBe(true);
+    const copyId = copyIdOf(editor);
+    expect(copyId).toBeTruthy();
+    expect(itemsOf(editor, copyId as string)).toEqual([]);
+
+    const before = editor.serialize();
+    const rowsBefore = physicalRows(editor, copyId as string);
+
+    let threw: string | null = null;
+    let result: any = null;
+    try {
+      result = applyDocumentEdits(editor as unknown as LiveEditor, {
+        edits: [
+          {
+            op: 'insert_row',
+            anchor: cellAt(editor, copyId as string, 1),
+            count: 1
+          } as any
+        ]
+      });
+    } catch (err) {
+      threw = String((err as Error)?.message ?? err);
+    }
+
+    const outcome = {
+      threwRaw: threw,
+      code: result?.results?.[0]?.ok ? null : result?.results?.[0]?.error ?? null,
+      ok: result?.results?.[0]?.ok ?? false,
+      rowsBefore,
+      rowsAfter: physicalRows(editor, copyId as string),
+      pristine: editor.serialize() === before
+    };
+    // eslint-disable-next-line no-console
+    console.info('ITEMLESS insert_row:', JSON.stringify(outcome, null, 2));
+
+    // An UNCAUGHT throw is never acceptable: the engine's contract is that a
+    // refusal is a named result, not an exception escaping to the caller.
+    expect(outcome.threwRaw).toBeNull();
+
+    if (outcome.ok) {
+      // Sane: a row really was added.
+      expect(outcome.rowsAfter).toBeGreaterThan(outcome.rowsBefore);
+    } else {
+      // Refused: by name, and with nothing written.
+      expect(outcome.code).not.toBeNull();
+      expect(outcome.pristine).toBe(true);
+    }
+  });
+});
