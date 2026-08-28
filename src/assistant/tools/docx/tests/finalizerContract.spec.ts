@@ -270,6 +270,97 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
     expect(editor.revisions.length).toBe(0);
     expect(editor.serialize()).toBe(before);
   });
+
+  it('(c) BLOCKER FIX: a row inserted by an EARLIER change set is not free to colour', () => {
+    // The escape hatch says "this set inserted it, so this set's reject removes
+    // it, so nothing needs restoring". That reasoning only holds for THIS set.
+    //
+    // A row tracked-inserted by an earlier, still-unaccepted change set is
+    // tracked-inserted too - and this set's reject leaves it exactly where it
+    // is. Colouring a keyless cell there is precisely the irreversible write the
+    // decline exists to prevent, and it is reachable on any review document that
+    // already carries pending insertions, which is most of them.
+    //
+    // Scoping the free-to-write set to this change set's own insertions is the
+    // fix; this row is its proof.
+    const PRIOR = 'prior-set-insertion';
+    const doc: any = docWith(stripedTable(7));
+    const table = doc.sections[0].blocks[1];
+    // Body row 3 is UNSHADED in the fixture, so it is keyless - the only kind
+    // of cell whose colouring cannot be undone.
+    const priorRow = table.rows[3];
+    priorRow.rowFormat = { revisionIds: [PRIOR] };
+    for (const cell of priorRow.cells)
+      for (const block of cell.blocks)
+        for (const inline of block.inlines ?? [])
+          inline.characterFormat = { revisionIds: [PRIOR] };
+    doc.revisions = [
+      {
+        // OUR OWN earlier change set, not a foreign author's. A foreign pending
+        // revision is refused outright by the guard slice 1 added, so it could
+        // never reach the finalizer - which makes our own unaccepted work the
+        // reachable case, and the one that matters: this set's reject does not
+        // remove the previous set's insertions either.
+        author: 'Robin',
+        date: '2026-08-20T09:00:00Z',
+        revisionType: 'Insertion',
+        revisionId: PRIOR
+      }
+    ];
+
+    const live = open(doc);
+    const before = editor.serialize();
+
+    // NEGATIVE CONTROL: the row really does qualify document-wide, which is what
+    // made the old scoping wrong. If it did not, this row would prove nothing.
+    expect(before).toContain(PRIOR);
+
+    const result = applyDocumentEdits(live, {
+      changeSetId: 'finalizer-c',
+      edits: [
+        { op: 'delete_row', anchor: '0;1;2;0;0', group: 'g' } as any,
+        {
+          op: 'split_table',
+          anchor: '0;1;0;0;0',
+          splitAtRow: 6,
+          targetAnchor: '0;2',
+          position: 'before',
+          group: 'g'
+        } as any
+      ]
+    }) as any;
+    expect(result.results.every((r: any) => r.ok)).toBe(true);
+
+    // It DECLINED, out loud, rather than colouring somebody else's pending row.
+    expect(
+      (result.warnings ?? []).some((w: string) => /left unbanded/.test(w))
+    ).toBe(true);
+
+    // Reject ONLY this change set's groups. Rejecting every group would also
+    // reject the earlier set's pending insertion and delete its row, which is
+    // not what a person clicking reject on THIS card does - and it would make
+    // the byte comparison fail for a reason that has nothing to do with
+    // appearance. Found the honest way: the first version rejected everything
+    // and the diff pointed at content, not shading.
+    const groups = listRevisionGroups(editor as any).filter(
+      (group: any) => group.changeSetId === 'finalizer-c'
+    );
+    expect(groups.length).toBeGreaterThan(0);
+    resolveLiveRevisionGroupsAsOneUndo(editor as any, groups, false);
+    const after = editor.serialize();
+    if (after !== before) {
+      let i = 0;
+      while (i < before.length && before[i] === after[i]) i++;
+      // eslint-disable-next-line no-console
+      console.log(
+        `DIFF at ${i}\n  before: ${before.slice(
+          Math.max(0, i - 60),
+          i + 90
+        )}\n  after:  ${after.slice(Math.max(0, i - 60), i + 90)}`
+      );
+    }
+    expect(after).toBe(before);
+  });
 });
 
 /**
