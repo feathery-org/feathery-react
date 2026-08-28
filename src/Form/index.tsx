@@ -159,6 +159,7 @@ import {
   ACTION_AI_EXTRACTION,
   ACTION_ALLOY_VERIFY_ID,
   ACTION_BACK,
+  ACTION_BOX_SEND_FILES,
   ACTION_CONNECT_ACCOUNT,
   ACTION_GENERATE_ENVELOPES,
   ACTION_GENERATE_QUIK_DOCUMENTS,
@@ -236,6 +237,7 @@ import {
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
 import { createSchwabContact } from '../integrations/schwab';
+import { sendBoxFiles } from '../integrations/box';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
 import { SharedCodeInfo } from './definitions';
@@ -545,6 +547,32 @@ function Form({
       });
     }
     if (fileEntries.length) await client.submitFiles(fileEntries);
+  };
+
+  // Box reads this fuser's stored file rows, so every file field must be
+  // persisted first — the triggering button's "Validate & Submit Step" toggle
+  // may be off (submitPromise is a no-op then) and a normal step submit only
+  // covers the active step. Re-submitting an already-uploaded file is a safe,
+  // deduped no-op (see submitExtractionFiles above). Returns how many file
+  // fields had a value, so callers can skip the network call when there's
+  // nothing to send.
+  const submitAllUploadedFiles = async () => {
+    const fileEntries: { servar: any; stepKey: string }[] = [];
+    for (const step of Object.values(steps) as any[]) {
+      for (const { servar } of step?.servar_fields ?? []) {
+        if (
+          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
+        )
+          continue;
+        if (isFieldValueEmpty(fieldValues[servar.key], servar)) continue;
+        fileEntries.push({
+          servar: { key: servar.key, [servar.type]: fieldValues[servar.key] },
+          stepKey: step.key
+        });
+      }
+    }
+    if (fileEntries.length) await client.submitFiles(fileEntries);
+    return fileEntries.length;
   };
 
   // Collects file/signature fields that are still waiting to upload.
@@ -2770,6 +2798,20 @@ function Form({
         await Promise.all([submitPromise, client.flushCustomFields()]);
         await createSchwabContact(client, setElementError);
         break;
+      } else if (type === ACTION_BOX_SEND_FILES) {
+        await Promise.all([submitPromise, client.flushCustomFields()]);
+        let fileCount = 0;
+        try {
+          fileCount = await submitAllUploadedFiles();
+        } catch (e: any) {
+          setElementError(
+            e?.message || 'Your files could not be uploaded. Please try again.'
+          );
+          break;
+        }
+        // Nothing uploaded yet: this button may sit on a step where files are
+        // optional, so fall through to the next action rather than erroring.
+        if (fileCount && !(await sendBoxFiles(client, setElementError))) break;
       } else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
         await openPlaidLink(
