@@ -368,6 +368,50 @@ describe('an assistant edit stays reviewable', () => {
   });
 });
 
+describe('the native path guards on APIs that exist', () => {
+  // The antidote to a whole defect class. `insert-table` guarded on
+  // `selection.collapseToEnd`, which does not exist on this SDK - so the guard
+  // was permanently false, the branch never ran, and the failure was SILENT:
+  // it fell through to a reopen that looked like success. A guard on a
+  // nonexistent method is indistinguishable from a guard on an unmet
+  // precondition unless something asserts the method is really there.
+  //
+  // This row fails with "method missing" the moment an SDK upgrade, or a new
+  // guard written from documentation rather than from the bundle, reintroduces
+  // a phantom. It is deliberately about EXISTENCE, not behaviour - the rows
+  // above cover behaviour.
+  it.each([
+    ['selection.select', (e: any) => e.selection?.select],
+    ['selection.selectContentControl', (e: any) => e.selection?.selectContentControl],
+    ['selection.endOffset', (e: any) => e.selection && 'endOffset' in e.selection],
+    ['editorModule.paste', (e: any) => e.editorModule?.paste],
+    ['editorModule.delete', (e: any) => e.editorModule?.delete],
+    ['editorModule.deleteRow', (e: any) => e.editorModule?.deleteRow],
+    ['editorModule.insertRow', (e: any) => e.editorModule?.insertRow],
+    ['editorModule.insertContentControl', (e: any) => e.editorModule?.insertContentControl],
+    ['editorModule.updateContentControl', (e: any) => e.editorModule?.updateContentControl]
+  ])('the native structural path depends on %s, and it exists', (_name, read) => {
+    const harness = openHarness();
+    try {
+      expect(read(harness.editor as any)).toBeTruthy();
+    } finally {
+      closeHarness(harness);
+    }
+  });
+
+  it('does NOT depend on collapseToEnd, which never existed here', () => {
+    const harness = openHarness();
+    try {
+      // Pinned as the specific phantom that cost us this defect. If a future
+      // SDK adds it, this row fails and someone re-reads the history above
+      // before reaching for it again.
+      expect((harness.editor as any).selection?.collapseToEnd).toBeUndefined();
+    } finally {
+      closeHarness(harness);
+    }
+  });
+});
+
 describe('a failed assistant edit is honest about it', () => {
   it('raises native-mutation-failed rather than silently replacing the document', () => {
     const harness = openHarness();

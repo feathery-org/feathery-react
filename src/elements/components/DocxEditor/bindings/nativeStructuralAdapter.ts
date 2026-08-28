@@ -187,7 +187,10 @@ export function applyNativeStructuralMutations(
         const [sectionIndex, blockIndex] = end.split(';');
         const nextBlock = Number(blockIndex) + 1;
         if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
-        selection.select(`${sectionIndex};${nextBlock};0`, `${sectionIndex};${nextBlock};0`);
+        selection.select(
+          `${sectionIndex};${nextBlock};0`,
+          `${sectionIndex};${nextBlock};0`
+        );
         module.paste(
           JSON.stringify({
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]
