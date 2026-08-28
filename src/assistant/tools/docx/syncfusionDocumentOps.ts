@@ -11664,6 +11664,38 @@ function applyPlannedRowHeaders(
 }
 
 /**
+ * EVERY revision id anywhere inside a node - rows, cells, blocks, inlines,
+ * character formats, paragraph marks, row formats.
+ *
+ * One owner on purpose. Three separate guards have now been written against a
+ * PARTIAL view of where revision ids live, and each time the gap was the same
+ * shape: a location nobody listed. A guard reading only `rowFormat` cannot see
+ * a prior change set that edited cell TEXT, because that lands on the inline's
+ * own ids - so the guard passes and the write proceeds into a path already
+ * known to be unsafe.
+ *
+ * A deep walk cannot be wrong by omission, which a hand-kept list of locations
+ * always can.
+ */
+function collectRevisionIdsDeep(
+  node: any,
+  out = new Set<string>()
+): Set<string> {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    node.forEach((entry) => collectRevisionIdsDeep(entry, out));
+    return out;
+  }
+  for (const key of ['revisionIds', 'rids']) {
+    const ids = node[key];
+    if (Array.isArray(ids))
+      for (const id of ids) if (typeof id === 'string' && id) out.add(id);
+  }
+  for (const value of Object.values(node)) collectRevisionIdsDeep(value, out);
+  return out;
+}
+
+/**
  * One appearance pass per change set, after the last edit.
  *
  * Banding used to be settled inside the split handler, which is wrong twice: a
@@ -11776,13 +11808,9 @@ function finalizeTableAppearance(
     // table is left alone, loudly and counted, until the shared defect is fixed:
     // `docx-appearance-restore-prior-revisions`. The reversibility law stays
     // absolute and the capability narrows honestly.
-    const tableCarriesPriorPendingWork = rows.some((row: any) => {
-      const ids = rowRevisionIds(row);
-      const list = Array.isArray(ids) ? ids : ids ? [ids] : [];
-      return list.some(
-        (id: any) => typeof id === 'string' && preExistingRevisionIds.has(id)
-      );
-    });
+    const tableCarriesPriorPendingWork = [
+      ...collectRevisionIdsDeep(tableBlockAt(sfdt, anchor))
+    ].some((id) => preExistingRevisionIds.has(id));
     const planned: Array<{ row: number; shading: string | null }> = [];
     let survivorIndex = 0;
     let skippedKeyless = 0;
@@ -11823,10 +11851,13 @@ function finalizeTableAppearance(
           });
           // Written freely when the row is wholly this change set's own
           // insertion: a reject deletes it, so there is nothing to restore.
-          const whollyInserted = allRevisionIdsIn(
-            rowRevisionIds(row),
-            inserted
-          );
+          // Deep, for the same reason: a row is only free to write if EVERY
+          // revision id anywhere in it belongs to this set's insertions. Reading
+          // rowFormat alone would call a row wholly-inserted while its cell text
+          // carried somebody else's pending edit.
+          const rowIds = collectRevisionIdsDeep(row);
+          const whollyInserted =
+            rowIds.size > 0 && [...rowIds].every((id) => inserted.has(id));
           // Surviving content is off limits while the table carries an
           // earlier set's pending work; a wholly-inserted row stays writable
           // because a reject removes it and no restore has to run.
@@ -11846,29 +11877,6 @@ function finalizeTableAppearance(
       );
     if (!planned.length) continue;
 
-    // eslint-disable-next-line no-console
-    console.log(
-      `INSTR-LEN rawRows=${rows.length} snapshotRows=${current.rows.length}`
-    );
-    // TEMP INSTRUMENTATION - capture vs write comparison
-    for (const entry of planned) {
-      const rawRow = rows[entry.row];
-      const rawCells: any[] = pick(rawRow, 'cells', 'c') ?? [];
-      const rawFmt = pick(rawCells[0] ?? {}, 'cellFormat', 'tcpr', 'cf') ?? {};
-      const rawShading = pick(rawFmt, 'shading', 'sd') ?? {};
-      const rawColour = pick(rawShading, 'backgroundColor', 'bgc') ?? 'NONE';
-      const snapshot =
-        cellAppearanceAt(current, entry.row, 0)?.shading ?? 'NONE';
-      // eslint-disable-next-line no-console
-      console.log(
-        `INSTR row=${entry.row} wants=${
-          entry.shading ?? 'null'
-        } rawPrior=${rawColour} snapshotPrior=${snapshot} agree=${
-          String(rawColour).startsWith(String(snapshot)) ||
-          (snapshot === 'NONE' && rawColour === 'NONE')
-        }`
-      );
-    }
     const outcome = applyPlannedRowShadings(editor, anchor, current, planned);
     if (outcome.report.cellsWritten) record(outcome.restores);
   }
