@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { featheryDoc } from '../../../utils/browser';
 import DocxToolbar from './DocxToolbar';
 import { CheckIcon, CloseIcon } from './icons';
-import { TOOLBAR_HEIGHT } from './DocxToolbar/styles';
+import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import DocumentPanel, { PanelTab } from './DocumentPanel';
 import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
@@ -12,6 +13,15 @@ import { DocxSource } from './types';
 export { RailErrorBoundary } from './RailErrorBoundary';
 
 type ActivePanel = PanelTab | null;
+
+/** What a host's onSave may resolve with. `file` is the public copy of the
+ *  saved document (content controls stripped server-side) — the only bytes
+ *  downloads are allowed to serve. */
+export interface DocxSaveResult {
+  file?: string | null;
+  editor_file?: string | null;
+  [key: string]: unknown;
+}
 
 export interface DocxEditorProps {
   /** Document to open. `buffer` when the host already fetched the bytes (e.g.
@@ -34,6 +44,10 @@ export interface DocxEditorProps {
   visible?: boolean;
   /** Hide the local Download button (shown by default). */
   hideDownload?: boolean;
+  /** URL of the document's public copy (content controls stripped). When set,
+   *  Download saves current edits, then serves this copy (or the fresher one
+   *  from the save result) — never the raw editor bytes. */
+  downloadUrl?: string | null;
   /** Returns the current document as PDF bytes (converted by the host, e.g.
    *  the Feathery backend). When provided, Download becomes a DOCX/PDF menu.
    *  Current edits are saved via `onSave` before this is called. */
@@ -57,7 +71,9 @@ export interface DocxEditorProps {
   onError?: (error: string) => void;
   /** Persistence boundary: receives the exported .docx. The host decides where
    *  it goes (the component never persists on its own). */
-  onSave?: (blob: Blob) => unknown | Promise<unknown>;
+  onSave?: (
+    blob: Blob
+  ) => DocxSaveResult | void | Promise<DocxSaveResult | void>;
   /** Opt-in document bindings: [[...]] tokens become live fields and formulas
    *  that recalculate as the document is edited. Omitting it changes nothing. */
   bindings?: DocxBindingsConfig;
@@ -89,6 +105,7 @@ function DocxEditor({
   reviewChanges = false,
   visible = true,
   hideDownload,
+  downloadUrl,
   onExportPdf,
   terminalAction,
   onTerminalAction,
@@ -109,6 +126,15 @@ function DocxEditor({
   const [saving, setSaving] = useState(false);
   // Brief feedback shown after an explicit Save — the button otherwise gives
   // no sign of whether the document actually persisted.
+  // Binding-error modal shown when an action hits the export gate. Save and
+  // download offer a consented escape hatch ("Save Anyway" / "Download
+  // Anyway"); sign/send show it without one — informational, Close only.
+  const [gateWarning, setGateWarning] = useState<{
+    message: string;
+    confirmLabel?: string;
+    confirmTitle?: string;
+    proceed?: () => void;
+  } | null>(null);
   const [saveToast, setSaveToast] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -118,6 +144,9 @@ function DocxEditor({
   );
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  // Debounces the DOCX download: a double-click must not race two exports
+  // and two PATCH saves of the same bytes.
+  const [downloading, setDownloading] = useState(false);
   // The single right-rail slot shows at most one panel, toggled from the
   // toolbar's two buttons (Changes / Sections).
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
@@ -165,26 +194,73 @@ function DocxEditor({
   }, [activePanel, changesCount]);
 
   /**
-   * Reconcile anything uncommitted before bytes leave the editor, and refuse to
-   * export a document the engine considers wrong - an invalid number or an
-   * ambiguous edit would otherwise be persisted as if it were fine. Reported
-   * through onError so the host surfaces it the same way it surfaces every other
-   * editor failure.
+   * Reconcile anything uncommitted before bytes leave the editor and report the
+   * first blocking binding error, or null when the document is exportable.
+   * commitForSave() flushes typed edits either way, so a false only means the
+   * document carries an invalid binding config - not that content is missing.
    */
-  const readyToExport = (): boolean => {
-    if (!bindingsState.ready) return true;
-    if (bindingsState.commitForSave()) return true;
+  const exportBlockMessage = (): string | null => {
+    if (!bindingsState.ready) return null;
+    if (bindingsState.commitForSave()) return null;
     const detail = bindingsState.diagnostics
       .filter((entry) => entry.severity === 'error')
       .map((entry) => entry.message);
     console.error('Feathery: document has unresolved binding errors', detail);
-    onError?.(
-      detail.length
-        ? `This document cannot be saved yet: ${detail[0]}`
-        : 'This document cannot be saved yet.'
-    );
+    return detail.length
+      ? `This document cannot be saved yet: ${detail[0]}`
+      : 'This document cannot be saved yet.';
+  };
+
+  /**
+   * Hard gate for sign/send: refuse to export a document the engine considers
+   * wrong - an invalid number or an ambiguous edit would otherwise be signed
+   * as if it were fine. Shows the binding-error modal with no escape hatch:
+   * these outcomes are irreversible, so there is no "Sign Anyway".
+   */
+  const readyToExport = (): boolean => {
+    const block = exportBlockMessage();
+    if (block === null) return true;
+    setSaveToast(null);
+    setGateWarning({ message: block });
     return false;
   };
+
+  /**
+   * Soft gate for save and download paths: same check as the hard gate, but
+   * instead of refusing outright it offers an "Anyway" escape hatch - the
+   * flush already happened, so proceeding just means the persisted/exported
+   * document carries the invalid binding config. Signing/sending stays
+   * hard-gated: those are irreversible and leave the platform.
+   */
+  const softGate = (
+    retry: () => void,
+    confirmLabel: string,
+    confirmTitle: string
+  ): boolean => {
+    const block = exportBlockMessage();
+    if (block === null) return true;
+    setSaveToast(null);
+    setGateWarning({
+      message: block,
+      confirmLabel,
+      confirmTitle,
+      proceed: () => {
+        setGateWarning(null);
+        retry();
+      }
+    });
+    return false;
+  };
+
+  const gateDownload = (retry: () => void): boolean =>
+    softGate(
+      retry,
+      'Download Anyway',
+      'Saves and downloads the document as-is'
+    );
+
+  const gateSave = (retry: () => void): boolean =>
+    softGate(retry, 'Save Anyway', 'Saves the document as-is');
 
   // Which editor instance the rail is showing. Derived, not state: a recreation
   // must remount the rail's boundary in the same render that swaps the editor.
@@ -216,7 +292,7 @@ function DocxEditor({
     if (!onSave) return;
     setSaving(true);
     try {
-      const result = await onSave(blob);
+      const result = (await onSave(blob)) as DocxSaveResult | undefined;
       dirtyRef.current = false;
       setDirty(false);
       onChange?.(false);
@@ -245,8 +321,9 @@ function DocxEditor({
     []
   );
 
-  const handleSave = async () => {
-    if (!readyToExport()) return;
+  const handleSave = async (force = false) => {
+    if (force) bindingsState.commitForSave();
+    else if (!gateSave(() => handleSave(true))) return;
     try {
       await saveCurrentDocument(await exportDoc());
       flashSaveToast('success', 'Document saved');
@@ -256,23 +333,44 @@ function DocxEditor({
     }
   };
 
-  const handleDownload = async () => {
-    if (!readyToExport()) return;
+  // Re-fetch the saved public copy for download. no-store because saves reuse
+  // the same object key, so the HTTP cache could otherwise serve stale bytes.
+  const fetchDownloadBlob = async (url: string) => {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Could not download the document');
+    return await res.blob();
+  };
+
+  const handleDownload = async (force = false) => {
+    if (downloading) return;
+    if (force) bindingsState.commitForSave();
+    else if (!gateDownload(() => handleDownload(true))) return;
+    setDownloading(true);
     try {
-      // Write the current edits to the envelope BEFORE downloading, then hand
-      // back the exact bytes we exported — never a re-fetched (and possibly
-      // cache-stale) file URL.
+      // Save current edits first, then serve the host's public copy — content
+      // controls are stripped server-side on save, so the raw editor bytes
+      // must never be what the user walks away with.
       const blob = await exportDoc();
-      if (onSave && dirtyRef.current) await saveCurrentDocument(blob);
-      triggerDownload(blob);
+      const saveResult =
+        onSave && dirtyRef.current
+          ? await saveCurrentDocument(blob)
+          : undefined;
+      const url = saveResult?.file ?? downloadUrl;
+      // No public copy exists for standalone hosts — their exported bytes are
+      // the only source.
+      if (url) triggerDownload(await fetchDownloadBlob(url));
+      else triggerDownload(blob);
     } catch (err) {
       onError?.((err as Error).message || String(err));
+    } finally {
+      setDownloading(false);
     }
   };
 
-  const handleDownloadPdf = async () => {
-    if (!onExportPdf) return;
-    if (!readyToExport()) return;
+  const handleDownloadPdf = async (force = false) => {
+    if (!onExportPdf || exportingPdf) return;
+    if (force) bindingsState.commitForSave();
+    else if (!gateDownload(() => handleDownloadPdf(true))) return;
     setExportingPdf(true);
     try {
       // The host converts the SAVED document, so persist current edits first —
@@ -290,12 +388,17 @@ function DocxEditor({
   // Every terminal action saves the current edits first, then runs its own
   // outcome against the just-saved document.
   const saveThenRun = async (
-    run: (blob: Blob, saveResult?: unknown) => void | Promise<void>
+    run: (blob: Blob, saveResult?: unknown) => void | Promise<void>,
+    // Only the download outcome may bypass the gate (via "Download Anyway");
+    // sign/send stay hard-gated. The flush still runs so typed edits commit.
+    bypassGate = false
   ) => {
+    if (terminalRunning) return;
+    if (bypassGate) bindingsState.commitForSave();
     // Gated here rather than per-handler: this is the single funnel every
     // terminal action goes through, so a document the binding engine considers
     // invalid cannot be signed, sent or downloaded from any of them.
-    if (!readyToExport()) return;
+    else if (!readyToExport()) return;
     setTerminalRunning(true);
     try {
       const blob = await exportDoc();
@@ -311,16 +414,28 @@ function DocxEditor({
     }
   };
 
-  const handleTerminalAction = () =>
-    saveThenRun(async (blob, saveResult) => {
+  const handleTerminalAction = (force = false): Promise<void> | void => {
+    // Terminal download gets the soft gate + "Download Anyway"; other terminal
+    // outcomes keep the hard gate inside saveThenRun.
+    if (
+      terminalAction === 'download' &&
+      !force &&
+      !gateDownload(() => handleTerminalAction(true))
+    )
+      return;
+    return saveThenRun(async (blob, saveResult) => {
       if (terminalAction === 'download') {
-        // Download the just-saved bytes directly (avoids the stale-URL issue
-        // of re-fetching an overwritten envelope file).
-        triggerDownload(blob);
+        // Serve the public copy, same as the toolbar Download — the editor
+        // bytes carry content controls that must not leave the platform.
+        const url =
+          (saveResult as DocxSaveResult | undefined)?.file ?? downloadUrl;
+        if (url) triggerDownload(await fetchDownloadBlob(url));
+        else triggerDownload(blob);
       } else {
         await onTerminalAction?.(saveResult);
       }
-    });
+    }, force && terminalAction === 'download');
+  };
 
   // Draft variant of the 'sign' terminal action: identical save-first flow, and
   // the host sends the document to DocuSign as a draft instead of for signature.
@@ -328,9 +443,9 @@ function DocxEditor({
     saveThenRun((_blob, saveResult) => onTerminalActionDraft?.(saveResult));
 
   // PDF variant of the 'download' terminal action — same save-first flow,
-  // then the host-converted PDF bytes.
+  // then the host-converted PDF bytes. Gating (soft, with Download Anyway)
+  // lives in handleDownloadPdf.
   const handleTerminalActionPdf = async () => {
-    if (!readyToExport()) return;
     setTerminalRunning(true);
     try {
       await handleDownloadPdf();
@@ -361,20 +476,28 @@ function DocxEditor({
         <DocxToolbar
           editor={editor}
           // Save stays visible even alongside a terminal action so users can
-          // persist edits without committing to download/sign.
-          onSave={onSave ? handleSave : undefined}
-          // Secondary Download only when no terminal action owns downloading.
+          // persist edits without committing to download/sign. Arrow-wrapped:
+          // handleSave takes a force flag a raw click event must not satisfy.
+          onSave={onSave ? () => handleSave() : undefined}
+          // Secondary Download hides only when the terminal button IS the
+          // download (one Download, not two) — beside Sign/Draft it stays, so
+          // configuring Sign + Download shows both. Arrow-wrapped: the handlers
+          // take a `force` flag a raw DOM click event would truthily satisfy.
           onDownload={
-            hideDownload || terminalAction ? undefined : handleDownload
+            hideDownload || terminalAction === 'download'
+              ? undefined
+              : () => handleDownload()
           }
           onDownloadPdf={
-            hideDownload || terminalAction || !onExportPdf
+            hideDownload || terminalAction === 'download' || !onExportPdf
               ? undefined
-              : handleDownloadPdf
+              : () => handleDownloadPdf()
           }
-          downloadBusy={exportingPdf}
+          downloadBusy={exportingPdf || downloading}
           terminalAction={terminalAction}
-          onTerminalAction={onTerminalAction ? handleTerminalAction : undefined}
+          onTerminalAction={
+            onTerminalAction ? () => handleTerminalAction() : undefined
+          }
           onTerminalActionPdf={
             terminalAction === 'download' && onExportPdf
               ? handleTerminalActionPdf
@@ -470,6 +593,134 @@ function DocxEditor({
           />
         )}
       </div>
+      {/* Binding-error prompt: a blocking modal. Portaled to the document body
+          (same pattern as the toolbar menus) so the backdrop covers the whole
+          page — nothing proceeds until the user picks the Anyway action
+          (proceed despite invalid binding config) or cancels (button or Esc).
+          Backdrop clicks are inert on purpose: the choice must be explicit. */}
+      {gateWarning &&
+        createPortal(
+          <div
+            css={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10001,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(24, 24, 27, 0.45)'
+            }}
+          >
+            <div
+              role='alertdialog'
+              aria-modal='true'
+              aria-label='Document has binding errors'
+              tabIndex={-1}
+              ref={(node) => node?.focus()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setGateWarning(null);
+              }}
+              css={{
+                width: 440,
+                maxWidth: 'calc(100% - 48px)',
+                boxSizing: 'border-box',
+                padding: '20px 24px',
+                borderRadius: 10,
+                background: '#fff',
+                color: '#27272a',
+                border: '1px solid #e4e4e7',
+                fontSize: 14,
+                lineHeight: 1.5,
+                boxShadow:
+                  '0 0 0 1px rgb(0 9 50 / 4%), 0 24px 48px -12px rgb(0 9 50 / 25%)',
+                outline: 'none'
+              }}
+            >
+              <div
+                css={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                <span
+                  aria-hidden
+                  css={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    flex: '0 0 auto',
+                    background: '#fef3c7',
+                    color: '#b45309',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 700
+                  }}
+                >
+                  !
+                </span>
+                Document has binding errors
+              </div>
+              <div
+                css={{
+                  marginBottom: gateWarning.proceed ? 18 : 8,
+                  color: '#3f3f46'
+                }}
+              >
+                {gateWarning.message}
+              </div>
+              {!gateWarning.proceed && (
+                <div css={{ marginBottom: 18, color: '#71717a', fontSize: 13 }}>
+                  Fix these errors before signing or sending the document.
+                </div>
+              )}
+              <div
+                css={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}
+              >
+                <button
+                  type='button'
+                  onClick={() => setGateWarning(null)}
+                  css={{
+                    padding: '8px 14px',
+                    borderRadius: 6,
+                    border: '1px solid #e4e4e7',
+                    background: '#fff',
+                    color: '#3f3f46',
+                    fontSize: 13,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {gateWarning.proceed ? 'Cancel' : 'Close'}
+                </button>
+                {gateWarning.proceed && (
+                  <button
+                    type='button'
+                    onClick={gateWarning.proceed}
+                    title={gateWarning.confirmTitle}
+                    css={{
+                      padding: '8px 14px',
+                      borderRadius: 6,
+                      border: '1px solid transparent',
+                      background: FEATHERY_RED,
+                      color: '#fff',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {gateWarning.confirmLabel}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>,
+          featheryDoc().body
+        )}
       {/* Save feedback. Positioned over the editor, bottom-center, and
           auto-dismissed. Styled to match the Feathery dashboard toast: white
           surface, thin zinc border, dark text, fixed width. The tick sits at
