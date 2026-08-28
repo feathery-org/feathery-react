@@ -11747,6 +11747,17 @@ function applyPlannedRowHeaders(
 function finalizeTableAppearance(
   editor: LiveEditor,
   footprints: TableFootprint[],
+  /**
+   * Revision ids that existed BEFORE this change set.
+   *
+   * Load-bearing for correctness, not bookkeeping. The free-to-write rule is
+   * "this set inserted it, so this set's reject removes it" - and a row
+   * inserted by an EARLIER unaccepted change set is tracked-inserted too, while
+   * being untouched by THIS set's reject. Writing a first-ever colour there is
+   * the irreversible act the decline exists to prevent, and it is reachable on
+   * any review document that already carries pending insertions.
+   */
+  preExistingRevisionIds: Set<string>,
   record: (restores: AppearanceRestore[]) => void
 ): string[] {
   if (!footprints.length) return [];
@@ -11766,10 +11777,16 @@ function finalizeTableAppearance(
     );
 
   const deleted = deletedRevisionIds(sfdt);
-  // Content this change set INSERTED. A reject removes it outright, so anything
-  // written to it needs no restore - which is why appearance may be written
-  // there freely. This is slice 1's copy invariant, generalized.
-  const inserted = insertedRevisionIds(sfdt);
+  // Content THIS CHANGE SET inserted, and only this one. A reject removes it
+  // outright, so anything written to it needs no restore - which is why
+  // appearance may be written there freely. Slice 1's copy invariant,
+  // generalized, and scoped: document-wide insertions would include an earlier
+  // set's pending rows, which this set's reject leaves exactly where they are.
+  const inserted = new Set(
+    [...insertedRevisionIds(sfdt)].filter(
+      (id) => !preExistingRevisionIds.has(id)
+    )
+  );
 
   for (const footprint of latest.values()) {
     const address = sequence[footprint.sequenceIndex];
@@ -21339,6 +21356,11 @@ function applyDocumentEditsMeasured(
     const finalizerWarnings = finalizeTableAppearance(
       editor,
       tableFootprints,
+      new Set(
+        revisionSnapshot
+          .map((revision) => revision.revisionID)
+          .filter((id): id is string => typeof id === 'string' && !!id)
+      ),
       (restores) => recordAppearanceRestores(edits[0], restores)
     );
     warnings.push(...finalizerWarnings);
