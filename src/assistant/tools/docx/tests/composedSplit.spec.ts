@@ -448,3 +448,62 @@ describe('split_table composed from primitives, over a bound table', () => {
     expect(result.results.every((entry: any) => entry.ok)).toBe(true);
   });
 });
+
+/**
+ * The footprint receipt, proved through its CONSUMER.
+ *
+ * Row (g) can only assert the observable shape, because the receipt is stripped
+ * from the model-facing result by design. The finalizer is what CONSUMES the
+ * receipt, and its output does surface - as change-set warnings - so this is
+ * where a recorded footprint becomes visible without adding a production seam
+ * that exists only for tests.
+ */
+describe('the finalizer consumes both halves of a composed split', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+
+  beforeEach(() => {
+    editor = makeEditor();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+  });
+
+  it('(h) runs the finalizer over the change set, reaching both tables', () => {
+    const result: any = splitCosts(editor, 2);
+    expectComposed(result);
+
+    // WHAT THIS PROVES, AND WHAT IT DOES NOT. Measured 2026-08-28.
+    //
+    // The finalizer runs over this change set - it is invoked whenever
+    // footprints were recorded, and a throw inside it would have failed the set
+    // rather than reaching this line. So the receipt IS being consumed.
+    //
+    // It does NOT prove both halves were restriped, and the reason is the
+    // fixture rather than the engine: the costs table carries no banding, so
+    // `detectTableBanding` finds no cycle and the finalizer correctly has
+    // nothing to re-lay. The observed warnings are the serialization counter
+    // alone - no appearance write, and no decline either.
+    //
+    // Demonstrating a restripe needs a BANDED fixture, and demonstrating it
+    // honestly needs a browser, because the finalizer computes striping from
+    // the accept projection and jsdom cannot lay out the page. Phase 2's
+    // striping ledger row carries that proof. This row exists so the consumer
+    // is exercised at all, and so a future change that makes the finalizer
+    // throw on a two-footprint set fails here rather than in a browser.
+    expect(Array.isArray(result.warnings)).toBe(true);
+    expect(
+      (result.warnings as string[]).some((warning) =>
+        warning.includes('finalize_failed')
+      )
+    ).toBe(false);
+    expect(
+      [...indexOf(editor).tables.keys()].filter((id) => id.startsWith('costs'))
+    ).toHaveLength(2);
+  });
+});

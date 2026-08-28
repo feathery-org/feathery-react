@@ -294,12 +294,24 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // renders two adjacent tables as one - see `spliceDuplicateAfter`). Moving
     // it elsewhere is a separate, later edit against the copy's own anchor.
     //
-    // One per change set, and last of the anchored edits in it: duplicating a
-    // table inserts a table, so every later anchor may have moved. Re-read the
-    // document before targeting the copy.
+    // `keepRows` filters WHICH data rows the copy keeps, by ABSOLUTE table row
+    // index - the same indices a table_facts read reports, and the same ones
+    // delete_row takes. It selects among data rows only: the header band and
+    // any totals computed from the table's own rows are always kept and never
+    // need naming, so listing one is refused rather than silently obeyed.
+    // Omitting `keepRows` keeps every row. An empty `keepRows: []` is a
+    // deliberate header-and-totals copy with no data rows.
+    //
+    // TO SPLIT A TABLE: duplicate_table with `keepRows` set to the rows that
+    // should move, then delete_row those same rows from the source.
+    //
+    // One duplicate per change set. Later anchored edits in the same change set
+    // are fine - the copy takes a fresh identity, so the source keeps answering
+    // to its own anchor.
     op: 'duplicate_table',
     params: {
       rows: 'duplicateRows?',
+      keepRows: 'int>=0[]?',
       literal: 'boolean?',
       quotedFrom: 'string?',
       quotedText: 'string?'
