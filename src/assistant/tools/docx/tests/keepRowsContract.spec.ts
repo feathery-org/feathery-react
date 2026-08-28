@@ -472,3 +472,104 @@ describe('REPRO: keepRows on a table whose roles cannot be proven', () => {
     expect(result.results[0].error).not.toBeNull();
   });
 });
+
+/**
+ * The over-reach control for `keep_rows_roles_not_derivable`.
+ *
+ * The refusal is placed on the unbound branch of the routing fork, so the
+ * mirror risk is that it swallowed the LEGITIMATE case with it: duplicating an
+ * unbound table plainly, with no keepRows, must still work through the editor
+ * route exactly as it always did. A refusal that also blocks that has removed a
+ * capability rather than closed a gap.
+ */
+describe('the roles-not-derivable refusal does not over-reach', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+
+  const buildWithUnbound = (): DocumentEditor => {
+    const doc = buildCostsFixture();
+    const strip = (node: any): any => {
+      if (Array.isArray(node)) return node.map(strip);
+      if (!node || typeof node !== 'object') return node;
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'contentControlProperties') continue;
+        out[key] = strip(value);
+      }
+      return out;
+    };
+    const wrapper: any = doc.sections[0].blocks.find((block: any) =>
+      JSON.stringify(block ?? {}).includes('[[table=costs]]')
+    );
+    const inner = (wrapper.blocks ?? []).find((block: any) => block?.rows);
+    doc.sections[0].blocks.push(strip(inner));
+    doc.sections[0].blocks.push({ inlines: [{ text: 'tail' }] } as any);
+
+    const host = document.createElement('div');
+    host.style.width = '900px';
+    host.style.height = '700px';
+    document.body.appendChild(host);
+    const made = new DocumentEditor({
+      isReadOnly: false,
+      enableEditor: true,
+      enableSelection: true,
+      enableImageResizer: true,
+      enableSearch: true,
+      enableSfdtExport: true,
+      enableEditorHistory: true,
+      documentEditorSettings: { optimizeSfdt: false }
+    });
+    made.appendTo(host);
+    made.open(JSON.stringify(doc));
+    return made;
+  };
+
+  beforeEach(() => {
+    editor = buildWithUnbound();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+  });
+
+  it('plain unbound duplicate_table, with NO keepRows, still works via the editor route', () => {
+    const blocks = parsed(editor).sections[0].blocks;
+    const unboundIndex = blocks.findIndex(
+      (block: any) => block?.rows && !block?.contentControlProperties
+    );
+    // Pre-state asserted explicitly: the fixture really carries ONE unbound
+    // table of six rows. A control must never be satisfiable by the fixture's
+    // own construction.
+    expect(unboundIndex).toBeGreaterThan(-1);
+    expect(blocks[unboundIndex].rows.length).toBe(6);
+    const unboundTablesBefore = blocks.filter(
+      (block: any) => block?.rows && !block?.contentControlProperties
+    ).length;
+    expect(unboundTablesBefore).toBe(1);
+
+    const result: any = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'duplicate_table',
+          anchor: `0;${unboundIndex};0;0;0`,
+          rows: 'copy'
+        } as any
+      ]
+    });
+
+    expect(result.results[0].ok).toBe(true);
+    expect(result.results[0].error ?? null).toBeNull();
+
+    // The capability is intact: there are now TWO unbound tables, and the copy
+    // kept every row, which is what "no keepRows" means.
+    const after = parsed(editor).sections[0].blocks.filter(
+      (block: any) => block?.rows && !block?.contentControlProperties
+    );
+    expect(after).toHaveLength(2);
+    expect(after.map((block: any) => block.rows.length)).toEqual([6, 6]);
+  });
+});
