@@ -1,5 +1,5 @@
 /**
- * What the appearance finalizer owes, WRITTEN BEFORE IT EXISTS.
+ * What the appearance finalizer owes. Written before it existed, now met.
  *
  * Today `restripeSplitCopy` is called from inside the split handler, so banding
  * is settled in the middle of a change set. Two things follow, and both are
@@ -141,28 +141,46 @@ const shadingOf = (nth: number): string[] => {
 const bandsAlternate = (rows: string[]): boolean =>
   rows.slice(1).every((fill, i) => fill === (i % 2 === 1 ? '#E6E6E6' : '.'));
 
+/** Only the finalizer's own warnings, not the serialization timing line. */
+const finalizerWarnings = (result: any): string[] =>
+  (result.warnings ?? []).filter((w: string) =>
+    w.startsWith('Table appearance not finalized')
+  );
+
 describe('appearance finalizer - one pass per change set, on the accept projection', () => {
-  it('(a) CHARACTERIZATION: bands are settled mid-change-set, so accept leaves them wrong', () => {
-    // THE DEFECT, pinned. Two ops touch one table in one change set: a row is
-    // tracked-deleted, then the table is split. Striping is settled inside the
-    // split handler, at a moment when the deleted row is still PHYSICALLY
-    // PRESENT - a tracked delete only marks it. So the bands are laid out for a
-    // table that is about to lose a row, and the moment anyone accepts, they are
-    // one row out of phase.
+  it('(a) CHARACTERIZATION: a phase-shifting re-band is NOT applied, and why', () => {
+    // The third act of this row, and the honest end of tonight.
     //
-    // Measured on a 7-row striped table, deleting body row 2 and splitting at 4:
-    // the source keeps body rows 1 and 3, and after accept they read
-    //   #001B49 . .
-    // where a correctly banded table reads
-    //   #001B49 . #E6E6E6
-    // Two unshaded rows in a row - the stripe is simply gone.
+    // Act one: it asserted the DEFECT. Banding was settled inside the split
+    // handler while a tracked-deleted row was still physically present, so the
+    // stripes were laid out for a table about to lose a row and went one out of
+    // phase the moment anyone accepted. Measured `#001B49 . .` - two unshaded
+    // rows adjacent, the stripe gone.
     //
-    // Asserted AS THE DEFECT rather than as the requirement, because a
-    // permanently red test teaches people to ignore red, and this jest is too
-    // old for it.failing. When the finalizer lands - one pass per change set,
-    // after the last edit, computing from the ACCEPT PROJECTION rather than the
-    // live document - this row FAILS, and that failure is the signal to rewrite
-    // it as the requirement.
+    // Act two: the finalizer fixed it. Computing from the accept projection
+    // produced `#001B49 . #E6E6E6` and this row briefly asserted the
+    // requirement.
+    //
+    // Act three, which is why it asserts the defect again. Landing that fix
+    // broke reject byte-equality, and the cause is a platform limit measured on
+    // the real editor: no public API can restore a cell to never-coloured. All
+    // of background = a colour / 'empty' / undefined / '' leave
+    // `{"backgroundColor":"empty",...}`, and so do clearCellFormat() and
+    // clearFormat() - the latter growing the document by 137 characters. A
+    // pristine cell is `sd:{}` with no backgroundColor. The SDK's OWN undo
+    // restores that absence, because undo restores a snapshot while a setter
+    // assigns a value, and only the first can express absence.
+    //
+    // A phase-shifting re-band must colour rows that were never coloured - that
+    // is what shifting the stripe MEANS - so on content that survives its own
+    // rejection it cannot be undone. Reject byte-equality is the spine and the
+    // banding improvement is not, so the finalizer writes only to cells that
+    // were already coloured, or to content wholly inserted by this change set
+    // which a reject removes entirely.
+    //
+    // THE UNLOCK: `docx-reversible-absence`. When there is a way to restore a
+    // never-coloured cell - a snapshot-restore seam, or a vendor API - this row
+    // becomes the requirement again and act four gets written here.
     const live = open(docWith(stripedTable(7)));
     const result = applyDocumentEdits(live, {
       changeSetId: 'finalizer-a',
@@ -180,13 +198,34 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
     }) as any;
     expect(result.results.every((r: any) => r.ok)).toBe(true);
 
+    // The finalizer SAYS it declined, rather than silently leaving it unbanded.
+    expect(
+      (result.warnings ?? []).some((w: string) => /left unbanded/.test(w))
+    ).toBe(true);
+
     editor.revisions.acceptAll();
 
     expect(tableBlocks()).toHaveLength(2);
     const source = shadingOf(0);
     expect(source[0]).toBe('#001B49');
-    // The defect: the body bands do NOT alternate.
+    // Still out of phase, and deliberately so until absence is reversible.
     expect(bandsAlternate(source)).toBe(false);
-    expect(source).toEqual(['#001B49', '.', '.']);
   });
 });
+
+/**
+ * DELIBERATELY ABSENT, pending a ruling: the maintenance, content-immunity and
+ * dedupe properties.
+ *
+ * Each needs a change set the engine refuses in preflight today.
+ * `detectAnchorShiftingNotLast` rejects any set where split_table or
+ * copy_section is followed by another anchored edit, and
+ * `split_table_one_per_change_set` allows only one split. So no footprint can
+ * be recorded before a LATER shifting op, which makes the runner's maintenance
+ * and the finalizer's dedupe unreachable rather than untested.
+ *
+ * They become reachable when the anchor-shifting refusal is removed - the
+ * backlog's "delete the anchor-shifting refusal, gaining a capability" - and
+ * the footprint contract exists so that capability is safe to unlock. Their
+ * proofs belong with it.
+ */

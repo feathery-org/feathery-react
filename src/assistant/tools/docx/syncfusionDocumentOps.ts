@@ -6005,6 +6005,14 @@ interface TableFootprint {
    */
   sequenceIndex: number;
   /**
+   * The header-band size from effectiveHeaderRows at record time.
+   *
+   * Carried rather than re-derived: it is what the recording op already asked
+   * the one owner, and the finalizer needs it both to compare shapes and to
+   * know which rows the banding must leave alone.
+   */
+  headerRows: number;
+  /**
    * The table's SHAPE at record time: row count, column count, header rows.
    *
    * Deliberately NOT its content. Two exclusions, and each is a defect this
@@ -6028,6 +6036,16 @@ interface TableFootprint {
    * false alarm.
    */
   shapeFingerprint: string;
+  /**
+   * The banding cycle the finalizer must apply, from the AUTHORITATIVE source.
+   *
+   * Not re-detected at finalize, and the reason is circularity: a freshly
+   * pasted copy carries its source's fills at the WRONG phase, so detecting the
+   * cycle from the table about to be restriped just reproduces the error it was
+   * called to fix. The recording op knows the right answer - it read the source
+   * before it changed anything - so it says so here.
+   */
+  banding?: TableBanding;
 }
 
 /**
@@ -7525,6 +7543,7 @@ function captureTableFootprint(
   sfdt: any,
   tableAnchor: string,
   headerRows: number,
+  banding?: TableBanding,
   tableId?: string
 ): TableFootprint | null {
   try {
@@ -7544,7 +7563,9 @@ function captureTableFootprint(
       anchor: tableAnchor,
       ...(tableId ? { tableId } : {}),
       sequenceIndex,
-      shapeFingerprint
+      headerRows,
+      shapeFingerprint,
+      ...(banding ? { banding } : {})
     };
   } catch {
     // A footprint is a receipt, never a gate. If the table cannot be read here
@@ -9684,17 +9705,33 @@ export const ANCHORED_OP_HANDLERS: {
     // so the order is not load-bearing, but it keeps the invariant visible.
     for (const row of [...plan.extract].reverse())
       deleteTableRows(editor, moved.anchor, row);
-    restripeSplitCopy(editor, copyAnchor, appearance, plan.headerRows);
+    // Banding is NOT settled here any more. The change-set finalizer settles it
+    // once, after the last edit, computing from the accept projection - so rows
+    // this set has tracked-deleted contribute no band and the stripes are right
+    // for the document an accept actually produces. Settling it here as well
+    // wrote the same cells twice and broke reject byte-equality.
 
     // Both tables this op touched, recorded AFTER the last write so each anchor
     // and fingerprint describes the table as it now stands. Nothing consumes
     // these yet - the finalizer does, once it exists - but recording them here
     // is what lets it find these two tables again after later edits in the same
     // change set have shifted everything around them.
+    // The authoritative cycle, read from the source BEFORE this op changed it.
+    const sourceBanding = detectTableBanding(appearance) ?? undefined;
     const finalSfdt = serializeSfdt(editor);
     const tableFootprints = [
-      captureTableFootprint(finalSfdt, moved.anchor, plan.headerRows),
-      captureTableFootprint(finalSfdt, copyAnchor, plan.headerRows)
+      captureTableFootprint(
+        finalSfdt,
+        moved.anchor,
+        plan.headerRows,
+        sourceBanding
+      ),
+      captureTableFootprint(
+        finalSfdt,
+        copyAnchor,
+        plan.headerRows,
+        sourceBanding
+      )
     ].filter((footprint): footprint is TableFootprint => !!footprint);
     return tableFootprints.length
       ? { tableFootprints, pasteEffect: paste }
@@ -11684,6 +11721,151 @@ function applyPlannedRowHeaders(
     }
   });
   return { report, restores: transaction.restores };
+}
+
+/**
+ * One appearance pass per change set, after the last edit.
+ *
+ * Banding used to be settled inside the split handler, which is wrong twice: a
+ * LATER op in the same change set can change the table again and nothing
+ * revisits the stripes, and the fills are computed while rows that a tracked
+ * delete has only MARKED are still physically present - so the bands are laid
+ * out for a table that is about to lose rows, and the moment anyone accepts,
+ * they are one row out of phase.
+ *
+ * So this computes from the ACCEPT PROJECTION: the document as it will read
+ * once the change set is accepted, which is exactly what the reader will see.
+ * Rows still present but pending deletion contribute nothing to the phase, and
+ * the fills are written to the rows that will actually survive.
+ *
+ * Nothing here writes to a guessed table. Each footprint is resolved by its
+ * maintained sequence index, its SHAPE is asserted against what was recorded,
+ * and a mismatch skips that table with a warning rather than striping whatever
+ * now sits at the remembered position - the failure that made move_section
+ * write into the wrong place and duplicate nine binding tags.
+ */
+function finalizeTableAppearance(
+  editor: LiveEditor,
+  footprints: TableFootprint[],
+  record: (restores: AppearanceRestore[]) => void
+): string[] {
+  if (!footprints.length) return [];
+  const warnings: string[] = [];
+  const sfdt = serializeSfdt(editor);
+  const sequence = topLevelSequence(sfdt);
+
+  // DEDUPE, keeping the LAST record per resolved table. Several ops in one
+  // change set can touch the same table, and the later record describes it as
+  // it actually stands. Insertion order is edit order, so "last wins" is simply
+  // the final assignment.
+  const latest = new Map<string, TableFootprint>();
+  for (const footprint of footprints)
+    latest.set(
+      footprint.tableId ?? `seq:${footprint.sequenceIndex}`,
+      footprint
+    );
+
+  const deleted = deletedRevisionIds(sfdt);
+  // Content this change set INSERTED. A reject removes it outright, so anything
+  // written to it needs no restore - which is why appearance may be written
+  // there freely. This is slice 1's copy invariant, generalized.
+  const inserted = insertedRevisionIds(sfdt);
+
+  for (const footprint of latest.values()) {
+    const address = sequence[footprint.sequenceIndex];
+    if (!address) {
+      warnings.push(
+        `Table appearance not finalized for ${footprint.anchor}: nothing is at ` +
+          `sequence index ${footprint.sequenceIndex} any more.`
+      );
+      continue;
+    }
+    const anchor = `${address.section};${address.block}`;
+
+    const now = tableShapeFingerprint(sfdt, anchor, footprint.headerRows);
+    if (now !== footprint.shapeFingerprint) {
+      // The verify step, and it REFUSES rather than guesses. Content edits
+      // cannot land here - the fingerprint is structural - so a mismatch means
+      // the table changed shape without recording it, and striping it would be
+      // striping something nobody described.
+      warnings.push(
+        `Table appearance not finalized for ${anchor}: expected shape ` +
+          `${footprint.shapeFingerprint}, found ${now ?? 'no table'}.`
+      );
+      continue;
+    }
+
+    const current = liveTableAppearance(editor, anchor);
+    if (!current) continue;
+    const banding = footprint.banding ?? detectTableBanding(current);
+    if (!banding) continue;
+
+    // Which live rows survive an accept, in order. A row wholly marked deleted
+    // contributes no band and takes no fill.
+    const rows = getRows(tableBlockAt(sfdt, anchor)) ?? [];
+    const planned: Array<{ row: number; shading: string | null }> = [];
+    let survivorIndex = 0;
+    let skippedKeyless = 0;
+    rows.forEach((row: any, index: number) => {
+      if (allRevisionIdsIn(rowRevisionIds(row), deleted)) return;
+      if (survivorIndex >= footprint.headerRows) {
+        const wanted = bandedShadingForRow(banding, survivorIndex);
+        if (wanted !== undefined) {
+          // ONLY RECOLOUR A CELL THAT ALREADY CARRIES A SHADING KEY.
+          //
+          // Measured on the real editor: no public API can remove a shading key
+          // once a cell has one. `background` set to a colour, to 'empty', to
+          // undefined or to '' all leave `{"backgroundColor":"empty",...}`, and
+          // so do `clearCellFormat()` and `clearFormat()` - the latter grows the
+          // document by 137 characters. A pristine cell serializes as `sd:{}`
+          // with no backgroundColor at all, and the SDK's OWN undo restores that
+          // absence, because undo restores a snapshot while a setter assigns a
+          // value, and only the first can express absence.
+          //
+          // So every prior state of an ALREADY-KEYED cell is reproducible
+          // through the public setter and its restore is byte-exact, while
+          // materializing a first-ever key on a keyless cell is irreversible.
+          // The finalizer therefore never does the second thing to a table that
+          // survives its own rejection. A keyless row whose banding wants a
+          // colour is skipped and counted, not silently ignored.
+          const cells: any[] = pick(row, 'cells', 'c') ?? [];
+          const everColoured = cells.some((cell: any) => {
+            const format = pick(cell, 'cellFormat', 'tcpr', 'cf') ?? {};
+            const shading = pick(format, 'shading', 'sd');
+            // A pristine cell serializes as `sd:{}` - the shading OBJECT is
+            // there and empty. Its presence proves nothing; what separates
+            // reversible from irreversible is whether a background COLOUR was
+            // ever assigned. `sd:{}` is the never-coloured state that no public
+            // setter can restore.
+            return (
+              !!shading && pick(shading, 'backgroundColor', 'bgc') !== undefined
+            );
+          });
+          // Written freely when the row is wholly this change set's own
+          // insertion: a reject deletes it, so there is nothing to restore.
+          const whollyInserted = allRevisionIdsIn(
+            rowRevisionIds(row),
+            inserted
+          );
+          if (everColoured || whollyInserted)
+            planned.push({ row: index, shading: wanted });
+          else skippedKeyless++;
+        }
+      }
+      survivorIndex++;
+    });
+    if (skippedKeyless)
+      warnings.push(
+        `Table appearance at ${anchor}: ${skippedKeyless} row(s) left unbanded ` +
+          'because they carry no shading key and adding one could not be undone.'
+      );
+    if (!planned.length) continue;
+
+    const outcome = applyPlannedRowShadings(editor, anchor, current, planned);
+    if (outcome.report.cellsWritten) record(outcome.restores);
+  }
+
+  return warnings;
 }
 
 /** Enforce only the inserted rows' resolved fallback fills. */
@@ -20682,8 +20864,10 @@ function applyDocumentEditsMeasured(
             op: op.op,
             anchor: writtenOp.anchor,
             ...(appliedRelocation ? { relocated: appliedRelocation } : {}),
-            ...collectOpExtras(opExtras, (restores) =>
-              recordAppearanceRestores(op, restores)
+            ...collectOpExtras(
+              opExtras,
+              (restores) => recordAppearanceRestores(op, restores),
+              recordTableFootprints
             ),
             ...(inheritanceAppearance
               ? { appearance: inheritanceAppearance.report }
@@ -20908,7 +21092,7 @@ function applyDocumentEditsMeasured(
             ...collectOpExtras(
               extras,
               (restores) => recordAppearanceRestores(op, restores),
-              (footprints) => recordTableFootprints(footprints)
+              recordTableFootprints
             ),
             ...(composedDisagreements.has(index)
               ? {
@@ -21132,6 +21316,34 @@ function applyDocumentEditsMeasured(
   }
 
   const wroteAppearance = appearanceRestores.length > 0;
+  // ONE APPEARANCE PASS, after the last edit and BEFORE the revisions are
+  // grouped and before anything reads the
+  // result. Skipped when the change set failed: a failed set is rolled back,
+  // and settling the appearance of a document that is about to be restored
+  // would write fills nobody asked for.
+  //
+  // KNOWN LIMITATION, flagged rather than hidden: these restores are attributed
+  // to the FIRST edit's group. The finalizer settles the whole change set, so
+  // when a set spans several groups, rejecting one group restores fills the
+  // finalizer wrote for all of them. Correct for the single-group change sets
+  // every current caller produces, and it needs a ruling before a multi-group
+  // set relies on it.
+  // `results` is the live array at this point; a failed op leaves an entry with
+  // ok:false, and a set that failed preflight never ran an op so it recorded no
+  // footprints at all. Either way a rolled-back set must not have its
+  // appearance settled.
+  if (
+    !results.some((result) => result && !result.ok) &&
+    tableFootprints.length
+  ) {
+    const finalizerWarnings = finalizeTableAppearance(
+      editor,
+      tableFootprints,
+      (restores) => recordAppearanceRestores(edits[0], restores)
+    );
+    warnings.push(...finalizerWarnings);
+  }
+
   const grouping = groupNewRevisions(
     editor,
     revisionSnapshot,
@@ -21158,6 +21370,7 @@ function applyDocumentEditsMeasured(
     }
   );
   const hasFailure = materializedResults.some((result) => !result.ok);
+
   const inventory = readPostEditInventory(editor, warnings);
   warnings.push(
     `document_serialization: count=${
