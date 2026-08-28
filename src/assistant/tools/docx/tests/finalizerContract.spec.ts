@@ -26,6 +26,10 @@ import {
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
 import { applyDocumentEdits, LiveEditor } from '../syncfusionDocumentOps';
+import {
+  listRevisionGroups,
+  resolveLiveRevisionGroupsAsOneUndo
+} from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
   Editor,
@@ -211,21 +215,77 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
     // Still out of phase, and deliberately so until absence is reversible.
     expect(bandsAlternate(source)).toBe(false);
   });
+
+  it('(b) rejecting through the ENGINE SEAM restores source fills byte-equal', () => {
+    // The restore-exactness claim the write scope makes, proven on the branch
+    // that actually needs it.
+    //
+    // (a) covers ACCEPT only. Slice 1's row (e) covers a split alone, where the
+    // source write is a no-op. Neither exercises the case the finalizer newly
+    // creates: re-phased fills written to already-coloured cells in a table that
+    // SURVIVES its own rejection, whose restore therefore has to run.
+    //
+    // Rejected through the engine seam because that is what the product does -
+    // the rail's per-card reject and Reject all both call resolveGroups ->
+    // resolveLiveRevisionGroupsAsOneUndo (TrackedChangeGroups/index.tsx:367 and
+    // :375-388; RailHead.tsx:96), which is where appearance restores bound to
+    // the card by groupRevisionsAtomic are applied. A raw SDK rejectAll is not a
+    // product path and cannot run them.
+    const live = open(docWith(stripedTable(7)));
+    const before = editor.serialize();
+    const bandsBefore = shadingOf(0).join(' ');
+
+    const result = applyDocumentEdits(live, {
+      changeSetId: 'finalizer-b',
+      edits: [
+        { op: 'delete_row', anchor: '0;1;2;0;0', group: 'g' } as any,
+        {
+          op: 'split_table',
+          anchor: '0;1;0;0;0',
+          // Split LATE on purpose. At splitAtRow 4 the source keeps only two
+          // body rows, both of which either already match their band or are
+          // keyless, so the finalizer writes nothing to it and this row would
+          // prove nothing - the negative control below caught exactly that.
+          // Splitting at 6 leaves the source a row that IS already coloured and
+          // MUST change phase, which is the case the write scope claims to
+          // restore exactly.
+          splitAtRow: 6,
+          targetAnchor: '0;2',
+          position: 'before',
+          group: 'g'
+        } as any
+      ]
+    }) as any;
+    expect(result.results.every((r: any) => r.ok)).toBe(true);
+
+    // NEGATIVE CONTROL. Without this the row passes when the finalizer wrote
+    // nothing at all, which is the vacuity that would make the whole assertion
+    // meaningless: a restore of no writes is trivially byte-equal.
+    expect(shadingOf(0).join(' ')).not.toBe(bandsBefore);
+
+    const groups = listRevisionGroups(editor as any);
+    expect(groups.length).toBeGreaterThan(0);
+    resolveLiveRevisionGroupsAsOneUndo(editor as any, groups, false);
+
+    expect(editor.revisions.length).toBe(0);
+    expect(editor.serialize()).toBe(before);
+  });
 });
 
 /**
- * DELIBERATELY ABSENT, pending a ruling: the maintenance, content-immunity and
- * dedupe properties.
+ * DELIBERATELY ABSENT: the maintenance, content-immunity and dedupe property
+ * tests. The CODE for all three is present in this diff and reachable only in
+ * principle; it is the PROOFS that wait.
  *
  * Each needs a change set the engine refuses in preflight today.
  * `detectAnchorShiftingNotLast` rejects any set where split_table or
  * copy_section is followed by another anchored edit, and
  * `split_table_one_per_change_set` allows only one split. So no footprint can
  * be recorded before a LATER shifting op, which makes the runner's maintenance
- * and the finalizer's dedupe unreachable rather than untested.
+ * and the finalizer's dedupe unreachable rather than untested - and this row is
+ * what pins that, so nobody reads the code as dead and deletes it.
  *
- * They become reachable when the anchor-shifting refusal is removed - the
- * backlog's "delete the anchor-shifting refusal, gaining a capability" - and
- * the footprint contract exists so that capability is safe to unlock. Their
- * proofs belong with it.
+ * They become reachable when the anchor-shifting refusal is REPLACED BY THE
+ * MAINTENANCE LAW - the backlog's `docx-anchor-shifting-refusal` - and their
+ * proofs land with it.
  */
