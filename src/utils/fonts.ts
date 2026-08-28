@@ -123,3 +123,35 @@ export function loadGoogleFonts(families: string[]) {
   };
   featheryDoc().head.appendChild(link);
 }
+
+// CSS generic families, which terminate a font stack and need no fallback
+const GENERIC_FAMILIES = new Set([
+  'serif',
+  'sans-serif',
+  'monospace',
+  'cursive',
+  'fantasy',
+  'system-ui',
+  'ui-serif',
+  'ui-sans-serif',
+  'ui-monospace',
+  'ui-rounded',
+  'math',
+  'emoji',
+  'fangsong'
+]);
+
+export const isGenericFamily = (family: string) =>
+  GENERIC_FAMILIES.has(family.toLowerCase());
+
+// Generic family each font falls back to while downloading, keyed by family
+// name and served per form. Fonts we know nothing about (e.g. uploaded ones)
+// get no fallback so their stack is left alone.
+const fontFallbacks: Record<string, string> = {};
+
+export function setFontFallbacks(fallbacks: Record<string, string>) {
+  Object.assign(fontFallbacks, fallbacks);
+}
+
+export const getFontFallback = (family: string) =>
+  fontFallbacks[family.replace(/^'|'$/g, '')] ?? '';

@@ -17,7 +17,11 @@ export const LABEL_INHERITED_FONT_KEYS = [
   'font_italic',
   'line_height',
   'letter_spacing',
-  'text_transform'
+  'text_transform',
+  // The generic family shown while the font downloads. applyFontFamily reads
+  // label_font_fallback alongside label_font_family, so an unset label takes
+  // the field's fallback instead of re-deriving the automatic one.
+  'font_fallback'
 ] as const;
 
 export const LABEL_TEXT_ALIGN_DEFAULT = 'left';
