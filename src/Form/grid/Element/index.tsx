@@ -356,6 +356,9 @@ const Element = ({ node: el, form }: any) => {
               onChange();
             }}
             onClear={() => {
+              // Without this the row keeps its stored S3 path, so the submit
+              // re-keeps the signature the user just erased.
+              clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               changeValue(null, el, index);
               onChange();
             }}

@@ -158,9 +158,15 @@ export function updateSessionValues(session: any) {
     return acc;
   };
 
-  const transformedFieldValues = Object.entries(session.field_values).reduce(
-    replaceNullInServarArrays,
-    {}
+  const transformedFieldValues: Record<string, any> = Object.entries(
+    session.field_values
+  ).reduce(replaceNullInServarArrays, {});
+
+  // processFileValues owns these keys. The backend routes file servars into
+  // file_values alone, so this only bites if that split changes -- but '' here
+  // would flatten a repeat hole and silently undo it.
+  Object.keys(session.file_values ?? {}).forEach(
+    (key) => delete transformedFieldValues[key]
   );
 
   Object.assign(fieldValues, transformedFieldValues);

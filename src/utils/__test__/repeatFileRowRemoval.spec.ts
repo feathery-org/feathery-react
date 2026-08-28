@@ -36,11 +36,7 @@ beforeEach(() => {
 describe('removing a repeat row that holds a file', () => {
   // audio_recording routes through the same multipart submit and the same
   // indexed filePathMap as the other two, so it must classify with them.
-  it.each(FILE_FIELD_TYPES)('classifies %s as a file field', (type) => {
-    expect(FILE_FIELD_TYPES.includes(type)).toBe(true);
-  });
-
-  it('includes audio_recording', () => {
+  it('covers every type that submits through the indexed file path', () => {
     expect(FILE_FIELD_TYPES).toEqual([
       'file_upload',
       'signature',
@@ -68,6 +64,33 @@ describe('removing a repeat row that holds a file', () => {
     removeFilePathMapEntry('notes', 0);
 
     expect(fileDeduplicationCount.notes).toBeUndefined();
+  });
+
+  it('takes out the middle row and closes the gap', () => {
+    filePathMap.notes = ['s3/a.webm', 's3/b.webm', 's3/c.webm'];
+
+    removeFilePathMapEntry('notes', 1);
+
+    expect(filePathMap.notes).toEqual(['s3/a.webm', 's3/c.webm']);
+  });
+
+  it('takes out the last row without touching the others', () => {
+    filePathMap.notes = ['s3/a.webm', 's3/b.webm', 's3/c.webm'];
+
+    removeFilePathMapEntry('notes', 2);
+
+    expect(filePathMap.notes).toEqual(['s3/a.webm', 's3/b.webm']);
+  });
+
+  it('leaves the map alone for a row past the end', () => {
+    // A file column ends in empty rows, so it is shorter than its siblings and
+    // the container's last-row index can land past it. Dropping slot 0 here is
+    // what deleted the wrong file.
+    filePathMap.notes = ['s3/only.webm'];
+
+    removeFilePathMapEntry('notes', 3);
+
+    expect(filePathMap.notes).toEqual(['s3/only.webm']);
   });
 
   it('leaves a non-array path map alone', () => {

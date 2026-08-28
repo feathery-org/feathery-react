@@ -1000,10 +1000,21 @@ function Form({
     const curRepeatContainer = insideContainer || repeatContainer;
 
     const removeServars: Record<string, null> = {};
-    let curIndex = index;
+    // The removed row belongs to the container, not to any one field. Taking
+    // each field's own length lets a shorter array drop a different row, and a
+    // file field is shorter than its siblings whenever it ends in empty rows.
+    const containerRows = Math.max(
+      0,
+      ...getFieldsInRepeat(activeStep, curRepeatContainer).map((field: any) => {
+        const vals = fieldValues[field.servar.key];
+        return Array.isArray(vals) ? vals.length : 0;
+      })
+    );
+    const curIndex = isInsideContainer ? index : containerRows - 1;
+    if (curIndex < 0) return;
+
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
-      curIndex = !isInsideContainer ? vals.length - 1 : index;
 
       removeServars[field.servar.key] = null;
 

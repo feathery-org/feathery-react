@@ -118,8 +118,9 @@ describe('repeatable file_upload empty indices', () => {
     // Trailing hole stored as null: the row count is already right, so the
     // set_value trigger must not append another empty row.
     expect(getServarRepeatNum(setValueFileField, [file, null])).toBe(2);
-    // Trailing hole stored as '' (today's shape): '' !== null, so the last row
-    // reads as "filled" and a phantom row is appended.
+    // Trailing hole stored as '' (today's shape). getServarRepeatNum already
+    // treats '' as the default for a null-defaulting field, so neither shape
+    // appends a row.
     expect(getServarRepeatNum(setValueFileField, [file, ''])).toBe(2);
   });
 });

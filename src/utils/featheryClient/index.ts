@@ -269,29 +269,28 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     if (Array.isArray(fileValue)) {
-      // Use Promise.allSettled to handle failed promises gracefully
-      const results = await Promise.allSettled(
-        fileValue.map((f, i) => resolveFile(f, i))
-      );
-
       // Keep every position: a repeat row with no file stays null so its index
       // survives to the wire instead of the later files shifting up.
-      const resolved = results.map((r) =>
-        r.status === 'fulfilled' && r.value !== undefined ? r.value : null
+      const failures: Error[] = [];
+      const resolved = await Promise.all(
+        fileValue.map(async (f, i) => {
+          try {
+            const value = await resolveFile(f, i, { rethrowOnFailure: true });
+            return value === undefined ? null : value;
+          } catch (error) {
+            failures.push(
+              error instanceof Error ? error : new Error('File upload failed')
+            );
+            return null;
+          }
+        })
       );
 
       const isRealEntry = (v: any) => v !== null && v !== undefined && v !== '';
-      const hadFiles = fileValue.some(isRealEntry);
-      const allFailed = !resolved.some(isRealEntry);
-
-      if (hadFiles && allFailed) {
-        const firstError = results.find((r) => r.status === 'rejected');
-        const errorMessage = firstError
-          ? (firstError as PromiseRejectedResult).reason?.message ||
-            'File upload failed'
-          : 'All file uploads failed';
-        throw new Error(errorMessage);
-      }
+      // The submit replaces the whole field, so letting a failed row through as
+      // a hole would delete the file already stored at that row. Every row that
+      // was meant to hold a file has to resolve, or the user hears about it.
+      if (fileValue.some(isRealEntry) && failures.length) throw failures[0];
 
       return resolved;
     } else {
@@ -344,12 +343,15 @@ export default class FeatheryClient extends IntegrationClient {
     }
 
     // Only block duplicate submissions if the previous attempt SUCCEEDED
-    // This allows retries after failures while preventing duplicate successful uploads
+    // This allows retries after failures while preventing duplicate successful
+    // uploads. Keyed on the indices, not just the count: moving a file between
+    // repeat rows leaves the count identical but is a real change.
+    const fingerprint = `${numFiles}:${keepIndices.join()}:${newIndices.join()}`;
     const hadSuccess = fileRetryStatus[servar.key];
-    if (hadSuccess && fileDeduplicationCount[servar.key] === numFiles)
+    if (hadSuccess && fileDeduplicationCount[servar.key] === fingerprint)
       return Promise.resolve();
 
-    fileDeduplicationCount[servar.key] = numFiles;
+    fileDeduplicationCount[servar.key] = fingerprint;
 
     // Don't surface field-clearing requests in the upload progress toast.
     // numFiles is passed separately from the names because a value with no
@@ -369,7 +371,16 @@ export default class FeatheryClient extends IntegrationClient {
     if (numFiles > 0 && servar.repeated && Array.isArray(fileValue))
       formData.set(
         '__feathery_file_indices',
-        JSON.stringify({ [servar.key]: { keep: keepIndices, new: newIndices } })
+        JSON.stringify({
+          [servar.key]: {
+            keep: keepIndices,
+            new: newIndices,
+            // The repeat row count. It bounds the indices server-side to rows
+            // that exist, so a bug here cannot make one file expand into
+            // thousands of slots in every reader.
+            length: fileValue.length
+          }
+        })
       );
 
     formData.set('__feathery_form_key', this.formKey);

@@ -81,7 +81,9 @@ describe('repeatable file upload wire format', () => {
     );
     const body = bodyOf(client);
     expect(body.getAll('f')).toHaveLength(1);
-    expect(indicesOf(body)).toBe(JSON.stringify({ f: { keep: [], new: [2] } }));
+    expect(indicesOf(body)).toBe(
+      JSON.stringify({ f: { keep: [], new: [2], length: 3 } })
+    );
   });
 
   it('indexes a kept S3 path separately from a new upload', async () => {
@@ -93,7 +95,7 @@ describe('repeatable file upload wire format', () => {
     );
     const body = bodyOf(client);
     expect(indicesOf(body)).toBe(
-      JSON.stringify({ f: { keep: [1], new: [0] } })
+      JSON.stringify({ f: { keep: [1], new: [0], length: 2 } })
     );
   });
 
@@ -154,7 +156,9 @@ describe('repeatable file upload wire format', () => {
     );
     const body = bodyOf(client);
     expect(body.getAll('f')).toHaveLength(1);
-    expect(indicesOf(body)).toBe(JSON.stringify({ f: { keep: [], new: [0] } }));
+    expect(indicesOf(body)).toBe(
+      JSON.stringify({ f: { keep: [], new: [0], length: 3 } })
+    );
   });
 
   it('indexes a repeated signature the same way as a file upload', async () => {
@@ -170,6 +174,8 @@ describe('repeatable file upload wire format', () => {
     );
     const body = bodyOf(client);
     expect(body.getAll('f')).toHaveLength(1);
-    expect(indicesOf(body)).toBe(JSON.stringify({ f: { keep: [], new: [1] } }));
+    expect(indicesOf(body)).toBe(
+      JSON.stringify({ f: { keep: [], new: [1], length: 2 } })
+    );
   });
 });
