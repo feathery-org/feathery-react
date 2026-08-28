@@ -1379,6 +1379,49 @@ describe('IntegrationClient', () => {
       expect(body.ignore_template_field_mapping).toBe(true);
       expect(body.fill_data).toEqual({ some_field_key: 'a string' });
     });
+
+    it('forwards per-signer authentication as snake_case, omitting it when unset', async () => {
+      const formKey = 'test_form_key';
+      const integrationClient = new IntegrationClient(formKey);
+
+      global.fetch.mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ docusign_envelope_id: 'env-1' })
+      });
+
+      await integrationClient.sendDocusignEnvelope({
+        documents: ['doc-1'],
+        signers: [
+          {
+            email: 'sms@mail.com',
+            name: 'SMS Signer',
+            authentication: { method: 'sms', phoneNumbers: ['+15555555555'] }
+          },
+          {
+            email: 'verified@mail.com',
+            name: 'Verified Signer',
+            authentication: {
+              method: 'identity_verification',
+              workflowId: 'wf-123',
+              phoneNumbers: [{ countryCode: '1', number: '5555555555' }]
+            }
+          },
+          { email: 'plain@mail.com', name: 'Unauthenticated Signer' }
+        ]
+      });
+
+      const [sms, verified, plain] = requestBody().signers;
+      expect(sms.authentication).toEqual({
+        method: 'sms',
+        phone_numbers: ['+15555555555']
+      });
+      expect(verified.authentication).toEqual({
+        method: 'identity_verification',
+        workflow_id: 'wf-123',
+        phone_numbers: [{ country_code: '1', number: '5555555555' }]
+      });
+      expect(plain.authentication).toBeUndefined();
+    });
   });
 
   describe('updateDocusignEnvelope', () => {
