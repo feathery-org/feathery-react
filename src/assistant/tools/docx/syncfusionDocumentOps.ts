@@ -13167,6 +13167,16 @@ interface EngineMutationOutcome {
   sfdt: any;
   anchor?: string;
   details?: string[];
+  /**
+   * Tables this plan left in a shape the finalizer should restripe.
+   *
+   * The editor route carries these on `OpSuccessExtras`; an engine plan has no
+   * extras, so the same receipt travels on the outcome and is handed to the
+   * same sink. Recorded rather than acted on here: striping is decided once, at
+   * the end of the change set, because an op later in the same set can move or
+   * further edit the very table this one just wrote.
+   */
+  tableFootprints?: TableFootprint[];
 }
 
 interface EngineMutationPlan {
@@ -21212,6 +21222,11 @@ function applyDocumentEditsMeasured(
               }
               const outcome = plan.execute(state);
               outcomes.set(plan.index, outcome);
+              // Same sink, same ordering law as the editor route: an engine
+              // plan's footprints are already current as of its own write, so
+              // they are appended with no shift of their own.
+              if (outcome.tableFootprints?.length)
+                recordTableFootprints(outcome.tableFootprints);
               state = {
                 sfdt: outcome.sfdt,
                 index: scanBindings(outcome.sfdt)
