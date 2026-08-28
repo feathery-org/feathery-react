@@ -280,8 +280,13 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
     rowPath: SfdtPath | null
   ): void {
     (inlines || []).forEach((inline, i) => {
-      if (!inline || !inline.contentControlProperties) return;
+      if (!inline) return;
       const path = [...basePath, i];
+      // A shape/text box is an inline carrying a textFrame; its content is a
+      // block list scoped like the body (doc-level), not the table row it sits
+      // in, so recurse with a fresh context.
+      walkTextFrames(inline, path);
+      if (!inline.contentControlProperties) return;
       const rawTag = String(inline.contentControlProperties.tag || '');
       const def = parseTagOrDiagnose(rawTag, path);
       if (def && (def.kind === 'field' || def.kind === 'formula')) {
@@ -307,6 +312,35 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       }
       // Nested content controls inside a content control.
       walkInlines(inline.inlines, [...path, 'inlines'], tableCtx, rowPath);
+    });
+  }
+
+  // A text box's editable content lives at node.textFrame.blocks (an inline
+  // shape) and, defensively, at block.floatingElements[k].textFrame.blocks
+  // (some SFDT serializations anchor a floating shape on the paragraph). Both
+  // are doc-level block lists.
+  function walkTextFrames(node: any, basePath: SfdtPath): void {
+    const frame = node && node.textFrame;
+    if (frame && Array.isArray(frame.blocks)) {
+      walkBlocks(
+        frame.blocks,
+        [...basePath, 'textFrame', 'blocks'],
+        null,
+        null
+      );
+    }
+    (node && Array.isArray(node.floatingElements)
+      ? node.floatingElements
+      : []
+    ).forEach((shape: any, k: number) => {
+      if (shape && shape.textFrame && Array.isArray(shape.textFrame.blocks)) {
+        walkBlocks(
+          shape.textFrame.blocks,
+          [...basePath, 'floatingElements', k, 'textFrame', 'blocks'],
+          null,
+          null
+        );
+      }
     });
   }
 
@@ -395,6 +429,9 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       } else if (Array.isArray(block.inlines)) {
         walkInlines(block.inlines, [...path, 'inlines'], tableCtx, rowPath);
       }
+      // A floating text box may be anchored on the paragraph rather than sitting
+      // in its inlines; walkTextFrames covers block.floatingElements too.
+      if (block.floatingElements) walkTextFrames(block, path);
     });
   }
 
