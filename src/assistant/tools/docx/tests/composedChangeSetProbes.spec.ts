@@ -162,30 +162,28 @@ describe('PROBE: does a two-op change set behave as one unit?', () => {
     // eslint-disable-next-line no-console
     console.info('PROBE 1 outcome:', JSON.stringify(outcome, null, 2));
 
-    // THE FINDING, and it decides slice 3's sequencing rather than its shape.
-    //
-    // The composition is REFUSED outright. `duplicate_table` belongs to the
-    // anchor-shifting family, and `detectAnchorShiftingNotLast` rejects any
-    // change set where such an op is followed by another anchored edit - so
-    // `duplicate_table` + `delete_row`, which IS the planner-side split, cannot
-    // currently be expressed at all. Neither op runs; the document is
-    // untouched.
-    //
-    // This is not a surprise the design failed to anticipate. It is the exact
-    // refusal the footprint contract was built to make safe to lift: the
-    // dormant `tableId`, the anchor-maintenance law and the dedupe rule all
-    // exist so that removing it does not readmit the corruption it prevents.
-    // Tracked as the backlog's anchor-shifting item.
-    //
-    // This assertion flips when that refusal is lifted, and it is written to
-    // fail loudly at that moment rather than to be quietly deleted.
-    expect(outcome.results.map((entry) => entry.error)).toEqual([
-      'duplicate_table_must_end_change_set',
-      'duplicate_table_must_end_change_set'
-    ]);
-    expect(outcome.tablesAfter).toEqual(['costs']);
-    expect(editor.serialize()).toBe(pristine);
-    expect(outcome.revisions).toBe(0);
+    // THE COMPOSITION RUNS. This probe originally recorded the opposite: the
+    // pair was refused outright with `duplicate_table_must_end_change_set`,
+    // neither op ran, and that refusal was slice 3's blocker. Lifting it was
+    // the work; this row is now the evidence that the lift landed.
+    expect(outcome.results.map((entry) => entry.error)).toEqual([null, null]);
+    expect(outcome.tablesAfter).toHaveLength(2);
+    expect(outcome.revisions).toBeGreaterThan(0);
+
+    // THE PROPERTY THAT DECIDES THE SHAPE: rejecting the change set must leave
+    // NO orphan copy. A copy that survives its own rejection is precisely the
+    // coherent-but-wrong document this probe exists to rule out, and it is the
+    // jsdom half of the phase-2 ledger row for reject-the-card.
+    rejectAll(editor);
+    const afterReject = {
+      tables: costsTableIds(editor),
+      byteEqual: editor.serialize() === pristine
+    };
+    // eslint-disable-next-line no-console
+    console.info('PROBE 1 after reject:', JSON.stringify(afterReject, null, 2));
+
+    expect(afterReject.tables).toEqual(['costs']);
+    expect(afterReject.byteEqual).toBe(true);
   });
 
   it('PROBE 2: partial failure - a refused second op must not leave the first standing', () => {
