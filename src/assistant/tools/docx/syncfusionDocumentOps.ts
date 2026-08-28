@@ -84,6 +84,8 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+import { deriveTableStructure } from './tableStructure';
+import type { TableStructure } from './tableStructure';
 import type {
   BindingInstanceChoice,
   BindingWireIdentity,
@@ -14703,6 +14705,108 @@ function clonedBindingTags(
   for (const value of Object.values(node))
     clonedBindingTags(value, out, tableIdsSeen, scope);
   return { bindings: out, tableIds: tableIdsSeen };
+}
+
+/**
+ * Every formula name to its expression, for the transitive-dependency test.
+ *
+ * `formulas` maps a name to its OCCURRENCES - one definition seen in several
+ * places - so any occurrence carries the expression. The binding engine is what
+ * keeps divergent ones from existing, which is why reading the first is safe
+ * here rather than a silent pick-one.
+ */
+function documentFormulaMap(index: BindingIndex): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [name, occurrences] of index.formulas) {
+    const expression = occurrences[0]?.def;
+    if (expression && expression.kind === 'formula')
+      out.set(name, expression.expression);
+  }
+  return out;
+}
+
+/**
+ * Which physical rows of a duplicate survive, resolved from `keepRows`.
+ *
+ * `null` means the caller said nothing and every row is kept, which is the
+ * behaviour duplicate_table always had.
+ *
+ * THE INDEX SPACE IS ABSOLUTE TABLE ROW INDICES, not item ordinals. Every other
+ * row-addressing op in the surface speaks absolute rows - delete_row,
+ * set_cell_text, a table_facts read - and introducing a second index space for
+ * one parameter is how off-by-one defects arrive in a form nobody can see in a
+ * diff.
+ *
+ * ROLE-BEARING ROWS ARE NOT FILTERABLE. The header band and every aggregate row
+ * belong to BOTH halves of any partition: a fragment with no header is not a
+ * table a person can read, and a fragment whose totals were left behind shows
+ * numbers that silently no longer mean anything. So the caller filters items,
+ * and naming anything else is a refusal rather than a silent correction - a
+ * caller who names a total has misunderstood the primitive, and being told so
+ * is more useful than being quietly obeyed.
+ *
+ * This is the caller-facing half of the derive-roles-from-evidence law, and it
+ * is what makes the same filter safe one tier up, where the equivalent mistake
+ * would behead a section.
+ */
+function resolveKeepRows(
+  op: EditOp,
+  structure: TableStructure,
+  tableId: string
+): number[] | null {
+  if (op.keepRows === undefined) return null;
+  const where = `table ${tableId}: ${structure.rows.length} rows, header band ${structure.headerRows}`;
+  if (!Array.isArray(op.keepRows))
+    throw new OpError(
+      'keep_rows_not_a_list',
+      `duplicate_table keepRows must be a list of absolute table row indices. Nothing was written.`,
+      [where, `keepRows: ${JSON.stringify(op.keepRows)}`]
+    );
+
+  const asked = [...new Set(op.keepRows.map(Number))];
+  const byIndex = new Map(structure.rows.map((row) => [row.index, row]));
+
+  const notFound = asked.filter(
+    (row) => !Number.isInteger(row) || !byIndex.has(row)
+  );
+  if (notFound.length)
+    throw new OpError(
+      'keep_rows_row_not_found',
+      `duplicate_table keepRows names row ${notFound.join(
+        ', '
+      )}, which this table does not have. Nothing was written.`,
+      [
+        where,
+        `keepRows: ${asked.join(', ')}`,
+        'Re-read the table with a table_facts read and use its current row indices.'
+      ]
+    );
+
+  const roleRows = asked.filter((row) => byIndex.get(row)!.role !== 'item');
+  if (roleRows.length)
+    throw new OpError(
+      'keep_rows_names_role_row',
+      `duplicate_table keepRows names row ${roleRows.join(
+        ', '
+      )}, which is part of the header band or is a total computed from this table's own rows. Those rows are always kept and never need naming; keepRows selects only the data rows. Nothing was written.`,
+      [
+        where,
+        `keepRows: ${asked.join(', ')}`,
+        `roles: ${roleRows
+          .map((row) => `row ${row} is ${byIndex.get(row)!.role}`)
+          .join(', ')}`,
+        'List only the data rows the copy should keep. The header and any totals come along on their own.'
+      ]
+    );
+
+  // An EMPTY selection is legitimate, not a mistake: header plus totals plus no
+  // data is the natural end state of "move all the items into a new table", and
+  // an empty aggregate recomputes to zero rather than erroring. Refusing it
+  // would force a special case for the partition that is easiest to ask for.
+  const keep = new Set(asked);
+  return structure.rows
+    .filter((row) => row.role !== 'item' || keep.has(row.index))
+    .map((row) => row.index);
 }
 
 function boundDuplicateTablePlan(
