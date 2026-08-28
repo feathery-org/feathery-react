@@ -19,7 +19,11 @@ import {
   isStoreFieldValueAction,
   updateSessionValues
 } from '../formHelperFunctions';
-import { getDefaultFormFieldValue } from '../fieldHelperFunctions';
+import {
+  FILE_FIELD_TYPES,
+  getDefaultFormFieldValue,
+  isRepeatedFileField
+} from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
 import {
   isFontDeclaredByHost,
@@ -266,34 +270,43 @@ export default class FeatheryClient extends IntegrationClient {
     };
 
     if (Array.isArray(fileValue)) {
-      // Use Promise.allSettled to handle failed promises gracefully
-      const results = await Promise.allSettled(
-        fileValue.map((f, i) => resolveFile(f, i))
+      // Keep every position: a repeat row with no file stays null so its index
+      // survives to the wire instead of the later files shifting up.
+      const isHole = (v: any) => v === null || v === undefined || v === '';
+      const failures: Error[] = [];
+      const resolved = await Promise.all(
+        fileValue.map(async (f, i) => {
+          // An empty row must not resolve to whatever path is still stored at
+          // its index. filePathMap outlives the value for any writer that
+          // clears a row without sweeping the map -- the `field.value` setter
+          // and repeat_single both do -- and resurrecting it here would submit
+          // one file at two rows at once.
+          if (isHole(f)) return null;
+          try {
+            const value = await resolveFile(f, i, { rethrowOnFailure: true });
+            return value === undefined ? null : value;
+          } catch (error) {
+            failures.push(
+              error instanceof Error ? error : new Error('File upload failed')
+            );
+            return null;
+          }
+        })
       );
 
-      const successfulFiles = results
-        .filter(
-          (r) =>
-            r.status === 'fulfilled' &&
-            r.value !== null &&
-            r.value !== undefined
-        )
-        .map((r) => (r as PromiseFulfilledResult<any>).value);
+      if (!failures.length) return resolved;
 
-      // If user tried to upload files but ALL failed, throw error
-      const hadFiles = fileValue.length > 0;
-      const allFailed = successfulFiles.length === 0;
+      // The submit replaces the whole field, so letting a failed row through as
+      // a hole would delete the file already stored at that row. Every row that
+      // was meant to hold a file has to resolve, or the user hears about it.
+      if (isRepeatedFileField(servar)) throw failures[0];
 
-      if (hadFiles && allFailed) {
-        const firstError = results.find((r) => r.status === 'rejected');
-        const errorMessage = firstError
-          ? (firstError as PromiseRejectedResult).reason?.message ||
-            'File upload failed'
-          : 'All file uploads failed';
-        throw new Error(errorMessage);
-      }
-
-      return successfulFiles;
+      // A plain multi-file field holds no positions worth keeping, so one bad
+      // upload out of three still sends the other two, as it did before repeat
+      // holes existed. Only losing all of them is worth an error.
+      const uploaded = resolved.filter((v) => !isHole(v));
+      if (!uploaded.length) throw failures[0];
+      return uploaded;
     } else {
       return await resolveFile(fileValue, null, { rethrowOnFailure: true });
     }
@@ -307,12 +320,22 @@ export default class FeatheryClient extends IntegrationClient {
     const fileValue = await this._getFileValue(servar);
 
     let numFiles = 0;
+    const keepIndices: number[] = [];
+    const newIndices: number[] = [];
 
     if (fileValue || fileValue === '') {
       if (Array.isArray(fileValue)) {
-        const validFiles = fileValue.filter((file) => !!file && file !== '');
-        validFiles.forEach((file) => formData.append(servar.key, file));
-        numFiles = validFiles.length;
+        // Only real files go on the wire; their repeat indices travel alongside
+        // so the backend can rebuild the holes.
+        fileValue.forEach((file, index) => {
+          if (!file || file === '') return;
+          formData.append(servar.key, file);
+          // A string is an S3 path the backend should keep, anything else is a
+          // fresh upload. request.data merges those two sources, so they are
+          // indexed separately.
+          (typeof file === 'string' ? keepIndices : newIndices).push(index);
+        });
+        numFiles = keepIndices.length + newIndices.length;
       } else if (fileValue !== '') {
         formData.append(servar.key, fileValue);
         numFiles = 1;
@@ -334,12 +357,15 @@ export default class FeatheryClient extends IntegrationClient {
     }
 
     // Only block duplicate submissions if the previous attempt SUCCEEDED
-    // This allows retries after failures while preventing duplicate successful uploads
+    // This allows retries after failures while preventing duplicate successful
+    // uploads. Keyed on the indices, not just the count: moving a file between
+    // repeat rows leaves the count identical but is a real change.
+    const fingerprint = `${numFiles}:${keepIndices.join()}:${newIndices.join()}`;
     const hadSuccess = fileRetryStatus[servar.key];
-    if (hadSuccess && fileDeduplicationCount[servar.key] === numFiles)
+    if (hadSuccess && fileDeduplicationCount[servar.key] === fingerprint)
       return Promise.resolve();
 
-    fileDeduplicationCount[servar.key] = numFiles;
+    fileDeduplicationCount[servar.key] = fingerprint;
 
     // Don't surface field-clearing requests in the upload progress toast.
     // numFiles is passed separately from the names because a value with no
@@ -350,6 +376,25 @@ export default class FeatheryClient extends IntegrationClient {
         servar.key,
         getUploadFileNames(fileValue),
         numFiles
+      );
+
+    // Only a repeated file field has repeat rows to index. A non-repeated
+    // multi-file field is a flat list, so sending indices for it would flip its
+    // rows off the legacy dense representation for no gain, and would do so on
+    // nearly every file submission.
+    if (numFiles > 0 && servar.repeated && Array.isArray(fileValue))
+      formData.set(
+        '__feathery_file_indices',
+        JSON.stringify({
+          [servar.key]: {
+            keep: keepIndices,
+            new: newIndices,
+            // The repeat row count. It bounds the indices server-side to rows
+            // that exist, so a bug here cannot make one file expand into
+            // thousands of slots in every reader.
+            length: fileValue.length
+          }
+        })
       );
 
     formData.set('__feathery_form_key', this.formKey);
@@ -618,7 +663,11 @@ export default class FeatheryClient extends IntegrationClient {
     let params: Record<string, any> = {
       form_key: this.formKey,
       draft: this.draft,
-      override: overrideUserId
+      override: overrideUserId,
+      // This version reads a null in file_values as an empty repeat row.
+      // Versions before it map over the array dereferencing `.url`, so the
+      // backend holds the dense shape back until a client asks like this.
+      repeat_holes: 'true'
     };
     if (userId) params.fuser_key = userId;
     if (collaboratorId) params.collaborator_user = collaboratorId;
@@ -683,6 +732,9 @@ export default class FeatheryClient extends IntegrationClient {
       auth_data: authData,
       auth_form_key: authState.authFormKey,
       is_stytch_template_key: isStytchTemplateKey,
+      // This response also feeds updateSessionValues, so it needs the same
+      // hole signal the session fetch sends.
+      repeat_holes: true,
       ...(userId ? { fuser_key: userId } : {})
     };
     const url = `${API_URL}panel/update_auth/v3/`;
@@ -911,9 +963,7 @@ export default class FeatheryClient extends IntegrationClient {
     gatherTrustedFormFields(hiddenFields, this.formKey);
 
     const isFileServar = (servar: any) =>
-      ['file_upload', 'signature', 'audio_recording'].some(
-        (type) => type in servar
-      );
+      FILE_FIELD_TYPES.some((type) => type in servar);
     const jsonServars = servars.filter((servar: any) => !isFileServar(servar));
     const fileServars = servars.filter(isFileServar);
 

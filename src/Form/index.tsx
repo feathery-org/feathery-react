@@ -22,6 +22,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
   updateCustomCSS,
@@ -47,8 +48,11 @@ import {
   FieldStyles,
   formatStepFields,
   getAllFields,
+  FILE_FIELD_TYPES,
   getDefaultFieldValue,
   getDefaultFormFieldValue,
+  normalizeRepeatArrayValue,
+  stripEmptyRepeatEntries,
   getFieldValue,
   saveInitialValuesAndUrlParams,
   updateStepFieldOptions,
@@ -534,13 +538,14 @@ function Form({
       const found = getServarAndStepByFieldKey(fieldKey);
       if (!found) continue;
       const { servar, step } = found;
-      if (
-        !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-      )
-        continue;
+      if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
       fileEntries.push({
-        servar: { key: servar.key, [servar.type]: fieldValues[fieldKey] },
+        servar: {
+          key: servar.key,
+          [servar.type]: fieldValues[fieldKey],
+          repeated: Boolean(servar.repeated)
+        },
         stepKey: step.key
       });
     }
@@ -557,10 +562,7 @@ function Form({
         if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
-        if (
-          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-        )
-          return pending;
+        if (!FILE_FIELD_TYPES.includes(servar.type)) return pending;
         if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
         pending.push(fieldKey);
         return pending;
@@ -927,6 +929,20 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Servar per field key. updateFieldValues runs on every keystroke, so this
+  // avoids both the linear scan in getServarByFieldKey and the Field entity,
+  // whose type getter warns when the field is not on the active form. The whole
+  // servar is stored because callers need `repeated` as well as `type`.
+  const servarByKey = useMemo(() => {
+    const servars = new Map<string, any>();
+    Object.values(steps).forEach((step: any) =>
+      (step.servar_fields ?? []).forEach((field: any) =>
+        servars.set(field.servar.key, field.servar)
+      )
+    );
+    return servars;
+  }, [steps]);
+
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (!shouldScrollToTop || autoscroll === 'none') return;
@@ -984,12 +1000,31 @@ function Form({
     const curRepeatContainer = insideContainer || repeatContainer;
 
     const removeServars: Record<string, null> = {};
-    let curIndex = index;
+    // The removed row belongs to the container, not to any one field. Taking
+    // each field's own length lets a shorter array drop a different row, and a
+    // file field is shorter than its siblings whenever it ends in empty rows.
+    const fieldsInContainer = curRepeatContainer
+      ? getFieldsInRepeat(activeStep, curRepeatContainer)
+      : [];
+    const containerRows = Math.max(
+      0,
+      ...fieldsInContainer.map((field: any) => {
+        const vals = fieldValues[field.servar.key];
+        return Array.isArray(vals) ? vals.length : 0;
+      })
+    );
+    const curIndex = isInsideContainer ? index : containerRows - 1;
+    if (curIndex < 0) return;
+
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
-      curIndex = !isInsideContainer ? vals.length - 1 : index;
 
       removeServars[field.servar.key] = null;
+
+      // filePathMap is indexed by repeat row, so it has to lose the same slot
+      // or the surviving files resolve to the removed row's uploaded path.
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
@@ -1097,7 +1132,7 @@ function Form({
       (acc, [key, value]) => {
         const field = fields?.[key];
         if (Array.isArray(value) && field && !field.isHiddenField) {
-          acc[key] = value.map((item) => (item === null ? '' : item));
+          acc[key] = normalizeRepeatArrayValue(value, servarByKey.get(key));
         } else {
           acc[key] = value;
         }
@@ -2074,11 +2109,18 @@ function Form({
     if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
+      const servar = servarByKey.get(key);
       let newVal = val.value as any;
       newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => ![null, undefined].includes(v))
+        ? stripEmptyRepeatEntries(newVal, servar)
         : newVal;
-      return { key, [val.type]: newVal };
+      const field: Record<string, any> = { key, [val.type]: newVal };
+      // Only the file submit path reads this. Setting it on every field would
+      // change the shape of the JSON submit body, which carries these objects
+      // verbatim.
+      if (FILE_FIELD_TYPES.includes(val.type))
+        field.repeated = Boolean(servar?.repeated);
+      return field;
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
