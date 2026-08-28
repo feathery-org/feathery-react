@@ -48,6 +48,7 @@ describe('containerToolbarOutcomes', () => {
     ).toEqual({
       terminalAction: 'sign',
       offersDraft: false,
+      offersDownload: false,
       savesToField: true
     });
   });
@@ -61,6 +62,7 @@ describe('containerToolbarOutcomes', () => {
     ).toEqual({
       terminalAction: 'sign',
       offersDraft: true,
+      offersDownload: false,
       savesToField: false
     });
   });
@@ -74,6 +76,7 @@ describe('containerToolbarOutcomes', () => {
     ).toEqual({
       terminalAction: 'draft',
       offersDraft: false,
+      offersDownload: false,
       savesToField: false
     });
   });
@@ -87,6 +90,18 @@ describe('containerToolbarOutcomes', () => {
     ).toEqual({
       terminalAction: undefined,
       offersDraft: false,
+      offersDownload: false,
+      savesToField: false
+    });
+  });
+
+  it('offers download beside a terminal sign when both are configured', () => {
+    expect(
+      containerToolbarOutcomes({ editor_toolbar_actions: ['sign', 'download'] })
+    ).toEqual({
+      terminalAction: 'sign',
+      offersDraft: false,
+      offersDownload: true,
       savesToField: false
     });
   });
@@ -95,6 +110,7 @@ describe('containerToolbarOutcomes', () => {
     expect(containerToolbarOutcomes({})).toEqual({
       terminalAction: undefined,
       offersDraft: false,
+      offersDownload: false,
       savesToField: false
     });
   });

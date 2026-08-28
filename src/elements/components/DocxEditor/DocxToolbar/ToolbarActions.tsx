@@ -162,8 +162,18 @@ const ToolbarActions = forwardRef<HTMLDivElement, ToolbarActionsProps>(
             )}
           </Menu>
         ) : onDownload ? (
-          <button type='button' css={downloadBtn} onClick={onDownload}>
-            <DownloadIcon width={16} height={16} />
+          <button
+            type='button'
+            css={{ ...downloadBtn, opacity: downloadBusy ? 0.6 : 1 }}
+            onClick={onDownload}
+            disabled={downloadBusy}
+            title={downloadBusy ? 'Preparing download…' : 'Download'}
+          >
+            {downloadBusy ? (
+              <SpinnerIcon width={16} height={16} />
+            ) : (
+              <DownloadIcon width={16} height={16} />
+            )}
             Download
           </button>
         ) : null}
