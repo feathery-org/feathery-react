@@ -203,29 +203,36 @@ describe('graded cases - what the engine reaches today', () => {
     expect(editor.serialize()).toBe(before);
   });
 
-  it('case 2 control: the op surface carries no non-contiguous row selector', () => {
-    // The structural half of the same claim, independent of any document: a
-    // contiguous cut point is the only row vocabulary split_table has. If this
-    // ever reads false, the decomposition has started landing.
+  it('case 2 control: a CONTIGUOUS request on the same table SUCCEEDS', () => {
+    // A real control, not a restatement. The previous version of this row sent
+    // the same unsayable request as case 2 and asserted the same refusal, which
+    // proved nothing case 2 had not already proved.
+    //
+    // What needs ruling out is that case 2's refusal comes from the table, the
+    // anchor, or the document rather than from the missing vocabulary. So this
+    // sends a request the op CAN express - a contiguous cut at one point, on the
+    // same table, through the same anchor - and requires it to succeed. Case 2
+    // refuses and this one does not, so the difference is the request.
     const live = open();
     const anchor = cellAnchorContaining('North');
-    const contiguousOnly = apply(
+    const contiguous = apply(
       live,
       [
         {
           op: 'split_table',
           anchor,
-          extractRows: [1, 3, 5],
-          targetAnchor: '0;0',
-          position: 'after',
+          splitAtRow: 3,
+          // A real paragraph, not '0;0' - that one lands inside a table and the
+          // op refuses with relocation_target_in_table. Worth recording: case 2
+          // never reached that check, because a missing row selection fails
+          // first. Its error is the FIRST refusal, not the only one.
+          targetAnchor: '0;9',
+          position: 'before',
           group: 'g'
         } as any
       ],
       'graded-case-2-control'
     );
-    // No splitAtRow was supplied, and extractRows means nothing to the op, so
-    // the request cannot succeed by accident.
-    expect(contiguousOnly.results[0].ok).toBe(false);
-    expect(contiguousOnly.results[0].error).toBe('split_table_no_rows');
+    expect(contiguous.results[0].ok).toBe(true);
   });
 });

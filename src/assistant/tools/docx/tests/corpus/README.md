@@ -45,7 +45,7 @@ bookmarks - one safely inside a row and one spanning four - a foreign author's
 pending deletion, and a real tail table. It exists so schema and partition work
 has something that can actually fail.
 
-It also costs: adding it took the docx suite from about 30 seconds to about 85.
+It also costs: adding it took the docx suite from about 30 seconds to about 68, varying between 60 and 74 with machine load.
 
 WHAT IT DOES NOT HAVE, and this is not an oversight: header and footer stories.
 The full document, `flagship-proposal.headers.sfdt.json`, is kept in the harness

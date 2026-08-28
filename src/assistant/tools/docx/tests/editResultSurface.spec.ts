@@ -72,6 +72,7 @@ const MODEL_FACING_KEYS = new Set([
 /** Named so a failure says WHY the key must not be there. */
 const KNOWN_ENGINE_INTERNAL = new Set([
   'tableFootprints',
+  'pasteEffect',
   'appearanceWrite',
   'postWriteSfdt'
 ]);

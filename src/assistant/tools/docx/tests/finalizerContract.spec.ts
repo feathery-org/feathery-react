@@ -1,7 +1,7 @@
 /**
  * What the appearance finalizer owes. Written before it existed, now met.
  *
- * Today `restripeSplitCopy` is called from inside the split handler, so banding
+ * Banding used to be settled inside the split handler, so
  * is settled in the middle of a change set. Two things follow, and both are
  * wrong:
  *
@@ -145,12 +145,6 @@ const shadingOf = (nth: number): string[] => {
 const bandsAlternate = (rows: string[]): boolean =>
   rows.slice(1).every((fill, i) => fill === (i % 2 === 1 ? '#E6E6E6' : '.'));
 
-/** Only the finalizer's own warnings, not the serialization timing line. */
-const finalizerWarnings = (result: any): string[] =>
-  (result.warnings ?? []).filter((w: string) =>
-    w.startsWith('Table appearance not finalized')
-  );
-
 describe('appearance finalizer - one pass per change set, on the accept projection', () => {
   it('(a) CHARACTERIZATION: a phase-shifting re-band is NOT applied, and why', () => {
     // The third act of this row, and the honest end of tonight.
@@ -263,6 +257,15 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
     // meaningless: a restore of no writes is trivially byte-equal.
     expect(shadingOf(0).join(' ')).not.toBe(bandsBefore);
 
+    // N2: this change set contains NO explicit formatting op - the finalizer is
+    // its only appearance writer. The batch must still report that appearance
+    // was written and name the group a reject would restore, which it did not
+    // when the flag was computed before the finalizer ran.
+    expect(result.changeSet.formatTracking).toBeDefined();
+    expect(
+      (result.changeSet.groups ?? []).some((g: any) => g.restoresAppearance)
+    ).toBe(true);
+
     const groups = listRevisionGroups(editor as any);
     expect(groups.length).toBeGreaterThan(0);
     resolveLiveRevisionGroupsAsOneUndo(editor as any, groups, false);
@@ -361,6 +364,48 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
     }
     expect(after).toBe(before);
   });
+
+  it('(d) TRIPWIRE for the maintenance code: an op after a split is REFUSED', () => {
+    // This row is why the footprint maintenance and dedupe code is allowed to
+    // sit in the tree unexercised.
+    //
+    // Both depend on a footprint being recorded BEFORE a later shifting edit.
+    // The engine forbids that shape, so they are unreachable rather than
+    // untested - and that was PROSE until now, which is not a guarantee. If
+    // somebody deletes this refusal for the capability it withholds, they would
+    // silently activate two pieces of code nothing has ever run.
+    //
+    // So the refusal is asserted by its exact error string. When it goes, this
+    // row fails, and its failure is the instruction: land the maintenance law
+    // and its proofs in the same change - `docx-anchor-shifting-refusal`.
+    const live = open(docWith(stripedTable(5)));
+    const before = editor.serialize();
+    const result = applyDocumentEdits(live, {
+      changeSetId: 'tripwire',
+      edits: [
+        {
+          op: 'split_table',
+          anchor: '0;1;0;0;0',
+          splitAtRow: 3,
+          targetAnchor: '0;2',
+          position: 'before',
+          group: 'g'
+        } as any,
+        {
+          op: 'set_cell_text',
+          anchor: '0;1;1;1;0',
+          text: '$1',
+          group: 'g'
+        } as any
+      ]
+    }) as any;
+    expect(result.results[0].ok).toBe(false);
+    expect(result.results[0].error).toBe(
+      'anchor_shifting_op_must_end_change_set'
+    );
+    // Refused in preflight, so nothing was written.
+    expect(editor.serialize()).toBe(before);
+  });
 });
 
 /**
@@ -373,8 +418,9 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
  * copy_section is followed by another anchored edit, and
  * `split_table_one_per_change_set` allows only one split. So no footprint can
  * be recorded before a LATER shifting op, which makes the runner's maintenance
- * and the finalizer's dedupe unreachable rather than untested - and this row is
- * what pins that, so nobody reads the code as dead and deletes it.
+ * and the finalizer's dedupe unreachable rather than untested. Row (d) above
+ * asserts that refusal by its exact error string, so the guarantee is
+ * executable rather than a paragraph somebody has to notice.
  *
  * They become reachable when the anchor-shifting refusal is REPLACED BY THE
  * MAINTENANCE LAW - the backlog's `docx-anchor-shifting-refusal` - and their

@@ -167,4 +167,46 @@ describe('deriveTableStructure - roles from evidence', () => {
     ]);
     expect(two.headerRows).toBe(2);
   });
+
+  it('(h) a formula CYCLE terminates instead of recursing forever', () => {
+    // sum(a) where a is sum(b) and b is sum(a). The dependency walk follows refs
+    // through other formulas, so without the seen-set this call never returns -
+    // and a hang in a planner is worse than a wrong answer, because nothing
+    // reports it.
+    const cyclic = new Map([
+      ['a', 'sum(b)'],
+      ['b', 'sum(a)']
+    ]);
+    const structure = deriveTableStructure({
+      tableBlock: inventory,
+      headerRows: 1,
+      tableId: 'inventory',
+      documentFormulas: cyclic
+    });
+    expect(structure.rows).toHaveLength(19);
+  });
+
+  it('(i) an EMPTY table yields no rows and does not throw', () => {
+    const structure = deriveTableStructure({
+      tableBlock: { rows: [] },
+      headerRows: 1,
+      tableId: 'inventory',
+      documentFormulas: formulas
+    });
+    expect(structure.rows).toEqual([]);
+    expect(structure.headerRows).toBe(1);
+  });
+
+  it('(j) a table that is ONLY a header row has no items', () => {
+    // The degenerate shape a split could leave behind. Every row is inside the
+    // header band, so nothing may be classified as data.
+    const headerOnly = { rows: [(inventory.rows ?? inventory.r)[0]] };
+    const structure = deriveTableStructure({
+      tableBlock: headerOnly,
+      headerRows: 1,
+      tableId: 'inventory',
+      documentFormulas: formulas
+    });
+    expect(structure.rows.map((r) => r.role)).toEqual(['header']);
+  });
 });
