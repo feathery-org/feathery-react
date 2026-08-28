@@ -72,7 +72,18 @@ function applyRowAdoptions(
   if (!selection?.select || !module?.insertContentControl) return false;
   const live = JSON.parse(editor.serialize()) as SfdtDocument;
   const previousHistory = editor.enableEditorHistory;
+  const previousTracking = editor.enableTrackChanges;
+  // Adoption is not an edit in its own right. The row it fills was just
+  // inserted by the structural mutation, and under an authored batch that
+  // insertion already carries the revision the reviewer sees - so the controls
+  // inside it need neither their own history entries (the reason this function
+  // already suspended history) nor their own revisions. Leaving tracking on
+  // here also made the SDK's own serializer throw
+  // `Cannot set properties of undefined (setting 'revisionIds')` from
+  // writeInlineRevisions, because a content control inserted into an
+  // already-tracked row produces revision markers it cannot write back out.
   editor.enableEditorHistory = false;
+  editor.enableTrackChanges = false;
   try {
     for (const mutation of mutations) {
       const prefix = tableSelectionPrefix(mutation.tablePath);
@@ -111,6 +122,7 @@ function applyRowAdoptions(
     }
   } finally {
     editor.enableEditorHistory = previousHistory;
+    editor.enableTrackChanges = previousTracking;
   }
   return true;
 }
@@ -155,9 +167,27 @@ export function applyNativeStructuralMutations(
         module.delete();
       } else if (mutation.kind === 'insert-table') {
         const control = controlForTag(mutation.afterTag);
-        if (!control || !selection.collapseToEnd || !module.paste) return false;
+        // `collapseToEnd` does not exist on this SDK - not on Selection, not
+        // anywhere in the shipped bundle - so this guard could never pass and
+        // the branch below had never once run. Every table the assistant has
+        // ever created reached the document through the reopen instead, which
+        // is why the reopen's cost went unnoticed for so long.
+        // Collapsing is expressed with documented API: an empty range at the
+        // control's own end offset.
+        if (!control || !selection.select || !module.paste) return false;
         selection.selectContentControl(control);
-        selection.collapseToEnd();
+        // Selecting a block-level control that WRAPS A TABLE leaves the end
+        // offset inside the table's last cell (`0;6;5;1;0;12`), not after the
+        // table. Pasting there nests the new table inside a cell of the old
+        // one - which still satisfies a naive "is the copy in the index?"
+        // check, because the binding scan walks nested tables. The anchor must
+        // therefore be the start of the FOLLOWING top-level block.
+        const end = selection.endOffset;
+        if (typeof end !== 'string') return false;
+        const [sectionIndex, blockIndex] = end.split(';');
+        const nextBlock = Number(blockIndex) + 1;
+        if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
+        selection.select(`${sectionIndex};${nextBlock};0`, `${sectionIndex};${nextBlock};0`);
         module.paste(
           JSON.stringify({
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]
