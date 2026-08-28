@@ -10,6 +10,7 @@ export const TABLE_CLASS = {
   search: 'feathery-table-search',
   searchInput: 'feathery-table-search-input',
   addRowButton: 'feathery-table-add-row-button',
+  error: 'feathery-table-error',
   table: 'feathery-table',
   header: 'feathery-table-header',
   headerCell: 'feathery-table-header-cell',

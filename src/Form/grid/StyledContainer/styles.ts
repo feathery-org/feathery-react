@@ -103,7 +103,10 @@ export const getContainerStyles = (
       // if element is multi dropdown, don't apply min-width: min-content in order to allow for selected items
       // to wrap. Other elements should have min-width: min-content to prevent them from overflowing and becoming
       // too small.
-      if (elementType !== 'dropdown_multi') s.minWidth = 'min-content';
+      // Tables scroll horizontally inside their own container, so their cell
+      // must shrink to the configured width instead of the full table width.
+      if (elementType === 'table') s.minWidth = 0;
+      else if (elementType !== 'dropdown_multi') s.minWidth = 'min-content';
       s.width = '100%';
 
       const isFillWidth = isFill(width) || isFill(widthUnit);
