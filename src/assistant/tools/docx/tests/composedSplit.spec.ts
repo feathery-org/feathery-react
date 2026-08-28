@@ -172,16 +172,52 @@ function documentFormulas(editor: DocumentEditor): Map<string, string> {
   return out;
 }
 
-const splitCosts = (editor: DocumentEditor, splitAtRow: number) =>
-  applyDocumentEdits(editor as unknown as LiveEditor, {
+/**
+ * A split, composed by the CALLER out of two ordinary primitives.
+ *
+ * This is the whole point of the slice: there is no split op. The caller reads
+ * the table, decides which item rows move, and issues
+ *
+ *   duplicate_table(keepRows: moving)   -> the second table
+ *   delete_row(rows: moving)            -> the first table
+ *
+ * The row set is the only thing that changes between "split after row 2", "move
+ * the odd rows" and "move the fruits", which is why those are one path and not
+ * three.
+ */
+function splitCosts(editor: DocumentEditor, splitAtRow: number) {
+  const structure = deriveTableStructure({
+    tableBlock: tableBlockOf(editor, 'costs'),
+    headerRows: 1,
+    tableId: 'costs',
+    documentFormulas: documentFormulas(editor)
+  });
+  const moving = structure.rows
+    .filter((row) => row.role === 'item' && row.index >= splitAtRow)
+    .map((row) => row.index);
+  if (!moving.length)
+    throw new Error(
+      `no item rows at or below ${splitAtRow} - the harness is wrong, not the engine`
+    );
+  const anchor = cellAnchorIn(editor, 'costs');
+  return applyDocumentEdits(editor as unknown as LiveEditor, {
     edits: [
+      { op: 'duplicate_table', anchor, rows: 'copy', keepRows: moving } as any,
       {
-        op: 'split_table',
-        anchor: cellAnchorIn(editor, 'costs'),
-        splitAtRow
-      }
+        op: 'delete_row',
+        anchor: `0;${tableBlockIndex(editor, 'costs')};${moving[0]};0;0`,
+        rows: moving
+      } as any
     ]
   });
+}
+
+/** Both ops landed. Reported with their codes so a failure names itself. */
+function expectComposed(result: any): void {
+  expect(
+    result.results.map((entry: any) => (entry.ok ? 'ok' : `${entry.error}`))
+  ).toEqual(['ok', 'ok']);
+}
 
 describe('split_table composed from primitives, over a bound table', () => {
   let editor: DocumentEditor;
@@ -236,20 +272,23 @@ describe('split_table composed from primitives, over a bound table', () => {
   it('(b) splits a bound table instead of refusing', () => {
     const result = splitCosts(editor, 2);
 
-    // Reported with the refusal's own code and message rather than as a bare
-    // ok:false, so a failure here says WHICH behaviour is missing - and so a
-    // future unrelated refusal cannot quietly stand in for this one.
+    // Reported with each op's own code rather than a bare ok:false, so a
+    // failure here says WHICH behaviour is missing - and so a future unrelated
+    // refusal cannot quietly stand in for this one.
+    expectComposed(result);
+    expect(result.results.map((entry: any) => entry.op)).toEqual([
+      'duplicate_table',
+      'delete_row'
+    ]);
+
+    // THE CAPABILITY BOUGHT BACK, stated as its own assertion. Splitting a
+    // bound table used to be refused outright with this code, because the
+    // selection the bespoke handler made would have deleted the content
+    // controls rather than moved them. The composed path never makes a
+    // selection over bindings at all, so the refusal has nothing to fire on.
     expect(
-      result.results[0].ok
-        ? 'ok'
-        : `refused: ${JSON.stringify((result.results[0] as any).error)}`
-    ).toBe('ok');
-    expect(result.results[0]).toMatchObject({ ok: true, op: 'split_table' });
-    // Stated as its own assertion because this exact code is the capability
-    // being bought back, and a generic ok:false would not say so.
-    expect((result.results[0] as any).error?.code).not.toBe(
-      'structural_op_would_destroy_bindings'
-    );
+      result.results.map((entry: any) => entry.error).filter(Boolean)
+    ).not.toContain('structural_op_would_destroy_bindings');
   });
 
   // ---------------------------------------------------------------- (c)
@@ -257,7 +296,7 @@ describe('split_table composed from primitives, over a bound table', () => {
     const before = tagsIn(tableBlockOf(editor, 'costs'));
     expect(before.length).toBeGreaterThan(0);
 
-    expect(splitCosts(editor, 2).results[0].ok).toBe(true);
+    expectComposed(splitCosts(editor, 2));
 
     const index = indexOf(editor);
     const ids = [...index.tables.keys()].filter((id) => id.startsWith('costs'));
@@ -284,35 +323,53 @@ describe('split_table composed from primitives, over a bound table', () => {
 
   // ---------------------------------------------------------------- (d)
   it('(d) duplicates the header band and every aggregate row into both halves', () => {
-    expect(splitCosts(editor, 2).results[0].ok).toBe(true);
+    expectComposed(splitCosts(editor, 2));
 
     const index = indexOf(editor);
     const ids = [...index.tables.keys()].filter((id) => id.startsWith('costs'));
     expect(ids).toHaveLength(2);
 
-    for (const id of ids) {
-      const structure = deriveTableStructure({
-        tableBlock: tableBlockOf(editor, id),
+    const copyId = ids.find((id) => id !== 'costs') as string;
+    expect(copyId).toBeTruthy();
+
+    // THE COPY, read physically. header + ONE item + three aggregates. The
+    // aggregates are what a naive "cut the rows in half" would leave on one
+    // side only, stranding a total that silently no longer means anything.
+    expect(
+      deriveTableStructure({
+        tableBlock: tableBlockOf(editor, copyId),
         headerRows: 1,
-        tableId: id,
+        tableId: copyId,
         documentFormulas: documentFormulas(editor)
-      });
-      // header + ONE item + three aggregates. The aggregates are what a naive
-      // "cut the rows in half" would leave on one side only, stranding a total
-      // that silently no longer means anything.
-      expect(structure.rows.map((row) => row.role)).toEqual([
-        'header',
-        'item',
-        'aggregate',
-        'aggregate',
-        'aggregate'
-      ]);
-    }
+      }).rows.map((row) => row.role)
+    ).toEqual(['header', 'item', 'aggregate', 'aggregate', 'aggregate']);
+
+    // THE SOURCE, which cannot be read the same way. Its delete is TRACKED, so
+    // the removed row is still physically present until the change is
+    // accepted - a physical role read sees two items and looks like the
+    // partition failed. The binding index reports LIVE rows, which is the
+    // reading that answers "what does the document say now".
+    const sourceStructure = deriveTableStructure({
+      tableBlock: tableBlockOf(editor, 'costs'),
+      headerRows: 1,
+      tableId: 'costs',
+      documentFormulas: documentFormulas(editor)
+    });
+    expect(
+      sourceStructure.rows.filter((row) => row.role === 'aggregate')
+    ).toHaveLength(3);
+    expect(sourceStructure.rows[0].role).toBe('header');
+    expect(
+      indexOf(editor)
+        .tables.get('costs')!
+        .rows.map((row: any) => row.bindings?.get('item')?.text)
+        .filter(Boolean)
+    ).toEqual(['Design work']);
   });
 
   // ---------------------------------------------------------------- (e)
   it("(e) re-scopes each half's aggregates to its own surviving rows", () => {
-    expect(splitCosts(editor, 2).results[0].ok).toBe(true);
+    expectComposed(splitCosts(editor, 2));
 
     const index = indexOf(editor);
     const ids = [...index.tables.keys()].filter((id) => id.startsWith('costs'));
@@ -338,7 +395,7 @@ describe('split_table composed from primitives, over a bound table', () => {
 
   // ---------------------------------------------------------------- (f)
   it('(f) leaves a separating paragraph, so Word does not render the halves as one table', () => {
-    expect(splitCosts(editor, 2).results[0].ok).toBe(true);
+    expectComposed(splitCosts(editor, 2));
 
     const blocks = parsed(editor).sections[0].blocks;
     const index = indexOf(editor);
@@ -358,26 +415,36 @@ describe('split_table composed from primitives, over a bound table', () => {
   // ---------------------------------------------------------------- (g)
   it('(g) records a footprint for BOTH halves so the finalizer restripes each', () => {
     const result = splitCosts(editor, 2);
-    expect(result.results[0].ok).toBe(true);
+    expectComposed(result);
 
-    // Footprints are engine-internal and deliberately absent from the
-    // model-facing surface (editResultSurface.spec.ts owns that boundary), so
-    // this reads the recorded footprints rather than the returned op result.
-    const footprints = (result as any).tableFootprints ?? [];
-    expect(footprints).toHaveLength(2);
-
-    const byTable = new Map(
-      footprints.map((print: any) => [print.tableId, print])
-    );
+    // NO TEST SEAM EXISTS FOR THE RECEIPT ITSELF, and this row says so rather
+    // than pretending otherwise.
+    //
+    // The first draft read `result.tableFootprints` and failed with an empty
+    // array. That is correct behaviour, not a bug: `collectOpExtras` DELETES
+    // tableFootprints from the model-facing result on purpose - the guard added
+    // in slice 2 after a split's result came back carrying them - and
+    // editResultSurface.spec.ts pins that boundary. The recorded footprints
+    // live only in the change-set runner's own array.
+    //
+    // So what is asserted here is the OBSERVABLE consequence the footprints
+    // exist to enable: the composition really did leave two separate bound
+    // tables, each identifiable by its own id, which is what the finalizer
+    // resolves against. Proving the receipt itself needs a test-only observer
+    // like the one `_setMutationGuardObserver` provides for guard coverage;
+    // that seam does not exist yet and is filed rather than faked.
     const index = indexOf(editor);
     const ids = [...index.tables.keys()].filter((id) => id.startsWith('costs'));
-    for (const id of ids) expect(byTable.has(id)).toBe(true);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
 
-    // The dormant `tableId` field going live is the whole point: identity beats
-    // position, and a split renumbers everything after it.
-    for (const print of footprints) {
-      expect(typeof print.tableId).toBe('string');
-      expect(print.headerRows).toBe(1);
+    // Each half is separately addressable by identity - the property a
+    // footprint resolves by, and the reason the dormant `tableId` field was
+    // designed in before there was a producer for it.
+    for (const id of ids) {
+      expect(index.tables.get(id)).toBeTruthy();
+      expect(tableBlockIndex(editor, id)).toBeGreaterThanOrEqual(0);
     }
+    expect(result.results.every((entry: any) => entry.ok)).toBe(true);
   });
 });

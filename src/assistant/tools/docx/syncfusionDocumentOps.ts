@@ -14753,7 +14753,7 @@ function resolveKeepRows(
   op: EditOp,
   structure: TableStructure,
   tableId: string
-): number[] | null {
+): { rows: number[]; itemsKept: number } | null {
   if (op.keepRows === undefined) return null;
   const where = `table ${tableId}: ${structure.rows.length} rows, header band ${structure.headerRows}`;
   if (!Array.isArray(op.keepRows))
@@ -14782,7 +14782,13 @@ function resolveKeepRows(
       ]
     );
 
-  const roleRows = asked.filter((row) => byIndex.get(row)!.role !== 'item');
+  const askedRoles = asked.map((row) => ({
+    row,
+    role: byIndex.get(row)?.role
+  }));
+  const roleRows = askedRoles
+    .filter((entry) => entry.role !== 'item')
+    .map((entry) => entry.row);
   if (roleRows.length)
     throw new OpError(
       'keep_rows_names_role_row',
@@ -14792,8 +14798,9 @@ function resolveKeepRows(
       [
         where,
         `keepRows: ${asked.join(', ')}`,
-        `roles: ${roleRows
-          .map((row) => `row ${row} is ${byIndex.get(row)!.role}`)
+        `roles: ${askedRoles
+          .filter((entry) => entry.role !== 'item')
+          .map((entry) => `row ${entry.row} is ${entry.role}`)
           .join(', ')}`,
         'List only the data rows the copy should keep. The header and any totals come along on their own.'
       ]
@@ -14804,9 +14811,13 @@ function resolveKeepRows(
   // an empty aggregate recomputes to zero rather than erroring. Refusing it
   // would force a special case for the partition that is easiest to ask for.
   const keep = new Set(asked);
-  return structure.rows
-    .filter((row) => row.role !== 'item' || keep.has(row.index))
-    .map((row) => row.index);
+  const surviving = structure.rows.filter(
+    (row) => row.role !== 'item' || keep.has(row.index)
+  );
+  return {
+    rows: surviving.map((row) => row.index),
+    itemsKept: surviving.filter((row) => row.role === 'item').length
+  };
 }
 
 function boundDuplicateTablePlan(
@@ -14842,6 +14853,38 @@ function boundDuplicateTablePlan(
           `duplicate_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
         );
       const markerBlock = getAt(state.sfdt, markerPath);
+
+      // WHICH ROWS THE COPY KEEPS, decided before anything is built.
+      //
+      // Roles come from the schema, never from the caller: the header band and
+      // every aggregate row belong to both halves of a partition, so `keepRows`
+      // selects among ITEM rows only and naming anything else is a refusal.
+      // Resolving here means a bad selection refuses before a single row is
+      // cloned.
+      const sourceTableBlock = firstTableBlockIn(getAt(state.sfdt, markerPath));
+      const sourceAppearance = collectTableAppearance(sourceTableBlock);
+      // Through its ONE owner. Re-deriving header-ness here is how a style-only
+      // header and a filled header come to disagree, and every row below the
+      // disagreement then lands one out of phase.
+      const sourceHeaderRows = sourceAppearance
+        ? effectiveHeaderRows({
+            blocks: flattenSfdt(state.sfdt),
+            sfdt: state.sfdt,
+            tableAnchor: tableRoute.anchor,
+            source: sourceAppearance
+          })
+        : 0;
+      const keepIndices = resolveKeepRows(
+        op,
+        deriveTableStructure({
+          tableBlock: sourceTableBlock,
+          headerRows: sourceHeaderRows,
+          tableId: tableRoute.tableId,
+          documentFormulas: documentFormulaMap(state.index)
+        }),
+        tableRoute.tableId
+      );
+
       const clone = clonedWithoutRevisions(
         state.sfdt,
         containerCarryingOnlyTable(
@@ -14918,6 +14961,26 @@ function boundDuplicateTablePlan(
           ...rows.slice(lastData + 1)
         ];
       }
+      // Prune BEFORE the identity rewrite, so the rewrite walks the shape the
+      // copy will actually have. `rowIds` may carry entries for rows that no
+      // longer exist here, which is harmless - it is a lookup, not a worklist.
+      if (keepIndices) {
+        const cloneTable = firstTableBlockIn(clone);
+        const cloneRows = getRows(cloneTable);
+        if (cloneRows) {
+          const kept = keepIndices.rows
+            .map((row) => cloneRows[row])
+            .filter((row) => row !== undefined);
+          // Written through whichever key this dialect actually uses, rather
+          // than assuming `rows`: the live editor serializes optimized SFDT,
+          // where the key is `r`, and assuming the expanded spelling here would
+          // silently leave every row in place.
+          if ('rows' in cloneTable) cloneTable.rows = kept;
+          else if ('r' in cloneTable) cloneTable.r = kept;
+          else if ('rw' in cloneTable) cloneTable.rw = kept;
+        }
+      }
+
       rewriteBindingsInClone(clone, {
         tableIds,
         rowIds,
@@ -14954,7 +15017,23 @@ function boundDuplicateTablePlan(
         );
       const sourceColumns = [...liveTable.columnDefs.keys()];
       const cloneColumns = [...verified.columnDefs.keys()];
-      if (JSON.stringify(sourceColumns) !== JSON.stringify(cloneColumns))
+      // The column comparison asks "did the clone lose a bound column", and it
+      // is answered by the DATA rows, because that is where the `row=` tags
+      // live. A deliberately empty selection has no data rows, so it has no
+      // column defs to compare and this guard would fire on a copy that is
+      // exactly what was asked for.
+      //
+      // KNOWN CONSEQUENCE, recorded rather than hidden: such a copy carries its
+      // header and its totals but no prototype data row, so a later insert_row
+      // into it has no row to pattern itself on. Whether an empty copy should
+      // instead retain a hidden prototype is a design question this narrowing
+      // does not answer; it only stops the guard from refusing the ruled case.
+      const emptiedOnPurpose =
+        keepIndices !== null && keepIndices.itemsKept === 0;
+      if (
+        !emptiedOnPurpose &&
+        JSON.stringify(sourceColumns) !== JSON.stringify(cloneColumns)
+      )
         throw new OpError(
           'duplicate_table_shape_mismatch',
           `duplicate_table cloned "${tableRoute.tableId}" as "${newTableId}", but its columns changed. Nothing was kept.`,
@@ -14968,9 +15047,46 @@ function boundDuplicateTablePlan(
           'duplicate_table_row_count_mismatch',
           `duplicate_table expected ${replacementRows.length} materialized rows but found ${verified.rows.length}. Nothing was kept.`
         );
+      // LAW D: every structural write records a footprint, so the finalizer can
+      // find these tables again after later edits in the same change set have
+      // moved everything around them. BOTH halves, because a duplicate leaves
+      // two tables whose striping is now each other's business - the source
+      // lost rows and the copy is new.
+      //
+      // `tableId` is carried on each, which is the dormant field going live:
+      // identity beats position at resolution, and a duplicate renumbers every
+      // top-level index after it.
+      const cloneAnchor = boundTableAnchor(next, verified);
+      const sourceEntry = nextIndex.tables.get(tableRoute.tableId);
+      const sourceAnchor = sourceEntry
+        ? boundTableAnchor(next, sourceEntry) ?? tableRoute.anchor
+        : tableRoute.anchor;
+      const sourceBanding = sourceAppearance
+        ? detectTableBanding(sourceAppearance) ?? undefined
+        : undefined;
+      const tableFootprints = [
+        captureTableFootprint(
+          next,
+          sourceAnchor,
+          sourceHeaderRows,
+          sourceBanding,
+          tableRoute.tableId
+        ),
+        cloneAnchor
+          ? captureTableFootprint(
+              next,
+              cloneAnchor,
+              sourceHeaderRows,
+              sourceBanding,
+              newTableId
+            )
+          : null
+      ].filter((footprint): footprint is TableFootprint => !!footprint);
+
       return {
         sfdt: next,
-        anchor: boundTableAnchor(next, verified) ?? tableRoute.anchor,
+        anchor: cloneAnchor ?? tableRoute.anchor,
+        ...(tableFootprints.length ? { tableFootprints } : {}),
         details: [
           `source table: ${tableRoute.tableId}`,
           `new table: ${newTableId}`,
