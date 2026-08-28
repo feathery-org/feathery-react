@@ -6,7 +6,7 @@ import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
 import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
-import { featheryWindow } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const PAGE_GAP = 24;
 // US Letter aspect for loading placeholders; actual pages size themselves.
@@ -298,16 +298,24 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         // otherwise pages render at 1 CSS px per PDF px and look soft on every
         // HiDPI screen. CSS size stays in layout pixels.
         const dpr = featheryWindow().devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
-        canvas.style.width = `${pageWidth}px`;
-        canvas.style.height = `${
-          viewport.height * (pageWidth / viewport.width)
-        }px`;
-        const canvasContext = canvas.getContext('2d');
-        if (canvasContext) {
+        const backingWidth = Math.floor(viewport.width * dpr);
+        const backingHeight = Math.floor(viewport.height * dpr);
+        // Render to an OFFSCREEN canvas, then blit to the visible one only when
+        // the render fully completed. A page.render is cancelled whenever this
+        // effect re-runs (e.g. the ResizeObserver corrects pageWidth right after
+        // mount); form-field appearances — the checkbox checkmarks — are drawn
+        // LAST, so clearing and painting the visible canvas directly left the
+        // checks missing whenever the first render was cancelled mid-paint,
+        // until a later clean render happened to finish (the "blank until you
+        // resize" bug). Painting only a completed render off-screen makes an
+        // interrupted render a no-op instead of a partial, blank-checkbox frame.
+        const offscreen = featheryDoc().createElement('canvas');
+        offscreen.width = backingWidth;
+        offscreen.height = backingHeight;
+        const offCtx = offscreen.getContext('2d');
+        if (offCtx) {
           renderTask = page.render({
-            canvasContext,
+            canvasContext: offCtx,
             viewport,
             transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
             // Read-only review: render with print intent so every field's
@@ -319,10 +327,21 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
             intent: 'print',
             annotationMode: pdfjs.AnnotationMode.ENABLE
           });
+          let completed = true;
           try {
             await renderTask.promise;
           } catch (e: any) {
             if (e?.name !== 'RenderingCancelledException') throw e;
+            completed = false;
+          }
+          if (completed && !cancelled) {
+            canvas.width = backingWidth;
+            canvas.height = backingHeight;
+            canvas.style.width = `${pageWidth}px`;
+            canvas.style.height = `${
+              viewport.height * (pageWidth / viewport.width)
+            }px`;
+            canvas.getContext('2d')?.drawImage(offscreen, 0, 0);
           }
         }
       }
@@ -336,9 +355,16 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         textDiv.innerHTML = '';
         textDiv.style.setProperty('--scale-factor', String(viewport.scale));
         try {
+          // includeMarkedContent is deliberately OFF: with it on, pdf.js's
+          // TextLayer walks its container via endMarkedContent -> parentNode,
+          // and these generated forms have unbalanced marked-content operators,
+          // so the container walks past the root to null and the next
+          // `.append` throws ("Cannot read properties of null") from an async
+          // stream callback the try/catch below cannot reach. We only need
+          // selectable/SR text here, not the marked-content structure.
           const textContentSource = page.streamTextContent
             ? page.streamTextContent({
-                includeMarkedContent: true,
+                includeMarkedContent: false,
                 disableNormalization: true
               })
             : await page.getTextContent();
