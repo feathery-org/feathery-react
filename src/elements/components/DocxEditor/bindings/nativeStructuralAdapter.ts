@@ -131,6 +131,33 @@ function needsGroupedHistory(mutations: NativeStructuralMutation[]): boolean {
   return mutations.length > 1;
 }
 
+/**
+ * A tracked row deletion DESTROYS the binding identity of everything it removes,
+ * and no reject brings it back.
+ *
+ * Measured: `Editor.prototype.handleDeleteTracking` gives a BookmarkElementBox
+ * an `insertRevision(el, 'Deletion')` and lets a ContentControl fall to the else
+ * branch, where it is spliced out of the line immediately and revision-lessly.
+ * Counting a bound row's tags across the three stages gives 4 -> 0 -> 0: present,
+ * gone the instant the deletion is applied, still gone after `rejectAll`. The
+ * row comes back; its bindings do not. Undo is unaffected only because DeleteRow
+ * clones the whole table into history.
+ *
+ * Every delete-row and delete-table mutation reaching this adapter names bound
+ * content by construction, so there is no narrower condition to test - the
+ * refusal is the honest shape of what this path can do today.
+ *
+ * This is deliberately a REFUSAL rather than a silent success. Losing the links
+ * inside a client's document is not a degraded result, it is a corrupted one,
+ * and the caller is told instead. It is a safety net, not a resting place: the
+ * composed split deletes complement rows in both halves, so this also declines
+ * that capability until the identity question is settled. See
+ * data/docx-master-defect-undo.md.
+ */
+function refusesBoundDeletion(mutation: NativeStructuralMutation): boolean {
+  return mutation.kind === 'delete-row' || mutation.kind === 'delete-table';
+}
+
 export function applyNativeStructuralMutations(
   editor: SyncfusionEditorLike,
   mutations: NativeStructuralMutation[]
@@ -160,6 +187,9 @@ export function applyNativeStructuralMutations(
       complex = true;
     }
     for (const mutation of mutations) {
+      // Checked before anything is applied: a batch that would strip identity
+      // must not half-land its other mutations first.
+      if (refusesBoundDeletion(mutation)) return false;
       if (mutation.kind === 'delete-table') {
         const control = controlForTag(mutation.tag);
         if (!control || !module.delete) return false;

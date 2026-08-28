@@ -368,6 +368,68 @@ describe('an assistant edit stays reviewable', () => {
   });
 });
 
+describe('a bound deletion refuses rather than destroying identity', () => {
+  // The seam guard. A tracked row deletion strips the binding tags of everything
+  // it removes and no reject restores them (4 -> 0 -> 0 across pending and
+  // reject), because handleDeleteTracking gives a Bookmark a Deletion revision
+  // and splices a ContentControl out revision-lessly. Losing the links inside a
+  // client's document is a corrupted result, not a degraded one, so this path
+  // declines the work and says so.
+  it('refuses a bound row delete, and leaves the row and its tags untouched', () => {
+    const harness = openHarness();
+    try {
+      const { editor, run } = harness;
+      const before = editor.serialize();
+      const tagCount = (sfdt: string) =>
+        (sfdt.match(/row=r-1/g) || []).length;
+      expect(tagCount(before)).toBeGreaterThan(0);
+
+      run([{ type: 'remove-row', tableId: 'costs', rowId: 'r-1' }], {
+        provenance: PROVENANCE
+      });
+
+      // Refused, not silently reopened: the caller is told.
+      expect(
+        harness.attached
+          .diagnostics()
+          .some((entry) => entry.code === 'native-mutation-failed')
+      ).toBe(true);
+      expect(harness.open).not.toHaveBeenCalled();
+
+      // And nothing was half-applied. The document is exactly as it was, tags
+      // included - which is the whole point: a refusal that still damaged the
+      // document would be worse than no guard at all.
+      expect(tagCount(editor.serialize())).toBe(tagCount(before));
+      expect(rowIdsOf(editor, 'costs')).toEqual(['r-1', 'r-2']);
+    } finally {
+      closeHarness(harness);
+    }
+  });
+
+  it('refuses a bound table delete on the same grounds', () => {
+    const harness = openHarness();
+    try {
+      const { editor, run } = harness;
+      const marker = indexOf(editor).tables.get('costs')?.markerPath;
+      expect(marker).toBeTruthy();
+
+      run(
+        [{ type: 'remove-table', tableId: 'costs', tag: '[[table=costs]]' }],
+        { provenance: PROVENANCE }
+      );
+
+      expect(
+        harness.attached
+          .diagnostics()
+          .some((entry) => entry.code === 'native-mutation-failed')
+      ).toBe(true);
+      expect(tableIds(editor)).toContain('costs');
+    } finally {
+      closeHarness(harness);
+    }
+  });
+});
+
 describe('the native path guards on APIs that exist', () => {
   // The antidote to a whole defect class. `insert-table` guarded on
   // `selection.collapseToEnd`, which does not exist on this SDK - so the guard
