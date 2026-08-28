@@ -5992,7 +5992,18 @@ interface PasteEffect {
 interface TableFootprint {
   /** The table's anchor as of the moment the recording handler finished. */
   anchor: string;
-  /** The bound table's id, when it has one. Identity wins over position. */
+  /**
+   * The bound table's id, when it has one. Identity wins over position at
+   * resolution.
+   *
+   * DORMANT TODAY, and deliberately kept. No caller passes it, because the only
+   * recorder is split_table and splitting a BOUND table is refused outright -
+   * so a footprint with a tableId cannot currently be produced. The field is
+   * part of the ruled contract and costs nothing; it becomes live the moment a
+   * bound recorder exists, which is the same work that retires the bound-split
+   * refusal. Dormant for the same reason as the maintenance code beside it: the
+   * contract was designed whole rather than grown one caller at a time.
+   */
   tableId?: string;
   /**
    * The table's index in the WHOLE-DOCUMENT top-level sequence - the coordinate
@@ -7616,12 +7627,6 @@ interface PasteTarget {
   appendParagraphAt?: string;
 }
 
-/**
- * What one paste did to the document's top-level block sequence. Positions are
- * indices into `topLevelSequence`, never per-section block numbers - see the
- * note there for the live failure that distinction caused.
- */
-
 function relocationAnchorMissing(anchor: string, field: string): OpError {
   return new OpError(
     'relocation_anchor_not_found',
@@ -9132,71 +9137,6 @@ function refuseBreakInsideTable(op: string, block: FlatBlock): void {
     [`anchor: ${block.anchor}`],
     'never'
   );
-}
-
-/**
- * Re-lay the SOURCE's banding over the copy a split produced.
- *
- * The copy carries its rows' own fills, which were correct at the position those
- * rows used to occupy and are wrong at the position they now occupy: extracting
- * from a shaded row opens the new table on a stripe. Measured - a split at row 2
- * of an alternating table produced a copy reading stripe, unshaded, stripe,
- * unshaded where it should read unshaded first.
- *
- * The pattern is detected from the SOURCE, not from the copy. Detecting it from
- * the copy would read the phase the copy accidentally has and re-apply the very
- * error being corrected.
- *
- * Only the copy is re-laid. The source keeps a PREFIX of its own rows for a
- * splitAtRow, and a prefix of a correct alternation is still correct - so
- * touching it would be a write with nothing to fix. `rows` extraction can leave
- * the source a non-prefix subset, which is a different case and is not claimed
- * here.
- *
- * A table with no detectable banding is left alone: there is no pattern to
- * restore, and inventing one would impose a style the document never had.
- */
-function restripeSplitCopy(
-  editor: LiveEditor,
-  copyAnchor: string,
-  sourceAppearance: TableAppearance,
-  headerRows: number
-): void {
-  const inferred = detectTableBanding(sourceAppearance);
-  if (!inferred) return;
-  // Header rows come from the PLAN, not from banding inference.
-  //
-  // effectiveHeaderRows is the one owner of "how many rows are the header", and
-  // the plan already asked it. detectTableBanding answers the same question a
-  // second way, from fill evidence, and the two disagree on a header that is
-  // styled rather than filled - or worse, on a header whose fill happens to
-  // equal the band colour, where the inferred count absorbs a body row and every
-  // stripe below it lands one row out of phase.
-  const banding = { ...inferred, headerRows };
-  const current = liveTableAppearance(editor, copyAnchor);
-  if (!current) return;
-  // The returned `restores` are deliberately DISCARDED here, unlike the two
-  // call sites in the appearance-finalization pass which feed them to `record`
-  // so a reject can put shading back.
-  //
-  // Why that is safe TODAY, stated as an invariant rather than left implied:
-  // SyncFusion authors no revision for a shading change, so a reject can only
-  // restore fills the engine itself recorded. It does not need to here because
-  // the copy is wholly a pending Insertion - assertPastedTableMatches has just
-  // checked the pasted table row-for-row against the rows that were copied, so
-  // every cell this restripe touches belongs to content that a reject removes
-  // outright. There is no surviving cell for a stale fill to sit on.
-  //
-  // What would BREAK it: a paste that merges into existing content rather than
-  // arriving as a whole new table. Then some restriped cells would outlive the
-  // reject wearing a fill nobody chose, and this call would owe its restores.
-  //
-  // Not wired now because it cannot be: this runs inside an op handler, which
-  // has no `record` in scope; the finalizer described in
-  // data/docx-table-structure-design.md section (C) is the seam that gives it
-  // one, and wiring belongs there rather than in a one-off plumb through the
-  // handler signature.
-  applyBandingRows(editor, copyAnchor, current, banding, 0);
 }
 
 /**
@@ -21383,12 +21323,11 @@ function applyDocumentEditsMeasured(
     });
   }
 
-  const wroteAppearance = appearanceRestores.length > 0;
   // ONE APPEARANCE PASS, after the last edit and BEFORE the revisions are
-  // grouped and before anything reads the
-  // result. Skipped when the change set failed: a failed set is rolled back,
-  // and settling the appearance of a document that is about to be restored
-  // would write fills nobody asked for.
+  // grouped - the restores it records must be bound to the card, or a reject
+  // cannot run them. Skipped when the change set failed: a failed set is rolled
+  // back, and settling the appearance of a document that is about to be
+  // restored would write fills nobody asked for.
   //
   // KNOWN LIMITATION, flagged rather than hidden: these restores are attributed
   // to the FIRST edit's group. The finalizer settles the whole change set, so
@@ -21443,6 +21382,13 @@ function applyDocumentEditsMeasured(
     }
   );
   const hasFailure = materializedResults.some((result) => !result.ok);
+
+  // Computed AFTER the finalizer, not before it. The finalizer may be the only
+  // appearance writer in a change set - a re-band with no explicit formatting op
+  // - and reading this beforehand reported such a set as having written no
+  // appearance at all, so its card lost the formatting-tracking flag that tells
+  // a reviewer the fills are part of the change.
+  const wroteAppearance = appearanceRestores.length > 0;
 
   const inventory = readPostEditInventory(editor, warnings);
   warnings.push(
