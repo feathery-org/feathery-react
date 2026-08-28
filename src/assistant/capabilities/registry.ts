@@ -296,11 +296,20 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     //
     // `keepRows` filters WHICH data rows the copy keeps, by ABSOLUTE table row
     // index - the same indices a table_facts read reports, and the same ones
-    // delete_row takes. It selects among data rows only: the header band and
-    // any totals computed from the table's own rows are always kept and never
-    // need naming, so listing one is refused rather than silently obeyed.
-    // Omitting `keepRows` keeps every row. An empty `keepRows: []` is a
-    // deliberate header-and-totals copy with no data rows.
+    // delete_row takes. Omitting it keeps every row. An empty `keepRows: []` is
+    // a deliberate header-and-totals copy with no data rows.
+    //
+    // ON A TABLE WITH LINKED VALUES, it selects among data rows only: the
+    // header band and any totals computed from the table's own rows are always
+    // kept and never need naming, so listing one is refused rather than
+    // silently obeyed.
+    //
+    // ON A TABLE WITHOUT LINKED VALUES, `keepRows` is REFUSED, because there is
+    // no evidence to tell a data row from a total and the guarantee above
+    // cannot be honoured. Duplicate the whole table instead, then delete the
+    // rows you do not want from the copy. The condition is stated here because
+    // an unconditional promise is what would make that failure silent - the
+    // caller would trust it and never re-check.
     //
     // TO SPLIT A TABLE: duplicate_table with `keepRows` set to the rows that
     // should move, then delete_row those same rows from the source.

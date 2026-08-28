@@ -372,3 +372,99 @@ describe('anchor resolution after a shifting op, in one change set', () => {
     );
   });
 });
+
+/**
+ * A PROPERTY edit joining a change set after a structural one.
+ *
+ * Class 3 of the edit taxonomy (properties) is expected to share the same
+ * change set as class 1 (structural) - "duplicate this table and bold the
+ * total" is one intent, not two turns. I claimed this worked by ANALOGY with
+ * the anchored path row (ii-b) already proves. Analogy is not measurement, so
+ * this row pins it.
+ */
+describe('a property edit after a structural edit, in one change set', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+
+  beforeEach(() => {
+    editor = makeEditor();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+  });
+
+  it('(v) set_char_format after duplicate_table applies exactly once, to the right table', () => {
+    // The property edit targets the SECOND table in the fixture, which sits
+    // below the insertion point and therefore has its indices shifted by the
+    // duplicate - the same shape row (ii-b) exercises for content.
+    // A HIGHLIGHT, not bold. The fixture authors `bold: true` on its own total
+    // rows, so a bold-presence control fires on pre-existing formatting and
+    // reports a double-write that never happened - measured, and it is why this
+    // row uses a property the fixture does not already carry.
+    const boldCountBefore = (
+      JSON.stringify(parsed(editor).sections[0].blocks).match(/"bold":true/g) ??
+      []
+    ).length;
+
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'duplicate_table',
+          anchor: cellAt(editor, 'costs', 0),
+          rows: 'copy'
+        },
+        {
+          op: 'set_char_format',
+          anchor: cellAt(editor, 'expenses', 1),
+          highlightColor: 'Yellow'
+        } as any
+      ]
+    });
+
+    expect(codesOf(result)).toEqual([null, null]);
+
+    // Applied to the intended table.
+    const expensesBlock = JSON.stringify(
+      parsed(editor).sections[0].blocks[tableBlockIndex(editor, 'expenses')]
+    );
+    expect(expensesBlock).toContain('Yellow');
+
+    // EXACTLY ONCE, DOCUMENT-WIDE - the standing pattern for any post-shift
+    // write. A highlight that also landed on the duplicated costs table, or on
+    // its copy, is the stale-index double-write a lifted guard could
+    // reintroduce silently, and counting across the whole document is what
+    // catches it wherever it lands.
+    // CONFINEMENT, not a count of one. Measured: a single set_char_format on a
+    // cell anchor yields many `Yellow` occurrences, because the highlight is
+    // written onto every run the selection covers - so "exactly one occurrence"
+    // was the wrong metric. The property that actually matters after a shift is
+    // that the write is CONFINED to the intended table and reaches no other.
+    const blocksAfter = parsed(editor).sections[0].blocks;
+    const inExpenses = (
+      JSON.stringify(blocksAfter[tableBlockIndex(editor, 'expenses')]).match(
+        /Yellow/g
+      ) ?? []
+    ).length;
+    const everywhere = (
+      JSON.stringify(blocksAfter).match(/Yellow/g) ?? []
+    ).length;
+    expect(inExpenses).toBeGreaterThan(0);
+    // Nothing landed outside the target table - the stale-index write a lifted
+    // guard could reintroduce would show up exactly here.
+    expect(everywhere).toBe(inExpenses);
+
+    // And the duplicate did not itself add bold anywhere: the copy carries the
+    // fixture's own formatting, so this count grows only by what the clone
+    // duplicated, never by the property edit.
+    const boldCountAfter = (
+      JSON.stringify(parsed(editor).sections[0].blocks).match(/"bold":true/g) ??
+      []
+    ).length;
+    expect(boldCountAfter).toBeGreaterThanOrEqual(boldCountBefore);
+  });
+});

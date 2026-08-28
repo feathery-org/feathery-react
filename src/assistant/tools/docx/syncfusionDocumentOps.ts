@@ -15248,6 +15248,33 @@ function planBindingRoutedOp(
     const tableRoute = tableAnchor
       ? runtime?.tablesByAnchor.get(tableAnchor)
       : undefined;
+    // `keepRows` NEEDS PROVEN ROLES, and an unbound table cannot supply them.
+    //
+    // Without this the parameter is SILENTLY IGNORED: an unbound table has no
+    // binding route, so the op falls through to the editor handler, which knows
+    // nothing about keepRows and copies every row. Measured before this guard
+    // existed - a keepRows of [1,2] against a six-row unbound table produced a
+    // six-row copy and reported ok.
+    //
+    // Refusing is the honest answer rather than filtering anyway, because
+    // deriveTableStructure's unbound fallback classifies EVERY non-header row
+    // as an item (tableStructure.ts). Filtering on that would let a caller drop
+    // a total while the engine reported it had protected one - a promise it
+    // cannot keep is worse than a capability it does not have.
+    //
+    // This refusal retires itself: once a table carries bindings, roles are
+    // provable and the bound route takes the op, with no change here.
+    if (!tableRoute && op.keepRows !== undefined)
+      throw new OpError(
+        'keep_rows_roles_not_derivable',
+        `duplicate_table keepRows needs to know which rows are data and which are headers or totals, and the table at ${JSON.stringify(
+          tableAnchor ?? op.anchor ?? ''
+        )} has no linked values to tell them apart. Nothing was written.`,
+        [
+          `table: ${tableAnchor ?? op.anchor ?? '(unresolved)'}`,
+          'Duplicate the whole table without keepRows, then delete the rows you do not want from the copy.'
+        ]
+      );
     return tableRoute
       ? boundDuplicateTablePlan(index, op, target, tableRoute)
       : null;

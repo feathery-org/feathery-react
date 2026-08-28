@@ -349,3 +349,126 @@ describe('insert_row against an itemless bound table', () => {
     }
   });
 });
+
+/**
+ * REPRO FIRST: keepRows against an UNBOUND table.
+ *
+ * `deriveTableStructure` states its own unbound fallback (tableStructure.ts):
+ * a table with no row-scoped bindings has no evidence to separate data rows
+ * from decoration, so EVERY non-header row is classified `item`. `keepRows`
+ * then protects only non-item rows - so on such a table the role check has
+ * nothing to refuse, and the promise that "headers and totals ride
+ * automatically" is one the engine cannot keep.
+ *
+ * This row demonstrates the actual behaviour BEFORE the fix, so the fix is
+ * shown to change something real rather than asserted to.
+ */
+describe('REPRO: keepRows on a table whose roles cannot be proven', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+
+  const buildWithUnbound = (): DocumentEditor => {
+    const doc = buildCostsFixture();
+    const strip = (node: any): any => {
+      if (Array.isArray(node)) return node.map(strip);
+      if (!node || typeof node !== 'object') return node;
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'contentControlProperties') continue;
+        out[key] = strip(value);
+      }
+      return out;
+    };
+    const wrapper: any = doc.sections[0].blocks.find((block: any) =>
+      JSON.stringify(block ?? {}).includes('[[table=costs]]')
+    );
+    const inner = (wrapper.blocks ?? []).find((block: any) => block?.rows);
+    doc.sections[0].blocks.push(strip(inner));
+    // A trailing paragraph, because a table that is the document's LAST block
+    // trips `document_tail_table_last_row` - an unrelated guard that refuses
+    // before the keepRows path is reached at all. The first version of this
+    // repro measured that refusal instead of the behaviour under test.
+    doc.sections[0].blocks.push({ inlines: [{ text: 'tail' }] } as any);
+
+    const host = document.createElement('div');
+    host.style.width = '900px';
+    host.style.height = '700px';
+    document.body.appendChild(host);
+    const made = new DocumentEditor({
+      isReadOnly: false,
+      enableEditor: true,
+      enableSelection: true,
+      enableImageResizer: true,
+      enableSearch: true,
+      enableSfdtExport: true,
+      enableEditorHistory: true,
+      documentEditorSettings: { optimizeSfdt: false }
+    });
+    made.appendTo(host);
+    made.open(JSON.stringify(doc));
+    return made;
+  };
+
+  beforeEach(() => {
+    editor = buildWithUnbound();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    destroy(editor);
+  });
+
+  it('states what actually happens today, whatever that is', () => {
+    const blocks = parsed(editor).sections[0].blocks;
+    const unboundIndex = blocks.findIndex(
+      (block: any) => block?.rows && !block?.contentControlProperties
+    );
+    // The fixture must really carry an unbound table, or this proves nothing.
+    expect(unboundIndex).toBeGreaterThan(-1);
+    const rowsBefore = blocks[unboundIndex].rows.length;
+    expect(rowsBefore).toBe(6);
+
+    const before = editor.serialize();
+    const result: any = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'duplicate_table',
+          anchor: `0;${unboundIndex};0;0;0`,
+          rows: 'copy',
+          keepRows: [1, 2]
+        } as any
+      ]
+    });
+
+    const after = parsed(editor).sections[0].blocks;
+    const tables = after
+      .map((block: any, index: number) => ({ block, index }))
+      .filter((entry: any) => entry.block?.rows && !entry.block?.contentControlProperties)
+      .map((entry: any) => entry.block.rows.length);
+
+    // MEASURED BEFORE THE FIX, and it corrected the diagnosis rather than
+    // confirming it. The reported defect was "roles are unprovable so a total
+    // gets silently dropped". The actual behaviour was different and milder:
+    // `keepRows` was SILENTLY IGNORED. An unbound table has no binding route,
+    // so the op fell through to the editor handler, which knows nothing about
+    // keepRows - a keepRows of [1,2] against this six-row table produced a
+    // SIX-row copy and reported ok:true. No data was lost; a filter the caller
+    // asked for simply did not happen.
+    //
+    // The fix is the same either way, for a reason that survives the
+    // correction: a parameter that is silently ignored is never acceptable, and
+    // filtering on the unbound fallback would be worse than refusing, because
+    // that fallback calls every non-header row an item and would let a caller
+    // drop a total while the engine believed it had protected one.
+    expect(result.results[0].ok).toBe(false);
+    expect(result.results[0].error).toBe('keep_rows_roles_not_derivable');
+    // Nothing written, and the anti-vacuity guard: the refusal carries a
+    // reason, so "refused" and "never attempted" cannot read the same.
+    expect(editor.serialize()).toBe(before);
+    expect(tables).toEqual([rowsBefore]);
+    expect(result.results[0].error).not.toBeNull();
+  });
+});
