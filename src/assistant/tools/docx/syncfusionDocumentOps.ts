@@ -11820,6 +11820,29 @@ function finalizeTableAppearance(
     // Which live rows survive an accept, in order. A row wholly marked deleted
     // contributes no band and takes no fill.
     const rows = getRows(tableBlockAt(sfdt, anchor)) ?? [];
+
+    // INTERIM NARROWING, measured rather than precautionary.
+    //
+    // When the table carries pending revisions from an EARLIER change set, the
+    // appearance restore under-restores: a cell that was #E6E6E6FF comes back
+    // `empty` after a reject. Diagnosed 2026-08-27 - the finalizer's CAPTURE is
+    // correct, verified by logging the recorded prior value against the document
+    // at every written cell through cellAppearanceAt, so the fault is downstream
+    // in the shared binding/restore path that every appearance write uses, and
+    // is not slice 2's to change.
+    //
+    // It was never reachable before because the only prior writer that survived
+    // a reject wrote to wholly-pending copies. So surviving content on such a
+    // table is left alone, loudly and counted, until the shared defect is fixed:
+    // `docx-appearance-restore-prior-revisions`. The reversibility law stays
+    // absolute and the capability narrows honestly.
+    const tableCarriesPriorPendingWork = rows.some((row: any) => {
+      const ids = rowRevisionIds(row);
+      const list = Array.isArray(ids) ? ids : ids ? [ids] : [];
+      return list.some(
+        (id: any) => typeof id === 'string' && preExistingRevisionIds.has(id)
+      );
+    });
     const planned: Array<{ row: number; shading: string | null }> = [];
     let survivorIndex = 0;
     let skippedKeyless = 0;
@@ -11864,8 +11887,13 @@ function finalizeTableAppearance(
             rowRevisionIds(row),
             inserted
           );
-          if (everColoured || whollyInserted)
-            planned.push({ row: index, shading: wanted });
+          // Surviving content is off limits while the table carries an
+          // earlier set's pending work; a wholly-inserted row stays writable
+          // because a reject removes it and no restore has to run.
+          const mayWrite = whollyInserted
+            ? true
+            : everColoured && !tableCarriesPriorPendingWork;
+          if (mayWrite) planned.push({ row: index, shading: wanted });
           else skippedKeyless++;
         }
       }
@@ -11878,6 +11906,29 @@ function finalizeTableAppearance(
       );
     if (!planned.length) continue;
 
+    // eslint-disable-next-line no-console
+    console.log(
+      `INSTR-LEN rawRows=${rows.length} snapshotRows=${current.rows.length}`
+    );
+    // TEMP INSTRUMENTATION - capture vs write comparison
+    for (const entry of planned) {
+      const rawRow = rows[entry.row];
+      const rawCells: any[] = pick(rawRow, 'cells', 'c') ?? [];
+      const rawFmt = pick(rawCells[0] ?? {}, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const rawShading = pick(rawFmt, 'shading', 'sd') ?? {};
+      const rawColour = pick(rawShading, 'backgroundColor', 'bgc') ?? 'NONE';
+      const snapshot =
+        cellAppearanceAt(current, entry.row, 0)?.shading ?? 'NONE';
+      // eslint-disable-next-line no-console
+      console.log(
+        `INSTR row=${entry.row} wants=${
+          entry.shading ?? 'null'
+        } rawPrior=${rawColour} snapshotPrior=${snapshot} agree=${
+          String(rawColour).startsWith(String(snapshot)) ||
+          (snapshot === 'NONE' && rawColour === 'NONE')
+        }`
+      );
+    }
     const outcome = applyPlannedRowShadings(editor, anchor, current, planned);
     if (outcome.report.cellsWritten) record(outcome.restores);
   }
