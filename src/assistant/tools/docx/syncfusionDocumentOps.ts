@@ -17562,29 +17562,37 @@ function detectBatchedDuplicateTables(edits: EditOp[]): BatchRefusal | null {
       indices
     };
   }
-  const firstDuplicate = indices[0];
-  const laterAnchored = edits
-    .map((op, index) => ({ op, index }))
-    .filter(
-      ({ op, index }) =>
-        index > firstDuplicate &&
-        op?.op &&
-        !ANCHORLESS_OPS.has(op.op) &&
-        op.op !== 'replace_all'
-    )
-    .map(({ index }) => index);
-  if (!laterAnchored.length) return null;
-  return {
-    code: 'duplicate_table_must_end_change_set',
-    message:
-      'duplicate_table must be the last anchored edit in its change set. It inserts a table, so every later anchor may have shifted and can collide with the cloned table. Nothing was written.',
-    details: [
-      `duplicate_table at edit ${firstDuplicate}`,
-      `later anchored edits: ${laterAnchored.join(', ')}`,
-      'Duplicate the table, re-read structure/table_facts, then send follow-up edits against the fresh anchors.'
-    ],
-    indices: [firstDuplicate, ...laterAnchored]
-  };
+  // THE "MUST END THE CHANGE SET" REFUSAL IS GONE, REPLACED BY A LAW.
+  //
+  // It used to refuse any anchored edit after a duplicate, on the reasoning
+  // that the insert shifts every later anchor and a write against a moved
+  // anchor could collide with the clone. Two measurements retired it:
+  //
+  //   1. A CLONE FORKS IDENTITY (uniqueTableId / freshRowIdsFor), so after
+  //      duplicating "costs" the copy is "costs_copy" and the anchor "costs"
+  //      still names exactly one table - the source. The bound route already
+  //      resolves through that identity at execute time against the CURRENT
+  //      state, so the collision the refusal imagined cannot occur for a bound
+  //      target. anchorResolutionLaw.spec.ts (i)-(iii) pin this, including the
+  //      negative control that the copy keeps both its rows.
+  //   2. THE CHANGE SET IS ALL-OR-NOTHING AT PREFLIGHT. The refusal's own
+  //      comment worried that a later write "gets far enough to change the
+  //      document before the set fails". Measured: it does not. A refused op
+  //      aborts the set with nothing written and the failing op carrying its
+  //      own reason (composedChangeSetProbes.spec.ts PROBE 2).
+  //
+  // What replaces it is the resolution law: identity first; maintained
+  // position, fingerprint-asserted, when there is no identity; and a loud
+  // named refusal when resolution does not yield exactly one container.
+  // Identity never silently falls back to position - an expected id that is
+  // missing means the document is not what the change set thought it was.
+  //
+  // STILL GUARDED, and deliberately: several duplicates in one set, above.
+  // Also unchanged is detectAnchorShiftingNotLast, which covers copy_section -
+  // that op has no identity fork, so clause 2 is the only resolution available
+  // to it and clause 2 is not yet proven for an UNBOUND container. Lifting it
+  // needs its own evidence and is not part of this change.
+  return null;
 }
 
 /**
