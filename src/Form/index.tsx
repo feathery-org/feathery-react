@@ -1003,9 +1003,12 @@ function Form({
     // The removed row belongs to the container, not to any one field. Taking
     // each field's own length lets a shorter array drop a different row, and a
     // file field is shorter than its siblings whenever it ends in empty rows.
+    const fieldsInContainer = curRepeatContainer
+      ? getFieldsInRepeat(activeStep, curRepeatContainer)
+      : [];
     const containerRows = Math.max(
       0,
-      ...getFieldsInRepeat(activeStep, curRepeatContainer).map((field: any) => {
+      ...fieldsInContainer.map((field: any) => {
         const vals = fieldValues[field.servar.key];
         return Array.isArray(vals) ? vals.length : 0;
       })
