@@ -293,10 +293,15 @@ describe('writes aimed at a bound cell', () => {
 
   it('leaves native tracking off when control returns to the user', () => {
     expect(editor.enableTrackChanges).toBe(false);
-    const trackingDuringOpen: boolean[] = [];
+    // This used to observe tracking DURING the reopen, because an authored
+    // batch was installed with `editor.open`. It is no longer reopened at all:
+    // the edit applies natively so it stays undoable. The row keeps its point -
+    // the user must never inherit the assistant's tracking - and now asserts
+    // the stronger fact that no reopen happens, alongside the leak checks below.
+    const opens: string[] = [];
     const open = editor.open.bind(editor);
     editor.open = ((sfdt: string) => {
-      trackingDuringOpen.push(editor.enableTrackChanges);
+      opens.push(sfdt);
       open(sfdt);
     }) as typeof editor.open;
 
@@ -313,7 +318,7 @@ describe('writes aimed at a bound cell', () => {
     });
 
     expect(result.results[0]).toMatchObject({ ok: true, route: 'engine' });
-    expect(trackingDuringOpen).toEqual([false]);
+    expect(opens).toEqual([]);
     expect(editor.enableTrackChanges).toBe(false);
     const assistantRevisionCount = editor.revisions.length;
 

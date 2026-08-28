@@ -26,6 +26,8 @@
 import { EngineWrite } from './core/engine';
 import type { NativeStructuralMutation } from './core/sfdtAdapter';
 import { EditorPort } from './controller';
+import type { BindingCommandProvenance } from './reconcileRegistry';
+import { revisionGroupTag } from '../../../../utils/documentEditorPrimitives';
 import { anchorCaret, CaretAnchor, resolveAnchor } from './controlGeometry';
 import { applyNativeStructuralMutations } from './nativeStructuralAdapter';
 
@@ -157,6 +159,19 @@ export function configureEditorForBindings(
   }
 }
 
+/**
+ * Depth of the authored-batch scope below. `updateValues` serves two callers
+ * with opposite requirements - mechanical reconciliation, which must never
+ * author revisions, and an authored assistant batch, which must - so the
+ * decision belongs to the caller rather than being hard-coded in the writer.
+ */
+let authoredDepth = 0;
+
+/** True while an authored assistant batch is applying through this adapter. */
+export function isApplyingAuthoredBatch(): boolean {
+  return authoredDepth > 0;
+}
+
 export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
   // The deferred restore below outlives the synchronous call. On a step-back the
   // editor is destroyed before it fires; tracking it lets dispose() cancel it so
@@ -179,6 +194,50 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
     open: (sfdt: string) => editor.open(sfdt),
     applyStructuralMutations: (mutations: NativeStructuralMutation[]) =>
       applyNativeStructuralMutations(editor, mutations),
+
+    /**
+     * Borrow three editor switches for one authored batch, then hand every one
+     * of them back.
+     *
+     * Restoration is a `finally` around the whole run, not the happy path, and
+     * it restores the PRIOR values rather than assuming defaults. A leaked
+     * `enableTrackChanges` would silently start tracking the user's own typing;
+     * a leaked `currentUser` would stamp their later edits with the assistant's
+     * name, which is an authorship corruption worse than the defect this exists
+     * to fix. Same three switches, and the same discipline, as the assistant's
+     * older op seam.
+     */
+    withAuthoredRevisions<T>(
+      provenance: BindingCommandProvenance,
+      run: () => T
+    ): T {
+      const settings = editor.documentEditorSettings as
+        | { revisionSettings?: { customData?: string } }
+        | undefined;
+      const revisionSettings = settings?.revisionSettings;
+      const priorTracking = editor.enableTrackChanges;
+      const priorUser = (editor as any).currentUser;
+      const priorCustomData = revisionSettings?.customData;
+      authoredDepth += 1;
+      try {
+        editor.enableTrackChanges = true;
+        (editor as any).currentUser = provenance.author;
+        // Editors without `revisionSettings` (test doubles) go ungrouped, as
+        // they do on the older seam. Grouping is a review affordance; the
+        // authorship and the undoability are the load-bearing parts.
+        if (revisionSettings)
+          revisionSettings.customData = revisionGroupTag(
+            provenance.changeSetId,
+            provenance.group
+          );
+        return run();
+      } finally {
+        authoredDepth -= 1;
+        editor.enableTrackChanges = priorTracking;
+        (editor as any).currentUser = priorUser;
+        if (revisionSettings) revisionSettings.customData = priorCustomData;
+      }
+    },
 
     updateValues(writes: EngineWrite[]): boolean {
       const helper = editor.documentHelper;
@@ -248,16 +307,34 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
         // afterwards too: restoring a leftover `true` (Assist batch, document
         // flag, container drift) would make the user's next keystroke inside
         // this control a tracked insertion.
-        editor.enableTrackChanges = false;
+        //
+        // An AUTHORED batch is the one caller for which the opposite holds: its
+        // value writes are the assistant's own edits and must appear on the
+        // review card like any other. The authored scope owns restoring these
+        // switches, so this path leaves them alone entirely while inside it.
+        if (!authoredDepth) editor.enableTrackChanges = false;
+        // Formula cells normally get no history entry of their own: they are
+        // derived values, and recording them would put an undo step between the
+        // user and the edit that caused them. Under an authored batch that
+        // reasoning inverts twice over. The derived cells are part of the one
+        // change the reviewer accepts or rejects, so they belong in the SAME
+        // grouped history entry as the rest - and, measured on this SDK, a
+        // tracked write with history disabled loses its insertion outright: the
+        // old text is deleted, nothing replaces it, and the binding reads empty.
+        // Tracked editing and history are entangled here, so an authored batch
+        // keeps both on and lets the group carry the derived cells.
+        const groupedWrites = authoredDepth
+          ? applicableWrites.length
+          : fieldWrites.length;
         if (
-          fieldWrites.length > 1 &&
+          groupedWrites > 1 &&
           typeof (editorModule as any).initComplexHistory === 'function'
         ) {
           (editorModule as any).initComplexHistory('BindingValues');
           complex = true;
         }
         if (!apply(fieldWrites)) return false;
-        editor.enableEditorHistory = false;
+        if (!authoredDepth) editor.enableEditorHistory = false;
         if (!apply(applicableWrites.filter((write) => write.kind !== 'field')))
           return false;
         return true;
@@ -266,7 +343,7 @@ export function createEditorAdapter(editor: SyncfusionEditorLike): EditorPort {
       } finally {
         if (complex) history?.updateComplexHistory?.();
         editor.enableEditorHistory = previousHistory;
-        editor.enableTrackChanges = false;
+        if (!authoredDepth) editor.enableTrackChanges = false;
         try {
           // Prefer the anchored position. Normalizing "0012" to "12" shrinks the
           // control's interior by two offsets, so the saved absolute offset -

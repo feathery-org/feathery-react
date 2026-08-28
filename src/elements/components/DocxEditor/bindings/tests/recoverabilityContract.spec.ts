@@ -58,6 +58,10 @@ const rowIdsOf = (editor: DocumentEditor, tableId: string): string[] =>
 const tableIds = (editor: DocumentEditor): string[] =>
   [...indexOf(editor).tables.keys()].sort();
 
+/** Where the copy actually sits, so presence is never mistaken for placement. */
+const copyMarkerPath = (editor: DocumentEditor): unknown[] =>
+  (indexOf(editor).tables.get('costs_b')?.markerPath ?? []) as unknown[];
+
 function stacks(editor: DocumentEditor): { undo: number; redo: number } {
   const history = (editor as any).editorHistoryModule ?? editor.editorHistory;
   const undo = history.undoStackIn ?? history.undoStack;
@@ -106,9 +110,8 @@ function duplicateCostsTableCommand(editor: DocumentEditor): BindingCommand {
   const index = indexOf(editor);
   const costs = index.tables.get('costs');
   if (!costs?.markerPath) throw new Error('costs table has no marker');
-  let node: unknown = parsed(editor);
-  for (const step of costs.markerPath)
-    node = (node as Record<string, unknown>)[step as string];
+  let node: any = parsed(editor);
+  for (const step of costs.markerPath) node = node[step as any];
   const block = JSON.parse(
     JSON.stringify(node)
       .split('table=costs')
@@ -116,13 +119,13 @@ function duplicateCostsTableCommand(editor: DocumentEditor): BindingCommand {
       .split('row=r-')
       .join('row=b-')
   ) as SfdtBlock;
-  const anchorTag = [...(costs.rows[0]?.bindings.values() ?? [])][0]?.tag;
-  return {
-    type: 'add-table',
-    afterTableId: 'costs',
-    afterTag: anchorTag ?? QUANTITY_R1,
-    block
-  };
+  // The anchor is the source table's own MARKER tag - the block-level content
+  // control WRAPPING the table - which is what reconcileRegistry passes
+  // (`anchorBlock?.contentControlProperties?.tag`). A data-row binding tag
+  // looks plausible and is not: the native path would paste inside the table.
+  const afterTag = String(node?.contentControlProperties?.tag || '');
+  if (!afterTag) throw new Error('costs marker carries no tag');
+  return { type: 'add-table', afterTableId: 'costs', afterTag, block };
 }
 
 interface Harness {
@@ -235,6 +238,12 @@ describe('an assistant edit is recoverable', () => {
 
       run([duplicateCostsTableCommand(editor)], options);
       expect(tableIds(editor)).toEqual(withCopy);
+      // Presence is not placement. The binding scan walks NESTED tables too, so
+      // a copy pasted into a cell of the source table still shows up in the
+      // inventory - it reads as success while the document is wrong. The copy
+      // must be a top-level sibling: a marker path of exactly
+      // ['sections', n, 'blocks', m], nothing deeper.
+      expect(copyMarkerPath(editor)).toHaveLength(4);
 
       let guard = 0;
       while (
@@ -254,16 +263,26 @@ describe('an assistant edit is recoverable', () => {
     }
   );
 
-  forBothRoutes(
-    'criterion (b): reject unwinds completely, leaving no fragment',
-    ({ editor, run }, options) => {
+  // Criterion (b) is scoped to the provenance route on purpose, and the row
+  // below states why rather than leaving it as a claim. Rejecting is only
+  // meaningful for a TRACKED edit: an unprovenanced command is ordinary
+  // untracked editing, produces no revisions, and so has nothing to reject.
+  // Asserting "reject restores the document" on the control route would
+  // assert a contradiction and would pass only by accident.
+  it('criterion (b): reject unwinds completely, leaving no fragment', () => {
+    const harness = openHarness();
+    try {
+      const { editor, run } = harness;
       const beforeTables = tableIds(editor);
       const beforeRows = rowIdsOf(editor, 'costs');
       expect(beforeTables).not.toContain('costs_b');
 
-      run([duplicateCostsTableCommand(editor)], options);
+      run([duplicateCostsTableCommand(editor)], { provenance: PROVENANCE });
       expect(tableIds(editor)).toEqual([...beforeTables, 'costs_b'].sort());
 
+      // Anti-vacuity: there must be something to reject, or the restoration
+      // below proves nothing.
+      expect(editor.revisions.length).toBeGreaterThan(0);
       rejectAllRevisions(editor);
 
       // The 2.3 fragment the captain saw personally: a rejected table that
@@ -272,11 +291,24 @@ describe('an assistant edit is recoverable', () => {
       expect(tableIds(editor)).toEqual(beforeTables);
       expect(rowIdsOf(editor, 'costs')).toEqual(beforeRows);
       expect(editor.revisions.length).toBe(0);
-      expect(
-        JSON.stringify(parsed(editor)).includes('table=costs_b')
-      ).toBe(false);
+      expect(JSON.stringify(parsed(editor)).includes('table=costs_b')).toBe(
+        false
+      );
+    } finally {
+      closeHarness(harness);
     }
-  );
+  });
+
+  it('an unprovenanced edit is untracked, which is why (b) is scoped', () => {
+    const harness = openHarness();
+    try {
+      harness.run([duplicateCostsTableCommand(harness.editor)], {});
+      // The stated reason for the scoping above, measured rather than assumed.
+      expect(harness.editor.revisions.length).toBe(0);
+    } finally {
+      closeHarness(harness);
+    }
+  });
 });
 
 describe('an assistant edit stays reviewable', () => {
