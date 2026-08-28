@@ -21,7 +21,8 @@ import {
 } from '../formHelperFunctions';
 import {
   FILE_FIELD_TYPES,
-  getDefaultFormFieldValue
+  getDefaultFormFieldValue,
+  isRepeatedFileField
 } from '../fieldHelperFunctions';
 import { loadPhoneValidator } from '../validation';
 import {
@@ -271,9 +272,16 @@ export default class FeatheryClient extends IntegrationClient {
     if (Array.isArray(fileValue)) {
       // Keep every position: a repeat row with no file stays null so its index
       // survives to the wire instead of the later files shifting up.
+      const isHole = (v: any) => v === null || v === undefined || v === '';
       const failures: Error[] = [];
       const resolved = await Promise.all(
         fileValue.map(async (f, i) => {
+          // An empty row must not resolve to whatever path is still stored at
+          // its index. filePathMap outlives the value for any writer that
+          // clears a row without sweeping the map -- the `field.value` setter
+          // and repeat_single both do -- and resurrecting it here would submit
+          // one file at two rows at once.
+          if (isHole(f)) return null;
           try {
             const value = await resolveFile(f, i, { rethrowOnFailure: true });
             return value === undefined ? null : value;
@@ -286,13 +294,19 @@ export default class FeatheryClient extends IntegrationClient {
         })
       );
 
-      const isRealEntry = (v: any) => v !== null && v !== undefined && v !== '';
+      if (!failures.length) return resolved;
+
       // The submit replaces the whole field, so letting a failed row through as
       // a hole would delete the file already stored at that row. Every row that
       // was meant to hold a file has to resolve, or the user hears about it.
-      if (fileValue.some(isRealEntry) && failures.length) throw failures[0];
+      if (isRepeatedFileField(servar)) throw failures[0];
 
-      return resolved;
+      // A plain multi-file field holds no positions worth keeping, so one bad
+      // upload out of three still sends the other two, as it did before repeat
+      // holes existed. Only losing all of them is worth an error.
+      const uploaded = resolved.filter((v) => !isHole(v));
+      if (!uploaded.length) throw failures[0];
+      return uploaded;
     } else {
       return await resolveFile(fileValue, null, { rethrowOnFailure: true });
     }
@@ -649,7 +663,11 @@ export default class FeatheryClient extends IntegrationClient {
     let params: Record<string, any> = {
       form_key: this.formKey,
       draft: this.draft,
-      override: overrideUserId
+      override: overrideUserId,
+      // This version reads a null in file_values as an empty repeat row.
+      // Versions before it map over the array dereferencing `.url`, so the
+      // backend holds the dense shape back until a client asks like this.
+      repeat_holes: 'true'
     };
     if (userId) params.fuser_key = userId;
     if (collaboratorId) params.collaborator_user = collaboratorId;
@@ -714,6 +732,9 @@ export default class FeatheryClient extends IntegrationClient {
       auth_data: authData,
       auth_form_key: authState.authFormKey,
       is_stytch_template_key: isStytchTemplateKey,
+      // This response also feeds updateSessionValues, so it needs the same
+      // hole signal the session fetch sends.
+      repeat_holes: true,
       ...(userId ? { fuser_key: userId } : {})
     };
     const url = `${API_URL}panel/update_auth/v3/`;
