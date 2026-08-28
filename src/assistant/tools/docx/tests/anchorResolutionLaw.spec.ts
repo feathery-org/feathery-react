@@ -187,25 +187,139 @@ describe('anchor resolution after a shifting op, in one change set', () => {
       ]
     });
 
-    // Either it resolves correctly, or it refuses BY NAME. What it must never
-    // do is write to whatever now sits at the stale index.
-    const codes = codesOf(result);
-    // eslint-disable-next-line no-console
-    console.info(
-      '(ii) branch taken:',
-      codes[1] === null ? 'RESOLVED' : `REFUSED ${codes[1]}`
+    // MEASURED: it RESOLVES. Asserted definitely rather than as an
+    // either-way branch, which would pass without recording which happened.
+    //
+    // NOTE ON WHAT THIS DOES AND DOES NOT PROVE: `expenses` is BOUND, so it
+    // resolved through clause 1, identity - not through position maintenance.
+    // Row (ii-b) is the one that exercises clause 2.
+    expect(codesOf(result)).toEqual([null, null]);
+    expect(itemsOf(editor, 'costs')).toEqual(['Design work', 'Development']);
+    expect(indexOf(editor).tables.get('expenses')!.rows.length).toBe(
+      expensesBefore!.rows.length - 1
     );
-    if (codes[1] === null) {
-      // Resolved: expenses lost exactly one row, and costs kept both.
-      expect(itemsOf(editor, 'costs')).toEqual(['Design work', 'Development']);
-      expect(indexOf(editor).tables.get('expenses')!.rows.length).toBe(
-        expensesBefore!.rows.length - 1
-      );
-    } else {
-      // Refused: nothing was written, and the reason is specific.
-      expect(codes[1]).not.toBeNull();
-      expect(itemsOf(editor, 'costs')).toEqual(['Design work', 'Development']);
-    }
+  });
+
+  it('(ii-b) CLAUSE 2 EVIDENCE: an UNBOUND later table after the shift', () => {
+    // The hole spec (ii) does not close. `expenses` is BOUND, so it resolved by
+    // identity - clause 1 - and said nothing about clause 2. The lifted gate,
+    // however, admits ANY follower after a duplicate, including one that can
+    // only resolve by POSITION. This row measures that case directly, because
+    // admitting it with no evidence is exactly what the refusal existed to stop.
+    //
+    // An unbound table has no id to resolve by, so a write aimed at it must
+    // survive the two blocks the duplicate inserts ABOVE it, or refuse.
+    // Built from a REAL table rather than by hand. A hand-written minimal table
+    // block did not survive the editor's round-trip at all - its text was not
+    // findable afterwards - so this clones the fixture's own second table and
+    // strips every content control, which is exactly what "unbound" means and
+    // guarantees a structurally valid table.
+    const doc = buildCostsFixture();
+    const stripControls = (node: any, depth = 0): any => {
+      if (Array.isArray(node)) return node.map((n) => stripControls(n, depth));
+      if (!node || typeof node !== 'object') return node;
+      const out: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'contentControlProperties') continue;
+        if (key === 'text') {
+          out[key] = `UNBOUND-${String(value).slice(0, 6)}`;
+          continue;
+        }
+        out[key] = stripControls(value, depth + 1);
+      }
+      return out;
+    };
+    const expensesWrapper: any = doc.sections[0].blocks.find((block: any) =>
+      JSON.stringify(block ?? {}).includes('[[table=expenses]]')
+    );
+    expect(expensesWrapper).toBeTruthy();
+    // The INNER table, not the wrapper. The wrapper is a block content control
+    // whose `blocks` hold the table; appending the stripped wrapper appends a
+    // container the editor flattens into plain paragraphs, which is what the
+    // first attempt did - the document came back with three paragraphs and no
+    // table at all.
+    const innerTable = (expensesWrapper.blocks ?? []).find(
+      (block: any) => block?.rows
+    );
+    expect(innerTable).toBeTruthy();
+    doc.sections[0].blocks.push(stripControls(innerTable) as any);
+
+    attached.dispose();
+    destroy(editor);
+    const host = document.createElement('div');
+    host.style.width = '900px';
+    host.style.height = '700px';
+    document.body.appendChild(host);
+    editor = new DocumentEditor({
+      isReadOnly: false,
+      enableEditor: true,
+      enableSelection: true,
+      enableImageResizer: true,
+      enableSearch: true,
+      enableSfdtExport: true,
+      enableEditorHistory: true,
+      documentEditorSettings: { optimizeSfdt: false }
+    });
+    editor.appendTo(host);
+    editor.open(JSON.stringify(doc));
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+
+    const blocks = parsed(editor).sections[0].blocks;
+    const unboundIndex = blocks.findIndex((block: any) =>
+      JSON.stringify(block ?? {}).includes('UNBOUND-')
+    );
+    // The unbound table must actually BE a table and sit after the one being
+    // duplicated, or this row proves nothing. Both earlier attempts at this
+    // fixture failed here rather than silently measuring the wrong thing.
+    expect(blocks[unboundIndex]?.rows).toBeTruthy();
+    expect(unboundIndex).toBeGreaterThan(tableBlockIndex(editor, 'costs'));
+
+    // The anchor is computed BEFORE the change set, which is the realistic
+    // case: the model reads the document, then sends the batch.
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'duplicate_table',
+          anchor: cellAt(editor, 'costs', 0),
+          rows: 'copy'
+        },
+        {
+          op: 'set_cell_text',
+          anchor: `0;${unboundIndex};1;0;0`,
+          text: 'WROTE-HERE'
+        }
+      ]
+    });
+
+    const codes = codesOf(result);
+    const afterBlocks = parsed(editor).sections[0].blocks;
+    const landedInUnbound = JSON.stringify(
+      afterBlocks.find((block: any) =>
+        JSON.stringify(block ?? {}).includes('UNBOUND-')
+      ) ?? {}
+    ).includes('WROTE-HERE');
+
+    // MEASURED, 2026-08-28: position maintenance RESOLVES IT CORRECTLY. Both
+    // ops succeed and the write lands in the unbound table even though the
+    // duplicate inserted blocks above it. This is clause 2's first evidence,
+    // and it is what makes the lifted gate's admitted set equal to the proven
+    // set rather than wider than it.
+    //
+    // Asserted definitely rather than as a branch. An earlier draft accepted
+    // "resolved OR refused by name", which would have passed either way and
+    // recorded nothing - the same vacuity this file's sibling probe was
+    // rewritten to avoid.
+    expect(codes).toEqual([null, null]);
+    expect(landedInUnbound).toBe(true);
+
+    // NEGATIVE CONTROL: the text must appear EXACTLY once in the document, so a
+    // write that landed in the unbound table AND somewhere else - the stale
+    // index the original refusal feared - fails here rather than passing on the
+    // strength of the first check alone.
+    const occurrences = JSON.stringify(afterBlocks).split('WROTE-HERE').length - 1;
+    expect(occurrences).toBe(1);
   });
 
   it('(iii) identity beats position: the copy is reachable by its OWN id, not by where it sits', () => {
