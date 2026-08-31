@@ -56,3 +56,6 @@ amplifytools.xcconfig
 
 # Generated harness bundle (rebuild with harness/bindings/webpack.config.js)
 harness/bindings/bundle.js
+harness/button-loader/bundle.js
+harness/button-loader/*.bundle.js
+harness/button-loader/*.woff2
