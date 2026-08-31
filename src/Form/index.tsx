@@ -2811,7 +2811,11 @@ function Form({
         }
         // Nothing uploaded yet: this button may sit on a step where files are
         // optional, so fall through to the next action rather than erroring.
-        if (fileCount && !(await sendBoxFiles(client, setElementError))) break;
+        if (
+          fileCount &&
+          !(await sendBoxFiles(client, setElementError, action.field_id))
+        )
+          break;
       } else if (type === ACTION_TRIGGER_PLAID) {
         await submitPromise;
         await openPlaidLink(

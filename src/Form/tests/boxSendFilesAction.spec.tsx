@@ -135,6 +135,24 @@ describe('box_send_files action', () => {
     expect(client.submitFiles).not.toHaveBeenCalled();
   });
 
+  it('passes the configured field_id through to sendBoxFiles', async () => {
+    (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
+    GridMod._spies.actions = [
+      { type: 'box_send_files', field_id: 'servar-file-1' }
+    ];
+
+    render(<JSForm formId='f1' _internalId='iid-box-send-6' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(mockedSendBoxFiles).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        'servar-file-1'
+      )
+    );
+  });
+
   it('surfaces an error and does not escape the action loop when the file submit rejects', async () => {
     (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
 
