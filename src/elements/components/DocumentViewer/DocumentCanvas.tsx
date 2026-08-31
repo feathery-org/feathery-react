@@ -6,11 +6,38 @@ import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
 import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
-import { featheryWindow } from '../../../utils/browser';
+import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
 const PAGE_GAP = 24;
 // US Letter aspect for loading placeholders; actual pages size themselves.
 const SKELETON_ASPECT = '8.5 / 11';
+
+// A checked checkbox's glyph (ZapfDingbats, drawn with a standard font pdf.js
+// fetches async and doesn't await in render()) can paint blank; re-render on
+// this backoff until it does.
+const HEAL_BACKOFF_MS = [120, 300, 700, 1500, 3000];
+
+// Near-black opaque pixels in a rect. Zero for a checkbox rect = glyph unpainted.
+function inkInRect(canvas: HTMLCanvasElement, r: number[]): number {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return -1;
+  const x0 = Math.max(0, Math.floor(Math.min(r[0], r[2])));
+  const y0 = Math.max(0, Math.floor(Math.min(r[1], r[3])));
+  const w = Math.max(
+    1,
+    Math.min(canvas.width - x0, Math.ceil(Math.abs(r[2] - r[0])))
+  );
+  const h = Math.max(
+    1,
+    Math.min(canvas.height - y0, Math.ceil(Math.abs(r[3] - r[1])))
+  );
+  const d = ctx.getImageData(x0, y0, w, h).data;
+  let k = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] > 0 && d[i] + d[i + 1] + d[i + 2] < 400) k++;
+  }
+  return k;
+}
 
 interface DocumentCanvasProps {
   documents: ViewerDocument[];
@@ -298,16 +325,18 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         // otherwise pages render at 1 CSS px per PDF px and look soft on every
         // HiDPI screen. CSS size stays in layout pixels.
         const dpr = featheryWindow().devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * dpr);
-        canvas.height = Math.floor(viewport.height * dpr);
-        canvas.style.width = `${pageWidth}px`;
-        canvas.style.height = `${
-          viewport.height * (pageWidth / viewport.width)
-        }px`;
-        const canvasContext = canvas.getContext('2d');
-        if (canvasContext) {
+        const backingWidth = Math.floor(viewport.width * dpr);
+        const backingHeight = Math.floor(viewport.height * dpr);
+        // Render offscreen and blit only a completed frame, so a cancelled
+        // render (e.g. the ResizeObserver's pageWidth correction) can't leave a
+        // partial one on screen.
+        const offscreen = featheryDoc().createElement('canvas');
+        offscreen.width = backingWidth;
+        offscreen.height = backingHeight;
+        const offCtx = offscreen.getContext('2d');
+        if (offCtx) {
           renderTask = page.render({
-            canvasContext,
+            canvasContext: offCtx,
             viewport,
             transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
             // Read-only review: render with print intent so every field's
@@ -319,10 +348,80 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
             intent: 'print',
             annotationMode: pdfjs.AnnotationMode.ENABLE
           });
+          let completed = true;
           try {
             await renderTask.promise;
           } catch (e: any) {
             if (e?.name !== 'RenderingCancelledException') throw e;
+            completed = false;
+          }
+          if (completed && !cancelled) {
+            canvas.width = backingWidth;
+            canvas.height = backingHeight;
+            canvas.style.width = `${pageWidth}px`;
+            canvas.style.height = `${
+              viewport.height * (pageWidth / viewport.width)
+            }px`;
+            canvas.getContext('2d')?.drawImage(offscreen, 0, 0);
+          }
+
+          // Self-heal the async-font race: if a checked checkbox's glyph didn't
+          // paint, re-render (backing off) until it does, then re-blit. No-op
+          // once the font is loaded — the common case.
+          if (completed && !cancelled) {
+            try {
+              const anns = await page.getAnnotations({ intent: 'print' });
+              if (cancelled) return;
+              const checkRects: number[][] = (anns || [])
+                .filter(
+                  (an: any) =>
+                    an &&
+                    (an.checkBox || an.radioButton) &&
+                    an.fieldValue &&
+                    an.fieldValue !== 'Off' &&
+                    (an.exportValue == null || an.fieldValue === an.exportValue)
+                )
+                .map((an: any) => {
+                  const vr = viewport.convertToViewportRectangle(an.rect);
+                  return [vr[0] * dpr, vr[1] * dpr, vr[2] * dpr, vr[3] * dpr];
+                });
+              const anyGlyphMissing = (cv: HTMLCanvasElement) =>
+                checkRects.some((r) => inkInRect(cv, r) === 0);
+              if (checkRects.length && anyGlyphMissing(offscreen)) {
+                for (const delay of HEAL_BACKOFF_MS) {
+                  await new Promise((resolve) => {
+                    featheryWindow().setTimeout(resolve, delay);
+                  });
+                  if (cancelled) return;
+                  const heal = featheryDoc().createElement('canvas');
+                  heal.width = backingWidth;
+                  heal.height = backingHeight;
+                  const hctx = heal.getContext('2d');
+                  if (!hctx) break;
+                  renderTask = page.render({
+                    canvasContext: hctx,
+                    viewport,
+                    transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
+                    intent: 'print',
+                    annotationMode: pdfjs.AnnotationMode.ENABLE
+                  });
+                  try {
+                    await renderTask.promise;
+                  } catch (e: any) {
+                    if (e?.name !== 'RenderingCancelledException') throw e;
+                    return; // superseded — a newer render owns the canvas
+                  }
+                  if (cancelled) return;
+                  if (!anyGlyphMissing(heal)) {
+                    canvas.getContext('2d')?.drawImage(heal, 0, 0);
+                    break;
+                  }
+                }
+              }
+            } catch {
+              // Best-effort: a failure just leaves the first (blank) frame,
+              // which a later resize/re-render still corrects.
+            }
           }
         }
       }
@@ -336,9 +435,11 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         textDiv.innerHTML = '';
         textDiv.style.setProperty('--scale-factor', String(viewport.scale));
         try {
+          // includeMarkedContent OFF: these forms have unbalanced marked-content
+          // ops that make pdf.js's TextLayer append onto a null parent and throw.
           const textContentSource = page.streamTextContent
             ? page.streamTextContent({
-                includeMarkedContent: true,
+                includeMarkedContent: false,
                 disableNormalization: true
               })
             : await page.getTextContent();
