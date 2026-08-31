@@ -1,6 +1,11 @@
 import { PositionedElement, Subgrid } from '../types/Form';
 import { getPositionKey } from './hideAndRepeats';
-import { getDefaultFieldValue } from './fieldHelperFunctions';
+import {
+  getDefaultFieldValue,
+  isRepeatedFileField
+} from './fieldHelperFunctions';
+import { fieldValues } from './init';
+import { arrayMove } from './array';
 
 interface Step {
   subgrids: Subgrid[];
@@ -89,4 +94,87 @@ export function getServarRepeatNum(field: any, fieldValue: unknown): number {
   return servar.repeat_trigger === 'set_value' && !hasDefaultLastValue
     ? fieldValue.length + 1
     : fieldValue.length;
+}
+
+/**
+ * Rows the container's data actually has. Fields in one container can hold
+ * arrays of different lengths - a file field is shorter than its siblings
+ * whenever it ends in empty rows - so the container's row count is the longest
+ * of them. Note this is the count the data supports, not the count rendered:
+ * a 'set_value' trigger renders one more (see getServarRepeatNum).
+ */
+export function getRepeatContainerRowCount(
+  step: { servar_fields: any[] },
+  repeatContainer: PositionedElement
+) {
+  return Math.max(
+    0,
+    ...getFieldsInRepeat(step, repeatContainer).map((field: any) => {
+      const vals = fieldValues[field.servar.key];
+      return Array.isArray(vals) ? vals.length : 0;
+    })
+  );
+}
+
+const ROW_HOLE = Symbol('feathery.repeatRowHole');
+
+/**
+ * Permutes one repeated field's values for a container row move.
+ *
+ * A field shorter than the container is treated as ending in holes, so the same
+ * physical row moves in every field instead of each short array shifting a row
+ * of its own. Trailing holes are trimmed again afterwards because array length
+ * drives the rendered row count. An interior hole - one that opens when a real
+ * value moves past the tail - materializes as the field's neutral value: null
+ * for a repeated file field so __feathery_file_indices keeps the slot, the
+ * field default otherwise so stripEmptyRepeatEntries does not compact the row
+ * away at submit.
+ */
+export function moveRepeatRowValue(
+  list: any[],
+  from: number,
+  to: number,
+  rows: number,
+  field: any
+) {
+  const padded: any[] = Array.from({ length: rows }, (_, i) =>
+    i < list.length ? list[i] : ROW_HOLE
+  );
+
+  const moved = arrayMove(padded, from, to);
+  if (moved === padded) return list;
+
+  while (moved.length && moved[moved.length - 1] === ROW_HOLE) moved.pop();
+
+  const fill = isRepeatedFileField(field?.servar)
+    ? null
+    : getDefaultFieldValue(field);
+  return moved.map((val) => (val === ROW_HOLE ? fill : val));
+}
+
+/**
+ * Opens a new row at `at` in one repeated field's values.
+ *
+ * Padding to the container's row count first is what keeps a short field - a
+ * file field that ends in empty rows, say - inserting at the same physical row
+ * as its longer siblings instead of at its own shorter tail.
+ */
+export function insertRepeatRowValue(
+  list: any[],
+  at: number,
+  rows: number,
+  field: any
+) {
+  const fill = isRepeatedFileField(field?.servar)
+    ? null
+    : getDefaultFieldValue(field);
+  const padded: any[] = Array.from({ length: rows }, (_, i) =>
+    i < list.length ? list[i] : fill
+  );
+
+  return [
+    ...padded.slice(0, at),
+    getDefaultFieldValue(field),
+    ...padded.slice(at)
+  ];
 }

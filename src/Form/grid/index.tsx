@@ -9,6 +9,7 @@ import { Container } from './Container';
 import { getRepeatedContainers } from '../../utils/repeat';
 import CalendlyEmbed from './CalendlyEmbed';
 import QuikFormViewer from '../../elements/components/QuikFormViewer';
+import { ReorderLiveRegion } from './RepeatReorder';
 
 export const Grid = ({ step, form, viewport }: any) => {
   if (!step || !form.visiblePositions) return null;
@@ -19,7 +20,12 @@ export const Grid = ({ step, form, viewport }: any) => {
     form.visiblePositions
   );
 
-  return <Subgrid tree={formattedStep.tree} form={form} viewport={viewport} />;
+  return (
+    <>
+      <Subgrid tree={formattedStep.tree} form={form} viewport={viewport} />
+      <ReorderLiveRegion />
+    </>
+  );
 };
 
 const Subgrid = ({ tree: node, form, viewport }: any) => {
@@ -88,7 +94,11 @@ const Subgrid = ({ tree: node, form, viewport }: any) => {
   }
 };
 
-const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
+export const buildStepGrid = (
+  step: any,
+  viewport: string,
+  visiblePositions: any
+) => {
   step = convertStepToViewport(JSON.parse(JSON.stringify(step)), viewport);
 
   const map = buildGridMap(step);
@@ -102,7 +112,9 @@ const buildStepGrid = (step: any, viewport: string, visiblePositions: any) => {
     visiblePositions,
     repeatKeys,
     undefined,
-    false
+    false,
+    false,
+    buildChildBounds(map)
   );
 
   return { map, tree };
@@ -193,13 +205,41 @@ const buildGridMap = (step: any) => {
   return map;
 };
 
+/**
+ * Highest occupied child index for each parent position.
+ *
+ * Child positions are contiguous for anything the editor builds, but a form
+ * assembled through the API can leave a gap. Walking children by incrementing
+ * until a lookup misses would stop at that gap - and a gap at index 0 stops
+ * before the first child, rendering the step blank with nothing logged. This
+ * lets the walk cover every child that actually exists.
+ */
+const buildChildBounds = (gridMap: any) => {
+  const bounds: Record<string, number> = {};
+
+  Object.keys(gridMap).forEach((key) => {
+    if (key === 'root') return;
+
+    const parts = key.split(',');
+    const index = Number(parts[parts.length - 1]);
+    if (!Number.isInteger(index)) return;
+
+    const parentKey = parts.slice(0, -1).join(',') || 'root';
+    bounds[parentKey] = Math.max(bounds[parentKey] ?? -1, index);
+  });
+
+  return bounds;
+};
+
 const buildGridTree = (
   gridMap: any,
   position: any[],
   visiblePositions: VisiblePositions,
   repeatKeys: string[],
   repeatIndex: number | undefined,
-  lastRepeat: boolean
+  lastRepeat: boolean,
+  isRepeatRoot: boolean,
+  childBounds: Record<string, number>
 ) => {
   const positionKey = getPositionKey({ position });
   const node = { ...gridMap[positionKey] };
@@ -207,16 +247,21 @@ const buildGridTree = (
 
   node.repeat = repeatIndex;
   node.lastRepeat = lastRepeat;
+  // repeat is inherited by the whole subtree, so it cannot tell the cloned
+  // container apart from its descendants. Only the clone is a reorderable row.
+  node.repeatRoot = isRepeatRoot;
 
-  let i = 0;
-  let nextPos = [...position, i];
-  let nextPosKey = getPositionKey({ position: nextPos });
-  let hasNextChild = gridMap[nextPosKey];
+  const lastChild = childBounds[positionKey] ?? -1;
+  if (lastChild >= 0) node.children = [];
 
-  if (hasNextChild) node.children = [];
-
-  while (hasNextChild) {
+  for (let i = 0; i <= lastChild; i++) {
+    const nextPos = [...position, i];
+    const nextPosKey = getPositionKey({ position: nextPos });
+    // Indices are walked to the last occupied one rather than to the first
+    // miss, so a gap skips that child instead of truncating the whole branch.
     const repeats = visiblePositions[nextPosKey];
+    if (!gridMap[nextPosKey] || !repeats) continue;
+
     if (repeatKeys.includes(nextPosKey)) {
       repeats.forEach((flag, index) => {
         _recurseTree(
@@ -227,7 +272,9 @@ const buildGridTree = (
           visiblePositions,
           repeatKeys,
           index,
-          index === repeats.length - 1
+          index === repeats.length - 1,
+          true,
+          childBounds
         );
       });
     } else {
@@ -239,14 +286,11 @@ const buildGridTree = (
         visiblePositions,
         repeatKeys,
         repeatIndex,
-        lastRepeat
+        lastRepeat,
+        false,
+        childBounds
       );
     }
-
-    i = i + 1;
-    nextPos = [...position, i];
-    nextPosKey = getPositionKey({ position: nextPos });
-    hasNextChild = gridMap[nextPosKey];
   }
 
   return node;
