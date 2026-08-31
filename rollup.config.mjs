@@ -95,6 +95,12 @@ export default {
     babel({
       include: ['node_modules/@fingerprintjs/fingerprintjs/**'],
       babelHelpers: 'bundled',
+      // The repo's Babel config moved from package.json (file-relative, so it
+      // never reached node_modules) to a root babel.config.js that Jest needs
+      // in order to transform TanStack's ESM-only dist. Opting out here keeps
+      // this transform exactly as it was: preset-env and nothing else.
+      configFile: false,
+      babelrc: false,
       presets: [['@babel/preset-env', { targets: { ie: '11' } }]]
     }),
     typescript({

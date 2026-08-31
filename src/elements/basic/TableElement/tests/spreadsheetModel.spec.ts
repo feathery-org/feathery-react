@@ -1,0 +1,228 @@
+import {
+  buildFillPatches,
+  cellValuesEqual,
+  escapeTsvValue,
+  formatCellValue,
+  getFillPreview,
+  parseInputValue,
+  parseTsv,
+  serializeTsv
+} from '../spreadsheet/model';
+import type { CellValue, GridBounds } from '../spreadsheet/model';
+
+describe('parseInputValue', () => {
+  test('keeps numeric text as a number so it round-trips as one', () => {
+    expect(parseInputValue('42')).toBe(42);
+    expect(parseInputValue(' -3.5 ')).toBe(-3.5);
+    expect(parseInputValue('1e3')).toBe(1000);
+  });
+
+  test('recognizes booleans case-insensitively', () => {
+    expect(parseInputValue('TRUE')).toBe(true);
+    expect(parseInputValue('false')).toBe(false);
+  });
+
+  test('treats a blank entry as an empty cell', () => {
+    expect(parseInputValue('')).toBeNull();
+    expect(parseInputValue('   ')).toBeNull();
+  });
+
+  test('leaves anything else as the original string, untrimmed', () => {
+    expect(parseInputValue(' Acme Corp ')).toBe(' Acme Corp ');
+    // A leading zero is part of an identifier, not a number to normalize.
+    expect(parseInputValue('007-A')).toBe('007-A');
+  });
+});
+
+describe('cellValuesEqual', () => {
+  test('treats null and empty string as the same blank cell', () => {
+    // Both render blank, so committing one over the other is not an edit
+    // worth sending to the backend.
+    expect(cellValuesEqual(null, '')).toBe(true);
+    expect(cellValuesEqual('', null)).toBe(true);
+  });
+
+  test('distinguishes a value from a blank', () => {
+    expect(cellValuesEqual(0, null)).toBe(false);
+    expect(cellValuesEqual(false, '')).toBe(false);
+  });
+
+  test('compares by value', () => {
+    expect(cellValuesEqual(5, 5)).toBe(true);
+    expect(cellValuesEqual(5, '5')).toBe(false);
+  });
+});
+
+describe('formatCellValue', () => {
+  test('renders booleans and blanks the way a spreadsheet does', () => {
+    expect(formatCellValue(true)).toBe('TRUE');
+    expect(formatCellValue(false)).toBe('FALSE');
+    expect(formatCellValue(null)).toBe('');
+  });
+});
+
+describe('clipboard serialization', () => {
+  test('neutralizes values that would become formulas in Excel', () => {
+    expect(escapeTsvValue('=SUM(A1:A9)')).toBe("'=SUM(A1:A9)");
+    expect(escapeTsvValue('+1')).toBe("'+1");
+    expect(escapeTsvValue('@import')).toBe("'@import");
+    expect(escapeTsvValue('-5')).toBe("'-5");
+  });
+
+  test('does not quote a negative NUMBER, which cannot execute', () => {
+    expect(escapeTsvValue(-5)).toBe('-5');
+  });
+
+  test('quotes values containing tabs, quotes or newlines', () => {
+    expect(escapeTsvValue('a\tb')).toBe('"a\tb"');
+    expect(escapeTsvValue('say "hi"')).toBe('"say ""hi"""');
+  });
+
+  test('round-trips a grid through TSV', () => {
+    const grid: CellValue[][] = [
+      ['Acme', 120, true],
+      ['say "hi"', null, 'multi\nline']
+    ];
+
+    const parsed = parseTsv(serializeTsv([grid]));
+
+    expect(parsed).toEqual([
+      ['Acme', '120', 'TRUE'],
+      ['say "hi"', '', 'multi\nline']
+    ]);
+  });
+
+  test('a trailing newline does not produce a phantom row', () => {
+    expect(parseTsv('a\tb\n')).toEqual([['a', 'b']]);
+  });
+});
+
+describe('getFillPreview', () => {
+  const source: GridBounds = {
+    minRowIndex: 1,
+    maxRowIndex: 2,
+    minColumnIndex: 1,
+    maxColumnIndex: 1
+  };
+
+  test('returns nothing while the pointer is still inside the source', () => {
+    expect(getFillPreview(source, { rowIndex: 2, columnIndex: 1 })).toBeNull();
+  });
+
+  test('commits to the axis the pointer travelled furthest along', () => {
+    const down = getFillPreview(source, { rowIndex: 6, columnIndex: 2 });
+    expect(down?.direction).toBe('down');
+    expect(down?.destination).toEqual({
+      minRowIndex: 3,
+      maxRowIndex: 6,
+      minColumnIndex: 1,
+      maxColumnIndex: 1
+    });
+
+    const right = getFillPreview(source, { rowIndex: 2, columnIndex: 5 });
+    expect(right?.direction).toBe('right');
+  });
+
+  test('fills upward when dragged above the source', () => {
+    const up = getFillPreview(source, { rowIndex: 0, columnIndex: 1 });
+    expect(up?.direction).toBe('up');
+    expect(up?.destination.maxRowIndex).toBe(0);
+    expect(up?.expanded.minRowIndex).toBe(0);
+  });
+});
+
+describe('buildFillPatches', () => {
+  const fieldKeys = ['a', 'b'];
+  const rowIndices = [0, 1, 2, 3, 4];
+
+  const fill = (values: Record<string, CellValue[]>, source: GridBounds) => {
+    const getValue = (rowIndex: number, fieldKey: string) =>
+      values[fieldKey]?.[rowIndex] ?? null;
+    const preview = getFillPreview(source, { rowIndex: 4, columnIndex: 0 })!;
+    return buildFillPatches({
+      source,
+      preview,
+      rowIndices,
+      fieldKeys,
+      getValue
+    });
+  };
+
+  test('extends a numeric run by its detected step', () => {
+    const patches = fill({ a: [10, 20, null, null, null] }, {
+      minRowIndex: 0,
+      maxRowIndex: 1,
+      minColumnIndex: 0,
+      maxColumnIndex: 0
+    });
+
+    expect(patches.map((patch) => patch.after)).toEqual([30, 40, 50]);
+  });
+
+  test('extends an ISO date run by whole days', () => {
+    const patches = fill({ a: ['2026-01-01', '2026-01-03', null, null, null] }, {
+      minRowIndex: 0,
+      maxRowIndex: 1,
+      minColumnIndex: 0,
+      maxColumnIndex: 0
+    });
+
+    expect(patches.map((patch) => patch.after)).toEqual([
+      '2026-01-05',
+      '2026-01-07',
+      '2026-01-09'
+    ]);
+  });
+
+  test('repeats the source block when no series can be inferred', () => {
+    const patches = fill({ a: ['red', 'blue', null, null, null] }, {
+      minRowIndex: 0,
+      maxRowIndex: 1,
+      minColumnIndex: 0,
+      maxColumnIndex: 0
+    });
+
+    expect(patches.map((patch) => patch.after)).toEqual(['red', 'blue', 'red']);
+  });
+
+  test('a single source cell repeats rather than counting up', () => {
+    const patches = fill({ a: [7, null, null, null, null] }, {
+      minRowIndex: 0,
+      maxRowIndex: 0,
+      minColumnIndex: 0,
+      maxColumnIndex: 0
+    });
+
+    expect(patches.map((patch) => patch.after)).toEqual([7, 7, 7, 7]);
+  });
+
+  test('skips cells whose value would not change', () => {
+    const patches = fill({ a: [5, 5, 5, null, 5] }, {
+      minRowIndex: 0,
+      maxRowIndex: 1,
+      minColumnIndex: 0,
+      maxColumnIndex: 0
+    });
+
+    // Rows 2 and 4 already hold 5; only the blank row 3 is patched.
+    expect(patches).toEqual([
+      { rowIndex: 3, fieldKey: 'a', before: null, after: 5 }
+    ]);
+  });
+
+  test('carries the previous value so the fill can be undone', () => {
+    const patches = fill({ a: [1, 2, 'keep', null, null] }, {
+      minRowIndex: 0,
+      maxRowIndex: 1,
+      minColumnIndex: 0,
+      maxColumnIndex: 0
+    });
+
+    expect(patches[0]).toEqual({
+      rowIndex: 2,
+      fieldKey: 'a',
+      before: 'keep',
+      after: 3
+    });
+  });
+});
