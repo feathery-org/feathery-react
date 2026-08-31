@@ -104,6 +104,25 @@ describe('ButtonElement loader', () => {
     );
   });
 
+  it('treats a whitespace-only label as no content', () => {
+    // The loader sizes the button, and the blank label neither holds the
+    // button open nor takes space away from the loader
+    const element = makeElement({
+      text: ' ',
+      text_formatted: [{ insert: ' ' }]
+    });
+    renderButton(element, <span data-testid='loader' />);
+
+    const box = screen.getByTestId('loader').parentElement as HTMLElement;
+    expect(box.parentElement?.tagName).toBe('BUTTON');
+    expect(getComputedStyle(box).maxWidth).not.toBe('100%');
+
+    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
+    expect(getComputedStyle(label.parentElement as HTMLElement).display).toBe(
+      'none'
+    );
+  });
+
   it('does not clamp the loader when there is no content to preserve', () => {
     // Nothing is holding the button's size open, so the loader still sizes it
     renderButton(makeElement(), <span data-testid='loader' />);

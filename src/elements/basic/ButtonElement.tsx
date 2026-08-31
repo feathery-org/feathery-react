@@ -221,10 +221,16 @@ function ButtonElement({
       )}
     </>
   );
+  // A whitespace-only label has nothing worth preserving, so it neither holds
+  // the button open nor takes space from a loader that then sizes the button
   const hasContent = Boolean(
-    element.properties.image || element.properties.text
+    element.properties.image || element.properties.text?.trim()
   );
-  const hiddenStyles = { visibility: 'hidden' } as const;
+  const contentStyles = !loader
+    ? { display: 'contents' }
+    : hasContent
+    ? { display: 'contents', visibility: 'hidden' }
+    : { display: 'none' };
   // Draw the loader over the content instead of in place of it, matching how
   // the button lays its own content out
   const loaderOverlayStyles = {
@@ -312,9 +318,7 @@ function ButtonElement({
           unmounting it: a fit-sized button keeps its pre-loader dimensions,
           and the img isn't torn down and reloaded mid-click. `display:
           contents` generates no box, so the button's layout is unchanged. */}
-      <span css={{ display: 'contents', ...(loader ? hiddenStyles : {}) }}>
-        {buttonContent}
-      </span>
+      <span css={contentStyles}>{buttonContent}</span>
       {loader &&
         (hasContent ? (
           <div css={loaderOverlayStyles}>
