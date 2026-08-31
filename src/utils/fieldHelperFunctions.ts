@@ -159,7 +159,14 @@ export function getDefaultFieldValue(field: any) {
         return [meta.default_value];
       }
       // For multi-select fields, split comma-separated values into array
-      return meta.default_value.split(',').map((val: string) => val.trim());
+      const values = meta.default_value
+        .split(',')
+        .map((val: string) => val.trim());
+      // A dropdown_multi capped at 1 renders as a single-select (see
+      // DropdownMultiField), so its default can only be one entry.
+      if (servar.type === 'dropdown_multi' && Number(servar.max_length) === 1)
+        return values.slice(0, 1);
+      return values;
     }
     return meta.default_value;
   }

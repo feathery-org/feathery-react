@@ -11,6 +11,7 @@ type CollapseParams = {
   containerRef: React.RefObject<HTMLElement | null>;
   disabled: boolean;
   values: OptionData[];
+  isSingleSelectMode: boolean;
 };
 
 type MenuCloseOptions = {
@@ -41,7 +42,7 @@ type CollapseControls = {
   menu: MenuControls;
   pointer: PointerControls;
   measurement: MeasurementState;
-  selectRef: React.RefObject<SelectInstance<OptionData, true> | null>;
+  selectRef: React.RefObject<SelectInstance<OptionData, boolean> | null>;
 };
 
 // Minimal control surface we need from react-select's instance
@@ -65,18 +66,24 @@ type SelectControls = {
 export default function useCollapsedSelectionManager({
   containerRef,
   disabled,
-  values
+  values,
+  isSingleSelectMode
 }: CollapseParams): CollapseControls {
   // Track whether the menu is expanded from user interaction
   const [isMenuExpanded, setIsMenuExpanded] = useState(false);
-  const selectRef = useRef<SelectInstance<OptionData, true> | null>(null);
+  const selectRef = useRef<SelectInstance<OptionData, boolean> | null>(null);
 
   // Collapse when menu is not expanded
   const collapseSelected = !isMenuExpanded;
 
-  // Measure the visible chip window while collapse is active.
+  // Measure the visible chip window while collapse is active. A single-select
+  // value can't overflow into a "+N", so skip it.
   const { collapsedCount, isMeasuring, visibleCount } =
-    useCollapsedValuesMeasurement(containerRef, values, collapseSelected);
+    useCollapsedValuesMeasurement(
+      containerRef,
+      values,
+      collapseSelected && !isSingleSelectMode
+    );
 
   const closeMenu = useCallback((options?: MenuCloseOptions) => {
     setIsMenuExpanded(false);
