@@ -17971,15 +17971,20 @@ interface NamedComposerSectionTarget {
 }
 
 function composerSectionName(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/\p{M}+/gu, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .replace(/^the\s+/, '')
-    .replace(/\s+section$/, '')
-    .trim();
+  return (
+    value
+      .normalize('NFKD')
+      // Unicode property escapes need the `u` flag, which TypeScript rejects in
+      // a literal while the compile target is es5. Building the same regex
+      // through the constructor is identical at runtime and is not diagnosed.
+      .replace(new RegExp('\\p{M}+', 'gu'), '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(new RegExp('[^\\p{L}\\p{N}]+', 'gu'), ' ')
+      .replace(/^the\s+/, '')
+      .replace(/\s+section$/, '')
+      .trim()
+  );
 }
 
 function namedComposerSectionTarget(
@@ -19988,7 +19993,11 @@ function applyDocumentEditsMeasured(
         let trackedMutationTargetText: string | undefined;
         let insertInheritance = plan.insertInheritance;
         let inheritanceAppearance: AppearanceWriteOutcome | undefined;
-        let opExtras: OpSuccessExtras | void;
+        // Assigned only inside a conditional branch, and every read below
+        // already treats "not set" as undefined. The definite-assignment
+        // assertion says so to the compiler; an `= undefined` initializer
+        // would be stripped again by eslint's no-undef-init rule.
+        let opExtras!: OpSuccessExtras | void;
         try {
           if (op.op === 'replace_all') {
             // Untyped->typed boundary, same contract as the dispatch sites.

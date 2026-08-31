@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
-import { Column } from './types';
+import { CellWrite, Column } from './types';
 
 type HubEntry = { id: string; data: Record<string, any> };
 type HubRow = {
   localId: string;
   entryId: string | null;
   data: Record<string, any>;
+  // Hub field key -> message, for cells whose last write the Hub rejected.
+  // Drives the validation shading in spreadsheet mode.
+  errors?: Record<string, string>;
 };
 
 type DataHubAction = (options: {
@@ -44,8 +47,11 @@ type UseHubTableSourceReturn = {
   loading: boolean;
   saving: boolean;
   errors: string[];
+  // `${rowIndex}:${fieldKey}` -> message, for cells the Hub rejected.
+  cellErrors: Record<string, string>;
   refetch: () => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
+  handleCellsEdit: (writes: CellWrite[]) => void;
   handleAddRow: () => void;
   handleDeleteRow: (rowIndex: number) => void;
 };
@@ -217,61 +223,133 @@ export function useHubTableSource({
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
 
-  const handleCellEdit = useCallback(
-    (fieldKey: string, rowIndex: number, newValue: any) => {
-      const hubFieldKey = syntheticToHubKey[fieldKey];
-      const target = rowsRef.current[rowIndex];
-      if (!hubFieldKey || !target) return;
-      const { localId } = target;
-      const previousValue = target.data[hubFieldKey];
+  // Re-key row-local errors onto the (rowIndex, synthetic field key) pairs the
+  // grid renders, so shading survives rows being added or removed above them.
+  const cellErrors = useMemo(() => {
+    const hubKeyToSynthetic: Record<string, string> = {};
+    Object.entries(syntheticToHubKey).forEach(([synthetic, hubFieldKey]) => {
+      hubKeyToSynthetic[hubFieldKey] = synthetic;
+    });
 
-      updateRow(localId, (row) => ({
-        ...row,
-        data: { ...row.data, [hubFieldKey]: newValue }
-      }));
+    const result: Record<string, string> = {};
+    rows.forEach((row, rowIndex) => {
+      if (!row.errors) return;
+      Object.entries(row.errors).forEach(([hubFieldKey, message]) => {
+        const fieldKey = hubKeyToSynthetic[hubFieldKey];
+        if (fieldKey) result[`${rowIndex}:${fieldKey}`] = message;
+      });
+    });
+    return result;
+  }, [rows, syntheticToHubKey]);
+
+  /**
+   * Commit any number of cells. Writes are grouped by row so a pasted or
+   * drag-filled block costs one request per touched row instead of one per
+   * cell, and every cell in a row lands in a single atomic Hub update.
+   */
+  const handleCellsEdit = useCallback(
+    (writes: CellWrite[]) => {
+      if (!writes.length) return;
+
+      // Row index -> the hub-field changes destined for that row.
+      const changesByLocalId = new Map<string, Record<string, any>>();
+      const previousByLocalId = new Map<string, Record<string, any>>();
+
+      writes.forEach(({ fieldKey, rowIndex, value }) => {
+        const hubFieldKey = syntheticToHubKey[fieldKey];
+        const target = rowsRef.current[rowIndex];
+        if (!hubFieldKey || !target) return;
+
+        const changes = changesByLocalId.get(target.localId) ?? {};
+        changes[hubFieldKey] = value;
+        changesByLocalId.set(target.localId, changes);
+
+        const previous = previousByLocalId.get(target.localId) ?? {};
+        // Only the FIRST value seen for a cell is the pre-edit one to roll
+        // back to; a later write in the same batch is itself an edit.
+        if (!(hubFieldKey in previous)) {
+          previous[hubFieldKey] = target.data[hubFieldKey];
+        }
+        previousByLocalId.set(target.localId, previous);
+      });
+
+      if (!changesByLocalId.size) return;
+
+      // One commit for the whole batch, so a large paste is a single render.
+      commitRows(
+        rowsRef.current.map((row) => {
+          const changes = changesByLocalId.get(row.localId);
+          if (!changes) return row;
+          return {
+            ...row,
+            data: { ...row.data, ...changes },
+            errors: omitKeys(row.errors, Object.keys(changes))
+          };
+        })
+      );
       setErrors([]);
 
-      enqueue(async () => {
-        if (!hubId || !client?.dataHubAction) return;
-        const row = rowsRef.current.find((r) => r.localId === localId);
-        if (!row) return;
-        try {
-          if (row.entryId) {
-            await client.dataHubAction({
+      changesByLocalId.forEach((changes, localId) => {
+        enqueue(async () => {
+          if (!hubId || !client?.dataHubAction) return;
+          const row = rowsRef.current.find((r) => r.localId === localId);
+          if (!row) return;
+          const changedKeys = Object.keys(changes);
+          try {
+            if (row.entryId) {
+              await client.dataHubAction({
+                hubId,
+                operation: 'update',
+                where: [{ entryId: row.entryId }],
+                data: Object.fromEntries(
+                  changedKeys.map((key) => [key, row.data[key]])
+                )
+              });
+              return;
+            }
+            // Rows stay provisional until their first edit, so the first edit
+            // is what creates them (an empty row would just fail required
+            // fields).
+            const created: HubEntry | null = await client.dataHubAction({
               hubId,
-              operation: 'update',
-              where: [{ entryId: row.entryId }],
-              data: { [hubFieldKey]: row.data[hubFieldKey] }
+              operation: 'create',
+              data: row.data
             });
-            return;
-          }
-          // Rows stay provisional until their first edit, so the first edit is
-          // what creates them (an empty row would just fail required fields).
-          const created: HubEntry | null = await client.dataHubAction({
-            hubId,
-            operation: 'create',
-            data: row.data
-          });
-          if (!created?.id) throw new Error('Data Hub did not return a row ID');
-          updateRow(localId, (r) => ({
-            ...r,
-            entryId: created.id,
-            data: { ...r.data, ...created.data }
-          }));
-        } catch (error) {
-          // A failed create keeps the typed value so the user can fix and retry;
-          // a failed update has a stored value to fall back to.
-          if (row.entryId) {
+            if (!created?.id) {
+              throw new Error('Data Hub did not return a row ID');
+            }
             updateRow(localId, (r) => ({
               ...r,
-              data: { ...r.data, [hubFieldKey]: previousValue }
+              entryId: created.id,
+              data: { ...r.data, ...created.data }
             }));
+          } catch (error) {
+            const messages = errorMessages(error);
+            const message = messages[0];
+            const previous = previousByLocalId.get(localId) ?? {};
+            updateRow(localId, (r) => ({
+              ...r,
+              // A failed create keeps the typed values so the user can fix and
+              // retry; a failed update has stored values to fall back to.
+              data: r.entryId ? { ...r.data, ...previous } : r.data,
+              errors: {
+                ...r.errors,
+                ...Object.fromEntries(changedKeys.map((key) => [key, message]))
+              }
+            }));
+            setErrors(messages);
           }
-          setErrors(errorMessages(error));
-        }
+        });
       });
     },
-    [syntheticToHubKey, updateRow, enqueue, hubId, client]
+    [syntheticToHubKey, commitRows, updateRow, enqueue, hubId, client]
+  );
+
+  const handleCellEdit = useCallback(
+    (fieldKey: string, rowIndex: number, newValue: any) => {
+      handleCellsEdit([{ fieldKey, rowIndex, value: newValue }]);
+    },
+    [handleCellsEdit]
   );
 
   const handleAddRow = useCallback(() => {
@@ -320,9 +398,22 @@ export function useHubTableSource({
     loading,
     saving: pending > 0,
     errors,
+    cellErrors,
     refetch,
     handleCellEdit,
+    handleCellsEdit,
     handleAddRow,
     handleDeleteRow
   };
+}
+
+function omitKeys(
+  source: Record<string, string> | undefined,
+  keys: string[]
+): Record<string, string> | undefined {
+  if (!source) return undefined;
+  const remaining = Object.entries(source).filter(
+    ([key]) => !keys.includes(key)
+  );
+  return remaining.length ? Object.fromEntries(remaining) : undefined;
 }

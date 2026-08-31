@@ -17,6 +17,8 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { useHubTableSource } from './useHubTableSource';
+import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
+import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { TrashIcon } from '../../components/icons';
 import {
   containerStyle,
@@ -36,9 +38,28 @@ import {
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
+// Freezing more than a handful of rows/columns leaves no room to scroll, so
+// the designer offers 0-4 and the SDK clamps whatever it is handed.
+const MAX_FROZEN = 4;
+
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
+  // A fixed pixel height caps the table so its rows scroll inside it. The
+  // element wrapper ignores px heights on element nodes, so the element has to
+  // apply its own; % is capped by the wrapper and filled by `height: 100%`.
+  responsiveStyles.apply(
+    'container',
+    ['height', 'height_unit'],
+    (height: any, unit: any) =>
+      unit === 'px' && height ? { height: `${height}px` } : {}
+  );
   return responsiveStyles;
+}
+
+function clampFrozen(value: any): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(Math.max(Math.floor(parsed), 0), MAX_FROZEN);
 }
 
 function TableElement({
@@ -68,16 +89,23 @@ function TableElement({
     !editMode;
   const hub = useHubTableSource({ element, client, enabled: isHub });
 
-  const elementForData = useMemo(
-    () =>
-      isHub
-        ? {
-            ...element,
-            properties: { ...element.properties, columns: hub.hubColumns }
-          }
-        : element,
-    [isHub, element, hub.hubColumns]
-  );
+  // Transposed tables render one field per row, which the row/column
+  // spreadsheet model has no coordinates for, so they stay on the classic
+  // table even when spreadsheet style is selected.
+  const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
+  const frozenRows = clampFrozen(element.properties?.frozen_rows);
+  const frozenColumns = clampFrozen(element.properties?.frozen_columns);
+
+  const elementForData = useMemo(() => {
+    const properties = {
+      ...element.properties,
+      ...(isHub ? { columns: hub.hubColumns } : {}),
+      // The spreadsheet virtualizes every row, so paging it would just hide
+      // rows the user can already scroll to.
+      ...(wantsSpreadsheet ? { pagination: 0 } : {})
+    };
+    return { ...element, properties };
+  }, [isHub, element, hub.hubColumns, wantsSpreadsheet]);
 
   const {
     // search
@@ -137,16 +165,27 @@ function TableElement({
   });
 
   // In Hub mode the writes go to the Data Hub instead of form field values.
-  const { handleAddRow, handleDeleteRow, handleCellEdit } = isHub
-    ? {
-        handleAddRow: hub.handleAddRow,
-        handleDeleteRow: hub.handleDeleteRow,
-        handleCellEdit: hub.handleCellEdit
-      }
-    : fieldMutations;
+  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellsEdit } =
+    isHub
+      ? {
+          handleAddRow: hub.handleAddRow,
+          handleDeleteRow: hub.handleDeleteRow,
+          handleCellEdit: hub.handleCellEdit,
+          handleCellsEdit: hub.handleCellsEdit
+        }
+      : fieldMutations;
+
+  /**
+   * Adding a column only has a meaning for a data source that owns its own
+   * schema — the columns of a field-backed table are designer-defined element
+   * properties, and a Hub's are the Hub's own fields. The grid renders its add
+   * affordance only when a source supplies this, so today it never appears.
+   */
+  const handleAddColumn: AddColumnHandler | undefined = undefined;
 
   const tableId = element?.id;
 
+  const isSpreadsheet = wantsSpreadsheet && !isTransposed;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
   const showAddRow = canEdit && enableAddDeleteRows;
   const canDeleteRows = canEdit && enableAddDeleteRows;
@@ -207,8 +246,18 @@ function TableElement({
   const deleteIconRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const actionCellRefs = useRef<Map<number, HTMLTableCellElement>>(new Map());
 
+  // Adding or deleting a row renumbers the rows below it. The spreadsheet's
+  // undo history is keyed by row index, so it is dropped when this changes
+  // rather than replayed onto the wrong rows.
+  const [rowIdentityVersion, setRowIdentityVersion] = useState(0);
+  const bumpRowIdentity = useCallback(
+    () => setRowIdentityVersion((version) => version + 1),
+    []
+  );
+
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
+    bumpRowIdentity();
     handleAddRow();
     // Hub mutations don't own search/pagination; mirror the field-mode UX so the
     // new row is visible (field mode does this inside useTableMutations).
@@ -224,6 +273,7 @@ function TableElement({
     });
   }, [
     handleAddRow,
+    bumpRowIdentity,
     isHub,
     searchQuery,
     setSearchQuery,
@@ -233,11 +283,51 @@ function TableElement({
 
   const wrappedHandleDeleteRow = useCallback(
     (rowIndex: number) => {
+      bumpRowIdentity();
       handleDeleteRow(rowIndex);
       setDeleteRowIndex(null);
     },
-    [handleDeleteRow]
+    [bumpRowIdentity, handleDeleteRow]
   );
+
+  const spreadsheetCellsEdit = useCallback(
+    (writes: CellWrite[]) => {
+      // A pending "provisional" row stops being provisional as soon as any of
+      // its cells is written, the same rule single-cell editing follows.
+      const touched = new Set(writes.map((write) => write.rowIndex));
+      if (
+        [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
+      ) {
+        setPendingAddRows((prev) => {
+          const next = new Set(prev);
+          touched.forEach((rowIndex) => next.delete(rowIndex));
+          return next;
+        });
+      }
+      handleCellsEdit(writes);
+    },
+    [handleCellsEdit]
+  );
+
+  /**
+   * Feathery-controlled cell shading. Today its one source is a Data Hub write
+   * the backend rejected: that cell keeps its rolled-back value and is tinted
+   * with the validation message, instead of the failure only appearing in the
+   * banner above the table.
+   */
+  const hubCellErrors = isHub ? hub.cellErrors : undefined;
+  const getCellShading = useMemo<GetCellShading | undefined>(() => {
+    if (!hubCellErrors || !Object.keys(hubCellErrors).length) return undefined;
+    return ({ rowIndex, fieldKey }) => {
+      const message = hubCellErrors[`${rowIndex}:${fieldKey}`];
+      if (!message) return null;
+      return {
+        backgroundColor: '#fef2f2',
+        borderColor: '#ef4444',
+        message
+      };
+    };
+  }, [hubCellErrors]);
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
   useEffect(() => {
@@ -264,6 +354,17 @@ function TableElement({
       className={TABLE_CLASS.container}
       css={{
         ...containerStyle,
+        // The grid scrolls inside the container rather than the container
+        // scrolling, so sticky headers and frozen columns have a viewport to
+        // stick to.
+        ...(isSpreadsheet
+          ? {
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              overflow: 'hidden'
+            }
+          : {}),
         ...styles.getTarget('container')
       }}
     >
@@ -297,6 +398,20 @@ function TableElement({
       )}
       {showEmptyState ? (
         <EmptyState hasSearchQuery={searchQuery.trim().length > 0} />
+      ) : isSpreadsheet ? (
+        <SpreadsheetTable
+          columns={columns}
+          rowIndices={paginatedRowIndices}
+          fieldValues={activeFieldValues}
+          canEdit={canEdit}
+          frozenRows={frozenRows}
+          frozenColumns={frozenColumns}
+          heightUnit={element.styles?.height_unit}
+          onCellsEdit={spreadsheetCellsEdit}
+          onAddColumn={handleAddColumn}
+          getCellShading={getCellShading}
+          rowIdentityVersion={rowIdentityVersion}
+        />
       ) : (
         <div css={{ overflowX: 'auto' }}>
           <table

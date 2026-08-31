@@ -29,5 +29,19 @@ export const TABLE_CLASS = {
   pagination: 'feathery-table-pagination',
   pageButton: 'feathery-table-page-button',
   pageSelect: 'feathery-table-page-select',
-  empty: 'feathery-table-empty'
+  empty: 'feathery-table-empty',
+
+  // Spreadsheet display mode. This mode renders an ARIA grid of divs rather
+  // than a <table>, so it has its own class names — CSS written against
+  // `.feathery-table` and its children does not apply here.
+  grid: 'feathery-table-grid',
+  gridHeader: 'feathery-table-grid-header',
+  gridHeaderCell: 'feathery-table-grid-header-cell',
+  gridCornerHeader: 'feathery-table-grid-corner',
+  gridRow: 'feathery-table-grid-row',
+  gridRowNumber: 'feathery-table-grid-row-number',
+  gridCell: 'feathery-table-grid-cell',
+  gridCellEditor: 'feathery-table-grid-cell-input',
+  gridColumnResizer: 'feathery-table-grid-column-resizer',
+  gridFillHandle: 'feathery-table-grid-fill-handle'
 } as const;

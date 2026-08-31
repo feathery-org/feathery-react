@@ -61,8 +61,13 @@ interface Token {
 
 function tokenize(src: string): Token[] {
   const tokens: Token[] = [];
-  const re =
-    /\s*(?:([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)|(-?\d+(?:\.\d+)?)|([(),]))/y;
+  // Sticky (`y`) matching is what walks the input token by token. TypeScript
+  // rejects the flag on a literal while the compile target is es5, so the same
+  // regex is built through the constructor instead.
+  const re = new RegExp(
+    '\\s*(?:([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)|(-?\\d+(?:\\.\\d+)?)|([(),]))',
+    'y'
+  );
   let pos = 0;
   while (pos < src.length) {
     re.lastIndex = pos;
