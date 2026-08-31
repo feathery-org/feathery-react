@@ -192,8 +192,9 @@ function TableElement({
 
   const isSpreadsheet = wantsSpreadsheet;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
-  const showAddRow = canEdit && enableAddDeleteRows;
-  const canDeleteRows = canEdit && enableAddDeleteRows;
+  const hubAllowsAddRows = !isHub || hub.canAddRows;
+  const showAddRow = canEdit && enableAddDeleteRows && hubAllowsAddRows;
+  const canDeleteRows = canEdit && enableAddDeleteRows && hubAllowsAddRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
 
@@ -321,18 +322,38 @@ function TableElement({
    * banner above the table.
    */
   const hubCellErrors = isHub ? hub.cellErrors : undefined;
+  const hubIsRowEditable = isHub ? hub.isRowEditable : undefined;
+
+  // Unverified Hub rows are read-only: update, delete and create all filter on
+  // `verified=True` server-side, so an edit here would match nothing and look
+  // like a silent success.
+  const isCellEditable = useMemo(() => {
+    if (!hubIsRowEditable) return undefined;
+    return (rowIndex: number) => hubIsRowEditable(rowIndex);
+  }, [hubIsRowEditable]);
+
   const getCellShading = useMemo<GetCellShading | undefined>(() => {
-    if (!hubCellErrors || !Object.keys(hubCellErrors).length) return undefined;
+    const hasErrors = !!hubCellErrors && !!Object.keys(hubCellErrors).length;
+    if (!hasErrors && !hubIsRowEditable) return undefined;
     return ({ rowIndex, fieldKey }) => {
-      const message = hubCellErrors[`${rowIndex}:${fieldKey}`];
-      if (!message) return null;
-      return {
-        backgroundColor: '#fef2f2',
-        borderColor: '#ef4444',
-        message
-      };
+      const message = hubCellErrors?.[`${rowIndex}:${fieldKey}`];
+      if (message) {
+        return {
+          backgroundColor: '#fef2f2',
+          borderColor: '#ef4444',
+          message
+        };
+      }
+      if (hubIsRowEditable && !hubIsRowEditable(rowIndex)) {
+        return {
+          backgroundColor: '#f9fafb',
+          textColor: '#6b7280',
+          message: 'Unverified row — read only until it is verified'
+        };
+      }
+      return null;
     };
-  }, [hubCellErrors]);
+  }, [hubCellErrors, hubIsRowEditable]);
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
   useEffect(() => {
@@ -414,6 +435,7 @@ function TableElement({
           heightUnit={element.styles?.height_unit}
           onCellsEdit={spreadsheetCellsEdit}
           onAddColumn={handleAddColumn}
+          isCellEditable={isCellEditable}
           getCellShading={getCellShading}
           rowIdentityVersion={rowIdentityVersion}
         />

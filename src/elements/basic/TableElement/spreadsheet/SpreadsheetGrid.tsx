@@ -62,6 +62,7 @@ type SpreadsheetGridProps = {
   interactions: GridInteractions;
   canEdit: boolean;
   rowIndexById: Map<string, number>;
+  isCellEditable?: (rowIndex: number, fieldKey: string) => boolean;
   getCellShading?: GetCellShading;
   /** Reorders columns when a header is dragged onto another header. */
   onReorderColumns?: (draggedId: string, targetId: string) => void;
@@ -93,6 +94,7 @@ export const SpreadsheetGrid = React.forwardRef<
     interactions,
     canEdit,
     rowIndexById,
+    isCellEditable,
     getCellShading,
     onReorderColumns,
     onAddColumn
@@ -540,6 +542,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 interactions={interactions}
                 canEdit={canEdit}
                 rowIndexById={rowIndexById}
+                isCellEditable={isCellEditable}
                 getCellShading={getCellShading}
                 fillPreview={fillPreview}
                 onStartHeaderSelection={startHeaderSelection}
@@ -565,6 +568,7 @@ export const SpreadsheetGrid = React.forwardRef<
               interactions={interactions}
               canEdit={canEdit}
               rowIndexById={rowIndexById}
+              isCellEditable={isCellEditable}
               getCellShading={getCellShading}
               fillPreview={fillPreview}
               onStartHeaderSelection={startHeaderSelection}
@@ -820,6 +824,7 @@ type SubscribedRowProps = {
   interactions: GridInteractions;
   canEdit: boolean;
   rowIndexById: Map<string, number>;
+  isCellEditable?: (rowIndex: number, fieldKey: string) => boolean;
   getCellShading?: GetCellShading;
   fillPreview: FillPreview | null;
   onStartHeaderSelection: (
@@ -887,6 +892,7 @@ function SpreadsheetRowView({
   interactions,
   canEdit,
   rowIndexById,
+  isCellEditable,
   getCellShading,
   fillPreview,
   onStartHeaderSelection,
@@ -908,6 +914,7 @@ function SpreadsheetRowView({
     interactions,
     canEdit,
     rowIndexById,
+    isCellEditable,
     getCellShading,
     onStartFill
   };
@@ -972,6 +979,7 @@ type SpreadsheetCellProps = {
   interactions: GridInteractions;
   canEdit: boolean;
   rowIndexById: Map<string, number>;
+  isCellEditable?: (rowIndex: number, fieldKey: string) => boolean;
   getCellShading?: GetCellShading;
   left?: number;
   pinned?: 'start' | 'end';
@@ -988,6 +996,7 @@ function SpreadsheetCell({
   interactions,
   canEdit,
   rowIndexById,
+  isCellEditable,
   getCellShading,
   left,
   pinned,
@@ -1006,15 +1015,19 @@ function SpreadsheetCell({
     fillPreview != null &&
     isWithinBounds(fillPreview.destination, rowIndex, columnIndex);
   const activeBound = selection.activeBound;
+
+  const sourceRowIndex = rowIndexById.get(cell.row.id) ?? rowIndex;
+  const editable =
+    canEdit && (isCellEditable?.(sourceRowIndex, cell.column.id) ?? true);
   const showFillHandle =
-    canEdit &&
+    editable &&
     activeBound != null &&
     rowIndex === activeBound.maxRowIndex &&
     columnIndex === activeBound.maxColumnIndex;
 
   const value = cell.getValue();
   const shading = getCellShading?.({
-    rowIndex: rowIndexById.get(cell.row.id) ?? rowIndex,
+    rowIndex: sourceRowIndex,
     fieldKey: cell.column.id,
     columnIndex,
     value
@@ -1026,7 +1039,7 @@ function SpreadsheetCell({
       role='gridcell'
       aria-colindex={columnIndex + 1}
       aria-selected={isSelected}
-      aria-readonly={!canEdit || undefined}
+      aria-readonly={!editable || undefined}
       title={shading?.message}
       data-row-id={cell.row.id}
       data-column-id={cell.column.id}
