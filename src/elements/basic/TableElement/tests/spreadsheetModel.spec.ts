@@ -9,6 +9,12 @@ import {
   serializeTsv
 } from '../spreadsheet/model';
 import type { CellValue, GridBounds } from '../spreadsheet/model';
+import {
+  FIT_MAX_HEIGHT,
+  HEADER_HEIGHT,
+  ROW_HEIGHT,
+  spreadsheetViewportHeight
+} from '../spreadsheet/styles';
 
 describe('parseInputValue', () => {
   test('keeps numeric text as a number so it round-trips as one', () => {
@@ -224,5 +230,35 @@ describe('buildFillPatches', () => {
       before: 'keep',
       after: 3
     });
+  });
+});
+
+describe('spreadsheetViewportHeight', () => {
+  test('leaves the height alone when the element wrapper already bounds it', () => {
+    expect(spreadsheetViewportHeight('px', 10)).toBeUndefined();
+    expect(spreadsheetViewportHeight('%', 10)).toBeUndefined();
+  });
+
+  test('sizes a fit-height grid to its rows', () => {
+    // Header plus three rows plus the container border.
+    expect(spreadsheetViewportHeight('fit', 3)).toBe(
+      HEADER_HEIGHT + 3 * ROW_HEIGHT + 2
+    );
+  });
+
+  test('bounds a grid whose height was never set, so it is not left empty', () => {
+    // The virtualizer measures its scroll container: an unbounded grid renders
+    // no rows at all, so an element with no height style still gets one.
+    expect(spreadsheetViewportHeight(undefined, 3)).toBe(
+      HEADER_HEIGHT + 3 * ROW_HEIGHT + 2
+    );
+  });
+
+  test('caps a very tall table so it scrolls instead of growing the page', () => {
+    expect(spreadsheetViewportHeight('fit', 10_000)).toBe(FIT_MAX_HEIGHT);
+  });
+
+  test('an empty grid still reserves room for its header', () => {
+    expect(spreadsheetViewportHeight('fit', 0)).toBe(HEADER_HEIGHT + 2);
   });
 });

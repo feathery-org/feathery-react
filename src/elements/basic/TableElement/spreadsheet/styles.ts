@@ -8,6 +8,28 @@ export const DEFAULT_COLUMN_WIDTH = 140;
 export const MIN_COLUMN_WIDTH = 56;
 export const CELL_HORIZONTAL_PADDING = 10;
 
+// With no sized height there is nothing to scroll inside, so an unbounded grid
+// is capped here instead of growing down the page forever.
+export const FIT_MAX_HEIGHT = 400;
+
+/**
+ * Pixel height to force on the grid, or `undefined` to let it fill a container
+ * the element wrapper has already bounded.
+ *
+ * The row virtualizer measures its scroll container, so a grid with no bounded
+ * height renders NO rows at all. Only `px` and `%` bound it upstream; `fit` —
+ * the Table style panel's default — and a table that has never had a height set
+ * have to be given one here.
+ */
+export function spreadsheetViewportHeight(
+  heightUnit: string | undefined,
+  rowCount: number
+): number | undefined {
+  if (heightUnit === 'px' || heightUnit === '%') return undefined;
+  const content = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 2;
+  return Math.min(content, FIT_MAX_HEIGHT);
+}
+
 const colors = {
   white: '#ffffff',
   gray50: '#f9fafb',

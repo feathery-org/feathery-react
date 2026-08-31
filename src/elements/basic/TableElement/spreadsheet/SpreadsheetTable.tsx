@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useCreateAtom } from '@tanstack/react-store';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
@@ -13,9 +7,8 @@ import { CellValue } from './model';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import {
   DEFAULT_COLUMN_WIDTH,
-  HEADER_HEIGHT,
   MIN_COLUMN_WIDTH,
-  ROW_HEIGHT
+  spreadsheetViewportHeight
 } from './styles';
 import {
   spreadsheetFeatures,
@@ -24,11 +17,6 @@ import {
 } from './table';
 import { useGridInteractions } from './useGridInteractions';
 import { useSpreadsheetHistory } from './useSpreadsheetHistory';
-
-// With `fit` height there is no outer box to scroll inside, but the row
-// virtualizer needs a bounded viewport. Cap the grid so tall tables scroll
-// rather than growing the page without limit.
-const FIT_MAX_HEIGHT = 400;
 
 const columnHelper = createColumnHelper<
   typeof spreadsheetFeatures,
@@ -215,15 +203,10 @@ export function SpreadsheetTable({
     [table]
   );
 
-  const [fitHeight, setFitHeight] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    if (heightUnit !== 'fit') {
-      setFitHeight(undefined);
-      return;
-    }
-    const content = HEADER_HEIGHT + rows.length * ROW_HEIGHT + 2;
-    setFitHeight(Math.min(content, FIT_MAX_HEIGHT));
-  }, [heightUnit, rows.length]);
+  const fitHeight = useMemo(
+    () => spreadsheetViewportHeight(heightUnit, rows.length),
+    [heightUnit, rows.length]
+  );
 
   return (
     <div
