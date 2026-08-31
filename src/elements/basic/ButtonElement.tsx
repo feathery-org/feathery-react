@@ -195,6 +195,36 @@ function ButtonElement({
         }
   );
 
+  const buttonContent = (
+    <>
+      {element.properties.image && (
+        <img
+          src={element.properties.image}
+          css={{
+            ...imgMaxSizeStyles,
+            ...responsiveStyles.getTargets('img')
+          }}
+        />
+      )}
+      {element.properties.text && (
+        <TextNodes
+          element={element}
+          responsiveStyles={responsiveStyles}
+          cssTarget='buttonLabel'
+          editMode={editMode}
+          disabled={disabled}
+          focused={focused}
+          textCallbacks={textCallbacks}
+          featheryContext={featheryContext}
+          expand={!element.properties.image}
+        />
+      )}
+    </>
+  );
+  const hasContent = Boolean(
+    element.properties.image || element.properties.text
+  );
+
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
 
@@ -256,32 +286,48 @@ function ButtonElement({
       {customBorder}
       {children}
       {loader ? (
-        <div css={styles.getTarget('loader')}>{loader}</div>
-      ) : (
         <>
-          {element.properties.image && (
-            <img
-              src={element.properties.image}
+          {/* The content stays in the layout while invisible, so a fit-sized
+              button keeps its pre-loader dimensions */}
+          <span css={{ display: 'contents', visibility: 'hidden' }}>
+            {buttonContent}
+          </span>
+          <div
+            css={
+              hasContent
+                ? {
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    // Match how the button lays out its own content
+                    flexDirection: 'inherit',
+                    alignItems: 'inherit',
+                    justifyContent: 'inherit',
+                    padding: 'inherit'
+                  }
+                : undefined
+            }
+          >
+            <div
               css={{
-                ...imgMaxSizeStyles,
-                ...responsiveStyles.getTargets('img')
+                // The button no longer grows for the loader, so keep the
+                // loader inside the space the content already claimed
+                maxWidth: '100%',
+                maxHeight: '100%',
+                '& img, & svg': {
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain'
+                },
+                ...styles.getTarget('loader')
               }}
-            />
-          )}
-          {element.properties.text && (
-            <TextNodes
-              element={element}
-              responsiveStyles={responsiveStyles}
-              cssTarget='buttonLabel'
-              editMode={editMode}
-              disabled={disabled}
-              focused={focused}
-              textCallbacks={textCallbacks}
-              featheryContext={featheryContext}
-              expand={!element.properties.image}
-            />
-          )}
+            >
+              {loader}
+            </div>
+          </div>
         </>
+      ) : (
+        buttonContent
       )}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
