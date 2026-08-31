@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-import TextNodes from '../components/TextNodes';
+import TextNodes, { getRenderedText } from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import { isFit } from '../../utils/hydration';
@@ -221,16 +221,20 @@ function ButtonElement({
       )}
     </>
   );
-  // A whitespace-only label has nothing worth preserving, so it neither holds
-  // the button open nor takes space from a loader that then sizes the button
+  // A label that renders nothing has no size worth preserving, so it neither
+  // holds the button open nor takes space from a loader that then sizes the
+  // button. Blank text counts, and so does text that resolves to nothing - a
+  // label of only {{unfilled_field}} is set but renders empty.
   const hasContent = Boolean(
-    element.properties.image || element.properties.text?.trim()
+    element.properties.image ||
+      (element.properties.text &&
+        getRenderedText(element, featheryContext, editMode).trim())
   );
   const contentStyles = !loader
-    ? { display: 'contents' }
+    ? ({ display: 'contents' } as const)
     : hasContent
-    ? { display: 'contents', visibility: 'hidden' }
-    : { display: 'none' };
+    ? ({ display: 'contents', visibility: 'hidden' } as const)
+    : ({ display: 'none' } as const);
   // Draw the loader over the content instead of in place of it, matching how
   // the button lays its own content out
   const loaderOverlayStyles = {

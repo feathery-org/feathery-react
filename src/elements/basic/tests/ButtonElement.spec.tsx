@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ButtonElement from '../ButtonElement';
 import ResponsiveStyles from '../../styles';
+import { initState } from '../../../utils/init';
 
 const BASE_STYLES = {
   flex_direction: 'row',
@@ -27,15 +28,24 @@ const makeElement = (properties: any = {}) => ({
   repeat: null
 });
 
-const renderButton = (element: any, loader: any) =>
+const renderButton = (element: any, loader: any, featheryContext?: any) =>
   render(
     <ButtonElement
       element={element}
       responsiveStyles={new ResponsiveStyles(element, ['button'], true, 478)}
       editMode={false}
       loader={loader}
+      featheryContext={featheryContext}
     />
   );
+
+// The loader sizes the button only when nothing else is holding it open, so it
+// stays a direct child and is neither overlaid nor clamped
+const expectLoaderSizesButton = (loader: HTMLElement) => {
+  const box = loader.parentElement as HTMLElement;
+  expect(box.parentElement?.tagName).toBe('BUTTON');
+  expect(getComputedStyle(box).maxWidth).not.toBe('100%');
+};
 
 beforeAll(() => {
   (window as any).matchMedia = () => ({
@@ -113,14 +123,60 @@ describe('ButtonElement loader', () => {
     });
     renderButton(element, <span data-testid='loader' />);
 
-    const box = screen.getByTestId('loader').parentElement as HTMLElement;
-    expect(box.parentElement?.tagName).toBe('BUTTON');
-    expect(getComputedStyle(box).maxWidth).not.toBe('100%');
+    expectLoaderSizesButton(screen.getByTestId('loader'));
 
     const label = document.getElementById(`span-${element.id}`) as HTMLElement;
     expect(getComputedStyle(label.parentElement as HTMLElement).display).toBe(
       'none'
     );
+  });
+
+  it('treats a label of only an unfilled text variable as no content', () => {
+    // The label is set, but a known field the user hasn't filled resolves to
+    // nothing, so the label renders empty and cannot hold the button open
+    initState.knownFieldKeys.add('unfilled');
+    const element = makeElement({
+      text: '{{unfilled}}',
+      text_formatted: [{ insert: '{{unfilled}}' }]
+    });
+    renderButton(element, <span data-testid='loader' />);
+
+    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
+    expect(label.textContent).toBe('');
+    expectLoaderSizesButton(screen.getByTestId('loader'));
+  });
+
+  it('treats a data-bound label resolving to empty as no content', () => {
+    // A 'data' label ignores text_formatted, so a non-blank text property says
+    // nothing about whether anything renders
+    const element = makeElement({
+      text: 'Placeholder label',
+      text_formatted: [{ insert: 'Placeholder label' }],
+      text_mode: 'data',
+      text_source: 'feathery.empty'
+    });
+    renderButton(element, <span data-testid='loader' />, { empty: '' });
+
+    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
+    expect(label.textContent).toBe('');
+    expectLoaderSizesButton(screen.getByTestId('loader'));
+  });
+
+  it('keeps a data-bound label that resolves to real text as content', () => {
+    const element = makeElement({
+      text: 'Placeholder label',
+      text_formatted: [{ insert: 'Placeholder label' }],
+      text_mode: 'data',
+      text_source: 'feathery.email'
+    });
+    renderButton(element, <span data-testid='loader' />, {
+      email: 'a@b.com'
+    });
+
+    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
+    expect(label.textContent).toBe('a@b.com');
+    const box = screen.getByTestId('loader').parentElement as HTMLElement;
+    expect(getComputedStyle(box).maxWidth).toBe('100%');
   });
 
   it('does not clamp the loader when there is no content to preserve', () => {
