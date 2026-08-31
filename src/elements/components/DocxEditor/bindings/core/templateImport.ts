@@ -288,8 +288,28 @@ export function convertTemplateTokens(
     );
   };
 
-  for (const section of doc.sections || []) {
-    const blocks = section.blocks || [];
+  // A shape/text box's content is its own block list (doc-level, like the
+  // body). Convert tokens inside every text frame reachable from a block: an
+  // inline shape carries node.textFrame.blocks; a floating shape may be
+  // anchored on the paragraph as block.floatingElements[k].textFrame.blocks.
+  const convertTextFramesIn = (block: SfdtBlock): void => {
+    for (const inline of block.inlines || []) {
+      const frame = (inline as { textFrame?: { blocks?: SfdtBlock[] } })
+        .textFrame;
+      if (frame && Array.isArray(frame.blocks))
+        frame.blocks = convertBlockList(frame.blocks);
+    }
+    const floating = (block as { floatingElements?: unknown[] })
+      .floatingElements;
+    for (const shape of Array.isArray(floating) ? floating : []) {
+      const frame = (shape as { textFrame?: { blocks?: SfdtBlock[] } } | null)
+        ?.textFrame;
+      if (frame && Array.isArray(frame.blocks))
+        frame.blocks = convertBlockList(frame.blocks);
+    }
+  };
+
+  function convertBlockList(blocks: SfdtBlock[]): SfdtBlock[] {
     const out: SfdtBlock[] = [];
     let pendingTable: TableDefinition | null = null;
     for (const block of blocks) {
@@ -304,6 +324,7 @@ export function convertTemplateTokens(
                   true
               )
                 converted += 1;
+              convertTextFramesIn(cellBlock);
             }
           }
         }
@@ -331,14 +352,19 @@ export function convertTemplateTokens(
         const result = replaceTokensInParagraph(block, diagnostics, (def) => {
           pendingTable = def;
         });
+        convertTextFramesIn(block);
         if (result === 'marker') continue; // Drop the marker paragraph.
         if (result === true) converted += 1;
       }
       out.push(block);
     }
-    // A marker still pending at the end of a section had no table after it.
+    // A marker still pending at the end of a list had no table after it.
     reportDangling(pendingTable);
-    section.blocks = out;
+    return out;
+  }
+
+  for (const section of doc.sections || []) {
+    section.blocks = convertBlockList(section.blocks || []);
   }
 
   return { sfdt: doc, converted, diagnostics };
