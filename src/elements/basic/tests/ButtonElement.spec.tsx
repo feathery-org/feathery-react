@@ -112,5 +112,8 @@ describe('ButtonElement loader', () => {
     const boxStyles = getComputedStyle(box);
     expect(boxStyles.maxWidth).not.toBe('100%');
     expect(boxStyles.position).not.toBe('absolute');
+    // No wrapper between the button and the loader: an intermediate box is
+    // sized by its own content, which collapses a percentage-sized loader
+    expect(box.parentElement?.tagName).toBe('BUTTON');
   });
 });

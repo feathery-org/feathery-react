@@ -315,18 +315,19 @@ function ButtonElement({
       <span css={{ display: 'contents', ...(loader ? hiddenStyles : {}) }}>
         {buttonContent}
       </span>
-      {loader && (
-        <div css={hasContent ? loaderOverlayStyles : undefined}>
-          <div
-            css={{
-              ...(hasContent ? loaderClampStyles : {}),
-              ...styles.getTarget('loader')
-            }}
-          >
-            {loader}
+      {loader &&
+        (hasContent ? (
+          <div css={loaderOverlayStyles}>
+            <div css={{ ...loaderClampStyles, ...styles.getTarget('loader') }}>
+              {loader}
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          // Nothing is holding the button open, so the loader still sizes it.
+          // It stays a direct child: an intermediate wrapper would be sized by
+          // its own content, collapsing a percentage-sized loader to nothing.
+          <div css={styles.getTarget('loader')}>{loader}</div>
+        ))}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
         <ErrorInput
