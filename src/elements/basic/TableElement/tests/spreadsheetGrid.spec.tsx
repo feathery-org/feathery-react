@@ -138,9 +138,30 @@ describe('spreadsheet grid rendering', () => {
     );
   });
 
-  test('a transposed table falls back to the classic table', () => {
+  test('spreadsheet style overrides a stored Flip Table setting', () => {
+    // Flipping puts one field per row, which has no (row, column) coordinates
+    // for selection, fill or the clipboard. Spreadsheet mode therefore ignores
+    // it rather than silently falling back to the classic table.
     const { view } = renderTable({ transpose: true });
+    expect(grid()).toBeInTheDocument();
+    expect(view.container.querySelector('table')).toBeNull();
+    expect(
+      screen.getAllByRole('columnheader').map((h) => h.textContent)
+    ).toEqual(['Name', 'Age', 'City']);
+  });
+
+  test('spreadsheet style overrides stored search and pagination', () => {
+    renderTable({ search: true, sort: true, pagination: 2 });
+    // No search box, and all three rows render rather than one page of two.
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByText('Cara')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select row 3' })).toBeInTheDocument();
+  });
+
+  test('the classic table still honours those settings', () => {
+    const { view } = renderTable({ display_mode: 'classic', search: true });
     expect(view.container.querySelector('table')).not.toBeNull();
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
   });
 });
 

@@ -89,9 +89,6 @@ function TableElement({
     !editMode;
   const hub = useHubTableSource({ element, client, enabled: isHub });
 
-  // Transposed tables render one field per row, which the row/column
-  // spreadsheet model has no coordinates for, so they stay on the classic
-  // table even when spreadsheet style is selected.
   const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
   const frozenRows = clampFrozen(element.properties?.frozen_rows);
   const frozenColumns = clampFrozen(element.properties?.frozen_columns);
@@ -100,9 +97,17 @@ function TableElement({
     const properties = {
       ...element.properties,
       ...(isHub ? { columns: hub.hubColumns } : {}),
-      // The spreadsheet virtualizes every row, so paging it would just hide
-      // rows the user can already scroll to.
-      ...(wantsSpreadsheet ? { pagination: 0 } : {})
+      // Features the spreadsheet has no place for. They are overridden here
+      // rather than cleared off the element, so switching back to the classic
+      // table restores whatever the builder had configured.
+      //   pagination — every row is virtualized, so paging only hides rows.
+      //   search/sort — the grid has no affordance for either; a header click
+      //     selects the column, Excel-style.
+      //   transpose — one field per row has no (row, column) coordinates for
+      //     selection, fill or the clipboard to work against.
+      ...(wantsSpreadsheet
+        ? { pagination: 0, search: false, sort: false, transpose: false }
+        : {})
     };
     return { ...element, properties };
   }, [isHub, element, hub.hubColumns, wantsSpreadsheet]);
@@ -185,7 +190,7 @@ function TableElement({
 
   const tableId = element?.id;
 
-  const isSpreadsheet = wantsSpreadsheet && !isTransposed;
+  const isSpreadsheet = wantsSpreadsheet;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
   const showAddRow = canEdit && enableAddDeleteRows;
   const canDeleteRows = canEdit && enableAddDeleteRows;
