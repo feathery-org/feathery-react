@@ -224,6 +224,29 @@ function ButtonElement({
   const hasContent = Boolean(
     element.properties.image || element.properties.text
   );
+  const hiddenStyles = { visibility: 'hidden' } as const;
+  // Draw the loader over the content instead of in place of it, matching how
+  // the button lays its own content out
+  const loaderOverlayStyles = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    flexDirection: 'inherit',
+    alignItems: 'inherit',
+    justifyContent: 'inherit',
+    padding: 'inherit'
+  } as const;
+  // The button no longer grows for an overlaid loader, so keep that loader
+  // inside the space the content already claimed
+  const loaderClampStyles = {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    '& img, & svg': {
+      maxWidth: '100%',
+      maxHeight: '100%',
+      objectFit: 'contain'
+    }
+  } as const;
 
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
@@ -285,49 +308,24 @@ function ButtonElement({
     >
       {customBorder}
       {children}
-      {loader ? (
-        <>
-          {/* The content stays in the layout while invisible, so a fit-sized
-              button keeps its pre-loader dimensions */}
-          <span css={{ display: 'contents', visibility: 'hidden' }}>
-            {buttonContent}
-          </span>
+      {/* Always rendered so toggling the loader hides the content rather than
+          unmounting it: a fit-sized button keeps its pre-loader dimensions,
+          and the img isn't torn down and reloaded mid-click. `display:
+          contents` generates no box, so the button's layout is unchanged. */}
+      <span css={{ display: 'contents', ...(loader ? hiddenStyles : {}) }}>
+        {buttonContent}
+      </span>
+      {loader && (
+        <div css={hasContent ? loaderOverlayStyles : undefined}>
           <div
-            css={
-              hasContent
-                ? {
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    // Match how the button lays out its own content
-                    flexDirection: 'inherit',
-                    alignItems: 'inherit',
-                    justifyContent: 'inherit',
-                    padding: 'inherit'
-                  }
-                : undefined
-            }
+            css={{
+              ...(hasContent ? loaderClampStyles : {}),
+              ...styles.getTarget('loader')
+            }}
           >
-            <div
-              css={{
-                // The button no longer grows for the loader, so keep the
-                // loader inside the space the content already claimed
-                maxWidth: '100%',
-                maxHeight: '100%',
-                '& img, & svg': {
-                  maxWidth: '100%',
-                  maxHeight: '100%',
-                  objectFit: 'contain'
-                },
-                ...styles.getTarget('loader')
-              }}
-            >
-              {loader}
-            </div>
+            {loader}
           </div>
-        </>
-      ) : (
-        buttonContent
+        </div>
       )}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
