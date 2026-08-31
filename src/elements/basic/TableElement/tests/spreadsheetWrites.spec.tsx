@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { fieldValues } from '../../../../utils/init';
 import { useHubTableSource } from '../useHubTableSource';
+import type { HubVerification } from '../useHubTableSource';
 import { useTableMutations } from '../useTableMutations';
 import { useSpreadsheetHistory } from '../spreadsheet/useSpreadsheetHistory';
 import type { CellWrite } from '../types';
@@ -367,5 +368,163 @@ describe('useSpreadsheetHistory', () => {
     act(() => view.result.current.execute('Edit', []));
     expect(applied).toHaveLength(0);
     expect(view.result.current.canUndo).toBe(false);
+  });
+});
+
+describe('Data Hub verification filter', () => {
+  const HUB_COLUMNS = [
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    }
+  ];
+
+  const makeElement = (hubVerification?: HubVerification) => ({
+    id: 'table1',
+    properties: {
+      columns: HUB_COLUMNS,
+      hub_id: 'hub1',
+      ...(hubVerification ? { hub_verification: hubVerification } : {})
+    }
+  });
+
+  const key = (hubFieldKey: string) => `__hub_table1_${hubFieldKey}`;
+
+  const mixedEntries = [
+    { id: 'entry1', data: { name: 'Alice' }, verified: true },
+    { id: 'entry2', data: { name: 'Bob' }, verified: false }
+  ];
+
+  const setup = (
+    dataHubAction: jest.Mock,
+    hubVerification?: HubVerification
+  ) => {
+    const client = { dataHubAction } as any;
+    const element = makeElement(hubVerification);
+    return renderHook(() =>
+      useHubTableSource({ element, client, enabled: true })
+    );
+  };
+
+  test('defaults to verified, matching the Hub API default', async () => {
+    const dataHubAction = jest.fn(() => Promise.resolve([]));
+    const { result } = setup(dataHubAction);
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
+
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub1',
+      operation: 'get',
+      verification: 'verified'
+    });
+    expect(result.current.canAddRows).toBe(true);
+  });
+
+  test.each(['all', 'unverified'] as const)(
+    'sends the configured %s filter through to the Hub',
+    async (verification) => {
+      const dataHubAction = jest.fn(() => Promise.resolve([]));
+      setup(dataHubAction, verification);
+      await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
+
+      expect(dataHubAction).toHaveBeenCalledWith({
+        hubId: 'hub1',
+        operation: 'get',
+        verification
+      });
+    }
+  );
+
+  test('adding rows is off while viewing the staged set', async () => {
+    // `create` with verification:unverified is a batch REPLACE of the staged
+    // rows, so adding one row would drop every other one.
+    const dataHubAction = jest.fn(() => Promise.resolve([]));
+    const { result } = setup(dataHubAction, 'unverified');
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
+    expect(result.current.canAddRows).toBe(false);
+  });
+
+  test('marks unverified rows read-only', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
+    );
+    const { result } = setup(dataHubAction, 'all');
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    expect(result.current.isRowEditable(0)).toBe(true);
+    expect(result.current.isRowEditable(1)).toBe(false);
+  });
+
+  test('an unlabelled entry is treated as verified', async () => {
+    // With the default filter the Hub does not label entries at all.
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get'
+        ? Promise.resolve([{ id: 'entry1', data: { name: 'Alice' } }])
+        : Promise.resolve({})
+    );
+    const { result } = setup(dataHubAction);
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(1));
+    expect(result.current.isRowEditable(0)).toBe(true);
+  });
+
+  test('never writes to an unverified row', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
+    );
+    const { result } = setup(dataHubAction, 'all');
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    act(() =>
+      result.current.handleCellsEdit([
+        { fieldKey: key('name'), rowIndex: 1, value: 'Robert' }
+      ])
+    );
+
+    // Server-side this would match zero rows and read as a silent success.
+    await waitFor(() => expect(dataHubAction).not.toHaveBeenCalled());
+    expect(result.current.hubFieldValues[key('name')][1]).toBe('Bob');
+  });
+
+  test('a mixed batch still writes the verified rows', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
+    );
+    const { result } = setup(dataHubAction, 'all');
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    act(() =>
+      result.current.handleCellsEdit([
+        { fieldKey: key('name'), rowIndex: 0, value: 'Alicia' },
+        { fieldKey: key('name'), rowIndex: 1, value: 'Robert' }
+      ])
+    );
+
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub1',
+      operation: 'update',
+      where: [{ entryId: 'entry1' }],
+      data: { name: 'Alicia' }
+    });
+  });
+
+  test('deleting an unverified row is refused', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
+    );
+    const { result } = setup(dataHubAction, 'all');
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    act(() => result.current.handleDeleteRow(1));
+
+    // It would disappear locally and return on the next load.
+    expect(result.current.entryIds).toHaveLength(2);
+    await waitFor(() => expect(dataHubAction).not.toHaveBeenCalled());
   });
 });

@@ -42,6 +42,8 @@ export type SpreadsheetTableProps = {
    * exists so a future source can turn it on without reworking the grid.
    */
   onAddColumn?: AddColumnHandler;
+  /** Per-cell veto on editing, e.g. a read-only unverified Data Hub row. */
+  isCellEditable?: (rowIndex: number, fieldKey: string) => boolean;
   getCellShading?: GetCellShading;
   /**
    * Bumped by the parent whenever row indices shift (add/delete row), which
@@ -60,6 +62,7 @@ export function SpreadsheetTable({
   heightUnit,
   onCellsEdit,
   onAddColumn,
+  isCellEditable,
   getCellShading,
   rowIdentityVersion = 0
 }: SpreadsheetTableProps) {
@@ -187,6 +190,7 @@ export function SpreadsheetTable({
     undo: history.undo,
     redo: history.redo,
     canEdit,
+    isCellEditable,
     scrollToCell
   });
 
@@ -223,6 +227,7 @@ export function SpreadsheetTable({
         table={table}
         interactions={interactions}
         canEdit={canEdit}
+        isCellEditable={isCellEditable}
         rowIndexById={rowIndexById}
         getCellShading={getCellShading}
         onReorderColumns={handleReorderColumns}

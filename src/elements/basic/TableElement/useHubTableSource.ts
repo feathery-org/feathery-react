@@ -3,11 +3,21 @@ import { featheryWindow } from '../../../utils/browser';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import { CellWrite, Column } from './types';
 
-type HubEntry = { id: string; data: Record<string, any> };
+export type HubVerification = 'verified' | 'unverified' | 'all';
+
+type HubEntry = {
+  id: string;
+  data: Record<string, any>;
+  verified?: boolean;
+};
 type HubRow = {
   localId: string;
   entryId: string | null;
   data: Record<string, any>;
+  // Only meaningful when a verification filter was sent: the Hub labels each
+  // entry then. Unverified entries are READ-ONLY — update, delete and per-row
+  // create all filter on `verified=True` server-side.
+  verified: boolean;
   // Hub field key -> message, for cells whose last write the Hub rejected.
   // Drives the validation shading in spreadsheet mode.
   errors?: Record<string, string>;
@@ -19,6 +29,7 @@ type DataHubAction = (options: {
   entryId?: string;
   data?: Record<string, any>;
   where?: Array<{ entryId: string } | { fieldId: string; value?: any }>;
+  verification?: HubVerification;
 }) => Promise<any>;
 
 type UseHubTableSourceProps = {
@@ -28,6 +39,7 @@ type UseHubTableSourceProps = {
       columns: Column[];
       hub_id?: string;
       hidden_hub_fields?: string[];
+      hub_verification?: HubVerification;
     };
   };
   client:
@@ -49,6 +61,11 @@ type UseHubTableSourceReturn = {
   errors: string[];
   // `${rowIndex}:${fieldKey}` -> message, for cells the Hub rejected.
   cellErrors: Record<string, string>;
+  // False for rows the Hub returned as unverified, which are read-only.
+  isRowEditable: (rowIndex: number) => boolean;
+  // Adding is impossible while reading unverified rows: `create` with
+  // `verification: unverified` is a batch REPLACE of the staged set.
+  canAddRows: boolean;
   refetch: () => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
   handleCellsEdit: (writes: CellWrite[]) => void;
@@ -85,6 +102,9 @@ export function useHubTableSource({
   const hubId = element.properties?.hub_id;
   const userColumns: Column[] = element.properties?.columns || [];
   const hiddenHubFields = element.properties?.hidden_hub_fields;
+  // Omitted means verified-only, which is what the Hub API already defaults to.
+  const verification: HubVerification =
+    element.properties?.hub_verification ?? 'verified';
 
   const [schemaFields, setSchemaFields] = useState<HubFieldSchema[] | null>(
     null
@@ -175,7 +195,7 @@ export function useHubTableSource({
         client.getHubSchemas
           ? client.getHubSchemas([hubId]).catch(() => null)
           : Promise.resolve(null),
-        client.dataHubAction({ hubId, operation: 'get' })
+        client.dataHubAction({ hubId, operation: 'get', verification })
       ]);
       const fields = schemas?.hubs?.find((h) => h.id === hubId)?.fields;
       if (Array.isArray(fields)) setSchemaFields(fields);
@@ -185,7 +205,10 @@ export function useHubTableSource({
         list.map((entry) => ({
           localId: `entry:${entry.id}`,
           entryId: entry.id,
-          data: { ...entry.data }
+          data: { ...entry.data },
+          // The Hub only labels entries when a verification filter was sent;
+          // with the default filter every row it returns is verified.
+          verified: entry.verified ?? true
         }))
       );
     } catch (error) {
@@ -193,7 +216,7 @@ export function useHubTableSource({
     } finally {
       setLoading(false);
     }
-  }, [enabled, hubId, client, commitRows]);
+  }, [enabled, hubId, client, commitRows, verification]);
 
   const refetch = useCallback(() => {
     // A reload would drop in-flight writes and rows that have not been created
@@ -222,6 +245,11 @@ export function useHubTableSource({
   }, [hubColumns, rows, syntheticToHubKey]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
+
+  const isRowEditable = useCallback(
+    (rowIndex: number) => rows[rowIndex]?.verified !== false,
+    [rows]
+  );
 
   // Re-key row-local errors onto the (rowIndex, synthetic field key) pairs the
   // grid renders, so shading survives rows being added or removed above them.
@@ -259,6 +287,9 @@ export function useHubTableSource({
         const hubFieldKey = syntheticToHubKey[fieldKey];
         const target = rowsRef.current[rowIndex];
         if (!hubFieldKey || !target) return;
+        // An unverified row cannot be written through this API — the update
+        // would match zero rows server-side and look like a silent success.
+        if (!target.verified) return;
 
         const changes = changesByLocalId.get(target.localId) ?? {};
         changes[hubFieldKey] = value;
@@ -357,7 +388,12 @@ export function useHubTableSource({
       Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
     );
     commitRows([
-      { localId: `new:${nextLocalId.current++}`, entryId: null, data },
+      {
+        localId: `new:${nextLocalId.current++}`,
+        entryId: null,
+        data,
+        verified: true
+      },
       ...rowsRef.current
     ]);
     setErrors([]);
@@ -366,7 +402,9 @@ export function useHubTableSource({
   const handleDeleteRow = useCallback(
     (rowIndex: number) => {
       const target = rowsRef.current[rowIndex];
-      if (!target) return;
+      // Deleting filters on `verified=True` server-side, so an unverified row
+      // would vanish locally and come straight back on the next load.
+      if (!target || !target.verified) return;
       commitRows(rowsRef.current.filter((_, index) => index !== rowIndex));
       setErrors([]);
       if (!target.entryId) return;
@@ -399,6 +437,8 @@ export function useHubTableSource({
     saving: pending > 0,
     errors,
     cellErrors,
+    isRowEditable,
+    canAddRows: verification !== 'unverified',
     refetch,
     handleCellEdit,
     handleCellsEdit,
