@@ -234,9 +234,19 @@ describe('buildFillPatches', () => {
 });
 
 describe('spreadsheetViewportHeight', () => {
-  test('leaves the height alone when the element wrapper already bounds it', () => {
+  test('leaves a px height alone — the element sizes that container itself', () => {
     expect(spreadsheetViewportHeight('px', 10)).toBeUndefined();
-    expect(spreadsheetViewportHeight('%', 10)).toBeUndefined();
+  });
+
+  test('still sizes a percent height, which the wrapper only caps', () => {
+    // Verified in Chrome: with no definite height the grid's natural height is
+    // the whole virtual canvas, and the element wrapper's
+    // `min-height: fit-content` locks that in — a 60-row table rendered 1483px
+    // tall and did not scroll. The value acts as a flex-basis, so a percentage
+    // resolving taller than it still grows past it.
+    expect(spreadsheetViewportHeight('%', 3)).toBe(
+      HEADER_HEIGHT + 3 * ROW_HEIGHT + 2
+    );
   });
 
   test('sizes a fit-height grid to its rows', () => {

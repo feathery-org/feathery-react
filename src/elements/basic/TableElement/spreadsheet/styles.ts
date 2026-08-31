@@ -13,19 +13,24 @@ export const CELL_HORIZONTAL_PADDING = 10;
 export const FIT_MAX_HEIGHT = 400;
 
 /**
- * Pixel height to force on the grid, or `undefined` to let it fill a container
- * the element wrapper has already bounded.
+ * Pixel height to give the grid, or `undefined` when the element's own
+ * container is already sized.
  *
  * The row virtualizer measures its scroll container, so a grid with no bounded
- * height renders NO rows at all. Only `px` and `%` bound it upstream; `fit` —
- * the Table style panel's default — and a table that has never had a height set
- * have to be given one here.
+ * height renders NO rows at all — and, worse, its natural height is the whole
+ * virtual canvas, which the element wrapper's `min-height: fit-content` then
+ * locks in. Only `px` bounds the container upstream (the element applies it
+ * itself); `%` is capped by the wrapper but still needs a definite height
+ * here, and `fit` — the style panel's default — has nothing bounding it at all.
+ *
+ * The value is a flex-basis, not a cap: a `%` that resolves taller simply grows
+ * past it, so the grid still fills a large percentage box.
  */
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
   rowCount: number
 ): number | undefined {
-  if (heightUnit === 'px' || heightUnit === '%') return undefined;
+  if (heightUnit === 'px') return undefined;
   const content = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 2;
   return Math.min(content, FIT_MAX_HEIGHT);
 }
