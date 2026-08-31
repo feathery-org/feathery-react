@@ -250,7 +250,18 @@ export const getContainerStyles = (
         s.flex = '0 1 auto';
 
         if (isFill(heightUnit)) {
+          // `fill` has to GROW into the available space, not merely cap at it:
+          // capping alone leaves a scrolling element (a spreadsheet table) at
+          // its natural height with empty space below. gig's parent_axis
+          // naming is inverted vs CSS — 'row' means the parent stacks its
+          // children vertically, so height is the main axis there.
           s.maxHeight = '100%';
+          if (parentAxis === 'row') {
+            s.flex = '1 1 auto';
+            s.minHeight = 0;
+          } else {
+            s.height = '100%';
+          }
         }
 
         if (isFit(heightUnit)) {
