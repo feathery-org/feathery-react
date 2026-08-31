@@ -2811,9 +2811,12 @@ function Form({
         }
         // Nothing uploaded yet: this button may sit on a step where files are
         // optional, so fall through to the next action rather than erroring.
+        const boxFieldIds = (action.field_ids ?? [])
+          .map((f: any) => f.field_id)
+          .filter(Boolean);
         if (
           fileCount &&
-          !(await sendBoxFiles(client, setElementError, action.field_id))
+          !(await sendBoxFiles(client, setElementError, boxFieldIds))
         )
           break;
       } else if (type === ACTION_TRIGGER_PLAID) {
