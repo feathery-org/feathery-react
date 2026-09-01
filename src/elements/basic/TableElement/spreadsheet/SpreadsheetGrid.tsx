@@ -11,26 +11,26 @@ import { featheryDoc } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
 import { getFillPreview } from './model';
+import { CellEditor } from './CellEditor';
+import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
+import { CellRules } from './validation';
 import type { FillPreview, GridBounds, GridCoordinate } from './model';
 import {
   addRowStripLabelStyle,
   addRowStripStyle,
   canvasStyle,
-  cellEditorStyle,
   cellFillPreviewStyle,
-  cellFocusedStyle,
   cellZIndex,
   cellSelectedStyle,
   cellStyle,
-  cellTooltipStyle,
   cellValueStyle,
   columnHeaderLabelStyle,
   columnHeaderStyle,
   columnResizerActiveStyle,
   columnResizerStyle,
   cornerHeaderStyle,
-  edgeVars,
+  cellEdgeVars,
   fillHandleStyle,
   frozenRegionStyle,
   frozenRowStyle,
@@ -42,6 +42,7 @@ import {
   pinnedCellStyle,
   pinnedHeaderStyle,
   rowHeaderStyle,
+  rowFocusedStyle,
   rowRaisedStyle,
   rowStyle,
   CELL_HORIZONTAL_PADDING,
@@ -71,6 +72,8 @@ type SpreadsheetGridProps = {
   canEdit: boolean;
   rowIndexById: Map<string, number>;
   getCellShading?: GetCellShading;
+  /** Column rules, so a cell's editor matches what the column accepts. */
+  cellRules?: CellRules;
   /**
    * Renders a trailing add-column header when supplied. No data source
    * provides one yet, so it is currently never rendered.
@@ -104,6 +107,7 @@ export const SpreadsheetGrid = React.forwardRef<
     canEdit,
     rowIndexById,
     getCellShading,
+    cellRules,
     onAddColumn,
     onInsertRow,
     onDeleteRow
@@ -148,7 +152,10 @@ export const SpreadsheetGrid = React.forwardRef<
         hotkey: 'Shift+Tab',
         callback: () => interactions.moveSelection('left')
       },
-      { hotkey: 'Enter', callback: () => interactions.moveSelection('down') },
+      // Enter opens the editor on the selected cell. Committing from inside
+      // the editor is what moves down — so Enter, Enter walks a column the way
+      // a spreadsheet does, without a bare Enter skipping a cell unedited.
+      { hotkey: 'Enter', callback: interactions.startEditingActive },
       {
         hotkey: 'Shift+Enter',
         callback: () => interactions.moveSelection('up')
@@ -554,6 +561,7 @@ export const SpreadsheetGrid = React.forwardRef<
                   canEdit={canEdit}
                   rowIndexById={rowIndexById}
                   getCellShading={getCellShading}
+                  cellRules={cellRules}
                   fillPreview={fillPreview}
                   onStartHeaderSelection={startHeaderSelection}
                   onExtendHeaderSelection={extendHeaderSelection}
@@ -580,6 +588,7 @@ export const SpreadsheetGrid = React.forwardRef<
                 canEdit={canEdit}
                 rowIndexById={rowIndexById}
                 getCellShading={getCellShading}
+                cellRules={cellRules}
                 fillPreview={fillPreview}
                 onStartHeaderSelection={startHeaderSelection}
                 onExtendHeaderSelection={extendHeaderSelection}
@@ -841,6 +850,7 @@ type SubscribedRowProps = {
   canEdit: boolean;
   rowIndexById: Map<string, number>;
   getCellShading?: GetCellShading;
+  cellRules?: CellRules;
   fillPreview: FillPreview | null;
   onStartHeaderSelection: (
     event: React.MouseEvent<HTMLElement>,
@@ -913,6 +923,7 @@ function SpreadsheetRowView({
   canEdit,
   rowIndexById,
   getCellShading,
+  cellRules,
   fillPreview,
   onStartHeaderSelection,
   onExtendHeaderSelection,
@@ -927,9 +938,6 @@ function SpreadsheetRowView({
 
   const shared = {
     rowIndex,
-    // The last rows have nothing below them to open into, and the grid scrolls
-    // the focused cell to the edge rather than past it.
-    tooltipAbove: rowIndex >= table.getRowsInDisplayOrder().length - 1,
     selection,
     fillPreview,
     table,
@@ -938,6 +946,7 @@ function SpreadsheetRowView({
     canEdit,
     rowIndexById,
     getCellShading,
+    cellRules,
     onStartFill
   };
 
@@ -952,6 +961,8 @@ function SpreadsheetRowView({
         // selected one further would drop it out of the frozen region.
         ...(frozen
           ? frozenRowStyle
+          : selection.focusedColumnId
+          ? rowFocusedStyle
           : selection.inSelection
           ? rowRaisedStyle
           : {}),
@@ -1019,8 +1030,7 @@ type SpreadsheetCellProps = {
   canEdit: boolean;
   rowIndexById: Map<string, number>;
   getCellShading?: GetCellShading;
-  /** Flip the error bubble above the cell when there is no room below it. */
-  tooltipAbove: boolean;
+  cellRules?: CellRules;
   left?: number;
   pinned?: 'start' | 'end';
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
@@ -1037,7 +1047,7 @@ function SpreadsheetCell({
   canEdit,
   rowIndexById,
   getCellShading,
-  tooltipAbove,
+  cellRules,
   left,
   pinned,
   onStartFill
@@ -1099,13 +1109,9 @@ function SpreadsheetCell({
           isLastPinnedStart
         ),
         ...(pinned ? pinnedCellStyle : {}),
-        zIndex: cellZIndex(Boolean(pinned), isSelected || isFocused),
+        zIndex: cellZIndex(Boolean(pinned), isSelected || isFocused, isFocused),
         ...(isSelected ? cellSelectedStyle : {}),
-        ...(isFocused ? cellFocusedStyle : {}),
-        ...(edges.top ? edgeVars.top : {}),
-        ...(edges.right ? edgeVars.right : {}),
-        ...(edges.bottom ? edgeVars.bottom : {}),
-        ...(edges.left ? edgeVars.left : {}),
+        ...cellEdgeVars(edges, isFocused),
         ...(isFillTarget ? cellFillPreviewStyle : {}),
         // Feathery-controlled shading (e.g. a rejected value) is applied last
         // so a validation state stays visible through selection.
@@ -1126,31 +1132,26 @@ function SpreadsheetCell({
       }
     >
       {isEditing ? (
-        <input
-          autoFocus
-          className={TABLE_CLASS.gridCellEditor}
-          aria-label={`Edit ${cell.column.columnDef.meta?.name ?? ''} row ${
+        <CellEditor
+          rule={cellRules?.[cell.column.id]}
+          draft={interactions.editing?.draft ?? ''}
+          seeded={Boolean(interactions.editing?.seeded)}
+          label={`Edit ${cell.column.columnDef.meta?.name ?? ''} row ${
             rowIndex + 1
           }`}
-          value={interactions.editing?.draft ?? ''}
-          css={cellEditorStyle}
-          onFocus={(event) => event.currentTarget.select()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onChange={(event) => interactions.setEditingDraft(event.target.value)}
+          onChange={interactions.setEditingDraft}
+          onCommit={(draft) => interactions.commitEditing(undefined, draft)}
           onKeyDown={interactions.handleEditorKeyDown}
           onBlur={() => interactions.commitEditing()}
         />
       ) : (
         <span css={cellValueStyle}>{formatRenderedValue(value)}</span>
       )}
-      {showTooltip ? (
-        <span
-          role='tooltip'
-          className={TABLE_CLASS.gridCellTooltip}
-          css={cellTooltipStyle(shading?.severity !== 'warning', tooltipAbove)}
-        >
-          {shading?.message}
-        </span>
+      {showTooltip && shading?.message ? (
+        <CellErrorTooltip
+          message={shading.message}
+          blocking={shading.severity !== 'warning'}
+        />
       ) : null}
       {showFillHandle ? (
         <span

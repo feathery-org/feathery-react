@@ -140,6 +140,11 @@ export const frozenRowStyle = { zIndex: 21 } as const;
  * corner. Stays well below the frozen region (20/21) and the header (30).
  */
 export const rowRaisedStyle = { zIndex: 2 } as const;
+// Each row carries a translateY, which makes it a stacking context — no
+// z-index inside row N can rise above row N+1. So the row holding the focused
+// cell is lifted above the rest of the selection, not just above the unselected
+// rows, or the next row's grid line covers the bottom of the 2px ring.
+export const rowFocusedStyle = { zIndex: 3 } as const;
 
 const gutterBase = {
   position: 'sticky',
@@ -314,16 +319,6 @@ export const cellSelectedStyle = {
   backgroundColor: colors.accentSoft
 } as const;
 
-// The focused cell's ring reuses the ::after border so it sits on the grid line
-// like the range perimeter does, just thicker. An inset box-shadow would be
-// drawn inside the border and read as misaligned against the 1px perimeter.
-export const cellFocusedStyle = {
-  '--edge-top': '2px',
-  '--edge-right': '2px',
-  '--edge-bottom': '2px',
-  '--edge-left': '2px'
-} as const;
-
 /**
  * Stacking order for one cell, within its row.
  *
@@ -333,9 +328,15 @@ export const cellFocusedStyle = {
  * corner. Pinned cells already sit above the scrolling ones, so a selected
  * pinned cell has to stay above THEM rather than dropping to the plain
  * selected level.
+ *
+ * The FOCUSED cell gets its own level above the merely selected ones: its ring
+ * is 2px and pulled out onto the grid line, so a neighbour in the same range
+ * would otherwise paint its own background and 1px perimeter over the half of
+ * the ring that overhangs into it.
  */
-export function cellZIndex(pinned: boolean, raised: boolean) {
-  if (pinned) return raised ? 13 : 12;
+export function cellZIndex(pinned: boolean, raised: boolean, focused = false) {
+  if (pinned) return focused ? 14 : raised ? 13 : 12;
+  if (focused) return 5;
   return raised ? 4 : undefined;
 }
 
@@ -347,16 +348,21 @@ export const cellFillPreviewStyle = {
 
 const FILL_HANDLE_SIZE = 10;
 
+// Pulls the handle back inside the range from the exact intersection, so it
+// reads as belonging to the selected block rather than to the cell diagonally
+// below and to the right of it.
+const FILL_HANDLE_NUDGE = 3;
+
 export const fillHandleStyle = {
   position: 'absolute',
-  // Centred on the grid intersection at the range's bottom-right corner.
+  // Sits just inside the grid intersection at the range's bottom-right corner.
   // The offset is measured from the PADDING box, which sits one grid line in
   // from the cell's outer corner — so it is half the handle plus that line,
   // putting the handle's midpoint on the intersection itself. Possible because
   // the cell no longer clips its overflow (the value span truncates instead)
   // and both the cell and its row are raised above their neighbours.
-  right: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH}px`,
-  bottom: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH}px`,
+  right: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH - FILL_HANDLE_NUDGE}px`,
+  bottom: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH - FILL_HANDLE_NUDGE}px`,
   zIndex: 8,
   // A true square: border-box keeps the white ring inside the given size, and
   // the radius is stated so no ambient rounding can reach it.
@@ -388,14 +394,61 @@ export const cellEditorStyle = {
   WebkitUserSelect: 'text'
 } as const;
 
+// The dropdown variant of the editor. Same box as the text input so swapping
+// between them does not shift the cell, but it keeps the native control's own
+// padding for the disclosure arrow.
+export const cellSelectStyle = {
+  position: 'absolute',
+  inset: 0,
+  width: '100%',
+  height: '100%',
+  padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
+  boxSizing: 'border-box',
+  backgroundColor: colors.white,
+  border: `2px solid ${colors.accent}`,
+  outline: 'none',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: `${FONT_SIZE}px`,
+  color: 'inherit'
+} as const;
+
 // A range's perimeter is deliberately lighter than the 2px ring on the focused
 // cell, so the active cell still reads as the active one inside a selection.
-export const edgeVars = {
-  top: { '--edge-top': '1px' },
-  right: { '--edge-right': '1px' },
-  bottom: { '--edge-bottom': '1px' },
-  left: { '--edge-left': '1px' }
-} as const;
+export const RANGE_EDGE_WIDTH = '1px';
+export const FOCUSED_EDGE_WIDTH = '2px';
+
+export type CellEdges = {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+};
+
+/**
+ * The border width of each edge of one cell's selection outline.
+ *
+ * The focused cell almost always sits ON the range perimeter, so the two
+ * rules overlap and the order matters: the ring is applied last and wins every
+ * side, or the range's thinner edge overwrites the half of the ring they share
+ * and the active cell stops reading as active.
+ */
+export function cellEdgeVars(edges: CellEdges, focused: boolean) {
+  if (focused) {
+    return {
+      '--edge-top': FOCUSED_EDGE_WIDTH,
+      '--edge-right': FOCUSED_EDGE_WIDTH,
+      '--edge-bottom': FOCUSED_EDGE_WIDTH,
+      '--edge-left': FOCUSED_EDGE_WIDTH
+    };
+  }
+  return {
+    ...(edges.top ? { '--edge-top': RANGE_EDGE_WIDTH } : {}),
+    ...(edges.right ? { '--edge-right': RANGE_EDGE_WIDTH } : {}),
+    ...(edges.bottom ? { '--edge-bottom': RANGE_EDGE_WIDTH } : {}),
+    ...(edges.left ? { '--edge-left': RANGE_EDGE_WIDTH } : {})
+  };
+}
 
 export const rowMenuStyle = {
   position: 'fixed',
@@ -494,7 +547,9 @@ export const pendingBarStyle = {
 
 export const pendingCountStyle = {
   fontWeight: 600,
-  whiteSpace: 'nowrap'
+  whiteSpace: 'nowrap',
+  // Reads as the label on the Save/Discard pair it sits beside.
+  color: colors.gray700
 } as const;
 
 // The issue counter and its stepper read as one control, so the count is

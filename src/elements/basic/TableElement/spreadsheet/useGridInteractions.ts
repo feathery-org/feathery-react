@@ -24,6 +24,13 @@ export type EditingCell = {
   rowId: string;
   columnId: string;
   draft: string;
+  /**
+   * The editor was opened by typing, so `draft` is that first character rather
+   * than the cell's stored value. The editor uses this to place the caret
+   * after it instead of selecting it — selecting would let the next keystroke
+   * replace it, which reads as the first letter going missing.
+   */
+  seeded: boolean;
 };
 
 type GridInteractionOptions = {
@@ -113,7 +120,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
       setEditing({
         rowId,
         columnId,
-        draft: replacement ?? formatCellValue(valueByIds(rowId, columnId))
+        draft: replacement ?? formatCellValue(valueByIds(rowId, columnId)),
+        seeded: replacement !== undefined
       });
       scrollToCell(rowId, columnId);
     },
@@ -155,10 +163,20 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [execute, rowIndexById, scrollToActiveCorner, table, valueByIds]
   );
 
+  /**
+   * Commit whatever the editor is holding. `draft` overrides the state copy for
+   * an editor that decides its own value in one gesture — picking from a
+   * dropdown sets and commits together, before React has applied the setState.
+   */
   const commitEditing = React.useCallback(
-    (move?: CellSelectionDirection) => {
+    (move?: CellSelectionDirection, draft?: string) => {
       if (!editing) return;
-      commitCellValue(editing.rowId, editing.columnId, editing.draft, move);
+      commitCellValue(
+        editing.rowId,
+        editing.columnId,
+        draft ?? editing.draft,
+        move
+      );
     },
     [commitCellValue, editing]
   );
@@ -470,8 +488,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [scrollToCell, table]
   );
 
+  // Typed against HTMLElement rather than HTMLInputElement: a column with a
+  // fixed set of values edits through a <select>, and both share this handler.
   const handleEditorKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
+    (event: React.KeyboardEvent<HTMLElement>) => {
       if (event.key === 'Escape') {
         event.preventDefault();
         cancelEditing();

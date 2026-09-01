@@ -507,10 +507,11 @@ function TableElement({
     return ({ rowIndex, fieldKey }) => {
       const key = cellErrorKey(rowIndex, fieldKey);
       const blocking = blockingErrors[key];
+      // Background only: an outline here competes with the selection border,
+      // which is the one ring in the grid that means "you are here".
       if (blocking) {
         return {
           backgroundColor: validationColors.errorSurface,
-          borderColor: validationColors.errorBorder,
           message: blocking,
           severity: 'error'
         };
@@ -519,7 +520,6 @@ function TableElement({
       if (warning) {
         return {
           backgroundColor: validationColors.warningSurface,
-          borderColor: validationColors.warningBorder,
           message: warning,
           severity: 'warning'
         };
@@ -660,6 +660,7 @@ function TableElement({
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
           onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
           getCellShading={getCellShading}
+          cellRules={cellRules}
           rowIdentityVersion={rowIdentityVersion}
           pending={
             buffersEdits

@@ -2,6 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
+import { featheryWindow } from '../../../../utils/browser';
 import {
   hasUnsavedWork,
   unsavedWorkMessage,
@@ -101,6 +102,17 @@ const grid = () => screen.getByRole('grid');
 const cell = (text: string) =>
   screen.getByText(text).closest('[role="gridcell"]')!;
 const saveButton = () => screen.getByRole('button', { name: 'Save' });
+const discardButton = () => screen.getByRole('button', { name: 'Discard' });
+// Discarding cannot be undone, so it asks first.
+const discard = (accept = true) => {
+  const confirmSpy = jest
+    .spyOn(featheryWindow(), 'confirm')
+    .mockReturnValue(accept);
+  fireEvent.click(discardButton());
+  const asked = confirmSpy.mock.calls.map((call) => call[0]);
+  confirmSpy.mockRestore();
+  return asked;
+};
 const status = () => screen.getByRole('status');
 
 const editCell = (from: string, to: string) => {
@@ -180,8 +192,9 @@ describe('unsaved changes bar', () => {
     const { updateFieldValues } = renderTable();
     editCell('Alice', 'Alicia');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    const asked = discard();
 
+    expect(asked).toEqual(['Discard your unsaved change?']);
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
     expect(screen.getByText('Alice')).toBeInTheDocument();
     expect(updateFieldValues).not.toHaveBeenCalled();
@@ -191,9 +204,28 @@ describe('unsaved changes bar', () => {
     renderTable();
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Select row 2' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete row 2' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    discard();
 
     await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+  });
+
+  test('declining the discard prompt keeps the edits', () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+
+    const asked = discard(false);
+
+    expect(asked).toEqual(['Discard your unsaved change?']);
+    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(screen.getByText('Alicia')).toBeInTheDocument();
+  });
+
+  test('the prompt counts what is about to be thrown away', () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+    editCell('bob@test.com', 'robert@test.com');
+
+    expect(discard(false)).toEqual(['Discard your 2 unsaved changes?']);
   });
 
   test('the classic table keeps writing through, with no bar', async () => {
@@ -293,6 +325,174 @@ describe('validation errors', () => {
   });
 });
 
+describe('cell editors follow the column', () => {
+  // The hub fixture gives Status a fixed option list; a field-backed column
+  // has none, so it stays a free-text box.
+  const HUB_COLUMNS = [
+    {
+      name: 'Name',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf1',
+      hub_field_key: 'name'
+    },
+    {
+      name: 'Status',
+      field_id: '',
+      field_type: '',
+      field_key: '',
+      hub_field_id: 'hf3',
+      hub_field_key: 'status'
+    }
+  ];
+  const FIELDS_WITH_OPTIONS = [
+    { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
+    {
+      id: 'hf3',
+      key: 'status',
+      type: 'text',
+      required: false,
+      unique: false,
+      metadata: { options: ['Ready', 'Sent'] }
+    }
+  ];
+  const hubProps = {
+    columns: HUB_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+  const client = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({
+        hubs: [{ id: 'hub1', key: 'h', fields: FIELDS_WITH_OPTIONS }]
+      })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([
+            { id: 'e1', verified: true, data: { name: 'Alice', status: 'Ready' } }
+          ])
+        : Promise.resolve({})
+    )
+  });
+
+  test('a column with options edits through a dropdown', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.doubleClick(cell('Ready'));
+
+    const select = await screen.findByRole('combobox');
+    expect(select).toHaveValue('Ready');
+    expect(
+      [...select.querySelectorAll('option')].map((o) => o.textContent)
+    ).toEqual(['(empty)', 'Ready', 'Sent']);
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  test('picking an option commits it straight away', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.doubleClick(cell('Ready'));
+    fireEvent.change(await screen.findByRole('combobox'), {
+      target: { value: 'Sent' }
+    });
+
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(screen.getByText('Sent')).toBeInTheDocument();
+  });
+
+  test('typing a letter on a dropdown cell jumps to that option', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.mouseDown(cell('Ready'));
+    await waitFor(() =>
+      expect(cell('Ready')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 's' });
+
+    // The seeded character is a jump-to, not a value the column would accept.
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('Sent'));
+  });
+
+  test('a column with no options keeps a text box', () => {
+    renderTable();
+    fireEvent.doubleClick(cell('Alice'));
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+});
+
+describe('keyboard editing', () => {
+  test('Enter opens the editor instead of moving down', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+
+    expect(await screen.findByRole('textbox')).toHaveValue('Alice');
+  });
+
+  test('Enter from inside the editor commits and moves down', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Alicia' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(screen.getByText('Alicia')).toBeInTheDocument();
+  });
+
+  // The seeded character used to be selected, so the next keystroke replaced
+  // it and the first letter looked like it had been swallowed.
+  test('type-to-edit keeps the first character', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Z' });
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement;
+    expect(input).toHaveValue('Z');
+    // Caret parked after it, with nothing selected for the next key to eat.
+    expect(input.selectionStart).toBe(1);
+    expect(input.selectionEnd).toBe(1);
+  });
+
+  test('F2 still opens on the stored value, selected for replacement', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'F2' });
+
+    const input = (await screen.findByRole('textbox')) as HTMLInputElement;
+    expect(input).toHaveValue('Alice');
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(5);
+  });
+});
+
 describe('leaving with unsaved work', () => {
   const beforeUnload = () => {
     const event = new Event('beforeunload', { cancelable: true });
@@ -335,7 +535,7 @@ describe('leaving with unsaved work', () => {
   test('discarding releases it', async () => {
     renderTable({}, { formId: 'form-1' });
     editCell('Alice', 'Alicia');
-    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    discard();
 
     await waitFor(() => expect(hasUnsavedWork('form-1')).toBe(false));
   });
