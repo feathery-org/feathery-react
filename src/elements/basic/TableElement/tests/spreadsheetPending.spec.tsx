@@ -2,6 +2,11 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
+import {
+  hasUnsavedWork,
+  unsavedWorkMessage,
+  _clearUnsavedWorkRegistry
+} from '../../../../utils/unsavedWork';
 
 const COLUMNS = [
   { name: 'Name', field_id: 'f1', field_type: 'text', field_key: 'name_key' },
@@ -65,7 +70,7 @@ const renderTable = (
 ) => {
   const updateFieldValues = jest.fn();
   const submitCustom = jest.fn();
-  render(
+  const view = render(
     <TableElement
       element={{
         id: 'table1',
@@ -89,7 +94,7 @@ const renderTable = (
       {...extra}
     />
   );
-  return { updateFieldValues, submitCustom };
+  return { updateFieldValues, submitCustom, unmount: view.unmount };
 };
 
 const grid = () => screen.getByRole('grid');
@@ -114,6 +119,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  _clearUnsavedWorkRegistry();
   sizeSpies.forEach((restore) => restore());
   sizeSpies = [];
   ['name_key', 'email_key'].forEach((key) => {
@@ -287,31 +293,62 @@ describe('validation errors', () => {
   });
 });
 
-describe('leaving the page with unsaved work', () => {
+describe('leaving with unsaved work', () => {
   const beforeUnload = () => {
     const event = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(event);
     return event;
   };
 
-  test('nothing is intercepted while everything is saved', () => {
-    renderTable();
+  // The table registers with the form-wide registry the document editor uses,
+  // so one prompt covers Next/Back, browser history and a full page exit.
+  test('nothing is registered while everything is saved', () => {
+    renderTable({}, { formId: 'form-1' });
+    expect(hasUnsavedWork('form-1')).toBe(false);
     expect(beforeUnload().defaultPrevented).toBe(false);
   });
 
-  test('an unsaved edit prompts the browser', () => {
-    renderTable();
+  test('an unsaved edit registers a message and arms the browser', () => {
+    renderTable({}, { formId: 'form-1' });
     editCell('Alice', 'Alicia');
+
+    expect(unsavedWorkMessage('form-1')).toContain('unsaved changes in a table');
     expect(beforeUnload().defaultPrevented).toBe(true);
   });
 
-  test('saving releases the prompt', async () => {
-    renderTable();
+  test('the registration is scoped to this table\'s form', () => {
+    renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    expect(hasUnsavedWork('form-2')).toBe(false);
+  });
+
+  test('saving releases it', async () => {
+    renderTable({}, { formId: 'form-1' });
     editCell('Alice', 'Alicia');
     fireEvent.click(saveButton());
 
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    expect(hasUnsavedWork('form-1')).toBe(false);
     expect(beforeUnload().defaultPrevented).toBe(false);
+  });
+
+  test('discarding releases it', async () => {
+    renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => expect(hasUnsavedWork('form-1')).toBe(false));
+  });
+
+  // A table on a step the user navigates away from, or inside a repeat that is
+  // removed, must stop blocking the form it is no longer part of.
+  test('unmounting mid-edit releases it', () => {
+    const { unmount } = renderTable({}, { formId: 'form-1' });
+    editCell('Alice', 'Alicia');
+    expect(hasUnsavedWork('form-1')).toBe(true);
+
+    unmount();
+    expect(hasUnsavedWork('form-1')).toBe(false);
   });
 });
 
