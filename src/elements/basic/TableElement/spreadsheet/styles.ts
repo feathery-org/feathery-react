@@ -25,6 +25,15 @@ export const GRID_LINE_WIDTH = 1;
 export const FIT_MAX_HEIGHT = 400;
 
 /**
+ * Room kept below the last row, and below any cell the grid scrolls to.
+ *
+ * A cell's message bubble hangs underneath it, so scrolling a failing cell to
+ * the very bottom edge would bring the cell into view and leave its reason off
+ * screen. Sized for a two-line bubble plus its gap.
+ */
+export const TOOLTIP_SCROLL_MARGIN = 56;
+
+/**
  * Pixel height to give the grid, or `undefined` when the element's own
  * container is already sized.
  *
@@ -43,7 +52,11 @@ export function spreadsheetViewportHeight(
   rowCount: number
 ): number | undefined {
   if (heightUnit === 'px') return undefined;
-  const content = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 2;
+  // The canvas carries a trailing gutter so a scrolled-to cell has room for
+  // its message bubble; an auto-sized grid grows to include it rather than
+  // gaining a scrollbar over empty space.
+  const content =
+    HEADER_HEIGHT + rowCount * ROW_HEIGHT + TOOLTIP_SCROLL_MARGIN + 2;
   return Math.min(content, FIT_MAX_HEIGHT);
 }
 
@@ -679,7 +692,7 @@ export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
       ? { bottom: '100%', marginBottom: '4px' }
       : { top: '100%', marginTop: '4px' }),
     zIndex: 30,
-    maxWidth: '260px',
+    maxWidth: '300px',
     width: 'max-content',
     padding: '6px 8px',
     borderRadius: '4px',
@@ -688,7 +701,7 @@ export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
       : validationColors.warningText,
     color: colors.white,
     fontFamily: GRID_FONT_FAMILY,
-    fontSize: `${FONT_SIZE - 4}px`,
+    fontSize: `${FONT_SIZE - 3}px`,
     fontWeight: 400,
     lineHeight: 1.35,
     textAlign: 'start',

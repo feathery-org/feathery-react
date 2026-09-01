@@ -503,6 +503,33 @@ describe('editors for other field types', () => {
     expect(input).toHaveValue('12.5');
   });
 
+  // The character that opens an editor is chosen before the editor exists, so
+  // it has to be filtered by the column rather than by the input.
+  test('typing a letter on a number cell opens nothing', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('42'));
+    await waitFor(() =>
+      expect(cell('42')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'a' });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByLabelText(/Edit age/)).toBeNull();
+  });
+
+  test('typing a digit on a number cell still starts the edit', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('42'));
+    await waitFor(() =>
+      expect(cell('42')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: '7' });
+
+    expect(await screen.findByLabelText(/Edit age/)).toHaveValue('7');
+  });
+
   test('a file column shows its file names and cannot be typed into', async () => {
     await renderTyped();
     expect(screen.getByText('deed.pdf')).toBeInTheDocument();
@@ -514,6 +541,61 @@ describe('editors for other field types', () => {
     fireEvent.change(input, { target: { value: 'nope' } });
     // A read-only editor records nothing, so there is still nothing to save.
     expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('keyboard stays on the grid', () => {
+  // The grid binds its keys to the grid element itself. Closing an editor
+  // unmounts the focused control, dropping focus to <body> — after which
+  // arrows and Enter reached nothing at all.
+  test('committing an edit hands the keyboard back', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    const input = await screen.findByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Alicia' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(grid()).toHaveFocus());
+    // Enter-commit moved down to Bob; the arrows still reach the grid, so it
+    // can move back.
+    await waitFor(() =>
+      expect(cell('Bob')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'ArrowUp' });
+    await waitFor(() =>
+      expect(cell('Alicia')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
+
+  test('abandoning an edit hands it back too', async () => {
+    renderTable();
+    fireEvent.doubleClick(cell('Alice'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    await waitFor(() => expect(grid()).toHaveFocus());
+  });
+
+  // Clicking Save blurs the editor, which commits. Grabbing focus back
+  // unconditionally would take it off the button the user just pressed.
+  test('it does not steal focus from a button that was clicked', async () => {
+    renderTable();
+    editCell('Alice', 'Alicia');
+    const save = saveButton();
+    save.focus();
+
+    fireEvent.doubleClick(cell('bob@test.com'));
+    const input = await screen.findByRole('textbox');
+    fireEvent.blur(input);
+    save.focus();
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(save).toHaveFocus();
   });
 });
 

@@ -10,6 +10,7 @@ import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
+import { seedActionFor } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import {
@@ -241,6 +242,12 @@ export function SpreadsheetTable({
       gridRef.current?.scrollToCell(rowId, columnId),
     []
   );
+  const restoreFocus = useCallback(() => gridRef.current?.restoreFocus(), []);
+  const seedAction = useCallback(
+    (fieldKey: string, char: string) =>
+      seedActionFor(cellRules?.[fieldKey], char),
+    [cellRules]
+  );
 
   // Failing cells in reading order — down the rows, left to right — with the
   // blocking ones first, so stepping through issues fixes what is holding the
@@ -281,6 +288,8 @@ export function SpreadsheetTable({
     redo: history.redo,
     canEdit,
     scrollToCell,
+    restoreFocus,
+    seedAction,
     acceptsValue,
     onValuesRefused
   });
