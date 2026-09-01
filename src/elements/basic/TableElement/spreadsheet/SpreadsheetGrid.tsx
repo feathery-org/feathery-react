@@ -11,12 +11,16 @@ import { featheryDoc } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
 import { getFillPreview } from './model';
+import { RowMenu, RowMenuTarget } from './RowMenu';
 import type { FillPreview, GridBounds, GridCoordinate } from './model';
 import {
+  addRowStripLabelStyle,
+  addRowStripStyle,
   canvasStyle,
   cellEditorStyle,
   cellFillPreviewStyle,
   cellFocusedStyle,
+  cellRaisedStyle,
   cellSelectedStyle,
   cellStyle,
   cellValueStyle,
@@ -25,13 +29,13 @@ import {
   columnResizerActiveStyle,
   columnResizerStyle,
   cornerHeaderStyle,
-  dropIndicatorStyle,
   edgeVars,
   fillHandleStyle,
   frozenRegionStyle,
   frozenRowStyle,
   gridStyle,
   headerRowStyle,
+  headerHighlightStyle,
   headerSelectedStyle,
   lastPinnedStyle,
   pinnedCellStyle,
@@ -63,13 +67,15 @@ type SpreadsheetGridProps = {
   canEdit: boolean;
   rowIndexById: Map<string, number>;
   getCellShading?: GetCellShading;
-  /** Reorders columns when a header is dragged onto another header. */
-  onReorderColumns?: (draggedId: string, targetId: string) => void;
   /**
    * Renders a trailing add-column header when supplied. No data source
    * provides one yet, so it is currently never rendered.
    */
   onAddColumn?: AddColumnHandler;
+  /** Enables the row context menu's insert items and the trailing add strip. */
+  onInsertRow?: (atIndex: number) => void;
+  /** Enables the row context menu's delete item. */
+  onDeleteRow?: (rowIndex: number) => void;
 };
 
 type FillDrag = {
@@ -94,8 +100,9 @@ export const SpreadsheetGrid = React.forwardRef<
     canEdit,
     rowIndexById,
     getCellShading,
-    onReorderColumns,
-    onAddColumn
+    onAddColumn,
+    onInsertRow,
+    onDeleteRow
   },
   forwardedRef
 ) {
@@ -242,9 +249,9 @@ export const SpreadsheetGrid = React.forwardRef<
   const [fillPreview, setFillPreview] = React.useState<FillPreview | null>(
     null
   );
-  const [dragOverColumnId, setDragOverColumnId] = React.useState<string | null>(
-    null
-  );
+  const [rowMenu, setRowMenu] = React.useState<RowMenuTarget | null>(null);
+  const closeRowMenu = React.useCallback(() => setRowMenu(null), []);
+  const hasRowMenu = Boolean(onInsertRow || onDeleteRow);
   const fillDragRef = React.useRef<FillDrag | null>(null);
   const headerSelectionDragRef = React.useRef<HeaderSelectionDrag | null>(null);
 
@@ -478,62 +485,87 @@ export const SpreadsheetGrid = React.forwardRef<
   const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualColumns = columnVirtualizer.getVirtualItems();
   const canvasWidth = columnVirtualizer.getTotalSize();
-  const canvasHeight = rowVirtualizer.getTotalSize();
+  const rowsHeight = rowVirtualizer.getTotalSize();
+  const canvasHeight = rowsHeight + (onInsertRow ? ROW_HEIGHT : 0);
   const displayColumnCount = getDisplayColumns().length;
 
   return (
-    <div
-      ref={scrollRef}
-      className={TABLE_CLASS.grid}
-      role='grid'
-      tabIndex={0}
-      aria-rowcount={table.getRowsInDisplayOrder().length + 1}
-      aria-colcount={displayColumnCount}
-      aria-readonly={!canEdit || undefined}
-      css={gridStyle}
-      onKeyDown={interactions.handleGridTextEntry}
-      onCopy={interactions.copySelection}
-      onCut={interactions.cutSelection}
-      onPaste={interactions.pasteSelection}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          event.currentTarget.focus({ preventScroll: true });
-        }
-      }}
-    >
-      <div css={{ ...canvasStyle, width: canvasWidth, height: canvasHeight }}>
-        <table.Subscribe
-          source={table.atoms.cellSelection}
-          selector={() => table.getCellSelectionBounds()}
-        >
-          {(selectionBounds) => (
-            <HeaderRow
-              table={table}
-              columnSizing={columnSizing}
-              resizingColumnId={table.state.columnResizing.isResizingColumn}
-              selectionBounds={selectionBounds}
-              virtualColumns={virtualColumns}
-              centerHeaders={table.getCenterLeafHeaders()}
-              startHeaders={table.getStartLeafHeaders()}
-              endHeaders={table.getEndLeafHeaders()}
-              dragOverColumnId={dragOverColumnId}
-              onStartSelection={startHeaderSelection}
-              onExtendSelection={extendHeaderSelection}
-              onReorderColumns={onReorderColumns}
-              onDragOverColumn={setDragOverColumnId}
-              onAddColumn={onAddColumn}
-            />
-          )}
-        </table.Subscribe>
+    <>
+      <div
+        ref={scrollRef}
+        className={TABLE_CLASS.grid}
+        role='grid'
+        tabIndex={0}
+        aria-rowcount={table.getRowsInDisplayOrder().length + 1}
+        aria-colcount={displayColumnCount}
+        aria-readonly={!canEdit || undefined}
+        css={gridStyle}
+        onKeyDown={interactions.handleGridTextEntry}
+        onCopy={interactions.copySelection}
+        onCut={interactions.cutSelection}
+        onPaste={interactions.pasteSelection}
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            event.currentTarget.focus({ preventScroll: true });
+          }
+        }}
+      >
+        <div css={{ ...canvasStyle, width: canvasWidth, height: canvasHeight }}>
+          <table.Subscribe
+            source={table.atoms.cellSelection}
+            selector={() => table.getCellSelectionBounds()}
+          >
+            {(selectionBounds) => (
+              <HeaderRow
+                table={table}
+                columnSizing={columnSizing}
+                resizingColumnId={table.state.columnResizing.isResizingColumn}
+                selectionBounds={selectionBounds}
+                virtualColumns={virtualColumns}
+                centerHeaders={table.getCenterLeafHeaders()}
+                startHeaders={table.getStartLeafHeaders()}
+                endHeaders={table.getEndLeafHeaders()}
+                onStartSelection={startHeaderSelection}
+                onExtendSelection={extendHeaderSelection}
+                onAddColumn={onAddColumn}
+              />
+            )}
+          </table.Subscribe>
 
-        {topRows.length ? (
-          <div css={{ ...frozenRegionStyle, height: frozenRowsHeight }}>
-            {topRows.map((row, index) => (
+          {topRows.length ? (
+            <div css={{ ...frozenRegionStyle, height: frozenRowsHeight }}>
+              {topRows.map((row, index) => (
+                <SubscribedRow
+                  key={row.id}
+                  row={row}
+                  top={index * ROW_HEIGHT}
+                  frozen
+                  table={table}
+                  columnSizing={columnSizing}
+                  virtualColumns={virtualColumns}
+                  interactions={interactions}
+                  canEdit={canEdit}
+                  rowIndexById={rowIndexById}
+                  getCellShading={getCellShading}
+                  fillPreview={fillPreview}
+                  onStartHeaderSelection={startHeaderSelection}
+                  onExtendHeaderSelection={extendHeaderSelection}
+                  onOpenRowMenu={hasRowMenu ? setRowMenu : undefined}
+                  onStartFill={startFillDrag}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {virtualRows.map((virtualRow) => {
+            const row = centerRows[virtualRow.index];
+            if (!row) return null;
+            return (
               <SubscribedRow
                 key={row.id}
                 row={row}
-                top={index * ROW_HEIGHT}
-                frozen
+                top={virtualRow.start}
+                frozen={false}
                 table={table}
                 columnSizing={columnSizing}
                 virtualColumns={virtualColumns}
@@ -544,37 +576,39 @@ export const SpreadsheetGrid = React.forwardRef<
                 fillPreview={fillPreview}
                 onStartHeaderSelection={startHeaderSelection}
                 onExtendHeaderSelection={extendHeaderSelection}
+                onOpenRowMenu={hasRowMenu ? setRowMenu : undefined}
                 onStartFill={startFillDrag}
               />
-            ))}
-          </div>
-        ) : null}
+            );
+          })}
 
-        {virtualRows.map((virtualRow) => {
-          const row = centerRows[virtualRow.index];
-          if (!row) return null;
-          return (
-            <SubscribedRow
-              key={row.id}
-              row={row}
-              top={virtualRow.start}
-              frozen={false}
-              table={table}
-              columnSizing={columnSizing}
-              virtualColumns={virtualColumns}
-              interactions={interactions}
-              canEdit={canEdit}
-              rowIndexById={rowIndexById}
-              getCellShading={getCellShading}
-              fillPreview={fillPreview}
-              onStartHeaderSelection={startHeaderSelection}
-              onExtendHeaderSelection={extendHeaderSelection}
-              onStartFill={startFillDrag}
-            />
-          );
-        })}
+          {onInsertRow ? (
+            <button
+              type='button'
+              className={TABLE_CLASS.gridAddRow}
+              css={{
+                ...addRowStripStyle,
+                transform: `translateY(${rowsHeight}px)`
+              }}
+              onClick={() => onInsertRow(table.getRowsInDisplayOrder().length)}
+            >
+              <span css={addRowStripLabelStyle}>+ Add row</span>
+            </button>
+          ) : null}
+        </div>
       </div>
-    </div>
+      {rowMenu ? (
+        <RowMenu
+          target={rowMenu}
+          canInsert={Boolean(onInsertRow)}
+          canDelete={Boolean(onDeleteRow)}
+          onInsertAbove={() => onInsertRow?.(rowMenu.rowIndex)}
+          onInsertBelow={() => onInsertRow?.(rowMenu.rowIndex + 1)}
+          onDelete={() => onDeleteRow?.(rowMenu.rowIndex)}
+          onClose={closeRowMenu}
+        />
+      ) : null}
+    </>
   );
 });
 
@@ -587,7 +621,6 @@ type HeaderRowProps = {
   centerHeaders: SpreadsheetTableHeader[];
   startHeaders: SpreadsheetTableHeader[];
   endHeaders: SpreadsheetTableHeader[];
-  dragOverColumnId: string | null;
   onStartSelection: (
     event: React.MouseEvent<HTMLElement>,
     axis: 'column',
@@ -595,8 +628,6 @@ type HeaderRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendSelection: (axis: 'column', id: string) => void;
-  onReorderColumns?: (draggedId: string, targetId: string) => void;
-  onDragOverColumn: (columnId: string | null) => void;
   onAddColumn?: AddColumnHandler;
 };
 
@@ -609,11 +640,8 @@ function HeaderRow({
   centerHeaders,
   startHeaders,
   endHeaders,
-  dragOverColumnId,
   onStartSelection,
   onExtendSelection,
-  onReorderColumns,
-  onDragOverColumn,
   onAddColumn
 }: HeaderRowProps) {
   const rowCount = table.getRowsInDisplayOrder().length;
@@ -623,11 +651,8 @@ function HeaderRow({
     columnSizing,
     resizingColumnId,
     rowCount,
-    dragOverColumnId,
     onStartSelection,
-    onExtendSelection,
-    onReorderColumns,
-    onDragOverColumn
+    onExtendSelection
   };
 
   return (
@@ -689,11 +714,8 @@ type HeaderCellProps = {
   columnSizing: SpreadsheetTable['state']['columnSizing'];
   resizingColumnId: false | string;
   rowCount: number;
-  dragOverColumnId: string | null;
   onStartSelection: HeaderRowProps['onStartSelection'];
   onExtendSelection: HeaderRowProps['onExtendSelection'];
-  onReorderColumns?: HeaderRowProps['onReorderColumns'];
-  onDragOverColumn: HeaderRowProps['onDragOverColumn'];
   left?: number;
   pinned?: 'start' | 'end';
 };
@@ -705,26 +727,31 @@ function HeaderCell({
   columnSizing,
   resizingColumnId,
   rowCount,
-  dragOverColumnId,
   onStartSelection,
   onExtendSelection,
-  onReorderColumns,
-  onDragOverColumn,
   left,
   pinned
 }: HeaderCellProps) {
   const { column } = header;
   const columnIndex = table.getCellSelectionColumnIndexes()[column.id] ?? -1;
-  const fullySelected = bounds.some(
+  const inSelection = bounds.some(
     (bound) =>
-      bound.minRowIndex === 0 &&
-      bound.maxRowIndex === rowCount - 1 &&
-      columnIndex >= bound.minColumnIndex &&
-      columnIndex <= bound.maxColumnIndex
+      columnIndex >= bound.minColumnIndex && columnIndex <= bound.maxColumnIndex
   );
+  const fullySelected =
+    inSelection &&
+    bounds.some(
+      (bound) =>
+        bound.minRowIndex === 0 &&
+        bound.maxRowIndex === rowCount - 1 &&
+        columnIndex >= bound.minColumnIndex &&
+        columnIndex <= bound.maxColumnIndex
+    );
   const meta = column.columnDef.meta;
   const label = meta?.name ?? column.id;
-  const canReorder = Boolean(onReorderColumns) && !pinned;
+  const startColumns = table.getStartVisibleLeafColumns();
+  const isLastPinnedStart =
+    pinned === 'start' && startColumns.at(-1)?.id === column.id;
 
   return (
     <div
@@ -733,35 +760,23 @@ function HeaderCell({
       aria-colindex={columnIndex + 1}
       aria-selected={fullySelected}
       title={label}
-      draggable={canReorder}
       css={{
         ...columnHeaderStyle,
-        ...getColumnPositionStyle(column, columnSizing, left, pinned),
+        ...getColumnPositionStyle(
+          column,
+          columnSizing,
+          left,
+          pinned,
+          isLastPinnedStart
+        ),
         ...(pinned ? pinnedHeaderStyle : {}),
+        ...(inSelection ? headerHighlightStyle : {}),
         ...(fullySelected ? headerSelectedStyle : {})
       }}
       onMouseDown={(event) =>
         onStartSelection(event, 'column', column.id, fullySelected)
       }
       onMouseEnter={() => onExtendSelection('column', column.id)}
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = 'move';
-        event.dataTransfer.setData('text/plain', column.id);
-      }}
-      onDragOver={(event) => {
-        if (!canReorder) return;
-        event.preventDefault();
-        onDragOverColumn(column.id);
-      }}
-      onDragLeave={() => onDragOverColumn(null)}
-      onDrop={(event) => {
-        event.preventDefault();
-        const draggedId = event.dataTransfer.getData('text/plain');
-        onDragOverColumn(null);
-        if (draggedId && draggedId !== column.id) {
-          onReorderColumns?.(draggedId, column.id);
-        }
-      }}
     >
       <span
         css={{
@@ -771,9 +786,6 @@ function HeaderCell({
       >
         {label}
       </span>
-      {dragOverColumnId === column.id ? (
-        <div css={{ ...dropIndicatorStyle, left: 0 }} />
-      ) : null}
       <div
         className={TABLE_CLASS.gridColumnResizer}
         role='separator'
@@ -807,6 +819,7 @@ type RowSelectionSnapshot = {
   activeBound?: CellSelectionBounds;
   focusedColumnId?: string;
   fullySelected: boolean;
+  inSelection: boolean;
   key: string;
 };
 
@@ -829,6 +842,7 @@ type SubscribedRowProps = {
     fullySelected: boolean
   ) => void;
   onExtendHeaderSelection: (axis: 'row', id: string) => void;
+  onOpenRowMenu?: (target: RowMenuTarget) => void;
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
 };
 
@@ -866,6 +880,10 @@ function SubscribedRow(props: SubscribedRowProps) {
               rowIndex >= bound.minRowIndex &&
               rowIndex <= bound.maxRowIndex
           ),
+          inSelection: bounds.some(
+            (bound) =>
+              rowIndex >= bound.minRowIndex && rowIndex <= bound.maxRowIndex
+          ),
           key: rowSelectionKey(ranges, bounds, rowIndex, row.id)
         };
       }}
@@ -891,6 +909,7 @@ function SpreadsheetRowView({
   fillPreview,
   onStartHeaderSelection,
   onExtendHeaderSelection,
+  onOpenRowMenu,
   onStartFill,
   selection
 }: SubscribedRowProps & { selection: RowSelectionSnapshot }) {
@@ -931,12 +950,23 @@ function SpreadsheetRowView({
         aria-selected={selection.fullySelected}
         css={{
           ...rowHeaderStyle,
+          ...(selection.inSelection ? headerHighlightStyle : {}),
           ...(selection.fullySelected ? headerSelectedStyle : {})
         }}
         onMouseDown={(event) =>
           onStartHeaderSelection(event, 'row', row.id, selection.fullySelected)
         }
         onMouseEnter={() => onExtendHeaderSelection('row', row.id)}
+        onContextMenu={(event) => {
+          if (!onOpenRowMenu) return;
+          event.preventDefault();
+          onOpenRowMenu({
+            rowIndex: rowIndexById.get(row.id) ?? rowIndex,
+            displayNumber: rowIndex + 1,
+            x: event.clientX,
+            y: event.clientY
+          });
+        }}
       >
         {rowIndex + 1}
       </button>
@@ -995,6 +1025,9 @@ function SpreadsheetCell({
 }: SpreadsheetCellProps) {
   const columnIndex =
     table.getCellSelectionColumnIndexes()[cell.column.id] ?? -1;
+  const isLastPinnedStart =
+    pinned === 'start' &&
+    table.getStartVisibleLeafColumns().at(-1)?.id === cell.column.id;
   const edges = cell.getSelectionEdges();
   const isSelected = cell.getIsSelected();
   const isFocused = selection.focusedColumnId === cell.column.id;
@@ -1036,9 +1069,16 @@ function SpreadsheetCell({
       tabIndex={isEditing ? -1 : isFocused ? 0 : -1}
       css={{
         ...cellStyle,
-        ...getColumnPositionStyle(cell.column, columnSizing, left, pinned),
+        ...getColumnPositionStyle(
+          cell.column,
+          columnSizing,
+          left,
+          pinned,
+          isLastPinnedStart
+        ),
         ...(pinned ? pinnedCellStyle : {}),
         ...(isSelected ? cellSelectedStyle : {}),
+        ...(isSelected || isFocused ? cellRaisedStyle : {}),
         ...(isFocused ? cellFocusedStyle : {}),
         ...(edges.top ? edgeVars.top : {}),
         ...(edges.right ? edgeVars.right : {}),
@@ -1117,14 +1157,17 @@ function getColumnPositionStyle(
   column: SpreadsheetTableColumn,
   columnSizing: SpreadsheetTable['state']['columnSizing'],
   left?: number,
-  pinned?: 'start' | 'end'
+  pinned?: 'start' | 'end',
+  isLastPinnedStart?: boolean
 ): React.CSSProperties {
   const width = getColumnSize(column, columnSizing);
   if (pinned === 'start') {
     return {
       width,
       insetInlineStart: ROW_HEADER_WIDTH + column.getStart('start'),
-      ...(column.getIsLastColumn('start') ? lastPinnedStyle : {})
+      // Only the innermost frozen column casts the shadow onto the scrolling
+      // region, so the frozen block reads as one unit.
+      ...(isLastPinnedStart ? lastPinnedStyle : {})
     };
   }
   if (pinned === 'end') {

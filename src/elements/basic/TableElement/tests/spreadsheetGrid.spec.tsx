@@ -1,5 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within
+} from '@testing-library/react';
 import TableElement from '../index';
 import { fieldValues } from '../../../../utils/init';
 
@@ -378,5 +384,117 @@ describe('freezing rows and columns', () => {
   test('renders without freezing when the properties are absent', () => {
     renderTable();
     expect(screen.getAllByRole('columnheader')).toHaveLength(3);
+  });
+});
+
+describe('row insertion and deletion', () => {
+  const openRowMenu = (rowNumber: number) => {
+    const header = screen.getByRole('button', { name: `Select row ${rowNumber}` });
+    fireEvent.contextMenu(header);
+  };
+
+  test('no row menu or add strip when adding and deleting are off', () => {
+    renderTable({ add_delete_rows: false });
+    openRowMenu(2);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('button', { name: '+ Add row' })).toBeNull();
+  });
+
+  test('right-clicking a row header offers insert and delete', () => {
+    renderTable({ add_delete_rows: true });
+    openRowMenu(2);
+
+    const menu = screen.getByRole('menu');
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+    ).toEqual(['Insert row above', 'Insert row below', 'Delete row 2']);
+  });
+
+  test('insert above adds a blank row at that index', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    openRowMenu(2);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Insert row above' }));
+
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenCalledWith({
+        name_key: ['Alice', '', 'Bob', 'Cara'],
+        age_key: [30, '', 40, 50],
+        city_key: ['Denver', '', 'Austin', 'Reno']
+      })
+    );
+  });
+
+  test('insert below adds a blank row after that index', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    openRowMenu(2);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Insert row below' }));
+
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenCalledWith({
+        name_key: ['Alice', 'Bob', '', 'Cara'],
+        age_key: [30, 40, '', 50],
+        city_key: ['Denver', 'Austin', '', 'Reno']
+      })
+    );
+  });
+
+  test('delete removes that row', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    openRowMenu(2);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete row 2' }));
+
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenCalledWith({
+        name_key: ['Alice', 'Cara'],
+        age_key: [30, 50],
+        city_key: ['Denver', 'Reno']
+      })
+    );
+  });
+
+  test('a new row is not submitted until a cell is edited', async () => {
+    const { submitCustom } = renderTable({ add_delete_rows: true });
+    openRowMenu(1);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Insert row below' }));
+
+    // An empty row would just fail required fields on the backend.
+    await waitFor(() => expect(submitCustom).not.toHaveBeenCalled());
+  });
+
+  test('Escape dismisses the menu', async () => {
+    renderTable({ add_delete_rows: true });
+    openRowMenu(2);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+
+  test('the trailing add strip appends a row at the end', async () => {
+    const { updateFieldValues } = renderTable({ add_delete_rows: true });
+    fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenCalledWith({
+        name_key: ['Alice', 'Bob', 'Cara', ''],
+        age_key: [30, 40, 50, ''],
+        city_key: ['Denver', 'Austin', 'Reno', '']
+      })
+    );
+  });
+
+  test('the toolbar add button gives way to the trailing strip', () => {
+    renderTable({ add_delete_rows: true });
+    // Two "add row" affordances would be one too many.
+    expect(screen.queryByText('+ Add Row')).toBeNull();
+    expect(screen.getByRole('button', { name: '+ Add row' })).toBeInTheDocument();
+  });
+
+  test('the classic table keeps its toolbar add button', () => {
+    renderTable({ add_delete_rows: true, display_mode: 'classic' });
+    expect(screen.getByText('+ Add Row')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '+ Add row' })).toBeNull();
   });
 });

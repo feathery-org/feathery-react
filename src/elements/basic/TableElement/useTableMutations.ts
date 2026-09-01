@@ -17,6 +17,7 @@ type UseTableMutationsProps = {
 
 type UseTableMutationsReturn = {
   handleAddRow: () => void;
+  handleInsertRow: (atIndex: number) => void;
   handleDeleteRow: (rowIndex: number) => void;
   handleRemoveRowLocal: (rowIndex: number) => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
@@ -45,6 +46,26 @@ export function useTableMutations({
       return Array.isArray(val) ? val : [];
     },
     [editMode]
+  );
+
+  const handleInsertRow = useCallback(
+    (atIndex: number) => {
+      const updates: Record<string, any> = {};
+      columns.forEach((col) => {
+        const existing = getFieldArray(col.field_key);
+        const at = Math.max(0, Math.min(atIndex, existing.length));
+        updates[col.field_key] = [
+          ...existing.slice(0, at),
+          '',
+          ...existing.slice(at)
+        ];
+      });
+      // No submitCustom — a new row stays provisional until the user edits a
+      // cell, so an empty row is never pushed to the backend.
+      updateFieldValues(updates);
+      onMutate();
+    },
+    [columns, getFieldArray, updateFieldValues, onMutate]
   );
 
   const handleAddRow = useCallback(() => {
@@ -144,6 +165,7 @@ export function useTableMutations({
 
   return {
     handleAddRow,
+    handleInsertRow,
     handleDeleteRow,
     handleRemoveRowLocal,
     handleCellEdit,

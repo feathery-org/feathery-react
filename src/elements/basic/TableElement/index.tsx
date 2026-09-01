@@ -170,15 +170,21 @@ function TableElement({
   });
 
   // In Hub mode the writes go to the Data Hub instead of form field values.
-  const { handleAddRow, handleDeleteRow, handleCellEdit, handleCellsEdit } =
-    isHub
-      ? {
-          handleAddRow: hub.handleAddRow,
-          handleDeleteRow: hub.handleDeleteRow,
-          handleCellEdit: hub.handleCellEdit,
-          handleCellsEdit: hub.handleCellsEdit
-        }
-      : fieldMutations;
+  const {
+    handleAddRow,
+    handleInsertRow,
+    handleDeleteRow,
+    handleCellEdit,
+    handleCellsEdit
+  } = isHub
+    ? {
+        handleAddRow: hub.handleAddRow,
+        handleInsertRow: hub.handleInsertRow,
+        handleDeleteRow: hub.handleDeleteRow,
+        handleCellEdit: hub.handleCellEdit,
+        handleCellsEdit: hub.handleCellsEdit
+      }
+    : fieldMutations;
 
   /**
    * Adding a column only has a meaning for a data source that owns its own
@@ -193,7 +199,11 @@ function TableElement({
   const isSpreadsheet = wantsSpreadsheet;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
   const hubAllowsAddRows = !isHub || hub.canAddRows;
-  const showAddRow = canEdit && enableAddDeleteRows && hubAllowsAddRows;
+  const canAddRows = canEdit && enableAddDeleteRows && hubAllowsAddRows;
+  // The spreadsheet has its own trailing "add row" strip and a row-header
+  // context menu, so the toolbar button would be a second way to do the same
+  // thing.
+  const showAddRow = canAddRows && !isSpreadsheet;
   const canDeleteRows = canEdit && enableAddDeleteRows && hubAllowsAddRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
@@ -294,6 +304,24 @@ function TableElement({
       setDeleteRowIndex(null);
     },
     [bumpRowIdentity, handleDeleteRow]
+  );
+
+  const spreadsheetInsertRow = useCallback(
+    (atIndex: number) => {
+      setDeleteRowIndex(null);
+      bumpRowIdentity();
+      handleInsertRow(atIndex);
+      // Hub mutations don't own search/pagination; mirror the field-mode UX so
+      // the new row is visible.
+      if (isHub && searchQuery) setSearchQuery('');
+      setPendingAddRows((prev) => {
+        const next = new Set<number>();
+        next.add(atIndex);
+        prev.forEach((idx) => next.add(idx >= atIndex ? idx + 1 : idx));
+        return next;
+      });
+    },
+    [handleInsertRow, bumpRowIdentity, isHub, searchQuery, setSearchQuery]
   );
 
   const spreadsheetCellsEdit = useCallback(
@@ -414,6 +442,8 @@ function TableElement({
           heightUnit={element.styles?.height_unit}
           onCellsEdit={spreadsheetCellsEdit}
           onAddColumn={handleAddColumn}
+          onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
+          onDeleteRow={canDeleteRows ? wrappedHandleDeleteRow : undefined}
           getCellShading={getCellShading}
           rowIdentityVersion={rowIdentityVersion}
         />
