@@ -40,6 +40,9 @@ interface PdfViewerProps {
   // Absent = fields still render but edits are never persisted.
   onSaveEnvelopeFile?: (envelopeId: string, file: Blob) => Promise<any>;
   apiRef?: React.MutableRefObject<PdfViewerApi | null>;
+  // Read-only pages paint widget values into the canvas and never mount the
+  // live form layer, so nothing is editable and nothing dirties.
+  readOnly?: boolean;
 }
 
 // The pdf renderer: a continuous page canvas with fillable AcroForm fields
@@ -48,7 +51,8 @@ interface PdfViewerProps {
 export default function PdfViewer({
   documents,
   onSaveEnvelopeFile,
-  apiRef
+  apiRef,
+  readOnly
 }: PdfViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -181,6 +185,7 @@ export default function PdfViewer({
           pageWidth={pageWidth}
           onDocLoad={onDocLoad}
           registerPageRef={registerPageRef}
+          readOnly={readOnly}
         />
       </div>
     </div>
