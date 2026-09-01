@@ -50,7 +50,8 @@ import {
   DEFAULT_COLUMN_WIDTH,
   HEADER_HEIGHT,
   ROW_HEADER_WIDTH,
-  ROW_HEIGHT
+  ROW_HEIGHT,
+  TOOLTIP_SCROLL_MARGIN
 } from './styles';
 import type {
   SpreadsheetTable,
@@ -65,6 +66,15 @@ export type SpreadsheetGridHandle = {
   scrollToCell: (rowId: string, columnId: string) => void;
   /** Returns keyboard focus to the grid, e.g. after a control above it acts. */
   focus: () => void;
+  /**
+   * Takes focus back after a cell editor closes, but only if nothing else has
+   * claimed it. Closing an editor unmounts the focused element, which drops
+   * focus to `body` — and the grid's keys are bound to the grid element, so
+   * arrows and Enter stop working until it is focused again. Clicking Save or
+   * Discard also blurs the editor, so an unconditional grab would steal focus
+   * straight back off the button the user just pressed.
+   */
+  restoreFocus: () => void;
 };
 
 type SpreadsheetGridProps = {
@@ -203,6 +213,9 @@ export const SpreadsheetGrid = React.forwardRef<
     estimateSize: () => ROW_HEIGHT,
     paddingStart: HEADER_HEIGHT + frozenRowsHeight,
     scrollPaddingStart: HEADER_HEIGHT + frozenRowsHeight,
+    // Stop short of the bottom edge so a scrolled-to cell has room beneath it
+    // for its message bubble, which hangs below the cell.
+    scrollPaddingEnd: TOOLTIP_SCROLL_MARGIN,
     overscan: 8
   });
 
@@ -230,6 +243,21 @@ export const SpreadsheetGrid = React.forwardRef<
     () => ({
       focus() {
         scrollRef.current?.focus({ preventScroll: true });
+      },
+      restoreFocus() {
+        // Deferred so the check sees where focus actually landed once the
+        // editor has unmounted — and a timeout rather than an animation frame,
+        // because rAF does not run at all in a hidden tab, which would leave
+        // the grid unfocusable for anyone who edits in a background tab.
+        setTimeout(() => {
+          const grid = scrollRef.current;
+          if (!grid) return;
+          const active = featheryDoc().activeElement;
+          const lost = !active || active === featheryDoc().body;
+          if (lost || grid.contains(active)) {
+            grid.focus({ preventScroll: true });
+          }
+        }, 0);
       },
       scrollToCell(rowId, columnId) {
         // Frozen rows and pinned columns are always on screen already.
@@ -501,7 +529,11 @@ export const SpreadsheetGrid = React.forwardRef<
   const virtualColumns = columnVirtualizer.getVirtualItems();
   const canvasWidth = columnVirtualizer.getTotalSize();
   const rowsHeight = rowVirtualizer.getTotalSize();
-  const canvasHeight = rowsHeight + (onInsertRow ? ROW_HEIGHT : 0);
+  // The trailing gutter is what `scrollPaddingEnd` scrolls INTO: without
+  // somewhere to go, the last rows still stop flush against the bottom edge
+  // and their bubbles stay clipped.
+  const canvasHeight =
+    rowsHeight + (onInsertRow ? ROW_HEIGHT : 0) + TOOLTIP_SCROLL_MARGIN;
   const displayColumnCount = getDisplayColumns().length;
 
   return (

@@ -48,6 +48,36 @@ export function choicesFor(rule?: CellRule): string[] | null {
   return null;
 }
 
+/**
+ * What typing a printable character on a selected cell should do.
+ *
+ * The character is chosen before any editor exists, so the editor's own input
+ * filtering cannot see it — a letter typed at a number column would open the
+ * editor already holding the letter. The decision has to be made here.
+ */
+export type SeedAction =
+  /** Open the editor holding the character. */
+  | 'seed'
+  /** Open the editor on the stored value, discarding the character. */
+  | 'open'
+  /** Do nothing at all. */
+  | 'ignore';
+
+export function seedActionFor(
+  rule: CellRule | undefined,
+  char: string
+): SeedAction {
+  switch (editorKindFor(rule)) {
+    case 'number':
+      // Only what could still become a number gets through.
+      return acceptsNumericInput(char) ? 'seed' : 'ignore';
+    case 'readonly':
+      return 'ignore';
+    default:
+      return 'seed';
+  }
+}
+
 // A partially typed number: an optional sign, digits, at most one point. Kept
 // deliberately permissive so "-", "1." and "" are all typeable on the way to a
 // real number — the column's rule is what finally judges the value.

@@ -3,6 +3,7 @@ import {
   choicesFor,
   editorKindFor,
   formatCellDisplay,
+  seedActionFor,
   toEditorValue
 } from '../spreadsheet/fieldEditors';
 
@@ -105,5 +106,31 @@ describe('formatCellDisplay', () => {
       'Alice'
     );
     expect(formatCellDisplay(true, undefined)).toBe('TRUE');
+  });
+});
+
+describe('seedActionFor', () => {
+  const number = { label: 'Age', type: 'number' as const };
+
+  // The character is chosen before an editor exists, so the editor's own
+  // filter never sees it — typing a letter used to open the editor already
+  // holding that letter.
+  test('a number column swallows anything that is not numeric', () => {
+    expect(seedActionFor(number, 'a')).toBe('ignore');
+    expect(seedActionFor(number, '$')).toBe('ignore');
+    expect(seedActionFor(number, '5')).toBe('seed');
+    expect(seedActionFor(number, '-')).toBe('seed');
+  });
+
+  test('a file column cannot be typed into at all', () => {
+    expect(seedActionFor({ label: 'Docs', type: 'file' }, '5')).toBe('ignore');
+  });
+
+  test('everything else takes the character as the start of the edit', () => {
+    expect(seedActionFor({ label: 'Name', type: 'text' }, 'A')).toBe('seed');
+    expect(
+      seedActionFor({ label: 'Tier', type: 'text', options: ['Gold'] }, 'G')
+    ).toBe('seed');
+    expect(seedActionFor(undefined, 'A')).toBe('seed');
   });
 });

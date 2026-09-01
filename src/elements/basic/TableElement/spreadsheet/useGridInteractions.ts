@@ -18,6 +18,7 @@ import {
   parseTsv,
   serializeTsv
 } from './model';
+import type { SeedAction } from './fieldEditors';
 import type { SpreadsheetTable } from './table';
 
 export type EditingCell = {
@@ -44,6 +45,14 @@ type GridInteractionOptions = {
   redo: () => void;
   canEdit: boolean;
   scrollToCell: (rowId: string, columnId: string) => void;
+  /** Hands the keyboard back to the grid once a cell editor closes. */
+  restoreFocus?: () => void;
+  /**
+   * What typing a character on a cell in this column should do. Decided by the
+   * column, because the character is picked before an editor exists to filter
+   * it — which is how a letter used to end up inside a number cell.
+   */
+  seedAction?: (fieldKey: string, char: string) => SeedAction;
   /**
    * Whether a value is one the column would accept. Bulk writes (paste, fill)
    * are filtered through this: typing a bad value is a deliberate act the user
@@ -65,6 +74,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
     redo,
     canEdit,
     scrollToCell,
+    restoreFocus,
+    seedAction,
     acceptsValue,
     onValuesRefused
   } = options;
@@ -170,8 +181,18 @@ export function useGridInteractions(options: GridInteractionOptions) {
         table.moveCellSelection(move);
         scrollToActiveCorner();
       }
+      // The editor being unmounted was holding focus; without this the grid's
+      // keys are bound to an element nothing is focused on any more.
+      restoreFocus?.();
     },
-    [execute, rowIndexById, scrollToActiveCorner, table, valueByIds]
+    [
+      execute,
+      restoreFocus,
+      rowIndexById,
+      scrollToActiveCorner,
+      table,
+      valueByIds
+    ]
   );
 
   /**
@@ -192,7 +213,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [commitCellValue, editing]
   );
 
-  const cancelEditing = React.useCallback(() => setEditing(null), []);
+  const cancelEditing = React.useCallback(() => {
+    setEditing(null);
+    restoreFocus?.();
+  }, [restoreFocus]);
 
   /**
    * Build the patches for every cell inside `bounds`. `getAfter` receives the
@@ -499,13 +523,24 @@ export function useGridInteractions(options: GridInteractionOptions) {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key.length !== 1 || event.nativeEvent.isComposing) return;
 
-      event.preventDefault();
       const active = getActiveRange();
-      if (active) {
-        startEditing(active.anchorRowId, active.anchorColumnId, event.key);
+      if (!active) return;
+
+      const action = seedAction?.(active.anchorColumnId, event.key) ?? 'seed';
+      if (action === 'ignore') {
+        // Swallowed on purpose: the column cannot hold this character, so it
+        // must not open an editor already containing it.
+        event.preventDefault();
+        return;
       }
+      event.preventDefault();
+      startEditing(
+        active.anchorRowId,
+        active.anchorColumnId,
+        action === 'seed' ? event.key : undefined
+      );
     },
-    [canEdit, editing, getActiveRange, startEditing]
+    [canEdit, editing, getActiveRange, seedAction, startEditing]
   );
 
   /**
