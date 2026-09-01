@@ -1419,7 +1419,13 @@ export default class IntegrationClient {
     else return { ok: false, error: (await res?.text()) ?? '' };
   }
 
-  async boxSendFiles(fieldIds: string[]) {
+  async boxSendFiles(
+    fields: {
+      field_id: string;
+      name_field_id?: string;
+      name_field_type?: string;
+    }[]
+  ) {
     const { userId } = initInfo();
     const url = `${API_URL}box/send_files/`;
     const reqOptions = {
@@ -1428,7 +1434,7 @@ export default class IntegrationClient {
       body: JSON.stringify({
         form_key: this.formKey,
         fuser_key: userId,
-        field_ids: fieldIds
+        field_ids: fields
       })
     };
     const res = await this._fetch(url, reqOptions, false);

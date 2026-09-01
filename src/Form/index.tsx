@@ -2818,10 +2818,18 @@ function Form({
         // Nothing uploaded yet: this button may not have any file fields
         // configured, or none of them have a value — either way, silently
         // fall through to the next action rather than erroring.
-        const boxFieldIds = boxFields.map((f: any) => f.field_id);
+        const boxSendFields = boxFields.map((f: any) => ({
+          field_id: f.field_id,
+          ...(f.name_field_id
+            ? {
+                name_field_id: f.name_field_id,
+                name_field_type: f.name_field_type
+              }
+            : {})
+        }));
         if (
           fileCount &&
-          !(await sendBoxFiles(client, setElementError, boxFieldIds))
+          !(await sendBoxFiles(client, setElementError, boxSendFields))
         )
           break;
       } else if (type === ACTION_TRIGGER_PLAID) {

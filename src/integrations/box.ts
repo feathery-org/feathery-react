@@ -4,9 +4,13 @@ const DEFAULT_ERROR =
 export async function sendBoxFiles(
   client: any,
   setElementError: any,
-  fieldIds: string[]
+  fields: {
+    field_id: string;
+    name_field_id?: string;
+    name_field_type?: string;
+  }[]
 ) {
-  const res = await client.boxSendFiles(fieldIds);
+  const res = await client.boxSendFiles(fields);
   // A network failure leaves res.error === '' (integrationClient._fetch
   // returns undefined), which would otherwise show a blank error message.
   if (!res.ok) setElementError(res.error || DEFAULT_ERROR);

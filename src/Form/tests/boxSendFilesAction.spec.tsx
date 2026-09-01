@@ -183,7 +183,7 @@ describe('box_send_files action', () => {
     expect(mockedSendBoxFiles).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
-      [FILE_FIELD_ID]
+      [{ field_id: FILE_FIELD_ID }]
     );
 
     delete (fieldValues as any)[OTHER_FIELD_KEY];
@@ -212,7 +212,43 @@ describe('box_send_files action', () => {
       expect(mockedSendBoxFiles).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        [FILE_FIELD_ID, 'servar-file-2']
+        [{ field_id: FILE_FIELD_ID }, { field_id: 'servar-file-2' }]
+      )
+    );
+  });
+
+  it('passes a configured name field through to sendBoxFiles', async () => {
+    (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
+    GridMod._spies.actions = [
+      {
+        type: 'box_send_files',
+        field_ids: [
+          {
+            field_id: FILE_FIELD_ID,
+            field_type: 'servar',
+            field_key: FILE_FIELD_KEY,
+            name_field_id: 'servar-name-1',
+            name_field_type: 'servar',
+            name_field_key: 'applicant_name'
+          }
+        ]
+      }
+    ];
+
+    render(<JSForm formId='f1' _internalId='iid-box-send-9' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(mockedSendBoxFiles).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        [
+          {
+            field_id: FILE_FIELD_ID,
+            name_field_id: 'servar-name-1',
+            name_field_type: 'servar'
+          }
+        ]
       )
     );
   });
