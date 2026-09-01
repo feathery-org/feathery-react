@@ -25,6 +25,7 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
+import { installTableDeleteGuard, TableDeleteImpact } from './tableDeleteGuard';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
@@ -47,6 +48,12 @@ export interface BindingsOptions {
    * matters: computing a template's formulas is not the user dirtying anything.
    */
   onSuppressContentChange?: (suppressed: boolean) => void;
+  /**
+   * Asked before a table deletion that would orphan formulas elsewhere in the
+   * document (they read values the table holds). Resolving false cancels the
+   * deletion; absent means such deletes proceed without a prompt.
+   */
+  confirmTableDelete?: (impact: TableDeleteImpact) => Promise<boolean>;
   persistence?: DocumentPersistence | null;
   setTimeoutFn?: (fn: () => void, ms: number) => TimerId;
   clearTimeoutFn?: (id: TimerId) => void;
@@ -96,6 +103,7 @@ export function attachBindings(
     onFieldValues,
     onDiagnostics,
     onSuppressContentChange,
+    confirmTableDelete,
     persistence = null,
     setTimeoutFn,
     clearTimeoutFn
@@ -160,6 +168,18 @@ export function attachBindings(
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
     controller.flush({ mode: 'self-heal' });
+  });
+  // Explicit whole-table deletion: lift the content-control locks that made
+  // deleteTable a silent no-op, and confirm/unwrap when the table feeds
+  // formulas elsewhere (tableDeleteGuard has the full story).
+  const uninstallTableDelete = installTableDeleteGuard(editor, {
+    ...(confirmTableDelete ? { confirm: confirmTableDelete } : {}),
+    onDeleted: () => {
+      if (controller.phase !== 'idle') return;
+      const history = editor.editorHistoryModule;
+      if (history?.isUndoing || history?.isRedoing) return;
+      controller.flush({ mode: 'self-heal' });
+    }
   });
 
   const eventful = editor as EventfulEditor;
@@ -239,6 +259,7 @@ export function attachBindings(
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
       step('guard', () => uninstallGuard());
       step('rowCommands', () => unwatchRowCommands());
+      step('tableDelete', () => uninstallTableDelete());
       step('triggers', () => triggers.dispose());
       // Cancels the deferred view restore, which would otherwise read
       // editor.selection ~60ms after the editor was destroyed.
