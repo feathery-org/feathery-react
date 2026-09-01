@@ -370,6 +370,9 @@ const AssistantChat = ({
     if (instanceId) {
       const panelRuntime = getPanelRuntimeSnapshot(instanceId);
       if (panelRuntime) body.panel_runtime = panelRuntime;
+      const transcriptionLanguage = internalState[instanceId]?.language?.trim();
+      if (transcriptionLanguage)
+        body.transcription_language = transcriptionLanguage;
       body.selection = readDocxSelection(getDocxEditor(instanceId));
       // Machine-only executor facts: protocol version and operation names.
       // ai-services intersects these names with its canonical server enum and

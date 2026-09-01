@@ -17,6 +17,9 @@ import {
   _clearDocxEditors
 } from '../docxEditorRegistry';
 import AssistantChat from '../../../AssistantChat';
+import internalState, {
+  setFormInternalState
+} from '../../../../utils/internalState';
 
 // Capture the chat transport options so tests can invoke the real `body()`
 // AssistantChat wires up - that is the exact payload a chat request carries,
@@ -133,6 +136,7 @@ beforeEach(() => {
   (global as any).fetch = fetchMock;
 });
 afterEach(() => {
+  delete internalState['form-1'];
   delete (global as any).fetch;
   jest.restoreAllMocks();
 });
@@ -1035,6 +1039,22 @@ describe('AssistantChat wiring (the regression guard)', () => {
       jest.advanceTimersByTime(INDEX_POLL_MS * 4);
     });
     expect(indexPosts()).toHaveLength(0);
+  });
+
+  it('includes the selected form language in assistant requests', () => {
+    setFormInternalState('form-1', { language: 'ja-JP, en-US' });
+
+    render(
+      <AssistantChat
+        instanceId='form-1'
+        baseUrl={BASE_URL}
+        getTargets={targets()}
+        getJwt={() => 'JWT'}
+      />
+    );
+
+    const transportBody = (globalThis as any).__capturedTransportOpts.body();
+    expect(transportBody.transcription_language).toBe('ja-JP, en-US');
   });
 
   it('cold start gains the mounted editor target, indexes it, and sends it to chat', async () => {
