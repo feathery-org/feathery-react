@@ -54,7 +54,9 @@ const colors = {
   gray700: '#374151',
   gray900: '#111827',
   accent: '#1d4ed8',
+  accentDark: '#1e40af',
   accentSoft: '#eff6ff',
+  accentHeader: '#dbeafe',
   accentTint: 'rgba(29, 78, 216, 0.08)'
 } as const;
 
@@ -162,7 +164,17 @@ export const rowHeaderStyle = {
 
 export const headerSelectedStyle = {
   color: colors.white,
-  backgroundColor: colors.accent
+  backgroundColor: colors.accent,
+  // The base header's hover rule would otherwise repaint the background grey
+  // and leave the selected white text unreadable.
+  '&:hover': { backgroundColor: colors.accentDark }
+} as const;
+
+// (6) The headers of a partly-selected row/column, so the selection's extent
+// is readable off the gutter and header strip.
+export const headerHighlightStyle = {
+  backgroundColor: colors.accentHeader,
+  color: colors.gray900
 } as const;
 
 export const columnHeaderStyle = {
@@ -236,7 +248,8 @@ export const cellStyle = {
   alignItems: 'center',
   height: `${ROW_HEIGHT}px`,
   padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
-  overflow: 'hidden',
+  // NOT `overflow: hidden`: that clips the fill handle straddling the corner.
+  // The value span truncates the text instead.
   // The virtualizer lays cells out every `width` px, so the padding and the
   // grid line must be INSIDE that width — content-box would make each cell
   // overlap its right-hand neighbour and push the selection border past the
@@ -269,9 +282,13 @@ export const cellStyle = {
 
 export const cellValueStyle = {
   display: 'block',
+  // `minWidth: 0` lets this shrink inside the flex cell so the ellipsis
+  // actually engages; the cell itself no longer clips.
   width: '100%',
+  minWidth: 0,
   overflow: 'hidden',
-  textOverflow: 'ellipsis'
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap'
 } as const;
 
 export const cellSelectedStyle = {
@@ -282,6 +299,11 @@ export const cellFocusedStyle = {
   boxShadow: `inset 0 0 0 2px ${colors.accent}`
 } as const;
 
+// Cells are absolutely positioned siblings, so a later one paints its grid
+// line over an earlier one's selection border. Lifting the selected cell keeps
+// the blue above the grey, and lets the fill handle overhang the corner.
+export const cellRaisedStyle = { zIndex: 4 } as const;
+
 export const cellFillPreviewStyle = {
   backgroundImage: `repeating-linear-gradient(135deg, ${colors.accentTint} 0 4px, rgba(29, 78, 216, 0.16) 4px 8px)`,
   outline: `1px dashed ${colors.accent}`,
@@ -290,13 +312,14 @@ export const cellFillPreviewStyle = {
 
 export const fillHandleStyle = {
   position: 'absolute',
-  // Inside the cell: the cell clips its overflow, so an outset handle showed
-  // only as a clipped sliver.
-  right: 0,
-  bottom: 0,
+  // Straddles the bottom-right corner, centred on the grid intersection.
+  // Possible because the cell no longer clips its overflow (the value span
+  // truncates instead) and the selected cell is raised above its neighbours.
+  right: '-4px',
+  bottom: '-4px',
   zIndex: 8,
-  width: '7px',
-  height: '7px',
+  width: '8px',
+  height: '8px',
   backgroundColor: colors.accent,
   border: `1px solid ${colors.white}`,
   cursor: 'crosshair'
@@ -321,9 +344,72 @@ export const cellEditorStyle = {
   WebkitUserSelect: 'text'
 } as const;
 
+// A range's perimeter is deliberately lighter than the 2px ring on the focused
+// cell, so the active cell still reads as the active one inside a selection.
 export const edgeVars = {
-  top: { '--edge-top': '2px' },
-  right: { '--edge-right': '2px' },
-  bottom: { '--edge-bottom': '2px' },
-  left: { '--edge-left': '2px' }
+  top: { '--edge-top': '1px' },
+  right: { '--edge-right': '1px' },
+  bottom: { '--edge-bottom': '1px' },
+  left: { '--edge-left': '1px' }
+} as const;
+
+export const rowMenuStyle = {
+  position: 'fixed',
+  zIndex: 1000,
+  display: 'flex',
+  flexDirection: 'column',
+  minWidth: '180px',
+  padding: '4px',
+  backgroundColor: colors.white,
+  border: `1px solid ${colors.gray300}`,
+  borderRadius: '6px',
+  boxShadow: '0 6px 16px rgba(0, 0, 0, 0.18)',
+  fontFamily: GRID_FONT_FAMILY,
+  fontSize: `${FONT_SIZE - 2}px`,
+  color: colors.gray900
+} as const;
+
+export const rowMenuItemStyle = {
+  display: 'block',
+  width: '100%',
+  padding: '7px 10px',
+  backgroundColor: 'transparent',
+  border: 0,
+  borderRadius: '4px',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  color: 'inherit',
+  textAlign: 'start',
+  '&:hover': { backgroundColor: colors.accentSoft }
+} as const;
+
+// The trailing "add a row" strip, styled as an affordance rather than data.
+export const addRowStripStyle = {
+  ...rowStyle,
+  display: 'flex',
+  alignItems: 'center',
+  height: `${ROW_HEIGHT}px`,
+  padding: 0,
+  backgroundColor: colors.gray50,
+  border: 0,
+  borderTop: `1px solid ${colors.gray200}`,
+  borderBottom: `1px solid ${colors.gray200}`,
+  boxSizing: 'border-box',
+  cursor: 'pointer',
+  fontFamily: GRID_FONT_FAMILY,
+  fontSize: `${FONT_SIZE - 2}px`,
+  color: colors.gray500,
+  textAlign: 'start',
+  '&:hover': { backgroundColor: colors.accentSoft, color: colors.accent }
+} as const;
+
+export const addRowStripLabelStyle = {
+  position: 'sticky',
+  insetInlineStart: 0,
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  paddingInlineStart: `${ROW_HEADER_WIDTH / 2}px`,
+  whiteSpace: 'nowrap'
 } as const;

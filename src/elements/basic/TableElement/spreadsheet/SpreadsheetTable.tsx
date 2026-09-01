@@ -42,6 +42,10 @@ export type SpreadsheetTableProps = {
    * exists so a future source can turn it on without reworking the grid.
    */
   onAddColumn?: AddColumnHandler;
+  /** Supplied when the table allows adding rows. */
+  onInsertRow?: (atIndex: number) => void;
+  /** Supplied when the table allows deleting rows. */
+  onDeleteRow?: (rowIndex: number) => void;
   getCellShading?: GetCellShading;
   /**
    * Bumped by the parent whenever row indices shift (add/delete row), which
@@ -60,6 +64,8 @@ export function SpreadsheetTable({
   heightUnit,
   onCellsEdit,
   onAddColumn,
+  onInsertRow,
+  onDeleteRow,
   getCellShading,
   rowIdentityVersion = 0
 }: SpreadsheetTableProps) {
@@ -133,7 +139,6 @@ export function SpreadsheetTable({
       keepPinnedRows: false
     },
     (state: SpreadsheetTableState) => ({
-      columnOrder: state.columnOrder,
       columnPinning: state.columnPinning,
       columnResizing: state.columnResizing,
       columnSizing: state.columnSizing,
@@ -190,19 +195,6 @@ export function SpreadsheetTable({
     scrollToCell
   });
 
-  const handleReorderColumns = useCallback(
-    (draggedId: string, targetId: string) => {
-      const order = table.getAllLeafColumns().map((column) => column.id);
-      const from = order.indexOf(draggedId);
-      const to = order.indexOf(targetId);
-      if (from < 0 || to < 0) return;
-      const next = [...order];
-      next.splice(to, 0, ...next.splice(from, 1));
-      table.setColumnOrder(next);
-    },
-    [table]
-  );
-
   const fitHeight = useMemo(
     () => spreadsheetViewportHeight(heightUnit, rows.length),
     [heightUnit, rows.length]
@@ -225,8 +217,9 @@ export function SpreadsheetTable({
         canEdit={canEdit}
         rowIndexById={rowIndexById}
         getCellShading={getCellShading}
-        onReorderColumns={handleReorderColumns}
         onAddColumn={onAddColumn}
+        onInsertRow={onInsertRow}
+        onDeleteRow={onDeleteRow}
       />
     </div>
   );

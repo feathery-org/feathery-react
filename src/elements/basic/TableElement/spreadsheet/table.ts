@@ -1,6 +1,5 @@
 import {
   cellSelectionFeature,
-  columnOrderingFeature,
   columnPinningFeature,
   columnResizingFeature,
   columnSizingFeature,
@@ -42,7 +41,6 @@ export type SpreadsheetColumnMeta = {
  */
 export const spreadsheetFeatures = tableFeatures({
   cellSelectionFeature,
-  columnOrderingFeature,
   columnPinningFeature,
   columnResizingFeature,
   columnSizingFeature,
@@ -54,11 +52,7 @@ export type SpreadsheetFeatures = typeof spreadsheetFeatures;
 
 export type SpreadsheetTableState = Pick<
   TableState<SpreadsheetFeatures>,
-  | 'columnOrder'
-  | 'columnPinning'
-  | 'columnResizing'
-  | 'columnSizing'
-  | 'rowPinning'
+  'columnPinning' | 'columnResizing' | 'columnSizing' | 'rowPinning'
 >;
 
 export type SpreadsheetTable = ReactTable<

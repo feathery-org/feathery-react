@@ -68,6 +68,7 @@ type UseHubTableSourceReturn = {
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
   handleCellsEdit: (writes: CellWrite[]) => void;
   handleAddRow: () => void;
+  handleInsertRow: (atIndex: number) => void;
   handleDeleteRow: (rowIndex: number) => void;
 };
 
@@ -376,21 +377,30 @@ export function useHubTableSource({
     [handleCellsEdit]
   );
 
-  const handleAddRow = useCallback(() => {
-    const data = Object.fromEntries(
-      Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
-    );
-    commitRows([
-      {
-        localId: `new:${nextLocalId.current++}`,
-        entryId: null,
-        data,
-        verified: true
-      },
-      ...rowsRef.current
-    ]);
-    setErrors([]);
-  }, [syntheticToHubKey, commitRows]);
+  const handleInsertRow = useCallback(
+    (atIndex: number) => {
+      const data = Object.fromEntries(
+        Object.values(syntheticToHubKey).map((hubFieldKey) => [hubFieldKey, ''])
+      );
+      const rows = rowsRef.current;
+      const at = Math.max(0, Math.min(atIndex, rows.length));
+      commitRows([
+        ...rows.slice(0, at),
+        {
+          localId: `new:${nextLocalId.current++}`,
+          entryId: null,
+          data,
+          // A row the user just added is theirs to fill in, never staged data.
+          verified: true
+        },
+        ...rows.slice(at)
+      ]);
+      setErrors([]);
+    },
+    [syntheticToHubKey, commitRows]
+  );
+
+  const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
 
   const handleDeleteRow = useCallback(
     (rowIndex: number) => {
@@ -434,6 +444,7 @@ export function useHubTableSource({
     handleCellEdit,
     handleCellsEdit,
     handleAddRow,
+    handleInsertRow,
     handleDeleteRow
   };
 }
