@@ -447,30 +447,9 @@ describe('Data Hub verification filter', () => {
     expect(result.current.canAddRows).toBe(false);
   });
 
-  test('marks unverified rows read-only', async () => {
-    const dataHubAction = jest.fn(({ operation }) =>
-      operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
-    );
-    const { result } = setup(dataHubAction, 'all');
-    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
-
-    expect(result.current.isRowEditable(0)).toBe(true);
-    expect(result.current.isRowEditable(1)).toBe(false);
-  });
-
-  test('an unlabelled entry is treated as verified', async () => {
-    // With the default filter the Hub does not label entries at all.
-    const dataHubAction = jest.fn(({ operation }) =>
-      operation === 'get'
-        ? Promise.resolve([{ id: 'entry1', data: { name: 'Alice' } }])
-        : Promise.resolve({})
-    );
-    const { result } = setup(dataHubAction);
-    await waitFor(() => expect(result.current.entryIds).toHaveLength(1));
-    expect(result.current.isRowEditable(0)).toBe(true);
-  });
-
-  test('never writes to an unverified row', async () => {
+  test('correcting an unverified row names that set on the update', async () => {
+    // Update defaults to the verified set server-side, so a staged row has to
+    // be targeted explicitly or the write would match nothing.
     const dataHubAction = jest.fn(({ operation }) =>
       operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
     );
@@ -484,12 +463,41 @@ describe('Data Hub verification filter', () => {
       ])
     );
 
-    // Server-side this would match zero rows and read as a silent success.
-    await waitFor(() => expect(dataHubAction).not.toHaveBeenCalled());
-    expect(result.current.hubFieldValues[key('name')][1]).toBe('Bob');
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub1',
+      operation: 'update',
+      verification: 'unverified',
+      where: [{ entryId: 'entry2' }],
+      data: { name: 'Robert' }
+    });
+    expect(result.current.hubFieldValues[key('name')][1]).toBe('Robert');
   });
 
-  test('a mixed batch still writes the verified rows', async () => {
+  test('a verified row is updated without a verification filter', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
+    );
+    const { result } = setup(dataHubAction, 'all');
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+    dataHubAction.mockClear();
+
+    act(() =>
+      result.current.handleCellsEdit([
+        { fieldKey: key('name'), rowIndex: 0, value: 'Alicia' }
+      ])
+    );
+
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub1',
+      operation: 'update',
+      where: [{ entryId: 'entry1' }],
+      data: { name: 'Alicia' }
+    });
+  });
+
+  test('a mixed batch writes each row against its own set', async () => {
     const dataHubAction = jest.fn(({ operation }) =>
       operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
     );
@@ -504,16 +512,17 @@ describe('Data Hub verification filter', () => {
       ])
     );
 
-    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
-    expect(dataHubAction).toHaveBeenCalledWith({
-      hubId: 'hub1',
-      operation: 'update',
-      where: [{ entryId: 'entry1' }],
-      data: { name: 'Alicia' }
-    });
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(2));
+    const calls = dataHubAction.mock.calls.map(([options]: any[]) => options);
+    expect(calls.find((c) => c.where[0].entryId === 'entry1').verification).toBe(
+      undefined
+    );
+    expect(calls.find((c) => c.where[0].entryId === 'entry2').verification).toBe(
+      'unverified'
+    );
   });
 
-  test('deleting an unverified row is refused', async () => {
+  test('deleting an unverified row targets that set too', async () => {
     const dataHubAction = jest.fn(({ operation }) =>
       operation === 'get' ? Promise.resolve(mixedEntries) : Promise.resolve({})
     );
@@ -523,8 +532,13 @@ describe('Data Hub verification filter', () => {
 
     act(() => result.current.handleDeleteRow(1));
 
-    // It would disappear locally and return on the next load.
-    expect(result.current.entryIds).toHaveLength(2);
-    await waitFor(() => expect(dataHubAction).not.toHaveBeenCalled());
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub1',
+      operation: 'delete',
+      verification: 'unverified',
+      where: [{ entryId: 'entry2' }]
+    });
+    expect(result.current.entryIds).toEqual(['entry1']);
   });
 });

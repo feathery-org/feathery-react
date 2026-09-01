@@ -1,11 +1,14 @@
 // Layout constants. Rows and the header are fixed-height because the row
 // virtualizer, the frozen-row region offset and the drag hit-testing all size
 // themselves from these numbers.
-export const ROW_HEIGHT = 24;
-export const HEADER_HEIGHT = 26;
-export const ROW_HEADER_WIDTH = 42;
-export const DEFAULT_COLUMN_WIDTH = 140;
-export const MIN_COLUMN_WIDTH = 56;
+export const ROW_HEIGHT = 32;
+export const HEADER_HEIGHT = 34;
+export const ROW_HEADER_WIDTH = 46;
+// Cell text size. Rows and the header are sized off this, so bumping one
+// without the other would clip descenders.
+export const FONT_SIZE = 16;
+export const DEFAULT_COLUMN_WIDTH = 160;
+export const MIN_COLUMN_WIDTH = 64;
 export const CELL_HORIZONTAL_PADDING = 10;
 
 // With no sized height there is nothing to scroll inside, so an unbounded grid
@@ -58,7 +61,7 @@ export const gridStyle = {
   outline: 'none',
   overscrollBehavior: 'contain',
   backgroundColor: colors.white,
-  cursor: 'cell',
+  cursor: 'default',
   userSelect: 'none',
   WebkitUserSelect: 'none'
 } as const;
@@ -112,7 +115,7 @@ const gutterBase = {
   border: 0,
   borderRight: `1px solid ${colors.gray300}`,
   borderBottom: `1px solid ${colors.gray200}`,
-  fontSize: '10px',
+  fontSize: `${FONT_SIZE - 4}px`,
   fontVariantNumeric: 'tabular-nums',
   textAlign: 'center',
   userSelect: 'none'
@@ -161,7 +164,7 @@ export const columnHeaderLabelStyle = {
   width: '100%',
   overflow: 'hidden',
   color: colors.gray900,
-  fontSize: '11px',
+  fontSize: `${FONT_SIZE - 2}px`,
   fontWeight: 600,
   textAlign: 'center',
   textOverflow: 'ellipsis',
@@ -213,15 +216,18 @@ export const cellStyle = {
   borderRight: `1px solid ${colors.gray200}`,
   borderBottom: `1px solid ${colors.gray200}`,
   outline: 'none',
-  cursor: 'cell',
-  fontSize: '11px',
+  cursor: 'default',
+  fontSize: `${FONT_SIZE}px`,
   whiteSpace: 'nowrap',
-  // The selection outline is drawn on a pseudo-element so a range border can
-  // straddle the 1px grid lines without shifting any cell's box.
+  // The selection outline is drawn on a pseudo-element so it can appear on any
+  // subset of edges without shifting the cell's box. It sits INSIDE the cell:
+  // an outset border overhangs the neighbouring cell, which is a later
+  // absolutely-positioned sibling and so paints over it — the right edge of a
+  // range would go missing.
   '&::after': {
     position: 'absolute',
     zIndex: 3,
-    inset: '-1px',
+    inset: 0,
     borderColor: colors.accent,
     borderStyle: 'solid',
     borderWidth:
@@ -276,7 +282,7 @@ export const cellEditorStyle = {
   border: `2px solid ${colors.accent}`,
   outline: 'none',
   cursor: 'text',
-  fontSize: '11px',
+  fontSize: `${FONT_SIZE}px`,
   fontFamily: 'inherit',
   userSelect: 'text',
   WebkitUserSelect: 'text'

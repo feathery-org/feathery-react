@@ -321,39 +321,18 @@ function TableElement({
    * with the validation message, instead of the failure only appearing in the
    * banner above the table.
    */
+  // Feathery-controlled cell shading. Its one source is a Data Hub write the
+  // backend rejected: the cell keeps its rolled-back value and is tinted with
+  // the validation message, instead of the failure only showing in the banner.
   const hubCellErrors = isHub ? hub.cellErrors : undefined;
-  const hubIsRowEditable = isHub ? hub.isRowEditable : undefined;
-
-  // Unverified Hub rows are read-only: update, delete and create all filter on
-  // `verified=True` server-side, so an edit here would match nothing and look
-  // like a silent success.
-  const isCellEditable = useMemo(() => {
-    if (!hubIsRowEditable) return undefined;
-    return (rowIndex: number) => hubIsRowEditable(rowIndex);
-  }, [hubIsRowEditable]);
-
   const getCellShading = useMemo<GetCellShading | undefined>(() => {
-    const hasErrors = !!hubCellErrors && !!Object.keys(hubCellErrors).length;
-    if (!hasErrors && !hubIsRowEditable) return undefined;
+    if (!hubCellErrors || !Object.keys(hubCellErrors).length) return undefined;
     return ({ rowIndex, fieldKey }) => {
-      const message = hubCellErrors?.[`${rowIndex}:${fieldKey}`];
-      if (message) {
-        return {
-          backgroundColor: '#fef2f2',
-          borderColor: '#ef4444',
-          message
-        };
-      }
-      if (hubIsRowEditable && !hubIsRowEditable(rowIndex)) {
-        return {
-          backgroundColor: '#f9fafb',
-          textColor: '#6b7280',
-          message: 'Unverified row — read only until it is verified'
-        };
-      }
-      return null;
+      const message = hubCellErrors[`${rowIndex}:${fieldKey}`];
+      if (!message) return null;
+      return { backgroundColor: '#fef2f2', borderColor: '#ef4444', message };
     };
-  }, [hubCellErrors, hubIsRowEditable]);
+  }, [hubCellErrors]);
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
   useEffect(() => {
@@ -435,7 +414,6 @@ function TableElement({
           heightUnit={element.styles?.height_unit}
           onCellsEdit={spreadsheetCellsEdit}
           onAddColumn={handleAddColumn}
-          isCellEditable={isCellEditable}
           getCellShading={getCellShading}
           rowIdentityVersion={rowIdentityVersion}
         />
