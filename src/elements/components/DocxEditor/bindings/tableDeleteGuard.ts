@@ -150,12 +150,17 @@ export function installTableDeleteGuard(
     }
   };
 
-  // Unwraps happen BEFORE the delete, each as its own native history entry
-  // (grouping via initComplexHistory on top of DeleteTable's table clone
-  // corrupts history teardown - same fragility rowCommandWatch documents).
-  // This order keeps every undo depth consistent: undoing the delete alone
-  // brings the table back while the prose keeps its plain numbers; further
-  // undos re-wrap the prose formulas, whose inputs exist again.
+  // Unwraps happen BEFORE the delete, then the whole set is one grouped
+  // history entry, so a single undo restores the table and re-wraps the prose
+  // formulas together (group revert runs children last-to-first: the table
+  // reflow lands before the InsertText undos, which replay through
+  // hierarchical positions and so survive it). Grouping is safe with THESE
+  // entry types: the earlier teardown crash came from removeContentControl's
+  // revert pushing its own entry onto the undo stack while it also stayed in
+  // the group's modifiedActions - double membership, double destroy, and the
+  // second destroy reads the owner the first one nulled. InsertText and
+  // DeleteTable revert through the standard path where only the group moves
+  // between stacks.
   const performDelete = (
     impact: TableDeleteImpact,
     self: unknown,
@@ -163,6 +168,16 @@ export function installTableDeleteGuard(
     anchor: string
   ): unknown => {
     const tags = impact.orphans.flatMap((orphan) => orphan.tags);
+    const history = editor.editorHistoryModule as Record<string, any> | null;
+    let grouped = false;
+    if (
+      tags.length &&
+      !history?.currentHistoryInfo &&
+      typeof module.initComplexHistory === 'function'
+    ) {
+      module.initComplexHistory('Grouping');
+      grouped = true;
+    }
     running = true;
     try {
       if (tags.length) {
@@ -183,6 +198,7 @@ export function installTableDeleteGuard(
       );
     } finally {
       running = false;
+      if (grouped) history?.updateComplexHistory?.();
       try {
         options.onDeleted?.();
       } catch {
