@@ -126,6 +126,10 @@ export default function useSelectProps({
       components: selectComponentsOverride,
       placeholder: '',
 
+      // 'auto' flips the menu above the control when it won't fit below;
+      // the default 'bottom' grows the page's scrollable area instead.
+      menuPlacement: 'auto' as const,
+
       // Menu behavior - open across picks; single mode closes in handleChange
       openMenuOnClick: !collapseSelected,
       closeMenuOnSelect: false,
