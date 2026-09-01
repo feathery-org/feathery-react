@@ -126,6 +126,11 @@ export default function useSelectProps({
       components: selectComponentsOverride,
       placeholder: '',
 
+      // With under minMenuHeight of room below even after scrolling, 'auto'
+      // flips the menu above the control; the default 'bottom' instead grows
+      // the page's scrollable area and scrolls to it. Decided once per open.
+      menuPlacement: 'auto' as const,
+
       // Menu behavior - open across picks; single mode closes in handleChange
       openMenuOnClick: !collapseSelected,
       closeMenuOnSelect: false,
