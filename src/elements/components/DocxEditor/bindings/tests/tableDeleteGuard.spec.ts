@@ -77,6 +77,11 @@ const flush = async () => {
   for (let i = 0; i < 4; i++) await Promise.resolve();
 };
 
+/** Occurrences of a literal value string in the serialized document. */
+function countOf(editor: DocumentEditor, value: string): number {
+  return editor.serialize().split(value).length - 1;
+}
+
 describe('installTableDeleteGuard', () => {
   let editor: DocumentEditor;
   let uninstall: () => void = () => undefined;
@@ -178,13 +183,15 @@ describe('installTableDeleteGuard', () => {
     const partial = scan(editor);
     expect(partial.tables.has('costs')).toBe(true);
     expect(partial.formulas.has('combined_total')).toBe(false);
-    // Two more undos re-wrap the prose formulas.
-    history.undo();
-    history.undo();
+    // The remaining undos re-wrap the prose formulas.
+    for (let i = 0; i < 20 && history.canUndo(); i++) history.undo();
     const restored = scan(editor);
     expect(restored.tables.has('costs')).toBe(true);
     expect(restored.formulas.has('grand_total')).toBe(true);
     expect(restored.formulas.has('combined_total')).toBe(true);
+    // The restore must not duplicate the value text beside the re-wrapped
+    // control ('$9,500.00' exists exactly once in the original document).
+    expect(countOf(editor, '$9,500.00')).toBe(1);
     // Editing after the undos clears the redo stack; that teardown crashing
     // is exactly what grouped complex history did, so pin that it does not.
     (editor as any).editorModule.insertText('x');

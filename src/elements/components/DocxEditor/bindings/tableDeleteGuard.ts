@@ -113,14 +113,21 @@ export function installTableDeleteGuard(
    * Unwrap every attached control carrying one of the tags to plain text -
    * except copies inside the doomed table, which the delete takes anyway (a
    * repeated formula shares one tag across all its occurrences).
+   *
+   * Each unwrap types the control's value over the whole selected control: one
+   * ordinary InsertText history entry whose undo replays through hierarchical
+   * position indexes. NOT editorModule.removeContentControl(): its undo
+   * re-splices the captured marker elements at captured line indexes
+   * (base-history-info revertContentControl), which go stale as soon as the
+   * table restore reflows the paragraph - the control comes back empty next to
+   * the text and the engine then writes the value into it, duplicating it.
    */
   const unwrapControls = (tags: string[], doomed: Set<unknown>): void => {
     const selection = anyEditor.selection as any;
-    if (!selection?.selectContentControl || !module.removeContentControl)
-      return;
+    if (!selection?.selectContentControl || !module.insertText) return;
     pruneDetachedContentControls(editor);
     for (const tag of tags) {
-      // removeContentControl reindexes the collection - re-query every pass.
+      // Unwrapping reindexes the collection - re-query every pass.
       for (let safety = 0; safety < 100; safety++) {
         const collection =
           editor.documentHelper?.contentControlCollection ?? [];
@@ -131,12 +138,13 @@ export function installTableDeleteGuard(
             !isInsideAny(entry, doomed)
         );
         if (!control) break;
+        // Content-only selection reads the display value...
+        selection.selectContentControlInternal?.(control);
+        const value = String(selection.text ?? '');
+        // ...then the whole control (markers included) gets typed over.
         selection.selectContentControl(control);
-        // removeContentControl acts on currentContentControl, which the outer
-        // whole-range selection does not always set; select inside then.
-        if (!selection.currentContentControl)
-          selection.selectContentControlInternal?.(control);
-        module.removeContentControl();
+        if (value) module.insertText(value);
+        else module.delete?.();
         pruneDetachedContentControls(editor);
       }
     }
@@ -158,7 +166,11 @@ export function installTableDeleteGuard(
     running = true;
     try {
       if (tags.length) {
-        unwrapControls(tags, doomedTableWidgets());
+        // insertText/delete are gated like everything else; the whole-control
+        // selection is exactly what the lock would otherwise block.
+        withContentControlLocksBypassed(module, () =>
+          unwrapControls(tags, doomedTableWidgets())
+        );
         try {
           // Unwrapping moved the selection; the delete acts on the anchor.
           if (anchor) anyEditor.selection?.select?.(anchor, anchor);
