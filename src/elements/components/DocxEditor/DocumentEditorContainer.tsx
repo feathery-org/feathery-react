@@ -24,6 +24,10 @@ import {
 } from '../../../assistant/tools/docx/docxEditorRegistry';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
+import {
+  EDITOR_REFRESH_EVENT,
+  PENDING_EDITOR_DRAFTS_KEY
+} from '../../../Form/envelopeActions';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -83,8 +87,8 @@ interface RefreshEventDetail {
 
 // Fired by the Generate Documents action targeting this container so an
 // already mounted editor reloads the freshly generated envelope.
-const REFRESH_EVENT = 'feathery-docx-editor-refresh';
-const PENDING_DRAFTS_KEY = '__featheryDocxEditorDrafts';
+const REFRESH_EVENT = EDITOR_REFRESH_EVENT;
+const PENDING_DRAFTS_KEY = PENDING_EDITOR_DRAFTS_KEY;
 
 /**
  * FLIP THIS TO TEST DOCUMENT BINDINGS. Ships false.
