@@ -4,6 +4,7 @@ import { useHubTableSource } from '../useHubTableSource';
 import type { HubVerification } from '../useHubTableSource';
 import { useTableMutations } from '../useTableMutations';
 import { useSpreadsheetHistory } from '../spreadsheet/useSpreadsheetHistory';
+import { usePendingEdits } from '../spreadsheet/usePendingEdits';
 import type { CellWrite } from '../types';
 
 const COLUMNS = [
@@ -540,5 +541,87 @@ describe('Data Hub verification filter', () => {
       where: [{ entryId: 'entry2' }]
     });
     expect(result.current.entryIds).toEqual(['entry1']);
+  });
+});
+
+
+describe('usePendingEdits', () => {
+  test('holds one entry per cell, not per keystroke', () => {
+    const { result } = renderHook(() => usePendingEdits());
+
+    act(() => result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '1' }]));
+    act(() => result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '2' }]));
+
+    expect(result.current.count).toBe(1);
+    expect(result.current.writes).toEqual([
+      { fieldKey: 'a', rowIndex: 0, value: '2' }
+    ]);
+  });
+
+  test('a field key containing a colon survives the round trip', () => {
+    const { result } = renderHook(() => usePendingEdits());
+    act(() =>
+      result.current.record([{ fieldKey: 'a:b:c', rowIndex: 7, value: 'x' }])
+    );
+    expect(result.current.writes).toEqual([
+      { fieldKey: 'a:b:c', rowIndex: 7, value: 'x' }
+    ]);
+  });
+
+  test('deleting a row drops the edits that were queued for it', () => {
+    const { result } = renderHook(() => usePendingEdits());
+    act(() =>
+      result.current.record([
+        { fieldKey: 'a', rowIndex: 0, value: '0' },
+        { fieldKey: 'a', rowIndex: 1, value: '1' }
+      ])
+    );
+
+    act(() => result.current.recordDelete(1));
+
+    expect(result.current.isRowDeleted(1)).toBe(true);
+    expect(result.current.writes).toEqual([
+      { fieldKey: 'a', rowIndex: 0, value: '0' }
+    ]);
+    // The edit is gone, the deletion takes its place.
+    expect(result.current.count).toBe(2);
+  });
+
+  test('deletions come back highest-index-first so they stay applicable', () => {
+    const { result } = renderHook(() => usePendingEdits());
+    act(() => {
+      result.current.recordDelete(0);
+      result.current.recordDelete(4);
+      result.current.recordDelete(2);
+    });
+    expect(result.current.deletedRows).toEqual([4, 2, 0]);
+  });
+
+  test('an inserted row renumbers the edits at and below it', () => {
+    const { result } = renderHook(() => usePendingEdits());
+    act(() =>
+      result.current.record([
+        { fieldKey: 'a', rowIndex: 0, value: 'above' },
+        { fieldKey: 'a', rowIndex: 2, value: 'below' }
+      ])
+    );
+    act(() => result.current.recordDelete(3));
+
+    act(() => result.current.shiftForInsert(2));
+
+    expect(result.current.writes).toEqual(
+      expect.arrayContaining([
+        { fieldKey: 'a', rowIndex: 0, value: 'above' },
+        { fieldKey: 'a', rowIndex: 3, value: 'below' }
+      ])
+    );
+    expect(result.current.deletedRows).toEqual([4]);
+  });
+
+  test('discard empties the buffer', () => {
+    const { result } = renderHook(() => usePendingEdits());
+    act(() => result.current.record([{ fieldKey: 'a', rowIndex: 0, value: '1' }]));
+    act(() => result.current.discard());
+    expect(result.current.count).toBe(0);
   });
 });

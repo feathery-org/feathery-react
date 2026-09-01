@@ -23,6 +23,7 @@ import {
   cellZIndex,
   cellSelectedStyle,
   cellStyle,
+  cellTooltipStyle,
   cellValueStyle,
   columnHeaderLabelStyle,
   columnHeaderStyle,
@@ -60,6 +61,8 @@ import type { GridInteractions } from './useGridInteractions';
 
 export type SpreadsheetGridHandle = {
   scrollToCell: (rowId: string, columnId: string) => void;
+  /** Returns keyboard focus to the grid, e.g. after a control above it acts. */
+  focus: () => void;
 };
 
 type SpreadsheetGridProps = {
@@ -217,6 +220,9 @@ export const SpreadsheetGrid = React.forwardRef<
   React.useImperativeHandle(
     forwardedRef,
     () => ({
+      focus() {
+        scrollRef.current?.focus({ preventScroll: true });
+      },
       scrollToCell(rowId, columnId) {
         // Frozen rows and pinned columns are always on screen already.
         const isFrozenRow = topRows.some((row) => row.id === rowId);
@@ -921,6 +927,9 @@ function SpreadsheetRowView({
 
   const shared = {
     rowIndex,
+    // The last rows have nothing below them to open into, and the grid scrolls
+    // the focused cell to the edge rather than past it.
+    tooltipAbove: rowIndex >= table.getRowsInDisplayOrder().length - 1,
     selection,
     fillPreview,
     table,
@@ -1010,6 +1019,8 @@ type SpreadsheetCellProps = {
   canEdit: boolean;
   rowIndexById: Map<string, number>;
   getCellShading?: GetCellShading;
+  /** Flip the error bubble above the cell when there is no room below it. */
+  tooltipAbove: boolean;
   left?: number;
   pinned?: 'start' | 'end';
   onStartFill: (event: React.MouseEvent, source: GridBounds) => void;
@@ -1026,6 +1037,7 @@ function SpreadsheetCell({
   canEdit,
   rowIndexById,
   getCellShading,
+  tooltipAbove,
   left,
   pinned,
   onStartFill
@@ -1061,6 +1073,7 @@ function SpreadsheetCell({
     columnIndex,
     value
   });
+  const showTooltip = Boolean(isFocused && !isEditing && shading?.message);
 
   return (
     <div
@@ -1069,7 +1082,9 @@ function SpreadsheetCell({
       aria-colindex={columnIndex + 1}
       aria-selected={isSelected}
       aria-readonly={!canEdit || undefined}
-      title={shading?.message}
+      // The focused cell shows the message as a bubble instead, so the native
+      // tooltip would be a duplicate of it.
+      title={showTooltip ? undefined : shading?.message}
       data-row-id={cell.row.id}
       data-column-id={cell.column.id}
       data-feathery-field={cell.column.id}
@@ -1128,6 +1143,15 @@ function SpreadsheetCell({
       ) : (
         <span css={cellValueStyle}>{formatRenderedValue(value)}</span>
       )}
+      {showTooltip ? (
+        <span
+          role='tooltip'
+          className={TABLE_CLASS.gridCellTooltip}
+          css={cellTooltipStyle(shading?.severity !== 'warning', tooltipAbove)}
+        >
+          {shading?.message}
+        </span>
+      ) : null}
       {showFillHandle ? (
         <span
           className={TABLE_CLASS.gridFillHandle}

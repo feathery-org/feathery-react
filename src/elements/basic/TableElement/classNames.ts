@@ -46,5 +46,10 @@ export const TABLE_CLASS = {
   gridFillHandle: 'feathery-table-grid-fill-handle',
   gridRowMenu: 'feathery-table-grid-row-menu',
   gridRowMenuItem: 'feathery-table-grid-row-menu-item',
-  gridAddRow: 'feathery-table-grid-add-row'
+  gridAddRow: 'feathery-table-grid-add-row',
+  gridPendingBar: 'feathery-table-grid-pending-bar',
+  gridIssueStep: 'feathery-table-grid-issue-step',
+  gridSaveButton: 'feathery-table-grid-save-button',
+  gridDiscardButton: 'feathery-table-grid-discard-button',
+  gridCellTooltip: 'feathery-table-grid-cell-tooltip'
 } as const;

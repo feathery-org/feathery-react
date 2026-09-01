@@ -51,6 +51,12 @@ export type CellShading = {
   borderColor?: string;
   /** Surfaced as the cell's title/aria-description, e.g. the validation error. */
   message?: string;
+  /**
+   * How serious the message is. `error` blocks a save; `warning` is advisory
+   * (a staged Data Hub row is not held to the hub's field rules until it is
+   * verified). Drives the color of the bubble shown on the focused cell.
+   */
+  severity?: 'error' | 'warning';
 };
 
 export type CellShadingContext = {
