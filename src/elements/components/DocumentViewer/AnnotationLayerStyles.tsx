@@ -13,20 +13,26 @@ import { Global, css } from '@emotion/react';
 // are injected as an emotion global style instead of importing the stylesheet
 // directly. Keep this scoped to the DocumentViewer lazy chunk.
 //
-// pdf.js sizes the layer via `setLayerDimensions`, which reads the
-// `--scale-factor` CSS custom property from the layer div itself (set at
-// render time in DocumentCanvas.tsx), not from this stylesheet —
-// --scale-factor is only declared here as a safe default for any late paint
-// before the first render call completes. --total-scale-factor is what 5.x's
-// widget-sizing rules consume; pdf.js derives it from --scale-factor, so it
-// is aliased here for the same pre-render window.
+// pdf.js sizes the layer via `setLayerDimensions`, whose width/height are CSS
+// expressions over custom properties: `round(down, var(--total-scale-factor) *
+// <page size>px, var(--scale-round-x))`. In pdf.js's own viewer those
+// properties are defined by its `.pdfViewer .page` rule; here the layer div is
+// that scope, so the same definitions live on `.annotationLayer` below. They
+// are load-bearing: `var(--scale-round-x)` has no fallback, so leaving it
+// undefined makes the whole width expression invalid and collapses the layer
+// (and every widget in it) to 0x0. `--scale-factor` itself is set on the div
+// at render time in DocumentCanvas.tsx; the declaration below is only a safe
+// default for any late paint before the first render call completes.
 export default function AnnotationLayerStyles() {
   return (
     <Global
       styles={css`
         .annotationLayer {
           --scale-factor: 1;
-          --total-scale-factor: var(--scale-factor);
+          --user-unit: 1;
+          --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+          --scale-round-x: 1px;
+          --scale-round-y: 1px;
           --annotation-unfocused-field-background: url("data:image/svg+xml;charset=UTF-8,<svg width='1px' height='1px' xmlns='http://www.w3.org/2000/svg'><rect width='100%' height='100%' style='fill:rgba(0, 54, 255, 0.13);'/></svg>");
           --input-focus-border-color: Highlight;
           --input-focus-outline: 1px solid Canvas;
