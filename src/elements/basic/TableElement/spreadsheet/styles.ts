@@ -275,14 +275,18 @@ export const cellStyle = {
   fontSize: `${FONT_SIZE}px`,
   whiteSpace: 'nowrap',
   // The selection outline is drawn on a pseudo-element so it can appear on any
-  // subset of edges without shifting the cell's box. It sits INSIDE the cell:
-  // an outset border overhangs the neighbouring cell, which is a later
-  // absolutely-positioned sibling and so paints over it — the right edge of a
-  // range would go missing.
+  // subset of edges without shifting the cell's box.
+  //
+  // `inset: -1px` is load-bearing. An absolutely positioned pseudo-element is
+  // laid out against the PADDING box, which sits inside this cell's own 1px
+  // grid line — at `inset: 0` the blue is drawn one pixel in and the grey line
+  // still shows outside it. Pulling out by 1px puts the border exactly on the
+  // grid line it replaces. Safe because the cell no longer clips its overflow
+  // and both the cell and its row are raised above their neighbours.
   '&::after': {
     position: 'absolute',
     zIndex: 3,
-    inset: 0,
+    inset: '-1px',
     borderColor: colors.accent,
     borderStyle: 'solid',
     borderWidth:
@@ -307,8 +311,14 @@ export const cellSelectedStyle = {
   backgroundColor: colors.accentSoft
 } as const;
 
+// The focused cell's ring reuses the ::after border so it sits on the grid line
+// like the range perimeter does, just thicker. An inset box-shadow would be
+// drawn inside the border and read as misaligned against the 1px perimeter.
 export const cellFocusedStyle = {
-  boxShadow: `inset 0 0 0 2px ${colors.accent}`
+  '--edge-top': '2px',
+  '--edge-right': '2px',
+  '--edge-bottom': '2px',
+  '--edge-left': '2px'
 } as const;
 
 /**
@@ -332,16 +342,23 @@ export const cellFillPreviewStyle = {
   outlineOffset: '-2px'
 } as const;
 
+const FILL_HANDLE_SIZE = 10;
+
 export const fillHandleStyle = {
   position: 'absolute',
-  // Straddles the bottom-right corner, centred on the grid intersection.
-  // Possible because the cell no longer clips its overflow (the value span
-  // truncates instead) and the selected cell is raised above its neighbours.
-  right: '-4px',
-  bottom: '-4px',
+  // Centred on the grid intersection at the range's bottom-right corner, so
+  // half of it sits outside the cell. Possible because the cell no longer
+  // clips its overflow (the value span truncates instead) and both the cell
+  // and its row are raised above their neighbours.
+  right: `-${FILL_HANDLE_SIZE / 2}px`,
+  bottom: `-${FILL_HANDLE_SIZE / 2}px`,
   zIndex: 8,
-  width: '8px',
-  height: '8px',
+  // A true square: border-box keeps the white ring inside the given size, and
+  // the radius is stated so no ambient rounding can reach it.
+  boxSizing: 'border-box',
+  width: `${FILL_HANDLE_SIZE}px`,
+  height: `${FILL_HANDLE_SIZE}px`,
+  borderRadius: 0,
   backgroundColor: colors.accent,
   border: `1px solid ${colors.white}`,
   cursor: 'crosshair'
