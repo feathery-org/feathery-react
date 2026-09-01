@@ -32,6 +32,15 @@ const INPUT_TYPES: Record<string, string> = {
 };
 
 /**
+ * Input types with a text selection to move a caret around in.
+ *
+ * `setSelectionRange` THROWS `InvalidStateError` on the others — and a throw
+ * inside the layout effect below tears down the whole grid, not just the cell.
+ * A date input is exactly that case.
+ */
+const SELECTABLE_TYPES = new Set(['text', 'search', 'url', 'tel', 'password']);
+
+/**
  * The editor for one cell, shaped by what the column actually holds: a fixed
  * set of values is picked, a date gets the native picker, a number refuses
  * letters outright, and an upload reference cannot be typed at all.
@@ -62,6 +71,8 @@ export function CellEditor({
     const input = inputRef.current;
     if (!input) return;
     input.focus({ preventScroll: true });
+    // A picker has no caret to place, and asking for one throws.
+    if (!SELECTABLE_TYPES.has(input.type)) return;
     if (seeded) {
       // Type-to-edit must NOT select: the character that opened the editor
       // would be highlighted, and the next keystroke would replace it — which

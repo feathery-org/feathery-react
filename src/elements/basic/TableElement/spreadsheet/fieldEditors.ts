@@ -73,6 +73,11 @@ export function seedActionFor(
       return acceptsNumericInput(char) ? 'seed' : 'ignore';
     case 'readonly':
       return 'ignore';
+    case 'date':
+    case 'datetime':
+      // A picker takes a whole date, not a character, so open it on the stored
+      // value rather than seeding a fragment it would only discard.
+      return 'open';
     default:
       return 'seed';
   }

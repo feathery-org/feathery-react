@@ -122,6 +122,13 @@ describe('seedActionFor', () => {
     expect(seedActionFor(number, '-')).toBe('seed');
   });
 
+  // A picker takes a whole date; seeding a character into one crashed the grid
+  // outright, because setSelectionRange throws on a date input.
+  test('date pickers open on their stored value rather than the character', () => {
+    expect(seedActionFor({ label: 'Born', type: 'date' }, '2')).toBe('open');
+    expect(seedActionFor({ label: 'At', type: 'datetime' }, '2')).toBe('open');
+  });
+
   test('a file column cannot be typed into at all', () => {
     expect(seedActionFor({ label: 'Docs', type: 'file' }, '5')).toBe('ignore');
   });
