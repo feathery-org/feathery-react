@@ -1,23 +1,11 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
-import { createPortal } from 'react-dom';
-import DocumentCanvas from './DocumentCanvas';
-import Toolbar, { ToolbarAction } from './Toolbar';
-import { useActivePage, pageKey } from './useActivePage';
-import { useIsNarrowViewport } from './useIsNarrowViewport';
-import ViewerSidebar from './sidebar';
-import AlertBanner from './AlertBanner';
-import {
-  featheryDoc,
-  featheryWindow,
-  runningInClient
-} from '../../../utils/browser';
-import { stepPageKey, trapTabKey, isEditableTarget } from './keyboard';
+import React, { useMemo, useRef, useState } from 'react';
+import OverlaySurface from '../DocumentEditor/OverlaySurface';
+import { ToolbarAction } from '../DocumentEditor/Toolbar';
+import AlertBanner from '../DocumentEditor/AlertBanner';
+import { isEditableTarget } from '../DocumentEditor/keyboard';
+import PdfViewer, { PdfViewerApi, ViewerDocument } from './PdfViewer';
+
+export type { ViewerDocument };
 
 export type ReviewEnvelopeAction = 'sign' | 'fill' | 'download' | 'save';
 export type EditorToolbarAction = ReviewEnvelopeAction | 'draft';
@@ -77,21 +65,7 @@ const TOOLBAR_ACTION_ENVELOPE_ACTION: Record<
   draft: 'sign'
 };
 
-const MAX_PAGE_WIDTH = 900;
-const CONTAINER_PADDING = 48;
 const VIEWER_TITLE = 'Review Your Forms';
-
-/** One entry of the review payload's `documents` array, exactly as the
- * backend's build_envelope_viewer_payload emits it. */
-export interface ViewerDocument {
-  type: 'form';
-  pdf_url: string;
-  // The id finalize acts on.
-  envelope_id?: string;
-  // The filler's own signing token, present only when they sign this one.
-  signer_id?: string | null;
-  name?: string;
-}
 
 export interface DocumentViewerPayload {
   documents: ViewerDocument[];
@@ -118,6 +92,8 @@ interface DocumentViewerProps {
   onSaveEnvelopeFile?: (envelopeId: string, file: Blob) => Promise<any>;
 }
 
+// The Generate Documents review editor: the pdf renderer hosted in the
+// full-screen overlay surface, with the finalize toolbar the action configured.
 export default function DocumentViewer({
   payload,
   action,
@@ -126,140 +102,17 @@ export default function DocumentViewer({
   onFinalize,
   onSaveEnvelopeFile
 }: DocumentViewerProps) {
-  const loadedDocs = useRef<Record<string, any>>({});
-  const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  // Keep the keydown listener (bound once) calling the latest setShow, which
-  // the parent passes as a fresh closure on every render.
-  const setShowRef = useRef(setShow);
-  setShowRef.current = setShow;
-  // Dedicated body-level node so the viewer renders in its own subtree and the
-  // rest of the page can be made `inert` while it is open (see the portal
-  // effect below).
-  const portalElRef = useRef<HTMLElement | null>(null);
-  if (portalElRef.current === null && runningInClient()) {
-    portalElRef.current = featheryDoc().createElement('div');
-  }
+  const pdfApiRef = useRef<PdfViewerApi | null>(null);
   // Key of the toolbar action currently running (spinner + disable-all), or
   // null when idle. Keys: 'primary', 'draft', 'download'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  // Read by the once-bound Escape handler, which must see the live value.
-  const busyKeyRef = useRef(busyKey);
-  busyKeyRef.current = busyKey;
   const [error, setError] = useState('');
-  const [pageCounts, setPageCounts] = useState<Record<string, number>>({});
-  const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
 
   const isExpired = useMemo(
     () => new Date(payload.expires_at).getTime() < Date.now(),
     [payload.expires_at]
   );
   const [expiredBanner, setExpiredBanner] = useState(isExpired);
-
-  const pageEntries = useMemo(
-    () =>
-      payload.documents.flatMap((doc) =>
-        Array.from({ length: pageCounts[doc.pdf_url] ?? 0 }, (_, i) => ({
-          pdfUrl: doc.pdf_url,
-          pageIndex: i,
-          key: pageKey(doc.pdf_url, i)
-        }))
-      ),
-    [payload.documents, pageCounts]
-  );
-  const pageOrder = useMemo(() => pageEntries.map((p) => p.key), [pageEntries]);
-  const { activeKey, observePage } = useActivePage(
-    scrollContainerRef,
-    pageOrder
-  );
-  const isNarrow = useIsNarrowViewport();
-  const pageEntriesRef = useRef(pageEntries);
-  pageEntriesRef.current = pageEntries;
-  const activeKeyRef = useRef(activeKey);
-  activeKeyRef.current = activeKey;
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width;
-      if (width) {
-        setPageWidth(Math.min(MAX_PAGE_WIDTH, width - CONTAINER_PADDING));
-      }
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, []);
-
-  // Mount the portal node on the document body and make every sibling `inert`
-  // so assistive tech (and Tab) can't reach the form behind this modal. The
-  // Tab trap alone doesn't constrain a screen reader's virtual cursor.
-  useEffect(() => {
-    const node = portalElRef.current;
-    if (!node) return undefined;
-    const body = featheryDoc().body;
-    body.appendChild(node);
-    const siblings = Array.from(body.children).filter(
-      (c) => c !== node
-    ) as HTMLElement[];
-    const hadInert = siblings.map((el) => el.hasAttribute('inert'));
-    siblings.forEach((el) => el.setAttribute('inert', ''));
-    return () => {
-      siblings.forEach((el, i) => {
-        if (!hadInert[i]) el.removeAttribute('inert');
-      });
-      if (node.parentNode) node.parentNode.removeChild(node);
-    };
-  }, []);
-
-  useEffect(() => {
-    // Restore focus to whatever was focused before the viewer opened when it
-    // closes, so keyboard/SR users don't get dropped onto <body>.
-    const previouslyFocused = featheryDoc().activeElement as HTMLElement | null;
-    containerRef.current?.focus();
-    const doc = featheryDoc();
-    const onKeyDown = (e: KeyboardEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-      if (e.key === 'Escape') {
-        if (isEditableTarget(e.target)) {
-          // First Esc leaves the field; the next Esc closes the viewer.
-          (e.target as HTMLElement).blur();
-          return;
-        }
-        // Closing mid-action would hide the viewer while the action's side
-        // effect (save/sign/send) still completes in the background —
-        // invisibly, and after the surrounding flow was told the review was
-        // cancelled. It would also unmount the canvas, racing
-        // pdfProxy.destroy() against a saveDocument() still in flight. The
-        // toolbar's Back button applies the same gate.
-        if (busyKeyRef.current !== null) return;
-        setShowRef.current(false);
-      } else if (e.key === 'PageDown' || e.key === 'PageUp') {
-        // Let focused inputs/textareas handle paging keys natively.
-        if (isEditableTarget(e.target)) return;
-        e.preventDefault();
-        const entries = pageEntriesRef.current;
-        const nextKey = stepPageKey(
-          entries.map((p) => p.key),
-          activeKeyRef.current,
-          e.key === 'PageDown' ? 1 : -1
-        );
-        const target = entries.find((p) => p.key === nextKey);
-        if (target) onNavigate(target.pdfUrl, target.pageIndex);
-      } else if (e.key === 'Tab') {
-        trapTabKey(container, e);
-      }
-    };
-    doc.addEventListener('keydown', onKeyDown);
-    return () => {
-      doc.removeEventListener('keydown', onKeyDown);
-      previouslyFocused?.focus?.();
-    };
-    // onNavigate is stable; setShow is read via ref, so the listener binds
-    // once and always calls the latest setShow.
-  }, []);
 
   // The envelopes finalize acts on: every reviewed form document, in order.
   // Read straight off the payload rather than out of the rendered PDFs;
@@ -278,65 +131,6 @@ export default function DocumentViewer({
         })),
     [payload.documents]
   );
-
-  // Documents with field edits not yet saved to their envelope. Tracked via
-  // pdf.js's annotationStorage modified flag: set on the first widget change,
-  // cleared by saveDocument()/resetModified() — so a doc saved once and then
-  // edited again goes dirty again.
-  const dirtyDocs = useRef<Set<string>>(new Set());
-
-  const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
-    loadedDocs.current[pdfUrl] = pdfProxy;
-    const storage = pdfProxy.annotationStorage;
-    if (storage) {
-      storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
-      storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
-    }
-    setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
-  }, []);
-
-  // Write each dirty document's edited field values into its PDF
-  // (pdf.js saveDocument serializes annotationStorage into the AcroForm) and
-  // persist it to the envelope, so every finalize outcome — download, sign,
-  // save — acts on what the filler sees. saveDocument resets the storage's
-  // modified flag, which clears the doc from dirtyDocs via onResetModified.
-  const saveEditedDocuments = async () => {
-    if (!onSaveEnvelopeFile) return;
-    for (const doc of payload.documents) {
-      if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
-      const pdfProxy = loadedDocs.current[doc.pdf_url];
-      if (!pdfProxy) continue;
-      const bytes = await pdfProxy.saveDocument();
-      try {
-        await onSaveEnvelopeFile(
-          doc.envelope_id,
-          new Blob([bytes], { type: 'application/pdf' })
-        );
-      } catch (e) {
-        // saveDocument() already reset the modified flag; put the doc back so
-        // retrying the toolbar action re-saves it instead of skipping it.
-        dirtyDocs.current.add(doc.pdf_url);
-        throw e;
-      }
-    }
-  };
-
-  const registerPageRef = useCallback(
-    (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
-      pageRefs.current[pageKey(pdfUrl, pageIndex)] = el;
-      observePage(pageKey(pdfUrl, pageIndex), el);
-    },
-    [observePage]
-  );
-
-  const onNavigate = useCallback((pdfUrl: string, pageIndex: number) => {
-    const el = pageRefs.current[pageKey(pdfUrl, pageIndex)];
-    if (!el) return;
-    const reduceMotion = featheryWindow().matchMedia?.(
-      '(prefers-reduced-motion: reduce)'
-    ).matches;
-    el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
-  }, []);
 
   // The toolbar is configured on the action: `editor_toolbar_actions` lists
   // which outcomes the filler may choose. Each button finalizes with its own
@@ -360,7 +154,7 @@ export default function DocumentViewer({
     setError('');
     try {
       // Persist any edited field values first, so the outcome acts on them.
-      await saveEditedDocuments();
+      await pdfApiRef.current?.saveEditedDocuments();
       // No required-field gate here: filling fields in the editor is
       // optional — the generated documents were already completable without
       // it, so blocking on empty required fields would leave the user with no
@@ -406,56 +200,35 @@ export default function DocumentViewer({
         }
       ];
 
-  if (!portalElRef.current) return null;
-  return createPortal(
-    <div
-      ref={containerRef}
-      role='dialog'
-      aria-modal='true'
-      aria-label={VIEWER_TITLE}
-      tabIndex={-1}
-      css={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        flexDirection: 'column',
-        backgroundColor: '#f4f5f8',
-        outline: 'none'
+  return (
+    <OverlaySurface
+      title={VIEWER_TITLE}
+      onClose={() => setShow(false)}
+      actions={toolbarActions}
+      busyKey={busyKey}
+      banners={
+        <>
+          {expiredBanner && (
+            <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
+          )}
+          {error && (
+            <AlertBanner message={error} onDismiss={() => setError('')} />
+          )}
+        </>
+      }
+      onSurfaceKeyDown={(e) => {
+        if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
+        // Let focused inputs/textareas handle paging keys natively.
+        if (isEditableTarget(e.target)) return;
+        e.preventDefault();
+        pdfApiRef.current?.stepPage(e.key === 'PageDown' ? 1 : -1);
       }}
     >
-      <Toolbar
-        title={VIEWER_TITLE}
-        onBack={() => setShow(false)}
-        actions={toolbarActions}
-        busyKey={busyKey}
+      <PdfViewer
+        documents={payload.documents}
+        onSaveEnvelopeFile={onSaveEnvelopeFile}
+        apiRef={pdfApiRef}
       />
-      {expiredBanner && (
-        <AlertBanner message='This session has expired. Please close and reopen the viewer.' />
-      )}
-      {error && <AlertBanner message={error} onDismiss={() => setError('')} />}
-      <div css={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <ViewerSidebar
-          documents={payload.documents}
-          pageCounts={pageCounts}
-          pdfProxies={loadedDocs.current}
-          activeKey={activeKey}
-          onNavigate={onNavigate}
-          isNarrow={isNarrow}
-        />
-        <div
-          ref={scrollContainerRef}
-          css={{ flex: 1, overflow: 'auto', padding: 24 }}
-        >
-          <DocumentCanvas
-            documents={payload.documents}
-            pageWidth={pageWidth}
-            onDocLoad={onDocLoad}
-            registerPageRef={registerPageRef}
-          />
-        </div>
-      </div>
-    </div>,
-    portalElRef.current
+    </OverlaySurface>
   );
 }

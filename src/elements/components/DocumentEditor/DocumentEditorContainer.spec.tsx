@@ -14,7 +14,7 @@ import DocumentEditorContainer from './DocumentEditorContainer';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors
-} from './docxDirtyRegistry';
+} from '../DocxEditor/docxDirtyRegistry';
 
 jest.mock('../../../utils/documentEditorPrimitives', () => ({
   rebindRevisionGroups: jest.fn()
@@ -29,7 +29,7 @@ const OPEN_STATE = { opened: false };
 
 // Exposes the terminal handlers as buttons so the container's outcome routing
 // can be driven the way the real toolbar drives it.
-jest.mock('./index', () => {
+jest.mock('../DocxEditor/index', () => {
   const React = jest.requireActual('react');
 
   return function MockDocxEditor({

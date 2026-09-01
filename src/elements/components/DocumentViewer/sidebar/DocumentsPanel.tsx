@@ -1,6 +1,6 @@
 import React from 'react';
-import { ViewerDocument } from '../index';
-import { color, fontSize, radius } from '../tokens';
+import { ViewerDocument } from '../PdfViewer';
+import { color, fontSize, radius } from '../../DocumentEditor/tokens';
 
 interface DocumentsPanelProps {
   documents: ViewerDocument[];

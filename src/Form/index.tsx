@@ -232,11 +232,12 @@ import {
   runOAuthPopup
 } from '../integrations/connectAccount/oauthPopup';
 import { isNum } from '../utils/primitives';
+import { editorContainerId } from '../utils/document';
 import {
-  editorContainerId,
-  getSignUrl,
-  isDocusignSignAction
-} from '../utils/document';
+  buildReviewFinalize,
+  dispatchEditorRefresh,
+  runEnvelopeOutcome
+} from './envelopeActions';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
 import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
 import { createSchwabContact } from '../integrations/schwab';
@@ -1381,63 +1382,26 @@ function Form({
         // envelope action) but resolving a promise instead of advancing the
         // action flow.
         generateEnvelopeFlow: async (action: Record<string, any>) => {
-          // `actingAction` is the outcome to apply — the configured
-          // envelope_action on the direct path, or the toolbar button the
-          // filler pressed in the editor, where envelope_action is
-          // 'open_in_editor' and carries no outcome of its own.
-          const runEnvelopeAction = async (
-            data: any,
-            actingAction?: string,
-            draft = false
-          ) => {
-            const envAction = actingAction ?? action.envelope_action;
-            if (envAction === 'download' && data.files) {
-              await downloadAllFileUrls(
-                data.files,
-                replaceTextVariables(action.envelope_zip_name)
-              );
-            } else if (envAction === 'save' && data.files) {
-              let files = data.files;
-              if (files.length === 1) files = files[0];
-              const newValues = { [action.save_document_field_key]: files };
-              updateFieldValues(newValues);
-              client.submitCustom(newValues);
-            } else if (!envAction || envAction === 'sign') {
-              // `envAction` has to be passed: in the editor flow
-              // action.envelope_action is 'open_in_editor', and the outcome is
-              // the toolbar button the filler pressed.
-              if (isDocusignSignAction(action, envAction)) {
-                // DocuSign has no Feathery sign URL — its
-                // {docusign_envelope_id, status} response is itself the
-                // completion signal, so all that's left is telling the filler.
-                showEnvelopeOutcome(
-                  ENVELOPE_FLOW_TOAST_ID,
-                  draft ? 'Saved as Draft' : 'Sent for Signature',
-                  action.documents
-                );
-                return;
-              }
-              // Feathery hosted eSign: open the signing page. The action-flow
-              // redirect/registerEvent variant is step-specific, so it's not
-              // run for logic-rule invocations.
-              //
-              // Only ever opened as a signer: the batch returns the filler's
-              // own token when they sign it, and there's nothing for them to
-              // open when it doesn't.
-              const signers = data.signers ?? [];
-              const signerId = signers.find((s: any) => s.signer_id)?.signer_id;
-              if (signerId) openTab(getSignUrl(signerId, action.redirect));
-              else if (signers.some((s: any) => s.invited))
-                showEnvelopeOutcome(
-                  ENVELOPE_FLOW_TOAST_ID,
-                  'Sent for Signature',
-                  action.documents
-                );
-            }
+          // No navigateToSignUrl: the action-flow redirect/registerEvent
+          // variant is step-specific, so a logic-rule invocation opens the
+          // sign page in a new tab instead.
+          const outcomeDeps = {
+            client,
+            updateFieldValues,
+            showOutcome: (label: string, documents?: string[]) =>
+              showEnvelopeOutcome(ENVELOPE_FLOW_TOAST_ID, label, documents)
           };
           const data = await client.generateEnvelopes(action);
           if (!data) throw new Error('Document generation failed');
           if (data.status === 'error') throw new Error(data.message);
+          const containerId = editorContainerId(action);
+          if (containerId) {
+            // A container-bound editor consumes the generate response itself;
+            // opening the review viewer here would hand it a payload shaped
+            // for the overlay.
+            dispatchEditorRefresh(containerId, action, data);
+            return data;
+          }
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
               // What finalize returned, so the method resolves with the real
@@ -1447,24 +1411,11 @@ function Form({
               setReviewViewerPayload({
                 payload: data,
                 action,
-                onFinalize: async ({
-                  envelopes,
-                  envelopeAction,
-                  draft
-                }: any) => {
-                  const result = await client.finalizeEnvelopeReview(action, {
-                    envelopes,
-                    envelopeAction,
-                    draft
-                  });
-                  if (!result) {
-                    return { status: 'error', message: 'Finalize failed' };
-                  }
-                  if (result.status === 'error') return result;
-                  await runEnvelopeAction(result, envelopeAction, draft);
-                  finalized = result;
-                  return result;
-                },
+                onFinalize: buildReviewFinalize({
+                  action,
+                  deps: outcomeDeps,
+                  onFinalized: (result) => (finalized = result)
+                }),
                 onComplete: () => {
                   setTimeout(() => setReviewViewerPayload(null), 500);
                   resolve(finalized);
@@ -1479,7 +1430,7 @@ function Form({
               });
             });
           }
-          await runEnvelopeAction(data);
+          await runEnvelopeOutcome(action, data, outcomeDeps);
           return data;
         },
         // Lets a document-editor container, which runs its own signing action
@@ -3143,89 +3094,24 @@ function Form({
           break;
         }
       } else if (type === ACTION_GENERATE_ENVELOPES) {
-        // TODO (tyler): extract this whole generate-envelopes branch (and the
-        // other click-action branches in runElementActions) into its own
-        // module. It is too much logic to keep bloating the Form component
-        // with, and runEnvelopeAction plus the review-viewer wiring below are
-        // self-contained enough to move behind a small interface.
         const envelopeId = `envelope-${i}`;
         updateEnvelopeGeneration(envelopeId, { status: 'incomplete' });
         await Promise.all([submitPromise, client.flushCustomFields()]);
-        // Shared with the editor's finalize response: runs the same
-        // sign-redirect/download/save handling the direct path always ran
-        // immediately off the generate response. `actingAction` is the outcome
-        // to apply — the configured envelope_action on the direct path, or the
-        // toolbar button the filler pressed in the editor (where
-        // envelope_action is 'open_in_editor' and carries no outcome itself).
-        // Self-guards on a container editor, which hands the envelope to a
-        // document-editor container instead of running the action.
-        const runEnvelopeAction = async (
-          data: any,
-          actingAction?: string,
-          draft = false
-        ) => {
-          if (editorContainerId(action)) return;
-          const envAction = actingAction ?? action.envelope_action;
-          if (!envAction || envAction === 'sign') {
-            if (isDocusignSignAction(action, envAction)) {
-              // DocuSign sign has no Feathery sign URL to redirect to — the
-              // `{docusign_envelope_id, status}` response (already validated
-              // for errors above) is itself the completion signal, so just
-              // continue the flow. `envAction` has to be passed: in the editor
-              // flow action.envelope_action is 'open_in_editor', and the
-              // outcome is the toolbar button the filler pressed.
-              //
-              // Create Draft finalizes as a sign too, so the label comes off
-              // the request — a draft is saved in the sender's DocuSign
-              // account, not delivered to anyone. Not off the response: the
-              // poll endpoint overwrites its status with "complete", so
-              // DocuSign's own "created" never reaches here.
-              showEnvelopeOutcome(
-                envelopeId,
-                draft ? 'Saved as Draft' : 'Sent for Signature',
-                action.documents
-              );
-              return;
-            }
-            // One entry comes back per signable envelope, carrying an id only
-            // when the filler signs it first. One signer link covers the rest
-            // of the batch they can sign.
-            const responseSigners = data.signers ?? [];
-            const matchedSigner = responseSigners.find((s: any) => s.signer_id);
-            if (!matchedSigner) {
-              // Nothing in the batch for the filler to sign themselves.
-              if (responseSigners.some((s: any) => s.invited))
-                showEnvelopeOutcome(
-                  envelopeId,
-                  'Sent for Signature',
-                  action.documents
-                );
-              return;
-            }
-            // Sign files
-            const url = getSignUrl(matchedSigner.signer_id, action.redirect);
-            if (action.redirect) {
-              const eventData: Record<string, any> = {
-                step_key: activeStep.key,
-                next_step_key: '',
-                event: submit ? 'complete' : 'skip',
-                completed: true
-              };
-              await client.registerEvent(eventData);
-              featheryWindow().location.href = url;
-            } else openTab(url);
-          } else if (envAction === 'download' && data.files) {
-            // Download files directly
-            await downloadAllFileUrls(
-              data.files,
-              replaceTextVariables(action.envelope_zip_name)
-            );
-          } else if (envAction === 'save' && data.files) {
-            let files = data.files;
-            if (files.length === 1) files = files[0];
-            const newValues = { [action.save_document_field_key]: files };
-            updateFieldValues(newValues);
-            client.submitCustom(newValues);
+        const outcomeDeps = {
+          client,
+          updateFieldValues,
+          showOutcome: (label: string, documents?: string[]) =>
+            showEnvelopeOutcome(envelopeId, label, documents),
+          // A step-flow sign redirect registers the step completion before
+          // navigating the page away.
+          navigateToSignUrl: async (url: string) => {
+            await client.registerEvent({
+              step_key: activeStep.key,
+              next_step_key: '',
+              event: submit ? 'complete' : 'skip',
+              completed: true
+            });
+            featheryWindow().location.href = url;
           }
         };
         try {
@@ -3247,25 +3133,7 @@ function Form({
 
           const containerId = editorContainerId(action);
           if (containerId) {
-            const refreshDetail = {
-              containerId,
-              documents: action.documents ?? [],
-              envelopes: data.envelopes ?? []
-            };
-            const win = featheryWindow() as any;
-            win.__featheryDocxEditorDrafts = {
-              ...(win.__featheryDocxEditorDrafts ?? {}),
-              [containerId]: refreshDetail
-            };
-            // Tell any mounted document-editor container to reload the freshly
-            // generated envelope (needed when the editor is on the same step as
-            // the button; a different-step editor consumes the stored draft on
-            // mount).
-            win.dispatchEvent(
-              new CustomEvent('feathery-docx-editor-refresh', {
-                detail: refreshDetail
-              })
-            );
+            dispatchEditorRefresh(containerId, action, data);
           } else if (action.envelope_action === 'open_in_editor') {
             // Open the review viewer with the generated envelopes instead of
             // running the download/save/sign handling immediately; it runs
@@ -3275,34 +3143,7 @@ function Form({
             setReviewViewerPayload({
               payload: data,
               action,
-              onFinalize: async ({
-                envelopes,
-                envelopeAction,
-                draft
-              }: {
-                envelopes: { envelopeId: string }[];
-                envelopeAction: 'sign' | 'fill' | 'download' | 'save';
-                draft: boolean;
-              }) => {
-                const result = await client.finalizeEnvelopeReview(action, {
-                  envelopes,
-                  envelopeAction,
-                  draft
-                });
-                // A missing result is a failure, not a success: _fetch
-                // resolves undefined on a network blip / 403 / 409, and
-                // `result?.status` would let that fall through to the sign
-                // redirect (or throw a raw TypeError in the save branch) as
-                // if finalize had succeeded.
-                if (!result)
-                  return {
-                    status: 'error',
-                    message: 'Failed to finalize documents. Please try again.'
-                  };
-                if (result.status === 'error') return result;
-                await runEnvelopeAction(result, envelopeAction, draft);
-                return result;
-              },
+              onFinalize: buildReviewFinalize({ action, deps: outcomeDeps }),
               onComplete: () => {
                 flowOnSuccess(i)().then(() => {
                   setTimeout(() => setReviewViewerPayload(null), 500);
@@ -3311,7 +3152,7 @@ function Form({
             });
             break;
           } else {
-            await runEnvelopeAction(data);
+            await runEnvelopeOutcome(action, data, outcomeDeps);
           }
         } catch (e: any) {
           updateEnvelopeGeneration(envelopeId, { status: 'error' });

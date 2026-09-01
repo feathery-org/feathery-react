@@ -18,7 +18,7 @@ import { fieldValues } from '../../../utils/init';
 import { getRenderData } from '../../../utils/image';
 import DangerouslySetHtmlContent from '../../../utils/DangerouslySetHTMLContent';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
-import DocumentEditorContainer from '../../../elements/components/DocxEditor/DocumentEditorContainer';
+import DocumentEditorContainer from '../../../elements/components/DocumentEditor/DocumentEditorContainer';
 import { ShadowDomHtmlContent } from '../../../utils/ShadowDomHtmlContent';
 
 export type StyledContainerProps = PropsWithChildren & {
