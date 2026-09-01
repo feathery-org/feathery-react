@@ -491,6 +491,29 @@ describe('editors for other field types', () => {
     expect(input).toHaveValue('1982-07-19');
   });
 
+  // `setSelectionRange` throws InvalidStateError on a date input, and the throw
+  // was inside a layout effect — which unmounted the entire table, not just
+  // the cell.
+  test('typing at a date cell opens the picker instead of crashing', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('1982-07-19T00:00:00Z'));
+    await waitFor(() =>
+      expect(cell('1982-07-19T00:00:00Z')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      )
+    );
+
+    fireEvent.keyDown(grid(), { key: '2' });
+
+    const input = await screen.findByLabelText(/Edit born/);
+    expect(input).toHaveAttribute('type', 'date');
+    // Opened on the stored value, not on the character that opened it.
+    expect(input).toHaveValue('1982-07-19');
+    // And the grid is still standing.
+    expect(grid()).toBeInTheDocument();
+  });
+
   test('a number column refuses letters outright', async () => {
     await renderTyped();
     fireEvent.doubleClick(cell('42'));
