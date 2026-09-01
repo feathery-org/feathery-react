@@ -6,7 +6,7 @@ import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
-import { CellErrors, cellErrorKey } from './validation';
+import { CellErrors, cellErrorKey, CellRules } from './validation';
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
@@ -50,6 +50,8 @@ export type SpreadsheetTableProps = {
   /** Supplied when the table allows deleting rows. */
   onDeleteRow?: (rowIndex: number) => void;
   getCellShading?: GetCellShading;
+  /** Column rules, so each cell's editor matches what its column accepts. */
+  cellRules?: CellRules;
   /**
    * Bumped by the parent whenever row indices shift (add/delete row), which
    * invalidates the index-keyed undo history.
@@ -86,6 +88,7 @@ export function SpreadsheetTable({
   onInsertRow,
   onDeleteRow,
   getCellShading,
+  cellRules,
   rowIdentityVersion = 0,
   pending,
   blockingErrors,
@@ -312,6 +315,7 @@ export function SpreadsheetTable({
         canEdit={canEdit}
         rowIndexById={rowIndexById}
         getCellShading={getCellShading}
+        cellRules={cellRules}
         onAddColumn={onAddColumn}
         onInsertRow={onInsertRow}
         onDeleteRow={onDeleteRow}

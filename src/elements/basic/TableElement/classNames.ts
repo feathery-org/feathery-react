@@ -42,6 +42,7 @@ export const TABLE_CLASS = {
   gridRowNumber: 'feathery-table-grid-row-number',
   gridCell: 'feathery-table-grid-cell',
   gridCellEditor: 'feathery-table-grid-cell-input',
+  gridCellSelect: 'feathery-table-grid-cell-select',
   gridColumnResizer: 'feathery-table-grid-column-resizer',
   gridFillHandle: 'feathery-table-grid-fill-handle',
   gridRowMenu: 'feathery-table-grid-row-menu',

@@ -1,4 +1,5 @@
 import React from 'react';
+import { featheryWindow } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import {
   discardButtonStyle,
@@ -49,6 +50,15 @@ export function PendingChangesBar({
 
   const blocked = blockingCount > 0;
 
+  // Discarding cannot be undone — the buffer is the only copy of these edits.
+  const confirmDiscard = () => {
+    const message =
+      pendingCount === 1
+        ? 'Discard your unsaved change?'
+        : `Discard your ${pendingCount} unsaved changes?`;
+    if (featheryWindow().confirm(message)) onDiscard();
+  };
+
   return (
     <div
       role='status'
@@ -56,14 +66,6 @@ export function PendingChangesBar({
       className={TABLE_CLASS.gridPendingBar}
       css={pendingBarStyle}
     >
-      <span css={pendingCountStyle}>
-        {pendingCount
-          ? plural(pendingCount, 'unsaved change')
-          : saving
-          ? 'Saving…'
-          : 'No unsaved changes'}
-      </span>
-
       {issueCount > 0 && (
         <span css={issueGroupStyle}>
           <span css={issueCountStyle(blocked)}>
@@ -93,12 +95,19 @@ export function PendingChangesBar({
       )}
 
       <span css={pendingActionsStyle}>
+        <span css={pendingCountStyle}>
+          {pendingCount
+            ? plural(pendingCount, 'unsaved change')
+            : saving
+            ? 'Saving…'
+            : 'No unsaved changes'}
+        </span>
         <button
           type='button'
           className={TABLE_CLASS.gridDiscardButton}
           css={discardButtonStyle}
           disabled={saving || !pendingCount}
-          onClick={onDiscard}
+          onClick={confirmDiscard}
         >
           Discard
         </button>
