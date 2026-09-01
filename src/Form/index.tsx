@@ -1599,12 +1599,14 @@ function Form({
             const { inlineErrors, setInlineErrors } =
               internalState[_internalId];
             let index = null;
-            let message = error;
+            let message: string;
             // If the user provided an object for an error then use the specified index and message
             // This allows users to specify an error on an element in a repeated row
             if (typeof error === 'object') {
               index = error.index;
               message = error.message;
+            } else {
+              message = error;
             }
             setFormElementError({
               formRef,

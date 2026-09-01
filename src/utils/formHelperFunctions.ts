@@ -185,7 +185,7 @@ export function updateSessionValues(session: any) {
 interface SetFormElementErrorArgs {
   formRef?: React.MutableRefObject<any>;
   errorType?: string;
-  errorCallback?: (props: Record<string, unknown>) => Promise<void> | void;
+  errorCallback?: (props: Record<string, unknown>) => unknown;
   fieldKey?: string;
   message?: string;
   index?: number | null;
@@ -213,7 +213,8 @@ export async function setFormElementError({
   let invalid = false;
   let listIndex = index;
   if (errorType === 'html5') {
-    if (!formRef.current) return false;
+    const form = formRef?.current;
+    if (!form) return false;
 
     let errorTriggered = false;
     if (fieldKey) {
@@ -226,7 +227,7 @@ export async function setFormElementError({
         listIndex = null;
       }
       // form.elements has reserved props so must use namedItem to get by id
-      const singleOrList = formRef.current.elements.namedItem(fieldKey);
+      const singleOrList = form.elements.namedItem(fieldKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
@@ -255,9 +256,7 @@ export async function setFormElementError({
       // Find the first visible invalid element to show the browser tooltip.
       // Calling reportValidity() on the entire form fails if the first
       // invalid control is hidden via CSS (display:none).
-      const formElements = Array.from(
-        formRef.current.elements
-      ) as HTMLElement[];
+      const formElements = Array.from(form.elements) as HTMLElement[];
       for (const el of formElements) {
         if (
           'checkValidity' in el &&
@@ -269,7 +268,7 @@ export async function setFormElementError({
         }
       }
     }
-    invalid = !formRef.current.checkValidity();
+    invalid = !form.checkValidity();
   } else if (errorType === 'inline') {
     // Scope a repeated-field error to its row via a nested `byIndex` map under
     // the real field key, so an error validated on one repeat row doesn't bleed
