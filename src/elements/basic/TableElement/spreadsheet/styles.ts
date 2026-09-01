@@ -127,6 +127,17 @@ export const frozenRegionStyle = {
 
 export const frozenRowStyle = { zIndex: 21 } as const;
 
+/**
+ * Lifts a row that the selection touches above the rows around it.
+ *
+ * Each row carries a `translateY`, which makes it a STACKING CONTEXT — so a
+ * z-index on a cell only competes inside its own row and can never rise above
+ * a different row. Without this the next row down paints its top grid line
+ * over the range's bottom border, and clips the fill handle overhanging the
+ * corner. Stays well below the frozen region (20/21) and the header (30).
+ */
+export const rowRaisedStyle = { zIndex: 2 } as const;
+
 const gutterBase = {
   position: 'sticky',
   insetInlineStart: 0,
@@ -209,8 +220,9 @@ export const columnHeaderLabelStyle = {
 } as const;
 
 // Sticky pinned (frozen) columns sit above normal cells but below the gutter.
+// Cell z-index comes from `cellZIndex` so the selected case can stay above.
 export const pinnedHeaderStyle = { position: 'sticky', zIndex: 24 } as const;
-export const pinnedCellStyle = { position: 'sticky', zIndex: 12 } as const;
+export const pinnedCellStyle = { position: 'sticky' } as const;
 export const lastPinnedStyle = {
   boxShadow: '2px 0 3px -2px rgba(0, 0, 0, 0.35)'
 } as const;
@@ -299,10 +311,20 @@ export const cellFocusedStyle = {
   boxShadow: `inset 0 0 0 2px ${colors.accent}`
 } as const;
 
-// Cells are absolutely positioned siblings, so a later one paints its grid
-// line over an earlier one's selection border. Lifting the selected cell keeps
-// the blue above the grey, and lets the fill handle overhang the corner.
-export const cellRaisedStyle = { zIndex: 4 } as const;
+/**
+ * Stacking order for one cell, within its row.
+ *
+ * Cells are absolutely positioned siblings, so a later one paints its grid line
+ * over an earlier one's selection border; a selected cell has to be lifted for
+ * the blue to sit above the grey and for the fill handle to overhang the
+ * corner. Pinned cells already sit above the scrolling ones, so a selected
+ * pinned cell has to stay above THEM rather than dropping to the plain
+ * selected level.
+ */
+export function cellZIndex(pinned: boolean, raised: boolean) {
+  if (pinned) return raised ? 13 : 12;
+  return raised ? 4 : undefined;
+}
 
 export const cellFillPreviewStyle = {
   backgroundImage: `repeating-linear-gradient(135deg, ${colors.accentTint} 0 4px, rgba(29, 78, 216, 0.16) 4px 8px)`,
