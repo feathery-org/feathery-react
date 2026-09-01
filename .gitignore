@@ -56,4 +56,3 @@ amplifytools.xcconfig
 
 # Generated harness bundle (rebuild with harness/bindings/webpack.config.js)
 harness/bindings/bundle.js
-harness/review-editor/bundle.js
