@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { useCreateAtom } from '@tanstack/react-store';
 import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
@@ -6,7 +12,12 @@ import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
-import { CellErrors, cellErrorKey, CellRules } from './validation';
+import {
+  CellErrors,
+  cellErrorKey,
+  CellRules,
+  validateCellValue
+} from './validation';
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
@@ -192,7 +203,29 @@ export function SpreadsheetTable({
     }
   }, [frozenColumns, table, tableColumns]);
 
+  // Bulk writes are held to the column's rule. A cell the user types into is
+  // still free to be wrong — that is what the error and warning states are for
+  // — but a paste can drop hundreds of bad values at once, off screen.
+  const [refusedCount, setRefusedCount] = useState(0);
+  const acceptsValue = useCallback(
+    (fieldKey: string, value: CellValue) => {
+      const rule = cellRules?.[fieldKey];
+      return !rule || validateCellValue(value, rule) === null;
+    },
+    [cellRules]
+  );
+  const onValuesRefused = useCallback(
+    (count: number) => setRefusedCount(count),
+    []
+  );
   const history = useSpreadsheetHistory(onCellsEdit);
+
+  // The notice describes one paste. Saving or discarding ends that episode, so
+  // it goes with the buffer it was talking about.
+  const pendingCount = pending?.count ?? 0;
+  useEffect(() => {
+    if (!pendingCount) setRefusedCount(0);
+  }, [pendingCount]);
 
   // Adding or deleting a row renumbers every row below it, so index-keyed
   // patches from before the change can no longer be replayed safely.
@@ -247,7 +280,9 @@ export function SpreadsheetTable({
     undo: history.undo,
     redo: history.redo,
     canEdit,
-    scrollToCell
+    scrollToCell,
+    acceptsValue,
+    onValuesRefused
   });
 
   const stepIssue = useCallback(
@@ -276,7 +311,10 @@ export function SpreadsheetTable({
   // to report from after the buffer it came from is already empty.
   const showBar = Boolean(
     pending &&
-      (pending.count > 0 || pending.saving || blockingCount + warningCount > 0)
+      (pending.count > 0 ||
+        pending.saving ||
+        refusedCount > 0 ||
+        blockingCount + warningCount > 0)
   );
 
   // The status bar sits inside the element's own height box, so an auto-sized
@@ -306,6 +344,7 @@ export function SpreadsheetTable({
           onSave={pending.onSave}
           onDiscard={pending.onDiscard}
           onStepIssue={stepIssue}
+          refusedCount={refusedCount}
         />
       ) : null}
       <SpreadsheetGrid

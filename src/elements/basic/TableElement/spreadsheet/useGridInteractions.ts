@@ -44,6 +44,15 @@ type GridInteractionOptions = {
   redo: () => void;
   canEdit: boolean;
   scrollToCell: (rowId: string, columnId: string) => void;
+  /**
+   * Whether a value is one the column would accept. Bulk writes (paste, fill)
+   * are filtered through this: typing a bad value is a deliberate act the user
+   * can see flagged, but a paste can drop hundreds of them at once, silently
+   * and out of view.
+   */
+  acceptsValue?: (fieldKey: string, value: CellValue) => boolean;
+  /** How many cells a bulk write refused, so the UI can say so. */
+  onValuesRefused?: (count: number) => void;
 };
 
 export function useGridInteractions(options: GridInteractionOptions) {
@@ -55,7 +64,9 @@ export function useGridInteractions(options: GridInteractionOptions) {
     undo,
     redo,
     canEdit,
-    scrollToCell
+    scrollToCell,
+    acceptsValue,
+    onValuesRefused
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
 
@@ -241,6 +252,28 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [getDisplayColumns, getDisplayRows, getValue, rowIndexById]
   );
 
+  /**
+   * Drop the patches whose value the column would reject, and report how many.
+   * Clearing a cell is always allowed — an empty cell is a state the user can
+   * always reach, and a required column flags it rather than forbidding it.
+   */
+  const acceptable = React.useCallback(
+    (patches: CellPatch[]): CellPatch[] => {
+      if (!acceptsValue) return patches;
+      const kept = patches.filter(
+        (patch) =>
+          patch.after === null ||
+          patch.after === '' ||
+          acceptsValue(patch.fieldKey, patch.after)
+      );
+      // Always reported, including zero: each bulk write replaces the notice
+      // from the one before it rather than leaving a stale count on screen.
+      onValuesRefused?.(patches.length - kept.length);
+      return kept;
+    },
+    [acceptsValue, onValuesRefused]
+  );
+
   const clearSelection = React.useCallback(() => {
     if (!canEdit) return;
     execute(
@@ -324,7 +357,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
         const after = parseInputValue(matrix[0][0] ?? '');
         execute(
           'Paste cells',
-          patchesForBounds([activeBound], () => after)
+          acceptable(patchesForBounds([activeBound], () => after))
         );
         return;
       }
@@ -354,7 +387,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
         });
       });
 
-      execute('Paste cells', patches);
+      execute('Paste cells', acceptable(patches));
       selectBounds({
         minRowIndex: rowStart,
         maxRowIndex: maxRow,
@@ -363,6 +396,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       });
     },
     [
+      acceptable,
       canEdit,
       execute,
       getActiveRange,
@@ -397,10 +431,11 @@ export function useGridInteractions(options: GridInteractionOptions) {
         getValue
       });
 
-      execute('Fill cells', patches);
+      execute('Fill cells', acceptable(patches));
       selectBounds(preview.expanded);
     },
     [
+      acceptable,
       canEdit,
       execute,
       getDisplayColumns,
