@@ -7,6 +7,12 @@ export const ROW_HEADER_WIDTH = 46;
 // Cell text size. Rows and the header are sized off this, so bumping one
 // without the other would clip descenders.
 export const FONT_SIZE = 16;
+
+// The grid pins its own typography rather than inheriting the form's theme:
+// a display font, letter-spacing or an inherited line-height would break the
+// fixed row height the virtualizer and drag hit-testing depend on.
+export const GRID_FONT_FAMILY =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 export const DEFAULT_COLUMN_WIDTH = 160;
 export const MIN_COLUMN_WIDTH = 64;
 export const CELL_HORIZONTAL_PADDING = 10;
@@ -63,7 +69,23 @@ export const gridStyle = {
   backgroundColor: colors.white,
   cursor: 'default',
   userSelect: 'none',
-  WebkitUserSelect: 'none'
+  WebkitUserSelect: 'none',
+  // Every text property the form theme could inherit down is stated here, so
+  // the grid renders identically whatever the surrounding form looks like.
+  // Descendants inherit from the grid instead.
+  fontFamily: GRID_FONT_FAMILY,
+  fontSize: `${FONT_SIZE}px`,
+  fontWeight: 400,
+  fontStyle: 'normal',
+  fontVariant: 'normal',
+  lineHeight: 'normal',
+  letterSpacing: 'normal',
+  wordSpacing: 'normal',
+  textTransform: 'none',
+  textDecoration: 'none',
+  textShadow: 'none',
+  textAlign: 'start',
+  color: colors.gray900
 } as const;
 
 export const canvasStyle = {
@@ -110,6 +132,7 @@ const gutterBase = {
   width: `${ROW_HEADER_WIDTH}px`,
   padding: 0,
   margin: 0,
+  boxSizing: 'border-box',
   color: colors.gray700,
   backgroundColor: colors.gray50,
   border: 0,
@@ -150,7 +173,9 @@ export const columnHeaderStyle = {
   placeItems: 'center',
   height: `${HEADER_HEIGHT}px`,
   padding: '0 5px',
-  overflow: 'hidden',
+  boxSizing: 'border-box',
+  // Deliberately NOT `overflow: hidden`: the resize grip sits across the right
+  // border and would be clipped. The label span truncates itself instead.
   backgroundColor: colors.gray100,
   borderRight: `1px solid ${colors.gray300}`,
   borderBottom: `1px solid ${colors.gray300}`,
@@ -212,6 +237,11 @@ export const cellStyle = {
   height: `${ROW_HEIGHT}px`,
   padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
   overflow: 'hidden',
+  // The virtualizer lays cells out every `width` px, so the padding and the
+  // grid line must be INSIDE that width — content-box would make each cell
+  // overlap its right-hand neighbour and push the selection border past the
+  // column boundary.
+  boxSizing: 'border-box',
   backgroundColor: colors.white,
   borderRight: `1px solid ${colors.gray200}`,
   borderBottom: `1px solid ${colors.gray200}`,
@@ -260,8 +290,10 @@ export const cellFillPreviewStyle = {
 
 export const fillHandleStyle = {
   position: 'absolute',
-  right: '-3px',
-  bottom: '-3px',
+  // Inside the cell: the cell clips its overflow, so an outset handle showed
+  // only as a clipped sliver.
+  right: 0,
+  bottom: 0,
   zIndex: 8,
   width: '7px',
   height: '7px',
@@ -278,6 +310,7 @@ export const cellEditorStyle = {
   minWidth: '100%',
   height: 'calc(100% + 2px)',
   padding: `0 ${CELL_HORIZONTAL_PADDING / 2}px`,
+  boxSizing: 'border-box',
   backgroundColor: colors.white,
   border: `2px solid ${colors.accent}`,
   outline: 'none',
