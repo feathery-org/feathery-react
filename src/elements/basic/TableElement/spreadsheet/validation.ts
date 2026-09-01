@@ -17,6 +17,9 @@ export type CellValueType =
   | 'date'
   | 'datetime'
   | 'email'
+  // Upload references (`[{url, path}]`), so the grid shows them but cannot
+  // edit them — there is no typing your way to an uploaded file.
+  | 'file'
   | 'number'
   | 'phone_number'
   | 'tax_id'
@@ -176,6 +179,9 @@ export function validateCellValue(
       }
       return null;
     }
+    case 'file':
+      // The hub owns the `[{url, path}]` shape; the grid never authors it.
+      return null;
     default:
       return null;
   }
@@ -249,6 +255,7 @@ const HUB_TYPES: Record<string, CellValueType> = {
   date: 'date',
   datetime: 'datetime',
   email: 'email',
+  file: 'file',
   number: 'number',
   phone_number: 'phone_number',
   tax_id: 'tax_id',

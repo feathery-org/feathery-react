@@ -163,8 +163,12 @@ describe('rule derivation', () => {
       required: true,
       unique: true
     });
-    // A file field has no client-checkable shape, so it falls through to `any`.
-    expect(rules.__hub_t_notes.type).toBe('any');
+    // A file field keeps its own type so the grid can refuse to edit it; the
+    // `[{url, path}]` shape is the hub's to judge, not this module's.
+    expect(rules.__hub_t_notes.type).toBe('file');
+    expect(
+      validateCellValue('anything', { label: 'Notes', type: 'file' })
+    ).toBeNull();
   });
 
   test('hub metadata becomes the numeric and text bounds', () => {

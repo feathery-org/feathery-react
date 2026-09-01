@@ -2,6 +2,12 @@ import React from 'react';
 import { TABLE_CLASS } from '../classNames';
 import { CellRule } from './validation';
 import { cellEditorStyle, cellSelectStyle } from './styles';
+import {
+  acceptsNumericInput,
+  choicesFor,
+  editorKindFor,
+  toEditorValue
+} from './fieldEditors';
 
 export type CellEditorProps = {
   /** The column's rule, when it has one. Absent columns get a text input. */
@@ -17,17 +23,18 @@ export type CellEditorProps = {
   onBlur: () => void;
 };
 
-/** A column whose value is one of a fixed set is picked, not typed. */
-const choicesFor = (rule?: CellRule): string[] | null => {
-  if (rule?.options?.length) return rule.options;
-  if (rule?.type === 'boolean') return ['true', 'false'];
-  return null;
+// Native input types per editor kind. `text` covers the rest: a half-typed
+// email or number must stay in the box, and `type="number"` blanks its own
+// value the moment it disagrees with what was typed.
+const INPUT_TYPES: Record<string, string> = {
+  date: 'date',
+  datetime: 'datetime-local'
 };
 
 /**
  * The editor for one cell, shaped by what the column actually holds: a fixed
- * set of values is a dropdown, a number gets a numeric keypad on touch, and
- * everything else is a plain text box.
+ * set of values is picked, a date gets the native picker, a number refuses
+ * letters outright, and an upload reference cannot be typed at all.
  */
 export function CellEditor({
   rule,
@@ -39,16 +46,17 @@ export function CellEditor({
   onKeyDown,
   onBlur
 }: CellEditorProps) {
+  const kind = editorKindFor(rule);
   const choices = choicesFor(rule);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const selectRef = React.useRef<HTMLSelectElement>(null);
 
   /**
    * Focus and place the caret once, on open.
    *
    * Not `autoFocus` + `onFocus`: autoFocus fires during mount, which in Chrome
    * can land before React has committed `value`, so a `select()` there selects
-   * an empty box and the caret ends up at the end anyway. A layout effect runs
-   * after the value is in the DOM, so both cases are deterministic.
+   * an empty box. A layout effect runs after the value is in the DOM.
    */
   React.useLayoutEffect(() => {
     const input = inputRef.current;
@@ -83,10 +91,28 @@ export function CellEditor({
     onChange(match ?? '');
   }, [choices, draft, onChange]);
 
+  /**
+   * Drop the menu as soon as the editor opens, so Enter or a double-click
+   * lands the user on the choices instead of on a closed box they then have to
+   * click again. `showPicker` is recent and throws where it is unsupported or
+   * disallowed, in which case the select is simply focused and Space or a
+   * click opens it as usual.
+   */
+  React.useLayoutEffect(() => {
+    const select = selectRef.current;
+    if (!select) return;
+    select.focus({ preventScroll: true });
+    try {
+      (select as any).showPicker?.();
+    } catch {
+      // Not user-initiated enough for this browser; focus is still correct.
+    }
+  }, []);
+
   if (choices) {
     return (
       <select
-        autoFocus
+        ref={selectRef}
         className={TABLE_CLASS.gridCellSelect}
         aria-label={label}
         value={choices.includes(draft) ? draft : ''}
@@ -119,13 +145,22 @@ export function CellEditor({
       ref={inputRef}
       className={TABLE_CLASS.gridCellEditor}
       aria-label={label}
-      value={draft}
-      // A numeric column gets the numeric keypad on touch; the value stays a
-      // string so a half-typed number is never clamped or reformatted mid-edit.
-      inputMode={rule?.type === 'number' ? 'decimal' : undefined}
+      type={INPUT_TYPES[kind] ?? 'text'}
+      value={toEditorValue(draft, kind)}
+      // The numeric keypad on touch. The keystroke filter below is what
+      // actually keeps letters out.
+      inputMode={kind === 'number' ? 'decimal' : undefined}
+      readOnly={kind === 'readonly'}
       css={cellEditorStyle}
       onMouseDown={(event) => event.stopPropagation()}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => {
+        const next = event.target.value;
+        // A number column refuses anything that is not on its way to being a
+        // number, rather than accepting it and failing validation later.
+        if (kind === 'number' && !acceptsNumericInput(next)) return;
+        if (kind === 'readonly') return;
+        onChange(next);
+      }}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
     />

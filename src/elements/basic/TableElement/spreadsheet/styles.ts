@@ -114,6 +114,11 @@ export const headerRowStyle = {
   position: 'sticky',
   top: 0,
   zIndex: 30,
+  // Border-box, or the 1px bottom border renders OUTSIDE the stated height and
+  // the header covers the first pixel of row 0 — which the virtualizer has
+  // already positioned at exactly HEADER_HEIGHT. Measured in Chrome: 35px
+  // rendered against a 34px offset, hiding the top of a row-0 selection ring.
+  boxSizing: 'border-box',
   height: `${HEADER_HEIGHT}px`,
   backgroundColor: colors.gray100,
   borderBottom: `1px solid ${colors.gray300}`
@@ -294,7 +299,10 @@ export const cellStyle = {
   '&::after': {
     position: 'absolute',
     zIndex: 3,
-    inset: `-${GRID_LINE_WIDTH}px`,
+    top: `var(--edge-inset-top, -${GRID_LINE_WIDTH}px)`,
+    right: `-${GRID_LINE_WIDTH}px`,
+    bottom: `-${GRID_LINE_WIDTH}px`,
+    left: `-${GRID_LINE_WIDTH}px`,
     borderColor: colors.accent,
     borderStyle: 'solid',
     borderWidth:
@@ -433,20 +441,32 @@ export type CellEdges = {
  * side, or the range's thinner edge overwrites the half of the ring they share
  * and the active cell stops reading as active.
  */
-export function cellEdgeVars(edges: CellEdges, focused: boolean) {
+export function cellEdgeVars(
+  edges: CellEdges,
+  focused: boolean,
+  /**
+   * The cell is in the first data row, which the sticky header sits directly
+   * on top of. Every other edge is pulled out onto the grid line it replaces;
+   * this one has no grid line above it, only the header — and the header wins
+   * on z-index, so an overhanging top edge is simply invisible.
+   */
+  underHeader = false
+) {
   if (focused) {
     return {
       '--edge-top': FOCUSED_EDGE_WIDTH,
       '--edge-right': FOCUSED_EDGE_WIDTH,
       '--edge-bottom': FOCUSED_EDGE_WIDTH,
-      '--edge-left': FOCUSED_EDGE_WIDTH
+      '--edge-left': FOCUSED_EDGE_WIDTH,
+      ...(underHeader ? { '--edge-inset-top': '0px' } : {})
     };
   }
   return {
     ...(edges.top ? { '--edge-top': RANGE_EDGE_WIDTH } : {}),
     ...(edges.right ? { '--edge-right': RANGE_EDGE_WIDTH } : {}),
     ...(edges.bottom ? { '--edge-bottom': RANGE_EDGE_WIDTH } : {}),
-    ...(edges.left ? { '--edge-left': RANGE_EDGE_WIDTH } : {})
+    ...(edges.left ? { '--edge-left': RANGE_EDGE_WIDTH } : {}),
+    ...(underHeader && edges.top ? { '--edge-inset-top': '0px' } : {})
   };
 }
 
@@ -529,6 +549,14 @@ export const validationColors = {
 // used to grow an auto-height grid by the space the bar takes; a bar that
 // wraps on a narrow table simply borrows a little of the grid's height.
 export const PENDING_BAR_HEIGHT = 38;
+
+// A paste that dropped values says so, in the same tone as a warning: nothing
+// is broken, but the user needs to know it did not all land.
+export const refusedNoticeStyle = {
+  color: validationColors.warningText,
+  fontWeight: 600,
+  whiteSpace: 'nowrap'
+} as const;
 
 export const pendingBarStyle = {
   display: 'flex',

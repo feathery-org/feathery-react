@@ -428,6 +428,192 @@ describe('cell editors follow the column', () => {
   });
 });
 
+describe('editors for other field types', () => {
+  const TYPED_COLUMNS = [
+    { name: 'Age', field_id: '', field_type: '', field_key: '', hub_field_id: 'n1', hub_field_key: 'age' },
+    { name: 'Born', field_id: '', field_type: '', field_key: '', hub_field_id: 'd1', hub_field_key: 'born' },
+    { name: 'SSN', field_id: '', field_type: '', field_key: '', hub_field_id: 't1', hub_field_key: 'ssn' },
+    { name: 'Docs', field_id: '', field_type: '', field_key: '', hub_field_id: 'f1', hub_field_key: 'docs' }
+  ];
+  const TYPED_FIELDS = [
+    { id: 'n1', key: 'age', type: 'number', required: false, unique: false },
+    { id: 'd1', key: 'born', type: 'date', required: false, unique: false },
+    { id: 't1', key: 'ssn', type: 'tax_id', required: false, unique: false },
+    { id: 'f1', key: 'docs', type: 'file', required: false, unique: false }
+  ];
+  const ENTRY = {
+    id: 'e1',
+    verified: true,
+    data: {
+      age: 42,
+      born: '1982-07-19T00:00:00Z',
+      ssn: '123456789',
+      docs: [{ url: 'https://x/y', path: 'uploads/deed.pdf' }]
+    }
+  };
+  const typedClient = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: TYPED_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve([ENTRY]) : Promise.resolve({})
+    )
+  });
+  const typedProps = {
+    columns: TYPED_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+  const renderTyped = async () => {
+    renderTable(typedProps, { client: typedClient() });
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument());
+  };
+
+  test('a tax ID is masked until the cell is edited', async () => {
+    await renderTyped();
+    // At rest only the last four digits are readable.
+    expect(screen.getByText('•••••6789')).toBeInTheDocument();
+    expect(screen.queryByText('123456789')).toBeNull();
+
+    fireEvent.doubleClick(cell('•••••6789'));
+
+    // Editing reveals the real value — the mask is display only.
+    expect(await screen.findByRole('textbox')).toHaveValue('123456789');
+  });
+
+  test('a date column opens the native date picker on the date part', async () => {
+    await renderTyped();
+    fireEvent.doubleClick(cell('1982-07-19T00:00:00Z'));
+
+    const input = await screen.findByLabelText(/Edit born/);
+    expect(input).toHaveAttribute('type', 'date');
+    expect(input).toHaveValue('1982-07-19');
+  });
+
+  test('a number column refuses letters outright', async () => {
+    await renderTyped();
+    fireEvent.doubleClick(cell('42'));
+    const input = await screen.findByLabelText(/Edit age/);
+
+    fireEvent.change(input, { target: { value: '12x' } });
+    expect(input).toHaveValue('42');
+
+    fireEvent.change(input, { target: { value: '12.5' } });
+    expect(input).toHaveValue('12.5');
+  });
+
+  test('a file column shows its file names and cannot be typed into', async () => {
+    await renderTyped();
+    expect(screen.getByText('deed.pdf')).toBeInTheDocument();
+
+    fireEvent.doubleClick(cell('deed.pdf'));
+    const input = await screen.findByLabelText(/Edit docs/);
+    expect(input).toHaveAttribute('readonly');
+
+    fireEvent.change(input, { target: { value: 'nope' } });
+    // A read-only editor records nothing, so there is still nothing to save.
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+describe('pasting invalid data', () => {
+  const OPTION_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
+    { name: 'Status', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf3', hub_field_key: 'status' }
+  ];
+  const OPTION_FIELDS = [
+    { id: 'hf1', key: 'name', type: 'text', required: false, unique: false },
+    {
+      id: 'hf3',
+      key: 'status',
+      type: 'text',
+      required: false,
+      unique: false,
+      metadata: { options: ['Ready', 'Sent'] }
+    }
+  ];
+  const setup = async () => {
+    renderTable(
+      {
+        columns: OPTION_COLUMNS,
+        data_source: 'hub',
+        hub_id: 'hub1',
+        hub_verification: 'all'
+      },
+      {
+        client: {
+          getHubSchemas: jest.fn(() =>
+            Promise.resolve({
+              hubs: [{ id: 'hub1', key: 'h', fields: OPTION_FIELDS }]
+            })
+          ),
+          dataHubAction: jest.fn(({ operation }: any) =>
+            operation === 'get'
+              ? Promise.resolve([
+                  { id: 'e1', verified: true, data: { name: 'Alice', status: 'Ready' } }
+                ])
+              : Promise.resolve({})
+          )
+        }
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+  };
+
+  const pasteInto = (text: string) =>
+    fireEvent.paste(grid(), { clipboardData: { getData: () => text } });
+
+  test('a value the column rejects never lands', async () => {
+    await setup();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    // Status only accepts Ready or Sent.
+    pasteInto('Bob\tNonsense');
+
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    // The good half landed; the bad half did not.
+    expect(screen.queryByText('Nonsense')).toBeNull();
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(status()).toHaveTextContent('1 value skipped');
+    expect(status()).toHaveTextContent('1 unsaved change');
+  });
+
+  test('a wholly valid paste says nothing', async () => {
+    await setup();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    pasteInto('Bob\tSent');
+
+    await waitFor(() => expect(screen.getByText('Sent')).toBeInTheDocument());
+    expect(status()).not.toHaveTextContent('skipped');
+  });
+
+  test('the notice goes when the buffer it described does', async () => {
+    await setup();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+    pasteInto('Bob\tNonsense');
+    await waitFor(() => expect(status()).toHaveTextContent('skipped'));
+
+    const confirmSpy = jest
+      .spyOn(featheryWindow(), 'confirm')
+      .mockReturnValue(true);
+    fireEvent.click(discardButton());
+    confirmSpy.mockRestore();
+
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+  });
+});
+
 describe('keyboard editing', () => {
   test('Enter opens the editor instead of moving down', async () => {
     renderTable();

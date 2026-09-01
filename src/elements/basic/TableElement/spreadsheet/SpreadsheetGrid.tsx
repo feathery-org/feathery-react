@@ -10,10 +10,11 @@ import type { VirtualItem } from '@tanstack/react-virtual';
 import { featheryDoc } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
-import { getFillPreview } from './model';
+import { CellValue, getFillPreview } from './model';
 import { CellEditor } from './CellEditor';
 import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
+import { formatCellDisplay } from './fieldEditors';
 import { CellRules } from './validation';
 import type { FillPreview, GridBounds, GridCoordinate } from './model';
 import {
@@ -1111,7 +1112,7 @@ function SpreadsheetCell({
         ...(pinned ? pinnedCellStyle : {}),
         zIndex: cellZIndex(Boolean(pinned), isSelected || isFocused, isFocused),
         ...(isSelected ? cellSelectedStyle : {}),
-        ...cellEdgeVars(edges, isFocused),
+        ...cellEdgeVars(edges, isFocused, rowIndex === 0),
         ...(isFillTarget ? cellFillPreviewStyle : {}),
         // Feathery-controlled shading (e.g. a rejected value) is applied last
         // so a validation state stays visible through selection.
@@ -1145,7 +1146,9 @@ function SpreadsheetCell({
           onBlur={() => interactions.commitEditing()}
         />
       ) : (
-        <span css={cellValueStyle}>{formatRenderedValue(value)}</span>
+        <span css={cellValueStyle}>
+          {formatCellDisplay(value as CellValue, cellRules?.[cell.column.id])}
+        </span>
       )}
       {showTooltip && shading?.message ? (
         <CellErrorTooltip

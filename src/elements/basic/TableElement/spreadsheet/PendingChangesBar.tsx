@@ -9,6 +9,7 @@ import {
   pendingActionsStyle,
   pendingBarStyle,
   pendingCountStyle,
+  refusedNoticeStyle,
   saveButtonStyle
 } from './styles';
 
@@ -24,6 +25,8 @@ export type PendingChangesBarProps = {
   onDiscard: () => void;
   /** Steps the grid's focus through the failing cells. */
   onStepIssue: (delta: 1 | -1) => void;
+  /** Cells the last paste or fill refused because the column rejects them. */
+  refusedCount?: number;
 };
 
 const plural = (count: number, noun: string) =>
@@ -43,10 +46,11 @@ export function PendingChangesBar({
   saving,
   onSave,
   onDiscard,
-  onStepIssue
+  onStepIssue,
+  refusedCount = 0
 }: PendingChangesBarProps) {
   const issueCount = blockingCount + warningCount;
-  if (!pendingCount && !issueCount && !saving) return null;
+  if (!pendingCount && !issueCount && !saving && !refusedCount) return null;
 
   const blocked = blockingCount > 0;
 
@@ -66,6 +70,14 @@ export function PendingChangesBar({
       className={TABLE_CLASS.gridPendingBar}
       css={pendingBarStyle}
     >
+      {refusedCount > 0 && (
+        <span css={refusedNoticeStyle}>
+          {`${plural(refusedCount, 'value')} skipped — not valid for ${
+            refusedCount === 1 ? 'its column' : 'their columns'
+          }`}
+        </span>
+      )}
+
       {issueCount > 0 && (
         <span css={issueGroupStyle}>
           <span css={issueCountStyle(blocked)}>
