@@ -125,6 +125,38 @@ export function isContentControlAttached(control: ContentControlLike): boolean {
   return true;
 }
 
+/**
+ * Run with Syncfusion's canEditContentControl gate forced open. The gate makes
+ * every command touching a locked control return silently; callers assert the
+ * operation is a deliberate whole-control one (table delete, history replay).
+ */
+export function withContentControlLocksBypassed<T>(
+  module: object,
+  run: () => T
+): T {
+  const hadOwn = Object.prototype.hasOwnProperty.call(
+    module,
+    'canEditContentControl'
+  );
+  const previous = hadOwn
+    ? Object.getOwnPropertyDescriptor(module, 'canEditContentControl')
+    : undefined;
+  Object.defineProperty(module, 'canEditContentControl', {
+    configurable: true,
+    enumerable: true,
+    get: () => true
+  });
+  try {
+    return run();
+  } finally {
+    if (hadOwn && previous)
+      Object.defineProperty(module, 'canEditContentControl', previous);
+    else
+      delete (module as { canEditContentControl?: unknown })
+        .canEditContentControl;
+  }
+}
+
 /** Drop content controls whose widgets were removed by a table-clone command. */
 export function pruneDetachedContentControls(
   editor: SyncfusionEditorLike

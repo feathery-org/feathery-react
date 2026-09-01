@@ -7,6 +7,7 @@ import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import DocumentPanel, { PanelTab } from './DocumentPanel';
 import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
+import { TableDeleteImpact } from './bindings/tableDeleteGuard';
 import { DocxSource } from './types';
 
 // Re-exported for tests that import it from this module.
@@ -128,12 +129,15 @@ function DocxEditor({
   // no sign of whether the document actually persisted.
   // Binding-error modal shown when an action hits the export gate. Save and
   // download offer a consented escape hatch ("Save Anyway" / "Download
-  // Anyway"); sign/send show it without one — informational, Close only.
+  // Anyway"); sign/send show it without one — informational, Close only. The
+  // table-delete confirmation reuses it with its own title and a cancel hook.
   const [gateWarning, setGateWarning] = useState<{
     message: string;
+    title?: string;
     confirmLabel?: string;
     confirmTitle?: string;
     proceed?: () => void;
+    cancel?: () => void;
   } | null>(null);
   const [saveToast, setSaveToast] = useState<{
     type: 'success' | 'error';
@@ -165,6 +169,41 @@ function DocxEditor({
     }
   }, [onChange]);
 
+  /**
+   * Deleting a table that feeds calculated values elsewhere would strand them
+   * (stale number, save blocked, the control itself non-deletable). The guard
+   * asks here first; confirming deletes the table and converts the dependent
+   * values to plain text.
+   */
+  const confirmTableDelete = useCallback(
+    (impact: TableDeleteImpact) =>
+      new Promise<boolean>((resolve) => {
+        const names = impact.orphans
+          .map((orphan) => `"${orphan.name}"`)
+          .join(', ');
+        const plural = impact.orphans.length > 1;
+        setGateWarning({
+          title: 'Delete table?',
+          message: `The calculated value${
+            plural ? 's' : ''
+          } ${names} elsewhere in this document ${
+            plural ? 'use' : 'uses'
+          } numbers from this table. Deleting it keeps the current value${
+            plural ? 's' : ''
+          } as plain text.`,
+          confirmLabel: 'Delete table',
+          confirmTitle:
+            'Deletes the table; dependent calculated values become plain text',
+          proceed: () => {
+            setGateWarning(null);
+            resolve(true);
+          },
+          cancel: () => resolve(false)
+        });
+      }),
+    []
+  );
+
   const {
     containerRef,
     editor,
@@ -184,7 +223,7 @@ function DocxEditor({
     onEditorReady,
     onDirty: markDirty,
     onError,
-    bindings
+    bindings: bindings ? { ...bindings, confirmTableDelete } : bindings
   });
 
   // The Changes button is only offered while changes are pending; if they all
@@ -614,11 +653,14 @@ function DocxEditor({
             <div
               role='alertdialog'
               aria-modal='true'
-              aria-label='Document has binding errors'
+              aria-label={gateWarning.title ?? 'Document has binding errors'}
               tabIndex={-1}
               ref={(node) => node?.focus()}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') setGateWarning(null);
+                if (e.key === 'Escape') {
+                  gateWarning.cancel?.();
+                  setGateWarning(null);
+                }
               }}
               css={{
                 width: 440,
@@ -664,7 +706,7 @@ function DocxEditor({
                 >
                   !
                 </span>
-                Document has binding errors
+                {gateWarning.title ?? 'Document has binding errors'}
               </div>
               <div
                 css={{
@@ -684,7 +726,10 @@ function DocxEditor({
               >
                 <button
                   type='button'
-                  onClick={() => setGateWarning(null)}
+                  onClick={() => {
+                    gateWarning.cancel?.();
+                    setGateWarning(null);
+                  }}
                   css={{
                     padding: '8px 14px',
                     borderRadius: 6,
