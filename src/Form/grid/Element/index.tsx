@@ -109,6 +109,7 @@ const Element = ({ node: el, form }: any) => {
     return (
       <Elements.TableElement
         {...basicProps}
+        formId={form.formInstanceId}
         onClick={(payload: any) => tableOnClick(el, payload)}
         updateFieldValues={updateFieldValues}
         submitCustom={submitCustom}

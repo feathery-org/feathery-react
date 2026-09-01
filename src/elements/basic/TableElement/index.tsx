@@ -28,7 +28,7 @@ import {
 import { validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { TrashIcon } from '../../components/icons';
-import { featheryWindow } from '../../../utils/browser';
+import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
   containerStyle,
   rowStyle,
@@ -71,8 +71,14 @@ function clampFrozen(value: any): number {
   return Math.min(Math.max(Math.floor(parsed), 0), MAX_FROZEN);
 }
 
+// Warns before a step transition, a browser back/forward, or a page exit
+// throws buffered spreadsheet edits away.
+const UNSAVED_TABLE_MESSAGE =
+  'You have unsaved changes in a table. If you leave now, your changes will be lost.';
+
 function TableElement({
   element,
+  formId,
   responsiveStyles,
   onClick = () => {},
   updateFieldValues = () => {},
@@ -550,19 +556,26 @@ function TableElement({
     pendingEdits.discard();
   }, [pendingEdits]);
 
-  // Unsaved edits live only in this component, so leaving the page loses them.
+  /**
+   * Buffered edits live only in this component, so anything that leaves the
+   * step or the page loses them. The form-wide registry owns the prompting:
+   * it guards Next/Back and browser history as well as a full page exit, and
+   * keeps two dirty elements from queueing two dialogs.
+   */
+  const unsavedWorkId = `table:${tableId}`;
   useEffect(() => {
-    if (!hasPendingEdits) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      // Chrome only shows its prompt when returnValue is set.
-      event.returnValue = '';
-      return '';
-    };
-    const win = featheryWindow();
-    win.addEventListener('beforeunload', onBeforeUnload);
-    return () => win.removeEventListener('beforeunload', onBeforeUnload);
-  }, [hasPendingEdits]);
+    setUnsavedWork(
+      formId,
+      unsavedWorkId,
+      hasPendingEdits ? UNSAVED_TABLE_MESSAGE : null
+    );
+  }, [formId, unsavedWorkId, hasPendingEdits]);
+  // A table unmounted mid-edit (a hidden step, a removed repeat) is no longer
+  // holding anything the user can save, so it must stop blocking navigation.
+  useEffect(
+    () => () => clearUnsavedWork(formId, unsavedWorkId),
+    [formId, unsavedWorkId]
+  );
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
   useEffect(() => {

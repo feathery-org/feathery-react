@@ -18,8 +18,10 @@ import internalState from '../../utils/internalState';
 import {
   _clearDocxDirtyRegistry,
   hasDirtyDocxEditors,
-  setDocxEditorDirty
+  setDocxEditorDirty,
+  UNSAVED_DOCX_MESSAGE
 } from '../../elements/components/DocxEditor/docxDirtyRegistry';
+import { hasUnsavedWork, setUnsavedWork } from '../../utils/unsavedWork';
 
 let originalFetchForm: any;
 
@@ -122,6 +124,74 @@ describe('docx discard navigation boundary', () => {
     // Full-page exits stay on the browser's own beforeunload warning
     expect(BrowserMod._spies.confirm).not.toHaveBeenCalled();
     expect(hasDirtyDocxEditors('iid-docx-url')).toBe(true);
+  });
+});
+
+describe('unsaved work navigation boundary', () => {
+  const clickTrigger = async () =>
+    fireEvent.click(await screen.findByTestId('btn'));
+
+  // The document editor is no longer the only element that can hold unsaved
+  // work; a spreadsheet table registers with the same registry.
+  it('prompts for any registered source, not just the docx editor', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    GridMod._spies.actions = [{ type: 'next' }];
+    setUnsavedWork('iid-table-next', 'table:t1', 'Table has unsaved changes.');
+
+    render(<JSForm formId='f1' _internalId='iid-table-next' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(BrowserMod._spies.confirm).toHaveBeenCalledWith(
+        'Table has unsaved changes.'
+      )
+    );
+  });
+
+  it('stops Back navigation when the user declines', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(false);
+    GridMod._spies.actions = [{ type: 'back' }];
+    setUnsavedWork('iid-table-back', 'table:t1', 'Table has unsaved changes.');
+
+    render(<JSForm formId='f1' _internalId='iid-table-back' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1)
+    );
+    expect(hasUnsavedWork('iid-table-back')).toBe(true);
+  });
+
+  // Two dirty elements used to mean two consecutive dialogs, or one that
+  // named only the first of them.
+  it('asks once and names both when two elements are dirty', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    GridMod._spies.actions = [{ type: 'next' }];
+    setDocxEditorDirty('iid-both', 'document-container-a', true);
+    setUnsavedWork('iid-both', 'table:t1', 'Table has unsaved changes.');
+
+    render(<JSForm formId='f1' _internalId='iid-both' />);
+    await clickTrigger();
+
+    await waitFor(() =>
+      expect(BrowserMod._spies.confirm).toHaveBeenCalledTimes(1)
+    );
+    expect(BrowserMod._spies.confirm).toHaveBeenCalledWith(
+      `${UNSAVED_DOCX_MESSAGE}\n\nTable has unsaved changes.`
+    );
+  });
+
+  it('leaves another form on the page alone', async () => {
+    BrowserMod._spies.confirm.mockReturnValue(true);
+    GridMod._spies.actions = [{ type: 'next' }];
+    setUnsavedWork('iid-other-form', 'table:t1', 'Table has unsaved changes.');
+
+    render(<JSForm formId='f1' _internalId='iid-clean-form' />);
+    await clickTrigger();
+
+    await act(async () => {});
+    expect(BrowserMod._spies.confirm).not.toHaveBeenCalled();
+    expect(hasDirtyDocxEditors('iid-clean-form')).toBe(false);
   });
 });
 
