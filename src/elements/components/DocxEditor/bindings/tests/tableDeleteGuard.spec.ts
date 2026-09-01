@@ -164,7 +164,7 @@ describe('installTableDeleteGuard', () => {
     expect(scan(editor).tables.has('costs')).toBe(false);
   });
 
-  it('undo walks back through consistent documents to a full restore', async () => {
+  it('one undo restores the table and the re-wrapped prose formulas atomically', async () => {
     editor = makeEditor(buildCostsFixture());
     uninstall = installTableDeleteGuard(
       editor as unknown as SyncfusionEditorLike,
@@ -177,14 +177,9 @@ describe('installTableDeleteGuard', () => {
     expect(scan(editor).tables.has('costs')).toBe(false);
 
     const history = (editor as any).editorHistoryModule;
-    // First undo restores the table (its own controls with it); the prose
-    // formulas stay plain text - a consistent, evaluable document.
+    // The delete + unwraps are one grouped entry: a single undo restores the
+    // table AND re-wraps the prose formulas around their values.
     history.undo();
-    const partial = scan(editor);
-    expect(partial.tables.has('costs')).toBe(true);
-    expect(partial.formulas.has('combined_total')).toBe(false);
-    // The remaining undos re-wrap the prose formulas.
-    for (let i = 0; i < 20 && history.canUndo(); i++) history.undo();
     const restored = scan(editor);
     expect(restored.tables.has('costs')).toBe(true);
     expect(restored.formulas.has('grand_total')).toBe(true);
@@ -192,10 +187,22 @@ describe('installTableDeleteGuard', () => {
     // The restore must not duplicate the value text beside the re-wrapped
     // control ('$9,500.00' exists exactly once in the original document).
     expect(countOf(editor, '$9,500.00')).toBe(1);
-    // Editing after the undos clears the redo stack; that teardown crashing
-    // is exactly what grouped complex history did, so pin that it does not.
+
+    // A single redo replays the whole group.
+    history.redo();
+    const redone = scan(editor);
+    expect(redone.tables.has('costs')).toBe(false);
+    expect(redone.formulas.has('combined_total')).toBe(false);
+    expect(countOf(editor, '$9,500.00')).toBe(1);
+
+    // Editing after an undo clears the redo stack; that teardown crashing is
+    // exactly what grouping removeContentControl entries did, so pin that the
+    // InsertText/DeleteTable group survives it (and editor destroy in
+    // afterEach covers the other teardown surface).
+    history.undo();
     (editor as any).editorModule.insertText('x');
     expect(scan(editor).tables.has('costs')).toBe(true);
+    expect(countOf(editor, '$9,500.00')).toBe(1);
   });
 
   it('passes through untouched under track changes', async () => {
