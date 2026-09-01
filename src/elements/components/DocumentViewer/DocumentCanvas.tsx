@@ -47,17 +47,22 @@ export default function DocumentCanvas({
   // destroy() leaks it for the life of the page, so every open/close cycle of
   // the viewer would accumulate another full document.
   const openDocsRef = useRef<Set<any>>(new Set());
+  // pdf.js 6.x removed PDFDocumentProxy.destroy(); teardown goes through the
+  // loading task instead, so remember each proxy's task.
+  const loadingTasksRef = useRef<WeakMap<any, any>>(new WeakMap());
   const docUrlsKey = documents.map((d) => d.pdf_url).join('|');
 
   const destroyDoc = useCallback((pdfProxy: any) => {
     if (!pdfProxy) return;
     openDocsRef.current.delete(pdfProxy);
-    // cleanup() frees per-page render resources, destroy() tears down the
-    // worker-side document. Both are best-effort: a document already destroyed
-    // (or one whose load never finished) must not break teardown.
+    // cleanup() frees per-page render resources, the task's destroy() tears
+    // down the worker-side document. Both are best-effort: a document already
+    // destroyed (or one whose load never finished) must not break teardown.
     try {
       pdfProxy.cleanup?.();
-      pdfProxy.destroy?.();
+      const task = loadingTasksRef.current.get(pdfProxy);
+      if (task?.destroy) task.destroy();
+      else pdfProxy.destroy?.();
     } catch {
       // already torn down
     }
@@ -73,13 +78,16 @@ export default function DocumentCanvas({
         return next;
       });
       loadPdfjs()
-        .then(
-          (pdfjs: any) =>
-            pdfjs.getDocument({
-              url: doc.pdf_url,
-              standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL
-            }).promise
-        )
+        .then((pdfjs: any) => {
+          const task = pdfjs.getDocument({
+            url: doc.pdf_url,
+            standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL
+          });
+          return task.promise.then((pdfProxy: any) => {
+            loadingTasksRef.current.set(pdfProxy, task);
+            return pdfProxy;
+          });
+        })
         .then((pdfProxy: any) => {
           // Superseded while loading (remount/unmount): this proxy will never
           // be rendered, so destroy it rather than leaking it.
