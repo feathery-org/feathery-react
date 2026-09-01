@@ -95,6 +95,9 @@ const renderTable = (props: Record<string, any> = {}) => {
 
 const grid = () => screen.getByRole('grid');
 const cell = (text: string) => screen.getByText(text).closest('[role="gridcell"]')!;
+// Spreadsheet edits are buffered, so nothing reaches the data source until the
+// user saves them.
+const save = () => fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
 beforeEach(() => {
   stubLayout();
@@ -239,6 +242,9 @@ describe('spreadsheet editing', () => {
     fireEvent.change(input, { target: { value: 'Alicia' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
+    expect(updateFieldValues).not.toHaveBeenCalled();
+    save();
+
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenCalledWith({
         name_key: ['Alicia', 'Bob', 'Cara']
@@ -254,6 +260,7 @@ describe('spreadsheet editing', () => {
 
     fireEvent.change(input, { target: { value: '31' } });
     fireEvent.keyDown(input, { key: 'Enter' });
+    save();
 
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenCalledWith({
@@ -299,6 +306,7 @@ describe('spreadsheet range operations', () => {
     );
 
     fireEvent.keyDown(grid(), { key: 'Delete' });
+    save();
 
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenCalledWith({
@@ -321,6 +329,7 @@ describe('spreadsheet range operations', () => {
         getData: () => 'Xavier\t21\nYolanda\t22'
       }
     });
+    save();
 
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenCalledWith({
@@ -341,12 +350,13 @@ describe('spreadsheet range operations', () => {
     fireEvent.paste(grid(), {
       clipboardData: { getData: () => 'Xavier' }
     });
-    await waitFor(() => expect(updateFieldValues).toHaveBeenCalled());
-    updateFieldValues.mockClear();
+    await waitFor(() => expect(cell('Xavier')).toBeInTheDocument());
 
     // `Mod` resolves per platform, and jsdom's user agent reports neither mac
     // nor windows, so the undo chord here is Control+Z (Cmd+Z on a real Mac).
     fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+    await waitFor(() => expect(cell('Alice')).toBeInTheDocument());
+    save();
 
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenCalledWith({
@@ -444,6 +454,10 @@ describe('row insertion and deletion', () => {
     const { updateFieldValues } = renderTable({ add_delete_rows: true });
     openRowMenu(2);
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete row 2' }));
+    // The row leaves the grid immediately, but the source keeps it until save.
+    await waitFor(() => expect(screen.queryByText('Bob')).toBeNull());
+    expect(updateFieldValues).not.toHaveBeenCalled();
+    save();
 
     await waitFor(() =>
       expect(updateFieldValues).toHaveBeenCalledWith({

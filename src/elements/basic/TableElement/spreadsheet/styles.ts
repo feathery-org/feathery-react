@@ -457,3 +457,159 @@ export const addRowStripLabelStyle = {
   paddingInlineStart: `${ROW_HEADER_WIDTH / 2}px`,
   whiteSpace: 'nowrap'
 } as const;
+
+// Validation states. Red blocks a save; orange is advisory — staged
+// (unverified) rows are not held to the hub's field rules until they are
+// verified, so a bad value there is a warning the user may still save.
+export const validationColors = {
+  errorText: '#b42318',
+  errorBorder: '#f04438',
+  errorSurface: '#fef3f2',
+  warningText: '#b54708',
+  warningBorder: '#f79009',
+  warningSurface: '#fffaeb',
+  // A cell holding an edit that has not been written yet.
+  pendingSurface: colors.accentTint
+} as const;
+
+// Single-line height of the bar: 8px padding twice plus one 21px line. Only
+// used to grow an auto-height grid by the space the bar takes; a bar that
+// wraps on a narrow table simply borrows a little of the grid's height.
+export const PENDING_BAR_HEIGHT = 38;
+
+export const pendingBarStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: '8px 12px',
+  flex: '0 0 auto',
+  padding: '8px 12px',
+  backgroundColor: colors.accentSoft,
+  borderBottom: `1px solid ${colors.gray200}`,
+  fontFamily: GRID_FONT_FAMILY,
+  fontSize: `${FONT_SIZE - 3}px`,
+  lineHeight: 1.4,
+  color: colors.gray900
+} as const;
+
+export const pendingCountStyle = {
+  fontWeight: 600,
+  whiteSpace: 'nowrap'
+} as const;
+
+// The issue counter and its stepper read as one control, so the count is
+// tinted to whichever severity it is stepping through.
+export const issueGroupStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  whiteSpace: 'nowrap'
+} as const;
+
+export const issueCountStyle = (blocking: boolean) =>
+  ({
+    fontWeight: 600,
+    color: blocking ? validationColors.errorText : validationColors.warningText
+  } as const);
+
+export const issueStepperStyle = (blocking: boolean) =>
+  ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '22px',
+    height: '22px',
+    padding: 0,
+    backgroundColor: colors.white,
+    border: `1px solid ${
+      blocking ? validationColors.errorBorder : validationColors.warningBorder
+    }`,
+    borderRadius: '4px',
+    cursor: 'pointer',
+    color: blocking ? validationColors.errorText : validationColors.warningText,
+    fontFamily: 'inherit',
+    fontSize: `${FONT_SIZE - 4}px`,
+    lineHeight: 1,
+    '&:hover': {
+      backgroundColor: blocking
+        ? validationColors.errorSurface
+        : validationColors.warningSurface
+    },
+    '&:focus-visible': {
+      outline: `2px solid ${colors.accent}`,
+      outlineOffset: '1px'
+    },
+    '&:disabled': { opacity: 0.4, cursor: 'default' }
+  } as const);
+
+// Actions sit at the far end of the bar, away from the status text.
+export const pendingActionsStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '8px',
+  marginInlineStart: 'auto'
+} as const;
+
+const pendingButtonBase = {
+  padding: '5px 12px',
+  borderRadius: '4px',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 'inherit',
+  fontWeight: 600,
+  lineHeight: 1.4,
+  '&:focus-visible': {
+    outline: `2px solid ${colors.accent}`,
+    outlineOffset: '1px'
+  },
+  '&:disabled': { opacity: 0.5, cursor: 'default' }
+} as const;
+
+export const discardButtonStyle = {
+  ...pendingButtonBase,
+  backgroundColor: 'transparent',
+  border: `1px solid ${colors.gray300}`,
+  color: colors.gray700,
+  '&:hover:not(:disabled)': { backgroundColor: colors.white }
+} as const;
+
+export const saveButtonStyle = {
+  ...pendingButtonBase,
+  backgroundColor: colors.accent,
+  border: `1px solid ${colors.accent}`,
+  color: colors.white,
+  '&:hover:not(:disabled)': { backgroundColor: colors.accentDark }
+} as const;
+
+/**
+ * The error bubble for the focused cell.
+ *
+ * Positioned inside the cell rather than in a portal so it travels with the
+ * grid's scrolling for free. The cell and its row are already raised while
+ * focused, which is what keeps it above the rows below.
+ */
+export const cellTooltipStyle = (blocking: boolean, above: boolean) =>
+  ({
+    position: 'absolute',
+    insetInlineStart: 0,
+    ...(above
+      ? { bottom: '100%', marginBottom: '4px' }
+      : { top: '100%', marginTop: '4px' }),
+    zIndex: 30,
+    maxWidth: '260px',
+    width: 'max-content',
+    padding: '6px 8px',
+    borderRadius: '4px',
+    backgroundColor: blocking
+      ? validationColors.errorText
+      : validationColors.warningText,
+    color: colors.white,
+    fontFamily: GRID_FONT_FAMILY,
+    fontSize: `${FONT_SIZE - 4}px`,
+    fontWeight: 400,
+    lineHeight: 1.35,
+    textAlign: 'start',
+    whiteSpace: 'normal',
+    pointerEvents: 'none',
+    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.22)'
+  } as const);

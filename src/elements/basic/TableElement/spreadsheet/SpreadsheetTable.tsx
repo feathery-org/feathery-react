@@ -4,10 +4,13 @@ import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
+import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
+import { CellErrors, cellErrorKey } from './validation';
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
+  PENDING_BAR_HEIGHT,
   spreadsheetViewportHeight
 } from './styles';
 import {
@@ -52,6 +55,22 @@ export type SpreadsheetTableProps = {
    * invalidates the index-keyed undo history.
    */
   rowIdentityVersion?: number;
+  /**
+   * Unsaved-work state for the bar above the grid. Omitted when the table
+   * writes through on every edit, which leaves nothing to save or discard.
+   */
+  pending?: {
+    count: number;
+    saving: boolean;
+    onSave: () => void;
+    onDiscard: () => void;
+  };
+  /**
+   * Failing cells keyed `${rowIndex}:${fieldKey}`, split by whether they stop
+   * a save. Both are walked by the bar's stepper, blocking cells first.
+   */
+  blockingErrors?: CellErrors;
+  warningErrors?: CellErrors;
 };
 
 export function SpreadsheetTable({
@@ -67,7 +86,10 @@ export function SpreadsheetTable({
   onInsertRow,
   onDeleteRow,
   getCellShading,
-  rowIdentityVersion = 0
+  rowIdentityVersion = 0,
+  pending,
+  blockingErrors,
+  warningErrors
 }: SpreadsheetTableProps) {
   const getValue = useCallback(
     (rowIndex: number, fieldKey: string): CellValue => {
@@ -184,6 +206,36 @@ export function SpreadsheetTable({
     []
   );
 
+  // Failing cells in reading order — down the rows, left to right — with the
+  // blocking ones first, so stepping through issues fixes what is holding the
+  // save back before it visits the advisory ones.
+  const issues = useMemo(() => {
+    if (!blockingErrors && !warningErrors) return [];
+    const inOrder = (errors: CellErrors | undefined) =>
+      errors && Object.keys(errors).length
+        ? rows.flatMap((row) =>
+            columns
+              .filter((column) =>
+                Boolean(errors[cellErrorKey(row.rowIndex, column.field_key)])
+              )
+              .map((column) => ({ rowId: row.id, columnId: column.field_key }))
+          )
+        : [];
+    return [...inOrder(blockingErrors), ...inOrder(warningErrors)];
+  }, [blockingErrors, warningErrors, rows, columns]);
+
+  // Where the stepper is in `issues`. Reset whenever the set changes, so
+  // fixing a cell restarts the walk rather than skipping the next one.
+  const issueCursor = useRef(-1);
+  const issueSignature = issues
+    .map((i) => `${i.rowId}:${i.columnId}`)
+    .join('|');
+  const prevSignature = useRef(issueSignature);
+  if (prevSignature.current !== issueSignature) {
+    prevSignature.current = issueSignature;
+    issueCursor.current = -1;
+  }
+
   const interactions = useGridInteractions({
     table,
     rowIndexById,
@@ -195,10 +247,42 @@ export function SpreadsheetTable({
     scrollToCell
   });
 
-  const fitHeight = useMemo(
-    () => spreadsheetViewportHeight(heightUnit, rows.length),
-    [heightUnit, rows.length]
+  const stepIssue = useCallback(
+    (delta: 1 | -1) => {
+      if (!issues.length) return;
+      const cursor = issueCursor.current;
+      const next =
+        cursor < 0
+          ? delta > 0
+            ? 0
+            : issues.length - 1
+          : (cursor + delta + issues.length) % issues.length;
+      issueCursor.current = next;
+      const issue = issues[next];
+      interactions.focusCell(issue.rowId, issue.columnId);
+      // The stepper button took focus on the click; the grid needs it back or
+      // the next arrow key would step the button instead of the selection.
+      gridRef.current?.focus();
+    },
+    [interactions, issues]
   );
+
+  const blockingCount = Object.keys(blockingErrors ?? {}).length;
+  const warningCount = Object.keys(warningErrors ?? {}).length;
+  // The bar also stays up while a save is in flight, so the write has somewhere
+  // to report from after the buffer it came from is already empty.
+  const showBar = Boolean(
+    pending &&
+      (pending.count > 0 || pending.saving || blockingCount + warningCount > 0)
+  );
+
+  // The status bar sits inside the element's own height box, so an auto-sized
+  // grid grows to make room for it rather than losing a row while it is up.
+  const fitHeight = useMemo(() => {
+    const base = spreadsheetViewportHeight(heightUnit, rows.length);
+    if (base === undefined) return undefined;
+    return base + (showBar ? PENDING_BAR_HEIGHT : 0);
+  }, [heightUnit, rows.length, showBar]);
 
   return (
     <div
@@ -210,6 +294,17 @@ export function SpreadsheetTable({
         ...(fitHeight ? { height: `${fitHeight}px` } : {})
       }}
     >
+      {showBar && pending ? (
+        <PendingChangesBar
+          pendingCount={pending.count}
+          blockingCount={blockingCount}
+          warningCount={warningCount}
+          saving={pending.saving}
+          onSave={pending.onSave}
+          onDiscard={pending.onDiscard}
+          onStepIssue={stepIssue}
+        />
+      ) : null}
       <SpreadsheetGrid
         ref={gridRef}
         table={table}

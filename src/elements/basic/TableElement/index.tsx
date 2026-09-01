@@ -18,8 +18,17 @@ import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
+import { usePendingEdits } from './spreadsheet/usePendingEdits';
+import {
+  CellErrors,
+  cellErrorKey,
+  fieldCellRules,
+  validateGrid
+} from './spreadsheet/validation';
+import { validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { TrashIcon } from '../../components/icons';
+import { featheryWindow } from '../../../utils/browser';
 import {
   containerStyle,
   rowStyle,
@@ -87,9 +96,27 @@ function TableElement({
     element.properties?.data_source === 'hub' &&
     !!element.properties?.hub_id &&
     !editMode;
-  const hub = useHubTableSource({ element, client, enabled: isHub });
 
   const wantsSpreadsheet = element.properties?.display_mode === 'spreadsheet';
+
+  /**
+   * Spreadsheet mode holds edits until the user saves them. The classic table
+   * keeps writing through on every edit: its cells are individually committed
+   * form inputs, so there is no batch for a Save button to act on.
+   */
+  const pendingEdits = usePendingEdits();
+  // Not in the builder: an unsaved cell there would guard the designer's own
+  // navigation, and the canvas is showing example data anyway.
+  const buffersEdits = wantsSpreadsheet && !editMode;
+  const hasPendingEdits = buffersEdits && pendingEdits.count > 0;
+
+  const hub = useHubTableSource({
+    element,
+    client,
+    enabled: isHub,
+    blockRefetch: hasPendingEdits
+  });
+
   const frozenRows = clampFrozen(element.properties?.frozen_rows);
   const frozenColumns = clampFrozen(element.properties?.frozen_columns);
 
@@ -311,6 +338,9 @@ function TableElement({
       setDeleteRowIndex(null);
       bumpRowIdentity();
       handleInsertRow(atIndex);
+      // The row lands in the source data straight away, so every buffered edit
+      // at or below it now belongs to a different row index.
+      if (buffersEdits) pendingEdits.shiftForInsert(atIndex);
       // Hub mutations don't own search/pagination; mirror the field-mode UX so
       // the new row is visible.
       if (isHub && searchQuery) setSearchQuery('');
@@ -321,7 +351,34 @@ function TableElement({
         return next;
       });
     },
-    [handleInsertRow, bumpRowIdentity, isHub, searchQuery, setSearchQuery]
+    [
+      handleInsertRow,
+      bumpRowIdentity,
+      isHub,
+      searchQuery,
+      setSearchQuery,
+      buffersEdits,
+      pendingEdits
+    ]
+  );
+
+  /**
+   * Removing a row is held back with the cell edits, so Discard puts it back
+   * and one Save applies the whole set. Until then it is simply not rendered.
+   */
+  const spreadsheetDeleteRow = useCallback(
+    (rowIndex: number) => {
+      setDeleteRowIndex(null);
+      if (!buffersEdits) {
+        wrappedHandleDeleteRow(rowIndex);
+        return;
+      }
+      // The row leaves the grid now, so index-keyed undo patches recorded
+      // against it can no longer be replayed.
+      bumpRowIdentity();
+      pendingEdits.recordDelete(rowIndex);
+    },
+    [buffersEdits, pendingEdits, wrappedHandleDeleteRow, bumpRowIdentity]
   );
 
   const spreadsheetCellsEdit = useCallback(
@@ -338,29 +395,174 @@ function TableElement({
           return next;
         });
       }
-      handleCellsEdit(writes);
+      if (buffersEdits) pendingEdits.record(writes);
+      else handleCellsEdit(writes);
     },
-    [handleCellsEdit]
+    [handleCellsEdit, buffersEdits, pendingEdits]
+  );
+
+  // Rows the user removed but has not saved are simply not rendered; the
+  // source keeps them (and its row numbering) until the save applies them.
+  const spreadsheetRowIndices = useMemo(
+    () =>
+      buffersEdits
+        ? paginatedRowIndices.filter(
+            (rowIndex: number) => !pendingEdits.isRowDeleted(rowIndex)
+          )
+        : paginatedRowIndices,
+    [buffersEdits, paginatedRowIndices, pendingEdits]
+  );
+
+  // Buffered edits are layered over the stored values so the grid renders what
+  // the user typed, not what the backend still holds.
+  const spreadsheetFieldValues = useMemo(() => {
+    if (!buffersEdits || !pendingEdits.writes.length) return activeFieldValues;
+    const values = { ...activeFieldValues };
+    // Each touched column's array is copied once, so several edits in one
+    // column don't each rebuild it.
+    const copied = new Set<string>();
+    pendingEdits.writes.forEach(({ fieldKey, rowIndex, value }) => {
+      if (!copied.has(fieldKey)) {
+        const current = values[fieldKey];
+        values[fieldKey] = Array.isArray(current) ? [...current] : [];
+        copied.add(fieldKey);
+      }
+      values[fieldKey][rowIndex] = value;
+    });
+    return values;
+  }, [activeFieldValues, buffersEdits, pendingEdits.writes]);
+
+  /**
+   * The column rules the spreadsheet validates against. A Hub owns its own
+   * field schema; a field-backed table has only each column's form field type,
+   * so it can check formats but not the field's own required/length settings —
+   * those are enforced when the step is submitted.
+   */
+  const cellRules = useMemo(
+    () => (isHub ? hub.cellRules : fieldCellRules(columns)),
+    [isHub, hub.cellRules, columns]
   );
 
   /**
-   * Feathery-controlled cell shading. Today its one source is a Data Hub write
-   * the backend rejected: that cell keeps its rolled-back value and is tinted
-   * with the validation message, instead of the failure only appearing in the
-   * banner above the table.
+   * Every failing cell: the ones this client can see, plus any the backend
+   * rejected. A live client-side result wins, because a server error describes
+   * a write the user may already have corrected.
    */
-  // Feathery-controlled cell shading. Its one source is a Data Hub write the
-  // backend rejected: the cell keeps its rolled-back value and is tinted with
-  // the validation message, instead of the failure only showing in the banner.
-  const hubCellErrors = isHub ? hub.cellErrors : undefined;
+  const cellErrors = useMemo<CellErrors>(() => {
+    if (!isSpreadsheet) return {};
+    const validated = validateGrid({
+      rowIndices: spreadsheetRowIndices,
+      fieldKeys: columns.map((column: any) => column.field_key),
+      getValue: (rowIndex, fieldKey) => {
+        const value = spreadsheetFieldValues[fieldKey];
+        const cell = Array.isArray(value) ? value[rowIndex] : value;
+        return cell === undefined ? null : cell;
+      },
+      rules: cellRules
+    });
+    return isHub ? { ...hub.cellErrors, ...validated } : validated;
+  }, [
+    isSpreadsheet,
+    isHub,
+    hub.cellErrors,
+    spreadsheetRowIndices,
+    spreadsheetFieldValues,
+    columns,
+    cellRules
+  ]);
+
+  /**
+   * A staged Data Hub row is not held to the hub's field rules until it is
+   * verified — correcting extracted data is the whole point of editing one —
+   * so a bad value there is a warning the user can still save. Everywhere else
+   * an error blocks the save, because the backend would reject it anyway.
+   */
+  const { blockingErrors, warningErrors } = useMemo(() => {
+    const blocking: CellErrors = {};
+    const warning: CellErrors = {};
+    Object.entries(cellErrors).forEach(([key, message]) => {
+      const rowIndex = Number(key.slice(0, key.indexOf(':')));
+      const staged = isHub && hub.rowVerified[rowIndex] === false;
+      (staged ? warning : blocking)[key] = message;
+    });
+    return { blockingErrors: blocking, warningErrors: warning };
+  }, [cellErrors, isHub, hub.rowVerified]);
+
+  /**
+   * Feathery-controlled cell shading: what is wrong with a cell, and what is
+   * waiting to be written. Errors win over warnings, and both win over the
+   * unsaved tint, so the most urgent state is the one that shows.
+   */
   const getCellShading = useMemo<GetCellShading | undefined>(() => {
-    if (!hubCellErrors || !Object.keys(hubCellErrors).length) return undefined;
+    const hasIssues =
+      Object.keys(blockingErrors).length > 0 ||
+      Object.keys(warningErrors).length > 0;
+    if (!hasIssues && !hasPendingEdits) return undefined;
     return ({ rowIndex, fieldKey }) => {
-      const message = hubCellErrors[`${rowIndex}:${fieldKey}`];
-      if (!message) return null;
-      return { backgroundColor: '#fef2f2', borderColor: '#ef4444', message };
+      const key = cellErrorKey(rowIndex, fieldKey);
+      const blocking = blockingErrors[key];
+      if (blocking) {
+        return {
+          backgroundColor: validationColors.errorSurface,
+          borderColor: validationColors.errorBorder,
+          message: blocking,
+          severity: 'error'
+        };
+      }
+      const warning = warningErrors[key];
+      if (warning) {
+        return {
+          backgroundColor: validationColors.warningSurface,
+          borderColor: validationColors.warningBorder,
+          message: warning,
+          severity: 'warning'
+        };
+      }
+      if (
+        hasPendingEdits &&
+        pendingEdits.peek(rowIndex, fieldKey) !== undefined
+      ) {
+        return { backgroundColor: validationColors.pendingSurface };
+      }
+      return null;
     };
-  }, [hubCellErrors]);
+  }, [blockingErrors, warningErrors, hasPendingEdits, pendingEdits]);
+
+  const savingEdits = isHub && hub.saving;
+
+  /**
+   * Applies the buffer: the cell edits as one batch per row/column, then the
+   * row deletions from the bottom up so each index is still valid when it is
+   * applied.
+   */
+  const handleSaveEdits = useCallback(() => {
+    const { writes, deletedRows } = pendingEdits;
+    if (!writes.length && !deletedRows.length) return;
+    pendingEdits.clear();
+    if (writes.length) handleCellsEdit(writes);
+    if (deletedRows.length) {
+      bumpRowIdentity();
+      deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
+    }
+  }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
+
+  const handleDiscardEdits = useCallback(() => {
+    pendingEdits.discard();
+  }, [pendingEdits]);
+
+  // Unsaved edits live only in this component, so leaving the page loses them.
+  useEffect(() => {
+    if (!hasPendingEdits) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Chrome only shows its prompt when returnValue is set.
+      event.returnValue = '';
+      return '';
+    };
+    const win = featheryWindow();
+    win.addEventListener('beforeunload', onBeforeUnload);
+    return () => win.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasPendingEdits]);
 
   // Lets the assistant invoke this table's mutations through the same handlers the user UI calls
   useEffect(() => {
@@ -434,8 +636,8 @@ function TableElement({
       ) : isSpreadsheet ? (
         <SpreadsheetTable
           columns={columns}
-          rowIndices={paginatedRowIndices}
-          fieldValues={activeFieldValues}
+          rowIndices={spreadsheetRowIndices}
+          fieldValues={spreadsheetFieldValues}
           canEdit={canEdit}
           frozenRows={frozenRows}
           frozenColumns={frozenColumns}
@@ -443,9 +645,21 @@ function TableElement({
           onCellsEdit={spreadsheetCellsEdit}
           onAddColumn={handleAddColumn}
           onInsertRow={canAddRows ? spreadsheetInsertRow : undefined}
-          onDeleteRow={canDeleteRows ? wrappedHandleDeleteRow : undefined}
+          onDeleteRow={canDeleteRows ? spreadsheetDeleteRow : undefined}
           getCellShading={getCellShading}
           rowIdentityVersion={rowIdentityVersion}
+          pending={
+            buffersEdits
+              ? {
+                  count: pendingEdits.count,
+                  saving: savingEdits,
+                  onSave: handleSaveEdits,
+                  onDiscard: handleDiscardEdits
+                }
+              : undefined
+          }
+          blockingErrors={blockingErrors}
+          warningErrors={warningErrors}
         />
       ) : (
         <div css={{ overflowX: 'auto' }}>

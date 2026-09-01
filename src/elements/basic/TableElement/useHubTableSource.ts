@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { featheryWindow } from '../../../utils/browser';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
+import { CellRules, hubCellRules } from './spreadsheet/validation';
 import { CellWrite, Column } from './types';
 
 export type HubVerification = 'verified' | 'unverified' | 'all';
@@ -50,6 +51,11 @@ type UseHubTableSourceProps = {
     | null
     | undefined;
   enabled: boolean;
+  /**
+   * Holds off background resyncs. A refetch replaces every row, so it would
+   * silently rewrite the rows that unsaved edits are keyed to.
+   */
+  blockRefetch?: boolean;
 };
 
 type UseHubTableSourceReturn = {
@@ -61,6 +67,12 @@ type UseHubTableSourceReturn = {
   errors: string[];
   // `${rowIndex}:${fieldKey}` -> message, for cells the Hub rejected.
   cellErrors: Record<string, string>;
+  // The hub's own field rules, so the grid can flag a bad value before a save
+  // rather than only after one is rejected.
+  cellRules: CellRules;
+  // Whether each row is verified, in row order. A staged (unverified) row is
+  // not held to the hub's field rules until it is verified.
+  rowVerified: boolean[];
   // Adding is impossible while reading unverified rows: `create` with
   // `verification: unverified` is a batch REPLACE of the staged set.
   canAddRows: boolean;
@@ -95,7 +107,8 @@ const errorMessages = (error: any): string[] => {
 export function useHubTableSource({
   element,
   client,
-  enabled
+  enabled,
+  blockRefetch = false
 }: UseHubTableSourceProps): UseHubTableSourceReturn {
   const tableId = element.id;
   const hubId = element.properties?.hub_id;
@@ -217,10 +230,13 @@ export function useHubTableSource({
     }
   }, [enabled, hubId, client, commitRows, verification]);
 
+  const blockRefetchRef = useRef(blockRefetch);
+  blockRefetchRef.current = blockRefetch;
+
   const refetch = useCallback(() => {
-    // A reload would drop in-flight writes and rows that have not been created
-    // yet, so only resync when the table has nothing outstanding.
-    if (pendingRef.current > 0) return;
+    // A reload would drop in-flight writes, unsaved edits, and rows that have
+    // not been created yet, so only resync when nothing is outstanding.
+    if (pendingRef.current > 0 || blockRefetchRef.current) return;
     if (rowsRef.current.some((row) => row.entryId == null)) return;
     loadEntries().catch(() => {});
   }, [loadEntries]);
@@ -244,6 +260,13 @@ export function useHubTableSource({
   }, [hubColumns, rows, syntheticToHubKey]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
+
+  const rowVerified = useMemo(() => rows.map((row) => row.verified), [rows]);
+
+  const cellRules = useMemo(
+    () => hubCellRules(hubColumns, schemaFields),
+    [hubColumns, schemaFields]
+  );
 
   // Re-key row-local errors onto the (rowIndex, synthetic field key) pairs the
   // grid renders, so shading survives rows being added or removed above them.
@@ -319,7 +342,7 @@ export function useHubTableSource({
           const changedKeys = Object.keys(changes);
           try {
             if (row.entryId) {
-              await client.dataHubAction({
+              const result = await client.dataHubAction({
                 hubId,
                 operation: 'update',
                 // Update defaults to the verified set, so correcting a staged
@@ -330,6 +353,21 @@ export function useHubTableSource({
                   changedKeys.map((key) => [key, row.data[key]])
                 )
               });
+              // A staged row is stored even when it breaks a field rule, and
+              // the Hub reports the rule it broke alongside the success. Keep
+              // it on the cells so the grid can flag them; the row is
+              // unverified, so the table treats it as a warning.
+              if (result?.error) {
+                updateRow(localId, (r) => ({
+                  ...r,
+                  errors: {
+                    ...r.errors,
+                    ...Object.fromEntries(
+                      changedKeys.map((key) => [key, result.error])
+                    )
+                  }
+                }));
+              }
               return;
             }
             // Rows stay provisional until their first edit, so the first edit
@@ -439,6 +477,8 @@ export function useHubTableSource({
     saving: pending > 0,
     errors,
     cellErrors,
+    cellRules,
+    rowVerified,
     canAddRows: verification !== 'unverified',
     refetch,
     handleCellEdit,
