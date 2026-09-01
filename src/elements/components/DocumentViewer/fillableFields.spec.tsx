@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DocumentViewer from './index';
+import { featheryDoc } from '../../../utils/browser';
 
 // Fillable-field persistence: the viewer renders the PDF's own AcroForm
 // widgets (DocumentCanvas), and any edits — tracked through pdf.js's
@@ -195,6 +196,39 @@ it('surfaces a save failure, skips finalize, and retries the save on the next at
       ([envelopeId]) => envelopeId === 'env-1'
     )
   ).toBe(true);
+});
+
+it('blocks Escape and Back while a save/finalize is in flight', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  // Keep the action in flight until we release it, so the viewer stays busy.
+  let releaseSave: (value: any) => void = () => undefined;
+  const onSaveEnvelopeFile = jest.fn(
+    () => new Promise((resolve) => (releaseSave = resolve))
+  );
+  const setShow = jest.fn();
+  const { onFinalize } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    { onSaveEnvelopeFile, setShow }
+  );
+  await waitForLoad(proxyA, proxyB);
+
+  proxyA.annotationStorage.onSetModified();
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1));
+
+  // Closing now would hide the viewer while the action's side effect still
+  // completes invisibly in the background — both close paths must be inert.
+  expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+  fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+  expect(setShow).not.toHaveBeenCalled();
+
+  releaseSave({ id: 'env-1' });
+  await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+
+  // Idle again: Escape closes as usual.
+  fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
+  expect(setShow).toHaveBeenCalledWith(false);
 });
 
 it('finalizes without saving when onSaveEnvelopeFile is not provided', async () => {

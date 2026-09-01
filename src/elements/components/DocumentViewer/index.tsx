@@ -144,6 +144,9 @@ export default function DocumentViewer({
   // Key of the toolbar action currently running (spinner + disable-all), or
   // null when idle. Keys: 'primary', 'draft', 'download'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Read by the once-bound Escape handler, which must see the live value.
+  const busyKeyRef = useRef(busyKey);
+  busyKeyRef.current = busyKey;
   const [error, setError] = useState('');
   const [pageCounts, setPageCounts] = useState<Record<string, number>>({});
   const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
@@ -225,6 +228,13 @@ export default function DocumentViewer({
           (e.target as HTMLElement).blur();
           return;
         }
+        // Closing mid-action would hide the viewer while the action's side
+        // effect (save/sign/send) still completes in the background —
+        // invisibly, and after the surrounding flow was told the review was
+        // cancelled. It would also unmount the canvas, racing
+        // pdfProxy.destroy() against a saveDocument() still in flight. The
+        // toolbar's Back button applies the same gate.
+        if (busyKeyRef.current !== null) return;
         setShowRef.current(false);
       } else if (e.key === 'PageDown' || e.key === 'PageUp') {
         // Let focused inputs/textareas handle paging keys natively.
