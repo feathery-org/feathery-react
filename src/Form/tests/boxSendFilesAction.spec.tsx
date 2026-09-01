@@ -15,6 +15,7 @@ jest.mock('../../integrations/box', () => ({
 const mockedSendBoxFiles = sendBoxFiles as jest.Mock;
 
 const FILE_FIELD_KEY = 'box_file_field';
+const FILE_FIELD_ID = 'servar-file-1';
 
 const defaultSteps = ClientMod._spies.formState.steps;
 
@@ -27,7 +28,7 @@ describe('box_send_files action', () => {
     delete (fieldValues as any)[FILE_FIELD_KEY];
     mockedSendBoxFiles.mockResolvedValue(true);
 
-    // One step with a real file_upload servar, so submitAllUploadedFiles has
+    // One step with a real file_upload servar, so submitFieldFiles has
     // something to find. The shared testMocks.tsx default has none.
     ClientMod._spies.formState.steps = [
       {
@@ -37,7 +38,7 @@ describe('box_send_files action', () => {
           {
             servar: {
               key: FILE_FIELD_KEY,
-              id: 'servar-file-1',
+              id: FILE_FIELD_ID,
               type: 'file_upload',
               name: '',
               required: false
@@ -50,7 +51,17 @@ describe('box_send_files action', () => {
       }
     ];
 
-    GridMod._spies.actions = [{ type: 'box_send_files' }];
+    // A real button always has its target field(s) configured; the field_key
+    // is resolved server-side (see property_field_id_to_key) before it ever
+    // reaches the runtime.
+    GridMod._spies.actions = [
+      {
+        type: 'box_send_files',
+        field_ids: [
+          { field_id: FILE_FIELD_ID, field_type: 'servar', field_key: FILE_FIELD_KEY }
+        ]
+      }
+    ];
     // The riskiest path: the button's "Validate & Submit Step" toggle is off,
     // so submitPromise alone would never persist the uploaded file.
     GridMod._spies.submit = false;
@@ -61,7 +72,7 @@ describe('box_send_files action', () => {
     ClientMod._spies.formState.steps = defaultSteps;
   });
 
-  it('force-submits uploaded files before sending, with the submit toggle off', async () => {
+  it('force-submits the configured field(s) before sending, with the submit toggle off', async () => {
     (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
 
     render(<JSForm formId='f1' _internalId='iid-box-send-1' />);
@@ -86,7 +97,7 @@ describe('box_send_files action', () => {
     (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
     mockedSendBoxFiles.mockResolvedValue(false);
     GridMod._spies.actions = [
-      { type: 'box_send_files' },
+      ...GridMod._spies.actions,
       { type: 'url', url: 'https://example.com/after-send', open_tab: false }
     ];
 
@@ -101,7 +112,7 @@ describe('box_send_files action', () => {
   it('lets a following action run when sendBoxFiles succeeds (regression guard: no unconditional break)', async () => {
     (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
     GridMod._spies.actions = [
-      { type: 'box_send_files' },
+      ...GridMod._spies.actions,
       { type: 'url', url: 'https://example.com/after-send', open_tab: false }
     ];
 
@@ -115,10 +126,10 @@ describe('box_send_files action', () => {
     );
   });
 
-  it('does nothing and does not block a following action when no files are uploaded', async () => {
+  it('does nothing and does not block a following action when the configured field has no value', async () => {
     // fieldValues[FILE_FIELD_KEY] intentionally left unset.
     GridMod._spies.actions = [
-      { type: 'box_send_files' },
+      ...GridMod._spies.actions,
       { type: 'url', url: 'https://example.com/after-send', open_tab: false }
     ];
 
@@ -135,14 +146,61 @@ describe('box_send_files action', () => {
     expect(client.submitFiles).not.toHaveBeenCalled();
   });
 
-  it('passes the configured field_ids through to sendBoxFiles', async () => {
+  it('only submits and sends the fields named in field_ids, not every file field on the form', async () => {
+    const OTHER_FIELD_KEY = 'other_file_field';
+    ClientMod._spies.formState.steps = [
+      {
+        ...ClientMod._spies.formState.steps[0],
+        servar_fields: [
+          ...ClientMod._spies.formState.steps[0].servar_fields,
+          {
+            servar: {
+              key: OTHER_FIELD_KEY,
+              id: 'servar-file-2',
+              type: 'file_upload',
+              name: '',
+              required: false
+            },
+            properties: {}
+          }
+        ]
+      }
+    ];
+    (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
+    (fieldValues as any)[OTHER_FIELD_KEY] = new File(['content'], 'b.pdf');
+
+    render(<JSForm formId='f1' _internalId='iid-box-send-8' />);
+    await clickTrigger();
+
+    await waitFor(() => expect(mockedSendBoxFiles).toHaveBeenCalled());
+    const client = GridMod._spies.form.client;
+    expect(client.submitFiles).toHaveBeenCalledWith([
+      {
+        servar: { key: FILE_FIELD_KEY, file_upload: expect.anything() },
+        stepKey: 'step-1'
+      }
+    ]);
+    expect(mockedSendBoxFiles).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [FILE_FIELD_ID]
+    );
+
+    delete (fieldValues as any)[OTHER_FIELD_KEY];
+  });
+
+  it('passes every configured field_id through to sendBoxFiles, even ones with no current value', async () => {
     (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
     GridMod._spies.actions = [
       {
         type: 'box_send_files',
         field_ids: [
-          { field_id: 'servar-file-1', field_type: 'servar' },
-          { field_id: 'servar-file-2', field_type: 'servar' }
+          { field_id: FILE_FIELD_ID, field_type: 'servar', field_key: FILE_FIELD_KEY },
+          {
+            field_id: 'servar-file-2',
+            field_type: 'servar',
+            field_key: 'field_not_on_this_form'
+          }
         ]
       }
     ];
@@ -154,25 +212,29 @@ describe('box_send_files action', () => {
       expect(mockedSendBoxFiles).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
-        ['servar-file-1', 'servar-file-2']
+        [FILE_FIELD_ID, 'servar-file-2']
       )
     );
   });
 
-  it('omits empty field_ids entries and sends everything when none are configured', async () => {
+  it('does nothing and sends nothing when field_ids is empty', async () => {
     (fieldValues as any)[FILE_FIELD_KEY] = new File(['content'], 'a.pdf');
-    GridMod._spies.actions = [{ type: 'box_send_files', field_ids: [] }];
+    GridMod._spies.actions = [
+      { type: 'box_send_files', field_ids: [] },
+      { type: 'url', url: 'https://example.com/after-send', open_tab: false }
+    ];
 
     render(<JSForm formId='f1' _internalId='iid-box-send-7' />);
     await clickTrigger();
 
     await waitFor(() =>
-      expect(mockedSendBoxFiles).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        []
+      expect(BrowserMod._spies.location.href).toBe(
+        'https://example.com/after-send'
       )
     );
+    expect(mockedSendBoxFiles).not.toHaveBeenCalled();
+    const client = GridMod._spies.form.client;
+    expect(client.submitFiles).not.toHaveBeenCalled();
   });
 
   it('surfaces an error and does not escape the action loop when the file submit rejects', async () => {

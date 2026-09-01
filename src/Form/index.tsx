@@ -549,27 +549,28 @@ function Form({
     if (fileEntries.length) await client.submitFiles(fileEntries);
   };
 
-  // Box reads this fuser's stored file rows, so every file field must be
+  // Box reads this fuser's stored file rows, so the targeted field(s) must be
   // persisted first — the triggering button's "Validate & Submit Step" toggle
   // may be off (submitPromise is a no-op then) and a normal step submit only
   // covers the active step. Re-submitting an already-uploaded file is a safe,
-  // deduped no-op (see submitExtractionFiles above). Returns how many file
-  // fields had a value, so callers can skip the network call when there's
-  // nothing to send.
-  const submitAllUploadedFiles = async () => {
+  // deduped no-op (see submitExtractionFiles above). Returns how many of the
+  // given fields had a value, so callers can skip the network call when
+  // there's nothing to send.
+  const submitFieldFiles = async (fieldKeys: string[]) => {
     const fileEntries: { servar: any; stepKey: string }[] = [];
-    for (const step of Object.values(steps) as any[]) {
-      for (const { servar } of step?.servar_fields ?? []) {
-        if (
-          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-        )
-          continue;
-        if (isFieldValueEmpty(fieldValues[servar.key], servar)) continue;
-        fileEntries.push({
-          servar: { key: servar.key, [servar.type]: fieldValues[servar.key] },
-          stepKey: step.key
-        });
-      }
+    for (const fieldKey of fieldKeys) {
+      const found = getServarAndStepByFieldKey(fieldKey);
+      if (!found) continue;
+      const { servar, step } = found;
+      if (
+        !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
+      )
+        continue;
+      if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
+      fileEntries.push({
+        servar: { key: servar.key, [servar.type]: fieldValues[fieldKey] },
+        stepKey: step.key
+      });
     }
     if (fileEntries.length) await client.submitFiles(fileEntries);
     return fileEntries.length;
@@ -2800,20 +2801,24 @@ function Form({
         break;
       } else if (type === ACTION_BOX_SEND_FILES) {
         await Promise.all([submitPromise, client.flushCustomFields()]);
+        const boxFields = (action.field_ids ?? []).filter(
+          (f: any) => f.field_id && f.field_key
+        );
         let fileCount = 0;
         try {
-          fileCount = await submitAllUploadedFiles();
+          fileCount = await submitFieldFiles(
+            boxFields.map((f: any) => f.field_key)
+          );
         } catch (e: any) {
           setElementError(
             e?.message || 'Your files could not be uploaded. Please try again.'
           );
           break;
         }
-        // Nothing uploaded yet: this button may sit on a step where files are
-        // optional, so fall through to the next action rather than erroring.
-        const boxFieldIds = (action.field_ids ?? [])
-          .map((f: any) => f.field_id)
-          .filter(Boolean);
+        // Nothing uploaded yet: this button may not have any file fields
+        // configured, or none of them have a value — either way, silently
+        // fall through to the next action rather than erroring.
+        const boxFieldIds = boxFields.map((f: any) => f.field_id);
         if (
           fileCount &&
           !(await sendBoxFiles(client, setElementError, boxFieldIds))
