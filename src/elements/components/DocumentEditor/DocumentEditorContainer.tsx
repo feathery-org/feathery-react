@@ -12,6 +12,7 @@ import DocxEnvelopeEditor, {
   Envelope,
   envelopeSourceUrl
 } from './DocxEnvelopeEditor';
+import PdfEnvelopeViewer from './PdfEnvelopeViewer';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -242,6 +243,22 @@ export default function DocumentEditorContainer({
       <div css={placeholder}>
         No document yet — generate it to start editing.
       </div>
+    );
+  }
+  if (envelope.type === 'pdf' && sourceUrl) {
+    return box(
+      <PdfEnvelopeViewer
+        envelope={envelope}
+        action={targetAction}
+        client={client}
+        // Reload only on regenerate, never on save (same contract as `source`
+        // below).
+        key={`${envelope.id}:${reloadKey}`}
+        sourceUrl={sourceUrl}
+        formId={formId}
+        defaultDocumentId={documentId}
+        onEnvelopeUpdated={onEnvelopeUpdated}
+      />
     );
   }
   if (envelope.type !== 'docx') {

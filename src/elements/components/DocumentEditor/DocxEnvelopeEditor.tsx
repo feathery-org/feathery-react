@@ -2,15 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import DocxEditor from '../DocxEditor/index';
 import type FeatheryClient from '../../../utils/featheryClient';
 import { API_URL } from '../../../utils/featheryClient';
-import { featheryWindow, openTab } from '../../../utils/browser';
+import { featheryWindow } from '../../../utils/browser';
 import { fieldValues, initState, setFieldValues } from '../../../utils/init';
-import internalState from '../../../utils/internalState';
-import {
-  containerToolbarOutcomes,
-  getSignUrl,
-  isDocusignSignAction,
-  signsViaDocusign
-} from '../../../utils/document';
+import { containerToolbarOutcomes } from '../../../utils/document';
+import { runEnvelopeSigningAction } from './envelopeSigning';
 import {
   registerDocxEditor,
   unregisterDocxEditor
@@ -196,92 +191,16 @@ export default function DocxEnvelopeEditor({
   // Only the signing actions run here; 'download' is handled inside DocxEditor,
   // which saves first and then serves the envelope's public (stripped) copy.
   const runSigningAction = useCallback(
-    async (draft: boolean) => {
-      const viaDocusign = signsViaDocusign(action ?? {});
-      // The field names whoever signs inline. Nobody does on DocuSign - it
-      // mails every recipient itself, from the role mappings - so routing to
-      // that field would reach someone never listed as a signer.
-      const signerKey = viaDocusign ? '' : action?.envelope_signer_field_key;
-      const fillerEmail = signerKey
-        ? fieldValues[signerKey]?.toString() ?? ''
-        : '';
-      let finalized: Record<string, any> | undefined;
-      // Both backends need a PDF carrying signature fields, and generation
-      // skipped that conversion to keep the docx editable. One-way: this draft
-      // stops being editable. Throws so nothing is sent unfinalized. It's also
-      // what hands back the signer to open as.
-      if (envelope.type === 'docx' && !envelope.signed) {
-        // Per-role signers were held back at generation for the same reason, so
-        // they go up now, scoped to the document actually on screen. Without
-        // any, the shared signer field covers every role instead.
-        const roleSigners = (action?.envelope_signers ?? [])
-          .filter((entry: any) => entry.document_id === activeDocumentId)
-          .map((entry: any) => {
-            const email = fieldValues[entry.field_key]?.toString() ?? '';
-            return {
-              document_id: entry.document_id,
-              role_id: entry.role_id,
-              email,
-              // Flagged entries are the ones this filler opens and signs
-              // inline.
-              filler:
-                !!fillerEmail &&
-                email.toLowerCase() === fillerEmail.toLowerCase()
-            };
-          });
-        const signers = (
-          roleSigners.length || !activeDocumentId
-            ? roleSigners
-            : // role_id left off rather than nulled - the backend rejects an
-              // explicit null, and omitting it covers every role.
-              [
-                {
-                  document_id: activeDocumentId,
-                  email: fillerEmail,
-                  filler: true
-                }
-              ]
-        ).filter((entry: any) => entry.email);
-        finalized = await client.finalizeEnvelope(
-          envelope.id,
-          signers,
-          action?.sign_method
-        );
-        setFinalizedId(envelope.id);
-      }
-
-      // Nothing here navigates away, so the outcome is only visible if it's
-      // announced.
-      const announce = internalState[formId ?? '']?.showEnvelopeOutcome;
-
-      if (isDocusignSignAction(action ?? {}, 'sign')) {
-        // DocuSign has no Feathery sign page: the backend send (or draft) is
-        // itself the completion signal.
-        const result = await client.finalizeEnvelopeReview(action ?? {}, {
-          envelopes: [{ envelopeId: envelope.id }],
-          envelopeAction: 'sign',
-          draft
-        });
-        if (!result) throw Error('Failed to send the document to DocuSign');
-        if (result.status === 'error') throw Error(result.message);
-        announce?.(
-          draft ? 'Saved as Draft' : 'Sent for Signature',
-          action?.documents
-        );
-        return;
-      }
-
-      // A signer id comes back only when the filler signs first. Without one
-      // the envelope is someone else's to sign, so there's nothing to open.
-      if (!finalized?.signer_id) {
-        if (finalized?.invited)
-          announce?.('Sent for Signature', action?.documents);
-        return;
-      }
-      const url = getSignUrl(finalized.signer_id, action?.redirect);
-      if (action?.redirect) featheryWindow().location.href = url;
-      else openTab(url);
-    },
+    (draft: boolean) =>
+      runEnvelopeSigningAction({
+        envelope,
+        action,
+        client,
+        formId,
+        activeDocumentId,
+        draft,
+        onFinalized: () => setFinalizedId(envelope.id)
+      }),
     [client, envelope, action, activeDocumentId, formId]
   );
 
