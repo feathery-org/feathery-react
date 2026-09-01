@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { ViewerDocument } from '../index';
+import { ViewerDocument } from '../PdfViewer';
 import PageThumbnails from './PageThumbnails';
 import DocumentsPanel from './DocumentsPanel';
-import { color, fontSize, shadow } from '../tokens';
-import { iconButtonCss } from '../buttonStyles';
-import { MenuIcon, CloseIcon } from '../icons';
+import { color, fontSize, shadow } from '../../DocumentEditor/tokens';
+import { iconButtonCss } from '../../DocumentEditor/buttonStyles';
+import { MenuIcon, CloseIcon } from '../../DocumentEditor/icons';
 
 const SIDEBAR_WIDTH = 240;
 

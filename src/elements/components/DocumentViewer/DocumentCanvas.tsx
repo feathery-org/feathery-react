@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { keyframes } from '@emotion/react';
-import { ViewerDocument } from './index';
+import { ViewerDocument } from './PdfViewer';
 import TextLayerStyles from './TextLayerStyles';
 import AnnotationLayerStyles from './AnnotationLayerStyles';
 import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
 import { LINK_SERVICE_STUB } from './linkServiceStub';
-import { color, radius, shadow, fontSize } from './tokens';
-import { secondaryButtonCss } from './buttonStyles';
-import { AlertIcon } from './icons';
+import { color, radius, shadow, fontSize } from '../DocumentEditor/tokens';
+import { secondaryButtonCss } from '../DocumentEditor/buttonStyles';
+import { AlertIcon } from '../DocumentEditor/icons';
 import { featheryWindow } from '../../../utils/browser';
 
 const PAGE_GAP = 24;

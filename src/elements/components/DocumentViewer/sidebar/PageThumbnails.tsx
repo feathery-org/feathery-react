@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { ViewerDocument } from '../index';
+import { ViewerDocument } from '../PdfViewer';
 import { pageKey } from '../useActivePage';
-import { color, fontSize, radius } from '../tokens';
+import { color, fontSize, radius } from '../../DocumentEditor/tokens';
 
 const THUMBNAIL_WIDTH = 160;
 
