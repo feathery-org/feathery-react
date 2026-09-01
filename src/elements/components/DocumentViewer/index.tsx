@@ -111,6 +111,11 @@ interface DocumentViewerProps {
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
   }) => Promise<{ status?: string; message?: string } | void>;
+  // Persist a PDF the filler edited in the viewer back to its envelope.
+  // Called before finalize for every document with unsaved field edits, so
+  // whatever outcome finalize runs (download, sign, ...) acts on the edited
+  // file. Absent = fields still render but edits are never persisted.
+  onSaveEnvelopeFile?: (envelopeId: string, file: Blob) => Promise<any>;
 }
 
 export default function DocumentViewer({
@@ -118,7 +123,8 @@ export default function DocumentViewer({
   action,
   setShow,
   onComplete,
-  onFinalize
+  onFinalize,
+  onSaveEnvelopeFile
 }: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -246,8 +252,9 @@ export default function DocumentViewer({
   }, []);
 
   // The envelopes finalize acts on: every reviewed form document, in order.
-  // Read straight off the payload rather than out of the rendered PDFs — the
-  // viewer is read-only, so there are no edited values to collect.
+  // Read straight off the payload rather than out of the rendered PDFs;
+  // edited field values are persisted separately (saveEditedDocuments) before
+  // finalize runs.
   const reviewedEnvelopes = useMemo(
     () =>
       payload.documents
@@ -262,10 +269,47 @@ export default function DocumentViewer({
     [payload.documents]
   );
 
+  // Documents with field edits not yet saved to their envelope. Tracked via
+  // pdf.js's annotationStorage modified flag: set on the first widget change,
+  // cleared by saveDocument()/resetModified() — so a doc saved once and then
+  // edited again goes dirty again.
+  const dirtyDocs = useRef<Set<string>>(new Set());
+
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
     loadedDocs.current[pdfUrl] = pdfProxy;
+    const storage = pdfProxy.annotationStorage;
+    if (storage) {
+      storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
+      storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
+    }
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
   }, []);
+
+  // Write each dirty document's edited field values into its PDF
+  // (pdf.js saveDocument serializes annotationStorage into the AcroForm) and
+  // persist it to the envelope, so every finalize outcome — download, sign,
+  // save — acts on what the filler sees. saveDocument resets the storage's
+  // modified flag, which clears the doc from dirtyDocs via onResetModified.
+  const saveEditedDocuments = async () => {
+    if (!onSaveEnvelopeFile) return;
+    for (const doc of payload.documents) {
+      if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
+      const pdfProxy = loadedDocs.current[doc.pdf_url];
+      if (!pdfProxy) continue;
+      const bytes = await pdfProxy.saveDocument();
+      try {
+        await onSaveEnvelopeFile(
+          doc.envelope_id,
+          new Blob([bytes], { type: 'application/pdf' })
+        );
+      } catch (e) {
+        // saveDocument() already reset the modified flag; put the doc back so
+        // retrying the toolbar action re-saves it instead of skipping it.
+        dirtyDocs.current.add(doc.pdf_url);
+        throw e;
+      }
+    }
+  };
 
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
@@ -305,10 +349,13 @@ export default function DocumentViewer({
     setBusyKey(busyActionKey);
     setError('');
     try {
-      // No required-field gate here: the editor is read-only for now, so a
-      // document whose required fields are empty could not be completed from
-      // this screen — blocking would leave the user with no way forward.
-      // Required values belong to the form step that feeds generation.
+      // Persist any edited field values first, so the outcome acts on them.
+      await saveEditedDocuments();
+      // No required-field gate here: filling fields in the editor is
+      // optional — the generated documents were already completable without
+      // it, so blocking on empty required fields would leave the user with no
+      // way forward. Required values belong to the form step that feeds
+      // generation.
       const result = await onFinalize?.({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],

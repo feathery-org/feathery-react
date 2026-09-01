@@ -3728,6 +3728,16 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
+              // Persists PDFs whose fields the filler edited in the viewer.
+              // The generic envelope file endpoint validates the extension
+              // against the envelope type, so name the upload as a pdf.
+              onSaveEnvelopeFile={(envelopeId: string, file: Blob) =>
+                clientRef.current.saveEnvelopeFile(
+                  envelopeId,
+                  file,
+                  'document.pdf'
+                )
+              }
             />
           </React.Suspense>
         )}

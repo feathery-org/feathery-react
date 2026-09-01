@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { keyframes } from '@emotion/react';
 import { ViewerDocument } from './index';
 import TextLayerStyles from './TextLayerStyles';
+import AnnotationLayerStyles from './AnnotationLayerStyles';
 import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
+import { LINK_SERVICE_STUB } from './linkServiceStub';
 import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
@@ -159,6 +161,7 @@ export default function DocumentCanvas({
       }}
     >
       <TextLayerStyles />
+      <AnnotationLayerStyles />
       {documents.map((doc) => {
         const state = docStates[doc.pdf_url];
         if (!state) {
@@ -310,14 +313,12 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
             canvasContext,
             viewport,
             transform: dpr === 1 ? undefined : [dpr, 0, 0, dpr, 0, 0],
-            // Read-only review: render with print intent so every field's
-            // filled value is baked into the page image. This shows values no
-            // matter where they live — the content stream, a widget appearance,
-            // or only in the field's /V (as Quik-filled fields do, with no baked
-            // appearance). No interactive widget layer is drawn on top (see
-            // below), so nothing can cover the values or be edited.
-            intent: 'print',
-            annotationMode: pdfjs.AnnotationMode.ENABLE
+            // ENABLE_FORMS excludes interactive widget appearances from the
+            // canvas — they're rendered as live HTML inputs by the annotation
+            // layer below, seeded from each field's /V. The default (ENABLE)
+            // would paint them onto the canvas too, doubling prefilled values
+            // under the inputs.
+            annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS
           });
           try {
             await renderTask.promise;
@@ -361,12 +362,60 @@ function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
         if (cancelled) return;
       }
 
-      // Read-only review: no interactive widget layer. The print-intent canvas
-      // above already bakes every filled value into the page image, so drawing
-      // form widgets here would only risk covering those values (blank Quik
-      // widgets did exactly that). Keep the div empty.
+      // Interactive form layer: the PDF's own AcroForm widgets rendered as
+      // HTML inputs, writing edits into pdfProxy.annotationStorage. The viewer
+      // reads that storage back on finalize (see index.tsx) to persist what
+      // the filler changed.
       const annotationDiv = annotationDivRef.current;
-      if (annotationDiv) annotationDiv.innerHTML = '';
+      if (annotationDiv) {
+        // Preserve focus across an annotation-layer rebuild (e.g. on resize):
+        // clearing innerHTML blurs the field the user is editing, so remember
+        // it and restore focus once the widgets are recreated.
+        const activeEl = annotationDiv.ownerDocument
+          .activeElement as HTMLElement | null;
+        const focusedId =
+          activeEl && annotationDiv.contains(activeEl) ? activeEl.id : '';
+        annotationDiv.innerHTML = '';
+        annotationDiv.style.setProperty(
+          '--scale-factor',
+          String(viewport.scale)
+        );
+        // dontFlip: the widget layer positions elements in CSS (y-down)
+        // coordinates; the flipped canvas viewport would mirror them.
+        const annotationViewport = viewport.clone({ dontFlip: true });
+        const annotationLayer = new pdfjs.AnnotationLayer({
+          div: annotationDiv,
+          page,
+          viewport: annotationViewport,
+          accessibilityManager: null,
+          annotationCanvasMap: null,
+          annotationEditorUIManager: null,
+          structTreeLayer: null,
+          // pdf.js 5.x takes these in the constructor (4.x took them in
+          // render() — see the version note in pdfjsLoader.ts).
+          linkService: LINK_SERVICE_STUB,
+          annotationStorage: pdfProxy.annotationStorage
+        });
+        try {
+          const annotations = await page.getAnnotations();
+          if (cancelled) return;
+          await annotationLayer.render({
+            annotations,
+            imageResourcesPath: '',
+            renderForms: true,
+            downloadManager: null,
+            enableScripting: false
+          });
+        } catch {
+          // A widget-layer failure degrades the page to read-only; it must
+          // never block the rendered document itself.
+        }
+        if (focusedId && typeof CSS !== 'undefined' && CSS.escape) {
+          annotationDiv
+            .querySelector<HTMLElement>(`#${CSS.escape(focusedId)}`)
+            ?.focus();
+        }
+      }
     })();
 
     return () => {
