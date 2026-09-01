@@ -1,5 +1,6 @@
 import internalState from '../../utils/internalState';
 import { getPositionKey } from '../../utils/hideAndRepeats';
+import { InlineErrorEntry, InlineErrors } from '../../utils/inlineErrors';
 
 export const getLiveStepKey = (state: any): string | undefined =>
   state.latestStepName ?? state.currentStep?.key;
@@ -22,11 +23,14 @@ export type InlineErrorSnapshot = Map<
 
 export const snapshotInlineErrors = (state: any): InlineErrorSnapshot => {
   const out: InlineErrorSnapshot = new Map();
-  const inlineErrors = state?.inlineErrors ?? {};
+  // Typed against the canonical shape so a rename/restructure of
+  // InlineErrorEntry breaks this parity layer at compile time instead of
+  // silently desyncing what the assistant reports from what renders.
+  const inlineErrors: InlineErrors = state?.inlineErrors ?? {};
   for (const key of Object.keys(inlineErrors)) {
-    const entry = inlineErrors[key] ?? {};
+    const entry: InlineErrorEntry = inlineErrors[key] ?? {};
     const byIndex = new Map<number, string>();
-    for (const [idx, data] of Object.entries<any>(entry.byIndex ?? {})) {
+    for (const [idx, data] of Object.entries(entry.byIndex ?? {})) {
       if (typeof data?.message === 'string' && data.message.length > 0)
         byIndex.set(Number(idx), data.message);
     }

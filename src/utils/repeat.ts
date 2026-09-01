@@ -24,6 +24,10 @@ export function inRepeat(
  * inline error: servar fields (by servar key) plus buttons and nested
  * containers (by element id, how submit/action failures are keyed). Used to
  * reindex errors when a row is removed.
+ *
+ * The repeat container's OWN id is deliberately included (it matches itself
+ * via inRepeat's comma-suffixed prefix check): the container is clickable once
+ * per row, so its action errors are per-row and must shift with the rows.
  */
 export function getRepeatErrorOwnerIds(
   step: { servar_fields?: any[]; buttons?: any[]; subgrids?: any[] },

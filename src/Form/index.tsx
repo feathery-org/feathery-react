@@ -979,8 +979,9 @@ function Form({
     // call, so validation is not weakened.
     // clearErrors stays false too: it would wipe custom validity from EVERY
     // control, so an already-invalid surviving row would silently look valid
-    // until the next validation pass. Surviving rows keep their validity; the
-    // new row never had any, so it stays untouched either way.
+    // until the next validation pass. On the add path no rows move, so
+    // existing validity stays correct; removal shifts rows across DOM nodes,
+    // which removeRepeatedRow handles itself (html5 clear + inline reindex).
     updateFieldValues(updatedValues, {
       triggerErrors: false,
       clearErrors: false
@@ -1045,6 +1046,13 @@ function Form({
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
 
+    // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
+    // rows are keyed by array position, so removal shifts surviving rows into
+    // DOM nodes that keep the previous occupant's validity -- the message would
+    // render on the wrong row. DOM validity can't be reindexed, so clear it
+    // all; the next validation pass restores any real errors.
+    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+
     // Inline errors for a repeated element live in its `byIndex` map. Drop the
     // removed row's entry and shift higher-indexed rows down so each remaining
     // row keeps its own error instead of inheriting a neighbor's. Operating on
@@ -1053,16 +1061,25 @@ function Form({
     // Every element in the container can own a per-row error, not just servar
     // fields: buttons (and containers) store submit/action failures under their
     // element id, so they must be shifted too.
-    setInlineErrors((prev) =>
-      shiftInlineErrorRows(
-        prev,
-        [
-          ...Object.keys(removeServars),
-          ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
-        ],
-        curIndex
-      )
-    );
+    const applyShift = () =>
+      setInlineErrors((prev) =>
+        shiftInlineErrorRows(
+          prev,
+          [
+            ...Object.keys(removeServars),
+            ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
+          ],
+          curIndex
+        )
+      );
+    // A pending async button-error publish (see setButtonError) still carries
+    // the pre-removal row index. Shift only after it lands so its error gets
+    // reindexed with the surviving rows (or dropped with the removed one)
+    // instead of attaching to whichever row now occupies the stale index.
+    const pendingPublish =
+      internalState[_internalId]?.pendingInlineErrorPublish;
+    if (pendingPublish) pendingPublish.then(applyShift);
+    else applyShift();
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -2535,7 +2552,12 @@ function Form({
               triggerErrors: true
             })
           )
-            .catch(() => {})
+            .catch((err) => {
+              // Still resolve so awaiters never hang, but leave a trail: a
+              // swallowed failure here means assistant tools snapshot inline
+              // errors believing the write landed.
+              console.warn('Failed to set button error', err);
+            })
             .then(() => resolve());
         }, 10);
       });

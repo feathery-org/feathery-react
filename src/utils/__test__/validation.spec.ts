@@ -7,6 +7,7 @@ import {
   phoneLibPromise
 } from '../validation';
 import { fieldValues } from '../init';
+import { featheryDoc } from '../browser';
 
 jest.mock('../init', () => ({
   initInfo: jest.fn().mockReturnValue({
@@ -141,6 +142,42 @@ describe('validation', () => {
         'This is a required field'
       );
       expect(inlineErrors['matrix-0']).toBeUndefined();
+    });
+
+    it('still targets the unanswered question control in html5 mode', () => {
+      // Positive case guarding the `errorType === 'html5'` condition: native
+      // browser validation must land on the question-suffixed DOM control.
+      // This jsdom build doesn't define the RadioNodeList global that the
+      // html5 branch instanceof-checks; a stub (never matched, so the single
+      // element path is taken) is enough here.
+      (global as any).RadioNodeList ??= class RadioNodeList {};
+      Object.assign(fieldValues, { matrix: {} });
+      const doc = featheryDoc();
+      const form = doc.createElement('form');
+      const questionInput = doc.createElement('input');
+      questionInput.name = 'matrix-0';
+      form.appendChild(questionInput);
+      doc.body.appendChild(form);
+
+      const field = {
+        servar: matrixServar(false),
+        position: [0],
+        validations: []
+      };
+      const step = { servar_fields: [field], buttons: [], subgrids: [] };
+
+      const { invalid } = validateElements({
+        step,
+        visiblePositions: { '0': [true] },
+        triggerErrors: true,
+        errorType: 'html5',
+        formRef: { current: form } as any,
+        setInlineErrors: jest.fn()
+      });
+
+      expect(questionInput.validationMessage).toBe('This is a required field');
+      expect(invalid).toBe(true);
+      form.remove();
     });
   });
 

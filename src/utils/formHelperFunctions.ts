@@ -1,6 +1,10 @@
 import { getWeightedBoolean } from './random';
 import { justRemove } from './array';
-import { applyInlineError, inlineEntryHasMessage } from './inlineErrors';
+import {
+  applyInlineError,
+  inlineEntryHasMessage,
+  InlineErrors
+} from './inlineErrors';
 import {
   fieldValues,
   filePathMap,
@@ -176,6 +180,21 @@ export function updateSessionValues(session: any) {
 /**
  * Set an error on a particular form DOM node(s).
  */
+// The sole writer of the InlineErrors invariant (row-scoped `byIndex` entries
+// under real field keys), so keep at least the error-map-shaping inputs typed.
+interface SetFormElementErrorArgs {
+  formRef?: React.MutableRefObject<any>;
+  errorType?: string;
+  errorCallback?: (props: Record<string, unknown>) => Promise<void> | void;
+  fieldKey?: string;
+  message?: string;
+  index?: number | null;
+  servarType?: string;
+  inlineErrors?: InlineErrors;
+  setInlineErrors?: (errors: InlineErrors) => void;
+  triggerErrors?: boolean;
+}
+
 export async function setFormElementError({
   formRef,
   errorType,
@@ -190,7 +209,7 @@ export async function setFormElementError({
   inlineErrors = {},
   setInlineErrors = () => {},
   triggerErrors = false
-}: any) {
+}: SetFormElementErrorArgs) {
   let invalid = false;
   let listIndex = index;
   if (errorType === 'html5') {

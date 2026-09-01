@@ -1,5 +1,6 @@
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
+import { InlineErrors } from './inlineErrors';
 import { ARRAY_FIELD_TYPES } from './fieldHelperFunctions';
 
 import React from 'react';
@@ -46,11 +47,11 @@ function validateElements({
   trigger?: Trigger;
 }): {
   errors: { [fieldKey: string]: string };
-  inlineErrors: { [key: string]: any };
+  inlineErrors: InlineErrors;
   invalid: boolean;
 } {
   let invalid = false;
-  const inlineErrors = {};
+  const inlineErrors: InlineErrors = {};
   const errors = getVisibleElements(
     step,
     visiblePositions,
