@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import type { OptionData, CreatableValidator } from './types';
-import type { SelectInstance } from 'react-select';
+import type { ActionMeta, OnChangeValue, SelectInstance } from 'react-select';
 
 interface UseSelectPropsParams {
   // Refs
-  selectRef: React.RefObject<SelectInstance<OptionData, true> | null>;
+  selectRef: React.RefObject<SelectInstance<OptionData, boolean> | null>;
   containerRef: React.RefObject<HTMLElement | null>;
 
   // Data
@@ -17,6 +17,7 @@ interface UseSelectPropsParams {
   disabled: boolean;
   isMenuOpen: boolean;
   loadingDynamicOptions: boolean;
+  isSingleSelectMode: boolean;
 
   // Styling
   selectStyles: any;
@@ -30,7 +31,10 @@ interface UseSelectPropsParams {
   shouldHideInput: boolean;
 
   // Callbacks
-  handleChange: (selected: any, actionMeta: any) => void;
+  handleChange: (
+    selected: OnChangeValue<OptionData, boolean>,
+    actionMeta: ActionMeta<OptionData>
+  ) => void;
   setFocused: (focused: boolean) => void;
   handleSelectKeyDown: (event: React.KeyboardEvent) => void;
   handleMenuOpen: () => void;
@@ -71,6 +75,7 @@ export default function useSelectProps({
   disabled,
   isMenuOpen,
   loadingDynamicOptions,
+  isSingleSelectMode,
   selectStyles,
   selectComponentsOverride,
   collapseSelected,
@@ -94,13 +99,21 @@ export default function useSelectProps({
   filterOption,
   ariaLabel
 }: UseSelectPropsParams) {
+  // react-select's openMenu() finds the current selection by object identity,
+  // so hand it the instance from `options`, or it won't open focused on it.
+  const singleValue = useMemo(() => {
+    const current = selectVal[0];
+    if (!isSingleSelectMode || !current) return null;
+    return options.find((option) => option.value === current.value) ?? current;
+  }, [isSingleSelectMode, options, selectVal]);
+
   return useMemo(
     () => ({
       // Core identity & data
-      ref: selectRef as React.RefObject<SelectInstance<OptionData, true>>,
+      ref: selectRef as React.RefObject<SelectInstance<OptionData, boolean>>,
       inputId: servar.key,
-      isMulti: true as const,
-      value: selectVal,
+      isMulti: !isSingleSelectMode,
+      value: isSingleSelectMode ? singleValue : selectVal,
       options: options,
 
       // State
@@ -113,11 +126,15 @@ export default function useSelectProps({
       components: selectComponentsOverride,
       placeholder: '',
 
-      // Menu behavior - all options selected for multi-select UX
+      // Menu behavior - open across picks; single mode closes in handleChange
       openMenuOnClick: !collapseSelected,
       closeMenuOnSelect: false,
       tabSelectsValue: false,
       blurInputOnSelect: false,
+
+      // isClearable gates backspace-on-empty-input, single mode's only clear
+      // path (undefined falls back to isMulti). indicatorsContainer hides the X
+      ...(isSingleSelectMode ? { isClearable: true } : {}),
 
       filterOption,
 
@@ -133,7 +150,9 @@ export default function useSelectProps({
       // Option state
       isOptionDisabled: (option: OptionData) =>
         option.isMoreIndicator ||
-        (servar.max_length && selectVal.length >= servar.max_length) ||
+        (!isSingleSelectMode &&
+          servar.max_length &&
+          selectVal.length >= servar.max_length) ||
         loadingDynamicOptions,
       noOptionsMessage: create ? () => null : noOptionsMessage,
 
@@ -172,10 +191,12 @@ export default function useSelectProps({
       servar.key,
       servar.max_length,
       selectVal,
+      singleValue,
       options,
       required,
       disabled,
       isMenuOpen,
+      isSingleSelectMode,
       selectStyles,
       selectComponentsOverride,
       collapseSelected,

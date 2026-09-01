@@ -1,4 +1,5 @@
 import { getWeightedBoolean } from './random';
+import { justRemove } from './array';
 import {
   fieldValues,
   filePathMap,
@@ -157,9 +158,15 @@ export function updateSessionValues(session: any) {
     return acc;
   };
 
-  const transformedFieldValues = Object.entries(session.field_values).reduce(
-    replaceNullInServarArrays,
-    {}
+  const transformedFieldValues: Record<string, any> = Object.entries(
+    session.field_values
+  ).reduce(replaceNullInServarArrays, {});
+
+  // processFileValues owns these keys. The backend routes file servars into
+  // file_values alone, so this only bites if that split changes -- but '' here
+  // would flatten a repeat hole and silently undo it.
+  Object.keys(session.file_values ?? {}).forEach(
+    (key) => delete transformedFieldValues[key]
   );
 
   Object.assign(fieldValues, transformedFieldValues);
@@ -300,20 +307,30 @@ export async function fetchS3File(url: any) {
 export function processFileValues(fileValues: Record<string, any>) {
   if (!fileValues || Object.keys(fileValues).length === 0) return;
 
+  // A repeated file field sends null for a row that holds no file. Those holes
+  // have to survive rehydration or the indices collapse again on reload.
   const filePromises = objectMap(fileValues, (fileOrFiles: any) =>
     Array.isArray(fileOrFiles)
-      ? fileOrFiles.map((f: any) => fetchS3File(f.url))
+      ? fileOrFiles.map((f: any) => (f?.url ? fetchS3File(f.url) : null))
       : fetchS3File(fileOrFiles.url)
   );
 
   const newFilePathMap = objectMap(fileValues, (fileOrFiles: any) =>
     Array.isArray(fileOrFiles)
-      ? fileOrFiles.map((f: any) => f.path)
+      ? fileOrFiles.map((f: any) => f?.path ?? null)
       : fileOrFiles.path
   );
 
   Object.assign(fieldValues, filePromises);
   Object.assign(filePathMap, newFilePathMap);
+}
+
+// Drop one repeat row's entry so the remaining paths stay aligned with their
+// rows. Deduplication is reset so the corrected file list is actually resent.
+export function removeFilePathMapEntry(key: any, index: number) {
+  const paths = filePathMap[key];
+  if (Array.isArray(paths)) filePathMap[key] = justRemove(paths, index);
+  delete fileDeduplicationCount[key];
 }
 
 // Update the map we maintain to track files that have already been uploaded to S3
