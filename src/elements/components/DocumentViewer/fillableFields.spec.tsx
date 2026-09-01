@@ -105,6 +105,14 @@ const waitForLoad = async (...proxies: any[]) => {
   );
 };
 
+// A click while the toolbar is still busy from the prior action is
+// swallowed by the disabled button, so wait for it to go idle first.
+const waitForIdleToolbar = async () => {
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled()
+  );
+};
+
 it('saves only the edited documents to their envelopes before finalizing', async () => {
   const proxyA = makePdfProxy();
   const proxyB = makePdfProxy();
@@ -163,6 +171,7 @@ it('does not re-save an already-saved document on a second toolbar action', asyn
   expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1);
 
   // Nothing changed since the save, so the next action skips the upload.
+  await waitForIdleToolbar();
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(2));
   expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1);
@@ -188,6 +197,7 @@ it('surfaces a save failure, skips finalize, and retries the save on the next at
 
   // saveDocument() reset the modified flag, but the failed upload must leave
   // the document dirty so retrying the action saves it again.
+  await waitForIdleToolbar();
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
   expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(2);
@@ -227,6 +237,7 @@ it('blocks Escape and Back while a save/finalize is in flight', async () => {
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
 
   // Idle again: Escape closes as usual.
+  await waitForIdleToolbar();
   fireEvent.keyDown(featheryDoc(), { key: 'Escape' });
   expect(setShow).toHaveBeenCalledWith(false);
 });
