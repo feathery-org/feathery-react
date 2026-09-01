@@ -16,6 +16,9 @@ export const GRID_FONT_FAMILY =
 export const DEFAULT_COLUMN_WIDTH = 160;
 export const MIN_COLUMN_WIDTH = 64;
 export const CELL_HORIZONTAL_PADDING = 10;
+// Width of the grid lines between cells. The selection border is pulled out by
+// exactly this much to land on top of them.
+export const GRID_LINE_WIDTH = 1;
 
 // With no sized height there is nothing to scroll inside, so an unbounded grid
 // is capped here instead of growing down the page forever.
@@ -268,8 +271,8 @@ export const cellStyle = {
   // column boundary.
   boxSizing: 'border-box',
   backgroundColor: colors.white,
-  borderRight: `1px solid ${colors.gray200}`,
-  borderBottom: `1px solid ${colors.gray200}`,
+  borderRight: `${GRID_LINE_WIDTH}px solid ${colors.gray200}`,
+  borderBottom: `${GRID_LINE_WIDTH}px solid ${colors.gray200}`,
   outline: 'none',
   cursor: 'default',
   fontSize: `${FONT_SIZE}px`,
@@ -286,7 +289,7 @@ export const cellStyle = {
   '&::after': {
     position: 'absolute',
     zIndex: 3,
-    inset: '-1px',
+    inset: `-${GRID_LINE_WIDTH}px`,
     borderColor: colors.accent,
     borderStyle: 'solid',
     borderWidth:
@@ -346,12 +349,14 @@ const FILL_HANDLE_SIZE = 10;
 
 export const fillHandleStyle = {
   position: 'absolute',
-  // Centred on the grid intersection at the range's bottom-right corner, so
-  // half of it sits outside the cell. Possible because the cell no longer
-  // clips its overflow (the value span truncates instead) and both the cell
-  // and its row are raised above their neighbours.
-  right: `-${FILL_HANDLE_SIZE / 2}px`,
-  bottom: `-${FILL_HANDLE_SIZE / 2}px`,
+  // Centred on the grid intersection at the range's bottom-right corner.
+  // The offset is measured from the PADDING box, which sits one grid line in
+  // from the cell's outer corner — so it is half the handle plus that line,
+  // putting the handle's midpoint on the intersection itself. Possible because
+  // the cell no longer clips its overflow (the value span truncates instead)
+  // and both the cell and its row are raised above their neighbours.
+  right: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH}px`,
+  bottom: `-${FILL_HANDLE_SIZE / 2 + GRID_LINE_WIDTH}px`,
   zIndex: 8,
   // A true square: border-box keeps the white ring inside the given size, and
   // the radius is stated so no ambient rounding can reach it.
