@@ -20,7 +20,7 @@ import {
   cellEditorStyle,
   cellFillPreviewStyle,
   cellFocusedStyle,
-  cellRaisedStyle,
+  cellZIndex,
   cellSelectedStyle,
   cellStyle,
   cellValueStyle,
@@ -41,6 +41,7 @@ import {
   pinnedCellStyle,
   pinnedHeaderStyle,
   rowHeaderStyle,
+  rowRaisedStyle,
   rowStyle,
   CELL_HORIZONTAL_PADDING,
   DEFAULT_COLUMN_WIDTH,
@@ -938,7 +939,13 @@ function SpreadsheetRowView({
       aria-rowindex={rowIndex + 2}
       css={{
         ...rowStyle,
-        ...(frozen ? frozenRowStyle : {}),
+        // A frozen row is already lifted above the scrolling rows; raising a
+        // selected one further would drop it out of the frozen region.
+        ...(frozen
+          ? frozenRowStyle
+          : selection.inSelection
+          ? rowRaisedStyle
+          : {}),
         height: ROW_HEIGHT,
         transform: `translateY(${top}px)`
       }}
@@ -1077,8 +1084,8 @@ function SpreadsheetCell({
           isLastPinnedStart
         ),
         ...(pinned ? pinnedCellStyle : {}),
+        zIndex: cellZIndex(Boolean(pinned), isSelected || isFocused),
         ...(isSelected ? cellSelectedStyle : {}),
-        ...(isSelected || isFocused ? cellRaisedStyle : {}),
         ...(isFocused ? cellFocusedStyle : {}),
         ...(edges.top ? edgeVars.top : {}),
         ...(edges.right ? edgeVars.right : {}),
