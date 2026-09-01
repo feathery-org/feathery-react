@@ -54,6 +54,11 @@ export const clearDocxEditorDirty = (
 export const hasDirtyDocxEditors = (formId?: string): boolean =>
   (dirtyByForm.get(formKey(formId))?.size ?? 0) > 0;
 
+export const isDocxEditorDirty = (
+  formId: string | undefined,
+  containerId: string
+): boolean => !!dirtyByForm.get(formKey(formId))?.has(containerId);
+
 export const _clearDocxDirtyRegistry = () => {
   dirtyByForm.clear();
   syncUnloadListener();

@@ -279,6 +279,9 @@ const UNSAVED_DOCX_MESSAGE =
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
 );
+const DocxOverlayEditor = React.lazy(
+  () => import('../elements/components/DocumentEditor/DocxOverlayEditor')
+);
 
 // The action flow keys its toast items by action index; the logic-rule and
 // container entry points have no index, so they announce under their own ids.
@@ -1404,6 +1407,28 @@ function Form({
           }
           if (action.envelope_action === 'open_in_editor') {
             return await new Promise((resolve, reject) => {
+              // Closing the editor without concluding has to settle the
+              // promise, or an awaiting logic rule hangs for the life of the
+              // page.
+              const onClose = () =>
+                reject(
+                  new Error('Document review was closed before completing')
+                );
+              if (data.editor === 'docx' && data.envelopes?.length) {
+                // The docx editor runs its outcomes itself; the generate
+                // payload (envelope metadata) is what the rule gets back.
+                setReviewViewerPayload({
+                  editor: 'docx',
+                  envelopes: data.envelopes,
+                  action,
+                  onComplete: () => {
+                    setTimeout(() => setReviewViewerPayload(null), 500);
+                    resolve(data);
+                  },
+                  onClose
+                });
+                return;
+              }
               // What finalize returned, so the method resolves with the real
               // outcome ({files: [...]}) — the generate payload here only holds
               // {documents, expires_at}.
@@ -1420,13 +1445,7 @@ function Form({
                   setTimeout(() => setReviewViewerPayload(null), 500);
                   resolve(finalized);
                 },
-                // Closing the viewer without continuing has to settle the
-                // promise, or an awaiting logic rule hangs for the life of the
-                // page.
-                onClose: () =>
-                  reject(
-                    new Error('Document review was closed before completing')
-                  )
+                onClose
               });
             });
           }
@@ -3135,21 +3154,34 @@ function Form({
           if (containerId) {
             dispatchEditorRefresh(containerId, action, data);
           } else if (action.envelope_action === 'open_in_editor') {
-            // Open the review viewer with the generated envelopes instead of
-            // running the download/save/sign handling immediately; it runs
-            // once the user hits Continue and finalize succeeds. Mutually
-            // exclusive with the container editor above, which presents its own
-            // editing surface (and needs the plain generate response).
-            setReviewViewerPayload({
-              payload: data,
-              action,
-              onFinalize: buildReviewFinalize({ action, deps: outcomeDeps }),
-              onComplete: () => {
-                flowOnSuccess(i)().then(() => {
-                  setTimeout(() => setReviewViewerPayload(null), 500);
-                });
-              }
-            });
+            // Open the editor with the generated envelopes instead of running
+            // the download/save/sign handling immediately; it runs once the
+            // user presses a toolbar action. Mutually exclusive with the
+            // container editor above, which presents its own editing surface
+            // (and needs the plain generate response). The backend picks the
+            // renderer: an all-docx packet from a docx-capable bundle comes
+            // back editable ({editor: 'docx', envelopes}); anything else is
+            // the pdf.js review payload.
+            const onComplete = () => {
+              flowOnSuccess(i)().then(() => {
+                setTimeout(() => setReviewViewerPayload(null), 500);
+              });
+            };
+            if (data.editor === 'docx' && data.envelopes?.length) {
+              setReviewViewerPayload({
+                editor: 'docx',
+                envelopes: data.envelopes,
+                action,
+                onComplete
+              });
+            } else {
+              setReviewViewerPayload({
+                payload: data,
+                action,
+                onFinalize: buildReviewFinalize({ action, deps: outcomeDeps }),
+                onComplete
+              });
+            }
             break;
           } else {
             await runEnvelopeOutcome(action, data, outcomeDeps);
@@ -3553,35 +3585,57 @@ function Form({
             onClose={() => setDataMappingState((p) => ({ ...p, show: false }))}
           />
         )}
-        {reviewViewerPayload && (
-          <React.Suspense fallback={null}>
-            <DocumentViewer
-              payload={reviewViewerPayload.payload}
-              action={reviewViewerPayload.action}
-              setShow={(show: boolean) => {
-                if (!show) {
-                  clearLoaders();
-                  // Let the opener know the user backed out — the logic-rule
-                  // flow awaits a promise that must settle either way.
-                  reviewViewerPayload.onClose?.();
-                  setReviewViewerPayload(null);
+        {reviewViewerPayload &&
+          (reviewViewerPayload.editor === 'docx' ? (
+            <React.Suspense fallback={null}>
+              <DocxOverlayEditor
+                envelopes={reviewViewerPayload.envelopes}
+                action={reviewViewerPayload.action}
+                client={clientRef.current}
+                formId={_internalId}
+                stepId={activeStep?.id}
+                assistantEnabled={!!formSettings.assistantEnabled}
+                setShow={(show: boolean) => {
+                  if (!show) {
+                    clearLoaders();
+                    // Let the opener know the user backed out — the logic-rule
+                    // flow awaits a promise that must settle either way.
+                    reviewViewerPayload.onClose?.();
+                    setReviewViewerPayload(null);
+                  }
+                }}
+                onComplete={reviewViewerPayload.onComplete}
+              />
+            </React.Suspense>
+          ) : (
+            <React.Suspense fallback={null}>
+              <DocumentViewer
+                payload={reviewViewerPayload.payload}
+                action={reviewViewerPayload.action}
+                setShow={(show: boolean) => {
+                  if (!show) {
+                    clearLoaders();
+                    // Let the opener know the user backed out — the logic-rule
+                    // flow awaits a promise that must settle either way.
+                    reviewViewerPayload.onClose?.();
+                    setReviewViewerPayload(null);
+                  }
+                }}
+                onComplete={reviewViewerPayload.onComplete}
+                onFinalize={reviewViewerPayload.onFinalize}
+                // Persists PDFs whose fields the filler edited in the viewer.
+                // The generic envelope file endpoint validates the extension
+                // against the envelope type, so name the upload as a pdf.
+                onSaveEnvelopeFile={(envelopeId: string, file: Blob) =>
+                  clientRef.current.saveEnvelopeFile(
+                    envelopeId,
+                    file,
+                    'document.pdf'
+                  )
                 }
-              }}
-              onComplete={reviewViewerPayload.onComplete}
-              onFinalize={reviewViewerPayload.onFinalize}
-              // Persists PDFs whose fields the filler edited in the viewer.
-              // The generic envelope file endpoint validates the extension
-              // against the envelope type, so name the upload as a pdf.
-              onSaveEnvelopeFile={(envelopeId: string, file: Blob) =>
-                clientRef.current.saveEnvelopeFile(
-                  envelopeId,
-                  file,
-                  'document.pdf'
-                )
-              }
-            />
-          </React.Suspense>
-        )}
+              />
+            </React.Suspense>
+          ))}
         {flinksFrame}
         <Grid step={activeStep} form={form} viewport={viewport} />
         {popupOptions && (

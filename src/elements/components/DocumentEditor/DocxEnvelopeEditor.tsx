@@ -24,7 +24,11 @@ export interface Envelope {
   editor_file?: string | null;
   document?: string;
   type: string;
-  signed: boolean;
+  // Absent on a freshly generated draft (the generate response doesn't carry
+  // it), which is by definition unsigned.
+  signed?: boolean;
+  // The template document's key, carried by the generate response for labels.
+  key?: string;
 }
 
 // The editor must open the control-bearing copy when the envelope has one;
@@ -84,6 +88,10 @@ interface DocxEnvelopeEditorProps {
   // Without this a failed send is swallowed: DocxEditor routes terminal
   // errors here and there is nothing else listening.
   onError: (message: string) => void;
+  // Fired after a signing terminal action completes, so a modal host can
+  // close itself and resume the surrounding flow. A failed action routes to
+  // onError instead and never fires this.
+  onTerminalOutcome?: () => void;
 }
 
 // The docx renderer: the reusable Syncfusion DocxEditor wired to a generated
@@ -103,7 +111,8 @@ export default function DocxEnvelopeEditor({
   assistantEnabled,
   defaultDocumentId,
   onEnvelopeUpdated,
-  onError
+  onError,
+  onTerminalOutcome
 }: DocxEnvelopeEditorProps) {
   // Envelope that was finalized for signing (docx → signable PDF) this
   // session. Keyed by id so a regenerated envelope is editable again without
@@ -206,14 +215,14 @@ export default function DocxEnvelopeEditor({
 
   // 'draft' as the terminal action means Create Draft is the only signing
   // outcome configured; offersDraft puts it in a menu beside Sign instead.
-  const runTerminalAction = useCallback(
-    () => runSigningAction(terminalAction === 'draft'),
-    [runSigningAction, terminalAction]
-  );
-  const runTerminalActionDraft = useCallback(
-    () => runSigningAction(true),
-    [runSigningAction]
-  );
+  const runTerminalAction = useCallback(async () => {
+    await runSigningAction(terminalAction === 'draft');
+    onTerminalOutcome?.();
+  }, [runSigningAction, terminalAction, onTerminalOutcome]);
+  const runTerminalActionDraft = useCallback(async () => {
+    await runSigningAction(true);
+    onTerminalOutcome?.();
+  }, [runSigningAction, onTerminalOutcome]);
 
   // DocxEditor exposes its live SyncFusion instance at this exact lifecycle
   // point. The registry key is stable for this editor across renders; retain

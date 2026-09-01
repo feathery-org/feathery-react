@@ -629,6 +629,7 @@ describe('IntegrationClient', () => {
             envelope_action: 'open_in_editor',
             merge_docs: false,
             editor_toolbar_actions: [],
+            editor_capabilities: ['docx_overlay'],
             signers: [
               { document_id: 'doc1', email: 'test@example.com', filler: true },
               { document_id: 'doc2', email: 'test@example.com', filler: true }

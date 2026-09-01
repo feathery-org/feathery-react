@@ -808,6 +808,11 @@ export default class IntegrationClient {
       // Generate reads the toolbar only to decide whether default field values
       // are baked in; the pressed action is sent to finalize separately.
       payload.editor_toolbar_actions = toolbarActions;
+      // This bundle's overlay hosts the Syncfusion docx editor, so an all-docx
+      // packet should come back editable ({editor: 'docx', envelopes}) instead
+      // of pre-converted for pdf.js. Backends predating the capability ignore
+      // it and convert as before.
+      payload.editor_capabilities = ['docx_overlay'];
     }
     if (signMethod) payload.sign_method = signMethod;
     if (signers.length) payload.signers = signers;
@@ -823,7 +828,9 @@ export default class IntegrationClient {
     if (!response) return;
     const data = await response.json();
     if (!response.ok) return { status: 'error', message: parseAPIError(data) };
-    if (!runAsync || data.documents) return data;
+    // A synchronous result is either the pdf review payload (documents) or the
+    // editable docx payload (envelopes); anything else means poll for it.
+    if (!runAsync || data.documents || data.envelopes) return data;
 
     // Poll `dids` must match the backend's document_cache_keys: a template's
     // UUID string, or the literal "quik" for the quik item. Interpolating the
