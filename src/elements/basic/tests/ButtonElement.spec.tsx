@@ -162,6 +162,22 @@ describe('ButtonElement loader', () => {
     expectLoaderSizesButton(screen.getByTestId('loader'));
   });
 
+  it('treats a data-bound label resolving to a boolean as no content', () => {
+    // React draws nothing for a boolean child, so the label is empty however
+    // non-blank the raw value reads
+    const element = makeElement({
+      text: 'Placeholder label',
+      text_formatted: [{ insert: 'Placeholder label' }],
+      text_mode: 'data',
+      text_source: 'feathery.flag'
+    });
+    renderButton(element, <span data-testid='loader' />, { flag: false });
+
+    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
+    expect(label.textContent).toBe('');
+    expectLoaderSizesButton(screen.getByTestId('loader'));
+  });
+
   it('keeps a data-bound label that resolves to real text as content', () => {
     const element = makeElement({
       text: 'Placeholder label',
