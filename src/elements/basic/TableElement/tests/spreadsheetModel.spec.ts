@@ -13,9 +13,9 @@ import {
   FIT_MAX_HEIGHT,
   HEADER_HEIGHT,
   ROW_HEIGHT,
-  spreadsheetViewportHeight,
-  tableContainment
+  spreadsheetViewportHeight
 } from '../spreadsheet/styles';
+import { tableContainment } from '../styles';
 
 describe('parseInputValue', () => {
   test('keeps numeric text as a number so it round-trips as one', () => {
