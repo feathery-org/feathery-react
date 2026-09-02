@@ -16,9 +16,9 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 const TooltipOption = ({
   children,
   ...props
-}: OptionProps<OptionData, true>) => {
+}: OptionProps<OptionData, boolean>) => {
   const BaseOption = SelectComponents.Option as ComponentType<
-    OptionProps<OptionData, true>
+    OptionProps<OptionData, boolean>
   >;
   const optionRef = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -118,9 +118,9 @@ const CollapsibleMultiValueRemove = (
   return <BaseMultiValueRemove {...props} innerProps={removeInnerProps} />;
 };
 
-const Control = (props: ControlProps<OptionData, true>) => {
+const Control = (props: ControlProps<OptionData, boolean>) => {
   const BaseControl = SelectComponents.Control as ComponentType<
-    ControlProps<OptionData, true>
+    ControlProps<OptionData, boolean>
   >;
   const selectProps = props.selectProps as DropdownSelectProps;
   const { onControlPress } = selectProps;
@@ -202,12 +202,12 @@ const CollapsedIndicator = ({
   ) : null;
 
 const CollapsibleMultiValueContainer = (
-  props: MultiValueGenericProps<OptionData, true>
+  props: MultiValueGenericProps<OptionData, boolean>
 ) => {
   const selectProps = props.selectProps as DropdownSelectProps;
 
   const BaseContainer = SelectComponents.MultiValueContainer as ComponentType<
-    MultiValueGenericProps<OptionData, true>
+    MultiValueGenericProps<OptionData, boolean>
   >;
 
   if (!selectProps.collapseSelected) {
@@ -245,10 +245,10 @@ const CollapsibleMultiValueContainer = (
   );
 };
 
-const CollapsibleMultiValue = (props: MultiValueProps<OptionData, true>) => {
+const CollapsibleMultiValue = (props: MultiValueProps<OptionData, boolean>) => {
   const selectProps = props.selectProps as DropdownSelectProps;
   const BaseMultiValue = SelectComponents.MultiValue as ComponentType<
-    MultiValueProps<OptionData, true>
+    MultiValueProps<OptionData, boolean>
   >;
 
   const cutoff = selectProps.visibleCount;

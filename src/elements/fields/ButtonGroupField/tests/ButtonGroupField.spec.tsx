@@ -40,6 +40,17 @@ describe('ButtonGroupField', () => {
     jest.clearAllMocks();
   });
 
+  describe('Button Role', () => {
+    it('exposes options as buttons findable by their label', () => {
+      const element = createButtonGroupElement();
+      const props = createButtonGroupProps(element);
+
+      const { getByRole } = render(<ButtonGroupField {...props} />);
+
+      expect(getByRole('button', { name: 'Option 2' })).toBeInTheDocument();
+    });
+  });
+
   describe('Basic Rendering', () => {
     it('renders with default options', () => {
       const element = createButtonGroupElement();

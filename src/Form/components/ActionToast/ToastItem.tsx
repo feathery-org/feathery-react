@@ -83,6 +83,14 @@ export default function ToastItem({
 }
 
 const renderItemLabel = (item: DataItem) => {
+  if (item.label) {
+    return (
+      <span css={{ color: item.status === 'queued' ? '#9ca3af' : '#374151' }}>
+        {item.label}
+      </span>
+    );
+  }
+
   // fallback labels if no run data yet
   if (!item.extractionKey) {
     const docCount = item.documents?.length || 0;

@@ -159,7 +159,14 @@ export function getDefaultFieldValue(field: any) {
         return [meta.default_value];
       }
       // For multi-select fields, split comma-separated values into array
-      return meta.default_value.split(',').map((val: string) => val.trim());
+      const values = meta.default_value
+        .split(',')
+        .map((val: string) => val.trim());
+      // A dropdown_multi capped at 1 renders as a single-select (see
+      // DropdownMultiField), so its default can only be one entry.
+      if (servar.type === 'dropdown_multi' && Number(servar.max_length) === 1)
+        return values.slice(0, 1);
+      return values;
     }
     return meta.default_value;
   }
@@ -207,6 +214,40 @@ export function getDefaultFieldValue(field: any) {
     default:
       return '';
   }
+}
+
+// Field types whose value is a file rather than something renderable as text.
+// All three share the multipart submit path, the indexed filePathMap and the
+// same repeat semantics, so this is the one list; do not inline a copy.
+export const FILE_FIELD_TYPES = ['file_upload', 'signature', 'audio_recording'];
+
+// Only a *repeated* file field has meaningful holes. It holds one file per
+// repeat row, so an empty row has to keep its index to stay lined up with the
+// other fields in the same repeat container. A non-repeated multi-file field
+// is just a list of files whose positions mean nothing, so compacting it is
+// correct and it must not send repeat indices.
+export function isRepeatedFileField(servar?: any) {
+  return Boolean(servar?.repeated && FILE_FIELD_TYPES.includes(servar.type));
+}
+
+// Repeated values render '' rather than 'null' for a cleared row, but a file
+// row has no text to render and needs its hole left alone.
+export function normalizeRepeatArrayValue(value: any[], servar?: any) {
+  // An unknown key is on no step of this form, so nothing renders it and it
+  // needs no display normalization. Leaving it alone is also the safer default
+  // of the two: rewriting a file hole to '' loses the row's index, while
+  // 'null' in a field nobody draws costs nothing.
+  if (!servar || isRepeatedFileField(servar)) return value;
+  return value.map((item) => (item === null ? '' : item));
+}
+
+// Drops cleared entries from a repeated value before submit. A repeated file
+// field keeps its holes so the repeat index survives to the wire. Every caller
+// builds its servar from a step field, so an absent one is not the unknown-key
+// case above — it compacts, which is the long-standing behavior.
+export function stripEmptyRepeatEntries(value: any[], servar?: any) {
+  if (isRepeatedFileField(servar)) return value;
+  return value.filter((v) => ![null, undefined].includes(v));
 }
 
 export function getDefaultFormFieldValue(field: any) {

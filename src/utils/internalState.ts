@@ -29,6 +29,30 @@ export type GetConfig = ({
   keys,
   unique
 }: GetConfigParams) => Promise<Record<string, any>[]>;
+// A phone number for an authentication method: an E.164 string, or the split
+// form ({ countryCode, number }) that identity_verification requires.
+type DocusignPhoneNumber = string | { countryCode: string; number: string };
+// Identity verification DocuSign requires before the signer opens the
+// envelope. Each method must be enabled on the DocuSign account.
+type DocusignSignerAuthentication = {
+  method:
+    | 'access_code'
+    | 'sms'
+    | 'phone'
+    | 'knowledge_based'
+    | 'identity_verification';
+  // Required for 'sms'; for 'phone' unless recipientMayProvideNumber; optional
+  // for an 'identity_verification' workflow with a phone step
+  phoneNumbers?: DocusignPhoneNumber[];
+  accessCode?: string; // required for 'access_code'
+  // Send the access code in DocuSign's notification email (defaults false)
+  addAccessCodeToEmail?: boolean;
+  // 'phone' only: let the recipient enter their own number
+  recipientMayProvideNumber?: boolean;
+  // Required for 'identity_verification' - a workflow GUID from the account's
+  // DocuSign ID Verification settings
+  workflowId?: string;
+};
 type DocusignSigner = {
   // Required for esign signers; omit for paper signers (not a DocuSign recipient)
   email?: string;
@@ -40,6 +64,8 @@ type DocusignSigner = {
   routingOrder?: string;
   // Document visibility: 0-based document indices to hide from this signer
   excludedDocuments?: number[];
+  // Identity verification this signer must clear to open the envelope
+  authentication?: DocusignSignerAuthentication;
 };
 // A document entry can be a plain template UUID string, or an object form for
 // multi-instance envelopes: fill a template fresh (documentId + fillData) or
@@ -136,6 +162,7 @@ export interface FormInternalState {
     React.SetStateAction<Record<string, { message: string; index: number }>>
   >;
   setUserProgress: React.Dispatch<React.SetStateAction<null>>;
+  setDataMappingState?: (state: { show: boolean; hubs: any[] }) => void;
   steps: any;
   setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions, repeatIndex?: number) => void;

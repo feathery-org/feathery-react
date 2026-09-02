@@ -5,7 +5,8 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  useSyncExternalStore
 } from 'react';
 
 import debounce from 'lodash.debounce';
@@ -21,6 +22,7 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
   updateCustomCSS,
@@ -46,8 +48,11 @@ import {
   FieldStyles,
   formatStepFields,
   getAllFields,
+  FILE_FIELD_TYPES,
   getDefaultFieldValue,
   getDefaultFormFieldValue,
+  normalizeRepeatArrayValue,
+  stripEmptyRepeatEntries,
   getFieldValue,
   saveInitialValuesAndUrlParams,
   updateStepFieldOptions,
@@ -166,6 +171,7 @@ import {
   ACTION_NEW_SUBMISSION,
   ACTION_NEXT,
   ACTION_OAUTH_LOGIN,
+  ACTION_START_DATA_MAPPING,
   ACTION_PURCHASE_PRODUCTS,
   ACTION_REMOVE_PRODUCT_FROM_PURCHASE,
   ACTION_REMOVE_REPEATED_ROW,
@@ -232,6 +238,7 @@ import {
   isDocusignSignAction
 } from '../utils/document';
 import QuikFormViewer from '../elements/components/QuikFormViewer';
+import DataMappingModal from '../elements/components/dataMapping/DataMappingModal';
 import { createSchwabContact } from '../integrations/schwab';
 import { getLoginStep } from '../auth/utils';
 import usePollFuserData from '../hooks/usePollFuserData';
@@ -244,6 +251,12 @@ import {
 } from './logic';
 import { useCheckButtonAction } from './hooks/useCheckButtonAction';
 import ActionToast from './components/ActionToast';
+import FileUploadToast from './components/FileUploadToast';
+import {
+  getUploadToastHeight,
+  setUploadIndicatorEnabled,
+  subscribeToUploadToastHeight
+} from '../utils/fileUploadProgress';
 import { useAIExtractionToast } from './components/ActionToast/useAIExtractionToast';
 import { useEnvelopeGenerationToast } from './components/ActionToast/useEnvelopeGenerationToast';
 import { useTrackUserInteraction } from './hooks/useTrackUserInteraction';
@@ -270,6 +283,12 @@ const DocumentViewer = React.lazy(
 // container entry points have no index, so they announce under their own ids.
 const ENVELOPE_FLOW_TOAST_ID = 'envelope-flow';
 const ENVELOPE_CONTAINER_TOAST_ID = 'envelope-container';
+
+// Bottom-right overlays stack rather than overlap: each one clears the boxes
+// already sitting below it, plus a gap. An absent box contributes nothing.
+const BOTTOM_RIGHT_STACK_GAP = 10;
+const stackAbove = (height: number) =>
+  height > 0 ? height + BOTTOM_RIGHT_STACK_GAP : 0;
 
 export * from './grid/StyledContainer';
 export type { StyledContainerProps } from './grid/StyledContainer';
@@ -427,6 +446,8 @@ function Form({
     saveUrlParams: false,
     saveHideIfFields: false,
     clearHideIfFields: false,
+    showFileUploadProgress: true,
+    showDocumentProgress: true,
     completionBehavior: '',
     globalStyles: {},
     mobileBreakpoint: DEFAULT_MOBILE_BREAKPOINT,
@@ -517,13 +538,14 @@ function Form({
       const found = getServarAndStepByFieldKey(fieldKey);
       if (!found) continue;
       const { servar, step } = found;
-      if (
-        !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-      )
-        continue;
+      if (!FILE_FIELD_TYPES.includes(servar.type)) continue;
       if (isFieldValueEmpty(fieldValues[fieldKey], servar)) continue;
       fileEntries.push({
-        servar: { key: servar.key, [servar.type]: fieldValues[fieldKey] },
+        servar: {
+          key: servar.key,
+          [servar.type]: fieldValues[fieldKey],
+          repeated: Boolean(servar.repeated)
+        },
         stepKey: step.key
       });
     }
@@ -540,10 +562,7 @@ function Form({
         if (status) return pending;
         const servar = getServarByFieldKey(fieldKey);
         if (!servar) return pending;
-        if (
-          !['file_upload', 'signature', 'audio_recording'].includes(servar.type)
-        )
-          return pending;
+        if (!FILE_FIELD_TYPES.includes(servar.type)) return pending;
         if (isFieldValueEmpty(fieldValues[fieldKey], servar)) return pending;
         pending.push(fieldKey);
         return pending;
@@ -578,6 +597,10 @@ function Form({
 
   const [showQuikFormViewer, setShowQuikFormViewer] = useState(false);
   const [quikHTMLPayload, setQuikHTMLPayload] = useState('');
+  const [dataMappingState, setDataMappingState] = useState<{
+    show: boolean;
+    hubs: any[];
+  }>({ show: false, hubs: [] });
   const [reviewViewerPayload, setReviewViewerPayload] = useState<any>(null);
   type ConnectAccountModalState = {
     provider: string;
@@ -746,8 +769,15 @@ function Form({
 
   // Reset height when toast data becomes empty
   const actionToastData = useMemo(
-    () => [...currentActionExtractions, ...currentEnvelopeGeneration],
-    [currentActionExtractions, currentEnvelopeGeneration]
+    () =>
+      formSettings.showDocumentProgress
+        ? [...currentActionExtractions, ...currentEnvelopeGeneration]
+        : [],
+    [
+      currentActionExtractions,
+      currentEnvelopeGeneration,
+      formSettings.showDocumentProgress
+    ]
   );
 
   useEffect(() => {
@@ -772,6 +802,21 @@ function Form({
       actionToastObserverRef.current = observer;
     }
   }, []);
+
+  // The file upload box is page-level and may be rendered by another form
+  // instance, so its height comes from the shared tracker rather than a ref
+  const fileUploadToastHeight = useSyncExternalStore(
+    subscribeToUploadToastHeight,
+    getUploadToastHeight,
+    getUploadToastHeight
+  );
+
+  // The Feathery badge sits in the bottom-right corner, so overlays there start
+  // above it
+  const bottomRightBase =
+    formSettings.showBrand && formSettings.brandPosition === 'bottom_right'
+      ? 67
+      : 20;
 
   // Tracks element to focus
   const focusRef = useRef<any>(undefined);
@@ -884,6 +929,20 @@ function Form({
     return new Set<string>();
   }, [activeStep?.id]);
 
+  // Servar per field key. updateFieldValues runs on every keystroke, so this
+  // avoids both the linear scan in getServarByFieldKey and the Field entity,
+  // whose type getter warns when the field is not on the active form. The whole
+  // servar is stored because callers need `repeated` as well as `type`.
+  const servarByKey = useMemo(() => {
+    const servars = new Map<string, any>();
+    Object.values(steps).forEach((step: any) =>
+      (step.servar_fields ?? []).forEach((field: any) =>
+        servars.set(field.servar.key, field.servar)
+      )
+    );
+    return servars;
+  }, [steps]);
+
   useEffect(() => {
     const autoscroll = formSettings.autoscroll;
     if (!shouldScrollToTop || autoscroll === 'none') return;
@@ -941,12 +1000,31 @@ function Form({
     const curRepeatContainer = insideContainer || repeatContainer;
 
     const removeServars: Record<string, null> = {};
-    let curIndex = index;
+    // The removed row belongs to the container, not to any one field. Taking
+    // each field's own length lets a shorter array drop a different row, and a
+    // file field is shorter than its siblings whenever it ends in empty rows.
+    const fieldsInContainer = curRepeatContainer
+      ? getFieldsInRepeat(activeStep, curRepeatContainer)
+      : [];
+    const containerRows = Math.max(
+      0,
+      ...fieldsInContainer.map((field: any) => {
+        const vals = fieldValues[field.servar.key];
+        return Array.isArray(vals) ? vals.length : 0;
+      })
+    );
+    const curIndex = isInsideContainer ? index : containerRows - 1;
+    if (curIndex < 0) return;
+
     const getNewVal = (field: any) => {
       const vals = fieldValues[field.servar.key] as any[];
-      curIndex = !isInsideContainer ? vals.length - 1 : index;
 
       removeServars[field.servar.key] = null;
+
+      // filePathMap is indexed by repeat row, so it has to lose the same slot
+      // or the surviving files resolve to the removed row's uploaded path.
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        removeFilePathMapEntry(field.servar.key, curIndex);
 
       const newRepeatedValues = justRemove(vals, curIndex);
       const defaultValue = [getDefaultFieldValue(field)];
@@ -1054,7 +1132,7 @@ function Form({
       (acc, [key, value]) => {
         const field = fields?.[key];
         if (Array.isArray(value) && field && !field.isHiddenField) {
-          acc[key] = value.map((item) => (item === null ? '' : item));
+          acc[key] = normalizeRepeatArrayValue(value, servarByKey.get(key));
         } else {
           acc[key] = value;
         }
@@ -1433,6 +1511,7 @@ function Form({
         inlineErrors,
         setInlineErrors,
         setUserProgress,
+        setDataMappingState,
         steps,
         setStepKey,
         updateFieldOptions: (
@@ -1760,7 +1839,15 @@ function Form({
             );
           };
         if (res.save_url_params) saveUrlParamsFormSetting = true;
-        setFormSettings({ ...formSettings, ...mapFormSettingsResponse(res) });
+        const mappedSettings = mapFormSettingsResponse(res);
+        setFormSettings({ ...formSettings, ...mappedSettings });
+        // The upload tracker is keyed by formKey since upload reporting
+        // happens in FeatheryClient, outside React state. Read the mapped
+        // setting rather than the raw response so the default lives in one place
+        setUploadIndicatorEnabled(
+          newClient.formKey,
+          mappedSettings.showFileUploadProgress
+        );
         formOffReason.current = res.formOff ? CLOSED : formOffReason.current;
         setLogicRules(res.logic_rules);
         setSharedCodes((prev) => res.shared_codes || prev);
@@ -2022,11 +2109,18 @@ function Form({
     if (invalid) return;
 
     const featheryFields = Object.entries(formattedFields).map(([key, val]) => {
+      const servar = servarByKey.get(key);
       let newVal = val.value as any;
       newVal = Array.isArray(newVal)
-        ? newVal.filter((v) => ![null, undefined].includes(v))
+        ? stripEmptyRepeatEntries(newVal, servar)
         : newVal;
-      return { key, [val.type]: newVal };
+      const field: Record<string, any> = { key, [val.type]: newVal };
+      // Only the file submit path reads this. Setting it on every field would
+      // change the shape of the JSON submit body, which carries these objects
+      // verbatim.
+      if (FILE_FIELD_TYPES.includes(val.type))
+        field.repeated = Boolean(servar?.repeated);
+      return field;
     });
 
     const stepPromise = client.submitStep(featheryFields, activeStep, hasNext);
@@ -3391,6 +3485,8 @@ function Form({
           setElementError((e as Error).message);
           break;
         }
+      } else if (type === ACTION_START_DATA_MAPPING) {
+        setDataMappingState({ show: true, hubs: action.mapping_hubs ?? [] });
       }
     }
 
@@ -3608,6 +3704,14 @@ function Form({
             setShow={setShowQuikFormViewer}
           />
         )}
+        {dataMappingState.show && (
+          <DataMappingModal
+            hubs={dataMappingState.hubs}
+            client={client}
+            responsiveStyles={globalCSS}
+            onClose={() => setDataMappingState((p) => ({ ...p, show: false }))}
+          />
+        )}
         {reviewViewerPayload && (
           <React.Suspense fallback={null}>
             <DocumentViewer
@@ -3667,23 +3771,23 @@ function Form({
         <ActionToast
           ref={setActionToastRef}
           data={actionToastData}
-          bottom={
-            formSettings.showBrand &&
-            formSettings.brandPosition === 'bottom_right'
-              ? 67
-              : 20
-          }
+          bottom={bottomRightBase}
         />
+        <FileUploadToast
+          instanceId={_internalId}
+          enabled={formSettings.showFileUploadProgress}
+          bottom={bottomRightBase + stackAbove(actionToastHeight)}
+        />
+
         {formSettings.assistantEnabled && (
           <AssistantChat
             instanceId={_internalId}
             baseUrl={`${new URL(API_URL).origin}/agent/assistant/`}
             getTargets={getAssistantTargets}
             bottom={
-              (formSettings.showBrand &&
-              formSettings.brandPosition === 'bottom_right'
-                ? 67
-                : 20) + (actionToastHeight > 0 ? actionToastHeight + 10 : 0)
+              bottomRightBase +
+              stackAbove(actionToastHeight) +
+              stackAbove(fileUploadToastHeight)
             }
             color={formSettings.assistantColor}
             workflowActions={formSettings.assistantWorkflowActions}

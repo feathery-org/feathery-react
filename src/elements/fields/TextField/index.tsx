@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { EYE_ICON_INSET, inputBoxAttrs, resetStyles } from '../../styles';
 import { emailPatternStr } from '../../../utils/validation';
 import useBorder from '../../components/useBorder';
 import TextAutocomplete from './TextAutocomplete';
@@ -216,7 +216,7 @@ function TextField({
     if (rounded !== current) onAccept(rounded, {});
   };
 
-  const spacing = element.properties.tooltipText ? 30 : 8;
+  const spacing = EYE_ICON_INSET(!!element.properties.tooltipText);
   return (
     <div
       ref={containerRef}
@@ -254,6 +254,7 @@ function TextField({
                 }
           )
         }}
+        {...inputBoxAttrs(element.servar.type)}
       >
         <TextAutocomplete
           allOptions={options}
@@ -354,7 +355,7 @@ function TextField({
             onAccept={handleAccept}
           />
         </TextAutocomplete>
-        {servar.type === 'ssn' && rawValue && (
+        {servar.type === 'ssn' && (rawValue || editMode) && (
           <div
             css={{
               position: 'absolute',
@@ -362,7 +363,8 @@ function TextField({
               insetInlineEnd: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
-              zIndex: FORM_Z_INDEX
+              zIndex: FORM_Z_INDEX,
+              ...responsiveStyles.getTarget('endIcon')
             }}
             onClick={() => setShowPassword((prev) => !prev)}
             aria-label='Toggle SSN visibility'

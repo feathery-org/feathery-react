@@ -25,6 +25,24 @@ export function textFieldShouldSubmit(servar: any, value: any) {
   }
 }
 
+/**
+ * A file upload field autosubmits only once it is actually filled.
+ *
+ * Multi-file fields are exempt entirely — the user isn't done after the first
+ * file, and submitting there strands the rest. The flag lives on the servar
+ * metadata, not on element properties. Removing a file reaches the same
+ * onChange handler as adding one, signalled by a -1 index, and is not a fill.
+ */
+export function fileFieldShouldSubmit(
+  servar: any,
+  files: any[],
+  fieldIndex: any
+) {
+  if (servar.metadata.multiple) return false;
+  if (fieldIndex === -1) return false;
+  return files.length > 0;
+}
+
 export function pickCloserElement(target: any, option1: any, option2: any) {
   if (!option1) return option2;
   if (!option2) return option1;

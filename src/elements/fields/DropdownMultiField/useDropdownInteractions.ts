@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { ActionMeta, OnChangeValue, SelectInstance } from 'react-select';
-import { featheryDoc } from '../../../utils/browser';
+import { featheryDoc, isTouchDevice } from '../../../utils/browser';
 import type { OptionData } from './types';
 
-type SelectWithInternalState = SelectInstance<OptionData, true> & {
+type SelectWithInternalState = SelectInstance<OptionData, boolean> & {
   state?: {
     focusedOption?: OptionData | null;
   };
@@ -28,7 +28,7 @@ const getLatestInputValue = (
 
 interface UseDropdownInteractionsParams {
   // Core refs
-  selectRef: React.RefObject<SelectInstance<OptionData, true> | null>;
+  selectRef: React.RefObject<SelectInstance<OptionData, boolean> | null>;
   containerRef: React.RefObject<HTMLElement | null>;
 
   // State
@@ -51,9 +51,13 @@ interface UseDropdownInteractionsParams {
   // Options config
   create: boolean;
   disableAllOptions: boolean;
+  isSingleSelectMode: boolean;
 
   // Parent callbacks
-  onChange: (selected: any, actionMeta: any) => void;
+  onChange: (
+    selected: OnChangeValue<OptionData, boolean>,
+    actionMeta: ActionMeta<OptionData>
+  ) => void;
 }
 
 interface UseDropdownInteractionsReturn {
@@ -64,7 +68,7 @@ interface UseDropdownInteractionsReturn {
 
   // Select component handlers
   handleChange: (
-    selected: OnChangeValue<OptionData, true>,
+    selected: OnChangeValue<OptionData, boolean>,
     actionMeta: ActionMeta<OptionData>
   ) => void;
   handleSelectKeyDown: (event: React.KeyboardEvent) => void;
@@ -103,6 +107,7 @@ export default function useDropdownInteractions({
   isCreatableInputValid,
   create,
   disableAllOptions,
+  isSingleSelectMode,
   onChange
 }: UseDropdownInteractionsParams): UseDropdownInteractionsReturn {
   // Handle React Select quirks where touch-initiated opens can trigger
@@ -222,9 +227,25 @@ export default function useDropdownInteractions({
 
   const handleChange = useCallback(
     (
-      selected: OnChangeValue<OptionData, true>,
+      selected: OnChangeValue<OptionData, boolean>,
       actionMeta: ActionMeta<OptionData>
     ) => {
+      const isSelectAction =
+        actionMeta.action === 'select-option' ||
+        actionMeta.action === 'create-option';
+
+      // Single mode closes on pick like a native select, but react-select's own
+      // setValue must still run - it resets the controlled inputValue.
+      if (isSingleSelectMode) {
+        if (isSelectAction) closeMenuImmediately({ skipBlur: true });
+        onChange(selected, actionMeta);
+        // blurInputOnSelect is forced off for the multi contract, so refocusing
+        // a touch device would leave its soft keyboard up over the closed menu.
+        if (isSelectAction && isTouchDevice()) selectRef.current?.blur?.();
+        else selectRef.current?.focus?.();
+        return;
+      }
+
       if (
         actionMeta.action === 'remove-value' ||
         actionMeta.action === 'pop-value'
@@ -234,8 +255,7 @@ export default function useDropdownInteractions({
       const skipBlurAction =
         actionMeta.action === 'remove-value' ||
         actionMeta.action === 'pop-value' ||
-        actionMeta.action === 'select-option' ||
-        actionMeta.action === 'create-option';
+        isSelectAction;
 
       if (!skipBlurAction || !isMenuOpen) {
         closeMenuImmediately(skipBlurAction ? { skipBlur: true } : undefined);
@@ -248,6 +268,7 @@ export default function useDropdownInteractions({
       closeMenuImmediately,
       extendCloseSuppression,
       isMenuOpen,
+      isSingleSelectMode,
       onChange,
       selectRef
     ]
@@ -310,7 +331,10 @@ export default function useDropdownInteractions({
     }
 
     if (hasFocusedOption) {
-      return isFocusedSelected ? 'block' : 'allow';
+      // Single mode has no deselect, so re-picking the focused value is still a
+      // valid select - letting it run is what clears the search text.
+      if (isSingleSelectMode || !isFocusedSelected) return 'allow';
+      return 'block';
     }
 
     if (disableAllOptions) {
@@ -329,6 +353,7 @@ export default function useDropdownInteractions({
     disableAllOptions,
     isMenuOpen,
     isCreatableInputValid,
+    isSingleSelectMode,
     options,
     selectVal,
     selectRef

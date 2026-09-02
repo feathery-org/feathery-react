@@ -21,6 +21,11 @@ describe('resolveLabelStyle', () => {
     expect(resolved.label_font_weight).toBe(400);
   });
 
+  it('inherits the field font fallback so the label keeps the same generic', () => {
+    const style = { font_family: 'Lora', font_fallback: 'serif' };
+    expect(resolveLabelStyle(style).label_font_fallback).toBe('serif');
+  });
+
   it('prefers an explicitly-set label_* value over the field value', () => {
     const style = { font_size: 16, label_font_size: 20 };
     expect(resolveLabelStyle(style).label_font_size).toBe(20);

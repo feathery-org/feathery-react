@@ -429,6 +429,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
       JSON.stringify({
         k: occurrence.def.kind,
         t: occurrence.def.fieldType,
+        g: occurrence.def.isGlobal,
         e:
           occurrence.def.kind === 'formula'
             ? occurrence.def.expression
@@ -441,7 +442,7 @@ export function scanBindings(sfdt: SfdtDocument): BindingIndex {
           index.diagnostics,
           'error',
           'conflicting-definition',
-          `occurrences of "${name}" disagree on kind/type/expression`,
+          `occurrences of "${name}" disagree on kind/type/global scope/expression`,
           occurrence.path
         );
       }

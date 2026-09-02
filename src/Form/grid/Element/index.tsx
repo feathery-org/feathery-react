@@ -18,6 +18,7 @@ import {
   ACTION_NEXT
 } from '../../../utils/elementActions';
 import {
+  fileFieldShouldSubmit,
   getInlineError,
   handleCheckboxGroupChange,
   handleCheckboxGroupSelectAllChange,
@@ -113,6 +114,7 @@ const Element = ({ node: el, form }: any) => {
         submitCustom={submitCustom}
         buttonLoaders={buttonLoaders}
         assistantClient={assistantClient}
+        client={form.client}
       />
     );
   else if (type === 'tab')
@@ -354,6 +356,9 @@ const Element = ({ node: el, form }: any) => {
               onChange();
             }}
             onClear={() => {
+              // Without this the row keeps its stored S3 path, so the submit
+              // re-keeps the signature the user just erased.
+              clearFilePathMapEntry(servar.key, servar.repeated ? index : null);
               changeValue(null, el, index);
               onChange();
             }}
@@ -393,7 +398,7 @@ const Element = ({ node: el, form }: any) => {
               onChange({
                 valueRepeatIndex: fieldIndex,
                 submitData:
-                  autosubmit && !el.properties.multiple && files.length > 0
+                  autosubmit && fileFieldShouldSubmit(servar, files, fieldIndex)
               });
             }}
             initialFiles={fieldVal}

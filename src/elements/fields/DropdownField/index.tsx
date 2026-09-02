@@ -1,4 +1,8 @@
-import { resetStyles } from '../../styles';
+import {
+  DROPDOWN_CHEVRON_RESERVE,
+  inputBoxAttrs,
+  resetStyles
+} from '../../styles';
 
 import React, { useEffect, useRef, useState } from 'react';
 import InlineTooltip from '../../components/InlineTooltip';
@@ -123,9 +127,6 @@ export default function DropdownField({
     }
   }
 
-  const hasTooltip = !!element.properties.tooltipText;
-  const chevronPosition = hasTooltip ? 30 : 10;
-
   responsiveStyles.applyFontStyles('field', !fieldVal);
   return (
     <div
@@ -166,6 +167,7 @@ export default function DropdownField({
               }
             : {}
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         <Global
           styles={css`
@@ -177,8 +179,6 @@ export default function DropdownField({
         {customBorder}
         <select
           css={{
-            ...resetStyles,
-            ...responsiveStyles.getTarget('field'),
             width: '100%',
             height: '100%',
             border: 'none',
@@ -190,11 +190,20 @@ export default function DropdownField({
             MozAppearance: 'none',
             backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M0 0.776454L0.970744 0L5 4.2094L9.02926 0L10 0.776454L5 6L0 0.776454Z' fill='%23${element.styles.font_color}'/></svg>")`,
             backgroundRepeat: 'no-repeat',
-            backgroundPosition: `${
+            // Split from the shorthand so the themed vertical placement on the
+            // field target survives -- the chevron rides the value's line. The
+            // inline offset is the custom property the theme emits, so a
+            // mobile padding override moves the glyph with the text.
+            backgroundPositionX: `${
               rightToLeft ? 'left' : 'right'
-            } ${chevronPosition}px center`,
-            [rightToLeft ? 'paddingLeft' : 'paddingRight']: 30,
-            position: 'relative'
+            } var(--fe-chevron-x, 10px)`,
+            backgroundPositionY: 'center',
+            position: 'relative',
+            ...resetStyles,
+            paddingInlineEnd: DROPDOWN_CHEVRON_RESERVE,
+            // Spread last, as every other input-box field does, so themed
+            // padding and alignment win over the defaults above.
+            ...responsiveStyles.getTarget('field')
           }}
           id={servar.key}
           value={fieldVal ?? ''}
@@ -216,7 +225,7 @@ export default function DropdownField({
           css={{
             position: 'absolute',
             pointerEvents: 'none',
-            [rightToLeft ? 'right' : 'left']: '0.75rem',
+            insetInlineStart: '0.75rem',
             transition: '0.2s ease all',
             top: '50%',
             ...responsiveStyles.getTarget('placeholder'),
