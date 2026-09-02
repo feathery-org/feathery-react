@@ -120,6 +120,9 @@ jobs:
   # and the tag push are already done by the time this runs, so a bump failure
   # leaves a valid release behind instead of a half-finished one.
   bump-consumers:
+    # Each matrix leg reports as bump-<repo>, so a failure names the repo it
+    # belongs to and branch protection can require the legs individually.
+    name: bump-${{ matrix.repo }}
     needs: release
     if: inputs.bump-consumers
     runs-on: ubuntu-latest
