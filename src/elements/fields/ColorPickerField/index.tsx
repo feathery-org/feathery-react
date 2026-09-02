@@ -38,10 +38,12 @@ function ColorPickerField({
       {children}
       {fieldLabel}
       {/* A real button rather than a div so the swatch is keyboard operable
-          and carries a name on TrustedForm certificates */}
+          and carries a name on TrustedForm certificates. The name is suffixed
+          so setFormElementError never resolves the field key to this button:
+          its BUTTON branch expects a ButtonElement with an #error_ child. */}
       <button
         type='button'
-        name={servar.key}
+        name={`${servar.key}-swatch`}
         value={fieldVal}
         aria-label={fieldAriaLabel(element)}
         aria-expanded={showPicker}

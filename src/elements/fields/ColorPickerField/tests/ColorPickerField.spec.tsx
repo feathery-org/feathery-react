@@ -157,7 +157,9 @@ describe('ColorPickerField - Certification naming', () => {
     );
 
     const swatch = container.querySelector('button') as HTMLButtonElement;
-    expect(swatch.name).toBe(element.servar.key);
+    // Suffixed so the field key never resolves to the button in
+    // setFormElementError, which expects a ButtonElement there
+    expect(swatch.name).toBe(`${element.servar.key}-swatch`);
     expect(swatch.value).toBe('AABBCCFF');
 
     const mirror = container.querySelector(

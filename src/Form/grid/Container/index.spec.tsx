@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { Container } from '.';
 
 // Records the props the real container would register dirty state under
@@ -33,6 +33,61 @@ const docxNode = {
     width_unit: 'fill'
   }
 };
+
+const actionNode = {
+  ...docxNode,
+  id: 'container-2',
+  key: 'plan-card-premium',
+  properties: { actions: [{ type: 'next' }] }
+};
+
+const form = {
+  formInstanceId: 'internal-form-id',
+  activeStep: { id: 'step-1' },
+  formSettings: { mobileBreakpoint: 480 }
+};
+
+describe('Container with actions', () => {
+  const renderActionable = () => {
+    const runElementActions = jest.fn();
+    const utils = render(
+      <Container
+        node={actionNode}
+        viewport='desktop'
+        form={form}
+        runElementActions={runElementActions}
+      />
+    );
+    const target = utils.container.querySelector(
+      '[aria-label="plan-card-premium"]'
+    ) as HTMLElement;
+    return { ...utils, runElementActions, target };
+  };
+
+  it('is named and focusable but carries no button role', () => {
+    // role="button" would make every descendant presentational and hide the
+    // card's own text and fields from assistive tech
+    const { target } = renderActionable();
+    expect(target).toBeTruthy();
+    expect(target.tabIndex).toBe(0);
+    expect(target.getAttribute('role')).toBeNull();
+  });
+
+  it('runs its actions on Enter and Space', () => {
+    const { target, runElementActions } = renderActionable();
+    fireEvent.keyDown(target, { key: 'Enter' });
+    fireEvent.keyDown(target, { key: ' ' });
+    expect(runElementActions).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores key presses that bubble from nested content', () => {
+    const { target, runElementActions } = renderActionable();
+    const child = target.ownerDocument.createElement('button');
+    target.appendChild(child);
+    fireEvent.keyDown(child, { key: 'Enter' });
+    expect(runElementActions).not.toHaveBeenCalled();
+  });
+});
 
 describe('Container document editor wiring', () => {
   // docxDirtyRegistry is keyed by the same id the Form guards Next/Back with,

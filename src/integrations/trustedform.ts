@@ -32,7 +32,12 @@ function awaitFormElement(): Promise<void> {
     });
 
     // Never block certification indefinitely if the form never renders
-    const timer = setTimeout(finish, FORM_WAIT_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      console.warn(
+        '[feathery] TrustedForm: form did not render within the wait window, injecting anyway'
+      );
+      finish();
+    }, FORM_WAIT_TIMEOUT_MS);
   });
 }
 
@@ -62,7 +67,11 @@ export async function installTrustedForm(
 
   // Deliberately not awaited: integration setup blocks the session fetch, and
   // the form we are waiting for cannot render until that fetch resolves.
-  awaitFormElement().then(() => injectTrustedFormScript(trustedformConfig));
+  awaitFormElement()
+    .then(() => injectTrustedFormScript(trustedformConfig))
+    .catch((err) =>
+      console.warn('[feathery] TrustedForm script failed to install', err)
+    );
 }
 
 export function gatherTrustedFormFields(existingFields: any, formKey: string) {

@@ -9,7 +9,7 @@ import {
   expectRatingIconCount
 } from './test-utils';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import RatingField from '../index';
 
 describe('RatingField - Base Functionality', () => {
@@ -222,6 +222,25 @@ describe('RatingField - Certification naming', () => {
       expect(button.value).toBe(String(i + 1));
       expect(button.getAttribute('aria-label')).toBeTruthy();
     });
+  });
+
+  it.each([
+    ['disabled', { disabled: true }],
+    ['edit mode', { editMode: true }]
+  ])('ignores button activation when %s', (_label, props) => {
+    // Real buttons stay keyboard reachable under pointer-events: none, so the
+    // guard has to live on the click handler
+    const onChange = jest.fn();
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField
+        {...createRatingProps(element, { fieldVal: 2, onChange, ...props })}
+      />
+    );
+
+    const buttons = container.querySelectorAll('button');
+    fireEvent.click(buttons[3]);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('mirrors the selected rating into a named hidden input', () => {

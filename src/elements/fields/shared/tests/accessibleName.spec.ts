@@ -18,6 +18,13 @@ describe('fieldAriaLabel', () => {
     expect(fieldAriaLabel(build({ name: 'First name' }))).toBeUndefined();
   });
 
+  it('names repeated fields even when they have a visible label', () => {
+    // Repeated fields render their <label> without htmlFor, so the label does
+    // not name the control and the fallback must still apply
+    const element = build({ name: 'Email', repeated: true });
+    expect(fieldAriaLabel(element)).toBe('my_field');
+  });
+
   it('falls back to the placeholder when there is no visible label', () => {
     const element = build({}, { placeholder: 'First name' });
     expect(fieldAriaLabel(element)).toBe('First name');

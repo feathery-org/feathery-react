@@ -64,7 +64,9 @@ export default function RatingField({
                 } - ${rating}`}
                 aria-pressed={fieldVal === rating}
                 aria-disabled={editMode || disabled}
-                onClick={() => onChange(rating)}
+                onClick={() => {
+                  if (!editMode && !disabled) onChange(rating);
+                }}
                 onMouseEnter={() => setHoverIndex(index)}
                 onMouseLeave={() => setHoverIndex(null)}
                 css={{

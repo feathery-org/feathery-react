@@ -15,8 +15,10 @@ export function fieldAriaLabel(element: any): string | undefined {
   if (properties.aria_label) return properties.aria_label;
 
   const servar = element?.servar;
-  // A visible <label htmlFor> is rendered whenever the servar has a name
-  if (servar?.name) return undefined;
+  // A visible <label htmlFor> is rendered whenever the servar has a name,
+  // except for repeated fields, whose label is not associated because the
+  // control id is not unique across rows (see fields/index.tsx)
+  if (servar?.name && !servar.repeated) return undefined;
 
   return properties.placeholder || servar?.key || undefined;
 }

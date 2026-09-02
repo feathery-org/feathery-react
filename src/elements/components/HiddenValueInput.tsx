@@ -4,7 +4,7 @@ import React from 'react';
  * Mirrors a field's value into a named, non-interactive form control.
  *
  * Some fields are built from divs and canvases rather than native inputs
- * (button groups, ratings, sliders, color pickers, signatures), so their value
+ * (button groups, ratings, sliders, color pickers), so their value
  * never appears in the DOM under the field's key. Lead-certification scanners
  * such as TrustedForm read the submitted DOM to build their certificate, and
  * without this they record only "[unnamed div]".

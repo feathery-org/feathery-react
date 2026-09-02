@@ -22,6 +22,7 @@ import useCollapsedSelectionManager from './useCollapsedSelectionManager';
 import useDropdownOptions from './useDropdownOptions';
 import useWindowedOptions from './useWindowedOptions';
 import useSelectProps from './useSelectProps';
+import { fieldAriaLabel } from '../shared/accessibleName';
 import useDropdownInteractions from './useDropdownInteractions';
 import type { CreatableValidator } from './types';
 
@@ -240,7 +241,7 @@ export default function DropdownMultiField({
     isValidNewOption: create ? isValidNewOption : undefined,
     onInputChange: handleInputChange,
     filterOption,
-    ariaLabel: element.properties.aria_label
+    ariaLabel: fieldAriaLabel(element)
   });
 
   return (

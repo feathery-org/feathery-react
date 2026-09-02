@@ -48,8 +48,9 @@ export const Container = ({
   const additionalCss: any = {};
   let handleClick: any;
   // Containers that carry actions are operable controls, but they render as
-  // bare divs. Without a role and a name, TrustedForm records every click on
-  // one as "[unnamed div]" and screen readers announce nothing at all.
+  // bare divs. Without a name, TrustedForm records every click on one as
+  // "[unnamed div]". Deliberately no role="button": that role makes every
+  // descendant presentational, hiding the text and fields inside the card.
   let interactiveProps: Record<string, any> = {};
 
   // Container-level hover tooltips apply only to actual containers. Field
@@ -115,7 +116,6 @@ export const Container = ({
 
     if (actions.length > 0) {
       interactiveProps = {
-        role: 'button',
         tabIndex: 0,
         'aria-label': containerLabel(node),
         onKeyDown: (e: any) => {
