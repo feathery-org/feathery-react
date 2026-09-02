@@ -113,6 +113,31 @@ export function getRepeatMaxRows(
 }
 
 /**
+ * Rendered row count for a repeat container, clamped so a 'set_value' trigger
+ * cannot offer a row past the author's cap.
+ *
+ * That trailing row is the one way left around a row limit: it is rendered
+ * whenever the last row is filled, and typing into it grows the array through
+ * `justInsert`, which runs upstream of every cap check. Withholding the row
+ * withholds the input.
+ *
+ * Never clamps below the rows the data already holds. A cap lowered after
+ * submissions must not hide answers that exist - the phantom row is the only
+ * thing this is meant to take away.
+ */
+export function clampRepeatCountToCap(
+  step: any,
+  repeatContainer: Subgrid,
+  count: number
+) {
+  const cap = getRepeatMaxRows(step, repeatContainer.id);
+  if (cap === null) return count;
+
+  const dataRows = getRepeatContainerRowCount(step, repeatContainer);
+  return Math.min(count, Math.max(cap, dataRows));
+}
+
+/**
  * Number of rendered rows for a repeated field. If the trigger is 'set_value'
  * and the last row is not at default, the renderer shows an extra empty row.
  */

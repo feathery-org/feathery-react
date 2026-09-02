@@ -282,11 +282,16 @@ export function useRowDrag({
       if (!state || event.pointerId !== state.pointerId) return;
       event.stopPropagation();
 
-      // A press that never crossed the drag threshold is a tap, which opens the
-      // menu - the single-pointer alternative to dragging.
+      // A press that never crossed the drag threshold is a tap. onPointerDown
+      // preventDefault()s to keep the container's click actions out of a grab,
+      // and that also suppresses the browser's own focus, so a tap has to place
+      // focus itself - otherwise the arrow keys are unreachable by pointer.
       const dragged = state.dragging;
       finish(dragged);
-      if (!dragged) onTap?.();
+      if (!dragged) {
+        handleRef.current?.focus();
+        onTap?.();
+      }
     },
     [finish, onTap]
   );

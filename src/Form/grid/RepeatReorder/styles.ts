@@ -8,8 +8,6 @@
  */
 export const REORDER_CLASS = 'feathery-repeat-reorder';
 export const GRIP_CLASS = 'feathery-repeat-reorder-grip';
-export const MENU_CLASS = 'feathery-repeat-reorder-menu';
-export const MENU_ITEM_CLASS = 'feathery-repeat-reorder-menu-item';
 export const INSERT_CLASS = 'feathery-repeat-insert';
 
 export const ROW_ATTR = 'data-feathery-repeat-row';
@@ -74,49 +72,17 @@ export const gripStyles = {
   '&:active': { cursor: 'grabbing', opacity: 1 }
 };
 
-export const menuStyles = {
-  position: 'absolute' as const,
-  insetBlockStart: 0,
-  insetInlineStart: '100%',
-  marginInlineStart: '4px',
-  zIndex: 4,
-  pointerEvents: 'auto' as const,
-  minWidth: '132px',
-  padding: '4px',
-  background: surface,
-  color: 'inherit',
-  font: 'inherit',
-  fontSize: '13px',
-  border: '1px solid',
-  borderColor: 'rgba(0, 0, 0, 0.12)',
-  borderRadius: '8px',
-  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.12)'
-};
-
-export const menuItemStyles = {
-  display: 'block',
-  width: '100%',
-  padding: '6px 10px',
-  border: 0,
-  background: 'none',
-  color: 'inherit',
-  font: 'inherit',
-  fontSize: '13px',
-  textAlign: 'start' as const,
-  borderRadius: '5px',
-  cursor: 'pointer',
-  '&:hover:not(:disabled), &:focus-visible': {
-    background: 'rgba(0, 0, 0, 0.06)'
-  },
-  '&:disabled': { opacity: 0.35, cursor: 'default' }
-};
-
-/** Sits on the seam below a row, centred so it reads as "insert here". */
-export const insertStyles = {
+/**
+ * Sits on a seam between two rows, centred so it reads as "insert here".
+ *
+ * Which seam depends on where the pointer is: the nearer edge of the row it is
+ * over, so the `+` always lands on the boundary being pointed at. Both variants
+ * ride the block axis, which is the axis rows stack on for every track the SDK
+ * lays out itself.
+ */
+const insertBase = {
   position: 'absolute' as const,
   insetInlineStart: '50%',
-  insetBlockEnd: 0,
-  transform: 'translate(-50%, 50%)',
   zIndex: 3,
   display: 'flex',
   alignItems: 'center',
@@ -134,6 +100,20 @@ export const insertStyles = {
   transition: 'opacity 0.12s ease',
   '&:hover, &:focus-visible': { opacity: 1 },
   '@media (hover: none)': { opacity: 0.6 }
+};
+
+/** On the seam below the row: insert after it. */
+export const insertStyles = {
+  ...insertBase,
+  insetBlockEnd: 0,
+  transform: 'translate(-50%, 50%)'
+};
+
+/** On the seam above the row: insert before it. */
+export const insertStylesAbove = {
+  ...insertBase,
+  insetBlockStart: 0,
+  transform: 'translate(-50%, -50%)'
 };
 
 export const visuallyHidden = {

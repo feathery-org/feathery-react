@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState
+} from 'react';
 import { getPositionKey } from '../../../utils/hideAndRepeats';
 import {
   getContainerById,
@@ -14,17 +20,14 @@ import {
   GUTTER_WIDTH,
   HANDLE_ATTR,
   INSERT_CLASS,
-  MENU_CLASS,
-  MENU_ITEM_CLASS,
   REORDER_CLASS,
   clusterStyles,
   gripStyles,
   insertStyles,
-  menuItemStyles,
-  menuStyles,
+  insertStylesAbove,
   visuallyHidden
 } from './styles';
-import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { featheryWindow } from '../../../utils/browser';
 
 /**
  * The instructions node every handle points `aria-describedby` at.
@@ -80,6 +83,8 @@ export interface RepeatRowReorder {
   visible: boolean[];
   /** This form instance, so live region and handles agree on one channel. */
   formId: string;
+  /** False on a lone row: there is nothing to reorder it against. */
+  canReorder: boolean;
   /** False once the container has reached the author's row cap. */
   canInsert: boolean;
   onMove: (from: number, to: number) => boolean;
@@ -119,8 +124,12 @@ export function useRepeatRowReorder(
 
   const rowCount = getRepeatContainerRowCount(activeStep, container);
   // Excludes the phantom trailing row a 'set_value' trigger renders past the
-  // end of the data.
-  if (rowCount < 2 || index >= rowCount) return null;
+  // end of the data - it has no row behind it to move or insert against.
+  if (rowCount < 1 || index >= rowCount) return null;
+
+  // A lone row has nothing to reorder against, but it can still be the anchor
+  // for adding the second one, so it keeps the seam and loses only the grip.
+  const canReorder = rowCount >= 2;
 
   // The badge counts what the user can see: a hide_if in the middle must not
   // make the visible rows read 1, 3, 4. Counted in absolute order, which is
@@ -137,6 +146,7 @@ export function useRepeatRowReorder(
   // reads as broken.
   const maxRows = getRepeatMaxRows(activeStep, container.id);
   const canInsert = maxRows === null || rowCount < maxRows;
+  if (!canReorder && !canInsert) return null;
 
   return {
     index,
@@ -144,6 +154,7 @@ export function useRepeatRowReorder(
     renderedCount,
     visible,
     formId: form.formInstanceId,
+    canReorder,
     canInsert,
     onMove: (from: number, to: number) =>
       Boolean(form.moveRepeatedRow?.(container, from, to)),
@@ -157,13 +168,17 @@ export const RepeatRowHandle = ({
   renderedCount,
   visible,
   formId,
+  canReorder,
   canInsert,
   onMove,
-  onInsert
-}: RepeatRowReorder) => {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  onInsert,
+  rowRef
+}: RepeatRowReorder & { rowRef: RefObject<HTMLElement | null> }) => {
   const clusterRef = useRef<HTMLDivElement>(null);
+
+  // Which seam the `+` sits on. Bottom is the resting choice: touch fires no
+  // hover, so a coarse pointer never gets a chance to pick a side.
+  const [seamAbove, setSeamAbove] = useState(false);
 
   // An absolutely positioned child is offset from its ancestor's padding box,
   // which sits inside the border. So a static offset is eaten by a thick
@@ -171,7 +186,7 @@ export const RepeatRowHandle = ({
   // the gutter outside the box however heavy the outline gets.
   useEffect(() => {
     const cluster = clusterRef.current;
-    const row = cluster?.parentElement;
+    const row = rowRef.current;
     if (!cluster || !row) return;
 
     const apply = () => {
@@ -187,12 +202,29 @@ export const RepeatRowHandle = ({
     const observer = new Observer(apply);
     observer.observe(row);
     return () => observer.disconnect();
-    // Mount only: the offset depends on the row's border width, and the
-    // observer is what watches that. Re-running per render rebuilt an observer
-    // and forced a style resolution for every row on every keystroke.
-  }, []);
+    // The offset depends on the row's border width, and the observer is what
+    // watches that. Re-running per render rebuilt an observer and forced a
+    // style resolution for every row on every keystroke. `canReorder` is a dep
+    // because the cluster only exists once there is a grip to put in it.
+  }, [rowRef, canReorder]);
 
-  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  // The `+` belongs on the boundary the filler is pointing at, so it follows
+  // the pointer to whichever edge of the row is nearer. State only changes when
+  // the half changes, so a move across one half is not a re-render per pixel.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || !canInsert) return;
+
+    const onPointerMove = (event: any) => {
+      const rect = row.getBoundingClientRect();
+      if (!rect.height) return;
+      const above = event.clientY < rect.top + rect.height / 2;
+      setSeamAbove((prev) => (prev === above ? prev : above));
+    };
+
+    row.addEventListener('pointermove', onPointerMove);
+    return () => row.removeEventListener('pointermove', onPointerMove);
+  }, [rowRef, canInsert]);
 
   // Built from the same flags as the badge below, so what a move announces and
   // what the handle calls itself can never drift apart.
@@ -206,118 +238,53 @@ export const RepeatRowHandle = ({
     [formId]
   );
 
-  const { dragging, move, handleRef, handleProps } = useRowDrag({
+  const { dragging, handleRef, handleProps } = useRowDrag({
     index,
     onMove,
     positionLabel,
     announce,
-    // Tapping the grip is the single-pointer alternative to dragging, which
-    // WCAG 2.2 SC 2.5.7 requires and a keyboard path does not satisfy.
-    onTap: () => setMenuOpen((open) => !open)
+    disabled: !canReorder
   });
-
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const doc = featheryDoc();
-    const onDown = (event: any) => {
-      if (!menuRef.current?.contains(event.target)) closeMenu();
-    };
-    const onKey = (event: any) => {
-      if (event.key !== 'Escape') return;
-      closeMenu();
-      handleRef.current?.focus();
-    };
-
-    doc.addEventListener('pointerdown', onDown);
-    doc.addEventListener('keydown', onKey);
-    return () => {
-      doc.removeEventListener('pointerdown', onDown);
-      doc.removeEventListener('keydown', onKey);
-    };
-  }, [menuOpen, closeMenu, handleRef]);
-
-  const label = `Row ${ordinal} of ${renderedCount}`;
-  const step = (direction: -1 | 1) => {
-    closeMenu();
-    move(direction);
-  };
-
-  const insertButton = (
-    <button
-      type='button'
-      className={INSERT_CLASS}
-      css={insertStyles}
-      aria-label={`Add a row below row ${ordinal}`}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onInsert(index + 1);
-      }}
-    >
-      <Plus />
-    </button>
-  );
 
   return (
     <>
-      {canInsert && insertButton}
-      <div ref={clusterRef} className={REORDER_CLASS} css={clusterStyles}>
+      {canInsert && (
         <button
-          {...{ [HANDLE_ATTR]: '' }}
-          ref={handleRef as any}
           type='button'
-          className={GRIP_CLASS}
-          css={gripStyles}
-          aria-roledescription='sortable row handle'
-          aria-label={label}
-          aria-describedby={reorderInstructionsId(formId)}
-          aria-haspopup='menu'
-          aria-expanded={menuOpen}
-          aria-pressed={dragging}
-          {...handleProps}
+          className={INSERT_CLASS}
+          css={seamAbove ? insertStylesAbove : insertStyles}
+          aria-label={
+            seamAbove
+              ? `Add a row above row ${ordinal}`
+              : `Add a row below row ${ordinal}`
+          }
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onInsert(seamAbove ? index : index + 1);
+          }}
         >
-          <Grip />
+          <Plus />
         </button>
-        {menuOpen && (
-          <div
-            ref={menuRef}
-            className={MENU_CLASS}
-            css={menuStyles}
-            role='menu'
-            aria-label={`Move ${label}`}
+      )}
+      {canReorder && (
+        <div ref={clusterRef} className={REORDER_CLASS} css={clusterStyles}>
+          <button
+            {...{ [HANDLE_ATTR]: '' }}
+            ref={handleRef as any}
+            type='button'
+            className={GRIP_CLASS}
+            css={gripStyles}
+            aria-roledescription='sortable row handle'
+            aria-label={`Row ${ordinal} of ${renderedCount}`}
+            aria-describedby={reorderInstructionsId(formId)}
+            aria-pressed={dragging}
+            {...handleProps}
           >
-            <button
-              type='button'
-              role='menuitem'
-              className={MENU_ITEM_CLASS}
-              css={menuItemStyles}
-              disabled={ordinal <= 1}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                step(-1);
-              }}
-            >
-              Move up
-            </button>
-            <button
-              type='button'
-              role='menuitem'
-              className={MENU_ITEM_CLASS}
-              css={menuItemStyles}
-              disabled={ordinal >= renderedCount}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                step(1);
-              }}
-            >
-              Move down
-            </button>
-          </div>
-        )}
-      </div>
+            <Grip />
+          </button>
+        </div>
+      )}
     </>
   );
 };
@@ -336,8 +303,8 @@ export const ReorderLiveRegion = ({ formId }: { formId: string }) => {
   return (
     <>
       <span id={reorderInstructionsId(formId)} css={visuallyHidden}>
-        Drag the handle to move this row, press the arrow keys to move it, or
-        activate the handle for move options.
+        Drag the handle to move this row, or focus the handle and press the
+        arrow keys to move it.
       </span>
       <span
         role='status'

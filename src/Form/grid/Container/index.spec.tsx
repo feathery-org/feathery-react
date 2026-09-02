@@ -129,7 +129,21 @@ describe('Container repeat row reorder handle', () => {
     (HTMLElement.prototype as any).releasePointerCapture = jest.fn();
   });
 
-  /** A press and release with no movement, which is what opens the menu. */
+  /** Moves the focused row one step. The arrow keys are the keyboard path. */
+  const pressArrow = (grip: HTMLElement, key: 'ArrowUp' | 'ArrowDown') =>
+    fireEvent.keyDown(grip, { key, bubbles: true });
+
+  /** Puts the pointer in the top or bottom half of a row's box. */
+  const hoverHalf = (row: HTMLElement, half: 'top' | 'bottom') => {
+    row.getBoundingClientRect = () =>
+      ({ top: 0, bottom: 100, height: 100, left: 0, right: 200 } as DOMRect);
+    fireEvent.pointerMove(row, {
+      bubbles: true,
+      clientY: half === 'top' ? 10 : 90
+    });
+  };
+
+  /** A press and release with no movement, which is not a drag. */
   const tapGrip = (grip: HTMLElement) => {
     fireEvent.pointerDown(grip, {
       bubbles: true,
@@ -266,6 +280,60 @@ describe('Container repeat row reorder handle', () => {
     expect(getByLabelText('Add a row below row 2')).toBeTruthy();
   });
 
+  /**
+   * The `+` sits on the boundary the pointer is actually pointing at, so a
+   * filler aiming above a row does not have to reason about which row's seam
+   * they are really using. Before this it was always the row's bottom edge, and
+   * inserting above the very first row was impossible.
+   */
+  it('moves the seam to the edge the pointer is nearer', () => {
+    const { container, getByLabelText } = renderContainer(
+      repeatNode({ repeat: 1 })
+    );
+    const row = container.querySelector(
+      '[data-feathery-repeat-row]'
+    ) as HTMLElement;
+
+    expect(getByLabelText('Add a row below row 2')).toBeTruthy();
+
+    hoverHalf(row, 'top');
+    expect(getByLabelText('Add a row above row 2')).toBeTruthy();
+
+    hoverHalf(row, 'bottom');
+    expect(getByLabelText('Add a row below row 2')).toBeTruthy();
+  });
+
+  it('inserts before the row when the seam is above it', () => {
+    const form = formProps();
+    const { container, getByLabelText } = renderContainer(
+      repeatNode({ repeat: 1 }),
+      form
+    );
+    const row = container.querySelector(
+      '[data-feathery-repeat-row]'
+    ) as HTMLElement;
+
+    hoverHalf(row, 'top');
+    getByLabelText('Add a row above row 2').click();
+    expect(form.insertRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 1);
+  });
+
+  // Previously nothing could be added ahead of the first row.
+  it('can insert ahead of the first row', () => {
+    const form = formProps();
+    const { container, getByLabelText } = renderContainer(
+      repeatNode({ repeat: 0 }),
+      form
+    );
+    const row = container.querySelector(
+      '[data-feathery-repeat-row]'
+    ) as HTMLElement;
+
+    hoverHalf(row, 'top');
+    getByLabelText('Add a row above row 1').click();
+    expect(form.insertRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 0);
+  });
+
   it('gives each row exactly one seam', () => {
     // One button per row, so no boundary ends up with two overlapping controls.
     const { container } = renderContainer(repeatNode({ repeat: 1 }));
@@ -274,27 +342,37 @@ describe('Container repeat row reorder handle', () => {
     );
   });
 
-  it('opens the move menu when the grip is tapped', () => {
-    const { getByLabelText, getByRole } = renderContainer(repeatNode());
+  // The grip offers no popup. A press that is not a drag just focuses it, which
+  // is what makes the arrow keys reachable by pointer.
+  it('offers no menu, and a tap focuses the grip instead', () => {
+    const { getByLabelText, queryByRole } = renderContainer(repeatNode());
     const grip = getByLabelText('Row 1 of 3');
 
-    expect(grip).toHaveAttribute('aria-expanded', 'false');
     tapGrip(grip);
 
-    expect(getByRole('menu')).toBeTruthy();
-    expect(grip).toHaveAttribute('aria-expanded', 'true');
+    expect(queryByRole('menu')).toBeNull();
+    expect(grip).not.toHaveAttribute('aria-haspopup');
+    expect(grip).toHaveFocus();
   });
 
-  it('disables the move option that would run off the end', () => {
-    const first = renderContainer(repeatNode({ repeat: 0 }));
-    tapGrip(first.getByLabelText('Row 1 of 3'));
-    expect(first.getByText('Move up')).toBeDisabled();
-    expect(first.getByText('Move down')).not.toBeDisabled();
-    first.unmount();
+  it('ignores an arrow key that would run off the end', () => {
+    const form = formProps();
+    const { getByLabelText } = render(
+      <div>
+        {[0, 1, 2].map((repeat) => (
+          <Container
+            key={repeat}
+            node={repeatNode({ repeat })}
+            viewport='desktop'
+            form={form}
+          />
+        ))}
+      </div>
+    );
 
-    const last = renderContainer(repeatNode({ repeat: 2 }));
-    tapGrip(last.getByLabelText('Row 3 of 3'));
-    expect(last.getByText('Move down')).toBeDisabled();
+    pressArrow(getByLabelText('Row 1 of 3'), 'ArrowUp');
+    pressArrow(getByLabelText('Row 3 of 3'), 'ArrowDown');
+    expect(form.moveRepeatedRow).not.toHaveBeenCalled();
   });
 
   it('numbers the badge by rendered position, not absolute index', () => {
@@ -321,10 +399,27 @@ describe('Container repeat row reorder handle', () => {
     expect(container.querySelector('[data-feathery-repeat-row]')).toBeNull();
   });
 
-  it('is absent when the container holds a single row', () => {
+  // A lone row has nothing to reorder against, but it is still the anchor for
+  // adding the second one, so the seam has to survive where the grip does not.
+  it('keeps the seam but drops the grip on a single row', () => {
     setFieldValues(['a']);
-    const { container } = renderContainer(repeatNode());
-    expect(container.querySelector('[data-feathery-repeat-row]')).toBeNull();
+    const { container, queryByLabelText } = renderContainer(repeatNode());
+
+    expect(container.querySelector('[data-feathery-repeat-row]')).toBeTruthy();
+    expect(container.querySelector('.feathery-repeat-insert')).toBeTruthy();
+    expect(
+      container.querySelector('[data-feathery-reorder-handle]')
+    ).toBeNull();
+    expect(queryByLabelText('Row 1 of 1')).toBeNull();
+  });
+
+  it('adds the second row from a lone row seam', () => {
+    setFieldValues(['a']);
+    const form = formProps({ visiblePositions: { '0': [true] } });
+    const { getByLabelText } = renderContainer(repeatNode(), form);
+
+    getByLabelText('Add a row below row 1').click();
+    expect(form.insertRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 1);
   });
 
   it('is absent on a fixed container, which renders itself twice', () => {
@@ -355,7 +450,7 @@ describe('Container repeat row reorder handle', () => {
     const form = formProps();
     // All three rows have to be in the DOM: the move steps by rendered
     // position, so a lone row has nothing to step onto.
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText } = render(
       <div>
         {[0, 1, 2].map((repeat) => (
           <Container
@@ -368,15 +463,14 @@ describe('Container repeat row reorder handle', () => {
       </div>
     );
 
-    tapGrip(getByLabelText('Row 1 of 3'));
-    getByText('Move down').click();
+    pressArrow(getByLabelText('Row 1 of 3'), 'ArrowDown');
     expect(form.moveRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 0, 1);
   });
 
   it('steps over a hidden row rather than swallowing the keypress', () => {
     // Absolute row 1 is hidden, so "down" from row 0 must reach absolute 2.
     const form = formProps({ visiblePositions: { '0': [true, false, true] } });
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText } = render(
       <div>
         {[0, 2].map((repeat) => (
           <Container
@@ -389,8 +483,7 @@ describe('Container repeat row reorder handle', () => {
       </div>
     );
 
-    tapGrip(getByLabelText('Row 1 of 2'));
-    getByText('Move down').click();
+    pressArrow(getByLabelText('Row 1 of 2'), 'ArrowDown');
     expect(form.moveRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 0, 2);
   });
 
@@ -406,7 +499,7 @@ describe('Container repeat row reorder handle', () => {
       heard.push(m)
     );
 
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText } = render(
       <div>
         {[0, 2].map((repeat) => (
           <Container
@@ -419,8 +512,7 @@ describe('Container repeat row reorder handle', () => {
       </div>
     );
 
-    tapGrip(getByLabelText('Row 1 of 2'));
-    getByText('Move down').click();
+    pressArrow(getByLabelText('Row 1 of 2'), 'ArrowDown');
     stop();
 
     // Absolute row 2 is the second of the two rows on screen.
@@ -443,7 +535,7 @@ describe('Container repeat row reorder handle', () => {
     );
 
     const form = formProps();
-    const { getByLabelText, getByText } = render(
+    const { getByLabelText } = render(
       <div>
         {[0, 1, 2].map((repeat) => (
           <Container
@@ -456,8 +548,7 @@ describe('Container repeat row reorder handle', () => {
       </div>
     );
 
-    tapGrip(getByLabelText('Row 1 of 3'));
-    getByText('Move down').click();
+    pressArrow(getByLabelText('Row 1 of 3'), 'ArrowDown');
     stop();
 
     expect(heard).toEqual([]);

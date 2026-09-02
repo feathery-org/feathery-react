@@ -121,7 +121,9 @@ export const Container = ({
         assistantEnabled={form.formSettings.assistantEnabled}
         {...tooltipHoverProps}
         {...(reorder ? { [ROW_ATTR]: reorder.index } : {})}
-        overlay={reorder ? <RepeatRowHandle {...reorder} /> : undefined}
+        overlay={
+          reorder ? <RepeatRowHandle {...reorder} rowRef={ref} /> : undefined
+        }
       >
         {children}
       </StyledContainer>
