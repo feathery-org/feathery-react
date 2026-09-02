@@ -444,11 +444,10 @@ export const SpreadsheetGrid = React.forwardRef<
   const virtualColumns = columnVirtualizer.getVirtualItems();
   const canvasWidth = columnVirtualizer.getTotalSize();
   const rowsHeight = rowVirtualizer.getTotalSize();
-  // The trailing gutter is what `scrollPaddingEnd` scrolls INTO: without
-  // somewhere to go, the last rows still stop flush against the bottom edge
-  // and their bubbles stay clipped.
-  const canvasHeight =
-    rowsHeight + (onInsertRow ? ROW_HEIGHT : 0) + TOOLTIP_SCROLL_MARGIN;
+  // No trailing gutter: a bubble on one of the last rows flips above the cell
+  // instead (CellErrorTooltip measures against the grid's visible box), so
+  // the canvas ends at the last row and nothing blank scrolls into view.
+  const canvasHeight = rowsHeight + (onInsertRow ? ROW_HEIGHT : 0);
 
   return (
     <>
@@ -967,7 +966,10 @@ function SpreadsheetCell({
       data-row-id={cell.row.id}
       data-column-id={cell.column.id}
       data-feathery-field={cell.column.id}
-      tabIndex={isEditing ? -1 : isFocused ? 0 : -1}
+      // Deliberately no tabIndex: any tabIndex makes a div focusable by click,
+      // and a focused cell that scrolls out of the virtualized window unmounts
+      // and drops focus to <body>, killing the keyboard. Focus lives on the
+      // scroll container, which never unmounts.
       css={{
         ...cellStyle,
         ...getColumnPositionStyle(cell.column, columnSizing, left),
@@ -982,7 +984,7 @@ function SpreadsheetCell({
       onMouseDown={(event) => {
         if (isEditing || event.button !== 0) return;
         // Keyboard handling lives on the scroll container, so clicking a cell
-        // has to return focus there rather than leave it on the cell div.
+        // gives it focus (the cell itself is not focusable, see above).
         event.currentTarget
           .closest<HTMLElement>(`.${TABLE_CLASS.grid}`)
           ?.focus({ preventScroll: true });

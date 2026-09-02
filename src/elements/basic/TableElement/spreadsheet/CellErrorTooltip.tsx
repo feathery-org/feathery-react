@@ -1,7 +1,7 @@
 import React from 'react';
 import { featheryWindow } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
-import { cellTooltipStyle } from './styles';
+import { cellTooltipStyle, HEADER_HEIGHT } from './styles';
 import { placeCellTooltip } from './tooltipPlacement';
 
 type CellErrorTooltipProps = {
@@ -14,9 +14,10 @@ type CellErrorTooltipProps = {
  * The message bubble on the focused cell.
  *
  * It lives inside the cell rather than in a portal, so it travels with the
- * grid's scrolling for free. In exchange it has to place itself: flip above
- * when the window has no room below, and nudge the page when the cell it
- * belongs to was scrolled to somewhere the bubble cannot be read.
+ * grid's scrolling for free. In exchange it has to place itself within the
+ * part of the grid that is actually visible — the grid's scroll box clips it,
+ * and so does the window — flipping above when there is no room below, and
+ * nudging whichever of the two is in the way when neither side fits.
  */
 export function CellErrorTooltip({ message, blocking }: CellErrorTooltipProps) {
   const ref = React.useRef<HTMLSpanElement>(null);
@@ -28,17 +29,34 @@ export function CellErrorTooltip({ message, blocking }: CellErrorTooltipProps) {
     if (!tip || !cell) return;
 
     const win = featheryWindow();
+    const grid = cell.closest<HTMLElement>(`.${TABLE_CLASS.grid}`);
+    // A grid with no layout yet (or none at all, in tests) cannot clip.
+    const measured = grid?.getBoundingClientRect();
+    const gridRect = measured && measured.height > 0 ? measured : undefined;
+    // The visible box is the window clipped to the grid, minus the sticky
+    // header a bubble flipped above row 0 would otherwise hide behind.
+    const boxTop = Math.max(0, (gridRect?.top ?? 0) + HEADER_HEIGHT);
+    const boxBottom = Math.min(win.innerHeight, gridRect?.bottom ?? Infinity);
     const rect = cell.getBoundingClientRect();
     const placement = placeCellTooltip({
-      cellTop: rect.top,
-      cellBottom: rect.bottom,
+      cellTop: rect.top - boxTop,
+      cellBottom: rect.bottom - boxTop,
       tooltipHeight: tip.offsetHeight,
-      viewportHeight: win.innerHeight
+      viewportHeight: boxBottom - boxTop
     });
 
     setAbove(placement.above);
     if (placement.scrollBy) {
-      win.scrollBy({ top: placement.scrollBy, behavior: 'smooth' });
+      // Scroll whichever edge is the tight one: the grid's own box when it is
+      // fully on screen, the page when the grid runs off it.
+      const gridIsTheEdge =
+        grid && gridRect
+          ? placement.scrollBy > 0
+            ? gridRect.bottom <= win.innerHeight
+            : gridRect.top >= 0
+          : false;
+      const target = gridIsTheEdge ? grid : win;
+      target?.scrollBy?.({ top: placement.scrollBy, behavior: 'smooth' });
     }
   }, [message]);
 

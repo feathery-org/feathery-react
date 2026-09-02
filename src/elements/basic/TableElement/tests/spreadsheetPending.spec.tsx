@@ -623,10 +623,9 @@ describe('editors for other field types', () => {
     expect(status()).toHaveTextContent('1 unsaved change');
   });
 
-  test('staged rows can be deleted even though they cannot be added to', async () => {
-    // `create` into the staged set is a batch replace, so adding is off; but
-    // `delete` targets one staged row by id, so cleaning up extracted data
-    // stays possible.
+  test('staged rows can be inserted and deleted', async () => {
+    // A row added to a table of staged data is itself staged (a single-row
+    // `create` appends to the set), and `delete` targets one staged row by id.
     const stagedClient = typedClient();
     stagedClient.dataHubAction = jest.fn(({ operation }: any) =>
       operation === 'get'
@@ -645,8 +644,8 @@ describe('editors for other field types', () => {
       screen.getByRole('menuitem', { name: 'Delete row 1' })
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('menuitem', { name: 'Insert row above' })
-    ).toBeNull();
+      screen.getByRole('menuitem', { name: 'Insert row above' })
+    ).toBeInTheDocument();
   });
 });
 
