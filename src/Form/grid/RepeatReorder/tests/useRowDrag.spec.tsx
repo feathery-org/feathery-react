@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useRowDrag } from '../useRowDrag';
-import { HANDLE_ATTR, ROW_ATTR } from '../styles';
+import { DRAGGING_ATTR, HANDLE_ATTR, ROW_ATTR } from '../styles';
 
 const ROW_HEIGHT = 20;
 
@@ -412,6 +412,81 @@ describe('the row is handed back as it was found', () => {
     fireEvent.pointerCancel(grip(0), { pointerId: 1 });
 
     expect(row.style.position).toBe('');
+  });
+});
+
+/**
+ * The insert seam is withheld for the length of a drag, which the stylesheet
+ * keys off a marker on every row in the track. The seams worth withholding are
+ * the ones the pointer travels over: their boundaries are in motion, so a `+`
+ * sitting on one no longer marks the place it claims to.
+ */
+describe('the track is marked while a drag is live', () => {
+  const marked = (container: HTMLElement) =>
+    container.querySelectorAll(`[${DRAGGING_ATTR}]`).length;
+
+  it('marks every row once the gesture becomes a drag', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    expect(marked(container)).toBe(0);
+
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    expect(marked(container)).toBe(3);
+  });
+
+  it('clears the mark on a normal drop', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+
+    expect(marked(container)).toBe(0);
+  });
+
+  it('clears the mark on a cancelled gesture', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+
+    expect(marked(container)).toBe(0);
+  });
+
+  it('never marks a press that stays under the drag threshold', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 2 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 2 });
+
+    expect(marked(container)).toBe(0);
   });
 });
 

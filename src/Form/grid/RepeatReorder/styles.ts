@@ -12,6 +12,8 @@ export const INSERT_CLASS = 'feathery-repeat-insert';
 
 export const ROW_ATTR = 'data-feathery-repeat-row';
 export const HANDLE_ATTR = 'data-feathery-reorder-handle';
+/** Set on every row in a track for as long as one of them is being dragged. */
+export const DRAGGING_ATTR = 'data-feathery-reorder-dragging';
 
 /**
  * The chrome sits in a gutter beside the row. It hangs off the outer container
@@ -51,7 +53,17 @@ export const rowRevealStyles = {
   // seam are the same boundary, they landed a few pixels apart both offering to
   // insert there. Only one row can be hovered, so only one seam can show.
   // Keyboard reach is unaffected: the button lights itself on :focus-visible.
-  [`&:hover .${INSERT_CLASS}`]: { opacity: 1 }
+  [`&:hover .${INSERT_CLASS}`]: { opacity: 1 },
+  // A drag has no use for "insert here". Every row is marked for the length of
+  // the gesture, so the seam goes for the row being carried and for the rows it
+  // passes over, whose boundaries are moving and no longer mean what they say.
+  // The `:hover` variant is spelled out so this wins on specificity rather than
+  // on being declared last.
+  [`&[${DRAGGING_ATTR}] .${INSERT_CLASS},
+    &[${DRAGGING_ATTR}]:hover .${INSERT_CLASS}`]: {
+    opacity: 0,
+    pointerEvents: 'none'
+  }
 };
 
 export const gripStyles = {

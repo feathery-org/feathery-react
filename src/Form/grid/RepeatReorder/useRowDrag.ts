@@ -12,7 +12,7 @@ import {
   TrackAxis
 } from './geometry';
 import { consumeRowFocus, requestRowFocus } from './focus';
-import { ROW_ATTR } from './styles';
+import { DRAGGING_ATTR, ROW_ATTR } from './styles';
 
 // Enough movement to tell a drag from a tap, so tapping the grip still just
 // focuses it and leaves the keyboard path usable.
@@ -143,6 +143,7 @@ const clearDrag = (state: DragState) => {
   // whatever it was - an empty string when there was no inline value, which
   // hands the property back to the stylesheet.
   state.row.style.position = state.rowPosition;
+  rowElements(state.track).forEach((el) => el.removeAttribute(DRAGGING_ATTR));
 };
 
 export function useRowDrag({
@@ -247,6 +248,11 @@ export function useRowDrag({
         if (Math.abs(coord - state.start) < DRAG_THRESHOLD_PX) return;
         state.dragging = true;
         featheryDoc().body.style.userSelect = 'none';
+        // Marks the whole track, not just the row being carried: the seams that
+        // most need withholding are the ones the pointer travels over.
+        rowElements(state.track).forEach((el) =>
+          el.setAttribute(DRAGGING_ATTR, '')
+        );
         setDragging(true);
         announce(`Row ${positionLabel(state.index)} grabbed`);
       }
