@@ -32,6 +32,7 @@ import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
   containerStyle,
+  tableContainment,
   rowStyle,
   cellStyle,
   dataColumnMinWidthStyle,
@@ -623,6 +624,7 @@ function TableElement({
       {...nameProps('table')}
       css={{
         ...containerStyle,
+        ...tableContainment(element.styles?.width_unit),
         // The grid scrolls inside the container rather than the container
         // scrolling, so the sticky header and row gutter have a viewport to
         // stick to.

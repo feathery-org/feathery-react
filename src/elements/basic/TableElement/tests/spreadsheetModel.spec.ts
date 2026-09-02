@@ -13,7 +13,8 @@ import {
   FIT_MAX_HEIGHT,
   HEADER_HEIGHT,
   ROW_HEIGHT,
-  spreadsheetViewportHeight
+  spreadsheetViewportHeight,
+  tableContainment
 } from '../spreadsheet/styles';
 
 describe('parseInputValue', () => {
@@ -273,5 +274,19 @@ describe('spreadsheetViewportHeight', () => {
     expect(spreadsheetViewportHeight('fit', 0)).toBe(
       HEADER_HEIGHT + 2
     );
+  });
+});
+
+describe('tableContainment', () => {
+  test('contains the width for every unit but fit', () => {
+    // A scroll container still reports its content width to its ancestors;
+    // measured in the designer canvas, a 1646px grid widened the whole step.
+    for (const unit of ['px', '%', 'fill', undefined]) {
+      expect(tableContainment(unit)).toEqual({ contain: 'inline-size' });
+    }
+  });
+
+  test('a fit-width table keeps reporting its natural width', () => {
+    expect(tableContainment('fit')).toEqual({});
   });
 });
