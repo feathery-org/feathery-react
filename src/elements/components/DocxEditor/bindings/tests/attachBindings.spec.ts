@@ -166,16 +166,37 @@ describe('attaching bindings to a tokenized template', () => {
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
   });
 
-  it('fires the locked-edit hint when a lock refuses an edit, debounced', () => {
+  it('fires the locked-edit hint only when the edit was actually refused', () => {
     attached.dispose();
     const onLockedEdit = jest.fn();
     attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
       onLockedEdit
     });
-    // Syncfusion signals a refused edit by triggering 'contentControl'.
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+    // Syncfusion fires 'contentControl' even for an editable control (all our
+    // controls are lockContentControl), so the event alone must NOT toast.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => true
+    });
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // A genuinely refused edit (gate closed) shows the hint, debounced.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => false
+    });
     (editor as any).trigger('contentControl');
     (editor as any).trigger('contentControl');
     expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
   });
 });
 
