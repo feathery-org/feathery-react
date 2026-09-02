@@ -48,10 +48,6 @@ import {
 } from './styles';
 import { TABLE_CLASS } from './classNames';
 
-// Freezing more than a handful of rows/columns leaves no room to scroll, so
-// the designer offers 0-4 and the SDK clamps whatever it is handed.
-const MAX_FROZEN = 4;
-
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
   // A fixed pixel height caps the table so its rows scroll inside it. The
@@ -64,12 +60,6 @@ function applyTableStyles(responsiveStyles: any) {
       unit === 'px' && height ? { height: `${height}px` } : {}
   );
   return responsiveStyles;
-}
-
-function clampFrozen(value: any): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 0;
-  return Math.min(Math.max(Math.floor(parsed), 0), MAX_FROZEN);
 }
 
 // Warns before a step transition, a browser back/forward, or a page exit
@@ -123,9 +113,6 @@ function TableElement({
     enabled: isHub,
     blockRefetch: hasPendingEdits
   });
-
-  const frozenRows = clampFrozen(element.properties?.frozen_rows);
-  const frozenColumns = clampFrozen(element.properties?.frozen_columns);
 
   const elementForData = useMemo(() => {
     const properties = {
@@ -605,7 +592,7 @@ function TableElement({
       css={{
         ...containerStyle,
         // The grid scrolls inside the container rather than the container
-        // scrolling, so sticky headers and frozen columns have a viewport to
+        // scrolling, so the sticky header and row gutter have a viewport to
         // stick to.
         ...(isSpreadsheet
           ? {
@@ -654,8 +641,6 @@ function TableElement({
           rowIndices={spreadsheetRowIndices}
           fieldValues={spreadsheetFieldValues}
           canEdit={canEdit}
-          frozenRows={frozenRows}
-          frozenColumns={frozenColumns}
           heightUnit={element.styles?.height_unit}
           onCellsEdit={spreadsheetCellsEdit}
           onAddColumn={handleAddColumn}

@@ -1,6 +1,5 @@
 // Layout constants. Rows and the header are fixed-height because the row
-// virtualizer, the frozen-row region offset and the drag hit-testing all size
-// themselves from these numbers.
+// virtualizer and the drag hit-testing both size themselves from these numbers.
 export const ROW_HEIGHT = 32;
 export const HEADER_HEIGHT = 34;
 export const ROW_HEADER_WIDTH = 46;
@@ -109,7 +108,7 @@ export const gridStyle = {
 export const canvasStyle = {
   position: 'relative',
   minWidth: '100%',
-  // Keeps the pinned/sticky layers stacking against each other rather than
+  // Keeps the sticky header and gutter stacking against the cells rather than
   // against anything the form renders around the table.
   isolation: 'isolate'
 } as const;
@@ -137,17 +136,6 @@ export const headerRowStyle = {
   borderBottom: `1px solid ${colors.gray300}`
 } as const;
 
-export const frozenRegionStyle = {
-  position: 'sticky',
-  top: `${HEADER_HEIGHT}px`,
-  zIndex: 20,
-  width: '100%',
-  backgroundColor: colors.white,
-  boxShadow: '0 2px 2px -1px rgba(0, 0, 0, 0.25)'
-} as const;
-
-export const frozenRowStyle = { zIndex: 21 } as const;
-
 /**
  * Lifts a row that the selection touches above the rows around it.
  *
@@ -155,7 +143,7 @@ export const frozenRowStyle = { zIndex: 21 } as const;
  * z-index on a cell only competes inside its own row and can never rise above
  * a different row. Without this the next row down paints its top grid line
  * over the range's bottom border, and clips the fill handle overhanging the
- * corner. Stays well below the frozen region (20/21) and the header (30).
+ * corner. Stays well below the header (30).
  */
 export const rowRaisedStyle = { zIndex: 2 } as const;
 // Each row carries a translateY, which makes it a stacking context — no
@@ -243,14 +231,6 @@ export const columnHeaderLabelStyle = {
   textAlign: 'center',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
-} as const;
-
-// Sticky pinned (frozen) columns sit above normal cells but below the gutter.
-// Cell z-index comes from `cellZIndex` so the selected case can stay above.
-export const pinnedHeaderStyle = { position: 'sticky', zIndex: 24 } as const;
-export const pinnedCellStyle = { position: 'sticky' } as const;
-export const lastPinnedStyle = {
-  boxShadow: '2px 0 3px -2px rgba(0, 0, 0, 0.35)'
 } as const;
 
 export const columnResizerStyle = {
@@ -346,17 +326,14 @@ export const cellSelectedStyle = {
  * Cells are absolutely positioned siblings, so a later one paints its grid line
  * over an earlier one's selection border; a selected cell has to be lifted for
  * the blue to sit above the grey and for the fill handle to overhang the
- * corner. Pinned cells already sit above the scrolling ones, so a selected
- * pinned cell has to stay above THEM rather than dropping to the plain
- * selected level.
+ * corner.
  *
  * The FOCUSED cell gets its own level above the merely selected ones: its ring
  * is 2px and pulled out onto the grid line, so a neighbour in the same range
  * would otherwise paint its own background and 1px perimeter over the half of
  * the ring that overhangs into it.
  */
-export function cellZIndex(pinned: boolean, raised: boolean, focused = false) {
-  if (pinned) return focused ? 14 : raised ? 13 : 12;
+export function cellZIndex(raised: boolean, focused = false) {
   if (focused) return 5;
   return raised ? 4 : undefined;
 }

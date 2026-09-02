@@ -44,10 +44,6 @@ export type SpreadsheetTableProps = {
   rowIndices: number[];
   fieldValues: Record<string, any>;
   canEdit: boolean;
-  /** 0-4 leading data rows pinned below the (always sticky) header. */
-  frozenRows: number;
-  /** 0-4 leading columns pinned beside the (always sticky) row numbers. */
-  frozenColumns: number;
   /** `fit` lets the grid size to its rows, up to a cap. */
   heightUnit?: string;
   onCellsEdit: (writes: CellWrite[]) => void;
@@ -92,8 +88,6 @@ export function SpreadsheetTable({
   rowIndices,
   fieldValues,
   canEdit,
-  frozenRows,
-  frozenColumns,
   heightUnit,
   onCellsEdit,
   onAddColumn,
@@ -172,37 +166,13 @@ export function SpreadsheetTable({
       // Rows re-derive on every field-value change; resetting the selection
       // then would clear it out from under the user mid-edit.
       autoResetCellSelection: false,
-      columnResizeMode: 'onChange',
-      keepPinnedRows: false
+      columnResizeMode: 'onChange'
     },
     (state: SpreadsheetTableState) => ({
-      columnPinning: state.columnPinning,
       columnResizing: state.columnResizing,
-      columnSizing: state.columnSizing,
-      rowPinning: state.rowPinning
+      columnSizing: state.columnSizing
     })
   );
-
-  // Freeze the leading N rows/columns the builder asked for. Both effects are
-  // no-ops once the pinned ids already match, so they do not loop.
-  useEffect(() => {
-    const desiredTop = rows.slice(0, frozenRows).map((row) => row.id);
-    const current = table.state.rowPinning;
-    if (!arraysEqual(current.top, desiredTop) || current.bottom.length) {
-      table.setRowPinning({ top: desiredTop, bottom: [] });
-    }
-  }, [frozenRows, rows, table]);
-
-  useEffect(() => {
-    const desiredStart = table
-      .getAllLeafColumns()
-      .slice(0, frozenColumns)
-      .map((column) => column.id);
-    const current = table.state.columnPinning;
-    if (!arraysEqual(current.start, desiredStart) || current.end.length) {
-      table.setColumnPinning({ start: desiredStart, end: [] });
-    }
-  }, [frozenColumns, table, tableColumns]);
 
   // Bulk writes are held to the column's rule. A cell the user types into is
   // still free to be wrong — that is what the error and warning states are for
@@ -369,12 +339,5 @@ export function SpreadsheetTable({
         onDeleteRow={onDeleteRow}
       />
     </div>
-  );
-}
-
-function arraysEqual(left: string[], right: string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
   );
 }

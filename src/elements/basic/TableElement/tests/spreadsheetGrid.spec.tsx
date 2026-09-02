@@ -384,19 +384,6 @@ describe('read-only spreadsheet', () => {
   });
 });
 
-describe('freezing rows and columns', () => {
-  test('clamps a frozen count above the supported maximum', () => {
-    // 9 rows would leave nothing to scroll; the element caps it at 4.
-    renderTable({ frozen_rows: 9 });
-    expect(grid()).toBeInTheDocument();
-  });
-
-  test('renders without freezing when the properties are absent', () => {
-    renderTable();
-    expect(screen.getAllByRole('columnheader')).toHaveLength(3);
-  });
-});
-
 describe('row insertion and deletion', () => {
   const openRowMenu = (rowNumber: number) => {
     const header = screen.getByRole('button', { name: `Select row ${rowNumber}` });
