@@ -152,7 +152,10 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   },
   getInitialStep: ({ initialStepId }: any) => initialStepId || 'step-1',
   getNewStepUrl: (k: string) => `/#${k}`,
-  getOrigin: () => ({ key: 'origin' }),
+  // Mirrors the real getOrigin, including throwing on a nullish argument. A
+  // stub that ignored its argument hid a crash where the caller passed one.
+  getOrigin: (steps: any) =>
+    Object.values(steps).find((step: any) => step.origin) ?? { key: '' },
   getPrevStepKey: () => '',
   getUrlHash: () => '',
   isStepTerminal: () => false,
@@ -161,7 +164,7 @@ jest.mock('../../utils/stepHelperFunctions', () => ({
   mapFormSettingsResponse: () => ({ shared_codes: [] }),
   nextStepKey: () => undefined,
   recurseProgressDepth: () => [0, 1],
-  setUrlStepHash: () => {}
+  setUrlStepHash: jest.fn()
 }));
 
 // Grid mock: no out of scope captures, only uses props
@@ -347,39 +350,46 @@ jest.mock('../../utils/featheryClient', () => {
     .fn()
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
 
+  // Lets a test stand in for one client call, e.g. force the session request
+  // to reject. Specs clear these entries in afterEach.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const overrides: Record<string, any> = {};
+
   class MockClient {
     // Return one step so getNewStep can set activeStep and render Grid
-    fetchForm = async () => ({
-      steps: [
-        {
-          key: 'step-1',
-          id: 's1',
-          servar_fields: [],
-          buttons: [],
-          next_conditions: []
-        }
-      ],
-      form_name: 'Test Form',
-      completion_behavior: '',
-      formOff: false,
-      logic_rules: [],
-      shared_codes: [],
-      track_hashes: false
-    });
+    fetchForm = async () =>
+      overrides.fetchForm?.() ?? {
+        steps: [
+          {
+            key: 'step-1',
+            id: 's1',
+            servar_fields: [],
+            buttons: [],
+            next_conditions: []
+          }
+        ],
+        form_name: 'Test Form',
+        completion_behavior: '',
+        formOff: false,
+        logic_rules: [],
+        shared_codes: [],
+        track_hashes: false
+      };
 
-    fetchSession = async () => [
-      {
-        current_step_key: 'step-1',
-        collaborator: {},
-        integrations: null,
-        back_nav_map: {},
-        servars: [],
-        hidden_fields: {},
-        production: false,
-        track_location: false
-      },
-      {}
-    ];
+    fetchSession = async () =>
+      overrides.fetchSession?.() ?? [
+        {
+          current_step_key: 'step-1',
+          collaborator: {},
+          integrations: null,
+          back_nav_map: {},
+          servars: [],
+          hidden_fields: {},
+          production: false,
+          track_location: false
+        },
+        {}
+      ];
 
     submitStep = jest.fn();
     registerEvent = jest.fn().mockResolvedValue(undefined);
@@ -395,7 +405,7 @@ jest.mock('../../utils/featheryClient', () => {
   return {
     __esModule: true,
     default: MockClient,
-    _spies: { inviteCollaborator: inviteCollaboratorSpy }
+    _spies: { inviteCollaborator: inviteCollaboratorSpy, overrides }
   };
 });
 
@@ -513,3 +523,9 @@ export const FormHelperMod: any = jest.requireMock(
 // Exposes the mocked client's collaborator invite call for assertions.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ClientMod: any = jest.requireMock('../../utils/featheryClient');
+
+// Lets tests assert what the form passed to setUrlStepHash.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const StepHelperMod: any = jest.requireMock(
+  '../../utils/stepHelperFunctions'
+);
