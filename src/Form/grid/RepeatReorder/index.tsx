@@ -38,15 +38,10 @@ import { featheryWindow } from '../../../utils/browser';
 export const reorderInstructionsId = (formId: string) =>
   `feathery-repeat-reorder-instructions-${formId}`;
 
-/** The conventional six-dot drag affordance. */
 /**
- * Fills its button rather than sitting inside it at a fixed size.
- *
- * A fixed 9px glyph inside a 16px content box leaves 3.5px either side, and the
- * browser cannot split that pixel - it rounds one way, so the plus drifts down
- * and to the right of the square it is supposed to be centred in. Letting the
- * SVG fill the box removes the fractional offset, and the viewBox does the
- * centring in its own units where it is exact.
+ * Fills its button rather than sitting at a fixed size inside it: a 9px glyph
+ * in a 16px box leaves an unsplittable half pixel either side, so the plus
+ * drifts off centre. The viewBox does the centring in exact units instead.
  */
 const Plus = () => (
   <svg
@@ -65,6 +60,7 @@ const Plus = () => (
   </svg>
 );
 
+/** The conventional six-dot drag affordance. */
 const Grip = () => (
   <svg width='10' height='16' viewBox='0 0 10 16' aria-hidden='true'>
     {[3, 8, 13].map((y) =>

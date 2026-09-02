@@ -46,14 +46,12 @@ const Row = ({
   rowCount,
   onMove,
   onRowClick,
-  onTap,
   announce
 }: {
   index: number;
   rowCount: number;
   onMove: (from: number, to: number) => boolean;
   onRowClick?: () => void;
-  onTap?: () => void;
   announce?: (message: string) => void;
 }) => {
   const { dragging, handleRef, handleProps } = useRowDrag({
@@ -62,8 +60,7 @@ const Row = ({
     // The handle owns the wording in real use; here every row is on screen, so
     // absolute index and rendered position are the same thing.
     positionLabel: (abs: number) => `${abs + 1} of ${rowCount}`,
-    announce: announce ?? (() => {}),
-    onTap
+    announce: announce ?? (() => {})
   });
   return (
     <div {...{ [ROW_ATTR]: index }} onClick={onRowClick}>
@@ -80,11 +77,7 @@ const Row = ({
   );
 };
 
-const renderTrack = (
-  rowCount = 3,
-  onRowClick?: () => void,
-  onTap?: () => void
-) => {
+const renderTrack = (rowCount = 3, onRowClick?: () => void) => {
   const onMove = jest.fn().mockReturnValue(true);
 
   // A real move re-renders the container, and that render is when the
@@ -109,7 +102,6 @@ const renderTrack = (
             rowCount={rowCount}
             onMove={handleMove}
             onRowClick={onRowClick}
-            onTap={onTap}
           />
         ))}
       </div>
@@ -490,48 +482,93 @@ describe('the track is marked while a drag is live', () => {
   });
 });
 
+/**
+ * Logic can hide the row being dragged. Its siblings stay on screen, so the
+ * cleanup has to reach them: otherwise the track keeps the transforms and the
+ * marker, leaving rows displaced and every seam hidden for the rest of the step.
+ */
+describe('a row that unmounts mid-drag', () => {
+  it('hands the whole track back', () => {
+    const onMove = jest.fn().mockReturnValue(true);
+
+    const Track = ({ rows }: { rows: number }) => (
+      <div>
+        {Array.from({ length: rows }, (_, i) => (
+          <Row key={i} index={i} rowCount={3} onMove={onMove} />
+        ))}
+      </div>
+    );
+
+    const { container, rerender } = render(<Track rows={3} />);
+    container.querySelectorAll(`[${ROW_ATTR}]`).forEach((row) => {
+      const i = Number(row.getAttribute(ROW_ATTR));
+      (row as HTMLElement).getBoundingClientRect = () =>
+        ({
+          top: i * ROW_HEIGHT,
+          bottom: (i + 1) * ROW_HEIGHT,
+          left: 0,
+          right: 100
+        } as DOMRect);
+    });
+
+    const handle = grip(2);
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 40
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 0 });
+
+    const survivor = container.querySelector(
+      `[${ROW_ATTR}="0"]`
+    ) as HTMLElement;
+    expect(survivor).toHaveAttribute(DRAGGING_ATTR);
+
+    // The dragged row goes away while the gesture is still live.
+    rerender(<Track rows={2} />);
+
+    expect(container.querySelectorAll(`[${DRAGGING_ATTR}]`)).toHaveLength(0);
+    expect(survivor.style.transform).toBe('');
+    expect(survivor.style.zIndex).toBe('');
+    expect(document.body.style.userSelect).toBe('');
+  });
+});
+
 describe('tap', () => {
-  // Tapping the grip is the single-pointer alternative to dragging that
-  // WCAG 2.2 SC 2.5.7 requires, so it has to survive the cases that are not
-  // drags - including a container with nothing to drag against.
-  it('reports a tap when the press never becomes a drag', () => {
-    const onTap = jest.fn();
-    renderTrack(3, undefined, onTap);
+  // onPointerDown preventDefault()s to keep the container's click actions out
+  // of a grab, which also suppresses the browser's own focus. A tap has to
+  // place focus itself or the arrow keys are unreachable by pointer.
+  it('focuses the grip when the press never becomes a drag', () => {
+    const { onMove } = renderTrack();
     const handle = grip(0);
 
     fireEvent.pointerDown(handle, {
-      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
     fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 0 });
 
-    expect(onTap).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not report a tap after a real drag', () => {
-    const onTap = jest.fn();
-    const { onMove } = renderTrack(3, undefined, onTap);
-    const handle = grip(0);
-
-    fireEvent.pointerDown(handle, {
-      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
-    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
-
-    expect(onMove).toHaveBeenCalled();
-    expect(onTap).not.toHaveBeenCalled();
-  });
-
-  it('still reports a tap on a lone row that cannot be dragged', () => {
-    const onTap = jest.fn();
-    const { onMove } = renderTrack(1, undefined, onTap);
-    const handle = grip(0);
-
-    fireEvent.pointerDown(handle, {
-      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
-    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
-
-    expect(onTap).toHaveBeenCalledTimes(1);
+    expect(handle).toHaveFocus();
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('commits the move after a real drag rather than focusing in place', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    expect(onMove).toHaveBeenCalledWith(0, 2);
   });
 });
 

@@ -51,8 +51,6 @@ export interface RowDragOptions {
   positionLabel: (abs: number) => string;
   /** Sends a message to this form's live region. */
   announce: (message: string) => void;
-  /** Fired when the grip is pressed and released without a drag. */
-  onTap?: () => void;
   disabled?: boolean;
 }
 
@@ -151,7 +149,6 @@ export function useRowDrag({
   onMove,
   positionLabel,
   announce,
-  onTap,
   disabled
 }: RowDragOptions) {
   const handleRef = useRef<HTMLElement>(null);
@@ -200,10 +197,8 @@ export function useRowDrag({
       const track = row?.parentElement;
       if (!row || !track) return;
 
-      // A repeat row's siblings include whatever else the author placed beside
-      // the container, so rows are identified by their marker, not by position.
-      // A lone row is still tracked: it cannot be dragged, but tapping it must
-      // still reach the menu.
+      // Siblings include whatever else the author placed beside the container,
+      // so rows are identified by their marker rather than by position.
       const elements = rowElements(track);
 
       const axis = trackAxis(track);
@@ -294,12 +289,9 @@ export function useRowDrag({
       // focus itself - otherwise the arrow keys are unreachable by pointer.
       const dragged = state.dragging;
       finish(dragged);
-      if (!dragged) {
-        handleRef.current?.focus();
-        onTap?.();
-      }
+      if (!dragged) handleRef.current?.focus();
     },
-    [finish, onTap]
+    [finish]
   );
 
   const onPointerCancel = useCallback(() => finish(false), [finish]);
@@ -357,20 +349,23 @@ export function useRowDrag({
     if (consumeRowFocus(index)) handleRef.current?.focus();
   });
 
-  // A drag interrupted by an unmount would otherwise leave the page unselectable.
+  // A row can unmount mid-drag when logic hides it. Its siblings are still on
+  // screen, so the transforms, z-index, borrowed position and drag marker have
+  // to come off them here too, or the track stays displaced with its seams
+  // hidden for good.
   useEffect(
     () => () => {
-      if (stateRef.current) {
-        stateRef.current = null;
-        featheryDoc().body.style.userSelect = '';
-      }
+      const state = stateRef.current;
+      if (!state) return;
+      stateRef.current = null;
+      clearDrag(state);
+      featheryDoc().body.style.userSelect = '';
     },
     []
   );
 
   return {
     dragging,
-    move,
     handleRef,
     handleProps: {
       onPointerDown,

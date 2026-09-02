@@ -82,19 +82,21 @@ export function getContainerById(
 const ACTION_ELEMENT_TYPES = ['buttons', 'texts', 'subgrids'];
 
 /**
- * The row cap an author configured for a container, or null for uncapped.
+ * The highest row count reachable through any add-row action, or null for
+ * uncapped. Each action still enforces its own `max_repeats`; this is the
+ * ceiling for everything else that has to agree with them.
  *
- * The cap lives on the add-row action rather than on the container, so a
- * container can be targeted by several actions with different limits - and any
- * action that leaves the limit blank is a path to unlimited rows, which makes
- * the whole container uncapped however tight its other actions are. Everything
- * that grows the container goes through here so one number governs them all.
+ * The loosest limit wins, because a filler will use whichever button still
+ * adds: with actions capped at 5 and 2, five rows are reachable. Taking the
+ * tightest instead made the insert seam refuse at 2 while the other button
+ * kept adding. A blank limit is a path to unlimited rows, and is the same rule
+ * carried to its end.
  */
 export function getRepeatMaxRows(
   step: any,
   containerId: string
 ): number | null {
-  let max: number | null = null;
+  let ceiling: number | null = null;
 
   for (const type of ACTION_ELEMENT_TYPES) {
     for (const element of step[type] ?? []) {
@@ -104,26 +106,19 @@ export function getRepeatMaxRows(
 
         const limit = Number(action.max_repeats);
         if (!Number.isFinite(limit) || limit < 1) return null;
-        max = max === null ? limit : Math.min(max, limit);
+        ceiling = ceiling === null ? limit : Math.max(ceiling, limit);
       }
     }
   }
 
-  return max;
+  return ceiling;
 }
 
 /**
- * Rendered row count for a repeat container, clamped so a 'set_value' trigger
- * cannot offer a row past the author's cap.
- *
- * That trailing row is the one way left around a row limit: it is rendered
- * whenever the last row is filled, and typing into it grows the array through
- * `justInsert`, which runs upstream of every cap check. Withholding the row
- * withholds the input.
- *
- * Never clamps below the rows the data already holds. A cap lowered after
- * submissions must not hide answers that exist - the phantom row is the only
- * thing this is meant to take away.
+ * Rendered row count, clamped so a 'set_value' trigger cannot offer a row past
+ * the cap: typing into that trailing row grows the array upstream of every cap
+ * check. Never clamps below the rows the data holds, so a cap lowered after
+ * submissions hides no existing answers.
  */
 export function clampRepeatCountToCap(
   step: any,

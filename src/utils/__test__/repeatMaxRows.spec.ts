@@ -54,19 +54,20 @@ describe('getRepeatMaxRows', () => {
     ).toBe(5);
   });
 
-  it('takes the tightest cap when several actions target the container', () => {
+  // A filler uses whichever button still adds, so six rows are reachable here.
+  // Taking the tightest made the seam refuse at 2 while the other button kept
+  // going, which is the disagreement this resolver exists to prevent.
+  it('takes the loosest cap when several actions target the container', () => {
     const s = step({
       buttons: [
         button([addRow('repeat-1', 6)]),
         button([addRow('repeat-1', 2)])
       ]
     });
-    expect(getRepeatMaxRows(s, 'repeat-1')).toBe(2);
+    expect(getRepeatMaxRows(s, 'repeat-1')).toBe(6);
   });
 
-  // An action with the limit left blank is a route to unlimited rows, so the
-  // container is uncapped however tight its other actions are - otherwise the
-  // seam would refuse a row the author's own button would happily add.
+  // The same rule carried to its end: a blank limit reaches any row count.
   it('is uncapped when any targeting action leaves the limit blank', () => {
     const s = step({
       buttons: [button([addRow('repeat-1', 2)]), button([addRow('repeat-1')])]

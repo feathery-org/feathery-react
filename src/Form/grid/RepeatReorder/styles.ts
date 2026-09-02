@@ -23,7 +23,7 @@ export const DRAGGING_ATTR = 'data-feathery-reorder-dragging';
 export const GUTTER_WIDTH = 28;
 
 const ink = 'var(--feathery-repeat-handle-ink, currentColor)';
-const surface = 'var(--feathery-repeat-menu-surface, #fff)';
+const surface = 'var(--feathery-repeat-insert-surface, #fff)';
 
 /** Revealed by the row, so a resting form carries no extra furniture. */
 export const clusterStyles = {
@@ -47,18 +47,13 @@ export const rowRevealStyles = {
   [`&:hover .${REORDER_CLASS}, &:focus-within .${REORDER_CLASS}`]: {
     opacity: 1
   },
-  // The seam is hover-only, deliberately. On `:focus-within` too, the row being
-  // typed in and the row under the pointer both lit up, putting two `+` on the
-  // page at once - and since a row's "above" seam and its predecessor's "below"
-  // seam are the same boundary, they landed a few pixels apart both offering to
-  // insert there. Only one row can be hovered, so only one seam can show.
-  // Keyboard reach is unaffected: the button lights itself on :focus-visible.
+  // Hover-only, so exactly one seam can show. Adding `:focus-within` lit both
+  // the row being typed in and the row under the pointer, and those two seams
+  // can be the same boundary. The button lights itself on :focus-visible, so
+  // keyboard reach is unaffected.
   [`&:hover .${INSERT_CLASS}`]: { opacity: 1 },
-  // A drag has no use for "insert here". Every row is marked for the length of
-  // the gesture, so the seam goes for the row being carried and for the rows it
-  // passes over, whose boundaries are moving and no longer mean what they say.
-  // The `:hover` variant is spelled out so this wins on specificity rather than
-  // on being declared last.
+  // No boundary is where it looks during a drag, so no seam is offered. The
+  // `:hover` variant is spelled out so this wins on specificity, not on order.
   [`&[${DRAGGING_ATTR}] .${INSERT_CLASS},
     &[${DRAGGING_ATTR}]:hover .${INSERT_CLASS}`]: {
     opacity: 0,
@@ -93,12 +88,9 @@ export const gripStyles = {
 };
 
 /**
- * Sits on a seam between two rows, centred so it reads as "insert here".
- *
- * Which seam depends on where the pointer is: the nearer edge of the row it is
- * over, so the `+` always lands on the boundary being pointed at. Both variants
- * ride the block axis, which is the axis rows stack on for every track the SDK
- * lays out itself.
+ * Sits on the seam between two rows, on whichever edge of the row the pointer
+ * is nearer. Both variants ride the block axis, which is the axis rows stack on
+ * for every track the SDK lays out itself.
  */
 const insertBase = {
   position: 'absolute' as const,

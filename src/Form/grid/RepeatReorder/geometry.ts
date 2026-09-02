@@ -54,12 +54,9 @@ export function orderRows(rows: RowSnapshot[], axis: TrackAxis) {
 /**
  * Where the dragged row wants to land, as an absolute index.
  *
- * The test is the dragged row's own centre against its neighbours' near edges,
- * not the pointer against their midpoints. The grip sits at the row's top
- * corner, so the pointer trails the row it is carrying: judging by the pointer
- * means the row has to be dragged most of the way past a neighbour before
- * anything happens. Comparing centre to edge makes the swap land as soon as the
- * rows visually overlap, which is where it looks like it should.
+ * Compares the dragged row's centre to its neighbours' near edges rather than
+ * the pointer to their midpoints: the grip sits at the row's corner, so the
+ * pointer trails the row and judging by it needs almost a full row of travel.
  */
 export function targetIndexFromCenter(
   rows: RowSnapshot[],
@@ -90,12 +87,9 @@ export function targetIndexFromCenter(
 }
 
 /**
- * The absolute index one rendered step away from `from`, for the arrow keys and
- * chevron buttons. Returns null at the ends.
- *
- * Screen order, not DOM order: a `*-reverse` track lays its rows out backwards,
- * and "up" has to mean up on screen or the arrow keys send the row the opposite
- * way from the one pressed.
+ * The absolute index one rendered step away from `from`, for the arrow keys.
+ * Returns null at the ends. Screen order, not DOM order, so "up" means up on
+ * screen even on a `*-reverse` track.
  */
 export function steppedTargetIndex(
   rows: RowSnapshot[],
@@ -119,12 +113,9 @@ export function mainAxisExtent(rect: RowRect, vertical: boolean) {
 
 /**
  * Distance a displaced row travels: the dragged row's extent plus the gap it
- * leaves behind. Measured from the rows rather than assumed, because the gap
- * comes from the container's own `gap` or the rows' external padding.
- *
- * Gaps are read in screen order. Measuring in DOM order on a `*-reverse` track
- * makes every gap negative, and they would all be discarded as nonsense,
- * leaving displaced rows overlapping by exactly the gap.
+ * leaves behind. The gap is measured rather than assumed, and read in screen
+ * order - in DOM order a `*-reverse` track yields only negative gaps, which
+ * would all be discarded and leave the rows overlapping.
  */
 export function displacementFor(
   rows: RowSnapshot[],
