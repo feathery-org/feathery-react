@@ -67,10 +67,23 @@ describe('validateCellValue', () => {
     ).toContain('valid UUID');
   });
 
-  test('phone numbers allow the punctuation people type', () => {
+  test('phone numbers are held to the hub rule: digits only', () => {
+    // The hub matches the raw string against ^\d{7,15}$, so punctuation or a
+    // leading + that passed here would be refused on save — after the cell
+    // had shown as clean.
     const rule = { label: 'Phone', type: 'phone_number' as const };
-    expect(validateCellValue('(415) 555-1234', rule)).toBeNull();
+    expect(validateCellValue('4155551234', rule)).toBeNull();
+    expect(validateCellValue('(415) 555-1234', rule)).toContain('7–15 digits');
+    expect(validateCellValue('+14155551234', rule)).toContain('7–15 digits');
     expect(validateCellValue('12345', rule)).toContain('7–15 digits');
+  });
+
+  test('an empty file cell is never required, matching the hub', () => {
+    // Every server-side required check skips file fields; flagging one here
+    // would disable Save for a row the hub accepts.
+    expect(
+      validateCellValue(null, { label: 'Docs', type: 'file', required: true })
+    ).toBeNull();
   });
 
   test('dates are parsed, then held to their range', () => {
@@ -133,6 +146,31 @@ describe('validateGrid', () => {
     expect(errors[cellErrorKey(2, 'email')]).toContain('must be unique');
   });
 
+  test('staged rows neither claim a unique value nor get flagged for one', () => {
+    // The hub checks uniqueness against verified rows only, and not at all
+    // for a staged write. Row 2 (verified) shares row 0's email: it would be
+    // flagged if row 0 were verified, but row 0 is staged here, so it is not.
+    const rules = { email: { label: 'Email', type: 'email' as const, unique: true } };
+    const staged = validateGrid({
+      rowIndices: [0, 1, 2],
+      fieldKeys: ['email'],
+      getValue,
+      rules,
+      isRowStaged: (rowIndex) => rowIndex === 0
+    });
+    expect(staged[cellErrorKey(2, 'email')]).toBeUndefined();
+
+    // And a staged duplicate of a verified value is not flagged either.
+    const stagedCopy = validateGrid({
+      rowIndices: [0, 1, 2],
+      fieldKeys: ['email'],
+      getValue,
+      rules,
+      isRowStaged: (rowIndex) => rowIndex === 2
+    });
+    expect(stagedCopy[cellErrorKey(2, 'email')]).toBeUndefined();
+  });
+
   test('columns with no rule are skipped entirely', () => {
     expect(
       validateGrid({
@@ -179,12 +217,15 @@ describe('rule derivation', () => {
     expect(rules.k).toMatchObject({ minValue: 1, maxValue: 9 });
   });
 
-  test('field-backed columns only get format rules', () => {
+  test('field-backed columns only get format and storage-type rules', () => {
     const rules = fieldCellRules([
       { field_key: 'a', name: 'Email', field_type: 'email' },
-      { field_key: 'b', name: 'Notes', field_type: 'text_field' }
+      { field_key: 'b', name: 'Notes', field_type: 'text_field' },
+      { field_key: 'c', name: 'Active', field_type: 'checkbox' }
     ]);
     expect(rules.a).toEqual({ label: 'Email', type: 'email' });
     expect(rules.b).toBeUndefined();
+    // A checkbox stores a boolean, so its cells parse as one.
+    expect(rules.c).toEqual({ label: 'Active', type: 'boolean' });
   });
 });

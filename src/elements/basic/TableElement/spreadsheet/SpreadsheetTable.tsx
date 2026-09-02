@@ -10,7 +10,7 @@ import { createColumnHelper, useTable } from '@tanstack/react-table';
 import type { CellSelectionState } from '@tanstack/react-table';
 import { AddColumnHandler, CellWrite, Column, GetCellShading } from '../types';
 import { CellValue } from './model';
-import { seedActionFor } from './fieldEditors';
+import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
 import {
@@ -218,6 +218,15 @@ export function SpreadsheetTable({
       seedActionFor(cellRules?.[fieldKey], char),
     [cellRules]
   );
+  const isReadOnly = useCallback(
+    (fieldKey: string) => editorKindFor(cellRules?.[fieldKey]) === 'readonly',
+    [cellRules]
+  );
+  const parseValue = useCallback(
+    (fieldKey: string, text: string, before: CellValue) =>
+      parseCellInput(text, cellRules?.[fieldKey], before),
+    [cellRules]
+  );
 
   // Failing cells in reading order — down the rows, left to right — with the
   // blocking ones first, so stepping through issues fixes what is holding the
@@ -261,7 +270,9 @@ export function SpreadsheetTable({
     restoreFocus,
     seedAction,
     acceptsValue,
-    onValuesRefused
+    onValuesRefused,
+    isReadOnly,
+    parseValue
   });
 
   const stepIssue = useCallback(

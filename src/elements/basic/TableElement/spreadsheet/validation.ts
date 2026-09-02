@@ -57,7 +57,9 @@ export const cellErrorKey = (rowIndex: number, fieldKey: string) =>
 const TAX_ID_PATTERN = /^\d{9}$/;
 const UUID_PATTERN =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-const PHONE_PATTERN = /^\+?\d{7,15}$/;
+// Exactly the hub's `_PHONE_RE`: digits only, no punctuation and no leading
+// `+`. Anything looser here shows a cell as clean that the hub then rejects.
+const PHONE_PATTERN = /^\d{7,15}$/;
 
 function isEmpty(value: CellValue): boolean {
   return value === null || value === undefined || value === '';
@@ -85,7 +87,12 @@ export function validateCellValue(
   const { label } = rule;
 
   if (isEmpty(value)) {
-    return rule.required ? `Field \`${label}\` is required` : null;
+    // The hub never holds a file field to `required` — every server-side
+    // required check skips FIELD_TYPE_FILE — so flagging one here would block
+    // a save the hub accepts.
+    return rule.required && rule.type !== 'file'
+      ? `Field \`${label}\` is required`
+      : null;
   }
 
   if (rule.type === 'number') {
@@ -139,9 +146,9 @@ export function validateCellValue(
         ? null
         : `Field \`${label}\` must be a valid URL`;
     case 'phone_number':
-      // The hub only requires 7-15 digits; libphonenumber's stricter check
-      // would reject numbers the backend accepts.
-      return PHONE_PATTERN.test(text.replace(/[\s()-]/g, ''))
+      // Checked as stored, not normalized: the hub matches the raw string, so
+      // `(415) 555-1234` fails there and has to fail here too.
+      return PHONE_PATTERN.test(text)
         ? null
         : `Field \`${label}\` phone number must be 7–15 digits`;
     case 'tax_id':
@@ -194,6 +201,12 @@ type ValidateGridOptions = {
   fieldKeys: string[];
   getValue: (rowIndex: number, fieldKey: string) => CellValue;
   rules: CellRules;
+  /**
+   * Whether a row is staged (unverified) Hub data. The hub checks uniqueness
+   * against verified rows only, and never for a staged write, so a staged row
+   * neither claims a value nor is flagged for sharing one.
+   */
+  isRowStaged?: (rowIndex: number) => boolean;
 };
 
 /**
@@ -204,7 +217,8 @@ export function validateGrid({
   rowIndices,
   fieldKeys,
   getValue,
-  rules
+  rules,
+  isRowStaged
 }: ValidateGridOptions): CellErrors {
   const errors: CellErrors = {};
   const uniqueKeys = fieldKeys.filter((key) => rules[key]?.unique);
@@ -214,6 +228,7 @@ export function validateGrid({
   );
 
   rowIndices.forEach((rowIndex) => {
+    const staged = isRowStaged?.(rowIndex) ?? false;
     fieldKeys.forEach((fieldKey) => {
       const rule = rules[fieldKey];
       if (!rule) return;
@@ -223,7 +238,7 @@ export function validateGrid({
         errors[cellErrorKey(rowIndex, fieldKey)] = message;
         return;
       }
-      if (!rule.unique || isEmpty(value)) return;
+      if (!rule.unique || isEmpty(value) || staged) return;
       // A duplicate flags the LATER row, so the first occurrence stays clean
       // and the user fixes the copy rather than the original.
       const values = seen.get(fieldKey) as Map<string, number>;
@@ -265,8 +280,8 @@ const HUB_TYPES: Record<string, CellValueType> = {
 
 /**
  * Rules for Hub-backed columns, keyed by the synthetic storage key the grid
- * renders. `file` and `any` fields carry no client-checkable rule beyond
- * required, which is what the hub itself enforces for them.
+ * renders. `any` fields carry no client-checkable rule beyond required; `file`
+ * fields carry none at all, since the hub exempts them from required too.
  */
 export function hubCellRules(
   columns: Array<{ field_key: string; name: string; hub_field_key?: string }>,
@@ -302,13 +317,15 @@ export function hubCellRules(
   return rules;
 }
 
-// Form field types whose value has a format a spreadsheet cell can get wrong.
-// Anything absent (text, select, checkbox, …) accepts whatever is typed.
+// Form field types whose value has a format a spreadsheet cell can get wrong,
+// or a storage type other than text. Anything absent (text, select, …) accepts
+// whatever is typed and stores it as text.
 const FIELD_TYPES: Record<string, CellValueType> = {
   email: 'email',
   phone_number: 'phone_number',
   url: 'url',
   integer_field: 'number',
+  checkbox: 'boolean',
   ssn: 'tax_id'
 };
 

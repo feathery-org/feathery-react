@@ -200,6 +200,22 @@ describe('unsaved changes bar', () => {
     expect(updateFieldValues).not.toHaveBeenCalled();
   });
 
+  test('Discard also forgets the undo history', async () => {
+    // Otherwise Ctrl+Z would replay the edit's "before" value as a new
+    // pending change over a cell that already shows it.
+    renderTable();
+    editCell('Alice', 'Alicia');
+    discard();
+    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+
+    fireEvent.keyDown(grid(), { key: 'z', ctrlKey: true });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(hasUnsavedWork('form1')).toBe(false);
+  });
+
   test('a discarded row deletion comes back', async () => {
     renderTable();
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Select row 2' }));
@@ -553,17 +569,84 @@ describe('editors for other field types', () => {
     expect(await screen.findByLabelText(/Edit age/)).toHaveValue('7');
   });
 
-  test('a file column shows its file names and cannot be typed into', async () => {
+  test('a file column shows its file names and opens no editor', async () => {
     await renderTyped();
     expect(screen.getByText('deed.pdf')).toBeInTheDocument();
 
+    // The stored value is an array. An editor opened on its String() form
+    // would commit "[object Object]" back over the upload reference the
+    // moment it closed, so no editor opens at all — by mouse or by key.
     fireEvent.doubleClick(cell('deed.pdf'));
-    const input = await screen.findByLabelText(/Edit docs/);
-    expect(input).toHaveAttribute('readonly');
+    fireEvent.mouseDown(cell('deed.pdf'));
+    await waitFor(() =>
+      expect(cell('deed.pdf')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    fireEvent.keyDown(grid(), { key: 'F2' });
+    fireEvent.keyDown(grid(), { key: 'x' });
 
-    fireEvent.change(input, { target: { value: 'nope' } });
-    // A read-only editor records nothing, so there is still nothing to save.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByLabelText(/Edit docs/)).toBeNull();
+    expect(screen.getByText('deed.pdf')).toBeInTheDocument();
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('a file cell survives Delete and paste as well', async () => {
+    await renderTyped();
+    fireEvent.mouseDown(cell('deed.pdf'));
+    await waitFor(() =>
+      expect(cell('deed.pdf')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    fireEvent.keyDown(grid(), { key: 'Delete' });
+    fireEvent.paste(grid(), { clipboardData: { getData: () => 'nope' } });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText('deed.pdf')).toBeInTheDocument();
+    expect(screen.queryByText('nope')).toBeNull();
+    // The paste reports what it skipped, but nothing is waiting to be saved.
+    expect(screen.queryByText(/\d+ unsaved change/)).toBeNull();
+  });
+
+  test('a tax ID keeps its leading zero instead of becoming a number', async () => {
+    await renderTyped();
+    fireEvent.doubleClick(cell('•••••6789'));
+    const input = await screen.findByRole('textbox');
+
+    fireEvent.change(input, { target: { value: '012345678' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Nine digits masked to the last four — not the eight of 12345678.
+    await waitFor(() =>
+      expect(screen.getByText('•••••5678')).toBeInTheDocument()
+    );
+    expect(status()).toHaveTextContent('1 unsaved change');
+  });
+
+  test('staged rows can be deleted even though they cannot be added to', async () => {
+    // `create` into the staged set is a batch replace, so adding is off; but
+    // `delete` targets one staged row by id, so cleaning up extracted data
+    // stays possible.
+    const stagedClient = typedClient();
+    stagedClient.dataHubAction = jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([{ ...ENTRY, verified: false }])
+        : Promise.resolve({})
+    );
+    renderTable(
+      { ...typedProps, hub_verification: 'unverified' },
+      { client: stagedClient }
+    );
+    await waitFor(() => expect(screen.getByText('42')).toBeInTheDocument());
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Select row 1' }));
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Delete row 1' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'Insert row above' })
+    ).toBeNull();
   });
 });
 
