@@ -169,6 +169,48 @@ export function pruneDetachedContentControls(
 }
 
 /**
+ * Prune detached entries, then restore DOCUMENT ORDER in the content control
+ * collection. Undo re-registers restored controls at the END of the
+ * collection, but Syncfusion's lookups assume document order — the
+ * getContentControls scan early-breaks at the first control past the caret,
+ * so an out-of-order entry is never found: selection.currentContentControl
+ * returns undefined and the control loses its chrome, its lock, and the
+ * engine's writes. Verified live: re-sorting alone restores all three.
+ */
+export function normalizeContentControlCollection(
+  editor: SyncfusionEditorLike
+): void {
+  pruneDetachedContentControls(editor);
+  const collection = editor.documentHelper?.contentControlCollection;
+  const selection = editor.selection as any;
+  if (
+    !Array.isArray(collection) ||
+    typeof selection?.getPosition !== 'function'
+  )
+    return;
+  const positioned = collection.map((control) => {
+    try {
+      return {
+        control,
+        position: selection.getPosition(control, true)?.startPosition ?? null
+      };
+    } catch {
+      return { control, position: null };
+    }
+  });
+  positioned.sort((a, b) => {
+    if (!a.position || !b.position) return 0;
+    try {
+      if (a.position.isAtSamePosition(b.position)) return 0;
+      return a.position.isExistBefore(b.position) ? -1 : 1;
+    } catch {
+      return 0;
+    }
+  });
+  collection.splice(0, collection.length, ...positioned.map((e) => e.control));
+}
+
+/**
  * Ask the editor for verbose SFDT.
  *
  * Syncfusion defaults optimizeSfdt to true, and minified SFDT renames every key
