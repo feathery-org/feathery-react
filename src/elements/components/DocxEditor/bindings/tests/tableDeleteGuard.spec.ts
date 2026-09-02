@@ -82,6 +82,20 @@ function countOf(editor: DocumentEditor, value: string): number {
   return editor.serialize().split(value).length - 1;
 }
 
+/** Row count of the bound costs table in the serialized document. */
+function costsRowCount(editor: DocumentEditor): number {
+  const doc = JSON.parse(editor.serialize()) as any;
+  for (const block of doc.sections[0].blocks) {
+    if (!String(block.contentControlProperties?.tag || '').includes('costs'))
+      continue;
+    const table = (block.blocks ?? []).find((child: any) =>
+      Array.isArray(child.rows)
+    );
+    if (table) return table.rows.length;
+  }
+  return -1;
+}
+
 describe('installTableDeleteGuard', () => {
   let editor: DocumentEditor;
   let uninstall: () => void = () => undefined;
@@ -203,6 +217,71 @@ describe('installTableDeleteGuard', () => {
     (editor as any).editorModule.insertText('x');
     expect(scan(editor).tables.has('costs')).toBe(true);
     expect(countOf(editor, '$9,500.00')).toBe(1);
+  });
+
+  it('reproduces the row bug without the guard: deleteRow from a locked cell is a silent no-op', () => {
+    editor = makeEditor(buildCostsFixture());
+    caretIntoControl(editor, 'line_total');
+    (editor as any).editorModule.deleteRow();
+    expect(costsRowCount(editor)).toBe(6);
+  });
+
+  it('deletes a data row from its locked formula cell without asking', () => {
+    editor = makeEditor(buildCostsFixture());
+    const confirm = jest.fn(() => Promise.resolve(true));
+    uninstall = installTableDeleteGuard(
+      editor as unknown as SyncfusionEditorLike,
+      { confirm }
+    );
+
+    caretIntoControl(editor, 'line_total');
+    (editor as any).editorModule.deleteRow();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(costsRowCount(editor)).toBe(5);
+  });
+
+  it('deleting the Subtotal row confirms and unwraps everything that read it', async () => {
+    editor = makeEditor(buildCostsFixture());
+    const confirm = jest.fn(() => Promise.resolve(true));
+    uninstall = installTableDeleteGuard(
+      editor as unknown as SyncfusionEditorLike,
+      { confirm }
+    );
+
+    caretIntoControl(editor, 'costs_subtotal');
+    (editor as any).editorModule.deleteRow();
+    await flush();
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0].scope).toBe('row');
+    expect(
+      confirm.mock.calls[0][0].orphans.map((orphan: any) => orphan.name)
+    ).toEqual(['combined_total', 'costs_tax', 'grand_total']);
+
+    const index = scan(editor);
+    expect(costsRowCount(editor)).toBe(5);
+    expect(index.formulas.has('grand_total')).toBe(false);
+    expect(index.formulas.has('costs_tax')).toBe(false);
+    // Values survive as plain text: Total cell + prose repeat keep $7,800.00
+    // (the Subtotal copy died with its row).
+    expect(countOf(editor, '$7,800.00')).toBe(2);
+
+    // Row entries cannot be grouped on this Syncfusion version (table-clone
+    // reverts crash inside complex history), so the restore is sequential -
+    // but every depth is consistent: the first undo brings the row (and its
+    // own formula) back while the survivors stay plain text.
+    const history = (editor as any).editorHistoryModule;
+    history.undo();
+    expect(costsRowCount(editor)).toBe(6);
+    expect(scan(editor).formulas.has('grand_total')).toBe(false);
+    for (let i = 0; i < 20 && history.canUndo(); i++) history.undo();
+    const restored = scan(editor);
+    expect(costsRowCount(editor)).toBe(6);
+    expect(restored.formulas.has('grand_total')).toBe(true);
+    expect(restored.formulas.has('costs_tax')).toBe(true);
+    expect(restored.formulas.has('combined_total')).toBe(true);
+    expect(countOf(editor, '$7,800.00')).toBe(3);
   });
 
   it('passes through untouched under track changes', async () => {

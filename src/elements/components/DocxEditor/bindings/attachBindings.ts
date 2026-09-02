@@ -159,6 +159,21 @@ export function attachBindings(
     ...(clearTimeoutFn ? { clearTimeoutFn } : {})
   });
   const uninstallGuard = installKeystrokeGuard(editor);
+  // Explicit whole-table/row deletion: lift the content-control locks that
+  // made deleteTable/deleteRow silent no-ops, and confirm/unwrap when the
+  // deleted values feed formulas elsewhere (tableDeleteGuard has the full
+  // story). Installed BEFORE watchRowCommands so the row watcher's wrapper
+  // stays outermost and its reconcile runs after the guard's grouped history
+  // entry closes.
+  const uninstallTableDelete = installTableDeleteGuard(editor, {
+    ...(confirmTableDelete ? { confirm: confirmTableDelete } : {}),
+    onDeleted: () => {
+      if (controller.phase !== 'idle') return;
+      const history = editor.editorHistoryModule;
+      if (history?.isUndoing || history?.isRedoing) return;
+      controller.flush({ mode: 'self-heal' });
+    }
+  });
   // Native insertRow/deleteRow bypass runCommands. After the user's command
   // the interceptor adopts and recomputes in the same turn. Replay during
   // undo/redo must not flush: that inserts content controls mid-history and
@@ -168,18 +183,6 @@ export function attachBindings(
     const history = editor.editorHistoryModule;
     if (history?.isUndoing || history?.isRedoing) return;
     controller.flush({ mode: 'self-heal' });
-  });
-  // Explicit whole-table deletion: lift the content-control locks that made
-  // deleteTable a silent no-op, and confirm/unwrap when the table feeds
-  // formulas elsewhere (tableDeleteGuard has the full story).
-  const uninstallTableDelete = installTableDeleteGuard(editor, {
-    ...(confirmTableDelete ? { confirm: confirmTableDelete } : {}),
-    onDeleted: () => {
-      if (controller.phase !== 'idle') return;
-      const history = editor.editorHistoryModule;
-      if (history?.isUndoing || history?.isRedoing) return;
-      controller.flush({ mode: 'self-heal' });
-    }
   });
 
   const eventful = editor as EventfulEditor;

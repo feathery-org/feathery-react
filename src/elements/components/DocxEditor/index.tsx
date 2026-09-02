@@ -170,10 +170,10 @@ function DocxEditor({
   }, [onChange]);
 
   /**
-   * Deleting a table that feeds calculated values elsewhere would strand them
-   * (stale number, save blocked, the control itself non-deletable). The guard
-   * asks here first; confirming deletes the table and converts the dependent
-   * values to plain text.
+   * Deleting a table or row that feeds calculated values elsewhere would
+   * strand them (stale number, save blocked, the control itself
+   * non-deletable). The guard asks here first; confirming deletes and converts
+   * the dependent values to plain text in one undoable step.
    */
   const confirmTableDelete = useCallback(
     (impact: TableDeleteImpact) =>
@@ -182,18 +182,18 @@ function DocxEditor({
           .map((orphan) => `"${orphan.name}"`)
           .join(', ');
         const plural = impact.orphans.length > 1;
+        const scope = impact.scope === 'row' ? 'row' : 'table';
         setGateWarning({
-          title: 'Delete table?',
+          title: `Delete ${scope}?`,
           message: `The calculated value${
             plural ? 's' : ''
           } ${names} elsewhere in this document ${
             plural ? 'use' : 'uses'
-          } numbers from this table. Deleting it keeps the current value${
+          } numbers from this ${scope}. Deleting it keeps the current value${
             plural ? 's' : ''
           } as plain text.`,
-          confirmLabel: 'Delete table',
-          confirmTitle:
-            'Deletes the table; dependent calculated values become plain text',
+          confirmLabel: scope === 'row' ? 'Delete row' : 'Delete table',
+          confirmTitle: `Deletes the ${scope}; dependent calculated values become plain text`,
           proceed: () => {
             setGateWarning(null);
             resolve(true);
