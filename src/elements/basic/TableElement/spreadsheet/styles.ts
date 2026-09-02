@@ -116,6 +116,10 @@ export const gridStyle = {
   fontWeight: 400,
   fontStyle: 'normal',
   fontVariant: 'normal',
+  // Digits share one width, so numbers in a column line up the way they do in
+  // a spreadsheet. Stated after the `fontVariant` shorthand, which would reset
+  // it. Every descendant inherits it, cell editors included.
+  fontVariantNumeric: 'tabular-nums',
   lineHeight: 'normal',
   letterSpacing: 'normal',
   wordSpacing: 'normal',
