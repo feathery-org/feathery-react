@@ -321,4 +321,39 @@ describe('useDocxEditor across a review-gate flip', () => {
     expect(editors[1].openAsync).toHaveBeenCalled();
     expect(editors[1].open).not.toHaveBeenCalledWith(CARRIED);
   });
+
+  it('fires onEdit per content change, tagged with assistant authorship', async () => {
+    const onEdit = jest.fn();
+    const Edited = () => {
+      const api = useDocxEditor({
+        source: { url: 'https://example.test/doc.docx' },
+        serviceUrl: 'https://example.test/service/',
+        reviewChanges: false,
+        licenseKey: 'test-key',
+        onEdit
+      });
+      return <div ref={api.containerRef} />;
+    };
+
+    render(<Edited />);
+    await settle();
+
+    const ed = editors[0] as any;
+    const registration = ed.addEventListener.mock.calls.find(
+      ([name]: [string]) => name === 'contentChange'
+    );
+    expect(registration).toBeTruthy();
+    const fireContentChange = registration[1];
+
+    // A human edit: the assistant session flag is not set on the instance.
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: false });
+
+    // An assistant-driven edit: the bridge's session flag lives on the editor.
+    ed.__featheryAssistantSession = true;
+    await act(async () => fireContentChange());
+    expect(onEdit).toHaveBeenLastCalledWith({ assistant: true });
+
+    expect(onEdit).toHaveBeenCalledTimes(2);
+  });
 });

@@ -19069,6 +19069,12 @@ const ASSISTANT_WRITING_KEY = '__featheryAssistantWriting';
 // Guards the gaps BETWEEN tool calls in one editing turn: set by the docx
 // bridge on the first write of a turn, cleared by AssistantChat at turn end.
 const ASSISTANT_SESSION_KEY = '__featheryAssistantSession';
+// Edge-triggered listeners for that flag, stored per editor instance. The
+// version-history session tracker reads a turn end (true → false) as a slice
+// boundary, so only transitions are delivered, never repeated same-value sets.
+const ASSISTANT_SESSION_LISTENERS_KEY = '__featheryAssistantSessionListeners';
+
+type AssistantSessionListener = (active: boolean) => void;
 
 /** True while `applyDocumentEdits` is mid-batch, or the editing turn driving
  *  it is still in flight. */
@@ -19087,7 +19093,30 @@ export function setAssistantSessionActive(
   active: boolean
 ): void {
   if (!editor) return;
-  (editor as any)[ASSISTANT_SESSION_KEY] = active;
+  const ed = editor as any;
+  const next = !!active;
+  if (!!ed[ASSISTANT_SESSION_KEY] === next) return; // edge-only
+  ed[ASSISTANT_SESSION_KEY] = next;
+  const listeners: Set<AssistantSessionListener> | undefined =
+    ed[ASSISTANT_SESSION_LISTENERS_KEY];
+  if (listeners) listeners.forEach((cb) => cb(next));
+}
+
+/** Subscribe to assistant-session active/inactive EDGES on this editor. The
+ *  callback fires only when the flag transitions. Returns an unsubscribe. */
+export function onAssistantSessionChange(
+  editor: LiveEditor | null | undefined,
+  cb: AssistantSessionListener
+): () => void {
+  if (!editor) return () => undefined;
+  const ed = editor as any;
+  const listeners: Set<AssistantSessionListener> =
+    ed[ASSISTANT_SESSION_LISTENERS_KEY] ??
+    (ed[ASSISTANT_SESSION_LISTENERS_KEY] = new Set());
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
 }
 
 // Applies a logical change set in deterministic phases. We preflight only the

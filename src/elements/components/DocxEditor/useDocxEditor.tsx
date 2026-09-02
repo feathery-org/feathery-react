@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { featheryDoc, featheryWindow } from '../../../utils/browser';
+import { featheryWindow } from '../../../utils/browser';
 import { dynamicImport } from '../../../integrations/utils';
 import {
   disableUserTrackChanges,
@@ -8,7 +8,9 @@ import {
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
-import { EJ2_SCRIPT_URL, EJ2_STYLE_URLS } from './constants';
+import { isAssistantWriting } from '../../../assistant/tools/docx/syncfusionDocumentOps';
+import { EJ2_SCRIPT_URL } from './constants';
+import { loadStyles, waitForDocumentLoad, waitForEj } from './ejLoader';
 import { stampMissingContentControlColors } from './contentControlSafety';
 import { installDocumentTailInvariant } from './documentTailInvariant';
 import { DocxSource } from './types';
@@ -26,49 +28,6 @@ const BUILT_IN_SYNCFUSION_LICENSE_KEY =
   typeof __SYNCFUSION_LICENSE_KEY__ === 'undefined'
     ? ''
     : __SYNCFUSION_LICENSE_KEY__;
-
-// Inject the Syncfusion theme CSS once (deduped across all editor instances).
-const LOADED_STYLES = new Set<string>();
-function loadStyles() {
-  const doc = featheryDoc();
-  EJ2_STYLE_URLS.forEach((href) => {
-    if (LOADED_STYLES.has(href)) return;
-    LOADED_STYLES.add(href);
-    const link = doc.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = href;
-    doc.head.appendChild(link);
-  });
-  loadAccentOverride();
-}
-
-// The Syncfusion tailwind3 theme's accent is indigo (--color-sf-primary
-// #6366f1). Retint the primary family to the Feathery red so the editor's
-// accents — context menus, primary buttons, focus rings, selection highlight,
-// title bar — match the rest of the product. Applied at :root because the
-// context menu renders in a portal on <body>, out of the editor's subtree.
-const ACCENT_STYLE_ID = 'feathery-docx-accent';
-function loadAccentOverride() {
-  const doc = featheryDoc();
-  if (doc.getElementById(ACCENT_STYLE_ID)) return;
-  const style = doc.createElement('style');
-  style.id = ACCENT_STYLE_ID;
-  style.textContent = `:root{
-    --color-sf-primary:#e2626e;
-    --color-sf-primary-bg-color:#e2626e;
-    --color-sf-primary-bg-color-hover:#dc3a4b;
-    --color-sf-primary-bg-color-focus:#dc3a4b;
-    --color-sf-primary-bg-color-pressed:#c9313f;
-    --color-sf-primary-outline:#e2626e;
-    --color-sf-primary-border-color:#e2626e;
-    --color-sf-primary-border-color-hover:#dc3a4b;
-    --color-sf-primary-border-color-focus:#dc3a4b;
-    --color-sf-primary-border-color-pressed:#c9313f;
-    --color-sf-primary-dark:#dc3a4b;
-    --color-sf-primary-darker:#c9313f;
-  }`;
-  doc.head.appendChild(style);
-}
 
 // GitHub-style tracked-change rendering: green wash for insertions, red wash
 // + red struck text for deletions, replace = struck old + green new. The
@@ -100,37 +59,6 @@ const OPENING_DOCUMENT_KEY = '__featheryOpeningDocument';
 /** True while a source document is being opened/reopened on this editor. */
 export function isOpeningDocument(ed: any): boolean {
   return !!ed?.[OPENING_DOCUMENT_KEY];
-}
-
-// A conversion that never completes must not strand the editor in `loading`.
-const DOCUMENT_LOAD_TIMEOUT_MS = 20000;
-
-/**
- * Resolves when Syncfusion finishes laying the document out. `documentChange`
- * fires exactly once per open, after open()/openAsync() has already resolved,
- * and is the only signal that the document is really on screen.
- */
-function waitForDocumentLoad(ed: any): Promise<void> {
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      try {
-        ed.removeEventListener?.('documentChange', finish);
-      } catch {
-        /* instance already torn down */
-      }
-      resolve();
-    };
-    try {
-      ed.addEventListener?.('documentChange', finish);
-    } catch {
-      finish();
-      return;
-    }
-    setTimeout(finish, DOCUMENT_LOAD_TIMEOUT_MS);
-  });
 }
 
 /** One pending edit's painted extent, in viewport-canvas coordinates. */
@@ -694,20 +622,6 @@ async function resolveBuffer(source: DocxSource): Promise<ArrayBuffer> {
 // scriptjs can report the CDN bundle "loaded" a beat before the (multi-MB) ej2
 // UMD finishes attaching `ej` to window (notably under Next). Poll for it rather
 // than checking once.
-function waitForEj(timeoutMs = 15000): Promise<any> {
-  return new Promise((resolve) => {
-    const done = () => (featheryWindow() as any).ej?.documenteditor;
-    if (done()) return resolve((featheryWindow() as any).ej);
-    const start = Date.now();
-    const iv = setInterval(() => {
-      if (done() || Date.now() - start > timeoutMs) {
-        clearInterval(iv);
-        resolve((featheryWindow() as any).ej);
-      }
-    }, 50);
-  });
-}
-
 export interface DocxBindingsConfig
   extends Omit<UseDocxBindingsOptions, 'editor' | 'loading' | 'readOnly'> {
   enabled?: boolean;
@@ -729,6 +643,10 @@ interface Props {
    *  drives the document directly through this — no iframe boundary). */
   onEditorReady?: (editor: any) => void;
   onDirty?: () => void;
+  /** Fired on every content change (not edge-collapsed like onDirty), tagged
+   *  with whether the assistant is driving the edit. The version-history
+   *  session tracker uses this to attribute edits and keep autosave alive. */
+  onEdit?: (info: { assistant: boolean }) => void;
   onError?: (error: string) => void;
   /**
    * Opt-in document bindings: [[...]] tokens become live fields and formulas that
@@ -762,6 +680,7 @@ export function useDocxEditor({
   onReady,
   onEditorReady,
   onDirty,
+  onEdit,
   onError,
   bindings
 }: Props): Result {
@@ -773,6 +692,8 @@ export function useDocxEditor({
   const ignoreContentChangeRef = useRef(true);
   const onDirtyRef = useRef(onDirty);
   onDirtyRef.current = onDirty;
+  const onEditRef = useRef(onEdit);
+  onEditRef.current = onEdit;
   const [editor, setEditor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -919,6 +840,9 @@ export function useDocxEditor({
           if (ignoreContentChangeRef.current) return;
           unsavedRef.current = true;
           onDirtyRef.current?.();
+          // Unlike onDirty (edge-only), onEdit fires on every change so the
+          // session tracker can debounce autosave and attribute each edit.
+          onEditRef.current?.({ assistant: isAssistantWriting(ed) });
         });
         // Native right-click menu — insert/delete table rows & columns,
         // cut/copy/paste, etc. (the built-in toolbar is disabled).
