@@ -5,6 +5,7 @@ import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { inputBoxAttrs } from '../../styles';
 
 import {
   Control as DropdownControl,
@@ -18,6 +19,7 @@ import {
   DropdownSelect
 } from './createDropdownSelect';
 import { createSelectStyles } from './selectStyles';
+import useMobileViewport from './useMobileViewport';
 import useCollapsedSelectionManager from './useCollapsedSelectionManager';
 import useDropdownOptions from './useDropdownOptions';
 import useWindowedOptions from './useWindowedOptions';
@@ -220,24 +222,34 @@ export default function DropdownMultiField({
     onChange: handleValueChange
   });
 
-  const hasTooltip = !!properties.tooltipText;
-  const chevronPosition = hasTooltip ? 30 : 10;
   const SelectComponent = create ? DropdownCreatableSelect : DropdownSelect;
 
   responsiveStyles.applyFontStyles('field');
 
   const shouldHideInput = collapseSelected && !isMeasuring && !focused;
 
+  // The caret handling below is resolved in JS, so it reads the alignment the
+  // way a media query would: the mobile override under the breakpoint, the
+  // desktop value above it.
+  const isMobileViewport = useMobileViewport(
+    responsiveStyles.getMobileBreakpoint()
+  );
+  const align = isMobileViewport
+    ? element.mobile_styles?.horizontal_align ??
+      element.styles?.horizontal_align
+    : element.styles?.horizontal_align;
+  const aligned = align === 'center' || align === 'flex-end';
+
   const selectStyles = useMemo(
     () =>
       createSelectStyles({
-        chevronPosition,
+        aligned,
         fontColor: element.styles.font_color,
         menuZIndex: DROPDOWN_Z_INDEX,
         responsiveStyles,
         rightToLeft
       }),
-    [chevronPosition, element.styles.font_color, responsiveStyles, rightToLeft]
+    [aligned, element.styles.font_color, responsiveStyles, rightToLeft]
   );
 
   // Organize all SelectComponent props
@@ -285,6 +297,8 @@ export default function DropdownMultiField({
         height: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
+        // A moved padding or alignment turns the element into a column here
+        // (applyMultiselectLayout); untouched forms keep this block layout.
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -314,6 +328,7 @@ export default function DropdownMultiField({
         onMouseDown={handleWrapperMouseDown}
         onTouchStart={handleWrapperTouchStart}
         onKeyDownCapture={handleKeyDownCapture}
+        {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
         <SelectComponent {...selectProps} inputValue={inputValue} />
