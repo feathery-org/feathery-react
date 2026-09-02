@@ -82,6 +82,42 @@ function countOf(editor: DocumentEditor, value: string): number {
   return editor.serialize().split(value).length - 1;
 }
 
+/**
+ * The failure the live env exposed: a control can exist in the serialized
+ * document yet be invisible to every lookup because the collection is out of
+ * document order. Discoverable = selecting inside it reports it.
+ */
+function controlIsDiscoverable(editor: DocumentEditor, tagPart: string): boolean {
+  const collection = (editor as any).documentHelper
+    .contentControlCollection as any[];
+  const control = collection.find((entry) =>
+    String(entry.contentControlProperties?.tag || '').includes(tagPart)
+  );
+  if (!control) return false;
+  (editor.selection as any).selectContentControlInternal(control);
+  return !!(editor.selection as any).currentContentControl;
+}
+
+/** True when the collection is sorted by document position. */
+function collectionInDocumentOrder(editor: DocumentEditor): boolean {
+  const selection = editor.selection as any;
+  const collection = (editor as any).documentHelper
+    .contentControlCollection as any[];
+  let previous: any = null;
+  for (const control of collection) {
+    let position: any = null;
+    try {
+      position = selection.getPosition(control, true)?.startPosition ?? null;
+    } catch {
+      position = null;
+    }
+    if (!position) continue;
+    if (previous && position.isExistBefore(previous)) return false;
+    previous = position;
+  }
+  return true;
+}
+
 /** Row count of the bound costs table in the serialized document. */
 function costsRowCount(editor: DocumentEditor): number {
   const doc = JSON.parse(editor.serialize()) as any;
@@ -278,6 +314,12 @@ describe('installTableDeleteGuard', () => {
     expect(restored.formulas.has('costs_tax')).toBe(true);
     expect(restored.formulas.has('combined_total')).toBe(true);
     expect(countOf(editor, '$7,800.00')).toBe(3);
+    // Existing in the model is not enough - the restored controls must be
+    // discoverable (collection in document order), or they render and behave
+    // as plain text even though serialize still shows them.
+    expect(collectionInDocumentOrder(editor)).toBe(true);
+    expect(controlIsDiscoverable(editor, 'name=costs_subtotal')).toBe(true);
+    expect(controlIsDiscoverable(editor, 'name=combined_total')).toBe(true);
 
     // One redo gesture replays the whole set.
     history.redo();

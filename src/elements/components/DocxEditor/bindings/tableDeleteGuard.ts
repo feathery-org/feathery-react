@@ -34,6 +34,7 @@ import {
 import { SfdtDocument } from './core/sfdtTypes';
 import {
   isContentControlAttached,
+  normalizeContentControlCollection,
   pruneDetachedContentControls,
   withContentControlLocksBypassed,
   SyncfusionEditorLike
@@ -255,6 +256,12 @@ export function installTableDeleteGuard(
               atomicSetIds.set(entry, setId);
         }
       }
+      // The delete + unwraps also re-register controls; keep document order.
+      try {
+        normalizeContentControlCollection(editor);
+      } catch {
+        // Healing is best effort.
+      }
       try {
         options.onDeleted?.();
       } catch {
@@ -285,16 +292,25 @@ export function installTableDeleteGuard(
       const top = Array.isArray(stack) ? stack[stack.length - 1] : undefined;
       const setId = top ? atomicSetIds.get(top) : undefined;
       const result = original.apply(this, args);
-      if (setId === undefined) return result;
-      for (let safety = 0; safety < 100; safety++) {
-        const current = this?.[stackKey];
-        if (!Array.isArray(current)) break;
-        const next = current[current.length - 1];
-        if (!next || atomicSetIds.get(next) !== setId) break;
-        const lengthBefore = current.length;
-        original.apply(this, args);
-        // A refused call (read-only, disabled history) must not spin here.
-        if (current.length === lengthBefore) break;
+      if (setId !== undefined) {
+        for (let safety = 0; safety < 100; safety++) {
+          const current = this?.[stackKey];
+          if (!Array.isArray(current)) break;
+          const next = current[current.length - 1];
+          if (!next || atomicSetIds.get(next) !== setId) break;
+          const lengthBefore = current.length;
+          original.apply(this, args);
+          // A refused call (read-only, disabled history) must not spin here.
+          if (current.length === lengthBefore) break;
+        }
+      }
+      // Undo re-registers restored controls at the END of the collection, and
+      // every Syncfusion lookup assumes document order - out of order, a
+      // restored control loses chrome, lock, and engine writes.
+      try {
+        normalizeContentControlCollection(editor);
+      } catch {
+        // Healing is best effort; the undo itself already happened.
       }
       return result;
     };
