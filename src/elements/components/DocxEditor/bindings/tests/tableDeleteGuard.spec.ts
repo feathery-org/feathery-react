@@ -62,13 +62,22 @@ function scan(editor: DocumentEditor) {
   return scanBindings(JSON.parse(editor.serialize()) as SfdtDocument);
 }
 
-/** Puts the caret INSIDE the first attached control carrying the tag part. */
-function caretIntoControl(editor: DocumentEditor, tagPart: string): void {
+/** A control whose tag OR title contains `part` (title disambiguates twins). */
+function findByTagOrTitle(editor: DocumentEditor, part: string): any {
   const collection = (editor as any).documentHelper
     .contentControlCollection as any[];
-  const control = collection.find((entry) =>
-    String(entry.contentControlProperties?.tag || '').includes(tagPart)
-  );
+  return collection.find((entry) => {
+    const props = entry.contentControlProperties ?? {};
+    return (
+      String(props.tag || '').includes(part) ||
+      String(props.title || '').includes(part)
+    );
+  });
+}
+
+/** Puts the caret INSIDE the first attached control carrying the tag/title. */
+function caretIntoControl(editor: DocumentEditor, part: string): void {
+  const control = findByTagOrTitle(editor, part);
   expect(control).toBeTruthy();
   (editor.selection as any).selectContentControlInternal(control);
 }
@@ -87,12 +96,8 @@ function countOf(editor: DocumentEditor, value: string): number {
  * document yet be invisible to every lookup because the collection is out of
  * document order. Discoverable = selecting inside it reports it.
  */
-function controlIsDiscoverable(editor: DocumentEditor, tagPart: string): boolean {
-  const collection = (editor as any).documentHelper
-    .contentControlCollection as any[];
-  const control = collection.find((entry) =>
-    String(entry.contentControlProperties?.tag || '').includes(tagPart)
-  );
+function controlIsDiscoverable(editor: DocumentEditor, part: string): boolean {
+  const control = findByTagOrTitle(editor, part);
   if (!control) return false;
   (editor.selection as any).selectContentControlInternal(control);
   return !!(editor.selection as any).currentContentControl;
@@ -390,6 +395,72 @@ describe('installTableDeleteGuard', () => {
     expect(args.isHandled).toBe(true);
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(scan(editor).tables.has('costs')).toBe(false);
+  });
+
+  it('reproduces the prose bug: a range covering a locked control is a silent no-op', () => {
+    editor = makeEditor(buildCostsFixture());
+    // Select the "Amount due ..." paragraph, which holds a locked grand_total.
+    caretIntoControl(editor, 'Grand total (repeat)');
+    (editor.selection as any).selectParagraph();
+    (editor as any).editorModule.handleDelete();
+    // Both grand_total occurrences survive - the delete was refused.
+    expect(scan(editor).formulas.get('grand_total')?.length).toBe(2);
+  });
+
+  it('deletes a prose range that fully covers a control, then undo restores it', async () => {
+    editor = makeEditor(buildCostsFixture());
+    const confirm = jest.fn(() => Promise.resolve(true));
+    uninstall = installTableDeleteGuard(
+      editor as unknown as SyncfusionEditorLike,
+      { confirm }
+    );
+
+    caretIntoControl(editor, 'Grand total (repeat)');
+    (editor.selection as any).selectParagraph();
+    const args = { event: { key: 'Delete' }, isHandled: false };
+    (editor as any).trigger('keyDown', args);
+    await flush();
+
+    // The prose paragraph is gone; its grand_total occurrence with it. The
+    // table's grand_total survives, so combined_total never orphaned -> no
+    // dialog.
+    expect(args.isHandled).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(scan(editor).formulas.get('grand_total')?.length).toBe(1);
+
+    (editor as any).editorHistoryModule.undo();
+    const restored = scan(editor);
+    expect(restored.formulas.get('grand_total')?.length).toBe(2);
+    expect(collectionInDocumentOrder(editor)).toBe(true);
+    expect(controlIsDiscoverable(editor, 'Grand total (repeat)')).toBe(true);
+  });
+
+  it('leaves a partial-overlap selection to native (blocked) behavior', async () => {
+    editor = makeEditor(buildCostsFixture());
+    const confirm = jest.fn(() => Promise.resolve(true));
+    uninstall = installTableDeleteGuard(
+      editor as unknown as SyncfusionEditorLike,
+      { confirm }
+    );
+
+    // A sub-range strictly inside a locked control's value (would split it) is
+    // a partial overlap the guard must refuse to handle, leaving the native
+    // (blocked) path to run.
+    const ctrl = findByTagOrTitle(editor, 'Grand total (repeat)');
+    (editor.selection as any).selectContentControlInternal(ctrl);
+    const startOffset = String((editor.selection as any).startOffset);
+    const endOffset = String((editor.selection as any).endOffset);
+    // Shrink the end by two characters so the selection sits inside the value.
+    const parts = endOffset.split(';');
+    parts[parts.length - 1] = String(Number(parts[parts.length - 1]) - 2);
+    (editor.selection as any).select(startOffset, parts.join(';'));
+    const args = { event: { key: 'Delete' }, isHandled: false };
+    (editor as any).trigger('keyDown', args);
+    await flush();
+
+    expect(args.isHandled).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(scan(editor).formulas.get('grand_total')?.length).toBe(2);
   });
 
   it('uninstall restores the original method', () => {

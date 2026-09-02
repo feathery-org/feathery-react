@@ -154,11 +154,28 @@ describe('attaching bindings to a tokenized template', () => {
     attached.dispose();
     const removed = remove.mock.calls.map((call) => call[0]);
     expect(removed).toEqual(
-      expect.arrayContaining(['contentChange', 'selectionChange', 'keyDown'])
+      expect.arrayContaining([
+        'contentChange',
+        'selectionChange',
+        'keyDown',
+        'contentControl'
+      ])
     );
     remove.mockRestore();
     // Reattach so afterEach's dispose stays valid.
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+  });
+
+  it('fires the locked-edit hint when a lock refuses an edit, debounced', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+    // Syncfusion signals a refused edit by triggering 'contentControl'.
+    (editor as any).trigger('contentControl');
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
   });
 });
 

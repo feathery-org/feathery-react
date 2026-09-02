@@ -2,6 +2,7 @@
 // table stop evaluating once it is gone. The engine is the reference resolver;
 // these specs pin the diffing on top of it.
 import {
+  analyzeRangeDeleteImpact,
   analyzeRowDeleteImpact,
   analyzeTableDeleteImpact
 } from '../tableDeleteImpact';
@@ -109,5 +110,37 @@ describe('analyzeRowDeleteImpact', () => {
     expect(analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, 4, 9)).toBeNull();
     expect(analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, -1, 0)).toBeNull();
     expect(analyzeRowDeleteImpact(fixture(), 0, 0, 0, 0)).toBeNull();
+  });
+});
+
+describe('analyzeRangeDeleteImpact', () => {
+  const GRAND_TOTAL_TAG = () =>
+    require('./fixtures/costsFixture').GRAND_TOTAL_TAG();
+
+  it('scope is range and null table id', () => {
+    const impact = analyzeRangeDeleteImpact(fixture(), []);
+    expect(impact.scope).toBe('range');
+    expect(impact.tableId).toBeNull();
+  });
+
+  it('removing every occurrence of an input strands the formulas that read it', () => {
+    // grand_total feeds combined_total; wiping all its occurrences breaks it.
+    const impact = analyzeRangeDeleteImpact(fixture(), [GRAND_TOTAL_TAG()]);
+    expect(impact.orphans.map((o) => o.name)).toEqual(['combined_total']);
+  });
+
+  it('removing a self-contained value strands nothing', () => {
+    // project.name is read by no formula.
+    const projectTag = fixture()
+      .sections![0].blocks!.flatMap((b) => b.inlines ?? [])
+      .map((i) => String(i.contentControlProperties?.tag ?? ''))
+      .find((t) => t.includes('project.name'))!;
+    expect(analyzeRangeDeleteImpact(fixture(), [projectTag]).orphans).toEqual(
+      []
+    );
+  });
+
+  it('no removed tags means no orphans', () => {
+    expect(analyzeRangeDeleteImpact(fixture(), []).orphans).toEqual([]);
   });
 });
