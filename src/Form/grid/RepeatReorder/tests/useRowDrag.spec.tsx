@@ -1,0 +1,608 @@
+/**
+ * The drag hook. jsdom has no layout and no pointer capture, so both are
+ * stubbed; what is worth testing here is the bookkeeping around them - that a
+ * grab is always released, that a tap is not mistaken for a drag, and that the
+ * grab does not leak into the container's own click actions.
+ */
+import React, { useState } from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useRowDrag } from '../useRowDrag';
+import { DRAGGING_ATTR, HANDLE_ATTR, ROW_ATTR } from '../styles';
+
+const ROW_HEIGHT = 20;
+
+// jsdom ships no PointerEvent, so testing-library would fall back to a bare
+// Event and silently drop pointerId and the coordinates the hook reads.
+class FakePointerEvent extends MouseEvent {
+  pointerId: number;
+  pointerType: string;
+
+  constructor(type: string, props: any = {}) {
+    super(type, props);
+    this.pointerId = props.pointerId ?? 0;
+    this.pointerType = props.pointerType ?? 'mouse';
+  }
+}
+
+beforeAll(() => {
+  (window as any).PointerEvent = FakePointerEvent;
+  (HTMLElement.prototype as any).setPointerCapture = jest.fn();
+  (HTMLElement.prototype as any).releasePointerCapture = jest.fn();
+  jest
+    .spyOn(window, 'getComputedStyle')
+    .mockImplementation(() => ({ flexDirection: 'column' } as any));
+  jest
+    .spyOn(window, 'requestAnimationFrame')
+    .mockImplementation((cb: any) => {
+      cb(0);
+      return 0;
+    });
+});
+
+beforeEach(() => jest.clearAllMocks());
+
+const Row = ({
+  index,
+  rowCount,
+  onMove,
+  onRowClick,
+  announce
+}: {
+  index: number;
+  rowCount: number;
+  onMove: (from: number, to: number) => boolean;
+  onRowClick?: () => void;
+  announce?: (message: string) => void;
+}) => {
+  const { dragging, handleRef, handleProps } = useRowDrag({
+    index,
+    onMove,
+    // The handle owns the wording in real use; here every row is on screen, so
+    // absolute index and rendered position are the same thing.
+    positionLabel: (abs: number) => `${abs + 1} of ${rowCount}`,
+    announce: announce ?? (() => {})
+  });
+  return (
+    <div {...{ [ROW_ATTR]: index }} onClick={onRowClick}>
+      <span
+        {...{ [HANDLE_ATTR]: '' }}
+        ref={handleRef as any}
+        role='button'
+        tabIndex={0}
+        aria-label={`Row ${index + 1}`}
+        aria-pressed={dragging}
+        {...handleProps}
+      />
+    </div>
+  );
+};
+
+const renderTrack = (rowCount = 3, onRowClick?: () => void) => {
+  const onMove = jest.fn().mockReturnValue(true);
+
+  // A real move re-renders the container, and that render is when the
+  // destination row claims focus. The stub has to do the same or the focus
+  // handoff has nothing to run on.
+  const Track = () => {
+    const [, bump] = useState(0);
+    const handleMove = (from: number, to: number) => {
+      const result = onMove(from, to);
+      bump((n) => n + 1);
+      return result;
+    };
+    return (
+      <div>
+        {/* An authored sibling that is not a repeat row - the hook must not
+            count it as one. */}
+        <button type='button'>Add row</button>
+        {Array.from({ length: rowCount }, (_, i) => (
+          <Row
+            key={i}
+            index={i}
+            rowCount={rowCount}
+            onMove={handleMove}
+            onRowClick={onRowClick}
+          />
+        ))}
+      </div>
+    );
+  };
+
+  const { container } = render(<Track />);
+
+  // jsdom reports zero-size rects, so lay the rows out by hand.
+  container.querySelectorAll(`[${ROW_ATTR}]`).forEach((row) => {
+    const i = Number(row.getAttribute(ROW_ATTR));
+    (row as HTMLElement).getBoundingClientRect = () =>
+      ({
+        top: i * ROW_HEIGHT,
+        bottom: (i + 1) * ROW_HEIGHT,
+        left: 0,
+        right: 100
+      } as DOMRect);
+  });
+
+  return { onMove, container };
+};
+
+const grip = (index: number) =>
+  screen.getByLabelText(`Row ${index + 1}`) as HTMLElement;
+
+describe('pointer drag', () => {
+  it('commits a move once the row has been carried past its neighbours', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    // Rows span 0-20, 20-40, 40-60. The dragged row's centre starts at 10 and
+    // ends at 65, clearing the top edge of both rows below it.
+    expect(onMove).toHaveBeenCalledWith(0, 2);
+  });
+
+  it('swaps as soon as the row overlaps its neighbour, not the pointer', () => {
+    // The grip is at the row's top corner, so the pointer trails the row. A
+    // 12px drag puts the row centre at 22, just past row 2's top edge at 20 -
+    // under the old pointer-versus-midpoint rule this needed 30px.
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+
+    expect(onMove).toHaveBeenCalledWith(0, 1);
+  });
+
+  it('treats movement under the threshold as a tap, not a drag', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 2 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 2 });
+
+    expect(onMove).not.toHaveBeenCalled();
+    expect(handle).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('does not fire the container click action on grab and release', () => {
+    const onRowClick = jest.fn();
+    renderTrack(3, onRowClick);
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.click(handle);
+
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('releases the pointer capture on a normal drop', () => {
+    renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
+  });
+
+  it('releases the pointer capture when the gesture is cancelled', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('releases the pointer capture when the browser takes it away', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.lostPointerCapture(handle, { pointerId: 1 });
+
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('abandons the move on Escape and leaves the page selectable', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.keyDown(handle, { key: 'Escape' });
+
+    expect(onMove).not.toHaveBeenCalled();
+    expect(document.body.style.userSelect).toBe('');
+  });
+
+  it('ignores a secondary mouse button', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      button: 2,
+      pointerType: 'mouse',
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when the container has only one row', () => {
+    const { onMove } = renderTrack(1);
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true, pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A hide_if closing over a middle row changes which absolute index a rendered
+ * slot holds. The React key for a repeat row is its rendered position, so the
+ * slot's component instance survives that change while its index prop moves
+ * under it - and the grab has to follow the new index, not the one the slot
+ * held when it first mounted.
+ */
+describe('a row whose index changes under it', () => {
+  /** Rows sit where their slot is, whatever absolute index that slot holds. */
+  const layout = (container: HTMLElement) =>
+    container
+      .querySelectorAll(`[${ROW_ATTR}]`)
+      .forEach((row, slot) => {
+        (row as HTMLElement).getBoundingClientRect = () =>
+          ({
+            top: slot * ROW_HEIGHT,
+            bottom: (slot + 1) * ROW_HEIGHT,
+            left: 0,
+            right: 100
+          } as DOMRect);
+      });
+
+  const renderShifting = () => {
+    const onMove = jest.fn().mockReturnValue(true);
+
+    // Absolute indices actually rendered: all four, then 0, 2, 3 once a
+    // hide_if closes over row 1.
+    const Track = ({ hidden }: { hidden: boolean }) => (
+      <div>
+        {(hidden ? [0, 2, 3] : [0, 1, 2, 3]).map((abs, slot) => (
+          <Row key={slot} index={abs} rowCount={4} onMove={onMove} />
+        ))}
+      </div>
+    );
+
+    const { container, rerender } = render(<Track hidden={false} />);
+    layout(container);
+    rerender(<Track hidden />);
+    layout(container);
+
+    return { onMove, container };
+  };
+
+  it('grabs the row the slot holds now, not the one it used to', () => {
+    const { onMove } = renderShifting();
+    // Slot 1 held absolute row 1 on mount and holds absolute row 2 now.
+    const handle = grip(2);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+
+    // Slots span 0-20, 20-40, 40-60. The dragged row's centre starts at 30 and
+    // ends at 42, clearing the top edge of the slot below it, which holds
+    // absolute row 3. Reading the stale index instead leaves restingCenter at 0
+    // and drags the row all the way to the front.
+    expect(onMove).toHaveBeenCalledWith(2, 3);
+  });
+
+  it('lifts the element it is carrying', () => {
+    const { onMove, container } = renderShifting();
+    const handle = grip(2);
+    const carried = container.querySelector(
+      `[${ROW_ATTR}="2"]`
+    ) as HTMLElement;
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+
+    // A stale index would look up a row marked 1, which no longer exists, and
+    // nothing would move on screen.
+    expect(carried.style.transform).toBe('translateY(12px)');
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+    expect(onMove).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The lift borrows the row's `position` so its z-index applies. Leaving an
+ * inline value behind would outrank the author's own stylesheet for the rest of
+ * the session, on a property they may well have set on purpose.
+ */
+describe('the row is handed back as it was found', () => {
+  const drag = (handle: HTMLElement) => {
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+  };
+
+  it('leaves no inline position behind when there was none', () => {
+    const { container } = renderTrack();
+    const row = container.querySelector(`[${ROW_ATTR}="0"]`) as HTMLElement;
+
+    drag(grip(0));
+
+    expect(row.style.position).toBe('');
+  });
+
+  it('restores an inline position the author set', () => {
+    const { container } = renderTrack();
+    const row = container.querySelector(`[${ROW_ATTR}="0"]`) as HTMLElement;
+    row.style.position = 'absolute';
+
+    drag(grip(0));
+
+    expect(row.style.position).toBe('absolute');
+  });
+
+  it('restores it on a cancelled gesture too', () => {
+    const { container } = renderTrack();
+    const row = container.querySelector(`[${ROW_ATTR}="0"]`) as HTMLElement;
+
+    fireEvent.pointerDown(grip(0), {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(grip(0), { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerCancel(grip(0), { pointerId: 1 });
+
+    expect(row.style.position).toBe('');
+  });
+});
+
+/**
+ * The insert seam is withheld for the length of a drag, which the stylesheet
+ * keys off a marker on every row in the track. The seams worth withholding are
+ * the ones the pointer travels over: their boundaries are in motion, so a `+`
+ * sitting on one no longer marks the place it claims to.
+ */
+describe('the track is marked while a drag is live', () => {
+  const marked = (container: HTMLElement) =>
+    container.querySelectorAll(`[${DRAGGING_ATTR}]`).length;
+
+  it('marks every row once the gesture becomes a drag', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    expect(marked(container)).toBe(0);
+
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    expect(marked(container)).toBe(3);
+  });
+
+  it('clears the mark on a normal drop', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+
+    expect(marked(container)).toBe(0);
+  });
+
+  it('clears the mark on a cancelled gesture', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+
+    expect(marked(container)).toBe(0);
+  });
+
+  it('never marks a press that stays under the drag threshold', () => {
+    const { container } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 2 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 2 });
+
+    expect(marked(container)).toBe(0);
+  });
+});
+
+/**
+ * Logic can hide the row being dragged. Its siblings stay on screen, so the
+ * cleanup has to reach them: otherwise the track keeps the transforms and the
+ * marker, leaving rows displaced and every seam hidden for the rest of the step.
+ */
+describe('a row that unmounts mid-drag', () => {
+  it('hands the whole track back', () => {
+    const onMove = jest.fn().mockReturnValue(true);
+
+    const Track = ({ rows }: { rows: number }) => (
+      <div>
+        {Array.from({ length: rows }, (_, i) => (
+          <Row key={i} index={i} rowCount={3} onMove={onMove} />
+        ))}
+      </div>
+    );
+
+    const { container, rerender } = render(<Track rows={3} />);
+    container.querySelectorAll(`[${ROW_ATTR}]`).forEach((row) => {
+      const i = Number(row.getAttribute(ROW_ATTR));
+      (row as HTMLElement).getBoundingClientRect = () =>
+        ({
+          top: i * ROW_HEIGHT,
+          bottom: (i + 1) * ROW_HEIGHT,
+          left: 0,
+          right: 100
+        } as DOMRect);
+    });
+
+    const handle = grip(2);
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 40
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 0 });
+
+    const survivor = container.querySelector(
+      `[${ROW_ATTR}="0"]`
+    ) as HTMLElement;
+    expect(survivor).toHaveAttribute(DRAGGING_ATTR);
+
+    // The dragged row goes away while the gesture is still live.
+    rerender(<Track rows={2} />);
+
+    expect(container.querySelectorAll(`[${DRAGGING_ATTR}]`)).toHaveLength(0);
+    expect(survivor.style.transform).toBe('');
+    expect(survivor.style.zIndex).toBe('');
+    expect(document.body.style.userSelect).toBe('');
+  });
+});
+
+describe('tap', () => {
+  // onPointerDown preventDefault()s to keep the container's click actions out
+  // of a grab, which also suppresses the browser's own focus. A tap has to
+  // place focus itself or the arrow keys are unreachable by pointer.
+  it('focuses the grip when the press never becomes a drag', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 0 });
+
+    expect(handle).toHaveFocus();
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('commits the move after a real drag rather than focusing in place', () => {
+    const { onMove } = renderTrack();
+    const handle = grip(0);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
+
+    expect(onMove).toHaveBeenCalledWith(0, 2);
+  });
+});
+
+describe('keyboard', () => {
+  it('moves down with ArrowDown', () => {
+    const { onMove } = renderTrack();
+    fireEvent.keyDown(grip(0), { key: 'ArrowDown' });
+    expect(onMove).toHaveBeenCalledWith(0, 1);
+  });
+
+  it('moves up with ArrowUp', () => {
+    const { onMove } = renderTrack();
+    fireEvent.keyDown(grip(2), { key: 'ArrowUp' });
+    expect(onMove).toHaveBeenCalledWith(2, 1);
+  });
+
+  it('accepts the horizontal pair too', () => {
+    const { onMove } = renderTrack();
+    fireEvent.keyDown(grip(0), { key: 'ArrowRight' });
+    expect(onMove).toHaveBeenCalledWith(0, 1);
+  });
+
+  it('does nothing at the ends', () => {
+    const { onMove } = renderTrack();
+    fireEvent.keyDown(grip(0), { key: 'ArrowUp' });
+    fireEvent.keyDown(grip(2), { key: 'ArrowDown' });
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('moves focus to the row that landed at the destination', () => {
+    // The React key for a repeat row is positional, so focus stays on a DOM
+    // node that now belongs to a different logical row unless it is moved.
+    renderTrack();
+    fireEvent.keyDown(grip(0), { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(grip(1));
+  });
+});

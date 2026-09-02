@@ -1,5 +1,5 @@
 import { getWeightedBoolean } from './random';
-import { justRemove } from './array';
+import { arrayMove, justRemove } from './array';
 import {
   fieldValues,
   filePathMap,
@@ -330,6 +330,43 @@ export function processFileValues(fileValues: Record<string, any>) {
 export function removeFilePathMapEntry(key: any, index: number) {
   const paths = filePathMap[key];
   if (Array.isArray(paths)) filePathMap[key] = justRemove(paths, index);
+  delete fileDeduplicationCount[key];
+}
+
+// Permute one field's paths for a container row move. filePathMap is a
+// positional array parallel to the field's values, so it has to take the same
+// permutation or a moved file resolves to the row it left behind. Padding to
+// the container's row count keeps a short map aligned with its longer siblings.
+// Deduplication is reset so the corrected file list is actually resent.
+export function moveFilePathMapEntry(
+  key: any,
+  from: number,
+  to: number,
+  rows: number
+) {
+  const paths = filePathMap[key];
+  if (Array.isArray(paths)) {
+    const padded = Array.from(
+      { length: Math.max(rows, paths.length) },
+      (_, i) => (i < paths.length ? paths[i] : null)
+    );
+    const moved = arrayMove(padded, from, to);
+    if (moved !== padded) filePathMap[key] = moved;
+  }
+  delete fileDeduplicationCount[key];
+}
+
+// Open a slot so the paths stay aligned with their rows once a row is inserted
+// above them. Deduplication is reset so the corrected file list is resent.
+export function insertFilePathMapEntry(key: any, at: number, rows: number) {
+  const paths = filePathMap[key];
+  if (Array.isArray(paths)) {
+    const padded = Array.from(
+      { length: Math.max(rows, paths.length) },
+      (_, i) => (i < paths.length ? paths[i] : null)
+    );
+    filePathMap[key] = [...padded.slice(0, at), null, ...padded.slice(at)];
+  }
   delete fileDeduplicationCount[key];
 }
 

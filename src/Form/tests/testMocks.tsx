@@ -41,6 +41,14 @@ jest.mock('../../utils/array', () => ({
   },
   justRemove: (arr: any[], idx: number) =>
     arr.filter((_: any, i: number) => i !== idx),
+  arrayMove: (arr: any[], from: number, to: number) => {
+    if (from === to) return arr;
+    if (from < 0 || from >= arr.length || to < 0 || to >= arr.length) return arr;
+    const next = arr.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+  },
   // Mirrors the real toList: arrays pass through, null/undefined become [],
   // and only coerceCSV callers get a comma split.
   toList: (v: any, coerceCSV = false) => {
@@ -52,12 +60,57 @@ jest.mock('../../utils/array', () => ({
   }
 }));
 
-// Repeat utils
-jest.mock('../../utils/repeat', () => ({
-  getContainerById: () => undefined,
-  getFieldsInRepeat: () => [],
-  getRepeatedContainer: () => undefined
-}));
+// Repeat utils. The step-traversal helpers are inert by default; a spec that
+// exercises repeat rows reassigns them on RepeatMod. The row-permutation
+// helpers keep their real behaviour so those specs assert real output.
+jest.mock('../../utils/repeat', () => {
+  const ROW_HOLE = Symbol('mock.repeatRowHole');
+  return {
+    getContainerById: () => undefined,
+    getFieldsInRepeat: () => [],
+    getRepeatedContainer: () => undefined,
+    getRepeatContainerRowCount: () => 0,
+    // Uncapped by default, so a spec only opts in to a row cap when it is
+    // testing one.
+    getRepeatMaxRows: () => null,
+    insertRepeatRowValue: (
+      list: any[],
+      at: number,
+      rows: number,
+      field: any
+    ) => {
+      const isFile = ['file_upload', 'signature', 'audio_recording'].includes(
+        field?.servar?.type
+      );
+      const fill = isFile ? null : '';
+      const padded: any[] = Array.from({ length: rows }, (_, i) =>
+        i < list.length ? list[i] : fill
+      );
+      return [...padded.slice(0, at), '', ...padded.slice(at)];
+    },
+    moveRepeatRowValue: (
+      list: any[],
+      from: number,
+      to: number,
+      rows: number,
+      field: any
+    ) => {
+      const padded: any[] = Array.from({ length: rows }, (_, i) =>
+        i < list.length ? list[i] : ROW_HOLE
+      );
+      if (from === to) return list;
+      if (from < 0 || from >= rows || to < 0 || to >= rows) return list;
+      const [moved] = padded.splice(from, 1);
+      padded.splice(to, 0, moved);
+      while (padded.length && padded[padded.length - 1] === ROW_HOLE)
+        padded.pop();
+      const isFile = ['file_upload', 'signature', 'audio_recording'].includes(
+        field?.servar?.type
+      );
+      return padded.map((val) => (val === ROW_HOLE ? (isFile ? null : '') : val));
+    }
+  };
+});
 
 // Hide and repeats
 jest.mock('../../utils/hideAndRepeats', () => ({
@@ -92,6 +145,9 @@ jest.mock('../../utils/init', () => {
     defaultClient: { flushCustomFields: jest.fn() },
     FieldValues: {} as any,
     fieldValues: {} as any,
+    filePathMap: {} as any,
+    fileDeduplicationCount: {} as any,
+    fileRetryStatus: {} as any,
     initState,
     initInfo: jest.fn(() => ({
       userId: '',
@@ -118,6 +174,39 @@ jest.mock('../../utils/formHelperFunctions', () => ({
   prioritizeActions: (a: any) => a,
   registerRenderCallback: () => {},
   rerenderAllForms: () => {},
+  insertFilePathMapEntry: (key: string, at: number, rows: number) => {
+    const { filePathMap } = jest.requireMock('../../utils/init');
+    const paths = filePathMap[key];
+    if (!Array.isArray(paths)) return;
+    const padded = Array.from({ length: Math.max(rows, paths.length) }, (_, i) =>
+      i < paths.length ? paths[i] : null
+    );
+    filePathMap[key] = [...padded.slice(0, at), null, ...padded.slice(at)];
+  },
+  removeFilePathMapEntry: (key: string, index: number) => {
+    const { filePathMap } = jest.requireMock('../../utils/init');
+    const paths = filePathMap[key];
+    if (Array.isArray(paths))
+      filePathMap[key] = paths.filter((_: any, i: number) => i !== index);
+  },
+  moveFilePathMapEntry: (
+    key: string,
+    from: number,
+    to: number,
+    rows: number
+  ) => {
+    const { filePathMap } = jest.requireMock('../../utils/init');
+    const paths = filePathMap[key];
+    if (!Array.isArray(paths)) return;
+    const padded = Array.from({ length: Math.max(rows, paths.length) }, (_, i) =>
+      i < paths.length ? paths[i] : null
+    );
+    if (from === to || from < 0 || from >= padded.length) return;
+    if (to < 0 || to >= padded.length) return;
+    const [moved] = padded.splice(from, 1);
+    padded.splice(to, 0, moved);
+    filePathMap[key] = padded;
+  },
   setFormElementError: jest.fn(),
   updateCustomCSS: () => {},
   updateCustomHead: () => {}
@@ -134,6 +223,10 @@ jest.mock('../../utils/fieldHelperFunctions', () => ({
   formatAllFormFields: () => ({}),
   getAllFields: () => ({}),
   getDefaultFieldValue: () => '',
+  FILE_FIELD_TYPES: ['file_upload', 'signature', 'audio_recording'],
+  hasRepeatOptionsForFields: () => false,
+  insertStepFieldRepeatOptions: () => {},
+  moveStepFieldRepeatOptions: () => {},
   getDefaultFormFieldValue: () => '',
   getFieldValue: () => ({ value: '', valueList: undefined }),
   isValidFieldIdentifier: () => true,
@@ -494,6 +587,8 @@ export const CheckButtonActionMod: any = jest.requireMock(
 // tests without replacing the mock per test.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const GridMod: any = jest.requireMock('../grid');
+
+export const RepeatMod: any = jest.requireMock('../../utils/repeat');
 
 // Expose the browser confirmation mock used by Form integration tests.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

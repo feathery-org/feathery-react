@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { featheryDoc, featheryWindow } from '../../../../utils/browser';
 import { getViewport } from '../../../../elements/styles';
 
-const isFixedContainer = (node: any, rawNode: any, breakpoint: number) => {
+export const isFixedContainer = (
+  node: any,
+  rawNode: any,
+  breakpoint: number
+) => {
   const _node = rawNode ?? node;
   const styles =
     getViewport(breakpoint) === 'mobile' ? _node.mobile_styles : _node.styles;

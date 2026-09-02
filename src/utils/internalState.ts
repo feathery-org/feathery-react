@@ -166,6 +166,8 @@ export interface FormInternalState {
   steps: any;
   setStepKey: (key: string) => void;
   updateFieldOptions: (newOptions: FieldOptions, repeatIndex?: number) => void;
+  moveFieldOptions: (fieldKeys: Set<string>, from: number, to: number) => void;
+  insertFieldOptions: (fieldKeys: Set<string>, at: number) => void;
   updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => void;
   updateFieldProperties: (
     fieldKey: string,

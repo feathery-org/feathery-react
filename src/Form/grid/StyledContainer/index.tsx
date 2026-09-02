@@ -31,6 +31,13 @@ export type StyledContainerProps = PropsWithChildren & {
   [key: string]: any;
   viewportOnly?: boolean;
   breakpoint: number;
+  /**
+   * Chrome rendered as a direct child of the outer container rather than
+   * inside `.inner-container`. The inner container sits within the outer box's
+   * border and padding, so anything anchored to it drifts inward as those grow
+   * and ends up over the border. An overlay anchors to the box itself.
+   */
+  overlay?: React.ReactNode;
 };
 
 /**
@@ -59,6 +66,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
       formId,
       stepId,
       assistantEnabled,
+      overlay,
       ...props
     },
     ref
@@ -170,6 +178,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           className={classNames('styled-container', type, className)}
           {...props}
         >
+          {overlay}
           {/* An inner container is required to properly size px-height
             elements as the outer container is dependent on content size. */}
           <div className='inner-container' css={innerStyles}>
@@ -210,6 +219,7 @@ export const StyledContainer = forwardRef<HTMLDivElement, StyledContainerProps>(
           data-feathery-id={node.key}
           data-element={elementType}
         >
+          {isFixed ? null : overlay}
           {/* An inner container is required to properly size px-height
             elements as the outer container is dependent on content size. */}
           <div className='inner-container' css={innerStyles}>

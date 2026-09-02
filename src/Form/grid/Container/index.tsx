@@ -4,6 +4,8 @@ import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import HoverTooltip from '../../../elements/components/HoverTooltip';
 import { replaceTextVariables } from '../../../elements/components/TextNodes';
 import { isMobile as _isMobile } from '../../../utils/browser';
+import { RepeatRowHandle, useRepeatRowReorder } from '../RepeatReorder';
+import { ROW_ATTR, rowRevealStyles } from '../RepeatReorder/styles';
 
 type ContainerProps = PropsWithChildren & {
   node: any;
@@ -11,9 +13,13 @@ type ContainerProps = PropsWithChildren & {
   runElementActions?: any;
   selected?: boolean;
   form: {
-    activeStep?: { id?: string };
+    activeStep?: { id?: string; servar_fields?: any[]; subgrids?: any[] };
     formInstanceId?: string;
     formSettings: { mobileBreakpoint: number; assistantEnabled?: boolean };
+    visiblePositions?: Record<string, boolean[]>;
+    buttonLoaders?: Record<string, any>;
+    moveRepeatedRow?: (container: any, from: number, to: number) => boolean;
+    insertRepeatedRow?: (container: any, at: number) => boolean;
   };
 };
 
@@ -32,6 +38,7 @@ export const Container = ({
 }: ContainerProps) => {
   const ref = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
+  const reorder = useRepeatRowReorder(node, form);
   const additionalCss: any = {};
   let handleClick: any;
 
@@ -97,6 +104,9 @@ export const Container = ({
     Object.assign(additionalCss, selectableStyles);
   }
 
+  // The row reveals its own chrome, so a resting form carries no furniture.
+  if (reorder) Object.assign(additionalCss, rowRevealStyles);
+
   return (
     <>
       <StyledContainer
@@ -110,6 +120,10 @@ export const Container = ({
         stepId={form.activeStep?.id}
         assistantEnabled={form.formSettings.assistantEnabled}
         {...tooltipHoverProps}
+        {...(reorder ? { [ROW_ATTR]: reorder.index } : {})}
+        overlay={
+          reorder ? <RepeatRowHandle {...reorder} rowRef={ref} /> : undefined
+        }
       >
         {children}
       </StyledContainer>

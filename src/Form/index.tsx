@@ -22,6 +22,8 @@ import {
   prioritizeActions,
   processFileValues,
   registerRenderCallback,
+  insertFilePathMapEntry,
+  moveFilePathMapEntry,
   removeFilePathMapEntry,
   rerenderAllForms,
   setFormElementError,
@@ -55,6 +57,9 @@ import {
   stripEmptyRepeatEntries,
   getFieldValue,
   saveInitialValuesAndUrlParams,
+  hasRepeatOptionsForFields,
+  insertStepFieldRepeatOptions,
+  moveStepFieldRepeatOptions,
   updateStepFieldOptions,
   updateStepFieldProperties,
   updateStepFieldStyles
@@ -62,7 +67,11 @@ import {
 import {
   getContainerById,
   getFieldsInRepeat,
-  getRepeatedContainer
+  getRepeatContainerRowCount,
+  getRepeatedContainer,
+  getRepeatMaxRows,
+  insertRepeatRowValue,
+  moveRepeatRowValue
 } from '../utils/repeat';
 import {
   getHideIfReferences,
@@ -975,10 +984,21 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
+    // The cap belongs to the container, so it is measured against the
+    // container's row count. Taking each field's own length instead let a
+    // field that trails empty rows keep growing after its siblings had
+    // stopped, which is the opposite of one row being added.
+    const rows = repeatContainer
+      ? getRepeatContainerRowCount(activeStep, repeatContainer)
+      : 0;
+    if (limit && rows >= limit) return;
+
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
-      if (limit && val && Array.isArray(val) && val.length >= limit) return val;
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
@@ -1003,16 +1023,9 @@ function Form({
     // The removed row belongs to the container, not to any one field. Taking
     // each field's own length lets a shorter array drop a different row, and a
     // file field is shorter than its siblings whenever it ends in empty rows.
-    const fieldsInContainer = curRepeatContainer
-      ? getFieldsInRepeat(activeStep, curRepeatContainer)
-      : [];
-    const containerRows = Math.max(
-      0,
-      ...fieldsInContainer.map((field: any) => {
-        const vals = fieldValues[field.servar.key];
-        return Array.isArray(vals) ? vals.length : 0;
-      })
-    );
+    const containerRows = curRepeatContainer
+      ? getRepeatContainerRowCount(activeStep, curRepeatContainer)
+      : 0;
     const curIndex = isInsideContainer ? index : containerRows - 1;
     if (curIndex < 0) return;
 
@@ -1032,6 +1045,104 @@ function Form({
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+  }
+
+  /**
+   * Moves one repeat container row to a new index. Returns whether anything
+   * changed so callers can skip their own follow-up work (focus, announcements)
+   * on a rejected move.
+   */
+  function moveRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    fromIndex: number,
+    toIndex: number
+  ) {
+    if (!repeatContainer) return false;
+
+    const fields = getFieldsInRepeat(activeStep, repeatContainer);
+    // A container whose row count comes only from text variables has no arrays
+    // for updateRepeatValues to permute.
+    if (!fields.length) return false;
+
+    const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    if (rows < 2) return false;
+
+    // Clamping also discards the phantom trailing row that a 'set_value'
+    // trigger renders past the end of the data.
+    const from = Math.min(Math.max(fromIndex, 0), rows - 1);
+    const to = Math.min(Math.max(toIndex, 0), rows - 1);
+    if (from === to) return false;
+
+    // Inline errors are re-derived rather than permuted: the inline branch of
+    // setFormElementError stores no index, so there is nothing per-row to move,
+    // and updateFieldValues revalidates for us.
+    const remainingErrors = { ...inlineErrors };
+    fields.forEach((field: any) => delete remainingErrors[field.servar.key]);
+    setInlineErrors(remainingErrors);
+
+    const getNewVal = (field: any) => {
+      const key = field.servar.key;
+      const vals = fieldValues[key];
+      if (!Array.isArray(vals)) return vals;
+
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        moveFilePathMapEntry(key, from, to, rows);
+
+      return moveRepeatRowValue(vals, from, to, rows, field);
+    };
+
+    updateRepeatValues(repeatContainer, getNewVal);
+    internalState[_internalId].moveFieldOptions(
+      new Set(fields.map((field: any) => field.servar.key)),
+      from,
+      to
+    );
+    return true;
+  }
+
+  /**
+   * Opens a new row at `index`, so a row can be added between two existing ones
+   * rather than only at the end. Returns whether anything changed.
+   */
+  function insertRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    index: number
+  ) {
+    if (!repeatContainer) return false;
+
+    const fields = getFieldsInRepeat(activeStep, repeatContainer);
+    if (!fields.length) return false;
+
+    const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    // Inserting between rows still grows the container, so it answers to the
+    // same cap the add-row action does.
+    const limit = getRepeatMaxRows(activeStep, repeatContainer.id);
+    if (limit !== null && rows >= limit) return false;
+
+    // A boundary, not a row, so the count itself is a valid position.
+    const at = Math.min(Math.max(index, 0), rows);
+
+    const remainingErrors = { ...inlineErrors };
+    fields.forEach((field: any) => delete remainingErrors[field.servar.key]);
+    setInlineErrors(remainingErrors);
+
+    const getNewVal = (field: any) => {
+      const key = field.servar.key;
+      const vals = fieldValues[key];
+      if (!Array.isArray(vals)) return vals;
+
+      if (FILE_FIELD_TYPES.includes(field.servar.type))
+        insertFilePathMapEntry(key, at, rows);
+
+      return insertRepeatRowValue(vals, at, rows, field);
+    };
+
+    updateRepeatValues(repeatContainer, getNewVal);
+    internalState[_internalId].insertFieldOptions(
+      new Set(fields.map((field: any) => field.servar.key)),
+      at
+    );
+    return true;
   }
 
   // Debouncing the validateElements call to rate limit calls
@@ -1523,6 +1634,30 @@ function Form({
           );
           setSteps(JSON.parse(JSON.stringify(steps)));
           updateStepFieldOptions(newStep, newOptions, repeatIndex);
+        },
+        insertFieldOptions: (fieldKeys: Set<string>, at: number) => {
+          if (!hasRepeatOptionsForFields(newStep, fieldKeys)) return;
+
+          Object.values(steps).forEach((step) =>
+            insertStepFieldRepeatOptions(step, fieldKeys, at)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+          insertStepFieldRepeatOptions(newStep, fieldKeys, at);
+        },
+        moveFieldOptions: (
+          fieldKeys: Set<string>,
+          from: number,
+          to: number
+        ) => {
+          // Every reorder would otherwise pay a whole-form deep clone even
+          // though most containers hold no per-row options at all.
+          if (!hasRepeatOptionsForFields(newStep, fieldKeys)) return;
+
+          Object.values(steps).forEach((step) =>
+            moveStepFieldRepeatOptions(step, fieldKeys, from, to)
+          );
+          setSteps(JSON.parse(JSON.stringify(steps)));
+          moveStepFieldRepeatOptions(newStep, fieldKeys, from, to);
         },
         updateFieldStyles: (fieldKey: string, newStyles: FieldStyles) => {
           Object.values(steps).forEach((step) =>
@@ -2033,7 +2168,10 @@ function Form({
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
     if (repeatRowOperation === 'add' && repeatContainer)
-      addRepeatedRow(repeatContainer);
+      addRepeatedRow(
+        repeatContainer,
+        getRepeatMaxRows(activeStep, repeatContainer.id)
+      );
     return change;
   };
 
@@ -3619,6 +3757,8 @@ function Form({
       changeFormStep(nextStepKey, activeStep.key, false),
     client,
     updateFieldValues,
+    moveRepeatedRow,
+    insertRepeatedRow,
     submitCustom: (values: Record<string, any>) => client?.submitCustom(values),
     elementOnView,
     onViewElements: viewElements,
