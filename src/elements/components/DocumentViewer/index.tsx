@@ -100,6 +100,8 @@ export interface DocumentViewerPayload {
 
 interface DocumentViewerProps {
   payload: DocumentViewerPayload;
+  // The Generate Documents action: `editor_toolbar_actions` configures the
+  // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
   setShow: (show: boolean) => void;
   onComplete: () => void;
@@ -150,6 +152,9 @@ export default function DocumentViewer({
   // dirty, then saveDocument()'s finally resets the flag and the doc looks
   // clean. The edit would stay on screen but never be persisted.
   const isInputLocked = busyKey !== null;
+  // A read-only editor shows the documents without the live form layer:
+  // nothing is editable, so nothing dirties and nothing is saved back.
+  const readOnly = !!action.editor_read_only;
   // Read by the once-bound Escape handler, which must see the live value.
   const busyKeyRef = useRef(busyKey);
   busyKeyRef.current = busyKey;
@@ -307,7 +312,7 @@ export default function DocumentViewer({
   // save — acts on what the filler sees. saveDocument resets the storage's
   // modified flag, which clears the doc from dirtyDocs via onResetModified.
   const saveEditedDocuments = async () => {
-    if (!onSaveEnvelopeFile) return;
+    if (!onSaveEnvelopeFile || readOnly) return;
     for (const doc of payload.documents) {
       if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
       const pdfProxy = loadedDocs.current[doc.pdf_url];
@@ -462,6 +467,7 @@ export default function DocumentViewer({
             onDocLoad={onDocLoad}
             registerPageRef={registerPageRef}
             inputLocked={isInputLocked}
+            readOnly={readOnly}
           />
         </div>
       </div>

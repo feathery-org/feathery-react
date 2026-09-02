@@ -60,17 +60,17 @@ const makePdfProxy = () => {
   return proxy;
 };
 
+// Constructed once per rendered page by the editable viewer; a read-only
+// viewer never mounts it.
+const AnnotationLayer = jest.fn(() => ({ render: () => Promise.resolve() }));
+
 const setupPdfjs = (proxies: Record<string, any>) => {
   loadPdfjs.mockResolvedValue({
     getDocument: ({ url }: { url: string }) => ({
       promise: Promise.resolve(proxies[url])
     }),
     AnnotationMode: { ENABLE: 1, ENABLE_FORMS: 2 },
-    AnnotationLayer: class {
-      render() {
-        return Promise.resolve();
-      }
-    }
+    AnnotationLayer
   });
 };
 
@@ -263,6 +263,7 @@ it('freezes the form widgets while a save/finalize is in flight', async () => {
   const widgetLayers = () =>
     Array.from(featheryDoc().querySelectorAll('.annotationLayer'));
   await waitFor(() => expect(widgetLayers()).toHaveLength(2));
+  await waitFor(() => expect(AnnotationLayer).toHaveBeenCalledTimes(2));
   widgetLayers().forEach((layer) => expect(layer).not.toHaveAttribute('inert'));
 
   proxyA.annotationStorage.onSetModified();
@@ -326,4 +327,24 @@ it('finalizes without saving when onSaveEnvelopeFile is not provided', async () 
   fireEvent.click(screen.getByRole('button', { name: 'Download' }));
   await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
   expect(proxyA.saveDocument).not.toHaveBeenCalled();
+});
+
+it('shows the documents read-only when the action sets editor_read_only', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  const { onFinalize, onSaveEnvelopeFile } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    { action: { ...action, editor_read_only: true } }
+  );
+  await waitForLoad(proxyA, proxyB);
+
+  // Nothing can dirty a read-only viewer; even a flagged doc is never saved.
+  proxyA.annotationStorage.onSetModified();
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+  expect(proxyA.saveDocument).not.toHaveBeenCalled();
+  expect(onSaveEnvelopeFile).not.toHaveBeenCalled();
+  // The live form layer was never mounted (the freeze test above shows the
+  // editable viewer constructs one per page), so there is nothing to edit.
+  expect(AnnotationLayer).not.toHaveBeenCalled();
 });

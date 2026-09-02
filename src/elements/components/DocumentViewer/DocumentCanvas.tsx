@@ -26,6 +26,9 @@ interface DocumentCanvasProps {
   // Make every page's form widgets inert (no pointer, keyboard, or focus)
   // while the viewer persists edits — see DocumentViewer's isInputLocked.
   inputLocked?: boolean;
+  // Read-only pages paint widget values into the canvas and skip the live
+  // form layer entirely, so nothing on the page is editable.
+  readOnly?: boolean;
 }
 
 interface DocState {
@@ -43,7 +46,8 @@ export default function DocumentCanvas({
   pageWidth,
   onDocLoad,
   registerPageRef,
-  inputLocked = false
+  inputLocked = false,
+  readOnly = false
 }: DocumentCanvasProps) {
   const [docStates, setDocStates] = useState<Record<string, DocState>>({});
   const generationRef = useRef(0);
@@ -233,6 +237,7 @@ export default function DocumentCanvas({
             pageWidth={pageWidth}
             registerPageRef={registerPageRef}
             inputLocked={inputLocked}
+            readOnly={readOnly}
           />
         );
       })}
@@ -250,6 +255,7 @@ interface DocumentPagesProps {
     el: HTMLDivElement | null
   ) => void;
   inputLocked: boolean;
+  readOnly: boolean;
 }
 
 function DocumentPages({
@@ -257,7 +263,8 @@ function DocumentPages({
   pdfUrl,
   pageWidth,
   registerPageRef,
-  inputLocked
+  inputLocked,
+  readOnly
 }: DocumentPagesProps) {
   const numPages: number = pdfProxy.numPages ?? 0;
   return (
@@ -272,6 +279,7 @@ function DocumentPages({
             pageNumber={pageIndex + 1}
             pageWidth={pageWidth}
             inputLocked={inputLocked}
+            readOnly={readOnly}
           />
         </div>
       ))}
@@ -284,13 +292,15 @@ interface PdfPageProps {
   pageNumber: number;
   pageWidth: number;
   inputLocked: boolean;
+  readOnly: boolean;
 }
 
 function PdfPage({
   pdfProxy,
   pageNumber,
   pageWidth,
-  inputLocked
+  inputLocked,
+  readOnly
 }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
@@ -342,8 +352,11 @@ function PdfPage({
             // canvas — they're rendered as live HTML inputs by the annotation
             // layer below, seeded from each field's /V. The default (ENABLE)
             // would paint them onto the canvas too, doubling prefilled values
-            // under the inputs.
-            annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS
+            // under the inputs. A read-only page skips the form layer, so the
+            // widget appearances have to come from the canvas instead.
+            annotationMode: readOnly
+              ? pdfjs.AnnotationMode.ENABLE
+              : pdfjs.AnnotationMode.ENABLE_FORMS
           });
           try {
             await renderTask.promise;
@@ -392,7 +405,7 @@ function PdfPage({
       // reads that storage back on finalize (see index.tsx) to persist what
       // the filler changed.
       const annotationDiv = annotationDivRef.current;
-      if (annotationDiv) {
+      if (annotationDiv && !readOnly) {
         // Preserve focus across an annotation-layer rebuild (e.g. on resize):
         // clearing innerHTML blurs the field the user is editing, so remember
         // it and restore focus once the widgets are recreated.
@@ -447,7 +460,7 @@ function PdfPage({
       cancelled = true;
       if (renderTask) renderTask.cancel();
     };
-  }, [pdfProxy, pageNumber, pageWidth]);
+  }, [pdfProxy, pageNumber, pageWidth, readOnly]);
 
   return (
     <div
