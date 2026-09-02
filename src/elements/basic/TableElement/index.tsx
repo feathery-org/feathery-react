@@ -497,14 +497,16 @@ function TableElement({
 
   /**
    * Feathery-controlled cell shading: what is wrong with a cell, and what is
-   * waiting to be written. Errors win over warnings, and both win over the
-   * unsaved tint, so the most urgent state is the one that shows.
+   * waiting to be written. Errors win over warnings, so the most urgent state
+   * is the one that shows. An unsaved edit itself is not tinted: the bar's
+   * count says what is pending, and a tint per cell read as a third kind of
+   * problem.
    */
   const getCellShading = useMemo<GetCellShading | undefined>(() => {
     const hasIssues =
       Object.keys(blockingErrors).length > 0 ||
       Object.keys(warningErrors).length > 0;
-    if (!hasIssues && !hasPendingEdits) return undefined;
+    if (!hasIssues) return undefined;
     return ({ rowIndex, fieldKey }) => {
       const key = cellErrorKey(rowIndex, fieldKey);
       const blocking = blockingErrors[key];
@@ -525,15 +527,9 @@ function TableElement({
           severity: 'warning'
         };
       }
-      if (
-        hasPendingEdits &&
-        pendingEdits.peek(rowIndex, fieldKey) !== undefined
-      ) {
-        return { backgroundColor: validationColors.pendingSurface };
-      }
       return null;
     };
-  }, [blockingErrors, warningErrors, hasPendingEdits, pendingEdits]);
+  }, [blockingErrors, warningErrors]);
 
   const savingEdits = isHub && hub.saving;
 
