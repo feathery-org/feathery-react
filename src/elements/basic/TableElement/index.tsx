@@ -381,6 +381,12 @@ function TableElement({
     (writes: CellWrite[]) => {
       // A pending "provisional" row stops being provisional as soon as any of
       // its cells is written, the same rule single-cell editing follows.
+      if (buffersEdits) {
+        // A held edit leaves the row provisional: nothing is written until
+        // Save, and Discard has to be able to take the row away again.
+        pendingEdits.record(writes);
+        return;
+      }
       const touched = new Set(writes.map((write) => write.rowIndex));
       if (
         [...touched].some((rowIndex) => pendingAddRowsRef.current.has(rowIndex))
@@ -391,8 +397,7 @@ function TableElement({
           return next;
         });
       }
-      if (buffersEdits) pendingEdits.record(writes);
-      else handleCellsEdit(writes);
+      handleCellsEdit(writes);
     },
     [handleCellsEdit, buffersEdits, pendingEdits]
   );
@@ -544,6 +549,10 @@ function TableElement({
       bumpRowIdentity();
       deletedRows.forEach((rowIndex) => handleDeleteRow(rowIndex));
     }
+    // Saving submits every column in full, blank rows included, so nothing
+    // is provisional any more (a Hub row still without an entry is tracked by
+    // the Hub source itself).
+    setPendingAddRows(new Set());
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
   // Discarding also drops the undo history: its entries describe edits that
@@ -551,8 +560,24 @@ function TableElement({
   // fresh "unsaved change" over a cell that already shows it.
   const handleDiscardEdits = useCallback(() => {
     pendingEdits.discard();
+    // Rows inserted since the last save were never written, so they go too —
+    // otherwise Discard would leave an empty row (and, for a Hub, one that
+    // blocks every background refetch) that nothing else can clean up.
+    if (isHub) hub.discardNewRows();
+    else {
+      [...pendingAddRowsRef.current]
+        .sort((a, b) => b - a)
+        .forEach((rowIndex) => fieldMutations.handleRemoveRowLocal(rowIndex));
+    }
+    setPendingAddRows(new Set());
     bumpRowIdentity();
-  }, [pendingEdits, bumpRowIdentity]);
+  }, [
+    pendingEdits,
+    bumpRowIdentity,
+    isHub,
+    hub.discardNewRows,
+    fieldMutations.handleRemoveRowLocal
+  ]);
 
   /**
    * Buffered edits live only in this component, so anything that leaves the

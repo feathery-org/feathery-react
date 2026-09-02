@@ -7,7 +7,13 @@ export type SpreadsheetCommand = {
   patches: CellPatch[];
 };
 
+type HistoryStacks = {
+  past: SpreadsheetCommand[];
+  future: SpreadsheetCommand[];
+};
+
 const HISTORY_LIMIT = 100;
+const EMPTY_HISTORY: HistoryStacks = { past: [], future: [] };
 
 /**
  * Undo/redo for spreadsheet edits.
@@ -21,40 +27,51 @@ const HISTORY_LIMIT = 100;
 export function useSpreadsheetHistory(
   applyWrites: (writes: CellWrite[]) => void
 ) {
-  const [past, setPast] = useState<SpreadsheetCommand[]>([]);
-  const [future, setFuture] = useState<SpreadsheetCommand[]>([]);
+  const [stacks, setStacks] = useState<HistoryStacks>(EMPTY_HISTORY);
+  // The stacks are read through a ref so undo/redo can apply their writes
+  // BEFORE calling setState. Applying inside a functional updater would run a
+  // sibling component's setState during this one's render, which React
+  // forbids (and Strict Mode would double-apply).
+  const stacksRef = useRef(stacks);
+  const commit = useCallback((next: HistoryStacks) => {
+    stacksRef.current = next;
+    setStacks(next);
+  }, []);
 
   const applyRef = useRef(applyWrites);
   applyRef.current = applyWrites;
 
-  const execute = useCallback((label: string, patches: CellPatch[]) => {
-    if (!patches.length) return;
-    applyRef.current(toWrites(patches, 'after'));
-    setPast((current) =>
-      [...current, { label, patches }].slice(-HISTORY_LIMIT)
-    );
-    setFuture([]);
-  }, []);
+  const execute = useCallback(
+    (label: string, patches: CellPatch[]) => {
+      if (!patches.length) return;
+      applyRef.current(toWrites(patches, 'after'));
+      const { past } = stacksRef.current;
+      commit({
+        past: [...past, { label, patches }].slice(-HISTORY_LIMIT),
+        future: []
+      });
+    },
+    [commit]
+  );
 
   const undo = useCallback(() => {
-    setPast((current) => {
-      const command = current[current.length - 1];
-      if (!command) return current;
-      applyRef.current(toWrites(command.patches, 'before'));
-      setFuture((upcoming) => [command, ...upcoming]);
-      return current.slice(0, -1);
-    });
-  }, []);
+    const { past, future } = stacksRef.current;
+    const command = past[past.length - 1];
+    if (!command) return;
+    applyRef.current(toWrites(command.patches, 'before'));
+    commit({ past: past.slice(0, -1), future: [command, ...future] });
+  }, [commit]);
 
   const redo = useCallback(() => {
-    setFuture((current) => {
-      const command = current[0];
-      if (!command) return current;
-      applyRef.current(toWrites(command.patches, 'after'));
-      setPast((previous) => [...previous, command].slice(-HISTORY_LIMIT));
-      return current.slice(1);
+    const { past, future } = stacksRef.current;
+    const command = future[0];
+    if (!command) return;
+    applyRef.current(toWrites(command.patches, 'after'));
+    commit({
+      past: [...past, command].slice(-HISTORY_LIMIT),
+      future: future.slice(1)
     });
-  }, []);
+  }, [commit]);
 
   /**
    * Patches are keyed by row index, so anything that shifts indices — adding
@@ -62,18 +79,15 @@ export function useSpreadsheetHistory(
    * whole stack. Replaying a stale patch would write to the wrong row, so the
    * history is dropped instead.
    */
-  const reset = useCallback(() => {
-    setPast([]);
-    setFuture([]);
-  }, []);
+  const reset = useCallback(() => commit(EMPTY_HISTORY), [commit]);
 
   return {
     execute,
     undo,
     redo,
     reset,
-    canUndo: past.length > 0,
-    canRedo: future.length > 0
+    canUndo: stacks.past.length > 0,
+    canRedo: stacks.future.length > 0
   };
 }
 

@@ -82,6 +82,8 @@ type UseHubTableSourceReturn = {
   handleAddRow: () => void;
   handleInsertRow: (atIndex: number) => void;
   handleDeleteRow: (rowIndex: number) => void;
+  // Drops rows added since the last save that were never written to the Hub.
+  discardNewRows: () => void;
 };
 
 const syntheticKey = (tableId: string, hubFieldKey: string) =>
@@ -447,6 +449,14 @@ export function useHubTableSource({
 
   const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
 
+  // A row with no entry yet exists only here. Besides being what Discard
+  // should take back, it also holds off every background refetch (see
+  // `refetch`), so leaving one behind would keep the table stale for good.
+  const discardNewRows = useCallback(() => {
+    const kept = rowsRef.current.filter((row) => row.entryId != null);
+    if (kept.length !== rowsRef.current.length) commitRows(kept);
+  }, [commitRows]);
+
   const handleDeleteRow = useCallback(
     (rowIndex: number) => {
       const target = rowsRef.current[rowIndex];
@@ -496,7 +506,8 @@ export function useHubTableSource({
     handleCellsEdit,
     handleAddRow,
     handleInsertRow,
-    handleDeleteRow
+    handleDeleteRow,
+    discardNewRows
   };
 }
 
