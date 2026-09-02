@@ -13,7 +13,7 @@ on:
           - minor
           - major
       bump-consumers:
-        description: 'Open a dependency bump PR in hosted-forms-next and feathery-frontend'
+        description: 'Open a dependency bump PR in each consumer repo'
         required: false
         default: true
         type: boolean
@@ -137,9 +137,6 @@ jobs:
             branch: main
           - repo: feathery-frontend
             branch: master
-            # This repo's .npmrc maps @feathery-org to GitHub Packages, so the
-            # lockfile refresh cannot resolve those deps unauthenticated.
-            github_packages: true
     env:
       VERSION: ${{ needs.release.outputs.version }}
       BUMP_BRANCH: chore/bump-feathery-react-${{ needs.release.outputs.version }}
@@ -153,23 +150,24 @@ jobs:
           ref: ${{ matrix.branch }}
           token: ${{ secrets.FEATHERY_BOT_TOKEN }}
 
+      # feathery-frontend pins Node in .nvmrc; hosted-forms-next has no pin and
+      # its own CI runs Node 20. Read the consumer's file when it has one so
+      # this never drifts from what they actually build with.
+      - name: Resolve Node version
+        id: node
+        run: echo "version=$(cat .nvmrc 2>/dev/null || echo 20)" >> "$GITHUB_OUTPUT"
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version-file: '.nvmrc'
-
-      # Written to ~/.npmrc rather than the repo's, so the token cannot end up
-      # in the bump commit. Requires read:packages on FEATHERY_BOT_TOKEN.
-      - name: Authenticate to GitHub Packages
-        if: matrix.github_packages
-        env:
-          BOT_TOKEN: ${{ secrets.FEATHERY_BOT_TOKEN }}
-        run: echo "//npm.pkg.github.com/:_authToken=${BOT_TOKEN}" >> "$HOME/.npmrc"
+          node-version: ${{ steps.node.outputs.version }}
+          cache: 'yarn'
 
       # npm needs a moment to serve a just-published version. Without this the
-      # upgrade below silently resolves the previous version and the PR is empty.
+      # install below silently resolves the previous version and the PR is empty.
       - name: Wait for @feathery/react@${{ needs.release.outputs.version }} on npm
         run: |
+          set -euo pipefail
           for attempt in $(seq 1 30); do
             if npm view "@feathery/react@${VERSION}" version \
               --registry https://registry.npmjs.org >/dev/null 2>&1; then
@@ -182,11 +180,27 @@ jobs:
           echo "::error::@feathery/react@${VERSION} did not appear on npm within 5 minutes."
           exit 1
 
-      # Both consumers already carry a caret range that a patch or minor release
-      # satisfies, so package.json alone would not change. yarn.lock is the part
-      # that actually moves the installed version.
+      # Both consumers carry a caret range that a patch or minor release already
+      # satisfies, so the range has to move or the install is a no-op. Rewriting
+      # just that one line and installing keeps the lockfile diff to this
+      # dependency; `yarn upgrade` re-resolves the tree and buries the change.
       - name: Bump @feathery/react
-        run: yarn upgrade "@feathery/react@^${VERSION}"
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const manifest = fs.readFileSync("package.json", "utf8");
+            const range = /("@feathery\/react":\s*")[^"]+(")/;
+            if (!range.test(manifest)) {
+              console.error("::error::@feathery/react is not a dependency here");
+              process.exit(1);
+            }
+            fs.writeFileSync(
+              "package.json",
+              manifest.replace(range, `$1^${process.env.VERSION}$2`)
+            );
+          '
+          yarn install
 
       - name: Open bump PR
         env:
@@ -207,34 +221,35 @@ jobs:
           git config user.email "${ACTOR}@users.noreply.github.com"
           git checkout -b "$BUMP_BRANCH"
           git add package.json yarn.lock
-          # feathery-frontend runs lint-staged on pre-commit. The consumer's own
-          # PR checks cover this diff, so skip the local hook.
+          # The consumer's own pre-commit hook, reinstalled by the yarn install
+          # above, has nothing to say about a lockfile. Its PR checks cover this.
           git commit --no-verify -m "chore: bump @feathery/react to ${VERSION}"
           # Force so re-running a failed release refreshes the branch in place.
           git push --force origin "$BUMP_BRANCH"
 
-          existing=$(gh pr list --repo "$TARGET_REPO" --head "$BUMP_BRANCH" \
+          url=$(gh pr list --repo "$TARGET_REPO" --head "$BUMP_BRANCH" \
             --state open --json url --jq '.[0].url // empty')
-          if [ -n "$existing" ]; then
-            echo "::notice::Refreshed existing PR ${existing}."
-            exit 0
+
+          if [ -n "$url" ]; then
+            echo "::notice::Refreshed existing PR ${url}."
+          else
+            {
+              printf 'Automated bump from the [@feathery/react %s release](%s).\n\n' "$VERSION" "$RELEASE_URL"
+              printf '@%s please review. Merging picks up the new SDK, and the checks on this PR are the first signal on whether the release breaks this app.\n\n' "$REVIEWER"
+              printf 'Opened by [Release & Publish](%s).\n' "$RUN_URL"
+            } > "$RUNNER_TEMP/bump-body.md"
+
+            url=$(gh pr create \
+              --repo "$TARGET_REPO" \
+              --base "$BASE_BRANCH" \
+              --head "$BUMP_BRANCH" \
+              --title "chore: bump @feathery/react to ${VERSION}" \
+              --body-file "$RUNNER_TEMP/bump-body.md")
+            echo "::notice::Opened ${url}."
           fi
 
-          {
-            printf 'Automated bump from the [@feathery/react %s release](%s).\n\n' "$VERSION" "$RELEASE_URL"
-            printf '@%s please review. Merging picks up the new SDK, and the checks on this PR are the first signal on whether the release breaks this app.\n\n' "$REVIEWER"
-            printf 'Opened by [Release & Publish](%s).\n' "$RUN_URL"
-          } > /tmp/bump-body.md
-
-          url=$(gh pr create \
-            --repo "$TARGET_REPO" \
-            --base "$BASE_BRANCH" \
-            --head "$BUMP_BRANCH" \
-            --title "chore: bump @feathery/react to ${VERSION}" \
-            --body-file /tmp/bump-body.md)
-          echo "::notice::Opened ${url}."
-
-          # A reviewer request needs push access on the target repo. Losing that
-          # must not fail the job, since the body already @-mentions them.
+          # Runs on the refresh path too, so a rerun after a failed create still
+          # lands the ping. A reviewer request needs push access on the target
+          # repo; losing it must not fail the job, the body @-mentions them.
           gh pr edit "$url" --add-reviewer "$REVIEWER" --add-assignee "$REVIEWER" \
             || echo "::warning::Could not request review from ${REVIEWER} on ${url}."
