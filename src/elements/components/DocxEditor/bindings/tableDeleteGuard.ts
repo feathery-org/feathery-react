@@ -185,15 +185,20 @@ export function installTableDeleteGuard(
   //   OUTSIDE the deleted table, so the group's reverse-order revert (inserts
   //   undone before the table restore) never relayouts under them.
   //
-  //   row - unwrap FIRST, delete after, NO grouping. Row entries are
+  //   row - unwrap FIRST, delete after, NO native grouping. Row entries are
   //   table-clone based, and any grouped revert touching one crashes this
   //   Syncfusion version on detached widgets (reLayout reads a stale
   //   bodyWidget; same fragility rowCommandWatch documents for insertRow, and
-  //   probed both group orderings). Sequential entries undo cleanly, and
-  //   unwrap-first keeps every undo depth consistent: the first undo restores
-  //   the row (its own formulas with it), later undos re-wrap the survivors.
-  //   A dying-row twin of an orphan tag gets unwrapped too - harmless, the
+  //   probed both group orderings). The entries stay sequential - each undo
+  //   cycle is the safe native one, with a full relayout between - and the
+  //   undo/redo wrap below chains them into one user gesture instead. The
+  //   unwrap-first order keeps every intermediate frame consistent: the row
+  //   restore (and relayout) lands before the InsertText reverts replay. A
+  //   dying-row twin of an orphan tag gets unwrapped too - harmless, the
   //   delete takes the plain text with it and its own undo restores it.
+  let atomicSetCounter = 0;
+  const atomicSetIds = new WeakMap<object, number>();
+
   const performDelete = (
     impact: TableDeleteImpact,
     fn: (...args: unknown[]) => unknown,
@@ -204,6 +209,10 @@ export function installTableDeleteGuard(
     const tags = impact.orphans.flatMap((orphan) => orphan.tags);
     const unwrapFirst = impact.scope === 'row';
     const history = editor.editorHistoryModule as Record<string, any> | null;
+    // The stack is lazily created on the first recorded edit; absent means 0.
+    const stackBefore = Array.isArray(history?.undoStack)
+      ? history?.undoStack.length
+      : 0;
     let grouped = false;
     if (
       tags.length &&
@@ -236,6 +245,16 @@ export function installTableDeleteGuard(
     } finally {
       running = false;
       if (grouped) history?.updateComplexHistory?.();
+      // Mark the ungrouped entries as one atomic set for the undo/redo chain.
+      if (!grouped && tags.length) {
+        const pushed = (history?.undoStack ?? []).slice(stackBefore);
+        if (pushed.length > 1) {
+          const setId = ++atomicSetCounter;
+          for (const entry of pushed)
+            if (entry && typeof entry === 'object')
+              atomicSetIds.set(entry, setId);
+        }
+      }
       try {
         options.onDeleted?.();
       } catch {
@@ -243,6 +262,47 @@ export function installTableDeleteGuard(
       }
     }
   };
+
+  // One user gesture undoes/redoes a whole atomic set: after the native call
+  // consumes an entry belonging to a set, keep calling it while the next entry
+  // on that stack belongs to the SAME set. Every inner call is a complete
+  // native cycle (revert + relayout + fresh selection), which is exactly why
+  // this works where initComplexHistory crashes.
+  const history = editor.editorHistoryModule as Record<string, any> | null;
+  const chainAtomicSet = (
+    original: (...args: unknown[]) => unknown,
+    stackKey: 'undoStack' | 'redoStack'
+  ) =>
+    function chained(this: any, ...args: unknown[]): unknown {
+      const stack = this?.[stackKey];
+      const top = Array.isArray(stack) ? stack[stack.length - 1] : undefined;
+      const setId = top ? atomicSetIds.get(top) : undefined;
+      const result = original.apply(this, args);
+      if (setId === undefined) return result;
+      for (let safety = 0; safety < 100; safety++) {
+        const current = this?.[stackKey];
+        if (!Array.isArray(current)) break;
+        const next = current[current.length - 1];
+        if (!next || atomicSetIds.get(next) !== setId) break;
+        const lengthBefore = current.length;
+        original.apply(this, args);
+        // A refused call (read-only, disabled history) must not spin here.
+        if (current.length === lengthBefore) break;
+      }
+      return result;
+    };
+  const originalUndo = history?.undo;
+  const originalRedo = history?.redo;
+  const patchedUndo =
+    history && typeof originalUndo === 'function'
+      ? chainAtomicSet(originalUndo, 'undoStack')
+      : null;
+  const patchedRedo =
+    history && typeof originalRedo === 'function'
+      ? chainAtomicSet(originalRedo, 'redoStack')
+      : null;
+  if (history && patchedUndo) history.undo = patchedUndo;
+  if (history && patchedRedo) history.redo = patchedRedo;
 
   const makePatched = (
     original: (...args: unknown[]) => unknown,
@@ -305,6 +365,10 @@ export function installTableDeleteGuard(
     if (patchedRow && module.deleteRow === patchedRow)
       module.deleteRow = originalRow;
     try {
+      if (history && patchedUndo && history.undo === patchedUndo)
+        history.undo = originalUndo;
+      if (history && patchedRedo && history.redo === patchedRedo)
+        history.redo = originalRedo;
       anyEditor.removeEventListener?.('keyDown', onKeyDown);
     } catch {
       // A destroyed instance dereferences null internals; nothing to undo.
