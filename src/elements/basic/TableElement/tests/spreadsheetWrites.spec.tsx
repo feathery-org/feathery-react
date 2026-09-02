@@ -258,6 +258,53 @@ describe('Data Hub batched writes', () => {
     await waitFor(() => expect(result.current.cellErrors).toEqual({}));
   });
 
+  test('an update that matched no row is a failure, not a silent success', async () => {
+    // The Hub answers 200 with `updated: 0` when the row was deleted or
+    // verified elsewhere since it was loaded. Treating that as saved would
+    // leave the grid showing an edit the Hub never took.
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get'
+        ? Promise.resolve(twoEntries)
+        : Promise.resolve({ updated: 0 })
+    );
+    const { result } = setup(dataHubAction);
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    act(() =>
+      result.current.handleCellsEdit([
+        { fieldKey: key('name'), rowIndex: 0, value: 'Alicia' }
+      ])
+    );
+
+    await waitFor(() =>
+      expect(result.current.cellErrors[`0:${key('name')}`]).toContain(
+        'changed or removed'
+      )
+    );
+    expect(result.current.hubFieldValues[key('name')][0]).toBe('Alice');
+    expect(result.current.errors).toHaveLength(1);
+  });
+
+  test('a delete that matched no row puts the row back', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get'
+        ? Promise.resolve(twoEntries)
+        : Promise.resolve({ deleted: 0 })
+    );
+    const { result } = setup(dataHubAction);
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    act(() => result.current.handleDeleteRow(0));
+    // Removed locally first, so the grid feels immediate…
+    expect(result.current.entryIds).toEqual(['entry2']);
+
+    // …and restored once the Hub says it matched nothing.
+    await waitFor(() =>
+      expect(result.current.entryIds).toEqual(['entry1', 'entry2'])
+    );
+    expect(result.current.errors[0]).toContain('changed or removed');
+  });
+
   test('the first edit of an added row creates it once for the whole batch', async () => {
     const dataHubAction = jest.fn(({ operation }) => {
       if (operation === 'get') return Promise.resolve(twoEntries);

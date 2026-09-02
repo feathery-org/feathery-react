@@ -62,6 +62,19 @@ type GridInteractionOptions = {
   acceptsValue?: (fieldKey: string, value: CellValue) => boolean;
   /** How many cells a bulk write refused, so the UI can say so. */
   onValuesRefused?: (count: number) => void;
+  /**
+   * A column the grid shows but must never write — a hub file field holds
+   * upload references no editor can author. Enforced on every write path
+   * (editor, paste, fill, clear), not only in the editor's input, because the
+   * editor's `readOnly` attribute stops typing and nothing else.
+   */
+  isReadOnly?: (fieldKey: string) => boolean;
+  /**
+   * Text from an editor or the clipboard as the value the column stores.
+   * Defaults to shape-based guessing; a column with a rule should decide by
+   * type instead, so `007` in a text column stays `007`.
+   */
+  parseValue?: (fieldKey: string, text: string, before: CellValue) => CellValue;
 };
 
 export function useGridInteractions(options: GridInteractionOptions) {
@@ -77,9 +90,26 @@ export function useGridInteractions(options: GridInteractionOptions) {
     restoreFocus,
     seedAction,
     acceptsValue,
-    onValuesRefused
+    onValuesRefused,
+    isReadOnly,
+    parseValue
   } = options;
   const [editing, setEditing] = React.useState<EditingCell | null>(null);
+
+  const parse = React.useCallback(
+    (fieldKey: string, text: string, before: CellValue): CellValue =>
+      parseValue ? parseValue(fieldKey, text, before) : parseInputValue(text),
+    [parseValue]
+  );
+
+  /** Drop the patches aimed at a column that cannot be written at all. */
+  const writable = React.useCallback(
+    (patches: CellPatch[]): CellPatch[] =>
+      isReadOnly
+        ? patches.filter((patch) => !isReadOnly(patch.fieldKey))
+        : patches,
+    [isReadOnly]
+  );
 
   // A read-only table keeps selection and copy, so an editor left open when
   // editing is revoked has to close.
@@ -133,7 +163,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
 
   const startEditing = React.useCallback(
     (rowId: string, columnId: string, replacement?: string) => {
-      if (!canEdit) return;
+      // No editor at all on a read-only column: the stored value may not even
+      // be text (a file cell holds an array), and an editor that opened on its
+      // String() form would commit that form back over the real value.
+      if (!canEdit || isReadOnly?.(columnId)) return;
       table.setFocusedCell(rowId, columnId);
       setEditing({
         rowId,
@@ -143,7 +176,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       });
       scrollToCell(rowId, columnId);
     },
-    [canEdit, scrollToCell, table, valueByIds]
+    [canEdit, isReadOnly, scrollToCell, table, valueByIds]
   );
 
   const startEditingActive = React.useCallback(() => {
@@ -166,8 +199,12 @@ export function useGridInteractions(options: GridInteractionOptions) {
     ) => {
       const rowIndex = rowIndexById.get(rowId);
       const before = valueByIds(rowId, columnId);
-      const after = parseInputValue(draft);
-      if (rowIndex !== undefined && !cellValuesEqual(before, after)) {
+      const after = parse(columnId, draft, before);
+      if (
+        rowIndex !== undefined &&
+        !isReadOnly?.(columnId) &&
+        !cellValuesEqual(before, after)
+      ) {
         execute('Edit cell', [{ rowIndex, fieldKey: columnId, before, after }]);
       }
 
@@ -183,6 +220,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
     },
     [
       execute,
+      isReadOnly,
+      parse,
       restoreFocus,
       rowIndexById,
       scrollToActiveCorner,
@@ -224,7 +263,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
       getAfter: (
         rowOffset: number,
         columnOffset: number,
-        before: CellValue
+        before: CellValue,
+        fieldKey: string
       ) => CellValue
     ): CellPatch[] => {
       const displayRows = getDisplayRows();
@@ -253,7 +293,8 @@ export function useGridInteractions(options: GridInteractionOptions) {
             const after = getAfter(
               row - bound.minRowIndex,
               column - bound.minColumnIndex,
-              before
+              before,
+              fieldKey
             );
             if (cellValuesEqual(before, after)) continue;
 
@@ -275,32 +316,35 @@ export function useGridInteractions(options: GridInteractionOptions) {
   /**
    * Drop the patches whose value the column would reject, and report how many.
    * Clearing a cell is always allowed — an empty cell is a state the user can
-   * always reach, and a required column flags it rather than forbidding it.
+   * always reach, and a required column flags it rather than forbidding it —
+   * except on a read-only column, which takes nothing at all.
    */
   const acceptable = React.useCallback(
     (patches: CellPatch[]): CellPatch[] => {
-      if (!acceptsValue) return patches;
+      if (!acceptsValue && !isReadOnly) return patches;
       const kept = patches.filter(
         (patch) =>
-          patch.after === null ||
-          patch.after === '' ||
-          acceptsValue(patch.fieldKey, patch.after)
+          !isReadOnly?.(patch.fieldKey) &&
+          (patch.after === null ||
+            patch.after === '' ||
+            !acceptsValue ||
+            acceptsValue(patch.fieldKey, patch.after))
       );
       // Always reported, including zero: each bulk write replaces the notice
       // from the one before it rather than leaving a stale count on screen.
       onValuesRefused?.(patches.length - kept.length);
       return kept;
     },
-    [acceptsValue, onValuesRefused]
+    [acceptsValue, isReadOnly, onValuesRefused]
   );
 
   const clearSelection = React.useCallback(() => {
     if (!canEdit) return;
     execute(
       'Clear cells',
-      patchesForBounds(getSelectedBounds(), () => null)
+      writable(patchesForBounds(getSelectedBounds(), () => null))
     );
-  }, [canEdit, execute, getSelectedBounds, patchesForBounds]);
+  }, [canEdit, execute, getSelectedBounds, patchesForBounds, writable]);
 
   const selectBounds = React.useCallback(
     (bounds: GridBounds) => {
@@ -374,10 +418,14 @@ export function useGridInteractions(options: GridInteractionOptions) {
           activeBound.maxColumnIndex > activeBound.minColumnIndex);
 
       if (fillsActiveRange) {
-        const after = parseInputValue(matrix[0][0] ?? '');
+        const text = matrix[0][0] ?? '';
         execute(
           'Paste cells',
-          acceptable(patchesForBounds([activeBound], () => after))
+          acceptable(
+            patchesForBounds([activeBound], (_row, _column, before, fieldKey) =>
+              parse(fieldKey, text, before)
+            )
+          )
         );
         return;
       }
@@ -400,7 +448,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
 
           const fieldKey = displayColumn.id;
           const before = getValue(rowIndex, fieldKey);
-          const after = parseInputValue(cellText);
+          const after = parse(fieldKey, cellText, before);
           if (!cellValuesEqual(before, after)) {
             patches.push({ rowIndex, fieldKey, before, after });
           }
@@ -424,6 +472,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       getDisplayRows,
       getSelectedBounds,
       getValue,
+      parse,
       patchesForBounds,
       rowIndexById,
       selectBounds
@@ -572,31 +621,61 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [cancelEditing, commitEditing]
   );
 
-  return {
-    editing,
-    setEditingDraft,
-    getActiveRange,
-    getSelectedBounds,
-    startEditing,
-    startEditingActive,
-    focusCell,
-    moveSelection,
-    commitCellValue,
-    commitEditing,
-    cancelEditing,
-    clearSelection,
-    copySelection,
-    cutSelection,
-    pasteSelection,
-    applyFill,
-    selectBounds,
-    selectColumnRange,
-    selectRowRange,
-    handleGridTextEntry,
-    handleEditorKeyDown,
-    undo,
-    redo
-  };
+  // One identity per set of callbacks: the grid keys document-level listener
+  // effects on this object, and a fresh one per keystroke in an editor would
+  // tear those listeners down and re-add them on every character.
+  return React.useMemo(
+    () => ({
+      editing,
+      setEditingDraft,
+      getActiveRange,
+      getSelectedBounds,
+      startEditing,
+      startEditingActive,
+      focusCell,
+      moveSelection,
+      commitCellValue,
+      commitEditing,
+      cancelEditing,
+      clearSelection,
+      copySelection,
+      cutSelection,
+      pasteSelection,
+      applyFill,
+      selectBounds,
+      selectColumnRange,
+      selectRowRange,
+      handleGridTextEntry,
+      handleEditorKeyDown,
+      undo,
+      redo
+    }),
+    [
+      editing,
+      setEditingDraft,
+      getActiveRange,
+      getSelectedBounds,
+      startEditing,
+      startEditingActive,
+      focusCell,
+      moveSelection,
+      commitCellValue,
+      commitEditing,
+      cancelEditing,
+      clearSelection,
+      copySelection,
+      cutSelection,
+      pasteSelection,
+      applyFill,
+      selectBounds,
+      selectColumnRange,
+      selectRowRange,
+      handleGridTextEntry,
+      handleEditorKeyDown,
+      undo,
+      redo
+    ]
+  );
 }
 
 export type GridInteractions = ReturnType<typeof useGridInteractions>;

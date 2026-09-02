@@ -87,6 +87,9 @@ type UseHubTableSourceReturn = {
 const syntheticKey = (tableId: string, hubFieldKey: string) =>
   `__hub_${tableId}_${hubFieldKey}`;
 
+const ROW_GONE_MESSAGE =
+  'This row was changed or removed in the Data Hub. Refresh to see the latest data.';
+
 const errorMessages = (error: any): string[] => {
   const detail = error?.response?.data ?? error?.data;
   if (detail) {
@@ -353,6 +356,10 @@ export function useHubTableSource({
                   changedKeys.map((key) => [key, row.data[key]])
                 )
               });
+              // The Hub answers 200 with a count, so a row that matched
+              // nothing — deleted or verified elsewhere since it was loaded —
+              // is a failure the caller has to notice for itself.
+              if (result?.updated === 0) throw new Error(ROW_GONE_MESSAGE);
               // A staged row is stored even when it breaks a field rule, and
               // the Hub reports the rule it broke alongside the success. Keep
               // it on the cells so the grid can flag them; the row is
@@ -451,12 +458,16 @@ export function useHubTableSource({
       enqueue(async () => {
         if (!hubId || !client?.dataHubAction) return;
         try {
-          await client.dataHubAction({
+          const result = await client.dataHubAction({
             hubId,
             operation: 'delete',
             ...(target.verified ? {} : { verification: 'unverified' }),
             where: [{ entryId: target.entryId as string }]
           });
+          // Zero matches means the Hub's copy has moved on (the row was
+          // verified or removed elsewhere); the local removal has to be
+          // undone so the table keeps matching the Hub.
+          if (result?.deleted === 0) throw new Error(ROW_GONE_MESSAGE);
         } catch (error) {
           // Put the row back so the table keeps matching the Hub.
           const restored = [...rowsRef.current];

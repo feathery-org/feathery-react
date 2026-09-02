@@ -6,6 +6,7 @@ import {
   acceptsNumericInput,
   choicesFor,
   editorKindFor,
+  fromEditorValue,
   toEditorValue
 } from './fieldEditors';
 
@@ -170,7 +171,9 @@ export function CellEditor({
         // number, rather than accepting it and failing validation later.
         if (kind === 'number' && !acceptsNumericInput(next)) return;
         if (kind === 'readonly') return;
-        onChange(next);
+        // A datetime picker reports local wall-clock time; the cell stores
+        // the UTC instant.
+        onChange(fromEditorValue(next, kind));
       }}
       onKeyDown={onKeyDown}
       onBlur={onBlur}

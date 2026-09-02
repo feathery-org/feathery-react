@@ -224,7 +224,10 @@ function TableElement({
   // context menu, so the toolbar button would be a second way to do the same
   // thing.
   const showAddRow = canAddRows && !isSpreadsheet;
-  const canDeleteRows = canEdit && enableAddDeleteRows && hubAllowsAddRows;
+  // Deleting is not gated the way adding is: the Hub cannot CREATE into the
+  // staged set (that is a batch replace), but it deletes a staged row by
+  // entry id like any other, so a table of extracted data can drop bad rows.
+  const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
 
@@ -451,13 +454,17 @@ function TableElement({
         const cell = Array.isArray(value) ? value[rowIndex] : value;
         return cell === undefined ? null : cell;
       },
-      rules: cellRules
+      rules: cellRules,
+      isRowStaged: isHub
+        ? (rowIndex) => hub.rowVerified[rowIndex] === false
+        : undefined
     });
     return isHub ? { ...hub.cellErrors, ...validated } : validated;
   }, [
     isSpreadsheet,
     isHub,
     hub.cellErrors,
+    hub.rowVerified,
     spreadsheetRowIndices,
     spreadsheetFieldValues,
     columns,
@@ -539,9 +546,13 @@ function TableElement({
     }
   }, [pendingEdits, handleCellsEdit, handleDeleteRow, bumpRowIdentity]);
 
+  // Discarding also drops the undo history: its entries describe edits that
+  // no longer exist, and undoing one would re-record the pre-edit value as a
+  // fresh "unsaved change" over a cell that already shows it.
   const handleDiscardEdits = useCallback(() => {
     pendingEdits.discard();
-  }, [pendingEdits]);
+    bumpRowIdentity();
+  }, [pendingEdits, bumpRowIdentity]);
 
   /**
    * Buffered edits live only in this component, so anything that leaves the
