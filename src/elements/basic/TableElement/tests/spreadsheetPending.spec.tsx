@@ -280,7 +280,7 @@ describe('validation errors', () => {
 
     expect(cell('not-an-email')).toHaveAttribute(
       'title',
-      expect.stringContaining('invalid email address')
+      expect.stringContaining('Invalid email')
     );
   });
 
@@ -299,7 +299,7 @@ describe('validation errors', () => {
     );
     // The focused cell explains itself rather than waiting for a hover.
     expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'invalid email address'
+      'Invalid email'
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Go to next issue' }));
@@ -406,6 +406,31 @@ describe('cell editors follow the column', () => {
       [...select.querySelectorAll('option')].map((o) => o.textContent)
     ).toEqual(['(empty)', 'Ready', 'Sent']);
     expect(screen.queryByRole('textbox')).toBeNull();
+  });
+
+  test('Enter released on the menu closes the editor even when nothing changed', async () => {
+    // Enter on the already-selected option fires no change event, and the
+    // keydown never reaches the page while the native menu is open. Only the
+    // keyup does — it must hand the keyboard back to the grid.
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+    fireEvent.mouseDown(cell('Ready'));
+    await waitFor(() =>
+      expect(cell('Ready')).toHaveAttribute('aria-selected', 'true')
+    );
+    fireEvent.keyDown(grid(), { key: 'Enter' });
+    const select = await screen.findByRole('combobox');
+
+    fireEvent.keyUp(select, { key: 'Enter' });
+
+    await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(grid()));
+    expect(screen.queryByRole('status')).toBeNull();
+    // And the grid is navigable again (Status is the last column).
+    fireEvent.keyDown(grid(), { key: 'ArrowLeft' });
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
   });
 
   test('picking an option commits it straight away', async () => {
