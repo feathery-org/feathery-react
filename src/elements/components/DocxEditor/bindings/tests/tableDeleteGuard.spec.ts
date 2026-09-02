@@ -267,21 +267,31 @@ describe('installTableDeleteGuard', () => {
     // (the Subtotal copy died with its row).
     expect(countOf(editor, '$7,800.00')).toBe(2);
 
-    // Row entries cannot be grouped on this Syncfusion version (table-clone
-    // reverts crash inside complex history), so the restore is sequential -
-    // but every depth is consistent: the first undo brings the row (and its
-    // own formula) back while the survivors stay plain text.
+    // Row entries cannot be natively grouped on this Syncfusion version
+    // (table-clone reverts crash inside complex history), so the guard chains
+    // the sequential entries instead: ONE undo gesture walks the whole set.
     const history = (editor as any).editorHistoryModule;
     history.undo();
-    expect(costsRowCount(editor)).toBe(6);
-    expect(scan(editor).formulas.has('grand_total')).toBe(false);
-    for (let i = 0; i < 20 && history.canUndo(); i++) history.undo();
     const restored = scan(editor);
     expect(costsRowCount(editor)).toBe(6);
     expect(restored.formulas.has('grand_total')).toBe(true);
     expect(restored.formulas.has('costs_tax')).toBe(true);
     expect(restored.formulas.has('combined_total')).toBe(true);
     expect(countOf(editor, '$7,800.00')).toBe(3);
+
+    // One redo gesture replays the whole set.
+    history.redo();
+    expect(costsRowCount(editor)).toBe(5);
+    expect(scan(editor).formulas.has('grand_total')).toBe(false);
+    expect(countOf(editor, '$7,800.00')).toBe(2);
+
+    // An unrelated edit after the restore is NOT chained into the set: its
+    // undo removes only itself.
+    history.undo();
+    (editor as any).editorModule.insertText('x');
+    history.undo();
+    expect(costsRowCount(editor)).toBe(6);
+    expect(scan(editor).formulas.has('grand_total')).toBe(true);
   });
 
   it('passes through untouched under track changes', async () => {
