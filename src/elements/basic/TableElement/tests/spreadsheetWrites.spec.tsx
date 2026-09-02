@@ -468,7 +468,6 @@ describe('Data Hub verification filter', () => {
       operation: 'get',
       verification: 'verified'
     });
-    expect(result.current.canAddRows).toBe(true);
   });
 
   test.each(['all', 'unverified'] as const)(
@@ -486,13 +485,64 @@ describe('Data Hub verification filter', () => {
     }
   );
 
-  test('adding rows is off while viewing the staged set', async () => {
-    // `create` with verification:unverified is a batch REPLACE of the staged
-    // rows, so adding one row would drop every other one.
-    const dataHubAction = jest.fn(() => Promise.resolve([]));
-    const { result } = setup(dataHubAction, 'unverified');
-    await waitFor(() => expect(dataHubAction).toHaveBeenCalled());
-    expect(result.current.canAddRows).toBe(false);
+  test.each(['all', 'unverified'] as const)(
+    'a row added while reading %s rows is created in the staged set',
+    async (verification) => {
+      const dataHubAction = jest.fn(({ operation }) =>
+        operation === 'get'
+          ? Promise.resolve(mixedEntries)
+          : Promise.resolve({ id: 'entry3', data: { name: 'Cara' }, verified: false, error: 'Field `name` is required' })
+      );
+      const { result } = setup(dataHubAction, verification);
+      await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+      dataHubAction.mockClear();
+
+      act(() => result.current.handleInsertRow(2));
+      expect(result.current.rowVerified[2]).toBe(false);
+      act(() =>
+        result.current.handleCellsEdit([
+          { fieldKey: key('name'), rowIndex: 2, value: 'Cara' }
+        ])
+      );
+
+      await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+      // A single staged row is APPENDED; the list form would replace the set.
+      expect(dataHubAction).toHaveBeenCalledWith({
+        hubId: 'hub1',
+        operation: 'create',
+        verification: 'unverified',
+        data: { name: 'Cara' }
+      });
+      await waitFor(() => expect(result.current.entryIds[2]).toBe('entry3'));
+      // The Hub stored it but reported the rule it breaks, as a warning.
+      expect(result.current.cellErrors[`2:${key('name')}`]).toBe('Field `name` is required');
+    }
+  );
+
+  test('a row added while reading verified rows is created verified', async () => {
+    const dataHubAction = jest.fn(({ operation }) =>
+      operation === 'get'
+        ? Promise.resolve([mixedEntries[0]])
+        : Promise.resolve({ id: 'entry3', data: { name: 'Cara' } })
+    );
+    const { result } = setup(dataHubAction, 'verified');
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(1));
+    dataHubAction.mockClear();
+
+    act(() => result.current.handleInsertRow(1));
+    expect(result.current.rowVerified[1]).toBe(true);
+    act(() =>
+      result.current.handleCellsEdit([
+        { fieldKey: key('name'), rowIndex: 1, value: 'Cara' }
+      ])
+    );
+
+    await waitFor(() => expect(dataHubAction).toHaveBeenCalledTimes(1));
+    expect(dataHubAction).toHaveBeenCalledWith({
+      hubId: 'hub1',
+      operation: 'create',
+      data: { name: 'Cara' }
+    });
   });
 
   test('correcting an unverified row names that set on the update', async () => {

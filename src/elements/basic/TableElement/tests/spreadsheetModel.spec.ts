@@ -13,8 +13,7 @@ import {
   FIT_MAX_HEIGHT,
   HEADER_HEIGHT,
   ROW_HEIGHT,
-  spreadsheetViewportHeight,
-  TOOLTIP_SCROLL_MARGIN
+  spreadsheetViewportHeight
 } from '../spreadsheet/styles';
 
 describe('parseInputValue', () => {
@@ -246,7 +245,7 @@ describe('spreadsheetViewportHeight', () => {
     // tall and did not scroll. The value acts as a flex-basis, so a percentage
     // resolving taller than it still grows past it.
     expect(spreadsheetViewportHeight('%', 3)).toBe(
-      HEADER_HEIGHT + 3 * ROW_HEIGHT + TOOLTIP_SCROLL_MARGIN + 2
+      HEADER_HEIGHT + 3 * ROW_HEIGHT + 2
     );
   });
 
@@ -254,7 +253,7 @@ describe('spreadsheetViewportHeight', () => {
     // Header, three rows, the gutter that keeps room under a scrolled-to cell
     // for its message bubble, and the container border.
     expect(spreadsheetViewportHeight('fit', 3)).toBe(
-      HEADER_HEIGHT + 3 * ROW_HEIGHT + TOOLTIP_SCROLL_MARGIN + 2
+      HEADER_HEIGHT + 3 * ROW_HEIGHT + 2
     );
   });
 
@@ -262,7 +261,7 @@ describe('spreadsheetViewportHeight', () => {
     // The virtualizer measures its scroll container: an unbounded grid renders
     // no rows at all, so an element with no height style still gets one.
     expect(spreadsheetViewportHeight(undefined, 3)).toBe(
-      HEADER_HEIGHT + 3 * ROW_HEIGHT + TOOLTIP_SCROLL_MARGIN + 2
+      HEADER_HEIGHT + 3 * ROW_HEIGHT + 2
     );
   });
 
@@ -272,7 +271,7 @@ describe('spreadsheetViewportHeight', () => {
 
   test('an empty grid still reserves room for its header', () => {
     expect(spreadsheetViewportHeight('fit', 0)).toBe(
-      HEADER_HEIGHT + TOOLTIP_SCROLL_MARGIN + 2
+      HEADER_HEIGHT + 2
     );
   });
 });

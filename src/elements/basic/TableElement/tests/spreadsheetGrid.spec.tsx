@@ -507,6 +507,10 @@ describe('Tab and the grid boundary', () => {
     await waitFor(() =>
       expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
     );
+    // Focus must live on the grid, never a cell: a focusable cell that the
+    // virtualizer unmounts while scrolling takes the keyboard with it.
+    expect(cell('Alice')).not.toHaveAttribute('tabindex');
+    expect(document.activeElement).toBe(grid());
 
     // fireEvent returns false once the default has been prevented, i.e. the
     // grid took the key rather than the browser.

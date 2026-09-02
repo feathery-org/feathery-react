@@ -218,15 +218,11 @@ function TableElement({
 
   const isSpreadsheet = wantsSpreadsheet;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
-  const hubAllowsAddRows = !isHub || hub.canAddRows;
-  const canAddRows = canEdit && enableAddDeleteRows && hubAllowsAddRows;
+  const canAddRows = canEdit && enableAddDeleteRows;
   // The spreadsheet has its own trailing "add row" strip and a row-header
   // context menu, so the toolbar button would be a second way to do the same
   // thing.
   const showAddRow = canAddRows && !isSpreadsheet;
-  // Deleting is not gated the way adding is: the Hub cannot CREATE into the
-  // staged set (that is a batch replace), but it deletes a staged row by
-  // entry id like any other, so a table of extracted data can drop bad rows.
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;

@@ -51,11 +51,8 @@ export function spreadsheetViewportHeight(
   rowCount: number
 ): number | undefined {
   if (heightUnit === 'px') return undefined;
-  // The canvas carries a trailing gutter so a scrolled-to cell has room for
-  // its message bubble; an auto-sized grid grows to include it rather than
-  // gaining a scrollbar over empty space.
-  const content =
-    HEADER_HEIGHT + rowCount * ROW_HEIGHT + TOOLTIP_SCROLL_MARGIN + 2;
+  // Header, rows and the grid's own 1px borders.
+  const content = HEADER_HEIGHT + rowCount * ROW_HEIGHT + 2;
   return Math.min(content, FIT_MAX_HEIGHT);
 }
 
@@ -83,7 +80,10 @@ export const gridStyle = {
   overflow: 'auto',
   outline: 'none',
   overscrollBehavior: 'contain',
-  backgroundColor: colors.white,
+  // Cells paint their own white, so whatever the columns and rows do not
+  // cover — to the right of the last column, below the last row — reads as
+  // the unused area outside the sheet rather than as more blank cells.
+  backgroundColor: colors.gray100,
   cursor: 'default',
   userSelect: 'none',
   WebkitUserSelect: 'none',

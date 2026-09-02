@@ -73,9 +73,6 @@ type UseHubTableSourceReturn = {
   // Whether each row is verified, in row order. A staged (unverified) row is
   // not held to the hub's field rules until it is verified.
   rowVerified: boolean[];
-  // Adding is impossible while reading unverified rows: `create` with
-  // `verification: unverified` is a batch REPLACE of the staged set.
-  canAddRows: boolean;
   refetch: () => void;
   handleCellEdit: (fieldKey: string, rowIndex: number, newValue: any) => void;
   handleCellsEdit: (writes: CellWrite[]) => void;
@@ -382,18 +379,31 @@ export function useHubTableSource({
             // Rows stay provisional until their first edit, so the first edit
             // is what creates them (an empty row would just fail required
             // fields).
-            const created: HubEntry | null = await client.dataHubAction({
-              hubId,
-              operation: 'create',
-              data: row.data
-            });
+            // A single row with `verification: unverified` is appended to
+            // the staged set (the list form would replace it).
+            const created: (HubEntry & { error?: string }) | null =
+              await client.dataHubAction({
+                hubId,
+                operation: 'create',
+                ...(row.verified ? {} : { verification: 'unverified' }),
+                data: row.data
+              });
             if (!created?.id) {
               throw new Error('Data Hub did not return a row ID');
             }
+            // A staged row is stored even when it breaks a field rule; the
+            // Hub reports the rule so the grid can flag it as a warning.
+            const createdError = created.error;
+            const createdErrors: Record<string, string> = createdError
+              ? Object.fromEntries(
+                  changedKeys.map((key) => [key, createdError])
+                )
+              : {};
             updateRow(localId, (r) => ({
               ...r,
               entryId: created.id,
-              data: { ...r.data, ...created.data }
+              data: { ...r.data, ...created.data },
+              errors: { ...r.errors, ...createdErrors }
             }));
           } catch (error) {
             const messages = errorMessages(error);
@@ -437,14 +447,15 @@ export function useHubTableSource({
           localId: `new:${nextLocalId.current++}`,
           entryId: null,
           data,
-          // A row the user just added is theirs to fill in, never staged data.
-          verified: true
+          // A row added to a table of staged data joins the staged set; only
+          // a table reading verified rows creates verified ones.
+          verified: verification === 'verified'
         },
         ...rows.slice(at)
       ]);
       setErrors([]);
     },
-    [syntheticToHubKey, commitRows]
+    [syntheticToHubKey, commitRows, verification]
   );
 
   const handleAddRow = useCallback(() => handleInsertRow(0), [handleInsertRow]);
@@ -500,7 +511,6 @@ export function useHubTableSource({
     cellErrors,
     cellRules,
     rowVerified,
-    canAddRows: verification !== 'unverified',
     refetch,
     handleCellEdit,
     handleCellsEdit,
