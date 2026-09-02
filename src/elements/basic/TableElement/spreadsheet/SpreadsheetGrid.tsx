@@ -938,8 +938,11 @@ function SpreadsheetCell({
   const activeBound = selection.activeBound;
 
   const sourceRowIndex = rowIndexById.get(cell.row.id) ?? rowIndex;
+  // Hidden for the whole grid while an editor is open: the handle belongs to
+  // the selection, and mid-edit there is nothing to fill from yet.
   const showFillHandle =
     canEdit &&
+    interactions.editing == null &&
     activeBound != null &&
     rowIndex === activeBound.maxRowIndex &&
     columnIndex === activeBound.maxColumnIndex;

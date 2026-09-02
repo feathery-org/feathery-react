@@ -540,14 +540,6 @@ export const validationColors = {
 // wraps on a narrow table simply borrows a little of the grid's height.
 export const PENDING_BAR_HEIGHT = 38;
 
-// A paste that dropped values says so, in the same tone as a warning: nothing
-// is broken, but the user needs to know it did not all land.
-export const refusedNoticeStyle = {
-  color: validationColors.warningText,
-  fontWeight: 600,
-  whiteSpace: 'nowrap'
-} as const;
-
 export const pendingBarStyle = {
   display: 'flex',
   alignItems: 'center',
