@@ -19,6 +19,8 @@ export interface OrphanedFormula {
 }
 
 export interface TableDeleteImpact {
+  /** What is being deleted, for the confirmation copy. */
+  scope: 'table' | 'row';
   /** Bound table id when the block is a tagged wrapper, else null. */
   tableId: string | null;
   orphans: OrphanedFormula[];
@@ -81,14 +83,61 @@ export function analyzeTableDeleteImpact(
 ): TableDeleteImpact | null {
   const block = tableBlockAt(doc, sectionIndex, blockIndex);
   if (!block) return null;
-
-  const before = applyRules(doc, { adoptRows: false });
   const trimmed = JSON.parse(JSON.stringify(doc)) as SfdtDocument;
   trimmed.sections?.[sectionIndex]?.blocks?.splice(blockIndex, 1);
-  const after = applyRules(trimmed, { adoptRows: false });
+  return {
+    scope: 'table',
+    tableId: boundTableId(block),
+    orphans: diffOrphans(doc, trimmed)
+  };
+}
 
+/**
+ * Impact of deleting rows [rowStart..rowEnd] of the table at
+ * sections[sectionIndex].blocks[blockIndex]. Deleting every row removes the
+ * table itself, so that case reports as a table deletion. Null when the block
+ * is not a table or the range is out of bounds.
+ */
+export function analyzeRowDeleteImpact(
+  doc: SfdtDocument,
+  sectionIndex: number,
+  blockIndex: number,
+  rowStart: number,
+  rowEnd: number
+): TableDeleteImpact | null {
+  const block = tableBlockAt(doc, sectionIndex, blockIndex);
+  if (!block) return null;
+  const rows = Array.isArray(block.rows)
+    ? block.rows
+    : (block.blocks?.find((child) => Array.isArray(child.rows)) as SfdtBlock)
+        ?.rows;
+  if (!Array.isArray(rows)) return null;
+  if (rowStart < 0 || rowEnd < rowStart || rowEnd >= rows.length) return null;
+  if (rowEnd - rowStart + 1 >= rows.length)
+    return analyzeTableDeleteImpact(doc, sectionIndex, blockIndex);
+
+  const trimmed = JSON.parse(JSON.stringify(doc)) as SfdtDocument;
+  const trimmedBlock = trimmed.sections?.[sectionIndex]?.blocks?.[blockIndex];
+  const trimmedRows = Array.isArray(trimmedBlock?.rows)
+    ? trimmedBlock?.rows
+    : trimmedBlock?.blocks?.find((child) => Array.isArray(child.rows))?.rows;
+  trimmedRows?.splice(rowStart, rowEnd - rowStart + 1);
+  return {
+    scope: 'row',
+    tableId: boundTableId(block),
+    orphans: diffOrphans(doc, trimmed)
+  };
+}
+
+/** Formulas that fail in `trimmed` but evaluated fine in `doc`. */
+function diffOrphans(
+  doc: SfdtDocument,
+  trimmed: SfdtDocument
+): OrphanedFormula[] {
+  const before = applyRules(doc, { adoptRows: false });
+  const after = applyRules(trimmed, { adoptRows: false });
   // Only failures the deletion introduces count; a formula already broken
-  // before is not this table's dependent.
+  // before is not this deletion's dependent.
   const alreadyFailing = failedFormulaNames(before);
   const orphans: OrphanedFormula[] = [];
   for (const name of failedFormulaNames(after)) {
@@ -101,5 +150,5 @@ export function analyzeTableDeleteImpact(
     if (tags.size) orphans.push({ name, tags: [...tags] });
   }
   orphans.sort((a, b) => a.name.localeCompare(b.name));
-  return { tableId: boundTableId(block), orphans };
+  return orphans;
 }

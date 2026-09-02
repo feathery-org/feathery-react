@@ -1,7 +1,10 @@
 // The dry run behind the delete-table confirmation: which formulas outside a
 // table stop evaluating once it is gone. The engine is the reference resolver;
 // these specs pin the diffing on top of it.
-import { analyzeTableDeleteImpact } from '../tableDeleteImpact';
+import {
+  analyzeRowDeleteImpact,
+  analyzeTableDeleteImpact
+} from '../tableDeleteImpact';
 import { buildCostsFixture } from './fixtures/costsFixture';
 import { SfdtDocument } from '../sfdtTypes';
 
@@ -73,5 +76,38 @@ describe('analyzeTableDeleteImpact', () => {
     const impact = analyzeTableDeleteImpact(doc, 0, COSTS_BLOCK);
     expect(impact?.tableId).toBe('costs');
     expect(impact?.orphans).toEqual([]);
+    expect(impact?.scope).toBe('table');
+  });
+});
+
+// Costs table rows: 0 header, 1 r-1, 2 r-2, 3 Subtotal, 4 Tax, 5 Total.
+describe('analyzeRowDeleteImpact', () => {
+  it('a data row dies without orphans - aggregates re-read the survivors', () => {
+    const impact = analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, 1, 1);
+    expect(impact?.scope).toBe('row');
+    expect(impact?.tableId).toBe('costs');
+    expect(impact?.orphans).toEqual([]);
+  });
+
+  it('deleting the Subtotal row strands everything that reads it', () => {
+    // costs_tax = mul(costs_subtotal, ...), grand_total = sum(costs_subtotal,
+    // costs_tax), combined_total = sum(grand_total, ...): all fail.
+    const impact = analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, 3, 3);
+    expect(impact?.orphans.map((orphan) => orphan.name)).toEqual([
+      'combined_total',
+      'costs_tax',
+      'grand_total'
+    ]);
+  });
+
+  it('deleting every row reports as a table deletion', () => {
+    const impact = analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, 0, 5);
+    expect(impact?.scope).toBe('table');
+  });
+
+  it('rejects out-of-range rows and non-table blocks', () => {
+    expect(analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, 4, 9)).toBeNull();
+    expect(analyzeRowDeleteImpact(fixture(), 0, COSTS_BLOCK, -1, 0)).toBeNull();
+    expect(analyzeRowDeleteImpact(fixture(), 0, 0, 0, 0)).toBeNull();
   });
 });

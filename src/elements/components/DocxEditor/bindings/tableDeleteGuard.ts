@@ -1,23 +1,33 @@
-// Make "delete this table" work from anywhere, and never destroy silently.
+// Make "delete this table/row" work from anywhere, and never destroy silently.
 //
 // Syncfusion refuses destructive commands whenever the selection touches a
-// lockContentControl control, and refuses SILENTLY: deleteTable returns at the
-// canEditContentControl gate. Every bound table is wrapped in exactly such a
-// control, so the one gesture users reach for worked only from an unbound
-// cell. Deleting a whole table is never the stray partial edit the lock exists
-// to prevent, so the wrap below lifts the gate for explicit table deletion -
-// from the toolbar button, the native context menu, and (via the keyDown
-// route) a whole-table selection plus Delete/Backspace.
+// lockContentControl control, and refuses SILENTLY: deleteTable and deleteRow
+// return at the canEditContentControl gate. Every bound table is wrapped in
+// exactly such a control and formula cells lock their contents, so the
+// gestures users reach for worked only from an unbound cell. Deleting a whole
+// table or row is never the stray partial edit the lock exists to prevent, so
+// the wraps below lift the gate for those explicit gestures - the toolbar
+// buttons, the native context menu, and (via the keyDown route) a whole-table
+// selection plus Delete/Backspace.
 //
-// Deleting a table can orphan formulas elsewhere that read its values: they
+// A deletion can orphan formulas elsewhere that read the deleted values: they
 // keep their last computed number, fail every following reconcile, block
-// saving, and are themselves non-deletable (del=keep by design). So the wrap
-// first dry-runs the deletion (tableDeleteImpact); when dependents exist the
-// host confirms with the user, and on confirm the orphaned controls are
-// unwrapped to plain text - the same cached-number semantics the export strip
-// applies - just before the delete (see performDelete for the undo ordering).
+// saving, and are themselves non-deletable (del=keep by design). So the wraps
+// first dry-run the deletion (tableDeleteImpact); when dependents exist the
+// host confirms with the user, and on confirm the surviving orphaned controls
+// are unwrapped to plain text - the same cached-number semantics the export
+// strip applies. The delete runs FIRST, then the unwraps: dying copies of a
+// repeated tag are pruned by then, so tag lookup alone finds the survivors.
+// The whole set is one grouped history entry - a single undo restores the
+// table/row and re-wraps the prose formulas together. Grouping is safe with
+// these entry types: the earlier teardown crash came from removeContentControl
+// reverts pushing their own entry onto the undo stack while it also stayed in
+// the group's modifiedActions (double membership, double destroy); InsertText
+// and Delete entries revert through the standard path where only the group
+// moves between stacks.
 
 import {
+  analyzeRowDeleteImpact,
   analyzeTableDeleteImpact,
   TableDeleteImpact
 } from './core/tableDeleteImpact';
@@ -48,9 +58,14 @@ export interface TableDeleteGuardOptions {
 
 type AnyEditor = SyncfusionEditorLike & Record<string, any>;
 
+/** A top-level table cell's hierarchical index: s;b;row;cell;para;offset. */
+const CELL_OFFSET_PARTS = 6;
+
 /**
- * Wrap editorModule.deleteTable and route whole-table Delete/Backspace through
- * it. Returns an uninstaller that puts everything back.
+ * Wrap editorModule.deleteTable/deleteRow and route whole-table
+ * Delete/Backspace through the table wrap. Returns an uninstaller.
+ * Install BEFORE rowCommandWatch so its wrapper stays outermost and its
+ * post-command reconcile fires after the grouped history entry closes.
  */
 export function installTableDeleteGuard(
   editor: SyncfusionEditorLike,
@@ -58,8 +73,9 @@ export function installTableDeleteGuard(
 ): () => void {
   const anyEditor = editor as AnyEditor;
   const module = editor.editorModule as Record<string, any> | undefined;
-  const original = module?.deleteTable;
-  if (!module || typeof original !== 'function') return () => {};
+  const originalTable = module?.deleteTable;
+  const originalRow = module?.deleteRow;
+  if (!module || typeof originalTable !== 'function') return () => {};
 
   let running = false;
   const replaying = (): boolean => {
@@ -71,48 +87,60 @@ export function installTableDeleteGuard(
     isApplyingNativeStructuralMutations() ||
     replaying() ||
     !!anyEditor.enableTrackChanges ||
-    !!anyEditor.isReadOnly;
+    !!anyEditor.isReadOnly ||
+    // No content controls, nothing to guard - skip the serialize dry run.
+    !editor.documentHelper?.contentControlCollection?.length;
 
-  /** Impact for the table under the selection; null when analysis cannot run. */
-  const analyze = (): TableDeleteImpact | null => {
+  /** [section, block, row] triples for both selection ends, or null. */
+  const selectionCellParts = (): { start: number[]; end: number[] } | null => {
+    const start = String(anyEditor.selection?.startOffset ?? '')
+      .split(';')
+      .map(Number);
+    const end = String(anyEditor.selection?.endOffset ?? '')
+      .split(';')
+      .map(Number);
+    // Deeper than one cell level means a nested table: the native command
+    // targets the inner table while the block index names the outer one, so
+    // the dry run would analyze the wrong thing - fall back to native.
+    if (start.length !== CELL_OFFSET_PARTS || end.length !== CELL_OFFSET_PARTS)
+      return null;
+    if (start.some((n) => !Number.isInteger(n))) return null;
+    if (end.some((n) => !Number.isInteger(n))) return null;
+    if (start[0] !== end[0] || start[1] !== end[1]) return null;
+    return { start, end };
+  };
+
+  const analyzeTable = (): TableDeleteImpact | null => {
     try {
-      const offset = String(anyEditor.selection?.startOffset ?? '');
-      const [section, block] = offset.split(';').map(Number);
-      if (!Number.isInteger(section) || !Number.isInteger(block)) return null;
+      const parts = selectionCellParts();
+      if (!parts) return null;
       const doc = JSON.parse(editor.serialize()) as SfdtDocument;
-      return analyzeTableDeleteImpact(doc, section, block);
+      return analyzeTableDeleteImpact(doc, parts.start[0], parts.start[1]);
     } catch {
       return null;
     }
   };
 
-  /** Widget fragments of the table the caret sits in - the one delete takes. */
-  const doomedTableWidgets = (): Set<unknown> => {
-    const table = (anyEditor.selection?.start as any)?.paragraph?.associatedCell
-      ?.ownerTable;
-    if (!table) return new Set();
-    const splits =
-      typeof table.getSplitWidgets === 'function'
-        ? table.getSplitWidgets()
-        : null;
-    return new Set(Array.isArray(splits) && splits.length ? splits : [table]);
-  };
-
-  const isInsideAny = (control: any, roots: Set<unknown>): boolean => {
-    let widget: any = control?.line?.paragraph;
-    const seen = new Set<unknown>();
-    while (widget && !seen.has(widget)) {
-      seen.add(widget);
-      if (roots.has(widget)) return true;
-      widget = widget.containerWidget;
+  const analyzeRows = (): TableDeleteImpact | null => {
+    try {
+      const parts = selectionCellParts();
+      if (!parts) return null;
+      const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+      return analyzeRowDeleteImpact(
+        doc,
+        parts.start[0],
+        parts.start[1],
+        Math.min(parts.start[2], parts.end[2]),
+        Math.max(parts.start[2], parts.end[2])
+      );
+    } catch {
+      return null;
     }
-    return false;
   };
 
   /**
-   * Unwrap every attached control carrying one of the tags to plain text -
-   * except copies inside the doomed table, which the delete takes anyway (a
-   * repeated formula shares one tag across all its occurrences).
+   * Unwrap every attached control carrying one of the tags to plain text.
+   * Runs after the delete, so a repeated tag's dying copies are already gone.
    *
    * Each unwrap types the control's value over the whole selected control: one
    * ordinary InsertText history entry whose undo replays through hierarchical
@@ -122,7 +150,7 @@ export function installTableDeleteGuard(
    * table restore reflows the paragraph - the control comes back empty next to
    * the text and the engine then writes the value into it, duplicating it.
    */
-  const unwrapControls = (tags: string[], doomed: Set<unknown>): void => {
+  const unwrapControls = (tags: string[]): void => {
     const selection = anyEditor.selection as any;
     if (!selection?.selectContentControl || !module.insertText) return;
     pruneDetachedContentControls(editor);
@@ -134,8 +162,7 @@ export function installTableDeleteGuard(
         const control = collection.find(
           (entry: any) =>
             isContentControlAttached(entry) &&
-            String(entry.contentControlProperties?.tag || '') === tag &&
-            !isInsideAny(entry, doomed)
+            String(entry.contentControlProperties?.tag || '') === tag
         );
         if (!control) break;
         // Content-only selection reads the display value...
@@ -150,28 +177,37 @@ export function installTableDeleteGuard(
     }
   };
 
-  // Unwraps happen BEFORE the delete, then the whole set is one grouped
-  // history entry, so a single undo restores the table and re-wraps the prose
-  // formulas together (group revert runs children last-to-first: the table
-  // reflow lands before the InsertText undos, which replay through
-  // hierarchical positions and so survive it). Grouping is safe with THESE
-  // entry types: the earlier teardown crash came from removeContentControl's
-  // revert pushing its own entry onto the undo stack while it also stayed in
-  // the group's modifiedActions - double membership, double destroy, and the
-  // second destroy reads the owner the first one nulled. InsertText and
-  // DeleteTable revert through the standard path where only the group moves
-  // between stacks.
+  // Ordering and grouping differ by scope, and both matter for undo:
+  //
+  //   table - delete FIRST, unwrap after, all in ONE grouped entry (a single
+  //   undo restores everything). Dying copies of a repeated tag are pruned by
+  //   the delete, so tag lookup finds only survivors; the unwraps all live
+  //   OUTSIDE the deleted table, so the group's reverse-order revert (inserts
+  //   undone before the table restore) never relayouts under them.
+  //
+  //   row - unwrap FIRST, delete after, NO grouping. Row entries are
+  //   table-clone based, and any grouped revert touching one crashes this
+  //   Syncfusion version on detached widgets (reLayout reads a stale
+  //   bodyWidget; same fragility rowCommandWatch documents for insertRow, and
+  //   probed both group orderings). Sequential entries undo cleanly, and
+  //   unwrap-first keeps every undo depth consistent: the first undo restores
+  //   the row (its own formulas with it), later undos re-wrap the survivors.
+  //   A dying-row twin of an orphan tag gets unwrapped too - harmless, the
+  //   delete takes the plain text with it and its own undo restores it.
   const performDelete = (
     impact: TableDeleteImpact,
+    fn: (...args: unknown[]) => unknown,
     self: unknown,
     args: unknown[],
     anchor: string
   ): unknown => {
     const tags = impact.orphans.flatMap((orphan) => orphan.tags);
+    const unwrapFirst = impact.scope === 'row';
     const history = editor.editorHistoryModule as Record<string, any> | null;
     let grouped = false;
     if (
       tags.length &&
+      impact.scope === 'table' &&
       !history?.currentHistoryInfo &&
       typeof module.initComplexHistory === 'function'
     ) {
@@ -180,22 +216,23 @@ export function installTableDeleteGuard(
     }
     running = true;
     try {
-      if (tags.length) {
-        // insertText/delete are gated like everything else; the whole-control
-        // selection is exactly what the lock would otherwise block.
-        withContentControlLocksBypassed(module, () =>
-          unwrapControls(tags, doomedTableWidgets())
-        );
+      // insertText/delete are gated like everything else; the whole-control
+      // selection is exactly what the lock would otherwise block.
+      if (unwrapFirst && tags.length) {
+        withContentControlLocksBypassed(module, () => unwrapControls(tags));
         try {
           // Unwrapping moved the selection; the delete acts on the anchor.
           if (anchor) anyEditor.selection?.select?.(anchor, anchor);
         } catch {
-          // Selection restore is best effort; deleteTable checks the caret.
+          // Selection restore is best effort; the command checks the caret.
         }
       }
-      return withContentControlLocksBypassed(module, () =>
-        original.apply(self, args)
+      const result = withContentControlLocksBypassed(module, () =>
+        fn.apply(self, args)
       );
+      if (!unwrapFirst && tags.length)
+        withContentControlLocksBypassed(module, () => unwrapControls(tags));
+      return result;
     } finally {
       running = false;
       if (grouped) history?.updateComplexHistory?.();
@@ -207,35 +244,43 @@ export function installTableDeleteGuard(
     }
   };
 
-  const patched = function patchedDeleteTable(
-    this: unknown,
-    ...args: unknown[]
-  ): unknown {
-    // Replay re-invokes deleteTable with the restored selection, which can sit
-    // inside a locked control; the gate would silently eat the redo entry.
-    if (replaying())
-      return withContentControlLocksBypassed(module, () =>
-        original.apply(this, args)
-      );
-    if (passthrough()) return original.apply(this, args);
-    const impact = analyze();
-    // Unrecognizable selection or document: exactly the native behavior.
-    if (!impact) return original.apply(this, args);
-    const anchor = String(anyEditor.selection?.startOffset ?? '');
-    if (!impact.orphans.length || !options.confirm)
-      return performDelete(impact, this, args, anchor);
-    options
-      .confirm(impact)
-      .then((confirmed) => {
-        if (!confirmed || anyEditor.isDestroyed) return;
-        // Every caller invokes this as module.deleteTable(), so the deferred
-        // apply on `module` matches the synchronous receiver.
-        performDelete(impact, module, args, anchor);
-      })
-      .catch(() => undefined);
-    return undefined;
-  };
-  module.deleteTable = patched;
+  const makePatched = (
+    original: (...args: unknown[]) => unknown,
+    analyze: () => TableDeleteImpact | null
+  ) =>
+    function patchedDelete(this: unknown, ...args: unknown[]): unknown {
+      // Replay re-invokes the command with the restored selection, which can
+      // sit inside a locked control; the gate would silently eat the entry.
+      if (replaying())
+        return withContentControlLocksBypassed(module, () =>
+          original.apply(this, args)
+        );
+      if (passthrough()) return original.apply(this, args);
+      const impact = analyze();
+      // Unrecognizable selection or document: exactly the native behavior.
+      if (!impact) return original.apply(this, args);
+      const anchor = String(anyEditor.selection?.startOffset ?? '');
+      if (!impact.orphans.length || !options.confirm)
+        return performDelete(impact, original, this, args, anchor);
+      options
+        .confirm(impact)
+        .then((confirmed) => {
+          if (!confirmed || anyEditor.isDestroyed) return;
+          // Every caller invokes these as module methods, so the deferred
+          // apply on `module` matches the synchronous receiver.
+          performDelete(impact, original, module, args, anchor);
+        })
+        .catch(() => undefined);
+      return undefined;
+    };
+
+  const patchedTable = makePatched(originalTable, analyzeTable);
+  module.deleteTable = patchedTable;
+  const patchedRow =
+    typeof originalRow === 'function'
+      ? makePatched(originalRow, analyzeRows)
+      : null;
+  if (patchedRow) module.deleteRow = patchedRow;
 
   // Whole-table selection + Delete/Backspace: today a silent no-op on bound
   // tables. Reroute to deleteTable; plain tables keep native Word behavior.
@@ -245,7 +290,7 @@ export function installTableDeleteGuard(
       if (key !== 'Delete' && key !== 'Backspace') return;
       if (passthrough()) return;
       if (!(anyEditor.selection as any)?.isTableSelected?.()) return;
-      const impact = analyze();
+      const impact = analyzeTable();
       if (!impact?.tableId) return;
       args.isHandled = true;
       module.deleteTable();
@@ -256,7 +301,9 @@ export function installTableDeleteGuard(
   anyEditor.addEventListener?.('keyDown', onKeyDown);
 
   return () => {
-    if (module.deleteTable === patched) module.deleteTable = original;
+    if (module.deleteTable === patchedTable) module.deleteTable = originalTable;
+    if (patchedRow && module.deleteRow === patchedRow)
+      module.deleteRow = originalRow;
     try {
       anyEditor.removeEventListener?.('keyDown', onKeyDown);
     } catch {
