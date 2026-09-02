@@ -80,7 +80,10 @@ type PreloadableField = React.ComponentType<any> & {
 // Share the resolved component between preload and render. A separate
 // React.lazy wrapper can still suspend on its first render even after an
 // external import() preload has resolved.
-const createPreloadableField = (load: () => Promise<any>): PreloadableField => {
+export const createPreloadableField = (
+  name: string,
+  load: () => Promise<any>
+): PreloadableField => {
   let Component: React.ComponentType<any> | null = null;
   let preloadPromise: Promise<any> | null = null;
   let loadError: any = null;
@@ -90,6 +93,14 @@ const createPreloadableField = (load: () => Promise<any>): PreloadableField => {
       loadError = null;
       preloadPromise = load()
         .then((module) => {
+          // A host app that cancels Vite's vite:preloadError event turns a
+          // failed chunk request into a promise resolving to undefined, so a
+          // resolved import is not proof the chunk actually loaded.
+          if (!module?.default) {
+            throw new Error(
+              `Field chunk "${name}" resolved without a default export`
+            );
+          }
           Component = module.default;
           return module;
         })
@@ -112,67 +123,12 @@ const createPreloadableField = (load: () => Promise<any>): PreloadableField => {
   return Field;
 };
 
-const AddressLine1 = createPreloadableField(fieldLoaders.AddressLine1);
-const AudioRecordingField = createPreloadableField(
-  fieldLoaders.AudioRecordingField
-);
-const ButtonGroupField = createPreloadableField(fieldLoaders.ButtonGroupField);
-const CheckboxField = createPreloadableField(fieldLoaders.CheckboxField);
-const CheckboxGroupField = createPreloadableField(
-  fieldLoaders.CheckboxGroupField
-);
-const ColorPickerField = createPreloadableField(fieldLoaders.ColorPickerField);
-const CustomField = createPreloadableField(fieldLoaders.CustomField);
-const DateSelectorField = createPreloadableField(
-  fieldLoaders.DateSelectorField
-);
-const DropdownField = createPreloadableField(fieldLoaders.DropdownField);
-const DropdownMultiField = createPreloadableField(
-  fieldLoaders.DropdownMultiField
-);
-const FileUploadField = createPreloadableField(fieldLoaders.FileUploadField);
-const MatrixField = createPreloadableField(fieldLoaders.MatrixField);
-const PasswordField = createPreloadableField(fieldLoaders.PasswordField);
-const PaymentMethodField = createPreloadableField(
-  fieldLoaders.PaymentMethodField
-);
-const PhoneField = createPreloadableField(fieldLoaders.PhoneField);
-const PinInputField = createPreloadableField(fieldLoaders.PinInputField);
-const QRScanner = createPreloadableField(fieldLoaders.QRScanner);
-const RadioButtonGroupField = createPreloadableField(
-  fieldLoaders.RadioButtonGroupField
-);
-const RatingField = createPreloadableField(fieldLoaders.RatingField);
-const SignatureField = createPreloadableField(fieldLoaders.SignatureField);
-const SliderField = createPreloadableField(fieldLoaders.SliderField);
-const TextField = createPreloadableField(fieldLoaders.TextField);
-const TextArea = createPreloadableField(fieldLoaders.TextArea);
-
-const preloadableFields = {
-  AddressLine1,
-  AudioRecordingField,
-  ButtonGroupField,
-  CheckboxField,
-  CheckboxGroupField,
-  ColorPickerField,
-  CustomField,
-  DateSelectorField,
-  DropdownField,
-  DropdownMultiField,
-  FileUploadField,
-  MatrixField,
-  PasswordField,
-  PaymentMethodField,
-  PhoneField,
-  PinInputField,
-  QRScanner,
-  RadioButtonGroupField,
-  RatingField,
-  SignatureField,
-  SliderField,
-  TextField,
-  TextArea
-};
+const preloadableFields = Object.fromEntries(
+  Object.entries(fieldLoaders).map(([name, load]) => [
+    name,
+    createPreloadableField(name, load)
+  ])
+) as Record<FieldComponentKey, PreloadableField>;
 
 const getFieldComponentKey = (servarType?: string): FieldComponentKey => {
   switch (servarType) {
