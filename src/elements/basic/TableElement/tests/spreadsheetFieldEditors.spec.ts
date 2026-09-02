@@ -197,6 +197,27 @@ describe('formatCellDisplay', () => {
     );
     expect(formatCellDisplay(true, undefined)).toBe('TRUE');
   });
+
+  test('dates read as a calendar day, in UTC so the day never shifts', () => {
+    const date = { label: 'Born', type: 'date' as const };
+    expect(formatCellDisplay('1982-07-19', date)).toBe('Jul 19, 1982');
+    // Older rows hold a midnight instant; it is the same day.
+    expect(formatCellDisplay('1982-07-19T00:00:00Z', date)).toBe('Jul 19, 1982');
+  });
+
+  test('datetimes read in the viewer\'s zone, like the editor shows them', () => {
+    const rule = { label: 'Sent', type: 'datetime' as const };
+    const shown = formatCellDisplay('2026-09-02T14:05:00.000Z', rule);
+    const expected = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    }).format(new Date('2026-09-02T14:05:00.000Z'));
+    expect(shown).toBe(expected);
+    expect(shown).toMatch(/Sep \d+, 2026/);
+  });
+
+  test('an unparseable date shows as typed so it can be fixed', () => {
+    expect(formatCellDisplay('soon', { label: 'Born', type: 'date' })).toBe('soon');
+  });
 });
 
 describe('seedActionFor', () => {
