@@ -181,14 +181,18 @@ function _collectHideFlags(
   visiblePositions: VisiblePositions,
   hiddenPositions: Record<string, number[]>,
   repeatKeys: string[],
-  internalId: string
+  internalId: string,
+  emptyableKeys: Set<string>
 ) {
   const elKey = getPositionKey(element);
   const repeatKey = repeatKeys.find((key) => inRepeat(elKey, key, true));
+  // Repeat containers render at least 1 instance unless the container opts into
+  // being emptied, in which case the user can delete every instance.
+  const minRepeats = repeatKey && emptyableKeys.has(repeatKey) ? 0 : 1;
   const numRepeats = Math.max(
     repeatCountByFields(step, repeatKey),
     repeatCountByTextVariables(step, repeatKey),
-    1
+    minRepeats
   );
 
   const curRepeats = repeatKey ? numRepeats : 1;
@@ -228,6 +232,11 @@ function _collectHideFlags(
 function getVisiblePositions(step: any, internalId: string) {
   const repeatGrids = getRepeatedContainers(step);
   const repeatKeys = repeatGrids.map(getPositionKey);
+  const emptyableKeys = new Set<string>(
+    repeatGrids
+      .filter((grid: any) => grid.properties?.allow_empty)
+      .map(getPositionKey)
+  );
   const visiblePositions: VisiblePositions = {};
 
   // Efficient data structure for tracking hidden elements
@@ -244,7 +253,8 @@ function getVisiblePositions(step: any, internalId: string) {
         visiblePositions,
         hiddenPositions,
         repeatKeys,
-        internalId
+        internalId,
+        emptyableKeys
       );
     });
 
@@ -260,7 +270,8 @@ function getVisiblePositions(step: any, internalId: string) {
         visiblePositions,
         hiddenPositions,
         repeatKeys,
-        internalId
+        internalId,
+        emptyableKeys
       );
     });
   });
