@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import type { ActionMeta, OnChangeValue } from 'react-select';
 import useBorder from '../../components/useBorder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
@@ -22,7 +23,7 @@ import useDropdownOptions from './useDropdownOptions';
 import useWindowedOptions from './useWindowedOptions';
 import useSelectProps from './useSelectProps';
 import useDropdownInteractions from './useDropdownInteractions';
-import type { CreatableValidator } from './types';
+import type { CreatableValidator, OptionData } from './types';
 
 export default function DropdownMultiField({
   element,
@@ -62,9 +63,37 @@ export default function DropdownMultiField({
   // Controlled inputValue needed to filter full dataset before passing to react-select
   const [inputValue, setInputValue] = useState('');
 
+  // A single max selectable option behaves like a searchable native dropdown.
+  // servar is untyped, so coerce - a stored "1" must not fall back to chips.
+  const isSingleSelectMode = Number(servar.max_length) === 1;
+
+  // Single mode hands react-select one option (or null on clear), but the
+  // stored field value is always a string array, so re-wrap on the way out.
+  const handleValueChange = useCallback(
+    (
+      selected: OnChangeValue<OptionData, boolean>,
+      actionMeta: ActionMeta<OptionData>
+    ) => {
+      if (!isSingleSelectMode || Array.isArray(selected))
+        return onChange(selected, actionMeta);
+      onChange(selected ? [selected] : [], actionMeta);
+    },
+    [isSingleSelectMode, onChange]
+  );
+
+  // Clamp what single mode displays, but leave the stored array alone: writing
+  // it back on mount would fire this field's change logic rules on load.
+  const displayFieldVal = useMemo(
+    () =>
+      isSingleSelectMode && Array.isArray(fieldVal)
+        ? fieldVal.slice(0, 1)
+        : fieldVal,
+    [fieldVal, isSingleSelectMode]
+  );
+
   // Build all dropdown options and selections
   const { options: allOptions, selectVal } = useDropdownOptions({
-    fieldVal,
+    fieldVal: displayFieldVal,
     fieldKey,
     servar,
     dynamicOptions,
@@ -95,7 +124,8 @@ export default function DropdownMultiField({
   } = useCollapsedSelectionManager({
     containerRef,
     disabled,
-    values: selectVal
+    values: selectVal,
+    isSingleSelectMode
   });
 
   const {
@@ -120,7 +150,9 @@ export default function DropdownMultiField({
   );
 
   const disableAllOptions =
-    (!!servar.max_length && selectVal.length >= servar.max_length) ||
+    (!isSingleSelectMode &&
+      !!servar.max_length &&
+      selectVal.length >= servar.max_length) ||
     loadingDynamicOptions;
   const create = servar.metadata.creatable_options;
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
@@ -184,7 +216,8 @@ export default function DropdownMultiField({
     isCreatableInputValid: create ? isCreatableInputValid : undefined,
     create,
     disableAllOptions,
-    onChange
+    isSingleSelectMode,
+    onChange: handleValueChange
   });
 
   const hasTooltip = !!properties.tooltipText;
@@ -218,6 +251,7 @@ export default function DropdownMultiField({
     disabled,
     isMenuOpen,
     loadingDynamicOptions,
+    isSingleSelectMode,
     selectStyles,
     selectComponentsOverride,
     collapseSelected,
