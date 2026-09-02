@@ -54,15 +54,6 @@ type GridInteractionOptions = {
    */
   seedAction?: (fieldKey: string, char: string) => SeedAction;
   /**
-   * Whether a value is one the column would accept. Bulk writes (paste, fill)
-   * are filtered through this: typing a bad value is a deliberate act the user
-   * can see flagged, but a paste can drop hundreds of them at once, silently
-   * and out of view.
-   */
-  acceptsValue?: (fieldKey: string, value: CellValue) => boolean;
-  /** How many cells a bulk write refused, so the UI can say so. */
-  onValuesRefused?: (count: number) => void;
-  /**
    * A column the grid shows but must never write — a hub file field holds
    * upload references no editor can author. Enforced on every write path
    * (editor, paste, fill, clear), not only in the editor's input, because the
@@ -89,8 +80,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
     scrollToCell,
     restoreFocus,
     seedAction,
-    acceptsValue,
-    onValuesRefused,
     isReadOnly,
     parseValue
   } = options;
@@ -103,6 +92,10 @@ export function useGridInteractions(options: GridInteractionOptions) {
   );
 
   /** Drop the patches aimed at a column that cannot be written at all. */
+  // Every bulk write (paste, fill, clear) goes through this and nothing else:
+  // a value that breaks the column's rule still lands and is flagged, exactly
+  // as a typed one is — an address missing its domain is on its way to being
+  // valid, not something to throw away. Only a read-only column takes nothing.
   const writable = React.useCallback(
     (patches: CellPatch[]): CellPatch[] =>
       isReadOnly
@@ -313,31 +306,6 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [getDisplayColumns, getDisplayRows, getValue, rowIndexById]
   );
 
-  /**
-   * Drop the patches whose value the column would reject, and report how many.
-   * Clearing a cell is always allowed — an empty cell is a state the user can
-   * always reach, and a required column flags it rather than forbidding it —
-   * except on a read-only column, which takes nothing at all.
-   */
-  const acceptable = React.useCallback(
-    (patches: CellPatch[]): CellPatch[] => {
-      if (!acceptsValue && !isReadOnly) return patches;
-      const kept = patches.filter(
-        (patch) =>
-          !isReadOnly?.(patch.fieldKey) &&
-          (patch.after === null ||
-            patch.after === '' ||
-            !acceptsValue ||
-            acceptsValue(patch.fieldKey, patch.after))
-      );
-      // Always reported, including zero: each bulk write replaces the notice
-      // from the one before it rather than leaving a stale count on screen.
-      onValuesRefused?.(patches.length - kept.length);
-      return kept;
-    },
-    [acceptsValue, isReadOnly, onValuesRefused]
-  );
-
   const clearSelection = React.useCallback(() => {
     if (!canEdit) return;
     execute(
@@ -421,7 +389,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
         const text = matrix[0][0] ?? '';
         execute(
           'Paste cells',
-          acceptable(
+          writable(
             patchesForBounds([activeBound], (_row, _column, before, fieldKey) =>
               parse(fieldKey, text, before)
             )
@@ -455,7 +423,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
         });
       });
 
-      execute('Paste cells', acceptable(patches));
+      execute('Paste cells', writable(patches));
       selectBounds({
         minRowIndex: rowStart,
         maxRowIndex: maxRow,
@@ -464,7 +432,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       });
     },
     [
-      acceptable,
+      writable,
       canEdit,
       execute,
       getActiveRange,
@@ -500,11 +468,11 @@ export function useGridInteractions(options: GridInteractionOptions) {
         getValue
       });
 
-      execute('Fill cells', acceptable(patches));
+      execute('Fill cells', writable(patches));
       selectBounds(preview.expanded);
     },
     [
-      acceptable,
+      writable,
       canEdit,
       execute,
       getDisplayColumns,

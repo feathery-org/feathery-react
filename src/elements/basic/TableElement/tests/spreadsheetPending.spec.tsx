@@ -604,7 +604,7 @@ describe('editors for other field types', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.getByText('deed.pdf')).toBeInTheDocument();
     expect(screen.queryByText('nope')).toBeNull();
-    // The paste reports what it skipped, but nothing is waiting to be saved.
+    // Nothing landed, so nothing is waiting to be saved.
     expect(screen.queryByText(/\d+ unsaved change/)).toBeNull();
   });
 
@@ -751,7 +751,9 @@ describe('pasting invalid data', () => {
   const pasteInto = (text: string) =>
     fireEvent.paste(grid(), { clipboardData: { getData: () => text } });
 
-  test('a value the column rejects never lands', async () => {
+  test('a value the column rejects still lands, flagged as an issue', async () => {
+    // A pasted value is treated exactly like a typed one: it may be on its way
+    // to being valid, so it is kept and flagged rather than thrown away.
     await setup();
     fireEvent.mouseDown(cell('Alice'));
     await waitFor(() =>
@@ -762,14 +764,14 @@ describe('pasting invalid data', () => {
     pasteInto('Bob\tNonsense');
 
     await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
-    // The good half landed; the bad half did not.
-    expect(screen.queryByText('Nonsense')).toBeNull();
-    expect(screen.getByText('Ready')).toBeInTheDocument();
-    expect(status()).toHaveTextContent('1 value skipped');
-    expect(status()).toHaveTextContent('1 unsaved change');
+    expect(screen.getByText('Nonsense')).toBeInTheDocument();
+    expect(status()).toHaveTextContent('2 unsaved changes');
+    // The row is verified, so the bad value blocks the save until it is fixed.
+    expect(status()).toHaveTextContent('1 error');
+    expect(saveButton()).toBeDisabled();
   });
 
-  test('a wholly valid paste says nothing', async () => {
+  test('a wholly valid paste raises no issue', async () => {
     await setup();
     fireEvent.mouseDown(cell('Alice'));
     await waitFor(() =>
@@ -779,17 +781,18 @@ describe('pasting invalid data', () => {
     pasteInto('Bob\tSent');
 
     await waitFor(() => expect(screen.getByText('Sent')).toBeInTheDocument());
-    expect(status()).not.toHaveTextContent('skipped');
+    expect(status()).not.toHaveTextContent('error');
+    expect(saveButton()).toBeEnabled();
   });
 
-  test('the notice goes when the buffer it described does', async () => {
+  test('discarding a flagged paste clears the bar', async () => {
     await setup();
     fireEvent.mouseDown(cell('Alice'));
     await waitFor(() =>
       expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
     );
     pasteInto('Bob\tNonsense');
-    await waitFor(() => expect(status()).toHaveTextContent('skipped'));
+    await waitFor(() => expect(status()).toHaveTextContent('1 error'));
 
     const confirmSpy = jest
       .spyOn(featheryWindow(), 'confirm')

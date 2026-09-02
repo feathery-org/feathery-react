@@ -542,3 +542,20 @@ describe('Tab and the grid boundary', () => {
     expect(cell('Alice')).toHaveAttribute('aria-selected', 'true');
   });
 });
+
+describe('fill handle', () => {
+  const handle = () => document.querySelector('.feathery-table-grid-fill-handle');
+
+  test('is hidden while a cell is being edited', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() => expect(handle()).not.toBeNull());
+
+    fireEvent.doubleClick(cell('Alice'));
+    await waitFor(() => expect(screen.getByRole('textbox')).toBeInTheDocument());
+    expect(handle()).toBeNull();
+
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+    await waitFor(() => expect(handle()).not.toBeNull());
+  });
+});
