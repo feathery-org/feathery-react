@@ -589,6 +589,37 @@ export function useGridInteractions(options: GridInteractionOptions) {
   );
 
   /**
+   * Tab walks the row like a spreadsheet, but it must still be a way OUT of
+   * the grid: at the last column (or the first, going backwards) the key is
+   * left to the browser, so a keyboard user can reach the rest of the form
+   * instead of being trapped in the table.
+   */
+  const handleGridTabKey = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.key !== 'Tab' || editing) return;
+      const active = getActiveRange();
+      if (!active) return;
+      const columns = getDisplayColumns();
+      const index = columns.findIndex(
+        (column) => column.id === active.focusColumnId
+      );
+      const atEdge = event.shiftKey ? index <= 0 : index >= columns.length - 1;
+      if (atEdge) return;
+      event.preventDefault();
+      moveSelection(event.shiftKey ? 'left' : 'right');
+    },
+    [editing, getActiveRange, getDisplayColumns, moveSelection]
+  );
+
+  const handleGridKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      handleGridTabKey(event);
+      if (!event.defaultPrevented) handleGridTextEntry(event);
+    },
+    [handleGridTabKey, handleGridTextEntry]
+  );
+
+  /**
    * Collapses the selection onto one cell and brings it into view. Used to
    * walk the user through failing cells from the status bar, so it also takes
    * keyboard focus back to the grid — otherwise the next arrow key would still
@@ -646,6 +677,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       selectColumnRange,
       selectRowRange,
       handleGridTextEntry,
+      handleGridKeyDown,
       handleEditorKeyDown,
       undo,
       redo
@@ -671,6 +703,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
       selectColumnRange,
       selectRowRange,
       handleGridTextEntry,
+      handleGridKeyDown,
       handleEditorKeyDown,
       undo,
       redo

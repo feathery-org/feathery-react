@@ -319,14 +319,20 @@ export function hubCellRules(
 
 // Form field types whose value has a format a spreadsheet cell can get wrong,
 // or a storage type other than text. Anything absent (text, select, …) accepts
-// whatever is typed and stores it as text.
+// whatever is typed and stores it as text. Upload fields hold file references,
+// which the grid can show but never edit.
 const FIELD_TYPES: Record<string, CellValueType> = {
   email: 'email',
   phone_number: 'phone_number',
   url: 'url',
   integer_field: 'number',
+  rating: 'number',
+  slider: 'number',
   checkbox: 'boolean',
-  ssn: 'tax_id'
+  ssn: 'tax_id',
+  file_upload: 'file',
+  signature: 'file',
+  audio_recording: 'file'
 };
 
 /**

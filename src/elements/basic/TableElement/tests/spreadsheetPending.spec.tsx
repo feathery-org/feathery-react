@@ -1003,3 +1003,70 @@ describe('staged Data Hub rows', () => {
     );
   });
 });
+
+describe('rows inserted before a save', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' }
+  ];
+  const hubClient = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]] }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([{ id: 'e1', verified: true, data: { name: 'Alice' } }])
+        : Promise.resolve({})
+    )
+  });
+  const rowCount = () => Number(grid().getAttribute('aria-rowcount')) - 1;
+  const addRow = () => fireEvent.click(screen.getByRole('button', { name: '+ Add row' }));
+
+  test('Discard removes an inserted Hub row and lets the table refetch again', async () => {
+    const client = hubClient();
+    const gets = () =>
+      client.dataHubAction.mock.calls.filter(([args]: any) => args.operation === 'get').length;
+    renderTable({ columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' }, { client });
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(rowCount()).toBe(1);
+
+    addRow();
+    await waitFor(() => expect(rowCount()).toBe(2));
+    // A row with no entry yet would be lost by a resync, so none happens...
+    const before = gets();
+    fireEvent(featheryWindow(), new Event('focus'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(gets()).toBe(before);
+
+    editCell('Alice', 'Alicia');
+    discard();
+    // ...until Discard takes the row back along with the edit.
+    await waitFor(() => expect(rowCount()).toBe(1));
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+    fireEvent(featheryWindow(), new Event('focus'));
+    await waitFor(() => expect(gets()).toBe(before + 1));
+  });
+
+  test('Discard removes an inserted field row too', async () => {
+    // Apply updates so the inserted blank row is really in the field values.
+    const updateFieldValues = jest.fn((updates: Record<string, any>) =>
+      Object.assign(fieldValues, updates)
+    );
+    renderTable({}, { updateFieldValues });
+    addRow();
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenLastCalledWith({
+        name_key: ['Alice', 'Bob', ''],
+        email_key: ['alice@test.com', 'bob@test.com', '']
+      })
+    );
+
+    editCell('Alice', 'Alicia');
+    discard();
+    await waitFor(() =>
+      expect(updateFieldValues).toHaveBeenLastCalledWith({
+        name_key: ['Alice', 'Bob'],
+        email_key: ['alice@test.com', 'bob@test.com']
+      })
+    );
+  });
+});

@@ -499,3 +499,42 @@ describe('row insertion and deletion', () => {
     expect(screen.queryByRole('button', { name: '+ Add row' })).toBeNull();
   });
 });
+
+describe('Tab and the grid boundary', () => {
+  test('Tab moves the selection along the row', async () => {
+    renderTable();
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+
+    // fireEvent returns false once the default has been prevented, i.e. the
+    // grid took the key rather than the browser.
+    expect(fireEvent.keyDown(grid(), { key: 'Tab' })).toBe(false);
+    await waitFor(() =>
+      expect(cell('30')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true })).toBe(false);
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+  });
+
+  test('Tab at the last column and Shift+Tab at the first leave the grid to the browser', async () => {
+    // Otherwise a keyboard user could never reach the rest of the form.
+    renderTable();
+    fireEvent.mouseDown(cell('Denver'));
+    await waitFor(() =>
+      expect(cell('Denver')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(fireEvent.keyDown(grid(), { key: 'Tab' })).toBe(true);
+    expect(cell('Denver')).toHaveAttribute('aria-selected', 'true');
+
+    fireEvent.mouseDown(cell('Alice'));
+    await waitFor(() =>
+      expect(cell('Alice')).toHaveAttribute('aria-selected', 'true')
+    );
+    expect(fireEvent.keyDown(grid(), { key: 'Tab', shiftKey: true })).toBe(true);
+    expect(cell('Alice')).toHaveAttribute('aria-selected', 'true');
+  });
+});
