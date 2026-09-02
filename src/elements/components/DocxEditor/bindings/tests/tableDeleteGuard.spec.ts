@@ -311,6 +311,26 @@ describe('installTableDeleteGuard', () => {
     expect(scan(editor).tables.has('costs')).toBe(true);
   });
 
+  it('routes whole-row Delete/Backspace on a bound table through the guard', async () => {
+    editor = makeEditor(buildCostsFixture());
+    const confirm = jest.fn(() => Promise.resolve(true));
+    uninstall = installTableDeleteGuard(
+      editor as unknown as SyncfusionEditorLike,
+      { confirm }
+    );
+
+    caretIntoControl(editor, 'costs_subtotal');
+    (editor.selection as any).selectRow();
+    const args = { event: { key: 'Backspace' }, isHandled: false };
+    (editor as any).trigger('keyDown', args);
+    await flush();
+
+    expect(args.isHandled).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm.mock.calls[0][0].scope).toBe('row');
+    expect(costsRowCount(editor)).toBe(5);
+  });
+
   it('routes whole-table Delete/Backspace on a bound table through the guard', async () => {
     editor = makeEditor(buildCostsFixture());
     const confirm = jest.fn(() => Promise.resolve(true));
