@@ -144,6 +144,12 @@ export default function DocumentViewer({
   // Key of the toolbar action currently running (spinner + disable-all), or
   // null when idle. Keys: 'primary', 'draft', 'download'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Freeze the PDF widgets while an action runs. pdf.js only fires
+  // onSetModified when the modified flag flips false→true, and during a save
+  // it is already true — so an edit made mid-save never re-marks the doc
+  // dirty, then saveDocument()'s finally resets the flag and the doc looks
+  // clean. The edit would stay on screen but never be persisted.
+  const isInputLocked = busyKey !== null;
   // Read by the once-bound Escape handler, which must see the live value.
   const busyKeyRef = useRef(busyKey);
   busyKeyRef.current = busyKey;
@@ -306,15 +312,18 @@ export default function DocumentViewer({
       if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
       const pdfProxy = loadedDocs.current[doc.pdf_url];
       if (!pdfProxy) continue;
-      const bytes = await pdfProxy.saveDocument();
       try {
+        const bytes = await pdfProxy.saveDocument();
         await onSaveEnvelopeFile(
           doc.envelope_id,
           new Blob([bytes], { type: 'application/pdf' })
         );
       } catch (e) {
-        // saveDocument() already reset the modified flag; put the doc back so
-        // retrying the toolbar action re-saves it instead of skipping it.
+        // pdf.js resets the modified flag in saveDocument()'s finally — even
+        // when the save itself rejects — so by now onResetModified has already
+        // dropped the doc from dirtyDocs. Put it back, whichever step failed,
+        // so retrying the toolbar action re-saves it instead of skipping it
+        // and finalizing the unedited file.
         dirtyDocs.current.add(doc.pdf_url);
         throw e;
       }
@@ -452,6 +461,7 @@ export default function DocumentViewer({
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
             registerPageRef={registerPageRef}
+            inputLocked={isInputLocked}
           />
         </div>
       </div>

@@ -110,6 +110,12 @@ export default function AnnotationLayerStyles() {
           pointer-events: none;
         }
 
+        /* Frozen while the viewer saves edits (DocumentCanvas sets inert
+           on the layer). Pointer fallback for browsers without inert. */
+        .annotationLayer[inert] section {
+          pointer-events: none;
+        }
+
         .annotationLayer .linkAnnotation {
           outline: none;
         }

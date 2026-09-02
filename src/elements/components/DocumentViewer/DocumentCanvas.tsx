@@ -23,6 +23,9 @@ interface DocumentCanvasProps {
     pageIndex: number,
     el: HTMLDivElement | null
   ) => void;
+  // Make every page's form widgets inert (no pointer, keyboard, or focus)
+  // while the viewer persists edits — see DocumentViewer's isInputLocked.
+  inputLocked?: boolean;
 }
 
 interface DocState {
@@ -39,7 +42,8 @@ export default function DocumentCanvas({
   documents,
   pageWidth,
   onDocLoad,
-  registerPageRef
+  registerPageRef,
+  inputLocked = false
 }: DocumentCanvasProps) {
   const [docStates, setDocStates] = useState<Record<string, DocState>>({});
   const generationRef = useRef(0);
@@ -228,6 +232,7 @@ export default function DocumentCanvas({
             pdfUrl={doc.pdf_url}
             pageWidth={pageWidth}
             registerPageRef={registerPageRef}
+            inputLocked={inputLocked}
           />
         );
       })}
@@ -244,13 +249,15 @@ interface DocumentPagesProps {
     pageIndex: number,
     el: HTMLDivElement | null
   ) => void;
+  inputLocked: boolean;
 }
 
 function DocumentPages({
   pdfProxy,
   pdfUrl,
   pageWidth,
-  registerPageRef
+  registerPageRef,
+  inputLocked
 }: DocumentPagesProps) {
   const numPages: number = pdfProxy.numPages ?? 0;
   return (
@@ -264,6 +271,7 @@ function DocumentPages({
             pdfProxy={pdfProxy}
             pageNumber={pageIndex + 1}
             pageWidth={pageWidth}
+            inputLocked={inputLocked}
           />
         </div>
       ))}
@@ -275,12 +283,29 @@ interface PdfPageProps {
   pdfProxy: any;
   pageNumber: number;
   pageWidth: number;
+  inputLocked: boolean;
 }
 
-function PdfPage({ pdfProxy, pageNumber, pageWidth }: PdfPageProps) {
+function PdfPage({
+  pdfProxy,
+  pageNumber,
+  pageWidth,
+  inputLocked
+}: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const annotationDivRef = useRef<HTMLDivElement | null>(null);
+
+  // `inert` blocks clicks, typing and focus on the widgets (blurring one
+  // that's focused), so nothing can be edited while a save is in flight.
+  // Set imperatively: React 18 doesn't know the attribute and drops a boolean
+  // value for it. The layer div itself survives the render effect's
+  // innerHTML rebuilds, so the attribute persists across them.
+  // AnnotationLayerStyles also turns off pointer-events under
+  // `.annotationLayer[inert]` for browsers that predate inert support.
+  useEffect(() => {
+    annotationDivRef.current?.toggleAttribute('inert', inputLocked);
+  }, [inputLocked]);
 
   useEffect(() => {
     let cancelled = false;

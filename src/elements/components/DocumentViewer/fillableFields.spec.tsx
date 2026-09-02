@@ -27,20 +27,33 @@ const page = {
 
 // One mock pdfProxy per pdf_url, exposing the same annotationStorage contract
 // the viewer relies on: onSetModified fires on the first widget edit and
-// saveDocument() resets the modified flag (as pdf.js's real save does).
+// saveDocument() resets the modified flag in a finally — on failure too, as
+// pdf.js's real save does. `failNextSave` makes the next saveDocument() reject.
 const makePdfProxy = () => {
   const storage: any = {
     onSetModified: null,
     onResetModified: null
   };
+  let nextSaveError: Error | null = null;
   const proxy: any = {
     numPages: 1,
     annotationStorage: storage,
     getPage: async () => page,
     saveDocument: jest.fn(async () => {
-      storage.onResetModified?.();
-      return new Uint8Array([37, 80, 68, 70]); // %PDF
+      try {
+        if (nextSaveError) {
+          const error = nextSaveError;
+          nextSaveError = null;
+          throw error;
+        }
+        return new Uint8Array([37, 80, 68, 70]); // %PDF
+      } finally {
+        storage.onResetModified?.();
+      }
     }),
+    failNextSave: (error: Error) => {
+      nextSaveError = error;
+    },
     cleanup: () => undefined,
     destroy: () => undefined
   };
@@ -206,6 +219,64 @@ it('surfaces a save failure, skips finalize, and retries the save on the next at
       ([envelopeId]) => envelopeId === 'env-1'
     )
   ).toBe(true);
+});
+
+it('re-saves on the next attempt when saveDocument() itself fails', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  const { onFinalize, onSaveEnvelopeFile } = renderViewer({
+    'http://x/a.pdf': proxyA,
+    'http://x/b.pdf': proxyB
+  });
+  await waitForLoad(proxyA, proxyB);
+
+  proxyA.annotationStorage.onSetModified();
+  proxyA.failNextSave(new Error('Worker crashed'));
+
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Worker crashed');
+  expect(onSaveEnvelopeFile).not.toHaveBeenCalled();
+  expect(onFinalize).not.toHaveBeenCalled();
+
+  // pdf.js reset the modified flag even though the save rejected. The doc
+  // must still count as dirty, or the retry would finalize the unedited file.
+  await waitForIdleToolbar();
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+  expect(proxyA.saveDocument).toHaveBeenCalledTimes(2);
+  expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1);
+  expect(onSaveEnvelopeFile.mock.calls[0][0]).toBe('env-1');
+});
+
+it('freezes the form widgets while a save/finalize is in flight', async () => {
+  const proxyA = makePdfProxy();
+  const proxyB = makePdfProxy();
+  let releaseSave: (value: any) => void = () => undefined;
+  const onSaveEnvelopeFile = jest.fn(
+    () => new Promise((resolve) => (releaseSave = resolve))
+  );
+  const { onFinalize } = renderViewer(
+    { 'http://x/a.pdf': proxyA, 'http://x/b.pdf': proxyB },
+    { onSaveEnvelopeFile }
+  );
+  await waitForLoad(proxyA, proxyB);
+  const widgetLayers = () =>
+    Array.from(featheryDoc().querySelectorAll('.annotationLayer'));
+  await waitFor(() => expect(widgetLayers()).toHaveLength(2));
+  widgetLayers().forEach((layer) => expect(layer).not.toHaveAttribute('inert'));
+
+  proxyA.annotationStorage.onSetModified();
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  await waitFor(() => expect(onSaveEnvelopeFile).toHaveBeenCalledTimes(1));
+
+  // An edit made now would never re-mark the doc dirty (pdf.js only fires
+  // onSetModified on a false→true flip), so every page's widgets go inert.
+  widgetLayers().forEach((layer) => expect(layer).toHaveAttribute('inert'));
+
+  releaseSave({ id: 'env-1' });
+  await waitFor(() => expect(onFinalize).toHaveBeenCalledTimes(1));
+  await waitForIdleToolbar();
+  widgetLayers().forEach((layer) => expect(layer).not.toHaveAttribute('inert'));
 });
 
 it('blocks Escape and Back while a save/finalize is in flight', async () => {
