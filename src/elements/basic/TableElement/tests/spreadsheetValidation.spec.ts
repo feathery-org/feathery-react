@@ -11,7 +11,7 @@ describe('validateCellValue', () => {
     expect(validateCellValue('', { label: 'Name', type: 'text' })).toBeNull();
     expect(
       validateCellValue('', { label: 'Name', type: 'text', required: true })
-    ).toBe('Field `Name` is required');
+    ).toBe('Required');
     // A required column is satisfied by a value the hub would reject for other
     // reasons; that failure is reported separately.
     expect(
@@ -28,10 +28,10 @@ describe('validateCellValue', () => {
       decimalDigits: 1
     };
     expect(validateCellValue('42', rule)).toBeNull();
-    expect(validateCellValue('abc', rule)).toContain('must be a number');
-    expect(validateCellValue(0, rule)).toBe('Field `Age` must be at least 1');
-    expect(validateCellValue(200, rule)).toBe('Field `Age` must be at most 120');
-    expect(validateCellValue(1.25, rule)).toContain('at most 1 decimal digit');
+    expect(validateCellValue('abc', rule)).toBe('Must be a number');
+    expect(validateCellValue(0, rule)).toBe('Must be at least 1');
+    expect(validateCellValue(200, rule)).toBe('Must be at most 120');
+    expect(validateCellValue(1.25, rule)).toBe('Up to 1 decimal place');
   });
 
   test('text columns enforce their option list and lengths', () => {
@@ -42,29 +42,29 @@ describe('validateCellValue', () => {
     };
     expect(validateCellValue('gold', rule)).toBeNull();
     expect(validateCellValue('bronze', rule)).toBe(
-      'Field `Tier` must be one of: gold, silver'
+      'Must be gold or silver'
     );
     expect(
       validateCellValue('ab', { label: 'Code', type: 'text', minLength: 3 })
-    ).toBe('Field `Code` must be at least 3 characters');
+    ).toBe('At least 3 characters');
   });
 
   test('format columns check their own shapes', () => {
     expect(
       validateCellValue('nope', { label: 'Email', type: 'email' })
-    ).toContain('invalid email address');
+    ).toBe('Invalid email');
     expect(
       validateCellValue('a@b.com', { label: 'Email', type: 'email' })
     ).toBeNull();
     expect(
       validateCellValue('12345', { label: 'SSN', type: 'tax_id' })
-    ).toContain('exactly 9 digits');
+    ).toBe('Must be 9 digits, no dashes');
     expect(
       validateCellValue('123456789', { label: 'SSN', type: 'tax_id' })
     ).toBeNull();
     expect(
       validateCellValue('not-a-uuid', { label: 'Ref', type: 'uuid' })
-    ).toContain('valid UUID');
+    ).toBe('Invalid UUID');
   });
 
   test('phone numbers are held to the hub rule: digits only', () => {
@@ -89,21 +89,21 @@ describe('validateCellValue', () => {
   test('dates are parsed, then held to their range', () => {
     expect(
       validateCellValue('not a date', { label: 'DOB', type: 'date' })
-    ).toContain('valid ISO datetime');
+    ).toBe('Invalid date');
     expect(
       validateCellValue('2020-01-01', {
         label: 'DOB',
         type: 'date',
         dateRange: 'future_only'
       })
-    ).toBe('Field `DOB` must be a future date');
+    ).toBe('Must be in the future');
     expect(
       validateCellValue('2020-01-01', {
         label: 'DOB',
         type: 'date',
         minDate: '2021-01-01'
       })
-    ).toBe('Field `DOB` must be on or after 2021-01-01');
+    ).toBe('Must be on or after 2021-01-01');
   });
 
   test('a column with no checkable rule accepts anything', () => {
@@ -143,7 +143,7 @@ describe('validateGrid', () => {
       rules: { email: { label: 'Email', type: 'email', unique: true } }
     });
     expect(errors[cellErrorKey(0, 'email')]).toBeUndefined();
-    expect(errors[cellErrorKey(2, 'email')]).toContain('must be unique');
+    expect(errors[cellErrorKey(2, 'email')]).toBe('Must be unique');
   });
 
   test('staged rows neither claim a unique value nor get flagged for one', () => {
@@ -237,5 +237,14 @@ describe('rule derivation', () => {
     // Upload fields hold file references the grid must never write over.
     expect(rules.f).toEqual({ label: 'Docs', type: 'file' });
     expect(rules.g).toEqual({ label: 'Signed', type: 'file' });
+  });
+});
+
+describe('listChoices via option rules', () => {
+  test('reads as a sentence for one, two and many options', () => {
+    const rule = (options: string[]) => ({ label: 'Status', type: 'text' as const, options });
+    expect(validateCellValue('x', rule(['A']))).toBe('Must be A');
+    expect(validateCellValue('x', rule(['A', 'B']))).toBe('Must be A or B');
+    expect(validateCellValue('x', rule(['A', 'B', 'C']))).toBe('Must be A, B, or C');
   });
 });

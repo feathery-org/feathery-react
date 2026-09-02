@@ -80,37 +80,44 @@ function parseDate(value: string): number | null {
 /**
  * The message for one cell, or `null` when it satisfies its column's rule.
  */
+/** "A", "A or B", "A, B, or C" — a choice list a cell can show at a glance. */
+function listChoices(options: string[]): string {
+  if (options.length <= 1) return options[0] ?? '';
+  if (options.length === 2) return `${options[0]} or ${options[1]}`;
+  return `${options.slice(0, -1).join(', ')}, or ${
+    options[options.length - 1]
+  }`;
+}
+
 export function validateCellValue(
   value: CellValue,
   rule: CellRule
 ): string | null {
-  const { label } = rule;
-
   if (isEmpty(value)) {
     // The hub never holds a file field to `required` — every server-side
     // required check skips FIELD_TYPE_FILE — so flagging one here would block
     // a save the hub accepts.
-    return rule.required && rule.type !== 'file'
-      ? `Field \`${label}\` is required`
-      : null;
+    return rule.required && rule.type !== 'file' ? 'Required' : null;
   }
 
   if (rule.type === 'number') {
     const numeric = typeof value === 'number' ? value : Number(String(value));
     if (typeof value === 'boolean' || Number.isNaN(numeric)) {
-      return `Field \`${label}\` has value \`${value}\` but must be a number`;
+      return 'Must be a number';
     }
     if (
       rule.decimalDigits != null &&
       decimalPlaces(numeric) > rule.decimalDigits
     ) {
-      return `Field \`${label}\` must have at most ${rule.decimalDigits} decimal digit(s)`;
+      return `Up to ${rule.decimalDigits} decimal ${
+        rule.decimalDigits === 1 ? 'place' : 'places'
+      }`;
     }
     if (rule.minValue != null && numeric < rule.minValue) {
-      return `Field \`${label}\` must be at least ${rule.minValue}`;
+      return `Must be at least ${rule.minValue}`;
     }
     if (rule.maxValue != null && numeric > rule.maxValue) {
-      return `Field \`${label}\` must be at most ${rule.maxValue}`;
+      return `Must be at most ${rule.maxValue}`;
     }
     return null;
   }
@@ -118,7 +125,7 @@ export function validateCellValue(
   if (rule.type === 'boolean') {
     const text = String(value).trim().toLowerCase();
     if (typeof value !== 'boolean' && text !== 'true' && text !== 'false') {
-      return `Field \`${label}\` has value \`${value}\` but must be a boolean`;
+      return 'Must be true or false';
     }
     return null;
   }
@@ -128,60 +135,50 @@ export function validateCellValue(
   switch (rule.type) {
     case 'text':
       if (rule.options?.length && !rule.options.includes(text)) {
-        return `Field \`${label}\` must be one of: ${rule.options.join(', ')}`;
+        return `Must be ${listChoices(rule.options)}`;
       }
       if (rule.minLength != null && text.length < rule.minLength) {
-        return `Field \`${label}\` must be at least ${rule.minLength} characters`;
+        return `At least ${rule.minLength} characters`;
       }
       if (rule.maxLength != null && text.length > rule.maxLength) {
-        return `Field \`${label}\` must be at most ${rule.maxLength} characters`;
+        return `At most ${rule.maxLength} characters`;
       }
       return null;
     case 'email':
-      return validators.email(text)
-        ? null
-        : `Field \`${label}\` has invalid email address \`${text}\``;
+      return validators.email(text) ? null : 'Invalid email';
     case 'url':
-      return validators.url(text)
-        ? null
-        : `Field \`${label}\` must be a valid URL`;
+      return validators.url(text) ? null : 'Invalid URL';
     case 'phone_number':
       // Checked as stored, not normalized: the hub matches the raw string, so
       // `(415) 555-1234` fails there and has to fail here too.
-      return PHONE_PATTERN.test(text)
-        ? null
-        : `Field \`${label}\` phone number must be 7–15 digits`;
+      return PHONE_PATTERN.test(text) ? null : 'Must be 7–15 digits';
     case 'tax_id':
-      return TAX_ID_PATTERN.test(text)
-        ? null
-        : `Field \`${label}\` must be exactly 9 digits with no dashes`;
+      return TAX_ID_PATTERN.test(text) ? null : 'Must be 9 digits, no dashes';
     case 'uuid':
-      return UUID_PATTERN.test(text)
-        ? null
-        : `Field \`${label}\` must be a valid UUID`;
+      return UUID_PATTERN.test(text) ? null : 'Invalid UUID';
     case 'date':
     case 'datetime': {
       const parsed = parseDate(text);
       if (parsed === null) {
-        return `Field \`${label}\` must be a valid ISO datetime string`;
+        return 'Invalid date';
       }
       const now = Date.now();
       if (rule.dateRange === 'past_only' && parsed >= now) {
-        return `Field \`${label}\` must be a past date`;
+        return 'Must be in the past';
       }
       if (rule.dateRange === 'future_only' && parsed <= now) {
-        return `Field \`${label}\` must be a future date`;
+        return 'Must be in the future';
       }
       if (rule.minDate != null) {
         const min = parseDate(rule.minDate);
         if (min !== null && parsed < min) {
-          return `Field \`${label}\` must be on or after ${rule.minDate}`;
+          return `Must be on or after ${rule.minDate}`;
         }
       }
       if (rule.maxDate != null) {
         const max = parseDate(rule.maxDate);
         if (max !== null && parsed > max) {
-          return `Field \`${label}\` must be on or before ${rule.maxDate}`;
+          return `Must be on or before ${rule.maxDate}`;
         }
       }
       return null;
@@ -244,9 +241,7 @@ export function validateGrid({
       const values = seen.get(fieldKey) as Map<string, number>;
       const normalized = String(value);
       if (values.has(normalized)) {
-        errors[
-          cellErrorKey(rowIndex, fieldKey)
-        ] = `Field \`${rule.label}\` must be unique; value \`${normalized}\` already exists`;
+        errors[cellErrorKey(rowIndex, fieldKey)] = 'Must be unique';
       } else {
         values.set(normalized, rowIndex);
       }

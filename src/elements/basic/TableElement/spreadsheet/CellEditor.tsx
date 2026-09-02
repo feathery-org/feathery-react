@@ -139,6 +139,16 @@ export function CellEditor({
           onCommit(picked);
         }}
         onKeyDown={onKeyDown}
+        // While the native menu is open the page sees no keydown, and picking
+        // the value that is already set fires no `change` either — so an Enter
+        // on the menu could leave the editor open with the select focused,
+        // where the next arrow key just reopens the menu (macOS). The keyup
+        // does arrive once the menu has closed, so it commits whatever is
+        // selected. After a real pick the select is already gone, so this
+        // never double-commits.
+        onKeyUp={(event) => {
+          if (event.key === 'Enter') onCommit(event.currentTarget.value);
+        }}
         onBlur={onBlur}
       >
         {/* Clearing the cell has to stay reachable from the dropdown. */}
