@@ -1,10 +1,8 @@
 import {
   cellSelectionFeature,
-  columnPinningFeature,
   columnResizingFeature,
   columnSizingFeature,
   metaHelper,
-  rowPinningFeature,
   tableFeatures
 } from '@tanstack/react-table';
 import type {
@@ -41,10 +39,8 @@ export type SpreadsheetColumnMeta = {
  */
 export const spreadsheetFeatures = tableFeatures({
   cellSelectionFeature,
-  columnPinningFeature,
   columnResizingFeature,
   columnSizingFeature,
-  rowPinningFeature,
   columnMeta: metaHelper<SpreadsheetColumnMeta>()
 });
 
@@ -52,7 +48,7 @@ export type SpreadsheetFeatures = typeof spreadsheetFeatures;
 
 export type SpreadsheetTableState = Pick<
   TableState<SpreadsheetFeatures>,
-  'columnPinning' | 'columnResizing' | 'columnSizing' | 'rowPinning'
+  'columnResizing' | 'columnSizing'
 >;
 
 export type SpreadsheetTable = ReactTable<

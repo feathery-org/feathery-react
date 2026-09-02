@@ -101,11 +101,7 @@ export function useGridInteractions(options: GridInteractionOptions) {
     [table]
   );
   const getDisplayColumns = React.useCallback(
-    () => [
-      ...table.getStartVisibleLeafColumns(),
-      ...table.getCenterVisibleLeafColumns(),
-      ...table.getEndVisibleLeafColumns()
-    ],
+    () => table.getAllLeafColumns(),
     [table]
   );
 
