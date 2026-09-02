@@ -226,9 +226,9 @@ const MULTISELECT_LEGACY_PADDING = {
 
 // A shrink_top label is a fixed overlay pinned to the box top: it takes no room
 // in the content box, so the value renders behind the theme's raw padding and
-// nothing about the label enters the geometry below. The backfill seeds
-// untouched fields at the reserve production drew, and a padding low enough to
-// run the value under the label's ink is allowed by design.
+// nothing about the label enters the geometry below. An unset inner_padding_top
+// falls back to the reserve production drew, computed below, and a padding low
+// enough to run the value under the label's ink is allowed by design.
 const offsetFromCenter = (d: number) =>
   d ? `calc(50% ${d > 0 ? '+' : '-'} ${Math.abs(d)}px)` : '50%';
 
@@ -1384,8 +1384,8 @@ export default class ResponsiveStyles {
           let start = l;
           if (type === 'phone_number') start = RESET_INPUT_PADDING_X;
           // A multiselect's placeholder has always sat at 0.75rem = 12px --
-          // 4px inside the chips' backfilled 8px inline start -- so it keeps
-          // that offset as the padding moves the chips.
+          // 4px inside react-select's own 8px inline start for the chips -- so
+          // it keeps that offset as the padding moves the chips.
           else if (type === MULTISELECT_FIELD)
             start = paddingSide(l, MULTISELECT_LEGACY_PADDING.left) + 4;
           if (isNum(start)) placed.insetInlineStart = `${start}px`;

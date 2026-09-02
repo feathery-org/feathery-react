@@ -675,10 +675,10 @@ describe('input box inner padding', () => {
   });
 
   it('keeps the plain reserve on a field whose input owns its padding', () => {
-    // payment_method's inner padding belongs to Stripe's card element. The
-    // backfill made inner_padding_top numeric on every theme, so max()ing
-    // the reserve against it would change untouched forms -- it stays the
-    // plain height/3 those forms always rendered with.
+    // payment_method's inner padding belongs to Stripe's card element, so it
+    // is not an input-box type and never takes these keys. The reserve stays
+    // the plain height/3 it always rendered with, whatever a theme happens to
+    // store under the key.
     expect(
       fieldTarget(
         'payment_method',
@@ -968,9 +968,9 @@ describe('multiselect content alignment', () => {
   });
 
   it('centres the chevron on the padded area, not on the box', () => {
-    // Centred is the seeded default, so this is the common case: an uneven
-    // padding moves the chips off the box's midline, and the chevron has to
-    // follow them there rather than sit halfway down the box.
+    // Centred is what the box does with no content_vertical_align, so this is
+    // the common case: an uneven padding moves the chips off the box's midline,
+    // and the chevron has to follow them there rather than sit halfway down.
     const styles = {
       ...SIZED,
       inner_padding_top: 101,
@@ -1095,9 +1095,9 @@ describe('input box minimum height', () => {
   });
 
   it('leaves the box alone at the padding the field already rendered with', () => {
-    // Every theme carries these values explicitly after the backfill, so the
-    // clamp has to key on a padding *raised* above them -- otherwise it would
-    // grow every box that exists today.
+    // 6/6 is what a text field already rendered with, and an unset side falls
+    // back to it, so the clamp has to key on a padding *raised* above that --
+    // otherwise it would grow every box that exists today.
     expect(
       boxTarget('text_field', {
         ...SIZED,
@@ -1457,8 +1457,9 @@ describe('a floating label tracks the padding its value follows', () => {
 
   it('moves a pinned resting label on the raw value line', () => {
     // 'top' mode: the value centres between the raw paddings, so the resting
-    // label -- standing in for it -- sits at 50% + (t - 6) / 2 over the
-    // backfilled 6px bottom, exactly as it would without a floating label.
+    // label -- standing in for it -- sits at 50% + (t - 6) / 2 over the legacy
+    // 6px bottom an unset side falls back to, exactly as it would without a
+    // floating label.
     (
       [
         [0, 'calc(50% - 3px)'],
