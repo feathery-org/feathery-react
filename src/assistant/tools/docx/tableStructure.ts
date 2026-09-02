@@ -49,7 +49,7 @@ export interface TableStructure {
 }
 
 const rowsOf = (tableBlock: any): any[] =>
-  tableBlock?.rows ?? tableBlock?.rw ?? [];
+  tableBlock?.rows ?? tableBlock?.r ?? tableBlock?.rw ?? [];
 const cellsOf = (row: any): any[] => row?.cells ?? row?.c ?? [];
 const blocksOf = (node: any): any[] => node?.blocks ?? node?.b ?? [];
 const inlinesOf = (node: any): any[] => node?.inlines ?? node?.i ?? [];

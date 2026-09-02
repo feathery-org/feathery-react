@@ -261,6 +261,8 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     // shape, and it exists so that shape needs no enumeration: naming a boundary
     // costs one number where listing rows 5..39 would be counting.
     // Exactly one of the two.
+    // Unbound tables only, a bound table is split by duplicate_table keepRows
+    // plus delete_row
     op: 'split_table',
     params: {
       rows: 'int>=0[]?',

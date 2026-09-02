@@ -28,9 +28,18 @@ describe('formula', () => {
     expect(collectRefs(ast)).toEqual(['costs.line_total']);
   });
 
+  it('accepts a bare reference: a cell that repeats another value', () => {
+    expect(parseExpression('schedule_subtotal')).toEqual({
+      ref: 'schedule_subtotal'
+    });
+    expect(parseExpression('costs.line_total')).toEqual({
+      ref: 'costs.line_total'
+    });
+  });
+
   it('rejects everything outside the allowlist', () => {
     const bad = [
-      'quantity', // bare ref, not a call
+      '100', // a bare literal references nothing
       'div(a,b)', // unknown function
       'eval(x)',
       'mul(quantity)', // arity

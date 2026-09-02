@@ -34,6 +34,10 @@ import {
   bindingCommandSurfaceFor
 } from '../reconcileRegistry';
 import {
+  installTrackedContentControlDeletion,
+  parseRevisionGroupTag
+} from '../../../../../utils/documentEditorPrimitives';
+import {
   destroyRealDocumentEditor,
   makeRealDocumentEditor
 } from './realEditorHarness';
@@ -98,6 +102,9 @@ const liveRevisions = (editor: DocumentEditor) =>
 
 const rejectAllRevisions = (editor: DocumentEditor): void => {
   for (const revision of liveRevisions(editor).reverse()) revision.reject();
+};
+const acceptAllRevisions = (editor: DocumentEditor): void => {
+  for (const revision of liveRevisions(editor).reverse()) revision.accept();
 };
 
 /**
@@ -188,7 +195,12 @@ describe('an assistant edit is recoverable', () => {
     ({ editor, open, run }, options) => {
       const before = stacks(editor).undo;
 
-      run([{ type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }], options);
+      run(
+        [
+          { type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }
+        ],
+        options
+      );
 
       expect(rowIdsOf(editor, 'costs')).toContain('r-3');
       // The document was mutated in place, not reopened. `EditorPort.open` is
@@ -210,7 +222,12 @@ describe('an assistant edit is recoverable', () => {
       const userEntries = stacks(editor).undo;
       expect(userEntries).toBeGreaterThan(0);
 
-      run([{ type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }], options);
+      run(
+        [
+          { type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }
+        ],
+        options
+      );
 
       // Strictly greater: our entry sits ON TOP of the user's, never instead
       // of it. A stack that shrank to 1 here is the signature of a wipe
@@ -224,12 +241,15 @@ describe('an assistant edit is recoverable', () => {
         guard += 1;
       }
       editor.editorHistory.undo();
-      expect(indexOf(editor).tables.get('costs')?.rows[0]?.bindings.get('quantity')?.text).toBe('12');
+      expect(
+        indexOf(editor).tables.get('costs')?.rows[0]?.bindings.get('quantity')
+          ?.text
+      ).toBe('12');
     }
   );
 
   forBothRoutes(
-    "criterion (a): undo puts a new table back exactly as it was",
+    'criterion (a): undo puts a new table back exactly as it was',
     ({ editor, run }, options) => {
       const beforeTables = tableIds(editor);
       const beforeSections = parsed(editor).sections?.length;
@@ -319,7 +339,9 @@ describe('an assistant edit stays reviewable', () => {
     const harness = openHarness();
     try {
       harness.run(
-        [{ type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }],
+        [
+          { type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }
+        ],
         { provenance: PROVENANCE }
       );
       const authors = liveRevisions(harness.editor).map((revision) =>
@@ -336,7 +358,9 @@ describe('an assistant edit stays reviewable', () => {
     const harness = openHarness();
     try {
       harness.run(
-        [{ type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }],
+        [
+          { type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }
+        ],
         { provenance: PROVENANCE }
       );
       const tags = liveRevisions(harness.editor).map((revision) =>
@@ -352,11 +376,44 @@ describe('an assistant edit stays reviewable', () => {
     }
   });
 
+  it('authors a value write as a Deletion and an Insertion under a parseable group tag', () => {
+    const harness = openHarness();
+    try {
+      harness.run(
+        [
+          {
+            type: 'set-value',
+            name: 'quantity',
+            value: '14',
+            tableId: 'costs',
+            rowId: 'r-1'
+          }
+        ],
+        { provenance: PROVENANCE }
+      );
+      // The write itself plus every formula it recomputes, each as a pair
+      const revisions = liveRevisions(harness.editor);
+      const types = new Set(revisions.map((revision) => revision.revisionType));
+      expect(types).toEqual(new Set(['Deletion', 'Insertion']));
+      for (const revision of revisions) {
+        expect((revision as any).author).toBe(PROVENANCE.author);
+        expect(parseRevisionGroupTag((revision as any).customData)).toEqual({
+          changeSetId: PROVENANCE.changeSetId,
+          group: PROVENANCE.group
+        });
+      }
+    } finally {
+      closeHarness(harness);
+    }
+  });
+
   it('leaves tracking off afterwards, so the next user keystroke is untracked', () => {
     const harness = openHarness();
     try {
       harness.run(
-        [{ type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }],
+        [
+          { type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }
+        ],
         { provenance: PROVENANCE }
       );
       // Tracking is borrowed for the batch and handed back. Leaving the global
@@ -368,50 +425,49 @@ describe('an assistant edit stays reviewable', () => {
   });
 });
 
-describe('a bound deletion refuses rather than destroying identity', () => {
-  // The seam guard. A tracked row deletion strips the binding tags of everything
-  // it removes and no reject restores them (4 -> 0 -> 0 across pending and
-  // reject), because handleDeleteTracking gives a Bookmark a Deletion revision
-  // and splices a ContentControl out revision-lessly. Losing the links inside a
-  // client's document is a corrupted result, not a degraded one, so this path
-  // declines the work and says so.
-  it('refuses a bound row delete, and leaves the row and its tags untouched', () => {
+describe('a bound deletion keeps identity through the review cycle', () => {
+  // With the tracked-deletion override installed the native path deletes
+  // bound rows and tables instead of refusing them
+  it('deletes a bound row as a revision, and reject restores row and tags', () => {
     const harness = openHarness();
     try {
       const { editor, run } = harness;
+      installTrackedContentControlDeletion(editor as any);
       const before = editor.serialize();
-      const tagCount = (sfdt: string) =>
-        (sfdt.match(/row=r-1/g) || []).length;
-      expect(tagCount(before)).toBeGreaterThan(0);
+      const tagCount = (sfdt: string) => (sfdt.match(/row=r-1/g) || []).length;
+      expect(tagCount(before)).toBe(4);
 
       run([{ type: 'remove-row', tableId: 'costs', rowId: 'r-1' }], {
         provenance: PROVENANCE
       });
 
-      // Refused, not silently reopened: the caller is told.
       expect(
         harness.attached
           .diagnostics()
           .some((entry) => entry.code === 'native-mutation-failed')
-      ).toBe(true);
+      ).toBe(false);
       expect(harness.open).not.toHaveBeenCalled();
+      // Pending: the row reads as deleted, every tag still serialized
+      expect(rowIdsOf(editor, 'costs')).toEqual(['r-2']);
+      expect(tagCount(editor.serialize())).toBe(4);
 
-      // And nothing was half-applied. The document is exactly as it was, tags
-      // included - which is the whole point: a refusal that still damaged the
-      // document would be worse than no guard at all.
-      expect(tagCount(editor.serialize())).toBe(tagCount(before));
+      rejectAllRevisions(editor);
       expect(rowIdsOf(editor, 'costs')).toEqual(['r-1', 'r-2']);
+      expect(tagCount(editor.serialize())).toBe(4);
     } finally {
       closeHarness(harness);
     }
   });
 
-  it('refuses a bound table delete on the same grounds', () => {
+  it('deletes a bound table as a revision, and reject restores it whole', () => {
     const harness = openHarness();
     try {
       const { editor, run } = harness;
-      const marker = indexOf(editor).tables.get('costs')?.markerPath;
-      expect(marker).toBeTruthy();
+      installTrackedContentControlDeletion(editor as any);
+      const before = editor.serialize();
+      const tagCount = (sfdt: string) =>
+        (sfdt.match(/table=costs\]|row=r-/g) || []).length;
+      expect(tagCount(before)).toBeGreaterThan(0);
 
       run(
         [{ type: 'remove-table', tableId: 'costs', tag: '[[table=costs]]' }],
@@ -422,8 +478,23 @@ describe('a bound deletion refuses rather than destroying identity', () => {
         harness.attached
           .diagnostics()
           .some((entry) => entry.code === 'native-mutation-failed')
-      ).toBe(true);
+      ).toBe(false);
+      // Pending: every row reads as deleted, every tag still serialized
+      expect(rowIdsOf(editor, 'costs')).toEqual([]);
+      expect(tagCount(editor.serialize())).toBe(tagCount(before));
+
+      rejectAllRevisions(editor);
       expect(tableIds(editor)).toContain('costs');
+      expect(rowIdsOf(editor, 'costs')).toEqual(['r-1', 'r-2']);
+      expect(tagCount(editor.serialize())).toBe(tagCount(before));
+
+      run(
+        [{ type: 'remove-table', tableId: 'costs', tag: '[[table=costs]]' }],
+        { provenance: PROVENANCE }
+      );
+      acceptAllRevisions(editor);
+      expect(tableIds(editor)).not.toContain('costs');
+      expect(tagCount(editor.serialize())).toBe(0);
     } finally {
       closeHarness(harness);
     }
@@ -444,22 +515,37 @@ describe('the native path guards on APIs that exist', () => {
   // above cover behaviour.
   it.each([
     ['selection.select', (e: any) => e.selection?.select],
-    ['selection.selectContentControl', (e: any) => e.selection?.selectContentControl],
-    ['selection.endOffset', (e: any) => e.selection && 'endOffset' in e.selection],
+    [
+      'selection.selectContentControl',
+      (e: any) => e.selection?.selectContentControl
+    ],
+    [
+      'selection.endOffset',
+      (e: any) => e.selection && 'endOffset' in e.selection
+    ],
     ['editorModule.paste', (e: any) => e.editorModule?.paste],
-    ['editorModule.delete', (e: any) => e.editorModule?.delete],
+    ['editorModule.deleteTable', (e: any) => e.editorModule?.deleteTable],
     ['editorModule.deleteRow', (e: any) => e.editorModule?.deleteRow],
     ['editorModule.insertRow', (e: any) => e.editorModule?.insertRow],
-    ['editorModule.insertContentControl', (e: any) => e.editorModule?.insertContentControl],
-    ['editorModule.updateContentControl', (e: any) => e.editorModule?.updateContentControl]
-  ])('the native structural path depends on %s, and it exists', (_name, read) => {
-    const harness = openHarness();
-    try {
-      expect(read(harness.editor as any)).toBeTruthy();
-    } finally {
-      closeHarness(harness);
+    [
+      'editorModule.insertContentControl',
+      (e: any) => e.editorModule?.insertContentControl
+    ],
+    [
+      'editorModule.updateContentControl',
+      (e: any) => e.editorModule?.updateContentControl
+    ]
+  ])(
+    'the native structural path depends on %s, and it exists',
+    (_name, read) => {
+      const harness = openHarness();
+      try {
+        expect(read(harness.editor as any)).toBeTruthy();
+      } finally {
+        closeHarness(harness);
+      }
     }
-  });
+  );
 
   it('does NOT depend on collapseToEnd, which never existed here', () => {
     const harness = openHarness();
@@ -483,7 +569,9 @@ describe('a failed assistant edit is honest about it', () => {
         .mockReturnValue(undefined);
 
       harness.run(
-        [{ type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }],
+        [
+          { type: 'add-row', tableId: 'costs', afterRowId: 'r-2', rowId: 'r-3' }
+        ],
         { provenance: PROVENANCE }
       );
 

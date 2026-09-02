@@ -177,8 +177,20 @@ function replaceTokensInParagraph(
   let changedAny = false;
   TOKEN_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
+  // Textless inlines such as bookmarks ride along at their position
+  const carried = new Set<RunSegment>();
   const pushPlain = (from: number, to: number) => {
     for (const segment of segments) {
+      if (
+        typeof segment.inl.text !== 'string' &&
+        segment.start >= from &&
+        segment.start <= to &&
+        !carried.has(segment)
+      ) {
+        carried.add(segment);
+        pieces.push(segment.inl);
+        continue;
+      }
       const start = Math.max(segment.start, from);
       const end = Math.min(segment.end, to);
       if (start >= end) continue;

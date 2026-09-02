@@ -757,6 +757,46 @@ export function installRevisionGroupIsolation(editor: LiveEditor): void {
   }
 }
 
+const CONTENT_CONTROL_DELETION_INSTALLED =
+  '__robinTrackedContentControlDeletion';
+
+// Vendored override, 34.1.31: handleDeleteTracking splices a content control
+// out untracked where a bookmark gets a Deletion revision, so a tracked row
+// delete destroys the row's binding tags and reject cannot restore them
+export function installTrackedContentControlDeletion(editor: LiveEditor): void {
+  const module: any = (editor as any).editorModule ?? editor.editor;
+  if (!module || typeof module.handleDeleteTracking !== 'function') return;
+  if (module[CONTENT_CONTROL_DELETION_INSTALLED]) return;
+  module[CONTENT_CONTROL_DELETION_INSTALLED] = true;
+  const original = module.handleDeleteTracking.bind(module);
+  // Same predicate the SDK uses to enter its marker branch with tracking on
+  const isTrackedDeletion = (elementBox: any): boolean => {
+    if (!module.owner?.enableTrackChanges) return false;
+    const history = module.editorHistory;
+    const isRedoingRowTrack =
+      !!elementBox.paragraph?.isInsideTable &&
+      !!history?.isRedoing &&
+      history.currentBaseHistoryInfo?.action === 'RemoveRowTrack';
+    return (
+      module.canHandleDeletion() || !module.skipTracking() || isRedoingRowTrack
+    );
+  };
+  module.handleDeleteTracking = (elementBox: any, ...rest: any[]): any => {
+    const isContentControl =
+      typeof elementBox?.contentControlWidgetType === 'string' &&
+      !!elementBox.contentControlProperties;
+    if (!isContentControl || !isTrackedDeletion(elementBox))
+      return original(elementBox, ...rest);
+    // Inside a tracked row deletion the row's own revision already governs
+    // accept and reject, the control only has to stay in place
+    if (module.skipTableElements) return undefined;
+    if (!module.checkToCombineRevisionsInSides(elementBox, 'Deletion'))
+      module.insertRevision(elementBox, 'Deletion');
+    module.updateLastDeletedRevision(elementBox);
+    return undefined;
+  };
+}
+
 type NativeResolvers = {
   accept?: () => void;
   reject?: () => void;

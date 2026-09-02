@@ -146,39 +146,10 @@ const bandsAlternate = (rows: string[]): boolean =>
   rows.slice(1).every((fill, i) => fill === (i % 2 === 1 ? '#E6E6E6' : '.'));
 
 describe('appearance finalizer - one pass per change set, on the accept projection', () => {
-  it('(a) CHARACTERIZATION: a phase-shifting re-band is NOT applied, and why', () => {
-    // The third act of this row, and the honest end of tonight.
-    //
-    // Act one: it asserted the DEFECT. Banding was settled inside the split
-    // handler while a tracked-deleted row was still physically present, so the
-    // stripes were laid out for a table about to lose a row and went one out of
-    // phase the moment anyone accepted. Measured `#001B49 . .` - two unshaded
-    // rows adjacent, the stripe gone.
-    //
-    // Act two: the finalizer fixed it. Computing from the accept projection
-    // produced `#001B49 . #E6E6E6` and this row briefly asserted the
-    // requirement.
-    //
-    // Act three, which is why it asserts the defect again. Landing that fix
-    // broke reject byte-equality, and the cause is a platform limit measured on
-    // the real editor: no public API can restore a cell to never-coloured. All
-    // of background = a colour / 'empty' / undefined / '' leave
-    // `{"backgroundColor":"empty",...}`, and so do clearCellFormat() and
-    // clearFormat() - the latter growing the document by 137 characters. A
-    // pristine cell is `sd:{}` with no backgroundColor. The SDK's OWN undo
-    // restores that absence, because undo restores a snapshot while a setter
-    // assigns a value, and only the first can express absence.
-    //
-    // A phase-shifting re-band must colour rows that were never coloured - that
-    // is what shifting the stripe MEANS - so on content that survives its own
-    // rejection it cannot be undone. Reject byte-equality is the spine and the
-    // banding improvement is not, so the finalizer writes only to cells that
-    // were already coloured, or to content wholly inserted by this change set
-    // which a reject removes entirely.
-    //
-    // THE UNLOCK: `docx-reversible-absence`. When there is a way to restore a
-    // never-coloured cell - a snapshot-restore seam, or a vendor API - this row
-    // becomes the requirement again and act four gets written here.
+  it('(a) declines a re-band that would colour never-coloured survivors, loudly', () => {
+    // No public API restores a cell to never-coloured, so a re-band that would
+    // colour a pristine survivor is declined, the banded fixture in
+    // finalizerRoles.spec.ts is where the re-band applies
     const live = open(docWith(stripedTable(7)));
     const result = applyDocumentEdits(live, {
       changeSetId: 'finalizer-a',
@@ -206,7 +177,7 @@ describe('appearance finalizer - one pass per change set, on the accept projecti
     expect(tableBlocks()).toHaveLength(2);
     const source = shadingOf(0);
     expect(source[0]).toBe('#001B49');
-    // Still out of phase, and deliberately so until absence is reversible.
+    // Out of phase, deliberately, until absence is reversible
     expect(bandsAlternate(source)).toBe(false);
   });
 

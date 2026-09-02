@@ -24,7 +24,14 @@ import {
 } from '@syncfusion/ej2-documenteditor';
 import { applyDocumentEdits, LiveEditor } from '../syncfusionDocumentOps';
 
-DocumentEditor.Inject(Editor, Selection, SfdtExport, EditorHistory, ImageResizer, Search);
+DocumentEditor.Inject(
+  Editor,
+  Selection,
+  SfdtExport,
+  EditorHistory,
+  ImageResizer,
+  Search
+);
 
 if (!window.crypto?.getRandomValues)
   Object.defineProperty(window, 'crypto', {
@@ -84,7 +91,10 @@ const boundCell = (text: string, tag: string, shading?: string) => ({
  */
 const stripedTable = (bodyRows: number) => ({
   rows: [
-    { rowFormat: {}, cells: [cell('Coverage', HEADER_BAND), cell('Amount', HEADER_BAND)] },
+    {
+      rowFormat: {},
+      cells: [cell('Coverage', HEADER_BAND), cell('Amount', HEADER_BAND)]
+    },
     ...Array.from({ length: bodyRows }, (_, i) => ({
       rowFormat: {},
       cells: [
@@ -97,7 +107,10 @@ const stripedTable = (bodyRows: number) => ({
 
 const boundStripedTable = () => ({
   rows: [
-    { rowFormat: {}, cells: [cell('Item', HEADER_BAND), cell('Amount', HEADER_BAND)] },
+    {
+      rowFormat: {},
+      cells: [cell('Item', HEADER_BAND), cell('Amount', HEADER_BAND)]
+    },
     {
       rowFormat: {},
       cells: [
@@ -251,7 +264,13 @@ const spanningBookmarkTable = () => ({
         para('Coverages and Limits'),
         {
           rows: [
-            { rowFormat: {}, cells: [cell('Coverage', HEADER_BAND), cell('Amount', HEADER_BAND)] },
+            {
+              rowFormat: {},
+              cells: [
+                cell('Coverage', HEADER_BAND),
+                cell('Amount', HEADER_BAND)
+              ]
+            },
             {
               rowFormat: {},
               cells: [
@@ -307,7 +326,13 @@ const bookmarkedTable = () => ({
         para('Coverages and Limits'),
         {
           rows: [
-            { rowFormat: {}, cells: [cell('Coverage', HEADER_BAND), cell('Amount', HEADER_BAND)] },
+            {
+              rowFormat: {},
+              cells: [
+                cell('Coverage', HEADER_BAND),
+                cell('Amount', HEADER_BAND)
+              ]
+            },
             { rowFormat: {}, cells: [cell('Item 1'), cell('$100')] },
             {
               rowFormat: {},
@@ -486,7 +511,9 @@ describe('split_table contract - what the recomposition owes', () => {
 
     // Body alternation starts unshaded on both, and alternates from there.
     const bodyAlternates = (bands: string[]) =>
-      bands.slice(1).every((b, i) => (i % 2 === 0 ? b === UNSHADED : b === STRIPE));
+      bands
+        .slice(1)
+        .every((b, i) => (i % 2 === 0 ? b === UNSHADED : b === STRIPE));
     expect(bodyAlternates(originalBands)).toBe(true);
     expect(bodyAlternates(createdBands)).toBe(true);
   });
@@ -522,7 +549,9 @@ describe('split_table contract - what the recomposition owes', () => {
     // NOTHING, which is the property that actually protects the document.
     const result = splitAt(live, 2, 'contract-c');
     expect(result.results[0].ok).toBe(false);
-    expect(result.results[0].error).toBe('structural_op_would_destroy_bindings');
+    expect(result.results[0].error).toBe(
+      'structural_op_would_destroy_bindings'
+    );
     expect(editor.serialize()).toBe(beforeSerialized);
     // Every tag still present, because nothing was written.
     expect(tagsIn(doc()).sort()).toEqual(before);
@@ -677,21 +706,21 @@ describe('split_table contract - what the recomposition owes', () => {
     expect(bookmarkNames(doc())).toEqual([]);
   });
 
-  it('S2(d2) a bookmark SPANNING the cut is refused, and survives intact', () => {
-    // Here the range opens in row 1 and closes in row 3, so extracting from row
-    // 2 would tear it. A torn or silently dropped bookmark takes every
-    // cross-reference to it with it, and nothing in the document says so.
-    //
-    // The refusal must also leave it whole: a "refusal" that dropped the
-    // bookmark would be the same lie this workstream keeps finding.
+  it('S2(d2) a bookmark SPANNING the cut is clamped to the rows that stay, and says so', () => {
+    // The range opens in row 1 and closes in row 3, so extracting from row 2
+    // tears it and the clamp keeps it on the row that stays
     const live = open(spanningBookmarkTable());
-    const before = editor.serialize();
     const namesBefore = bookmarkNames(doc());
     expect(namesBefore).toContain('coverage_span');
 
     const result = splitAt(live, 2, 'contract-s2d-span');
-    expect(result.results[0].ok).toBe(false);
-    expect(editor.serialize()).toBe(before);
+    expect(result.results[0].ok).toBe(true);
+    expect(result.results[0].details).toContain(
+      'bookmark "coverage_span" clamped to rows 1-1'
+    );
+    expect(bookmarkNames(doc())).toEqual(namesBefore);
+
+    editor.revisions.acceptAll();
     expect(bookmarkNames(doc())).toEqual(namesBefore);
   });
 
@@ -702,7 +731,8 @@ describe('split_table contract - what the recomposition owes', () => {
     // change nobody asked for, in a document somebody is about to send.
     const live = open(docWith(stripedTable(4)));
     const sectionFormatBefore = JSON.stringify(
-      (doc().sections ?? doc().sec)[0].sectionFormat ?? (doc().sections ?? doc().sec)[0].sf
+      (doc().sections ?? doc().sec)[0].sectionFormat ??
+        (doc().sections ?? doc().sec)[0].sf
     );
     const result = splitAt(live, 2, 'contract-s2e');
     expect(result.results[0].ok).toBe(true);
@@ -803,15 +833,22 @@ describe('split_table contract - what the recomposition owes', () => {
     const [original, created] = tablesIn();
     const textOf = (t: any) =>
       (t.rows ?? t.r).map((r: any) =>
-        (r.cells ?? r.c).map((c: any) =>
-          ((c.blocks ?? c.b)[0]?.inlines ?? []).map((i: any) => i.text ?? '').join('')
-        ).join('|')
+        (r.cells ?? r.c)
+          .map((c: any) =>
+            ((c.blocks ?? c.b)[0]?.inlines ?? [])
+              .map((i: any) => i.text ?? '')
+              .join('')
+          )
+          .join('|')
       );
 
     // Header preserved on both; no row lost or duplicated across the pair.
     expect(textOf(original)[0]).toBe('Coverage|Amount');
     expect(textOf(created)[0]).toBe('Coverage|Amount');
-    const bodyRows = [...textOf(original).slice(1), ...textOf(created).slice(1)];
+    const bodyRows = [
+      ...textOf(original).slice(1),
+      ...textOf(created).slice(1)
+    ];
     expect(bodyRows).toEqual([
       'Item 1|$100',
       'Item 2|$200',

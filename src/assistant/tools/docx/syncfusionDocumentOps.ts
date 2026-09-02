@@ -163,6 +163,7 @@ import {
   groupRevisionsAtomic,
   invalidateDocumentLayout,
   installRevisionGroupIsolation,
+  installTrackedContentControlDeletion,
   liveTableWidgetAt,
   paragraphIdentityText,
   parseRevisionGroupTag,
@@ -2394,6 +2395,7 @@ function bindingTablesByAnchor(
   const out = new Map<string, BoundTableFact>();
   if (!index) return out;
   for (const table of index.tables.values()) {
+    if (!table.rows.length) continue;
     const anchor = boundTableAnchor(sfdt, table);
     if (!anchor) continue;
     out.set(anchor, {
@@ -8055,11 +8057,7 @@ function assertTableHasNoBindings(
     (candidate) =>
       !!candidate.boundTag && candidate.anchor.startsWith(`${tableAnchor};`)
   );
-  // A table can be bound by its own table-scope marker while no individual cell
-  // carries a field tag - a bound repeating table with no data rows yet. Ask the
-  // binding index about the table itself, not only its cells.
-  const boundTable = bindingTablesByAnchor(sfdt).has(tableAnchor);
-  if (!bound.length && !boundTable) return;
+  if (!bound.length) return;
   throw new OpError(
     'structural_op_would_destroy_bindings',
     `${opName} cannot restructure the table at ${JSON.stringify(
@@ -9141,65 +9139,73 @@ function refuseBreakInsideTable(op: string, block: FlatBlock): void {
   );
 }
 
-/**
- * Refuse a split whose cut would tear a bookmark in half.
- *
- * A bookmark is a NAMED RANGE other content points at - a cross-reference, a
- * contents entry, a link from elsewhere in the document. Splitting between its
- * start and its end leaves the two markers in different tables, and a range
- * whose ends are in different tables is not a range: the reference it exists to
- * serve breaks, and nothing in the document says so.
- *
- * Deliberately NARROW. A bookmark lying entirely within the extracted rows, or
- * entirely within the retained ones, is not torn by the cut and is none of this
- * guard's business - refusing there would cost a capability to protect
- * something that was never at risk. Only a name present on BOTH sides is a tear.
- */
-function assertNoBookmarkSpansTheCut(
+// Bookmark clamp law: a torn end moves onto the nearest surviving row before
+// the rows go, and each clamp comes back as a receipt for the op's details
+function clampBookmarksAroundRemovedRows(
+  editor: LiveEditor,
   tableBlock: any,
   tableAnchor: string,
-  extract: number[]
-): void {
-  // The table block the caller already resolved, not a second resolution of the
-  // same anchor: tableContainerAt returns the CONTAINER, whose rows are one
-  // level down, and reading it here found none - the guard silently did nothing.
+  removed: number[]
+): string[] {
   const rows = getRows(tableBlock);
-  if (!rows) return;
-  const namesIn = (row: any): Set<string> => {
-    const found = new Set<string>();
+  const bookmarks = (editor as any).documentHelper?.bookmarks;
+  if (!rows || !bookmarks?.get) return [];
+  const spans = new Map<string, { start?: number; end?: number }>();
+  rows.forEach((row: any, index: number) => {
     const walk = (node: any): void => {
       if (!node || typeof node !== 'object') return;
       if (Array.isArray(node)) return node.forEach(walk);
       const name = pick(node, 'name', 'nm');
-      if (pick(node, 'bookmarkType', 'bt') !== undefined && name)
-        found.add(String(name));
+      const type = pick(node, 'bookmarkType', 'bt');
+      if (type !== undefined && name) {
+        const span = spans.get(String(name)) ?? {};
+        if (Number(type) === 0) span.start = index;
+        else span.end = index;
+        spans.set(String(name), span);
+      }
       for (const value of Object.values(node)) walk(value);
     };
     walk(row);
-    return found;
-  };
-  const extracted = new Set(extract);
-  const moving = new Set<string>();
-  const staying = new Set<string>();
-  rows.forEach((row: any, index: number) => {
-    const target = extracted.has(index) ? moving : staying;
-    for (const name of namesIn(row)) target.add(name);
   });
-  const torn = [...moving].filter((name) => staying.has(name));
-  if (!torn.length) return;
-  throw new OpError(
-    'split_table_would_tear_bookmark',
-    `The split at ${JSON.stringify(tableAnchor)} would cut ${
-      torn.length
-    } bookmark${torn.length === 1 ? '' : 's'} in half: ${torn.join(
-      ', '
-    )}. A bookmark is a named range other content refers to, and separating its start from its end breaks every reference to it. Nothing was written.`,
-    [
-      `table: ${tableAnchor}`,
-      `bookmarks spanning the cut: ${torn.join(', ')}`,
-      'Split at a boundary outside the bookmark, or remove the bookmark first if the range is no longer wanted.'
-    ]
-  );
+  const gone = new Set(removed);
+  const receipts: string[] = [];
+  for (const [name, span] of spans) {
+    if (span.start === undefined || span.end === undefined) continue;
+    const startGone = gone.has(span.start);
+    if (startGone === gone.has(span.end)) continue;
+    let start = span.start;
+    let end = span.end;
+    if (startGone) while (gone.has(start)) start++;
+    else while (gone.has(end)) end--;
+    const opening = bookmarks.get(name);
+    const torn = startGone ? opening : opening?.reference;
+    if (!torn?.line) continue;
+    // Moved in the widget tree, insertBookmark throws on a cross-cell selection
+    const lastCell = (pick(rows[end], 'cells', 'c') ?? []).length - 1;
+    const landing = startGone
+      ? `${tableAnchor};${start};0;0;0`
+      : `${tableAnchor};${end};${lastCell};0;0`;
+    editor.selection.select(landing, landing);
+    const paragraph = (editor.selection as any).start?.paragraph;
+    const lines = paragraph?.childWidgets;
+    if (!Array.isArray(lines) || !lines.length) continue;
+    const from = torn.line;
+    from.children.splice(from.children.indexOf(torn), 1);
+    const target = startGone ? lines[0] : lines[lines.length - 1];
+    if (startGone) target.children.unshift(torn);
+    else target.children.push(torn);
+    torn.line = target;
+    // A relayout under the batch's suspended layout is a no-op
+    const live = editor as any;
+    const layoutWasOn = editor.enableLayout === true;
+    if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
+    const layout = live.documentHelper?.layout;
+    layout?.reLayoutParagraph?.(from.paragraph, 0, 0);
+    layout?.reLayoutParagraph?.(paragraph, 0, 0);
+    if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
+    receipts.push(`bookmark "${name}" clamped to rows ${start}-${end}`);
+  }
+  return receipts;
 }
 
 export const ANCHORED_OP_HANDLERS: {
@@ -9601,9 +9607,14 @@ export const ANCHORED_OP_HANDLERS: {
     // exactly as they do to a move: rejecting this card would fold away a third
     // party's pending edit, and SyncFusion cannot accept a delete of the last
     // row of a document-tail table.
-    assertNoBookmarkSpansTheCut(tableBlock, tableAnchor, plan.extract);
     assertRangeHasNoForeignEdits(sfdt, source);
     assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
+    const clamped = clampBookmarksAroundRemovedRows(
+      editor,
+      tableBlock,
+      tableAnchor,
+      plan.extract
+    );
     const target = resolveRelocationTarget(blocks, op, source);
     const sourceIndex = sequenceIndexOf(
       topLevelSequence(sfdt),
@@ -9675,9 +9686,11 @@ export const ANCHORED_OP_HANDLERS: {
         sourceBanding
       )
     ].filter((footprint): footprint is TableFootprint => !!footprint);
-    return tableFootprints.length
-      ? { tableFootprints, pasteEffect: paste }
-      : { pasteEffect: paste };
+    return {
+      ...(tableFootprints.length ? { tableFootprints } : {}),
+      ...(clamped.length ? { details: clamped } : {}),
+      pasteEffect: paste
+    };
   },
   duplicate_table: ({ editor, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
@@ -10030,6 +10043,12 @@ export const ANCHORED_OP_HANDLERS: {
     // remove rather than only the anchored one - it was written for a row set
     // and was simply being handed one row at a time.
     assertRowsAreRemovable(blocks, tableAnchor, requested);
+    const clamped = clampBookmarksAroundRemovedRows(
+      editor,
+      tableBlockAt(serializeSfdt(editor), tableAnchor),
+      tableAnchor,
+      requested
+    );
     // DESCENDING, so that a run whose rows are withdrawn - physically removed,
     // unlike a tracked delete, which leaves them in place - cannot shift the rows
     // a later run still has to address: every run left to do sits above it.
@@ -10053,6 +10072,7 @@ export const ANCHORED_OP_HANDLERS: {
       tableRowColumns(flattenSfdt(postWriteSfdt), tableAnchor).size;
     return {
       postWriteSfdt,
+      ...(clamped.length ? { details: clamped } : {}),
       ...(withdrew > 0 ? { withdrewPendingInsertion: withdrew } : {})
     };
   },
@@ -11751,6 +11771,7 @@ function finalizeTableAppearance(
     );
 
   const deleted = deletedRevisionIds(sfdt);
+  const documentFormulas = documentFormulaMap(scanBindings(sfdt));
   // Content THIS CHANGE SET inserted, and only this one. A reject removes it
   // outright, so anything written to it needs no restore - which is why
   // appearance may be written there freely. Slice 1's copy invariant,
@@ -11793,7 +11814,15 @@ function finalizeTableAppearance(
 
     // Which live rows survive an accept, in order. A row wholly marked deleted
     // contributes no band and takes no fill.
-    const rows = getRows(tableBlockAt(sfdt, anchor)) ?? [];
+    const tableBlock = tableBlockAt(sfdt, anchor);
+    const rows = getRows(tableBlock) ?? [];
+    // Only item rows are banded, an aggregate row keeps its own fill
+    const roles = deriveTableStructure({
+      tableBlock,
+      headerRows: footprint.headerRows,
+      tableId: footprint.tableId ?? null,
+      documentFormulas
+    }).rows;
 
     // INTERIM NARROWING, measured rather than precautionary.
     //
@@ -11818,7 +11847,7 @@ function finalizeTableAppearance(
     let skippedKeyless = 0;
     rows.forEach((row: any, index: number) => {
       if (allRevisionIdsIn(rowRevisionIds(row), deleted)) return;
-      if (survivorIndex >= footprint.headerRows) {
+      if (roles[index]?.role === 'item') {
         const wanted = bandedShadingForRow(banding, survivorIndex);
         if (wanted !== undefined) {
           // ONLY RECOLOUR A CELL THAT ALREADY CARRIES A SHADING KEY.
@@ -13198,6 +13227,8 @@ interface EngineMutationPlan {
     identity: BindingWireIdentity;
     canonical: string;
   };
+  /** Moves torn bookmarks off the rows this plan removes, run only once every plan in the set has passed */
+  clampBookmarks?(): string[];
   execute(state: EngineMutationState): EngineMutationOutcome;
 }
 
@@ -14127,6 +14158,8 @@ function boundInsertRowsPlan(
 }
 
 function boundDeleteRowsPlan(
+  editor: LiveEditor,
+  sfdt: any,
   index: number,
   op: EditOp,
   block: FlatBlock,
@@ -14160,6 +14193,13 @@ function boundDeleteRowsPlan(
     index,
     op,
     anchor: block.anchor,
+    clampBookmarks: () =>
+      clampBookmarksAroundRemovedRows(
+        editor,
+        tableBlockAt(sfdt, tableRoute.anchor),
+        tableRoute.anchor,
+        requested
+      ),
     execute(state) {
       let next = state.sfdt;
       let nextIndex = state.index;
@@ -15248,6 +15288,8 @@ function planBindingRoutedOp(
     const tableRoute = tableAnchor
       ? runtime?.tablesByAnchor.get(tableAnchor)
       : undefined;
+    // A table marker with no row bindings proves no roles either
+    const rowsBound = !!tableRoute?.table.rows.length;
     // `keepRows` NEEDS PROVEN ROLES, and an unbound table cannot supply them.
     //
     // Without this the parameter is SILENTLY IGNORED: an unbound table has no
@@ -15264,12 +15306,12 @@ function planBindingRoutedOp(
     //
     // This refusal retires itself: once a table carries bindings, roles are
     // provable and the bound route takes the op, with no change here.
-    if (!tableRoute && op.keepRows !== undefined)
+    if (!rowsBound && op.keepRows !== undefined)
       throw new OpError(
         'keep_rows_roles_not_derivable',
         `duplicate_table keepRows needs to know which rows are data and which are headers or totals, and the table at ${JSON.stringify(
           tableAnchor ?? op.anchor ?? ''
-        )} has no linked values to tell them apart. Nothing was written.`,
+        )} has no row bindings to tell them apart. Nothing was written.`,
         [
           `table: ${tableAnchor ?? op.anchor ?? '(unresolved)'}`,
           'Duplicate the whole table without keepRows, then delete the rows you do not want from the copy.'
@@ -15303,7 +15345,9 @@ function planBindingRoutedOp(
     ? boundTableForBlock(maybeRuntime, target)
     : undefined;
   if (tableRoute) {
-    if (op.op === 'insert_row') {
+    // Row ops need row identity, a marker-only table leaves them to the editor route
+    const rowsBound = tableRoute.table.rows.length > 0;
+    if (op.op === 'insert_row' && rowsBound) {
       const plan = boundInsertRowsPlan(index, op, target, tableRoute);
       for (let offset = 0; offset < positiveCount(op.count); offset++)
         createdRows.set(
@@ -15312,8 +15356,8 @@ function planBindingRoutedOp(
         );
       return plan;
     }
-    if (op.op === 'delete_row')
-      return boundDeleteRowsPlan(index, op, target, tableRoute);
+    if (op.op === 'delete_row' && rowsBound)
+      return boundDeleteRowsPlan(editor, sfdt, index, op, target, tableRoute);
     if (op.op === 'delete_table')
       return boundDeleteTablePlan(index, op, target, tableRoute);
   }
@@ -20023,6 +20067,7 @@ function applyDocumentEditsMeasured(
   // Adjacent writes from different accept groups must not coalesce into one
   // revision; see installRevisionGroupIsolation. Idempotent.
   installRevisionGroupIsolation(editor);
+  installTrackedContentControlDeletion(editor);
   // The parsed SFDT behind the current block map. Table APPEARANCE lives on
   // cellFormat/rowFormat, which flattening drops, so the banding preserve reads
   // it from here instead of paying a second serialize.
@@ -20152,7 +20197,17 @@ function applyDocumentEditsMeasured(
     if (bucket) bucket.push(...restores);
     else appearanceRestoresByGroup.set(id, [...restores]);
   };
-  let anchorsMayHaveShifted = false;
+  // What landed ops may have moved, row ops shift anchors only inside their table
+  let documentShifted = false;
+  const shiftedTables = new Set<string>();
+  const anchorMayHaveShifted = (anchor: unknown): boolean =>
+    documentShifted ||
+    shiftedTables.has(
+      String(anchor ?? '')
+        .split(';')
+        .slice(0, 2)
+        .join(';')
+    );
   const refresh = (serializedSfdt?: any) => {
     const sfdt = serializedSfdt ?? serializeSfdt(editor);
     liveSfdt = sfdt;
@@ -20261,6 +20316,17 @@ function applyDocumentEditsMeasured(
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
     attempt(() => refresh());
+    const withdrawn = plans
+      .filter((plan) => opGroupId(plan.op, changeSetId) === groupId)
+      .reduce(
+        (sum, plan) =>
+          sum + (results[plan.index]?.withdrewPendingInsertion ?? 0),
+        0
+      );
+    if (withdrawn)
+      warnings.push(
+        `group_rollback_incomplete: ${groupId}; ${withdrawn} row(s) removed from a pending insertion cannot be restored`
+      );
     if (rollbackErrors.length)
       warnings.push(
         `group_rollback_failed: ${groupId}; ${rollbackErrors.join('; ')}`
@@ -20928,7 +20994,7 @@ function applyDocumentEditsMeasured(
                     blocks,
                     op.anchor,
                     plan.target,
-                    anchorsMayHaveShifted
+                    anchorMayHaveShifted(op.anchor)
                   );
               assertDeferredAnchorIsNewAndEmpty(plan, target);
               writtenOp = { ...op, anchor: target.anchor };
@@ -20980,7 +21046,7 @@ function applyDocumentEditsMeasured(
                       blocks,
                       String(op.inheritFormatFrom),
                       plan.source,
-                      anchorsMayHaveShifted,
+                      anchorMayHaveShifted(op.inheritFormatFrom),
                       true
                     )
                   : undefined;
@@ -21028,9 +21094,6 @@ function applyDocumentEditsMeasured(
                 opExtras = undefined;
               }
             }
-            // A skipped no-op wrote nothing, so it cannot have shifted anything.
-            if (mayShiftAnchors(op) && !(opExtras as OpSuccessExtras)?.noOp)
-              anchorsMayHaveShifted = true;
           }
           // A no-op left the document untouched: there is no revision to
           // assert, nothing to refresh, and - the whole point - no change card.
@@ -21067,6 +21130,20 @@ function applyDocumentEditsMeasured(
             priorAcceptStream
           );
           refresh(postWriteSfdt);
+          if (mayShiftAnchors(op)) {
+            const rowOpTable =
+              op.op === 'insert_row' || op.op === 'delete_row'
+                ? String(writtenOp.anchor ?? '')
+                    .split(';')
+                    .slice(0, 2)
+                    .join(';')
+                : '';
+            const tableKept = blocks.some((block) =>
+              block.anchor.startsWith(`${rowOpTable};`)
+            );
+            if (rowOpTable && tableKept) shiftedTables.add(rowOpTable);
+            else documentShifted = true;
+          }
           assertInsertedTableIsAddressable(
             writtenOp,
             byAnchor,
@@ -21273,7 +21350,7 @@ function applyDocumentEditsMeasured(
             target = createdTarget;
           } else if (
             !baselineTarget &&
-            anchorsMayHaveShifted &&
+            anchorMayHaveShifted(op.anchor) &&
             !TABLE_SCOPED_OPS.has(op.op) &&
             op.expect != null
           ) {
@@ -21300,7 +21377,7 @@ function applyDocumentEditsMeasured(
               blocks,
               op.anchor,
               baselineTarget,
-              anchorsMayHaveShifted && !TABLE_SCOPED_OPS.has(op.op)
+              anchorMayHaveShifted(op.anchor) && !TABLE_SCOPED_OPS.has(op.op)
             );
           }
           appliedRelocation =
@@ -21315,7 +21392,7 @@ function applyDocumentEditsMeasured(
                 blocks,
                 String(op.inheritFormatFrom),
                 plan.source,
-                anchorsMayHaveShifted,
+                anchorMayHaveShifted(op.inheritFormatFrom),
                 true
               )
             : undefined;
@@ -21489,6 +21566,12 @@ function applyDocumentEditsMeasured(
               if (globalId) appliedGlobalBindings.add(globalId);
             }
             applyingPlan = undefined;
+            for (const plan of enginePlans) {
+              const clamped = plan.clampBookmarks?.() ?? [];
+              const outcome = outcomes.get(plan.index);
+              if (clamped.length && outcome)
+                outcome.details = [...(outcome.details ?? []), ...clamped];
+            }
             const engineResult = surface.runCommands(
               diffBindingCommands(beforeCommands, state.sfdt),
               {
@@ -21505,6 +21588,12 @@ function applyDocumentEditsMeasured(
             // assistant operation on a public body position even though every
             // structural handler also resolves and selects its own anchor.
             leaveEngineAtAddressableBodySelection(editor, blocks);
+            // A refused native mutation is a failed change set, not a warning
+            const nativeFailure = engineResult.diagnostics.find(
+              (diagnostic) => diagnostic.code === 'native-mutation-failed'
+            );
+            if (nativeFailure)
+              throw new OpError('engine_apply_failed', nativeFailure.message);
             if (engineResult.diagnostics.length) {
               warnings.push(
                 `binding_engine_diagnostics: ${engineResult.diagnostics
