@@ -139,7 +139,7 @@ jobs:
             github_packages: true
     env:
       VERSION: ${{ needs.release.outputs.version }}
-      BUMP_BRANCH: bump/feathery-react-${{ needs.release.outputs.version }}
+      BUMP_BRANCH: chore/bump-feathery-react-${{ needs.release.outputs.version }}
       TARGET_REPO: feathery-org/${{ matrix.repo }}
       REVIEWER: trebitowski
     steps:
@@ -206,7 +206,7 @@ jobs:
           git add package.json yarn.lock
           # feathery-frontend runs lint-staged on pre-commit. The consumer's own
           # PR checks cover this diff, so skip the local hook.
-          git commit --no-verify -m "chore(deps): bump @feathery/react to ${VERSION}"
+          git commit --no-verify -m "chore: bump @feathery/react to ${VERSION}"
           # Force so re-running a failed release refreshes the branch in place.
           git push --force origin "$BUMP_BRANCH"
 
@@ -227,7 +227,7 @@ jobs:
             --repo "$TARGET_REPO" \
             --base "$BASE_BRANCH" \
             --head "$BUMP_BRANCH" \
-            --title "chore(deps): bump @feathery/react to ${VERSION}" \
+            --title "chore: bump @feathery/react to ${VERSION}" \
             --body-file /tmp/bump-body.md)
           echo "::notice::Opened ${url}."
 
