@@ -25,7 +25,7 @@ import {
   fieldCellRules,
   validateGrid
 } from './spreadsheet/validation';
-import { validationColors } from './spreadsheet/styles';
+import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
@@ -173,6 +173,11 @@ function TableElement({
   } = useTableData({
     element: elementForData,
     editMode,
+    // The classic preview keeps its two sample rows; a spreadsheet preview
+    // fills the height it was given so the canvas shows a sheet, not a strip.
+    exampleRows: wantsSpreadsheet
+      ? sampleRowCount(element.styles?.height_unit, element.styles?.height)
+      : undefined,
     dataVersion,
     externalFieldValues: isHub ? hub.hubFieldValues : undefined
   });

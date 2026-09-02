@@ -559,3 +559,33 @@ describe('fill handle', () => {
     await waitFor(() => expect(handle()).not.toBeNull());
   });
 });
+
+describe('designer preview', () => {
+  const rowCount = () => Number(grid().getAttribute('aria-rowcount')) - 1;
+
+  test('a sized spreadsheet preview fills its height with sample rows', () => {
+    render(
+      <TableElement
+        element={{ ...makeElement(), styles: { height: 400, height_unit: 'px' } }}
+        responsiveStyles={mockStyles()}
+        updateFieldValues={jest.fn()}
+        submitCustom={jest.fn()}
+        editMode
+      />
+    );
+    expect(rowCount()).toBe(10);
+  });
+
+  test('a fit-height preview keeps the short sample', () => {
+    render(
+      <TableElement
+        element={{ ...makeElement(), styles: { height: '', height_unit: 'fit' } }}
+        responsiveStyles={mockStyles()}
+        updateFieldValues={jest.fn()}
+        submitCustom={jest.fn()}
+        editMode
+      />
+    );
+    expect(rowCount()).toBe(2);
+  });
+});
