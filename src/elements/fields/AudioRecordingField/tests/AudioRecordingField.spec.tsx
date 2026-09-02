@@ -593,6 +593,12 @@ describe('AudioRecordingField', () => {
     Object.defineProperty(audio, 'duration', { value: 10, configurable: true });
     await act(async () => {
       fireEvent.durationChange(audio);
+    });
+    // Let the reported duration reach the readout first, so the assertion
+    // below cannot straddle an effect that has yet to flush
+    await waitFor(() => screen.getByText('0:00 / 0:10'));
+
+    await act(async () => {
       fireEvent.play(audio);
     });
 
@@ -602,6 +608,6 @@ describe('AudioRecordingField', () => {
       frames.splice(0).forEach((frame) => frame(0));
     });
 
-    expect(screen.getByText('0:04 / 0:10')).toBeTruthy();
+    await waitFor(() => screen.getByText('0:04 / 0:10'));
   });
 });

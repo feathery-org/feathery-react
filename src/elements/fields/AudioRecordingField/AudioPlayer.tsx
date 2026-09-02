@@ -24,8 +24,14 @@ function AudioPlayer({
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [reportedDuration, setReportedDuration] = useState(0);
+  const loadedSrc = useRef(src);
 
+  // Only a new recording invalidates the readout. On mount this state is
+  // already zero, and resetting it then can discard a duration the element
+  // has reported since the render that mounted it.
   useEffect(() => {
+    if (loadedSrc.current === src) return;
+    loadedSrc.current = src;
     setPlaying(false);
     setCurrent(0);
     setReportedDuration(0);
