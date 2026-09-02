@@ -500,7 +500,7 @@ describe('editors for other field types', () => {
 
   test('a date column opens the native date picker on the date part', async () => {
     await renderTyped();
-    fireEvent.doubleClick(cell('1982-07-19T00:00:00Z'));
+    fireEvent.doubleClick(cell('Jul 19, 1982'));
 
     const input = await screen.findByLabelText(/Edit born/);
     expect(input).toHaveAttribute('type', 'date');
@@ -512,9 +512,9 @@ describe('editors for other field types', () => {
   // the cell.
   test('typing at a date cell opens the picker instead of crashing', async () => {
     await renderTyped();
-    fireEvent.mouseDown(cell('1982-07-19T00:00:00Z'));
+    fireEvent.mouseDown(cell('Jul 19, 1982'));
     await waitFor(() =>
-      expect(cell('1982-07-19T00:00:00Z')).toHaveAttribute(
+      expect(cell('Jul 19, 1982')).toHaveAttribute(
         'aria-selected',
         'true'
       )

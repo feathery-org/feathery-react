@@ -208,7 +208,42 @@ export function formatCellDisplay(value: CellValue, rule?: CellRule): string {
 
   if (rule?.type === 'file') return formatFileValue(value);
 
+  if (rule?.type === 'date' || rule?.type === 'datetime') {
+    return formatDateValue(String(value), rule.type);
+  }
+
   return formatCellValue(value);
+}
+
+// The viewer's locale, so "Jul 19, 1982" or "19 Jul 1982" as they would expect.
+// A date is a calendar day with no zone, so it is read AND shown in UTC — the
+// viewer's zone must not shift it to the day before. A datetime is an instant,
+// shown in the viewer's zone like the `datetime-local` editor shows it.
+const DATE_DISPLAY = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC'
+});
+const DATETIME_DISPLAY = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit'
+});
+
+/**
+ * A stored ISO date or datetime, readably. Display only — the cell still holds
+ * (and copies) the stored string, and the editor still opens on it. Anything
+ * unparseable shows as typed, so the user can see what needs fixing.
+ */
+function formatDateValue(text: string, kind: 'date' | 'datetime'): string {
+  const instant = parseStoredDatetime(text);
+  if (!instant) return text;
+  return kind === 'date'
+    ? DATE_DISPLAY.format(instant)
+    : DATETIME_DISPLAY.format(instant);
 }
 
 /** File references render as their names; the cell cannot edit them. */
