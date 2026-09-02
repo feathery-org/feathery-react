@@ -555,9 +555,7 @@ export const validationColors = {
   errorSurface: '#fef3f2',
   warningText: '#b54708',
   warningBorder: '#f79009',
-  warningSurface: '#fffaeb',
-  // A cell holding an edit that has not been written yet.
-  pendingSurface: colors.accentTint
+  warningSurface: '#fffaeb'
 } as const;
 
 // Single-line height of the bar: 8px padding twice plus one 21px line. Only
