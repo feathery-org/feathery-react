@@ -260,6 +260,13 @@ export function installTableDeleteGuard(
       } catch {
         // A reconcile failure must never break the user's delete.
       }
+      // The confirmation dialog stole keyboard focus; without this, the
+      // Ctrl+Z right after a confirmed delete goes nowhere.
+      try {
+        anyEditor.focusIn?.();
+      } catch {
+        // Focus is a nicety; a torn-down editor must not break the delete.
+      }
     }
   };
 
@@ -325,7 +332,16 @@ export function installTableDeleteGuard(
       options
         .confirm(impact)
         .then((confirmed) => {
-          if (!confirmed || anyEditor.isDestroyed) return;
+          if (anyEditor.isDestroyed) return;
+          if (!confirmed) {
+            // Cancel also stole focus; hand it back so typing/undo work.
+            try {
+              anyEditor.focusIn?.();
+            } catch {
+              // Focus is a nicety only.
+            }
+            return;
+          }
           // Every caller invokes these as module methods, so the deferred
           // apply on `module` matches the synchronous receiver.
           performDelete(impact, original, module, args, anchor);
@@ -342,18 +358,29 @@ export function installTableDeleteGuard(
       : null;
   if (patchedRow) module.deleteRow = patchedRow;
 
-  // Whole-table selection + Delete/Backspace: today a silent no-op on bound
-  // tables. Reroute to deleteTable; plain tables keep native Word behavior.
+  // Whole-table or whole-row selection + Delete/Backspace: today a silent
+  // no-op on bound tables (the selection fully contains locked controls).
+  // Reroute to the guarded deleteTable/deleteRow; plain tables and partial
+  // selections keep native Word behavior.
   const onKeyDown = (args: any): void => {
     try {
       const key = args?.event?.key;
       if (key !== 'Delete' && key !== 'Backspace') return;
       if (passthrough()) return;
-      if (!(anyEditor.selection as any)?.isTableSelected?.()) return;
-      const impact = analyzeTable();
-      if (!impact?.tableId) return;
-      args.isHandled = true;
-      module.deleteTable();
+      const selection = anyEditor.selection as any;
+      if (selection?.isTableSelected?.()) {
+        const impact = analyzeTable();
+        if (!impact?.tableId) return;
+        args.isHandled = true;
+        module.deleteTable();
+        return;
+      }
+      if (selection?.isRowSelected?.()) {
+        const impact = analyzeRows();
+        if (!impact?.tableId) return;
+        args.isHandled = true;
+        module.deleteRow();
+      }
     } catch {
       // Failing open leaves the native (blocked) behavior, never breaks keys.
     }
