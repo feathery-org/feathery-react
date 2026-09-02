@@ -139,24 +139,40 @@ describe('steppedTargetIndex', () => {
     ];
     // Absolute 1 is hidden, so "down" from row 0 has to reach 2 or the
     // keypress would appear to do nothing.
-    expect(steppedTargetIndex(withHidden, 0, 1)).toBe(2);
-    expect(steppedTargetIndex(withHidden, 2, -1)).toBe(0);
+    expect(steppedTargetIndex(withHidden, 0, 1, vertical)).toBe(2);
+    expect(steppedTargetIndex(withHidden, 2, -1, vertical)).toBe(0);
   });
 
   it('returns null at the ends', () => {
-    expect(steppedTargetIndex(variableRows, 0, -1)).toBeNull();
-    expect(steppedTargetIndex(variableRows, 2, 1)).toBeNull();
+    expect(steppedTargetIndex(variableRows, 0, -1, vertical)).toBeNull();
+    expect(steppedTargetIndex(variableRows, 2, 1, vertical)).toBeNull();
   });
 
   it('returns null for a row that is not rendered', () => {
-    expect(steppedTargetIndex(variableRows, 9, 1)).toBeNull();
+    expect(steppedTargetIndex(variableRows, 9, 1, vertical)).toBeNull();
+  });
+
+  it('steps in screen order on a reversed track', () => {
+    // Absolute 0 is drawn at the bottom, so stepping "up" from it has to reach
+    // absolute 1 above it - the previous DOM sibling does not exist.
+    const reversedTrack: RowSnapshot[] = [
+      { abs: 0, rect: { top: 40, bottom: 60, left: 0, right: 100 } },
+      { abs: 1, rect: { top: 20, bottom: 40, left: 0, right: 100 } },
+      { abs: 2, rect: { top: 0, bottom: 20, left: 0, right: 100 } }
+    ];
+    const axis = { vertical: true, reversed: true };
+
+    expect(steppedTargetIndex(reversedTrack, 0, -1, axis)).toBe(1);
+    expect(steppedTargetIndex(reversedTrack, 0, 1, axis)).toBeNull();
+    expect(steppedTargetIndex(reversedTrack, 2, 1, axis)).toBe(1);
+    expect(steppedTargetIndex(reversedTrack, 2, -1, axis)).toBeNull();
   });
 });
 
 describe('displacementFor', () => {
   // Rows are 20, 60 and 20 tall with no gap between them.
   it('is the dragged row extent plus the gap it leaves', () => {
-    expect(displacementFor(variableRows, 1, true)).toBe(60);
+    expect(displacementFor(variableRows, 1, vertical)).toBe(60);
   });
 
   it('measures the gap rather than assuming there is none', () => {
@@ -164,7 +180,7 @@ describe('displacementFor', () => {
       { abs: 0, rect: { top: 0, bottom: 20, left: 0, right: 100 } },
       { abs: 1, rect: { top: 30, bottom: 50, left: 0, right: 100 } }
     ];
-    expect(displacementFor(spaced, 0, true)).toBe(30);
+    expect(displacementFor(spaced, 0, vertical)).toBe(30);
   });
 
   it('measures width for a side-by-side container', () => {
@@ -172,11 +188,23 @@ describe('displacementFor', () => {
       { abs: 0, rect: { top: 0, bottom: 50, left: 0, right: 40 } },
       { abs: 1, rect: { top: 0, bottom: 50, left: 40, right: 100 } }
     ];
-    expect(displacementFor(across, 0, false)).toBe(40);
+    expect(displacementFor(across, 0, horizontal)).toBe(40);
   });
 
   it('is zero when there is nothing to displace', () => {
-    expect(displacementFor([variableRows[0]], 0, true)).toBe(0);
+    expect(displacementFor([variableRows[0]], 0, vertical)).toBe(0);
+  });
+
+  it('still finds the gap on a reversed track', () => {
+    // In DOM order every gap here measures negative and would be thrown away,
+    // leaving the displaced rows overlapping by the 10px gap.
+    const reversedSpaced: RowSnapshot[] = [
+      { abs: 0, rect: { top: 30, bottom: 50, left: 0, right: 100 } },
+      { abs: 1, rect: { top: 0, bottom: 20, left: 0, right: 100 } }
+    ];
+    expect(
+      displacementFor(reversedSpaced, 0, { vertical: true, reversed: true })
+    ).toBe(30);
   });
 });
 

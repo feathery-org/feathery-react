@@ -23,7 +23,7 @@ export const Grid = ({ step, form, viewport }: any) => {
   return (
     <>
       <Subgrid tree={formattedStep.tree} form={form} viewport={viewport} />
-      <ReorderLiveRegion />
+      <ReorderLiveRegion formId={form.formInstanceId} />
     </>
   );
 };

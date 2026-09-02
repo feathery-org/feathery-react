@@ -3,10 +3,11 @@ import { getPositionKey } from '../../../utils/hideAndRepeats';
 import {
   getContainerById,
   getFieldsInRepeat,
-  getRepeatContainerRowCount
+  getRepeatContainerRowCount,
+  getRepeatMaxRows
 } from '../../../utils/repeat';
 import { isFixedContainer } from '../StyledContainer/hooks/useFixedContainer';
-import { subscribeToReorderAnnouncements } from './announce';
+import { announceReorder, subscribeToReorderAnnouncements } from './announce';
 import { useRowDrag } from './useRowDrag';
 import {
   GRIP_CLASS,
@@ -25,7 +26,14 @@ import {
 } from './styles';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
 
-export const REORDER_INSTRUCTIONS_ID = 'feathery-repeat-reorder-instructions';
+/**
+ * The instructions node every handle points `aria-describedby` at.
+ *
+ * Scoped to the form: a page can carry several Feathery forms, and a fixed id
+ * would have each form's handles described by whichever form rendered first.
+ */
+export const reorderInstructionsId = (formId: string) =>
+  `feathery-repeat-reorder-instructions-${formId}`;
 
 /** The conventional six-dot drag affordance. */
 /**
@@ -66,9 +74,14 @@ const Grip = () => (
 
 export interface RepeatRowReorder {
   index: number;
-  rowCount: number;
   ordinal: number;
   renderedCount: number;
+  /** Which absolute repeat indices are on screen, in absolute order. */
+  visible: boolean[];
+  /** This form instance, so live region and handles agree on one channel. */
+  formId: string;
+  /** False once the container has reached the author's row cap. */
+  canInsert: boolean;
   onMove: (from: number, to: number) => boolean;
   onInsert: (at: number) => boolean;
 }
@@ -110,17 +123,28 @@ export function useRepeatRowReorder(
   if (rowCount < 2 || index >= rowCount) return null;
 
   // The badge counts what the user can see: a hide_if in the middle must not
-  // make the visible rows read 1, 3, 4.
+  // make the visible rows read 1, 3, 4. Counted in absolute order, which is
+  // screen order for every track the SDK itself lays out; a custom stylesheet
+  // that reverses the track would need DOM measurement to number correctly,
+  // and this hook runs at render time with nothing to measure.
   const flags: boolean[] = form.visiblePositions?.[getPositionKey(node)] ?? [];
   const visible = flags.length ? flags : Array(rowCount).fill(true);
   const ordinal = visible.slice(0, index).filter(Boolean).length + 1;
   const renderedCount = visible.filter(Boolean).length;
 
+  // A seam that cannot add a row should not be offered. insertRepeatedRow
+  // refuses at the cap regardless, but a button that silently does nothing
+  // reads as broken.
+  const maxRows = getRepeatMaxRows(activeStep, container.id);
+  const canInsert = maxRows === null || rowCount < maxRows;
+
   return {
     index,
-    rowCount,
     ordinal,
     renderedCount,
+    visible,
+    formId: form.formInstanceId,
+    canInsert,
     onMove: (from: number, to: number) =>
       Boolean(form.moveRepeatedRow?.(container, from, to)),
     onInsert: (at: number) => Boolean(form.insertRepeatedRow?.(container, at))
@@ -129,9 +153,11 @@ export function useRepeatRowReorder(
 
 export const RepeatRowHandle = ({
   index,
-  rowCount,
   ordinal,
   renderedCount,
+  visible,
+  formId,
+  canInsert,
   onMove,
   onInsert
 }: RepeatRowReorder) => {
@@ -161,13 +187,30 @@ export const RepeatRowHandle = ({
     const observer = new Observer(apply);
     observer.observe(row);
     return () => observer.disconnect();
-  });
+    // Mount only: the offset depends on the row's border width, and the
+    // observer is what watches that. Re-running per render rebuilt an observer
+    // and forced a style resolution for every row on every keystroke.
+  }, []);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  // Built from the same flags as the badge below, so what a move announces and
+  // what the handle calls itself can never drift apart.
+  const positionLabel = useCallback(
+    (abs: number) =>
+      `${visible.slice(0, abs).filter(Boolean).length + 1} of ${renderedCount}`,
+    [visible, renderedCount]
+  );
+  const announce = useCallback(
+    (message: string) => announceReorder(formId, message),
+    [formId]
+  );
+
   const { dragging, move, handleRef, handleProps } = useRowDrag({
     index,
-    rowCount,
     onMove,
+    positionLabel,
+    announce,
     // Tapping the grip is the single-pointer alternative to dragging, which
     // WCAG 2.2 SC 2.5.7 requires and a keyboard path does not satisfy.
     onTap: () => setMenuOpen((open) => !open)
@@ -218,7 +261,7 @@ export const RepeatRowHandle = ({
 
   return (
     <>
-      {insertButton}
+      {canInsert && insertButton}
       <div ref={clusterRef} className={REORDER_CLASS} css={clusterStyles}>
         <button
           {...{ [HANDLE_ATTR]: '' }}
@@ -228,7 +271,7 @@ export const RepeatRowHandle = ({
           css={gripStyles}
           aria-roledescription='sortable row handle'
           aria-label={label}
-          aria-describedby={REORDER_INSTRUCTIONS_ID}
+          aria-describedby={reorderInstructionsId(formId)}
           aria-haspopup='menu'
           aria-expanded={menuOpen}
           aria-pressed={dragging}
@@ -283,13 +326,16 @@ export const RepeatRowHandle = ({
  * One polite live region per form. Rendered by Grid rather than by the handle
  * so screen readers see a single stable node instead of one per row.
  */
-export const ReorderLiveRegion = () => {
+export const ReorderLiveRegion = ({ formId }: { formId: string }) => {
   const [message, setMessage] = useState('');
-  useEffect(() => subscribeToReorderAnnouncements(setMessage), []);
+  useEffect(
+    () => subscribeToReorderAnnouncements(formId, setMessage),
+    [formId]
+  );
 
   return (
     <>
-      <span id={REORDER_INSTRUCTIONS_ID} css={visuallyHidden}>
+      <span id={reorderInstructionsId(formId)} css={visuallyHidden}>
         Drag the handle to move this row, press the arrow keys to move it, or
         activate the handle for move options.
       </span>

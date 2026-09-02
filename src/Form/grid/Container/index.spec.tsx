@@ -1,5 +1,6 @@
 import { fireEvent, render } from '@testing-library/react';
 import { Container } from '.';
+import { subscribeToReorderAnnouncements } from '../RepeatReorder/announce';
 
 // Records the props the real container would register dirty state under
 jest.mock(
@@ -229,6 +230,42 @@ describe('Container repeat row reorder handle', () => {
     expect(form.insertRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 3);
   });
 
+  /** A step whose add-row button caps the container at `maxRepeats` rows. */
+  const cappedStep = (maxRepeats: number) => ({
+    ...step,
+    buttons: [
+      {
+        properties: {
+          actions: [
+            {
+              type: 'add_repeated_row',
+              repeat_container: 'repeat-1',
+              max_repeats: maxRepeats
+            }
+          ]
+        }
+      }
+    ]
+  });
+
+  it('withdraws the seam once the container is at the row cap', () => {
+    // Three rows of data against a cap of three. Offering a button that
+    // insertRepeatedRow will refuse just reads as broken.
+    const { queryByLabelText } = renderContainer(
+      repeatNode({ repeat: 1 }),
+      formProps({ activeStep: cappedStep(3) })
+    );
+    expect(queryByLabelText('Add a row below row 2')).toBeNull();
+  });
+
+  it('keeps the seam while the container is below the row cap', () => {
+    const { getByLabelText } = renderContainer(
+      repeatNode({ repeat: 1 }),
+      formProps({ activeStep: cappedStep(4) })
+    );
+    expect(getByLabelText('Add a row below row 2')).toBeTruthy();
+  });
+
   it('gives each row exactly one seam', () => {
     // One button per row, so no boundary ends up with two overlapping controls.
     const { container } = renderContainer(repeatNode({ repeat: 1 }));
@@ -355,5 +392,74 @@ describe('Container repeat row reorder handle', () => {
     tapGrip(getByLabelText('Row 1 of 2'));
     getByText('Move down').click();
     expect(form.moveRepeatedRow).toHaveBeenCalledWith(step.subgrids[0], 0, 2);
+  });
+
+  /**
+   * What a move says out loud has to be the position the handle claims. Read in
+   * absolute indices instead, a container with a hidden row told a screen
+   * reader "position 3 of 3" about a handle labelled "Row 1 of 2".
+   */
+  it('announces the position its own label uses', () => {
+    const form = formProps({ visiblePositions: { '0': [true, false, true] } });
+    const heard: string[] = [];
+    const stop = subscribeToReorderAnnouncements('internal-form-id', (m) =>
+      heard.push(m)
+    );
+
+    const { getByLabelText, getByText } = render(
+      <div>
+        {[0, 2].map((repeat) => (
+          <Container
+            key={repeat}
+            node={repeatNode({ repeat })}
+            viewport='desktop'
+            form={form}
+          />
+        ))}
+      </div>
+    );
+
+    tapGrip(getByLabelText('Row 1 of 2'));
+    getByText('Move down').click();
+    stop();
+
+    // Absolute row 2 is the second of the two rows on screen.
+    expect(heard).toContain('Row moved to position 2 of 2');
+  });
+
+  it('describes its handles through its own form instructions node', () => {
+    const { getByLabelText } = renderContainer(repeatNode({ repeat: 0 }));
+
+    expect(getByLabelText('Row 1 of 3')).toHaveAttribute(
+      'aria-describedby',
+      'feathery-repeat-reorder-instructions-internal-form-id'
+    );
+  });
+
+  it('does not announce into another form on the page', () => {
+    const heard: string[] = [];
+    const stop = subscribeToReorderAnnouncements('a-different-form', (m) =>
+      heard.push(m)
+    );
+
+    const form = formProps();
+    const { getByLabelText, getByText } = render(
+      <div>
+        {[0, 1, 2].map((repeat) => (
+          <Container
+            key={repeat}
+            node={repeatNode({ repeat })}
+            viewport='desktop'
+            form={form}
+          />
+        ))}
+      </div>
+    );
+
+    tapGrip(getByLabelText('Row 1 of 3'));
+    getByText('Move down').click();
+    stop();
+
+    expect(heard).toEqual([]);
   });
 });

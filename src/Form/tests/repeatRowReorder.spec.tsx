@@ -58,6 +58,7 @@ beforeEach(() => {
   RepeatMod.getContainerById = () => undefined;
   RepeatMod.getFieldsInRepeat = () => [];
   RepeatMod.getRepeatContainerRowCount = () => 0;
+  RepeatMod.getRepeatMaxRows = () => null;
 });
 
 describe('moveRepeatedRow', () => {
@@ -200,5 +201,87 @@ describe('insertRepeatedRow', () => {
   it('refuses when there is no container to insert into', async () => {
     const { form } = await mountForm('iid-insert-refuse');
     expect(form.insertRepeatedRow(undefined, 0)).toBe(false);
+  });
+
+  // Inserting between rows grows the container just as the add-row button
+  // does, so it answers to the cap the author set on that button. Without this
+  // the seam is a way around a limit the rest of the form enforces.
+  it('refuses once the container is at the author row cap', async () => {
+    setUp(3);
+    RepeatMod.getRepeatMaxRows = () => 3;
+    (fieldValues as any).name = ['a', 'b', 'c'];
+    const { form } = await mountForm('iid-insert-capped');
+
+    expect(form.insertRepeatedRow(container, 1)).toBe(false);
+    expect((fieldValues as any).name).toEqual(['a', 'b', 'c']);
+  });
+
+  it('still inserts while the container is below the cap', async () => {
+    setUp(2);
+    RepeatMod.getRepeatMaxRows = () => 3;
+    (fieldValues as any).name = ['a', 'b'];
+    const { form } = await mountForm('iid-insert-under-cap');
+
+    expect(form.insertRepeatedRow(container, 1)).toBe(true);
+    await waitFor(() => {
+      expect((fieldValues as any).name).toEqual(['a', '', 'b']);
+    });
+  });
+});
+
+/**
+ * The row cap belongs to the container, not to any one field inside it.
+ * Deciding per field let a field that trails empty rows keep growing after its
+ * siblings had already stopped at the cap, so "add one row" quietly meant
+ * "top up the short columns".
+ */
+describe('addRepeatedRow at the row cap', () => {
+  const addRowAction = (maxRepeats: number) => [
+    {
+      type: 'add_repeated_row',
+      repeat_container: 'repeat-1',
+      max_repeats: maxRepeats
+    }
+  ];
+
+  const clickAddRow = async (id: string, maxRepeats: number) => {
+    GridMod._spies.actions = addRowAction(maxRepeats);
+    render(<JSForm formId='f1' _internalId={id} />);
+    const button = await screen.findByTestId('btn');
+    button.click();
+  };
+
+  afterEach(() => {
+    GridMod._spies.actions = [];
+  });
+
+  it('adds nothing at all once the container is at the cap', async () => {
+    setUp(3);
+    (fieldValues as any).name = ['a', 'b', 'c'];
+    // Shorter than its siblings, the way a file field is whenever it ends in
+    // empty rows. Judging the cap per field would grow this one.
+    (fieldValues as any).doc = ['f0'];
+    (fieldValues as any).pick = ['x', 'y', 'z'];
+
+    await clickAddRow('iid-add-capped', 3);
+
+    await waitFor(() => expect(screen.getByTestId('btn')).toBeTruthy());
+    expect((fieldValues as any).name).toEqual(['a', 'b', 'c']);
+    expect((fieldValues as any).doc).toEqual(['f0']);
+    expect((fieldValues as any).pick).toEqual(['x', 'y', 'z']);
+  });
+
+  it('adds a row to every field while below the cap', async () => {
+    setUp(2);
+    (fieldValues as any).name = ['a', 'b'];
+    (fieldValues as any).doc = ['f0'];
+    (fieldValues as any).pick = ['x', 'y'];
+
+    await clickAddRow('iid-add-under-cap', 3);
+
+    await waitFor(() => {
+      expect((fieldValues as any).name).toEqual(['a', 'b', '']);
+    });
+    expect((fieldValues as any).doc).toEqual(['f0', '']);
   });
 });

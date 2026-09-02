@@ -6,6 +6,7 @@ import {
 } from './fieldHelperFunctions';
 import { fieldValues } from './init';
 import { arrayMove } from './array';
+import { ACTION_ADD_REPEATED_ROW } from './elementActions';
 
 interface Step {
   subgrids: Subgrid[];
@@ -75,6 +76,40 @@ export function getContainerById(
   id: string
 ): Subgrid | undefined {
   return step.subgrids.find((subgrid) => subgrid.id === id);
+}
+
+/** Elements that can carry a click action, and so an add-row limit. */
+const ACTION_ELEMENT_TYPES = ['buttons', 'texts', 'subgrids'];
+
+/**
+ * The row cap an author configured for a container, or null for uncapped.
+ *
+ * The cap lives on the add-row action rather than on the container, so a
+ * container can be targeted by several actions with different limits - and any
+ * action that leaves the limit blank is a path to unlimited rows, which makes
+ * the whole container uncapped however tight its other actions are. Everything
+ * that grows the container goes through here so one number governs them all.
+ */
+export function getRepeatMaxRows(
+  step: any,
+  containerId: string
+): number | null {
+  let max: number | null = null;
+
+  for (const type of ACTION_ELEMENT_TYPES) {
+    for (const element of step[type] ?? []) {
+      for (const action of element.properties?.actions ?? []) {
+        if (action.type !== ACTION_ADD_REPEATED_ROW) continue;
+        if (action.repeat_container !== containerId) continue;
+
+        const limit = Number(action.max_repeats);
+        if (!Number.isFinite(limit) || limit < 1) return null;
+        max = max === null ? limit : Math.min(max, limit);
+      }
+    }
+  }
+
+  return max;
 }
 
 /**

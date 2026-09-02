@@ -7,7 +7,7 @@
 import React, { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useRowDrag } from '../useRowDrag';
-import { DROP_EDGE_ATTR, HANDLE_ATTR, ROW_ATTR } from '../styles';
+import { HANDLE_ATTR, ROW_ATTR } from '../styles';
 
 const ROW_HEIGHT = 20;
 
@@ -46,18 +46,23 @@ const Row = ({
   rowCount,
   onMove,
   onRowClick,
-  onTap
+  onTap,
+  announce
 }: {
   index: number;
   rowCount: number;
   onMove: (from: number, to: number) => boolean;
   onRowClick?: () => void;
   onTap?: () => void;
+  announce?: (message: string) => void;
 }) => {
   const { dragging, handleRef, handleProps } = useRowDrag({
     index,
-    rowCount,
     onMove,
+    // The handle owns the wording in real use; here every row is on screen, so
+    // absolute index and rendered position are the same thing.
+    positionLabel: (abs: number) => `${abs + 1} of ${rowCount}`,
+    announce: announce ?? (() => {}),
     onTap
   });
   return (
@@ -71,8 +76,6 @@ const Row = ({
         aria-pressed={dragging}
         {...handleProps}
       />
-      <span {...{ [DROP_EDGE_ATTR]: 'lead' }} data-testid={`lead-${index}`} />
-      <span {...{ [DROP_EDGE_ATTR]: 'trail' }} data-testid={`trail-${index}`} />
     </div>
   );
 };
@@ -268,6 +271,147 @@ describe('pointer drag', () => {
     fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 55 });
 
     expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A hide_if closing over a middle row changes which absolute index a rendered
+ * slot holds. The React key for a repeat row is its rendered position, so the
+ * slot's component instance survives that change while its index prop moves
+ * under it - and the grab has to follow the new index, not the one the slot
+ * held when it first mounted.
+ */
+describe('a row whose index changes under it', () => {
+  /** Rows sit where their slot is, whatever absolute index that slot holds. */
+  const layout = (container: HTMLElement) =>
+    container
+      .querySelectorAll(`[${ROW_ATTR}]`)
+      .forEach((row, slot) => {
+        (row as HTMLElement).getBoundingClientRect = () =>
+          ({
+            top: slot * ROW_HEIGHT,
+            bottom: (slot + 1) * ROW_HEIGHT,
+            left: 0,
+            right: 100
+          } as DOMRect);
+      });
+
+  const renderShifting = () => {
+    const onMove = jest.fn().mockReturnValue(true);
+
+    // Absolute indices actually rendered: all four, then 0, 2, 3 once a
+    // hide_if closes over row 1.
+    const Track = ({ hidden }: { hidden: boolean }) => (
+      <div>
+        {(hidden ? [0, 2, 3] : [0, 1, 2, 3]).map((abs, slot) => (
+          <Row key={slot} index={abs} rowCount={4} onMove={onMove} />
+        ))}
+      </div>
+    );
+
+    const { container, rerender } = render(<Track hidden={false} />);
+    layout(container);
+    rerender(<Track hidden />);
+    layout(container);
+
+    return { onMove, container };
+  };
+
+  it('grabs the row the slot holds now, not the one it used to', () => {
+    const { onMove } = renderShifting();
+    // Slot 1 held absolute row 1 on mount and holds absolute row 2 now.
+    const handle = grip(2);
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+
+    // Slots span 0-20, 20-40, 40-60. The dragged row's centre starts at 30 and
+    // ends at 42, clearing the top edge of the slot below it, which holds
+    // absolute row 3. Reading the stale index instead leaves restingCenter at 0
+    // and drags the row all the way to the front.
+    expect(onMove).toHaveBeenCalledWith(2, 3);
+  });
+
+  it('lifts the element it is carrying', () => {
+    const { onMove, container } = renderShifting();
+    const handle = grip(2);
+    const carried = container.querySelector(
+      `[${ROW_ATTR}="2"]`
+    ) as HTMLElement;
+
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+
+    // A stale index would look up a row marked 1, which no longer exists, and
+    // nothing would move on screen.
+    expect(carried.style.transform).toBe('translateY(12px)');
+
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 12 });
+    expect(onMove).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The lift borrows the row's `position` so its z-index applies. Leaving an
+ * inline value behind would outrank the author's own stylesheet for the rest of
+ * the session, on a property they may well have set on purpose.
+ */
+describe('the row is handed back as it was found', () => {
+  const drag = (handle: HTMLElement) => {
+    fireEvent.pointerDown(handle, {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 0, clientY: 35 });
+  };
+
+  it('leaves no inline position behind when there was none', () => {
+    const { container } = renderTrack();
+    const row = container.querySelector(`[${ROW_ATTR}="0"]`) as HTMLElement;
+
+    drag(grip(0));
+
+    expect(row.style.position).toBe('');
+  });
+
+  it('restores an inline position the author set', () => {
+    const { container } = renderTrack();
+    const row = container.querySelector(`[${ROW_ATTR}="0"]`) as HTMLElement;
+    row.style.position = 'absolute';
+
+    drag(grip(0));
+
+    expect(row.style.position).toBe('absolute');
+  });
+
+  it('restores it on a cancelled gesture too', () => {
+    const { container } = renderTrack();
+    const row = container.querySelector(`[${ROW_ATTR}="0"]`) as HTMLElement;
+
+    fireEvent.pointerDown(grip(0), {
+      bubbles: true,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0
+    });
+    fireEvent.pointerMove(grip(0), { pointerId: 1, clientX: 0, clientY: 35 });
+    fireEvent.pointerCancel(grip(0), { pointerId: 1 });
+
+    expect(row.style.position).toBe('');
   });
 });
 

@@ -11,7 +11,6 @@ import {
   targetIndexFromCenter,
   TrackAxis
 } from './geometry';
-import { announceReorder } from './announce';
 import { consumeRowFocus, requestRowFocus } from './focus';
 import { ROW_ATTR } from './styles';
 
@@ -27,6 +26,13 @@ interface DragState {
   rows: RowSnapshot[];
   axis: TrackAxis;
   start: number;
+  /**
+   * The row's own inline `position` before the drag borrowed it. The lift needs
+   * a positioned box for its z-index, but an author may have set `position`
+   * deliberately, and an inline value left behind outranks their stylesheet for
+   * the rest of the session.
+   */
+  rowPosition: string;
   /** Centre of the dragged row along the main axis, before it moved. */
   restingCenter: number;
   dragging: boolean;
@@ -36,9 +42,15 @@ interface DragState {
 export interface RowDragOptions {
   /** Absolute repeat index of this row. */
   index: number;
-  /** Total rows the container's data has. */
-  rowCount: number;
   onMove: (from: number, to: number) => boolean;
+  /**
+   * Renders an absolute repeat index as the position a person sees, e.g.
+   * "2 of 3". Supplied by the handle, which is what knows how many rows are on
+   * screen, so the spoken position always matches the handle's own label.
+   */
+  positionLabel: (abs: number) => string;
+  /** Sends a message to this form's live region. */
+  announce: (message: string) => void;
   /** Fired when the grip is pressed and released without a drag. */
   onTap?: () => void;
   disabled?: boolean;
@@ -75,6 +87,16 @@ const restingCenterOf = (rows: RowSnapshot[], abs: number, axis: TrackAxis) => {
 const rowElementByAbs = (track: HTMLElement, abs: number) =>
   track.querySelector<HTMLElement>(`[${ROW_ATTR}="${abs}"]`);
 
+/**
+ * Which way the track runs, read off the stylesheet.
+ *
+ * Subgrid `axis` is inverted relative to CSS, so the computed style is the only
+ * trustworthy source, and it also picks up the *-reverse variants. Both the
+ * pointer grab and the keyboard step read it here so they cannot disagree.
+ */
+const trackAxis = (track: HTMLElement) =>
+  axisFromFlexDirection(getComputedStyle(track).flexDirection || 'column');
+
 const axisTranslate = (offset: number, vertical: boolean) =>
   vertical ? `translateY(${offset}px)` : `translateX(${offset}px)`;
 
@@ -89,16 +111,16 @@ const axisTranslate = (offset: number, vertical: boolean) =>
 const paintDrag = (state: DragState, offset: number, to: number | null) => {
   const { track, rows, axis } = state;
 
-  const dragged = rowElementByAbs(track, state.index);
-  if (dragged) {
-    dragged.style.transition = 'none';
-    dragged.style.transform = axisTranslate(offset, axis.vertical);
-    dragged.style.zIndex = '2';
-    dragged.style.position = dragged.style.position || 'relative';
-  }
+  // The node captured at grab time, so the element whose `position` is
+  // borrowed here is exactly the one clearDrag restores it on.
+  const dragged = state.row;
+  dragged.style.transition = 'none';
+  dragged.style.transform = axisTranslate(offset, axis.vertical);
+  dragged.style.zIndex = '2';
+  dragged.style.position = dragged.style.position || 'relative';
 
   if (to === null) return;
-  const distance = displacementFor(rows, state.index, axis.vertical);
+  const distance = displacementFor(rows, state.index, axis);
   const shifts = displacementByAbs(rows, state.index, to, distance, axis);
 
   Object.entries(shifts).forEach(([abs, shift]) => {
@@ -117,12 +139,17 @@ const clearDrag = (state: DragState) => {
     el.style.zIndex = '';
     el.style.opacity = '';
   });
+  // Only the dragged row had its position borrowed, and it goes back to
+  // whatever it was - an empty string when there was no inline value, which
+  // hands the property back to the stylesheet.
+  state.row.style.position = state.rowPosition;
 };
 
 export function useRowDrag({
   index,
-  rowCount,
   onMove,
+  positionLabel,
+  announce,
   onTap,
   disabled
 }: RowDragOptions) {
@@ -148,18 +175,18 @@ export function useRowDrag({
       setDragging(false);
 
       if (!commit || state.to === null) {
-        if (state.dragging) announceReorder('Move cancelled');
+        if (state.dragging) announce('Move cancelled');
         return;
       }
 
       const to = state.to;
-      if (to === index) return;
-      if (!onMove(index, to)) return;
+      if (to === state.index) return;
+      if (!onMove(state.index, to)) return;
 
-      announceReorder(`Row moved to position ${to + 1} of ${rowCount}`);
+      announce(`Row moved to position ${positionLabel(to)}`);
       requestRowFocus(to);
     },
-    [index, rowCount, onMove]
+    [onMove, positionLabel, announce]
   );
 
   const onPointerDown = useCallback(
@@ -178,11 +205,7 @@ export function useRowDrag({
       // still reach the menu.
       const elements = rowElements(track);
 
-      // The stylesheet decides the direction: subgrid `axis` is inverted
-      // relative to CSS, and this also picks up the *-reverse variants.
-      const axis = axisFromFlexDirection(
-        getComputedStyle(track).flexDirection || 'column'
-      );
+      const axis = trackAxis(track);
 
       // Stop the container's own click actions from firing on grab-and-release.
       event.stopPropagation();
@@ -199,12 +222,17 @@ export function useRowDrag({
         rows: snapshotRows,
         axis,
         start: mainAxisCoord(event.clientX, event.clientY, axis),
+        rowPosition: row.style.position,
         restingCenter: restingCenterOf(snapshotRows, index, axis),
         dragging: false,
         to: null
       };
     },
-    [disabled]
+    // `index` matters: a repeat row's React key is its rendered position, so
+    // the row a slot holds changes whenever a hide_if opens or closes a gap
+    // above it. Without the dep this closure would keep grabbing the index the
+    // slot held on its first render.
+    [disabled, index]
   );
 
   const onPointerMove = useCallback(
@@ -220,7 +248,7 @@ export function useRowDrag({
         state.dragging = true;
         featheryDoc().body.style.userSelect = 'none';
         setDragging(true);
-        announceReorder(`Row ${index + 1} grabbed`);
+        announce(`Row ${positionLabel(state.index)} grabbed`);
       }
 
       // Rects are the ones captured at grab time. Live shifting is done with
@@ -229,9 +257,11 @@ export function useRowDrag({
       const offset = coord - state.start;
       // The row's centre, not the pointer: the grip sits at the row's corner,
       // so the pointer trails the row it is carrying.
+      // state.index, not the live prop: one from-index for the whole gesture,
+      // so a hide_if firing mid-drag cannot split the paint from the math.
       const to = targetIndexFromCenter(
         state.rows,
-        index,
+        state.index,
         state.restingCenter + offset,
         state.axis
       );
@@ -240,10 +270,10 @@ export function useRowDrag({
       paintDrag(state, offset, to);
       if (!changed) return;
 
-      if (to !== index)
-        announceReorder(`Moving to position ${to + 1} of ${rowCount}`);
+      if (to !== state.index)
+        announce(`Moving to position ${positionLabel(to)}`);
     },
-    [index, rowCount]
+    [positionLabel, announce]
   );
 
   const onPointerUp = useCallback(
@@ -268,17 +298,19 @@ export function useRowDrag({
       const track = handleRef.current?.closest<HTMLElement>(
         `[${ROW_ATTR}]`
       )?.parentElement;
-      const rows = track ? snapshot(rowElements(track)) : [];
+      if (!track) return;
+      const rows = snapshot(rowElements(track));
 
       // Stepping by rendered position rather than by index keeps a hidden row
-      // from swallowing a keypress.
-      const to = steppedTargetIndex(rows, index, direction);
+      // from swallowing a keypress, and the axis keeps "up" meaning up on
+      // screen however the track is laid out.
+      const to = steppedTargetIndex(rows, index, direction, trackAxis(track));
       if (to === null || !onMove(index, to)) return;
 
-      announceReorder(`Row moved to position ${to + 1} of ${rowCount}`);
+      announce(`Row moved to position ${positionLabel(to)}`);
       requestRowFocus(to);
     },
-    [index, rowCount, onMove]
+    [index, onMove, positionLabel, announce]
   );
 
   const onKeyDown = useCallback(

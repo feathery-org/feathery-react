@@ -39,9 +39,6 @@ export function mainAxisCoord(
   return axis.vertical ? clientY : clientX;
 }
 
-const midpoint = (rect: RowRect, vertical: boolean) =>
-  vertical ? (rect.top + rect.bottom) / 2 : (rect.left + rect.right) / 2;
-
 /**
  * Rows in the order they appear on screen.
  *
@@ -95,18 +92,24 @@ export function targetIndexFromCenter(
 /**
  * The absolute index one rendered step away from `from`, for the arrow keys and
  * chevron buttons. Returns null at the ends.
+ *
+ * Screen order, not DOM order: a `*-reverse` track lays its rows out backwards,
+ * and "up" has to mean up on screen or the arrow keys send the row the opposite
+ * way from the one pressed.
  */
 export function steppedTargetIndex(
   rows: RowSnapshot[],
   from: number,
-  direction: -1 | 1
+  direction: -1 | 1,
+  axis: TrackAxis
 ) {
-  const position = rows.findIndex((row) => row.abs === from);
+  const ordered = orderRows(rows, axis);
+  const position = ordered.findIndex((row) => row.abs === from);
   if (position === -1) return null;
 
   const next = position + direction;
-  if (next < 0 || next >= rows.length) return null;
-  return rows[next].abs;
+  if (next < 0 || next >= ordered.length) return null;
+  return ordered[next].abs;
 }
 
 /** Extent of a rect along the track's main axis. */
@@ -116,22 +119,28 @@ export function mainAxisExtent(rect: RowRect, vertical: boolean) {
 
 /**
  * Distance a displaced row travels: the dragged row's extent plus the gap it
- * leaves behind. Measured from the first pair rather than assumed, because the
- * gap comes from the container's own `gap` or the rows' external padding.
+ * leaves behind. Measured from the rows rather than assumed, because the gap
+ * comes from the container's own `gap` or the rows' external padding.
+ *
+ * Gaps are read in screen order. Measuring in DOM order on a `*-reverse` track
+ * makes every gap negative, and they would all be discarded as nonsense,
+ * leaving displaced rows overlapping by exactly the gap.
  */
 export function displacementFor(
   rows: RowSnapshot[],
   draggedIndex: number,
-  vertical: boolean
+  axis: TrackAxis
 ) {
   const dragged = rows.find((row) => row.abs === draggedIndex);
   if (!dragged || rows.length < 2) return 0;
 
+  const ordered = orderRows(rows, axis);
+  const vertical = axis.vertical;
   const start = (r: RowRect) => (vertical ? r.top : r.left);
   const end = (r: RowRect) => (vertical ? r.bottom : r.right);
-  const gaps = rows
+  const gaps = ordered
     .slice(1)
-    .map((row, i) => start(row.rect) - end(rows[i].rect))
+    .map((row, i) => start(row.rect) - end(ordered[i].rect))
     .filter((gap) => gap >= 0);
   const gap = gaps.length ? Math.min(...gaps) : 0;
 

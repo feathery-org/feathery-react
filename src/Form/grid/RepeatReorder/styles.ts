@@ -74,12 +74,6 @@ export const gripStyles = {
   '&:active': { cursor: 'grabbing', opacity: 1 }
 };
 
-/** The row being dragged, lifted out of the flow visually but not structurally. */
-export const draggingRowStyles = {
-  zIndex: 2,
-  cursor: 'grabbing'
-};
-
 export const menuStyles = {
   position: 'absolute' as const,
   insetBlockStart: 0,

@@ -70,6 +70,9 @@ jest.mock('../../utils/repeat', () => {
     getFieldsInRepeat: () => [],
     getRepeatedContainer: () => undefined,
     getRepeatContainerRowCount: () => 0,
+    // Uncapped by default, so a spec only opts in to a row cap when it is
+    // testing one.
+    getRepeatMaxRows: () => null,
     insertRepeatRowValue: (
       list: any[],
       at: number,

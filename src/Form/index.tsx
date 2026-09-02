@@ -69,6 +69,7 @@ import {
   getFieldsInRepeat,
   getRepeatContainerRowCount,
   getRepeatedContainer,
+  getRepeatMaxRows,
   insertRepeatRowValue,
   moveRepeatRowValue
 } from '../utils/repeat';
@@ -983,10 +984,21 @@ function Form({
     updateFieldValues(updatedValues);
   }
 
-  function addRepeatedRow(repeatContainer: Subgrid | undefined, limit = null) {
+  function addRepeatedRow(
+    repeatContainer: Subgrid | undefined,
+    limit: number | null = null
+  ) {
+    // The cap belongs to the container, so it is measured against the
+    // container's row count. Taking each field's own length instead let a
+    // field that trails empty rows keep growing after its siblings had
+    // stopped, which is the opposite of one row being added.
+    const rows = repeatContainer
+      ? getRepeatContainerRowCount(activeStep, repeatContainer)
+      : 0;
+    if (limit && rows >= limit) return;
+
     const getNewVal = (field: any) => {
       const val = fieldValues[field.servar.key];
-      if (limit && val && Array.isArray(val) && val.length >= limit) return val;
       return [
         // @ts-expect-error TS(2461): Type 'FeatheryFieldTypes' is not an array type.
         ...val,
@@ -1102,6 +1114,11 @@ function Form({
     if (!fields.length) return false;
 
     const rows = getRepeatContainerRowCount(activeStep, repeatContainer);
+    // Inserting between rows still grows the container, so it answers to the
+    // same cap the add-row action does.
+    const limit = getRepeatMaxRows(activeStep, repeatContainer.id);
+    if (limit !== null && rows >= limit) return false;
+
     // A boundary, not a row, so the count itself is a valid position.
     const at = Math.min(Math.max(index, 0), rows);
 
@@ -2151,7 +2168,10 @@ function Form({
 
     const change = updateFieldValues(updateValues, { rerender, triggerErrors });
     if (repeatRowOperation === 'add' && repeatContainer)
-      addRepeatedRow(repeatContainer);
+      addRepeatedRow(
+        repeatContainer,
+        getRepeatMaxRows(activeStep, repeatContainer.id)
+      );
     return change;
   };
 
