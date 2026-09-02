@@ -222,16 +222,25 @@ export function attachBindings(
     runGuarded(() => triggers.onKeyDown(args?.event?.key));
   const onBlur = () => runGuarded(() => triggers.onEditorBlur());
 
-  // Syncfusion fires 'contentControl' the instant a lock refuses an edit
-  // (typing into a computed cell, a delete that crosses a binding). Debounce
-  // so a held key or a burst is one hint, and never while the delete guard is
-  // mid-operation - those refusals are ours to resolve, not to complain about.
+  // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
+  // marked lockContentControl - which is every control we create, editable or
+  // not - so the event alone does NOT mean an edit was refused. Show the hint
+  // only when the edit really could not proceed: canEditContentControl is
+  // false (a locked value, or a selection crossing a lock). Debounce so a held
+  // key is one hint, and stay quiet while the delete guard is mid-operation -
+  // those refusals are ours to resolve, not to complain about.
   let lockedHintTimer: TimerId | null = null;
   const scheduleTimeout = setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
   const cancelTimeout = clearTimeoutFn ?? ((id) => clearTimeout(id as never));
+  const editRefused = (): boolean => {
+    const module = editor.editorModule as
+      | { canEditContentControl?: boolean }
+      | undefined;
+    return module ? module.canEditContentControl === false : false;
+  };
   const onLockedControl = () =>
     runGuarded(() => {
-      if (!onLockedEdit || isDeleteGuardBusy()) return;
+      if (!onLockedEdit || isDeleteGuardBusy() || !editRefused()) return;
       if (lockedHintTimer !== null) return;
       onLockedEdit();
       lockedHintTimer = scheduleTimeout(() => {
