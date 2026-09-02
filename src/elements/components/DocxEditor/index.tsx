@@ -140,7 +140,7 @@ function DocxEditor({
     cancel?: () => void;
   } | null>(null);
   const [saveToast, setSaveToast] = useState<{
-    type: 'success' | 'error';
+    type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -182,18 +182,24 @@ function DocxEditor({
           .map((orphan) => `"${orphan.name}"`)
           .join(', ');
         const plural = impact.orphans.length > 1;
-        const scope = impact.scope === 'row' ? 'row' : 'table';
+        const noun =
+          impact.scope === 'row'
+            ? 'row'
+            : impact.scope === 'range'
+            ? 'selection'
+            : 'table';
+        const label = impact.scope === 'range' ? 'Delete' : `Delete ${noun}`;
         setGateWarning({
-          title: `Delete ${scope}?`,
+          title: `Delete ${noun}?`,
           message: `The calculated value${
             plural ? 's' : ''
           } ${names} elsewhere in this document ${
             plural ? 'use' : 'uses'
-          } numbers from this ${scope}. Deleting it keeps the current value${
+          } numbers from this ${noun}. Deleting it keeps the current value${
             plural ? 's' : ''
           } as plain text.`,
-          confirmLabel: scope === 'row' ? 'Delete row' : 'Delete table',
-          confirmTitle: `Deletes the ${scope}; dependent calculated values become plain text`,
+          confirmLabel: label,
+          confirmTitle: `Deletes the ${noun}; dependent calculated values become plain text`,
           proceed: () => {
             setGateWarning(null);
             resolve(true);
@@ -203,6 +209,17 @@ function DocxEditor({
       }),
     []
   );
+
+  // Brief, non-error hint when a lock refuses an edit; the bindings layer fires
+  // this (debounced) instead of the edit silently doing nothing.
+  const handleLockedEdit = useCallback(() => {
+    setSaveToast({
+      type: 'info',
+      message: "This content is locked and can't be edited here."
+    });
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2500);
+  }, []);
 
   const {
     containerRef,
@@ -223,7 +240,9 @@ function DocxEditor({
     onEditorReady,
     onDirty: markDirty,
     onError,
-    bindings: bindings ? { ...bindings, confirmTableDelete } : bindings
+    bindings: bindings
+      ? { ...bindings, confirmTableDelete, onLockedEdit: handleLockedEdit }
+      : bindings
   });
 
   // The Changes button is only offered while changes are pending; if they all
@@ -344,7 +363,10 @@ function DocxEditor({
   // Flash a save toast and auto-dismiss it. Re-showing while one is already up
   // resets the timer so a second save reads as fresh feedback. Errors linger a
   // little longer than the success confirmation.
-  const flashSaveToast = (type: 'success' | 'error', message: string) => {
+  const flashSaveToast = (
+    type: 'success' | 'error' | 'info',
+    message: string
+  ) => {
     setSaveToast({ type, message });
     if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
     saveToastTimer.current = setTimeout(
@@ -800,7 +822,7 @@ function DocxEditor({
             pointerEvents: 'none'
           }}
         >
-          {saveToast.type === 'success' ? (
+          {saveToast.type === 'success' && (
             <CheckIcon
               width={16}
               height={16}
@@ -811,7 +833,8 @@ function DocxEditor({
                 transform: 'translateY(-50%)'
               }}
             />
-          ) : (
+          )}
+          {saveToast.type === 'error' && (
             <CloseIcon
               width={16}
               height={16}

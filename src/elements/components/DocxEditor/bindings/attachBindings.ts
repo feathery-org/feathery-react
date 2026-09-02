@@ -25,7 +25,11 @@ import {
 import { installKeystrokeGuard } from './keystrokeGuard';
 import { createCommitTriggers } from './commitTriggers';
 import { watchRowCommands } from './rowCommandWatch';
-import { installTableDeleteGuard, TableDeleteImpact } from './tableDeleteGuard';
+import {
+  installTableDeleteGuard,
+  isDeleteGuardBusy,
+  TableDeleteImpact
+} from './tableDeleteGuard';
 import { DocumentPersistence } from './persistence';
 import {
   registerBindingReconciler,
@@ -54,6 +58,13 @@ export interface BindingsOptions {
    * deletion; absent means such deletes proceed without a prompt.
    */
   confirmTableDelete?: (impact: TableDeleteImpact) => Promise<boolean>;
+  /**
+   * Fired (debounced) when the user's edit is refused because it lands on a
+   * locked content control - typing into a computed cell, or deleting across a
+   * binding without fully covering it. The host shows a brief "locked" hint so
+   * the refusal is not silent.
+   */
+  onLockedEdit?: () => void;
   persistence?: DocumentPersistence | null;
   setTimeoutFn?: (fn: () => void, ms: number) => TimerId;
   clearTimeoutFn?: (id: TimerId) => void;
@@ -104,6 +115,7 @@ export function attachBindings(
     onDiagnostics,
     onSuppressContentChange,
     confirmTableDelete,
+    onLockedEdit,
     persistence = null,
     setTimeoutFn,
     clearTimeoutFn
@@ -210,9 +222,27 @@ export function attachBindings(
     runGuarded(() => triggers.onKeyDown(args?.event?.key));
   const onBlur = () => runGuarded(() => triggers.onEditorBlur());
 
+  // Syncfusion fires 'contentControl' the instant a lock refuses an edit
+  // (typing into a computed cell, a delete that crosses a binding). Debounce
+  // so a held key or a burst is one hint, and never while the delete guard is
+  // mid-operation - those refusals are ours to resolve, not to complain about.
+  let lockedHintTimer: TimerId | null = null;
+  const scheduleTimeout = setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
+  const cancelTimeout = clearTimeoutFn ?? ((id) => clearTimeout(id as never));
+  const onLockedControl = () =>
+    runGuarded(() => {
+      if (!onLockedEdit || isDeleteGuardBusy()) return;
+      if (lockedHintTimer !== null) return;
+      onLockedEdit();
+      lockedHintTimer = scheduleTimeout(() => {
+        lockedHintTimer = null;
+      }, 600);
+    });
+
   eventful.addEventListener?.('contentChange', onContentChange);
   eventful.addEventListener?.('selectionChange', onSelectionChange);
   eventful.addEventListener?.('keyDown', onKeyDown);
+  eventful.addEventListener?.('contentControl', onLockedControl);
   // Clicking into a toolbar or a side panel must not strand an edit.
   const editableDiv = editor.documentHelper?.editableDiv;
   editableDiv?.addEventListener?.('blur', onBlur);
@@ -259,6 +289,12 @@ export function attachBindings(
       step('keyDown', () =>
         eventful.removeEventListener?.('keyDown', onKeyDown)
       );
+      step('contentControl', () =>
+        eventful.removeEventListener?.('contentControl', onLockedControl)
+      );
+      step('lockedHintTimer', () => {
+        if (lockedHintTimer !== null) cancelTimeout(lockedHintTimer);
+      });
       step('blur', () => editableDiv?.removeEventListener?.('blur', onBlur));
       step('guard', () => uninstallGuard());
       step('rowCommands', () => unwatchRowCommands());

@@ -20,7 +20,7 @@ export interface OrphanedFormula {
 
 export interface TableDeleteImpact {
   /** What is being deleted, for the confirmation copy. */
-  scope: 'table' | 'row';
+  scope: 'table' | 'row' | 'range';
   /** Bound table id when the block is a tagged wrapper, else null. */
   tableId: string | null;
   orphans: OrphanedFormula[];
@@ -127,6 +127,47 @@ export function analyzeRowDeleteImpact(
     tableId: boundTableId(block),
     orphans: diffOrphans(doc, trimmed)
   };
+}
+
+/**
+ * Impact of a prose deletion that removes every occurrence of each tag in
+ * `removedTags` (the guard passes only tags whose whole set the selection
+ * covers; a partially-covered name keeps a survivor and strands nothing). The
+ * orphans are formulas ELSEWHERE that read one of those now-absent names.
+ */
+export function analyzeRangeDeleteImpact(
+  doc: SfdtDocument,
+  removedTags: string[]
+): TableDeleteImpact {
+  const removed = new Set(removedTags);
+  const trimmed = JSON.parse(JSON.stringify(doc)) as SfdtDocument;
+  stripContentControls(trimmed, removed);
+  return {
+    scope: 'range',
+    tableId: null,
+    orphans: diffOrphans(doc, trimmed)
+  };
+}
+
+/** Remove every content control node whose tag is in `tags`, in place. */
+function stripContentControls(node: unknown, tags: Set<string>): void {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (let i = node.length - 1; i >= 0; i--) {
+      const child = node[i] as Record<string, unknown>;
+      const props = child?.contentControlProperties as
+        | { tag?: string }
+        | undefined;
+      if (props && tags.has(String(props.tag ?? ''))) {
+        node.splice(i, 1);
+        continue;
+      }
+      stripContentControls(child, tags);
+    }
+    return;
+  }
+  for (const value of Object.values(node as Record<string, unknown>))
+    stripContentControls(value, tags);
 }
 
 /** Formulas that fail in `trimmed` but evaluated fine in `doc`. */

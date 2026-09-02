@@ -27,6 +27,7 @@
 // moves between stacks.
 
 import {
+  analyzeRangeDeleteImpact,
   analyzeRowDeleteImpact,
   analyzeTableDeleteImpact,
   TableDeleteImpact
@@ -61,6 +62,14 @@ type AnyEditor = SyncfusionEditorLike & Record<string, any>;
 
 /** A top-level table cell's hierarchical index: s;b;row;cell;para;offset. */
 const CELL_OFFSET_PARTS = 6;
+
+// True while any guard instance is performing a delete + unwrap. The locked-
+// edit hint reads this so a refusal we are about to resolve ourselves never
+// flashes a "content is locked" toast.
+let guardBusyDepth = 0;
+export function isDeleteGuardBusy(): boolean {
+  return guardBusyDepth > 0;
+}
 
 /**
  * Wrap editorModule.deleteTable/deleteRow and route whole-table
@@ -140,6 +149,82 @@ export function installTableDeleteGuard(
   };
 
   /**
+   * A non-empty selection over prose: classify each content control it touches
+   * as fully covered or partially overlapped. 'blocked' when any control is
+   * only partially inside (deleting half a binding is the ambiguous edit the
+   * lock rightly refuses); null when no control is involved (native delete is
+   * already safe); otherwise the orphan impact of removing the covered ones.
+   *
+   * A name only strands a formula when ALL its occurrences are deleted - a
+   * repeated tag with a survivor still resolves - so the impact removes exactly
+   * the tags whose every occurrence is covered.
+   */
+  const analyzeRange = (): TableDeleteImpact | 'blocked' | null => {
+    const selection = anyEditor.selection as any;
+    if (
+      !selection ||
+      selection.isEmpty ||
+      typeof selection.getPosition !== 'function'
+    )
+      return null;
+    let selStart = selection.start;
+    let selEnd = selection.end;
+    if (selection.isForward === false) {
+      selStart = selection.end;
+      selEnd = selection.start;
+    }
+    if (!selStart || !selEnd) return null;
+    const collection = editor.documentHelper?.contentControlCollection ?? [];
+    const covered: any[] = [];
+    for (const control of collection) {
+      if (!isContentControlAttached(control)) continue;
+      let cs: any;
+      let ce: any;
+      try {
+        const pos = selection.getPosition(control, true);
+        cs = pos?.startPosition;
+        ce = pos?.endPosition;
+      } catch {
+        cs = ce = null;
+      }
+      if (!cs || !ce) continue;
+      const startsInside =
+        cs.isExistAfter(selStart) || cs.isAtSamePosition(selStart);
+      const endsInside =
+        ce.isExistBefore(selEnd) || ce.isAtSamePosition(selEnd);
+      if (startsInside && endsInside) {
+        covered.push(control);
+        continue;
+      }
+      // Any intersection that is not full containment is a partial overlap.
+      const overlaps = cs.isExistBefore(selEnd) && ce.isExistAfter(selStart);
+      if (overlaps) return 'blocked';
+    }
+    if (!covered.length) return null;
+    const tag = (c: any) => String(c.contentControlProperties?.tag || '');
+    const total = new Map<string, number>();
+    for (const control of collection)
+      if (isContentControlAttached(control) && tag(control))
+        total.set(tag(control), (total.get(tag(control)) ?? 0) + 1);
+    const coveredByTag = new Map<string, number>();
+    for (const control of covered)
+      if (tag(control))
+        coveredByTag.set(
+          tag(control),
+          (coveredByTag.get(tag(control)) ?? 0) + 1
+        );
+    const fullyRemoved = [...coveredByTag.entries()]
+      .filter(([t, count]) => count >= (total.get(t) ?? 0))
+      .map(([t]) => t);
+    try {
+      const doc = JSON.parse(editor.serialize()) as SfdtDocument;
+      return analyzeRangeDeleteImpact(doc, fullyRemoved);
+    } catch {
+      return null;
+    }
+  };
+
+  /**
    * Unwrap every attached control carrying one of the tags to plain text.
    * Runs after the delete, so a repeated tag's dying copies are already gone.
    *
@@ -208,6 +293,9 @@ export function installTableDeleteGuard(
     anchor: string
   ): unknown => {
     const tags = impact.orphans.flatMap((orphan) => orphan.tags);
+    // Rows are the only scope whose history entries are table-clone based and
+    // cannot be natively grouped (see below); table and prose-range deletes
+    // group safely.
     const unwrapFirst = impact.scope === 'row';
     const history = editor.editorHistoryModule as Record<string, any> | null;
     // The stack is lazily created on the first recorded edit; absent means 0.
@@ -217,7 +305,7 @@ export function installTableDeleteGuard(
     let grouped = false;
     if (
       tags.length &&
-      impact.scope === 'table' &&
+      impact.scope !== 'row' &&
       !history?.currentHistoryInfo &&
       typeof module.initComplexHistory === 'function'
     ) {
@@ -225,6 +313,7 @@ export function installTableDeleteGuard(
       grouped = true;
     }
     running = true;
+    guardBusyDepth += 1;
     try {
       // insertText/delete are gated like everything else; the whole-control
       // selection is exactly what the lock would otherwise block.
@@ -245,6 +334,7 @@ export function installTableDeleteGuard(
       return result;
     } finally {
       running = false;
+      guardBusyDepth -= 1;
       if (grouped) history?.updateComplexHistory?.();
       // Mark the ungrouped entries as one atomic set for the undo/redo chain.
       if (!grouped && tags.length) {
@@ -327,6 +417,36 @@ export function installTableDeleteGuard(
   if (history && patchedUndo) history.undo = patchedUndo;
   if (history && patchedRedo) history.redo = patchedRedo;
 
+  // Confirm (when the delete orphans formulas), then perform. Shared by the
+  // patched deleteTable/deleteRow and the keyDown range route.
+  const runGuardedDelete = (
+    impact: TableDeleteImpact,
+    fn: (...args: unknown[]) => unknown,
+    self: unknown,
+    args: unknown[]
+  ): unknown => {
+    const anchor = String(anyEditor.selection?.startOffset ?? '');
+    if (!impact.orphans.length || !options.confirm)
+      return performDelete(impact, fn, self, args, anchor);
+    options
+      .confirm(impact)
+      .then((confirmed) => {
+        if (anyEditor.isDestroyed) return;
+        if (!confirmed) {
+          // Cancel also stole focus; hand it back so typing/undo work.
+          try {
+            anyEditor.focusIn?.();
+          } catch {
+            // Focus is a nicety only.
+          }
+          return;
+        }
+        performDelete(impact, fn, self, args, anchor);
+      })
+      .catch(() => undefined);
+    return undefined;
+  };
+
   const makePatched = (
     original: (...args: unknown[]) => unknown,
     analyze: () => TableDeleteImpact | null
@@ -342,28 +462,9 @@ export function installTableDeleteGuard(
       const impact = analyze();
       // Unrecognizable selection or document: exactly the native behavior.
       if (!impact) return original.apply(this, args);
-      const anchor = String(anyEditor.selection?.startOffset ?? '');
-      if (!impact.orphans.length || !options.confirm)
-        return performDelete(impact, original, this, args, anchor);
-      options
-        .confirm(impact)
-        .then((confirmed) => {
-          if (anyEditor.isDestroyed) return;
-          if (!confirmed) {
-            // Cancel also stole focus; hand it back so typing/undo work.
-            try {
-              anyEditor.focusIn?.();
-            } catch {
-              // Focus is a nicety only.
-            }
-            return;
-          }
-          // Every caller invokes these as module methods, so the deferred
-          // apply on `module` matches the synchronous receiver.
-          performDelete(impact, original, module, args, anchor);
-        })
-        .catch(() => undefined);
-      return undefined;
+      // Every caller invokes these as module methods, so the deferred apply on
+      // `module` matches the synchronous receiver.
+      return runGuardedDelete(impact, original, module, args);
     };
 
   const patchedTable = makePatched(originalTable, analyzeTable);
@@ -396,7 +497,24 @@ export function installTableDeleteGuard(
         if (!impact?.tableId) return;
         args.isHandled = true;
         module.deleteRow();
+        return;
       }
+      // Prose range that covers content control(s): the lock would refuse it
+      // silently. Delete it ourselves (bypassed), unwrapping any formula the
+      // removal strands. 'blocked' (partial overlap) and null (no control)
+      // both fall through to native behavior.
+      const range = analyzeRange();
+      if (!range || range === 'blocked') return;
+      const deleteFn =
+        key === 'Backspace' ? module.handleBackKey : module.handleDelete;
+      if (typeof deleteFn !== 'function') return;
+      args.isHandled = true;
+      runGuardedDelete(
+        { ...range, scope: 'range' },
+        deleteFn as (...a: unknown[]) => unknown,
+        module,
+        []
+      );
     } catch {
       // Failing open leaves the native (blocked) behavior, never breaks keys.
     }
