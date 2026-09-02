@@ -96,6 +96,27 @@ const getTextVariables = (el: any) => {
   return textVariables.map((variable: any) => variable.slice(2, -2));
 };
 
+/**
+ * Gets the set of field keys referenced by {{key}} tokens anywhere on a step,
+ * so that changes to those fields can trigger a rerender of the text that
+ * interpolates them.
+ *
+ * Deliberately scans the whole serialized element rather than an allowlist of
+ * properties. Interpolation happens across many surfaces today (rich-text delta
+ * inserts, font_link hrefs, container tooltips, iframe_url, custom_html, matrix
+ * question labels, servar names), several of them nested, and an allowlist
+ * regresses silently the next time one is added. A false positive only costs a
+ * debounced rerender.
+ */
+function getTextVariableReferences(elements: [any, string][]): Set<string> {
+  const refSet = new Set<string>();
+  elements.forEach(([element]) => {
+    const matches = JSON.stringify(element ?? '').match(TEXT_VARIABLE_PATTERN);
+    matches?.forEach((match) => refSet.add(match.slice(2, -2)));
+  });
+  return refSet;
+}
+
 const repeatCountByTextVariables = (
   step: any,
   repeatKey: string | undefined
@@ -277,6 +298,7 @@ function getVisibleElements(
 export {
   shouldElementHide,
   getHideIfReferences,
+  getTextVariableReferences,
   getVisibleElements,
   getVisiblePositions,
   stepElementTypes,

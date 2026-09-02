@@ -491,6 +491,28 @@ export function installRevisionHighlightRendering(ed: any) {
     }
     return out;
   };
+
+  // SyncFusion paints a repeat header on continuation pages from a throwaway
+  // table clone and re-registers the clone's revisions on every paint. With a
+  // pending revision in a repeat-header row that walk throws mid-paint and
+  // every later page stays blank, so registration is off while the painter runs
+  if (typeof renderer.renderHeader === 'function') {
+    const originalRenderHeader = renderer.renderHeader.bind(renderer);
+    renderer.renderHeader = (page: any, widget: any, header: any) => {
+      const editorModule = ed.editorModule ?? ed.editor;
+      if (!editorModule) return originalRenderHeader(page, widget, header);
+      const constructForTable = editorModule.constructRevisionsForTable;
+      const constructFromID = editorModule.constructRevisionFromID;
+      editorModule.constructRevisionsForTable = () => {};
+      editorModule.constructRevisionFromID = () => {};
+      try {
+        return originalRenderHeader(page, widget, header);
+      } finally {
+        editorModule.constructRevisionsForTable = constructForTable;
+        editorModule.constructRevisionFromID = constructFromID;
+      }
+    };
+  }
 }
 
 // Keep every shared-surface review customization behind the same predicate as
@@ -843,13 +865,13 @@ export function useDocxEditor({
           headers: headers || [],
           height: '100%',
           // Syncfusion minifies serialized SFDT by default, renaming every key
-          // the binding engine reads - a bound document would come back looking
-          // like it had no bindings at all. Construction is the only place this
-          // reliably takes effect, and it is scoped to bound editors so nothing
-          // else pays for the larger payload.
-          ...(bindingsEnabled
-            ? { documentEditorSettings: { optimizeSfdt: false } }
-            : {})
+          // the binding engine AND the section-outline reader rely on - a
+          // document would come back looking like it had no bindings and no
+          // sections at all. Construction is the only place this reliably takes
+          // effect. Set unconditionally: section reordering is always available,
+          // so every editor must serialize verbose keys (the only cost is a
+          // slightly larger serialize payload on save/export).
+          documentEditorSettings: { optimizeSfdt: false }
         });
         // Wait until Syncfusion finishes creating the inner DocumentEditor —
         // opening a doc before `created` leaves a blank default document.

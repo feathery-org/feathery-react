@@ -670,8 +670,9 @@ export default class IntegrationClient {
   }
 
   // Replace a generated envelope's file with an edited version, e.g. from the
-  // in-form document editor. Returns { id, file, updated_at } with a fresh
-  // signed file URL.
+  // in-form document editor. Returns { id, file, editor_file, updated_at }
+  // with fresh signed URLs: `file` is the public copy (content controls
+  // stripped server-side), `editor_file` the control-bearing editor copy.
   saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
     const { userId } = initInfo();
     const formData = new FormData();
@@ -750,7 +751,8 @@ export default class IntegrationClient {
   }
 
   // The newest envelope for this submission + document, loaded by the in-form
-  // document editor container. Returns {id, file, type, signed} or {}.
+  // document editor container. Returns {id, file, editor_file, type, signed}
+  // or {} — the editor opens editor_file (controls intact) when present.
   getCurrentEnvelope(documentId: string) {
     const { userId } = initInfo();
     const params = encodeGetParams({
@@ -1031,7 +1033,33 @@ export default class IntegrationClient {
           name: signer.name,
           sign_method: signer.signMethod,
           routing_order: signer.routingOrder,
-          excluded_documents: signer.excludedDocuments
+          excluded_documents: signer.excludedDocuments,
+          // Omitted rather than nulled: the backend serializer treats a
+          // present `authentication` as a request to challenge the recipient.
+          ...(signer.authentication
+            ? {
+                authentication: {
+                  method: signer.authentication.method,
+                  // Phone entries pass through as E.164 strings; the object
+                  // form is re-keyed to the backend's snake_case.
+                  phone_numbers: signer.authentication.phoneNumbers?.map(
+                    (phone) =>
+                      typeof phone === 'string'
+                        ? phone
+                        : {
+                            country_code: phone.countryCode,
+                            number: phone.number
+                          }
+                  ),
+                  access_code: signer.authentication.accessCode,
+                  add_access_code_to_email:
+                    signer.authentication.addAccessCodeToEmail,
+                  recipient_may_provide_number:
+                    signer.authentication.recipientMayProvideNumber,
+                  workflow_id: signer.authentication.workflowId
+                }
+              }
+            : {})
         })),
         docusign_envelope_id: existingEnvelopeId,
         draft,

@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
@@ -10,11 +16,13 @@ import { getNextEditableCell } from './utils';
 import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
+import { useHubTableSource } from './useHubTableSource';
 import { TrashIcon } from '../../components/icons';
 import {
   containerStyle,
   rowStyle,
   cellStyle,
+  dataColumnMinWidthStyle,
   tableStyle,
   theadStyle,
   thStyle,
@@ -22,6 +30,7 @@ import {
   sortIconContainerStyle,
   toolbarStyle,
   addRowButtonStyle,
+  errorBannerStyle,
   deleteColumnStyle,
   deleteIconStyle
 } from './styles';
@@ -40,7 +49,8 @@ function TableElement({
   submitCustom = () => {},
   editMode = false,
   buttonLoaders = {},
-  assistantClient
+  assistantClient,
+  client
 }: any) {
   const styles = useMemo(
     () => applyTableStyles(responsiveStyles),
@@ -49,6 +59,25 @@ function TableElement({
 
   const [dataVersion, setDataVersion] = useState(0);
   const onMutate = useCallback(() => setDataVersion((v) => v + 1), []);
+
+  // Data Hub-backed tables source their rows from the Hub (live forms only;
+  // the builder keeps rendering example data).
+  const isHub =
+    element.properties?.data_source === 'hub' &&
+    !!element.properties?.hub_id &&
+    !editMode;
+  const hub = useHubTableSource({ element, client, enabled: isHub });
+
+  const elementForData = useMemo(
+    () =>
+      isHub
+        ? {
+            ...element,
+            properties: { ...element.properties, columns: hub.hubColumns }
+          }
+        : element,
+    [isHub, element, hub.hubColumns]
+  );
 
   const {
     // search
@@ -87,9 +116,14 @@ function TableElement({
     activeFieldValues,
     baseColumns,
     baseFieldValues
-  } = useTableData({ element, editMode, dataVersion });
+  } = useTableData({
+    element: elementForData,
+    editMode,
+    dataVersion,
+    externalFieldValues: isHub ? hub.hubFieldValues : undefined
+  });
 
-  const { handleAddRow, handleDeleteRow, handleCellEdit } = useTableMutations({
+  const fieldMutations = useTableMutations({
     columns: baseColumns,
     updateFieldValues,
     submitCustom,
@@ -102,9 +136,18 @@ function TableElement({
     onMutate
   });
 
+  // In Hub mode the writes go to the Data Hub instead of form field values.
+  const { handleAddRow, handleDeleteRow, handleCellEdit } = isHub
+    ? {
+        handleAddRow: hub.handleAddRow,
+        handleDeleteRow: hub.handleDeleteRow,
+        handleCellEdit: hub.handleCellEdit
+      }
+    : fieldMutations;
+
   const tableId = element?.id;
 
-  const canEdit = enableEditing && !isTransposed;
+  const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
   const showAddRow = canEdit && enableAddDeleteRows;
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
@@ -167,13 +210,26 @@ function TableElement({
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
     handleAddRow();
+    // Hub mutations don't own search/pagination; mirror the field-mode UX so the
+    // new row is visible (field mode does this inside useTableMutations).
+    if (isHub) {
+      if (searchQuery) setSearchQuery('');
+      if (enablePagination) setCurrentPage(0);
+    }
     setPendingAddRows((prev) => {
       const next = new Set<number>();
       next.add(0);
       prev.forEach((idx) => next.add(idx + 1));
       return next;
     });
-  }, [handleAddRow]);
+  }, [
+    handleAddRow,
+    isHub,
+    searchQuery,
+    setSearchQuery,
+    enablePagination,
+    setCurrentPage
+  ]);
 
   const wrappedHandleDeleteRow = useCallback(
     (rowIndex: number) => {
@@ -228,6 +284,15 @@ function TableElement({
               + Add Row
             </button>
           )}
+        </div>
+      )}
+      {isHub && hub.errors.length > 0 && (
+        <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>
+          <ul>
+            {hub.errors.map((error, index) => (
+              <li key={`${error}-${index}`}>{error}</li>
+            ))}
+          </ul>
         </div>
       )}
       {showEmptyState ? (
@@ -339,6 +404,7 @@ function TableElement({
                           }
                         : {
                             ...(cellStyle as any),
+                            ...dataColumnMinWidthStyle,
                             ...(isTransposed
                               ? isSecondColumn
                                 ? {}

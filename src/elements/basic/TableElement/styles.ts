@@ -10,6 +10,7 @@ const colors = {
   gray900: '#111827',
   blue50: '#eff6ff',
   blue700: '#1d4ed8',
+  red50: '#fef2f2',
   red500: '#ef4444',
   red600: '#dc2626'
 } as const;
@@ -113,7 +114,6 @@ export const searchInputStyle = {
 
 export const tableStyle = {
   width: '100%',
-  maxWidth: '100%',
   fontSize: '14px',
   textAlign: 'left',
   color: colors.gray600,
@@ -127,6 +127,12 @@ export const theadStyle = {
   color: colors.gray600,
   backgroundColor: colors.gray50,
   borderBottom: `1px solid ${colors.gray200}`
+} as const;
+
+// Data columns never shrink below this; the table overflows into the
+// horizontal-scroll wrapper instead of crushing cell content
+export const dataColumnMinWidthStyle = {
+  minWidth: '120px'
 } as const;
 
 export const thStyle = {
@@ -367,6 +373,18 @@ export const addRowButtonStyle = {
   paddingLeft: '12px',
   paddingRight: '12px',
   whiteSpace: 'nowrap' as const
+} as const;
+
+export const errorBannerStyle = {
+  padding: '10px 16px',
+  color: colors.red600,
+  backgroundColor: colors.red50,
+  borderBottom: `1px solid ${colors.red500}`,
+  fontSize: '13px',
+  '& ul': {
+    margin: 0,
+    paddingLeft: '18px'
+  }
 } as const;
 
 export const clickToEditStyle = {

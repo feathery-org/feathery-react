@@ -23,7 +23,7 @@ export function createSelectStyles({
   menuZIndex,
   responsiveStyles,
   rightToLeft
-}: SelectStylesParams): StylesConfig<OptionData, true> {
+}: SelectStylesParams): StylesConfig<OptionData, boolean> {
   const styles = {
     control: (baseStyles) => ({
       ...baseStyles,
@@ -55,6 +55,17 @@ export function createSelectStyles({
       const selectProps = state.selectProps as DropdownSelectProps & {
         inputValue?: string;
       };
+      if (!selectProps.isMulti) {
+        // Constant layout: nothing here reacts to menu-open or typing, so the
+        // value text can't shift. react-select grids this, so flex is inert.
+        return {
+          ...baseStyles,
+          paddingInlineEnd: 28,
+          minWidth: 0,
+          alignItems: 'center'
+        };
+      }
+
       const shouldWrap =
         !selectProps.collapseSelected || !!selectProps.inputValue;
       const paddingBlock = shouldWrap
@@ -99,6 +110,14 @@ export function createSelectStyles({
           : {})
       };
     },
+    // Inherit the control's theme font styles, as the native DropdownField does
+    singleValue: (baseStyles) => ({
+      ...baseStyles,
+      color: 'inherit',
+      fontSize: 'inherit',
+      marginLeft: 0,
+      marginRight: 0
+    }),
     multiValueLabel: (baseStyles, state) => {
       const selectProps = state.selectProps as DropdownSelectProps;
       if (selectProps.collapseSelected) {
@@ -218,7 +237,7 @@ export function createSelectStyles({
         }
       };
     }
-  } as StylesConfig<OptionData, true>;
+  } as StylesConfig<OptionData, boolean>;
 
   return styles;
 }

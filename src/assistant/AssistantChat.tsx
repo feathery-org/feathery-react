@@ -114,6 +114,9 @@ import { useTurnRunning, useWorkingPhrase } from './workingPhrases';
 const FAB_SIZE = 56;
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 500;
+// Shared height for every composer control (input, attach, send/mic, voice
+// pill) so they line up on one row regardless of borders.
+const COMPOSER_CONTROL_HEIGHT = 40;
 // One line of the indicator plus breathing room, derived from the indicator's
 // own metrics so a font change cannot clip it. The strip holding it is always
 // in the layout, so this height is spent whether or not a turn is running
@@ -305,7 +308,6 @@ export type AssistantChatProps = {
   getJwt?: () => string;
   bottom?: number;
   color?: string;
-  voiceEnabled?: boolean;
   workflowActions?: WorkflowAction[];
   allowedModes?: AssistantMode[];
   stepSettings?: AssistantStepSettings;
@@ -320,7 +322,6 @@ const AssistantChat = ({
   baseUrl,
   bottom = 20,
   color,
-  voiceEnabled = false,
   workflowActions = [],
   allowedModes = DEFAULT_MODES,
   stepSettings = {},
@@ -1004,7 +1005,11 @@ const AssistantChat = ({
   }, [isLoading, instanceId]);
 
   const composerButtonCss = {
-    padding: '10px',
+    // Fixed height + border-box so buttons and the input line up exactly,
+    // regardless of which controls carry a 1px border.
+    height: COMPOSER_CONTROL_HEIGHT,
+    boxSizing: 'border-box',
+    padding: '0 10px',
     backgroundColor: colors.primary,
     color: 'white',
     border: 'none',
@@ -1944,7 +1949,9 @@ const AssistantChat = ({
               disabled={isLoading}
               aria-label='Attach files'
               css={{
-                padding: '10px',
+                height: COMPOSER_CONTROL_HEIGHT,
+                boxSizing: 'border-box',
+                padding: '0 10px',
                 backgroundColor: 'transparent',
                 color: GRAY_800,
                 border: `1px solid ${GRAY_200}`,
@@ -1968,10 +1975,12 @@ const AssistantChat = ({
             onClick={voiceState === 'speaking' ? skipSpeaking : undefined}
             css={{
               flex: 1,
+              height: COMPOSER_CONTROL_HEIGHT,
+              boxSizing: 'border-box',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              padding: '10px 14px',
+              padding: '0 14px',
               border: `1px solid ${GRAY_200}`,
               borderRadius: '8px',
               backgroundColor: 'white',
@@ -2001,7 +2010,9 @@ const AssistantChat = ({
             placeholder='Type a message...'
             css={{
               flex: 1,
-              padding: '10px 14px',
+              height: COMPOSER_CONTROL_HEIGHT,
+              boxSizing: 'border-box',
+              padding: '0 14px',
               border: `1px solid ${GRAY_200}`,
               borderRadius: '8px',
               fontSize: '14px',
@@ -2022,7 +2033,7 @@ const AssistantChat = ({
           >
             <CloseIcon />
           </button>
-        ) : !voiceEnabled || input.trim() || attachments.length > 0 ? (
+        ) : input.trim() || attachments.length > 0 ? (
           <button
             type='button'
             onClick={handleSend}

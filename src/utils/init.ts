@@ -12,6 +12,9 @@ import {
 import { remountAllForms, rerenderAllForms } from './formHelperFunctions';
 import { parseUserVal } from './entities/Field';
 import { authState } from '../auth/LoginForm';
+// mask.ts imports nothing, so this stays free of the import cycles the rest of
+// the elements tree would introduce here.
+import { showsFormatInText } from '../elements/fields/TextField/mask';
 
 export type FeatheryFieldTypes =
   | null
@@ -70,6 +73,11 @@ type InitState = {
   // user has a value for it. Lets text variables tell an unfilled field apart
   // from a name that doesn't resolve to any field.
   knownFieldKeys: Set<string>;
+  // Number fields that opted into showing their format in text variables,
+  // keyed by field key — all a text variable carries. A key that isn't here
+  // interpolates its raw value, which is what every field did before the
+  // option existed.
+  textVariableFormats: Record<string, any>;
 } & InitOptions;
 
 let initFormsPromise: Promise<void> = Promise.resolve();
@@ -99,12 +107,13 @@ const initState: InitState = {
   region: '',
   completedSteps: new Set(),
   completedStepsLoaded: new Set(),
-  knownFieldKeys: new Set()
+  knownFieldKeys: new Set(),
+  textVariableFormats: {}
 };
 let fieldValues: FieldValues = {};
 let filePathMap: Record<string, null | string | (string | null)[]> = {};
 // Tracks number of files in last submission (prevents duplicate successful uploads)
-export const fileDeduplicationCount: Record<string, number> = {};
+export const fileDeduplicationCount: Record<string, string> = {};
 // Tracks last submission result (true=success, false=failed, undefined=never tried)
 export const fileRetryStatus: Record<string, boolean> = {};
 
@@ -193,6 +202,7 @@ function _fetchFormData(formIds: string[]) {
     const formClient = new FeatheryClient(key);
     formClient.fetchCacheForm().then((stepsResponse: any) => {
       initState.formSchemas[key] = stepsResponse;
+      registerTextVariableFormats(stepsResponse);
     });
   });
 }
@@ -301,6 +311,28 @@ function registerKnownFieldKeys(session: any) {
   ].forEach((key: string) => initState.knownFieldKeys.add(key));
 }
 
+/**
+ * Record which number fields render their format inside text variables. Driven
+ * off the form schema rather than the session, since only the schema carries
+ * servar metadata, and re-run per schema load so toggling the option in the
+ * builder takes effect on the next fetch.
+ */
+function registerTextVariableFormats(schema: any) {
+  // Steps arrive keyed by step id from the API and as an array when a form is
+  // off; Object.values covers both.
+  Object.values(schema?.steps ?? {}).forEach((step: any) => {
+    (step?.servar_fields ?? []).forEach((field: any) => {
+      const servar = field?.servar;
+      if (servar?.type !== 'integer_field' || !servar.key) return;
+      // Drop rather than skip, so turning the option off releases a key that an
+      // earlier load registered.
+      if (showsFormatInText(servar))
+        initState.textVariableFormats[servar.key] = servar;
+      else delete initState.textVariableFormats[servar.key];
+    });
+  });
+}
+
 function getCompletedStepKeys() {
   // Make a copy so callers can't mutate the set directly
   return new Set(initState.completedSteps);
@@ -346,6 +378,7 @@ export {
   setFieldValues,
   getFieldValues,
   registerKnownFieldKeys,
+  registerTextVariableFormats,
   getCompletedStepKeys,
   markStepCompleted,
   loadCompletedSteps,

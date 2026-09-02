@@ -52,11 +52,14 @@ export function editorContainerId(action: Record<string, any>): string {
  *
  * One terminal button, so the most conclusive outcome wins (Sign > Create Draft
  * > Download) and `offersDraft` puts the other signing outcome in a menu beside
- * it. 'draft' needs DocuSign; nothing else has a draft state.
+ * it. 'draft' needs DocuSign; nothing else has a draft state. `offersDownload`
+ * keeps the secondary Download button available when a signing outcome owns
+ * the terminal slot but Download is also configured.
  */
 export function containerToolbarOutcomes(action: Record<string, any>): {
   terminalAction: 'sign' | 'download' | 'draft' | undefined;
   offersDraft: boolean;
+  offersDownload: boolean;
   savesToField: boolean;
 } {
   const actions: string[] = action?.editor_toolbar_actions ?? [];
@@ -72,6 +75,7 @@ export function containerToolbarOutcomes(action: Record<string, any>): {
       : undefined,
     // Only meaningful beside Sign; on its own, draft *is* the terminal action.
     offersDraft: draft && sign,
+    offersDownload: actions.includes('download'),
     savesToField: actions.includes('save')
   };
 }

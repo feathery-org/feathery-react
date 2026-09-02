@@ -132,6 +132,12 @@ export function setSavedStepKey(formId: string, stepKey: string) {
 export function isStepTerminal(step: any) {
   // If step is navigable to another step, it's not terminal
   if (step.next_conditions.length > 0) return false;
+  const hasTabLinks = (step.tabs ?? []).some((tab: any) =>
+    (tab.properties?.entries ?? []).some(
+      (entry: any) => entry.step_key && entry.step_key !== step.key
+    )
+  );
+  if (hasTabLinks) return false;
 
   if (
     step.servar_fields.some((field: any) => field.servar.required) &&

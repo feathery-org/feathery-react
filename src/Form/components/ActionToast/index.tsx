@@ -1,11 +1,15 @@
 import { forwardRef, useState } from 'react';
-import { ChevronDown, ChevronUp } from './icons';
+import { ChevronDown, ChevronUp, CloseIcon } from './icons';
 import ToastItem from './ToastItem';
 import { DataItem } from './useAIExtractionToast';
 
 type ActionToastProps = {
   data: DataItem[];
   bottom?: number;
+  title?: string;
+  // When supplied, renders a dismiss control. Toasts that clear themselves
+  // leave this off and stay uncloseable, as before.
+  onDismiss?: () => void;
 };
 
 const getTitle = (data: DataItem[]): string => {
@@ -28,7 +32,7 @@ const getTitle = (data: DataItem[]): string => {
 };
 
 const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
-  ({ data, bottom = 20 }, ref) => {
+  ({ data, bottom = 20, title, onDismiss }, ref) => {
     const [isToastExpanded, setIsToastExpanded] = useState(true);
 
     if (data.length === 0) return null;
@@ -73,9 +77,30 @@ const ActionToast = forwardRef<HTMLDivElement, ActionToastProps>(
               fontSize: '16px'
             }}
           >
-            {getTitle(data)}
+            {title ?? getTitle(data)}
           </h3>
-          {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
+          <div css={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isToastExpanded ? <ChevronUp /> : <ChevronDown />}
+            {onDismiss && (
+              <span
+                role='button'
+                aria-label='Dismiss'
+                css={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: '#6b7280',
+                  ':hover': { color: '#111827' }
+                }}
+                onClick={(event) => {
+                  // The header toggles expansion, so keep the click here
+                  event.stopPropagation();
+                  onDismiss();
+                }}
+              >
+                <CloseIcon />
+              </span>
+            )}
+          </div>
         </div>
 
         {isToastExpanded && (

@@ -1,6 +1,7 @@
 import React from 'react';
 import DropdownMultiField from '../index';
 import { waitFor } from '@testing-library/react';
+import { isTouchDevice } from '../../../../utils/browser';
 import {
   createBaseElement,
   createFieldProps,
@@ -31,6 +32,16 @@ jest.mock('../../../../hooks/useSalesforceSync', () => ({
     shouldSalesforceSync: false
   }))
 }));
+
+// jsdom has no touch environment, so stub isTouchDevice and drive it per test
+jest.mock('../../../../utils/browser', () => ({
+  ...jest.requireActual('../../../../utils/browser'),
+  isTouchDevice: jest.fn(() => false)
+}));
+
+export const mockTouchDevice = (isTouch: boolean) => {
+  (isTouchDevice as jest.Mock).mockReturnValue(isTouch);
+};
 
 export const createDropdownMultiElement = (
   type: string,
@@ -95,6 +106,13 @@ export const createCreatableElement = (options: string[]) =>
     creatable_options: true
   });
 
+export const createSingleSelectCreatableElement = (options: string[]) =>
+  createDropdownMultiElement('dropdown_multi', {
+    ...createOptionsMetadata(options),
+    creatable_options: true,
+    max_length: 1
+  });
+
 export const getSelectInput = () => {
   const input = document.querySelector('input[id="test-dropdown-multi-key"]');
   if (!input) throw new Error('React-select input not found');
@@ -120,6 +138,29 @@ export const getOptionByText = (text: string) => {
 
 export const getSelectedValues = () => {
   return Array.from(document.querySelectorAll('div[class*="-multiValue"]'));
+};
+
+// Single-select mode (max_length 1) renders one SingleValue instead of chips
+export const getSingleValues = () =>
+  Array.from(
+    document.querySelectorAll('div[class*="-singleValue"]')
+  ) as HTMLElement[];
+
+export const getSingleValue = () => getSingleValues()[0] ?? null;
+
+export const getValueContainer = () => {
+  const container = document.querySelector('div[class*="-ValueContainer"]');
+  if (!container) throw new Error('React-select value container not found');
+  return container as HTMLElement;
+};
+
+export const getListbox = () =>
+  document.querySelector('[role="listbox"]') as HTMLElement | null;
+
+export const getFocusedOptionText = () => {
+  const id = getSelectInput().getAttribute('aria-activedescendant');
+  if (!id) return null;
+  return document.getElementById(id)?.textContent ?? null;
 };
 
 export const getSelectedValueElement = (text: string) => {
@@ -159,6 +200,17 @@ export const openDropdownMenu = async (user: any) => {
   const input = getSelectInput();
   input.focus();
   await user.keyboard('[ArrowDown]');
+  await waitFor(() => {
+    if (getOptionElements().length === 0) {
+      throw new Error('Dropdown menu did not open');
+    }
+  });
+};
+
+// Plain click: openDropdownMenu's trailing ArrowDown would move focus off
+// whichever option react-select opened on.
+export const openDropdownMenuByClick = async (user: any) => {
+  await user.click(getReactSelectContainer());
   await waitFor(() => {
     if (getOptionElements().length === 0) {
       throw new Error('Dropdown menu did not open');

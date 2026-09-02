@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import {
   thStyle,
+  dataColumnMinWidthStyle,
   sortIconContainerStyle,
   sortArrowStyle,
   sortHeaderContentStyle
@@ -77,6 +78,7 @@ export function SortHeader({
             onClick={() => isSortable && onSort(column.name)}
             css={{
               ...thStyle,
+              ...dataColumnMinWidthStyle,
               ...(isFirstColumn ? {} : { paddingLeft: 0 }),
               ...styles.getTarget('th'),
               ...(isSortable ? { cursor: 'pointer' } : {})

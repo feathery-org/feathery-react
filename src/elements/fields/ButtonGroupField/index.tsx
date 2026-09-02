@@ -96,12 +96,14 @@ function ButtonGroupField({
 
           return (
             <div
+              role='button'
               onClick={() => {
                 if (!editMode && !disabled && !loadingDynamicOptions) {
                   onClick(value);
                 }
               }}
               key={`${servar.key}-${index}`}
+              id={`${servar.key}-${index}`}
               css={{
                 position: 'relative',
                 display: 'flex',
@@ -132,7 +134,8 @@ function ButtonGroupField({
                   src={imageUrl}
                   css={{
                     ...imgMaxSizeStyles,
-                    ...responsiveStyles.getTargets('img')
+                    ...responsiveStyles.getTargets('img'),
+                    pointerEvents: 'none'
                   }}
                 />
               )}
@@ -143,7 +146,8 @@ function ButtonGroupField({
                     maxWidth: '100%',
                     ...responsiveStyles.getTargets('label'),
                     // Do not highlight text when clicking the button
-                    ...noTextSelectStyles
+                    ...noTextSelectStyles,
+                    pointerEvents: 'none'
                   }}
                 >
                   {label}

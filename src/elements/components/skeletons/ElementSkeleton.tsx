@@ -65,6 +65,7 @@ function applyStyles(element: any, styles: any) {
       styles.applyHeight('sub-fc');
       break;
     case 'signature':
+    case 'audio_recording':
       styles.applyHeight('sub-fc');
       styles.applyColor('field', 'background_color', 'backgroundColor');
       styles.applyCorners('field');

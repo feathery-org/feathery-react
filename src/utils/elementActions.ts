@@ -39,6 +39,7 @@ export const ACTION_TELESIGN_PHONE_TYPE = 'telesign_phone_type';
 export const ACTION_TELESIGN_VOICE_OTP = 'telesign_voice_otp';
 export const ACTION_TELESIGN_SMS_OTP = 'telesign_sms_otp';
 export const ACTION_TELESIGN_VERIFY_OTP = 'telesign_verify_otp';
+export const ACTION_START_DATA_MAPPING = 'start_data_mapping';
 export const NAVIGATION_ACTIONS = [ACTION_NEXT, ACTION_BACK, ACTION_URL];
 
 export const REQUIRED_FLOW_ACTIONS = {
@@ -97,13 +98,17 @@ export function canRunAction(
   )
     return true;
 
-  if (
-    event === 'change' &&
-    logicRule.elements.includes(
-      (props as ContextOnChange | ContextOnAction).trigger._servarId ?? ''
-    )
-  )
-    return true;
+  if (event === 'change') {
+    const trigger = (props as ContextOnChange | ContextOnAction).trigger;
+    // A single interaction can change more than the field it touched, so match
+    // on every servar the event reports as changed, not just the primary one.
+    const changedServarIds = [
+      trigger._servarId ?? '',
+      ...(trigger._relatedServarIds ?? [])
+    ];
+    if (changedServarIds.some((id) => logicRule.elements.includes(id)))
+      return true;
+  }
 
   return (
     event === 'action' &&

@@ -7,6 +7,7 @@ import {
   getAt,
   removeLineItem,
   scanBindings,
+  setAt,
   setOccurrenceText
 } from '../sfdtAdapter';
 import { buildCostsFixture } from './fixtures/costsFixture';
@@ -36,6 +37,28 @@ describe('two tables sharing one field', () => {
     const combined = index.formulas.get('combined_total')![0].def;
     expect(combined.kind === 'formula' ? combined.expression : null).toBe(
       'sum(grand_total,expenses_total)'
+    );
+  });
+
+  it('diagnoses mixed global scope under one binding id', () => {
+    const sfdt = buildCostsFixture({ globalTaxRate: true });
+    const second = scanBindings(sfdt).fields.get('tax_rate')![1];
+    const control = getAt(sfdt, second.path);
+    const mixed = setAt(sfdt, second.path, {
+      ...control,
+      contentControlProperties: {
+        ...control.contentControlProperties,
+        tag: second.tag.replace('|global=true', '')
+      }
+    });
+
+    expect(scanBindings(mixed).diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'conflicting-definition',
+          message: expect.stringContaining('global scope')
+        })
+      ])
     );
   });
 

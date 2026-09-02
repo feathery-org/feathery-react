@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { keyframes } from '@emotion/react';
 import { ViewerDocument } from './index';
 import TextLayerStyles from './TextLayerStyles';
-import { loadPdfjs } from './pdfjsLoader';
+import { loadPdfjs, PDFJS_STANDARD_FONT_DATA_URL } from './pdfjsLoader';
 import { color, radius, shadow, fontSize } from './tokens';
 import { secondaryButtonCss } from './buttonStyles';
 import { AlertIcon } from './icons';
@@ -73,7 +73,13 @@ export default function DocumentCanvas({
         return next;
       });
       loadPdfjs()
-        .then((pdfjs: any) => pdfjs.getDocument({ url: doc.pdf_url }).promise)
+        .then(
+          (pdfjs: any) =>
+            pdfjs.getDocument({
+              url: doc.pdf_url,
+              standardFontDataUrl: PDFJS_STANDARD_FONT_DATA_URL
+            }).promise
+        )
         .then((pdfProxy: any) => {
           // Superseded while loading (remount/unmount): this proxy will never
           // be rendered, so destroy it rather than leaking it.
