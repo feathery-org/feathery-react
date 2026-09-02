@@ -46,6 +46,27 @@ export const TOOLTIP_SCROLL_MARGIN = 56;
  * The value is a flex-basis, not a cap: a `%` that resolves taller simply grows
  * past it, so the grid still fills a large percentage box.
  */
+// Sample rows for the designer canvas. Two rows leave a sized grid mostly
+// empty, so the preview holds enough to fill the height it was given: a px
+// height is computed exactly, a fill/percent height (unknown until laid out)
+// gets plenty to scroll, and a fit height keeps hugging a short sample.
+const SAMPLE_ROWS_MIN = 2;
+const SAMPLE_ROWS_FLEXIBLE = 30;
+export function sampleRowCount(
+  heightUnit: string | undefined,
+  height: number | string | undefined
+): number {
+  if (heightUnit === 'px') {
+    const px = Number(height);
+    if (!Number.isFinite(px) || px <= 0) return SAMPLE_ROWS_MIN;
+    // Header, the add-row strip and the container border take their share.
+    const rows = Math.floor((px - HEADER_HEIGHT - ROW_HEIGHT - 2) / ROW_HEIGHT);
+    return Math.max(SAMPLE_ROWS_MIN, rows);
+  }
+  if (heightUnit === 'fill' || heightUnit === '%') return SAMPLE_ROWS_FLEXIBLE;
+  return SAMPLE_ROWS_MIN;
+}
+
 export function spreadsheetViewportHeight(
   heightUnit: string | undefined,
   rowCount: number

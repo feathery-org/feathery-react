@@ -13,6 +13,7 @@ import {
   FIT_MAX_HEIGHT,
   HEADER_HEIGHT,
   ROW_HEIGHT,
+  sampleRowCount,
   spreadsheetViewportHeight
 } from '../spreadsheet/styles';
 import { tableContainment } from '../styles';
@@ -288,5 +289,28 @@ describe('tableContainment', () => {
 
   test('a fit-width table keeps reporting its natural width', () => {
     expect(tableContainment('fit')).toEqual({});
+  });
+});
+
+describe('sampleRowCount', () => {
+  test('a px height gets exactly the rows that fill it', () => {
+    // 400px: header 34, add-row strip 32, border 2 -> 332px of rows -> 10.
+    expect(sampleRowCount('px', 400)).toBe(10);
+    expect(sampleRowCount('px', '400')).toBe(10);
+  });
+
+  test('a tiny or unusable px height still shows two rows', () => {
+    expect(sampleRowCount('px', 50)).toBe(2);
+    expect(sampleRowCount('px', undefined)).toBe(2);
+  });
+
+  test('a fill or percent height gets enough rows to scroll', () => {
+    expect(sampleRowCount('fill', '')).toBe(30);
+    expect(sampleRowCount('%', 60)).toBe(30);
+  });
+
+  test('a fit height keeps hugging a short sample', () => {
+    expect(sampleRowCount('fit', '')).toBe(2);
+    expect(sampleRowCount(undefined, undefined)).toBe(2);
   });
 });
