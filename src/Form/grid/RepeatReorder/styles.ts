@@ -40,10 +40,18 @@ export const clusterStyles = {
 
 /** Applied to the row so its own hover drives the chrome. */
 export const rowRevealStyles = {
+  // The grip is safe to show for a row being typed in: it sits in that row's
+  // own gutter, so several visible at once read as several handles.
   [`&:hover .${REORDER_CLASS}, &:focus-within .${REORDER_CLASS}`]: {
     opacity: 1
   },
-  [`&:hover .${INSERT_CLASS}, &:focus-within .${INSERT_CLASS}`]: { opacity: 1 }
+  // The seam is hover-only, deliberately. On `:focus-within` too, the row being
+  // typed in and the row under the pointer both lit up, putting two `+` on the
+  // page at once - and since a row's "above" seam and its predecessor's "below"
+  // seam are the same boundary, they landed a few pixels apart both offering to
+  // insert there. Only one row can be hovered, so only one seam can show.
+  // Keyboard reach is unaffected: the button lights itself on :focus-visible.
+  [`&:hover .${INSERT_CLASS}`]: { opacity: 1 }
 };
 
 export const gripStyles = {
