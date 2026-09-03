@@ -3,8 +3,10 @@ import TrackedChangeGroups from './TrackedChangeGroups';
 import SectionList from './sections/SectionPanel';
 import { RailErrorBoundary } from './RailErrorBoundary';
 import { INK, INK_3, LINE, PANEL, PANEL_2 } from './TrackedChangeGroups/styles';
+import HistoryPanel from './history/HistoryPanel';
+import { DocxHistoryHost, DocxVersion, VersionAuthor } from './history/types';
 
-export type PanelTab = 'changes' | 'sections';
+export type PanelTab = 'changes' | 'sections' | 'history';
 
 // Shared right-hand side panel. The slim edge rail decides which panel is open;
 // this component just shows the active one with a matching title (no in-panel
@@ -15,7 +17,8 @@ const PANEL_WIDTH = 341;
 
 const TITLES: Record<PanelTab, string> = {
   changes: 'Suggested changes',
-  sections: 'Sections'
+  sections: 'Sections',
+  history: 'History'
 };
 
 interface Props {
@@ -30,6 +33,12 @@ interface Props {
   markDirty?: () => void;
   /** Remounts the panel bodies' error boundaries on editor/document changes. */
   boundaryKey: string;
+  /** Version-history I/O adapter; when present the History panel is available. */
+  history?: DocxHistoryHost;
+  currentUser?: VersionAuthor;
+  onSelectVersion?: (version: DocxVersion) => void;
+  /** Bump to reload the version list (e.g. after a session closes). */
+  historyRefreshKey?: number | string;
 }
 
 export default function DocumentPanel({
@@ -40,7 +49,11 @@ export default function DocumentPanel({
   reviewChanges,
   onChangesCount,
   markDirty,
-  boundaryKey
+  boundaryKey,
+  history,
+  currentUser,
+  onSelectVersion,
+  historyRefreshKey
 }: Props) {
   return (
     <div
@@ -125,6 +138,20 @@ export default function DocumentPanel({
             <div css={{ position: 'absolute', inset: 0 }}>
               <RailErrorBoundary key={`sections:${boundaryKey}`}>
                 <SectionList editor={editor} markDirty={markDirty} />
+              </RailErrorBoundary>
+            </div>
+          )}
+          {open && tab === 'history' && history && (
+            <div css={{ position: 'absolute', inset: 0 }}>
+              <RailErrorBoundary key={`history:${boundaryKey}`}>
+                <HistoryPanel
+                  host={history}
+                  currentUser={
+                    currentUser ?? { kind: 'user', key: 'you', label: 'You' }
+                  }
+                  onSelect={onSelectVersion}
+                  refreshKey={historyRefreshKey}
+                />
               </RailErrorBoundary>
             </div>
           )}

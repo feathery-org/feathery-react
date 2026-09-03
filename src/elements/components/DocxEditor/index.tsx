@@ -701,6 +701,11 @@ function DocxEditor({
             onChangesCount={setChangesCount}
             markDirty={markDirty}
             boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
+            history={history}
+            currentUser={currentUser ?? DEFAULT_CURRENT_USER}
+            // Reload the list whenever a save lands so a new version and the
+            // "Current" tag stay fresh while the panel is open.
+            historyRefreshKey={historySession.savedAt?.getTime() ?? 0}
           />
         )}
         {/* Slim edge rail on the far right: one icon per side panel. Always
@@ -710,6 +715,7 @@ function DocxEditor({
             activePanel={activePanel}
             showChanges={!!reviewChanges}
             changesCount={changesCount}
+            showHistory={!!history}
             onToggle={(panel) =>
               setActivePanel((p) => (p === panel ? null : panel))
             }

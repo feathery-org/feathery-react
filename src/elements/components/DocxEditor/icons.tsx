@@ -581,3 +581,34 @@ export const ChangesIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d='M18 9.5a1 1 0 0 1 1 1V13h2.5a1 1 0 1 1 0 2H19v2.5a1 1 0 1 1-2 0V15h-2.5a1 1 0 1 1 0-2H17v-2.5a1 1 0 0 1 1-1Z' />
   </Svg>
 );
+
+// Version history: a clock with a counter-clockwise "rewind" arrow.
+export const HistoryIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M12 5a7 7 0 1 1-6.7 9 1 1 0 0 1 1.9-.6A5 5 0 1 0 7 9.6l1.3 1.3a.6.6 0 0 1-.4 1H4.3a.6.6 0 0 1-.6-.6V7.5a.6.6 0 0 1 1-.4l1 1A7 7 0 0 1 12 5Z' />
+    <path d='M12 8a1 1 0 0 1 1 1v3l2 1.2a1 1 0 1 1-1 1.7l-2.5-1.5A1 1 0 0 1 11 12V9a1 1 0 0 1 1-1Z' />
+  </Svg>
+);
+
+// Robin (the assistant): a four-point sparkle, used for its avatar and byline.
+export const RobinIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M12 3c.3 3.4 1.6 4.7 5 5-3.4.3-4.7 1.6-5 5-.3-3.4-1.6-4.7-5-5 3.4-.3 4.7-1.6 5-5Z' />
+    <path d='M18.5 13c.15 1.7.8 2.35 2.5 2.5-1.7.15-2.35.8-2.5 2.5-.15-1.7-.8-2.35-2.5-2.5 1.7-.15 2.35-.8 2.5-2.5Z' />
+  </Svg>
+);
+
+// Back arrow (version viewer exit on an older version).
+export const ArrowLeftIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M10.7 5.3a1 1 0 0 1 0 1.4L6.4 11H19a1 1 0 1 1 0 2H6.4l4.3 4.3a1 1 0 1 1-1.4 1.4l-6-6a1 1 0 0 1 0-1.4l6-6a1 1 0 0 1 1.4 0Z' />
+  </Svg>
+);
+
+// Restore: a rewind arrow onto a document.
+export const RestoreIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <path d='M6 3h7l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm7 1.5V8h3.5L13 4.5Z' />
+    <path d='M9 12.5a3 3 0 1 1 .9 2.1.75.75 0 0 1 1-1.1 1.5 1.5 0 1 0-.4-1.5H11a.6.6 0 0 1 .5 1l-1.4 1.6a.6.6 0 0 1-.9 0l-1.4-1.6a.6.6 0 0 1 .5-1H9Z' />
+  </Svg>
+);
