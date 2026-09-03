@@ -255,33 +255,48 @@ function ButtonElement({
     >
       {customBorder}
       {children}
-      {loader ? (
-        <div css={styles.getTarget('loader')}>{loader}</div>
-      ) : (
-        <>
-          {element.properties.image && (
-            <img
-              src={element.properties.image}
-              css={{
-                ...imgMaxSizeStyles,
-                ...responsiveStyles.getTargets('img')
-              }}
-            />
-          )}
-          {element.properties.text && (
-            <TextNodes
-              element={element}
-              responsiveStyles={responsiveStyles}
-              cssTarget='buttonLabel'
-              editMode={editMode}
-              disabled={disabled}
-              focused={focused}
-              textCallbacks={textCallbacks}
-              featheryContext={featheryContext}
-              expand={!element.properties.image}
-            />
-          )}
-        </>
+      {/* Keep content mounted (hidden) while loading so fit-width doesn't shrink */}
+      <div
+        css={{
+          display: 'contents',
+          visibility: loader ? 'hidden' : 'visible'
+        }}
+      >
+        {element.properties.image && (
+          <img
+            src={element.properties.image}
+            css={{
+              ...imgMaxSizeStyles,
+              ...responsiveStyles.getTargets('img')
+            }}
+          />
+        )}
+        {element.properties.text && (
+          <TextNodes
+            element={element}
+            responsiveStyles={responsiveStyles}
+            cssTarget='buttonLabel'
+            editMode={editMode}
+            disabled={disabled}
+            focused={focused}
+            textCallbacks={textCallbacks}
+            featheryContext={featheryContext}
+            expand={!element.properties.image}
+          />
+        )}
+      </div>
+      {loader && (
+        <div
+          css={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            ...styles.getTarget('loader')
+          }}
+        >
+          {loader}
+        </div>
       )}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
