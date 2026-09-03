@@ -68,10 +68,12 @@ export default function VersionViewer({
     if (!el || !viewer) return;
     const h = el.clientHeight;
     const w = el.clientWidth;
-    if (h > 0) viewer.height = `${h}px`;
-    if (w > 0) viewer.width = `${w}px`;
     try {
-      viewer.resize();
+      // resize(w, h) is the DocumentEditor's explicit-size API; a bare instance
+      // otherwise keeps its ~200px default. Fall back to a bare resize() when
+      // the host has not been measured yet (0×0).
+      if (h > 0 && w > 0) viewer.resize(w, h);
+      else viewer.resize();
     } catch {
       /* torn down mid-resize */
     }
@@ -185,7 +187,9 @@ export default function VersionViewer({
 
   return (
     <div css={{ position: 'absolute', inset: 0, background: PAPER, zIndex: 2 }}>
-      <div ref={hostElRef} css={{ position: 'absolute', inset: 0 }} />
+      {/* A normal block filling the overlay (not absolute) so the editor's
+          height:100% resolves against it — mirrors the live editor's host. */}
+      <div ref={hostElRef} css={{ width: '100%', height: '100%' }} />
       {phase !== 'ready' && (
         <div
           css={{
