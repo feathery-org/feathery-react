@@ -47,14 +47,21 @@ const emittedCss = () =>
     .map((rule) => rule.cssText)
     .join('');
 
+// The rule emotion emitted for one element, so an assertion cannot be satisfied
+// by some other element that happens to carry the same declaration
+const ruleFor = (el: HTMLElement) =>
+  emittedCss().match(
+    new RegExp(`\\.${el.className.split(' ')[0]}\\s*\\{[^}]*\\}`)
+  )?.[0] ?? '';
+
 // One path for every button: the loader is drawn over the content and clamped
 // to the box the button already has, so the button can never resize
 const expectOverlaidAndClamped = (loader: HTMLElement) => {
   const box = loader.parentElement as HTMLElement;
   const overlay = box.parentElement as HTMLElement;
-  expect(emittedCss()).toMatch(/max-width:\s*calc\(100% - 4px\)/);
-  expect(emittedCss()).toMatch(/max-height:\s*calc\(100% - 4px\)/);
-  expect(box.className).toBeTruthy();
+  const rule = ruleFor(box);
+  expect(rule).toContain('max-width: calc(100% - 4px)');
+  expect(rule).toContain('max-height: calc(100% - 4px)');
   expect(getComputedStyle(overlay).position).toBe('absolute');
   expect(overlay.parentElement?.tagName).toBe('BUTTON');
 };
@@ -66,6 +73,11 @@ beforeAll(() => {
     removeListener() {}
   });
 });
+
+// A known field the respondent hasn't filled renders empty, which one of the
+// cases below relies on. It lives on a module singleton, so put it back after.
+beforeEach(() => initState.knownFieldKeys.add('unfilled'));
+afterEach(() => initState.knownFieldKeys.delete('unfilled'));
 
 describe('ButtonElement loader', () => {
   const labelled = () =>
@@ -164,7 +176,6 @@ describe('ButtonElement loader', () => {
     ],
     ['no text and no image', {}, undefined]
   ])('overlays and clamps the loader for %s', (_label, properties, context) => {
-    initState.knownFieldKeys.add('unfilled');
     renderButton(
       makeElement(properties as any),
       <span data-testid='loader' />,
@@ -180,14 +191,9 @@ describe('ButtonElement loader', () => {
     renderButton(labelled(), <span data-testid='loader' />);
 
     const box = screen.getByTestId('loader').parentElement as HTMLElement;
-    // Scoped to the loader box's own rule, so the gap can't be satisfied by
-    // some other element's styles happening to carry the same declaration
-    const rule = emittedCss().match(
-      new RegExp(`\\.${box.className.split(' ')[0]}\\s*\\{[^}]*\\}`)
-    )?.[0];
+    const rule = ruleFor(box);
     expect(rule).toContain('max-width: calc(100% - 4px)');
-    expect(rule).toContain('max-height: calc(100% - 4px)');
-    // and it still carries the loader target's own size, halved from the button
+    // the same box still carries the loader target's size, halved from the button
     expect(rule).toContain('width: 50px');
   });
 
