@@ -550,6 +550,38 @@ describe('FeatheryClient - using api helpers', () => {
       text: jest.fn().mockResolvedValue('')
     });
 
+    const triggered = { run_id: 'run_1', run_url: 'https://app/runs/run_1' };
+    const running = { status: 'incomplete', run_status: 'running' };
+    const finished = {
+      status: 'complete',
+      run_status: 'succeeded',
+      result: { total: '12.00' },
+      data: {},
+      file_values: { statements: ['s3/statement.pdf'] }
+    };
+
+    // Route by URL so a poll tick can never consume the trigger response
+    // (or a later test's queue); the completion endpoint answers `running`
+    // once, then `finished`.
+    const mockRun = () => {
+      let polls = 0;
+      (global.fetch as jest.Mock).mockImplementation((url: string) =>
+        Promise.resolve(
+          url.includes('/completion/')
+            ? okJson(200, polls++ === 0 ? running : finished)
+            : okJson(201, triggered)
+        )
+      );
+    };
+
+    const waitUntil = async (condition: () => boolean) => {
+      const deadline = Date.now() + 2000;
+      while (!condition()) {
+        if (Date.now() > deadline) throw new Error('condition not met');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+
     beforeEach(() => {
       jest.clearAllMocks();
       global.fetch = jest.fn();
@@ -557,26 +589,11 @@ describe('FeatheryClient - using api helpers', () => {
       featheryClient = new FeatheryClient('formKey');
       featheryClient.AI_CHECK_INTERVAL = 1;
       featheryClient.COMPUTER_AGENT_MAX_TIME = 1000;
+      mockRun();
     });
-
-    const triggered = { run_id: 'run_1', run_url: 'https://app/runs/run_1' };
-    const finished = {
-      status: 'complete',
-      run_status: 'succeeded',
-      result: { total: '12.00' },
-      error: '',
-      data: {},
-      file_values: { statements: ['s3/statement.pdf'] }
-    };
 
     it('returns the trigger payload before the run finishes and reports completion', async () => {
       const onComplete = jest.fn();
-      (global.fetch as jest.Mock)
-        .mockResolvedValueOnce(okJson(201, triggered))
-        .mockResolvedValueOnce(
-          okJson(200, { status: 'incomplete', run_status: 'running' })
-        )
-        .mockResolvedValue(okJson(200, finished));
 
       const res = await featheryClient.runComputerAgent('agent_1', {
         onComplete
@@ -585,22 +602,19 @@ describe('FeatheryClient - using api helpers', () => {
       expect(res).toEqual({ ok: true, payload: triggered });
       expect(onComplete).not.toHaveBeenCalled();
 
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await waitUntil(() => onComplete.mock.calls.length > 0);
 
       expect(onComplete).toHaveBeenCalledWith(finished);
-      expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
+      const pollUrl = (global.fetch as jest.Mock).mock.calls
+        .map(([url]) => url)
+        .find((url: string) => url.includes('/completion/'));
+      expect(pollUrl).toBe(
         `${API_URL}computer-agent/run/completion/?fid=${userId}&rid=run_1`
       );
     });
 
     it('awaits the terminal payload when waitForCompletion is set', async () => {
       const onStatusUpdate = jest.fn();
-      (global.fetch as jest.Mock)
-        .mockResolvedValueOnce(okJson(201, triggered))
-        .mockResolvedValueOnce(
-          okJson(200, { status: 'incomplete', run_status: 'running' })
-        )
-        .mockResolvedValue(okJson(200, finished));
 
       const res = await featheryClient.runComputerAgent('agent_1', {
         waitForCompletion: true,
@@ -608,8 +622,10 @@ describe('FeatheryClient - using api helpers', () => {
       });
 
       expect(res).toEqual({ ok: true, payload: { ...triggered, ...finished } });
-      expect(onStatusUpdate).toHaveBeenCalledTimes(2);
-      expect(onStatusUpdate).toHaveBeenLastCalledWith(finished);
+      expect(onStatusUpdate.mock.calls.map(([d]) => d)).toEqual([
+        running,
+        finished
+      ]);
     });
   });
 
