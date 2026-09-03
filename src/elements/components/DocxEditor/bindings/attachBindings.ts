@@ -225,7 +225,15 @@ export function attachBindings(
   const onContentChange = () => runGuarded(() => triggers.onContentChange());
   const onKeyDown = (args: any) =>
     runGuarded(() => triggers.onKeyDown(args?.event?.key));
-  const onBlur = () => runGuarded(() => triggers.onEditorBlur());
+  const onBlur = () =>
+    runGuarded(() => {
+      triggers.onEditorBlur();
+      // Focus left the editor: drop the locked-edit hint so it can't linger.
+      if (lockHintActive) {
+        lockHintActive = false;
+        onLockedEditResolved?.();
+      }
+    });
 
   // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
   // marked lockContentControl - which is every control we create, editable or

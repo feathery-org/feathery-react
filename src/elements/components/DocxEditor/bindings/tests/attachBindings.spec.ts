@@ -237,6 +237,36 @@ describe('attaching bindings to a tokenized template', () => {
     if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
     else delete module.canEditContentControl;
   });
+
+  it('resolves the hint when focus leaves the editor', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    const onLockedEditResolved = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit,
+      onLockedEditResolved
+    });
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => false
+    });
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // Blurring the editable div drops the hint even while still on the cell.
+    (editor as any).documentHelper.editableDiv.dispatchEvent(
+      new Event('blur')
+    );
+    expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
+  });
 });
 
 describe('save gating', () => {
