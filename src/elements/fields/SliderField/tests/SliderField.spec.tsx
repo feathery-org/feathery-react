@@ -315,6 +315,13 @@ describe('SliderField - Certification naming', () => {
     expect(mirror.value).toBe('42');
   });
 
+  it('names the drag handle with the field key for certification scanners', () => {
+    const element = createSliderElement('slider');
+    render(<SliderField {...createSliderProps(element, { fieldVal: 3 })} />);
+    const handle = document.querySelector('.rc-slider-handle') as HTMLElement;
+    expect(handle.getAttribute('name')).toBe(element.servar.key);
+  });
+
   it('names the drag handle for assistive tech', () => {
     const element = createSliderElement('slider');
     render(<SliderField {...createSliderProps(element)} />);

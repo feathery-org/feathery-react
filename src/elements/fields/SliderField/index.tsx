@@ -84,6 +84,11 @@ export default function SliderField({
           }}
           // rc-slider does not spread unknown props onto its handle
           ariaLabelForHandle={fieldAriaLabel(element)}
+          // The handle is the element a certificate sees dragged, so it
+          // carries the field key like a native control would
+          handleRender={(handle) =>
+            React.cloneElement(handle, { name: servar.key } as any)
+          }
         />
         {/* rc-slider is built from divs, so the value is not otherwise
             readable under the field key by certification scanners */}
