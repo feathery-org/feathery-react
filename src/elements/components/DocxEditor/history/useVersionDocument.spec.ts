@@ -86,4 +86,60 @@ describe('useVersionDocument', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBe(true);
   });
+
+  const buf = (s: string) => new TextEncoder().encode(s).buffer;
+  const FINAL = JSON.stringify({
+    sections: [{ blocks: [{ inlines: [{ text: 'hi' }] }] }]
+  });
+
+  it('applies hunks and reports highlights available when a change list is present', async () => {
+    const changes = JSON.stringify({
+      v: 1,
+      sessionId: 's',
+      final_sha256: '',
+      hunks: [],
+      changeCount: 2,
+      formatChangeCount: 1,
+      authors: ['you']
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? changes : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({ final_sfdt: 'fin', changes: 'chg', change_count: 2 });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(false);
+    expect(result.current.editCount).toBe(2);
+    expect(result.current.formatCount).toBe(1);
+    expect(result.current.sfdt).toContain('sections');
+  });
+
+  it('degrades to the plain document on a change-list hash mismatch', async () => {
+    const changes = JSON.stringify({
+      v: 1,
+      sessionId: 's',
+      final_sha256: 'AAA',
+      hunks: [],
+      changeCount: 1,
+      formatChangeCount: 0,
+      authors: ['you']
+    });
+    const fetchVersionFile = jest.fn((url: string) =>
+      Promise.resolve(buf(url === 'chg' ? changes : FINAL))
+    );
+    const h = host({ fetchVersionFile });
+    const ver = version({
+      final_sfdt: 'fin',
+      changes: 'chg',
+      change_count: 1,
+      final_sha256: 'BBB' // != the change list's hash
+    });
+    const { result } = renderHook(() => useVersionDocument(h, ver));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.degraded).toBe(true);
+    expect(result.current.sfdt).toBe(FINAL);
+  });
 });

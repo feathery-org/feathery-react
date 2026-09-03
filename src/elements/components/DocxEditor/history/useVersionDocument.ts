@@ -1,23 +1,26 @@
-// Resolves the document to show for a selected version. A version that was
-// closed with a final SFDT opens that (fetched + inflated); an older docx-only
-// row (a tab-death session, or one predating the highlights PR) falls back to
-// its stored docx, opened through the Word Processor service.
-//
-// PR 4 shows the version as it stood — no per-author highlights yet; those, and
-// the applyHunks display document, arrive with the highlights PR.
+// Resolves the document to show for a selected version. When the version was
+// closed with a final SFDT AND a change list, its hunks are applied so the
+// viewer renders them as tracked-change highlights; without a change list it
+// shows the document plain (degraded — a tab-death row, a >30-day pruned row, or
+// a hash mismatch). An old docx-only row falls back to its stored docx.
 import { useEffect, useRef, useState } from 'react';
 
+import { applyHunks, ChangeList } from './sfdtDiff/index';
 import { DocxHistoryHost, DocxVersion } from './types';
 
 export interface VersionDocument {
   loading: boolean;
   error: boolean;
-  /** SFDT string to open directly (the version had a final SFDT). */
+  /** SFDT string to open directly (final SFDT, or the applyHunks display doc). */
   sfdt?: string;
   /** Docx URL to open through the service (no final SFDT — the fallback). */
   docxUrl?: string;
-  /** True when detailed per-author highlights are unavailable for this version
-   *  (always true in PR 4; refined once highlights land). */
+  /** Text-edit count for this version (from its change list). */
+  editCount?: number;
+  /** Formatting-change count for this version. */
+  formatCount?: number;
+  /** True when detailed per-author highlights are unavailable (no change list,
+   *  pruned highlights, or a hash mismatch) — the document still opens plain. */
   degraded: boolean;
 }
 
@@ -50,25 +53,59 @@ export function useVersionDocument(
     const id = ++reqId.current;
     setState({ loading: true, error: false, degraded: true });
 
+    const done = (next: Omit<VersionDocument, 'loading'>) => {
+      if (id === reqId.current) setState({ loading: false, ...next });
+    };
+
     (async () => {
       try {
         if (version.final_sfdt) {
-          const buffer = await host.fetchVersionFile(version.final_sfdt);
-          const sfdt = await gunzip(buffer);
-          if (id === reqId.current) {
-            setState({ loading: false, error: false, sfdt, degraded: true });
+          const finalSfdt = await gunzip(
+            await host.fetchVersionFile(version.final_sfdt)
+          );
+
+          // With a change list, apply the hunks so the viewer shows highlights.
+          if (version.changes && version.change_count != null) {
+            try {
+              const changes: ChangeList = JSON.parse(
+                await gunzip(await host.fetchVersionFile(version.changes))
+              );
+              const finalDoc = JSON.parse(finalSfdt);
+              // A hash mismatch means the hunks no longer describe this SFDT;
+              // show the document plain rather than mis-anchored highlights.
+              if (
+                changes.final_sha256 &&
+                version.final_sha256 &&
+                changes.final_sha256 !== version.final_sha256
+              ) {
+                done({ error: false, sfdt: finalSfdt, degraded: true });
+                return;
+              }
+              const display = applyHunks(finalDoc, changes);
+              done({
+                error: false,
+                sfdt: JSON.stringify(display),
+                editCount: changes.changeCount,
+                formatCount: changes.formatChangeCount,
+                degraded: false
+              });
+              return;
+            } catch {
+              // Corrupt/failed change list: fall back to the plain document.
+              done({ error: false, sfdt: finalSfdt, degraded: true });
+              return;
+            }
           }
+
+          done({ error: false, sfdt: finalSfdt, degraded: true });
           return;
         }
+
         const docxUrl = version.editor_file ?? version.file;
         if (!docxUrl) throw new Error('version has no document');
-        if (id === reqId.current) {
-          setState({ loading: false, error: false, docxUrl, degraded: true });
-        }
+        done({ error: false, docxUrl, degraded: true });
       } catch {
-        if (id === reqId.current) {
-          setState({ loading: false, error: true, degraded: true });
-        }
+        done({ error: true, degraded: true });
       }
     })();
   }, [host, version]);

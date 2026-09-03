@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
 import { loadStyles, waitForDocumentLoad, waitForEj } from '../ejLoader';
 import { stampMissingContentControlColors } from '../contentControlSafety';
+import { installRevisionHighlightRendering } from '../useDocxEditor';
 import { useVersionDocument } from './useVersionDocument';
 import { DocxHistoryHost, DocxVersion } from './types';
 
@@ -77,6 +78,16 @@ export default function VersionViewer({
     let cancelled = false;
     (async () => {
       try {
+        // With highlights available, patch the renderer and show revisions
+        // BEFORE opening so the first paint carries the wash/strikethrough.
+        if (!doc.degraded) {
+          try {
+            installRevisionHighlightRendering(viewer);
+            viewer.showRevisions = true;
+          } catch {
+            /* highlights are decoration; the document must still open */
+          }
+        }
         const loaded = waitForDocumentLoad(viewer);
         if (doc.sfdt) {
           viewer.open(doc.sfdt);
