@@ -113,6 +113,27 @@ const resolveQuikAttachments = (action: Record<string, any>) => {
   );
 };
 
+// Version-history metadata appended to the autosave PATCH so the backend can
+// group saves into one EnvelopeVersion row.
+export interface EnvelopeSaveMeta {
+  sessionId: string;
+  sessionStartedAt?: string; // ISO 8601
+  authors?: Array<{ kind: string; label: string }>;
+  closeSession?: boolean;
+}
+
+// Payload for the version close endpoint. In the current PR only finalSfdtGz is
+// produced; the diff fields arrive with the highlights PR.
+export interface EnvelopeClosePayload {
+  finalSfdtGz: Blob;
+  changesJson?: Blob;
+  changeCount: number | null;
+  formatChangeCount: number | null;
+  finalSha256: string;
+  startSha256: string;
+  authors: Array<{ kind: string; label: string }>;
+}
+
 // THIRD-PARTY INTEGRATIONS
 export default class IntegrationClient {
   formKey: string;
@@ -673,11 +694,29 @@ export default class IntegrationClient {
   // in-form document editor. Returns { id, file, editor_file, updated_at }
   // with fresh signed URLs: `file` is the public copy (content controls
   // stripped server-side), `editor_file` the control-bearing editor copy.
-  saveEnvelopeFile(envelopeId: string, file: Blob, fileName = 'document.docx') {
+  saveEnvelopeFile(
+    envelopeId: string,
+    file: Blob,
+    fileName = 'document.docx',
+    meta?: EnvelopeSaveMeta
+  ) {
     const { userId } = initInfo();
     const formData = new FormData();
     formData.append('fuser_key', userId ?? '');
     formData.append('file', file, fileName);
+    // Version-history metadata: when a session id is present the backend groups
+    // this save into one EnvelopeVersion row. Absent → the PATCH is unchanged.
+    if (meta?.sessionId) {
+      if (this.formKey) formData.append('form_key', this.formKey);
+      formData.append('session_id', meta.sessionId);
+      if (meta.sessionStartedAt)
+        formData.append('session_started_at', meta.sessionStartedAt);
+      const collaboratorId = (initState as any).collaboratorId;
+      if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+      if (meta.authors)
+        formData.append('authors', JSON.stringify(meta.authors));
+      if (meta.closeSession) formData.append('close_session', 'true');
+    }
     const url = `${API_URL}document/envelope/${envelopeId}/file/`;
     const options = {
       method: 'PATCH',
@@ -692,6 +731,52 @@ export default class IntegrationClient {
       // (e.g. the sign flow must not open against a stale envelope).
       if (!response) throw Error('Document save failed');
       if (response.ok) return await response.json();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
+  // List an envelope's version-history rows, newest first (readable on signed
+  // envelopes). Shape: EnvelopeVersionSerializer[].
+  async listEnvelopeVersions(envelopeId: string) {
+    const { userId } = initInfo();
+    const params = encodeGetParams({ fuser_key: userId });
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/?${params}`;
+    const response = await this._fetch(url, {}, false);
+    if (!response) throw Error('Failed to load version history');
+    if (response.ok) return response.json();
+    throw Error(parseAPIError(await response.json()));
+  }
+
+  // Close a session, uploading the final SFDT (gzipped) and, once the highlights
+  // PR lands, its anchored change list. 204 → the session was eliminated as
+  // unchanged (no row). Returns the version row otherwise.
+  closeEnvelopeVersion(
+    envelopeId: string,
+    sessionId: string,
+    payload: EnvelopeClosePayload
+  ) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    if (this.formKey) formData.append('form_key', this.formKey);
+    const collaboratorId = (initState as any).collaboratorId;
+    if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+    formData.append('final_sfdt', payload.finalSfdtGz, 'final.sfdt.gz');
+    if (payload.changesJson)
+      formData.append('changes', payload.changesJson, 'changes.json');
+    if (payload.changeCount != null)
+      formData.append('change_count', String(payload.changeCount));
+    if (payload.formatChangeCount != null)
+      formData.append('format_change_count', String(payload.formatChangeCount));
+    formData.append('final_sha256', payload.finalSha256);
+    formData.append('start_sha256', payload.startSha256);
+    formData.append('authors', JSON.stringify(payload.authors));
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${sessionId}/close/`;
+    const options = { method: 'POST', body: formData, keepalive: false };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (!response) throw Error('Version close failed');
+      if (response.status === 204) return null; // eliminated as unchanged
+      if (response.ok) return response.json();
       throw Error(parseAPIError(await response.json()));
     });
   }
