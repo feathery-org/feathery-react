@@ -160,7 +160,9 @@ function ConnectAccountModal({
               paddingBottom: '20px'
             }}
           >
-            <span>{accountEmail}</span>
+            <span>
+              {accountEmail || `Your ${providerLabel} account is connected`}
+            </span>
             <button
               type='button'
               onClick={handleChangeAccount}
@@ -178,7 +180,7 @@ function ConnectAccountModal({
               Change account
             </button>
           </div>
-          {ConfigComponent ? (
+          {ConfigComponent && (
             <ConfigComponent
               key={accountEmail}
               client={client}
@@ -186,8 +188,6 @@ function ConnectAccountModal({
               onSaved={onSaved}
               onError={setError}
             />
-          ) : (
-            <div>This account needs no additional setup.</div>
           )}
           {error && (
             <div css={{ color: '#d32f2f', paddingTop: '10px' }}>{error}</div>

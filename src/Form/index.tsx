@@ -227,6 +227,11 @@ import { verifyAlloyId } from '../integrations/alloy';
 import { useFlinksConnect } from '../integrations/flinks';
 import ConnectAccountModal from '../integrations/connectAccount/ConnectAccountModal';
 import {
+  CONFIG_COMPONENTS,
+  connectionFieldKey,
+  hasEmailIdentity
+} from '../integrations/connectAccount/providers';
+import {
   ACCOUNT_CONNECT_POPUP_NAME,
   getPopupFeatures,
   runOAuthPopup
@@ -2733,6 +2738,29 @@ function Form({
       );
     }
 
+    // The rest of the chain runs in a nested call over a sliced action array,
+    // so the windows this click pre-opened for those actions have to be handed
+    // across re-keyed to the slice, and dropped from this run's map, which
+    // closes whatever it still owns once the loop ends. Without the handoff the
+    // nested run pre-opens for itself - fine when it resumes from a fresh click
+    // (a modal's save, the Quik viewer's submit), but the connect account chain
+    // resumes straight off the OAuth result with no gesture left, so the browser
+    // blocks the window and the next action reports a popup that was never
+    // actually blocked. Windows already closed mean this run has finished and
+    // the resume is carrying its own gesture, so it is left to open its own.
+    const handOffPreOpenedWindows = (index: number) => {
+      const remaining = new Map<number, Window | null>();
+      let anyOpen = false;
+      preOpenedWindows.forEach((win, idx) => {
+        if (idx <= index) return;
+        remaining.set(idx - index - 1, win);
+        if (win && !win.closed) anyOpen = true;
+      });
+      if (!anyOpen) return undefined;
+      remaining.forEach((_, idx) => preOpenedWindows.delete(idx + index + 1));
+      return remaining;
+    };
+
     const flowOnSuccess = (index: number) => async () => {
       flowCompleted.current = true;
       elementClicks[id] = false;
@@ -2747,7 +2775,8 @@ function Form({
         onAsyncEnd,
         textSpanStart,
         textSpanEnd,
-        triggerPayload
+        triggerPayload,
+        preOpenedWindows: handOffPreOpenedWindows(index)
       });
       if (!running) onAsyncEnd();
     };
@@ -2846,28 +2875,33 @@ function Form({
         // first trigger's flow-advance closure. Ignore this trigger instead;
         // the shared post-loop cleanup below still releases its click lock
         // and closes its own pre-opened popup.
+        // Only covers triggers that open a modal: the ref is set by
+        // openConnectAccountModal, so a provider that connects without one
+        // races here exactly as it did before the modal existed.
         if (connectAccountModalRef.current) break;
 
         await Promise.all([submitPromise, client.flushCustomFields()]);
         const popup = preOpenedWindows.get(i) ?? null;
         preOpenedWindows.delete(i);
         const provider = action.provider;
-        const emailKey = `feathery.connections.${provider}.email`;
+        // Not always an email: a provider with no user identity records only
+        // that a connection exists. Either way a value here means connected.
+        const connectionKey = connectionFieldKey(provider);
 
+        const alreadyConnected = !!fieldValues[connectionKey];
+        let connected = false;
         try {
-          if (fieldValues[emailKey]) {
+          if (alreadyConnected) {
             popup?.close();
           } else {
             const result = await runOAuthPopup(client, provider, popup);
-            updateFieldValues({ [emailKey]: result.account_email ?? '' });
+            updateFieldValues({
+              [connectionKey]: hasEmailIdentity(provider)
+                ? result.account_email ?? ''
+                : 'true'
+            });
           }
-          // The flow advances from the modal's onSaved, not here - the
-          // respondent has not finished configuring the account yet.
-          openConnectAccountModal({
-            provider,
-            onFlowSuccess: flowOnSuccess(i),
-            onAsyncEnd
-          });
+          connected = true;
         } catch (error) {
           elementClicks[id] = false;
           clearButtonActionState();
@@ -2877,6 +2911,30 @@ function Form({
               : 'Unable to connect your account.'
           );
           onAsyncEnd();
+        }
+        // Deliberately outside the try: the modal's setup UI is what advances
+        // the flow, and advancing runs every remaining action in the chain.
+        // A failure in one of those is that action's error, not a failure to
+        // connect, so it must not land in the catch above and get relabelled
+        // "Unable to connect your account."
+        if (connected) {
+          // A repeat click on an already-connected button still opens the
+          // modal - it is the only route to "Change account". On a fresh
+          // connect the modal is worth showing only for a provider with setup
+          // to collect; otherwise connecting is the whole job and the flow
+          // continues straight away.
+          if (alreadyConnected || CONFIG_COMPONENTS[provider]) {
+            // The flow advances from the modal's onSaved, which only a
+            // provider's config component calls - the respondent has not
+            // finished configuring the account yet.
+            openConnectAccountModal({
+              provider,
+              onFlowSuccess: flowOnSuccess(i),
+              onAsyncEnd
+            });
+          } else {
+            await flowOnSuccess(i)();
+          }
         }
         break;
       } else if (type === ACTION_URL) {
@@ -3812,9 +3870,11 @@ function Form({
             provider={connectAccountModal.provider}
             client={client}
             accountEmail={
-              fieldValues[
-                `feathery.connections.${connectAccountModal.provider}.email`
-              ] as string
+              hasEmailIdentity(connectAccountModal.provider)
+                ? (fieldValues[
+                    connectionFieldKey(connectAccountModal.provider)
+                  ] as string)
+                : ''
             }
             onChangeAccount={async () => {
               // window.open must stay the first statement: the modal's
@@ -3837,8 +3897,10 @@ function Form({
                   popup
                 );
                 updateFieldValues({
-                  [`feathery.connections.${connectAccountModal.provider}.email`]:
-                    result.account_email ?? ''
+                  [connectionFieldKey(connectAccountModal.provider)]:
+                    hasEmailIdentity(connectAccountModal.provider)
+                      ? result.account_email ?? ''
+                      : 'true'
                 });
               } catch (error) {
                 return error instanceof Error
