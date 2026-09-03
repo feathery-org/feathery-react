@@ -9,7 +9,14 @@ import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
 import { TableDeleteImpact } from './bindings/tableDeleteGuard';
 import { useDocxHistorySession } from './history/useDocxHistorySession';
-import { DocxHistoryHost, DocxSaveMeta, VersionAuthor } from './history/types';
+import VersionViewer from './history/VersionViewer';
+import VersionBar from './history/VersionBar';
+import {
+  DocxHistoryHost,
+  DocxSaveMeta,
+  DocxVersion,
+  VersionAuthor
+} from './history/types';
 import { DocxSource } from './types';
 
 const DEFAULT_CURRENT_USER: VersionAuthor = {
@@ -175,6 +182,11 @@ function DocxEditor({
   // The single right-rail slot shows at most one panel, toggled from the
   // toolbar's two buttons (Changes / Sections).
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  // A selected older version, shown read-only over the live editor. The live
+  // editor keeps autosaving underneath while it is open.
+  const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
+    null
+  );
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
   // the toolbar's Changes badge and whether that button is offered at all.
   const [changesCount, setChangesCount] = useState(0);
@@ -292,6 +304,20 @@ function DocxEditor({
   useEffect(() => {
     if (activePanel === 'changes' && changesCount === 0) setActivePanel(null);
   }, [activePanel, changesCount]);
+
+  // Escape backs out one layer at a time: first the version viewer, then the
+  // side panel.
+  useEffect(() => {
+    if (!viewingVersion && activePanel === null) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (viewingVersion) setViewingVersion(null);
+      else setActivePanel(null);
+    };
+    const doc = featheryDoc();
+    doc.addEventListener('keydown', onKey);
+    return () => doc.removeEventListener('keydown', onKey);
+  }, [viewingVersion, activePanel]);
 
   /**
    * Reconcile anything uncommitted before bytes leave the editor and report the
@@ -595,7 +621,13 @@ function DocxEditor({
       {/* Reserve the toolbar's space until it mounts (it needs `editor`), so its
           arrival doesn't shrink the editor pane mid-load. */}
       {!editor && <div css={{ height: TOOLBAR_HEIGHT, flex: '0 0 auto' }} />}
-      {editor && (
+      {editor && viewingVersion && (
+        <VersionBar
+          version={viewingVersion}
+          onExit={() => setViewingVersion(null)}
+        />
+      )}
+      {editor && !viewingVersion && (
         <DocxToolbar
           editor={editor}
           // Save stays visible even alongside a terminal action so users can
@@ -686,6 +718,15 @@ function DocxEditor({
           />
           {loading && !error && <div css={overlay}>Loading document…</div>}
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
+          {history && viewingVersion && (
+            <VersionViewer
+              key={viewingVersion.id}
+              host={history}
+              version={viewingVersion}
+              serviceUrl={serviceUrl}
+              headers={headers}
+            />
+          )}
         </div>
         {/* Shared side panel; its title follows the rail icon that opened it
             (Suggested changes · Sections). Stays mounted while review is on so
@@ -703,6 +744,11 @@ function DocxEditor({
             boundaryKey={`${railGeneration}:${openNonce ?? 0}`}
             history={history}
             currentUser={currentUser ?? DEFAULT_CURRENT_USER}
+            // Selecting the current version just closes any open viewer (its
+            // bytes are the live editor beneath); an older one opens read-only.
+            onSelectVersion={(version) =>
+              setViewingVersion(version.is_current ? null : version)
+            }
             // Reload the list whenever a save lands so a new version and the
             // "Current" tag stay fresh while the panel is open.
             historyRefreshKey={historySession.savedAt?.getTime() ?? 0}
