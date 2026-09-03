@@ -214,23 +214,22 @@ function DocxEditor({
     []
   );
 
-  // Brief, non-error hint when a lock refuses an edit; the bindings layer fires
-  // this (debounced) instead of the edit silently doing nothing. Kept short,
-  // and dismissed early once the caret moves somewhere editable.
+  // Non-error hint shown while the caret is on a locked control that refused an
+  // edit. No timeout - it stays as long as the cursor sits on the locked cell;
+  // the bindings layer resolves it when the caret moves somewhere editable or
+  // leaves the editor.
   const handleLockedEdit = useCallback(() => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
     setSaveToast({
       type: 'info',
       message: "This content is locked and can't be edited here."
     });
-    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
-    saveToastTimer.current = setTimeout(() => setSaveToast(null), 1500);
   }, []);
 
-  // The caret left the locked spot for an editable one: hide the hint now,
-  // but never clobber a save success/error toast that happens to be showing.
+  // The caret left the locked spot: hide the hint now, but never clobber a save
+  // success/error toast that happens to be showing.
   const handleLockedEditResolved = useCallback(() => {
     if (saveToastRef.current?.type !== 'info') return;
-    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
     setSaveToast(null);
   }, []);
 
