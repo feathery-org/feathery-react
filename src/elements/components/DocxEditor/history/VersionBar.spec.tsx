@@ -65,4 +65,36 @@ describe('VersionBar', () => {
     fireEvent.click(restore);
     expect(onRestore).toHaveBeenCalled();
   });
+
+  it('summarizes changes and toggles highlights when available', () => {
+    const onToggle = jest.fn();
+    const { getByText, getByRole } = render(
+      <VersionBar
+        version={version()}
+        onExit={jest.fn()}
+        editCount={3}
+        formatCount={2}
+        highlightsAvailable
+        highlightsOn
+        onToggleHighlights={onToggle}
+      />
+    );
+    expect(getByText(/3 edits · 2 formatting/)).toBeTruthy();
+    const toggle = getByRole('checkbox') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(onToggle).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the change summary and toggle when highlights are unavailable', () => {
+    const { queryByText, queryByRole } = render(
+      <VersionBar
+        version={version()}
+        onExit={jest.fn()}
+        highlightsAvailable={false}
+      />
+    );
+    expect(queryByRole('checkbox')).toBeNull();
+    expect(queryByText(/edits/)).toBeNull();
+  });
 });

@@ -10,28 +10,54 @@ import { DocxHistoryHost, DocxVersion } from './types';
 const DOCX_MIME =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+export interface VersionMeta {
+  editCount?: number;
+  formatCount?: number;
+  degraded: boolean;
+}
+
 interface Props {
   host: DocxHistoryHost;
   version: DocxVersion;
   serviceUrl?: string;
   headers?: Record<string, string>[];
+  /** Show tracked-change highlights (default true). Off opens the version with
+   *  changes accepted (plain final state). The parent keys the viewer on this,
+   *  so toggling remounts and re-opens. */
+  highlightsOn?: boolean;
+  /** Reports the version's edit counts + whether highlights are available, so
+   *  the version bar can label them. */
+  onMeta?: (meta: VersionMeta) => void;
 }
 
 // A second, read-only DocumentEditor overlaid on the live editor's pane. It is
 // never registered (the assistant/rail must not see it) and is destroyed on
 // unmount — the parent keys it by version id so a new selection remounts it.
-// PR 4 shows the version as it stood; per-author highlights arrive in a later PR.
 export default function VersionViewer({
   host,
   version,
   serviceUrl,
-  headers
+  headers,
+  highlightsOn = true,
+  onMeta
 }: Props) {
   const hostElRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<any>(null);
   const [editorReady, setEditorReady] = useState(false);
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
   const doc = useVersionDocument(host, version);
+
+  // Report the version's counts up to the bar once resolved.
+  const onMetaRef = useRef(onMeta);
+  onMetaRef.current = onMeta;
+  useEffect(() => {
+    if (doc.loading) return;
+    onMetaRef.current?.({
+      editCount: doc.editCount,
+      formatCount: doc.formatCount,
+      degraded: doc.degraded
+    });
+  }, [doc.loading, doc.editCount, doc.formatCount, doc.degraded]);
 
   // Create the bare read-only editor once.
   useEffect(() => {
@@ -78,9 +104,9 @@ export default function VersionViewer({
     let cancelled = false;
     (async () => {
       try {
-        // With highlights available, patch the renderer and show revisions
-        // BEFORE opening so the first paint carries the wash/strikethrough.
-        if (!doc.degraded) {
+        // With highlights available and enabled, patch the renderer and show
+        // revisions BEFORE opening so the first paint carries the highlights.
+        if (!doc.degraded && highlightsOn) {
           try {
             installRevisionHighlightRendering(viewer);
             viewer.showRevisions = true;

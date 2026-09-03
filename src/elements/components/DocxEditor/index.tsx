@@ -187,6 +187,13 @@ function DocxEditor({
   const [viewingVersion, setViewingVersion] = useState<DocxVersion | null>(
     null
   );
+  // Highlight toggle + resolved counts for the version bar. Reset per version.
+  const [highlightsOn, setHighlightsOn] = useState(true);
+  const [versionMeta, setVersionMeta] = useState<{
+    editCount?: number;
+    formatCount?: number;
+    degraded: boolean;
+  } | null>(null);
   // Pending tracked-change count, reported by the (always-mounted) rail; drives
   // the toolbar's Changes badge and whether that button is offered at all.
   const [changesCount, setChangesCount] = useState(0);
@@ -625,6 +632,11 @@ function DocxEditor({
         <VersionBar
           version={viewingVersion}
           onExit={() => setViewingVersion(null)}
+          editCount={versionMeta?.editCount}
+          formatCount={versionMeta?.formatCount}
+          highlightsAvailable={!!versionMeta && !versionMeta.degraded}
+          highlightsOn={highlightsOn}
+          onToggleHighlights={setHighlightsOn}
         />
       )}
       {editor && !viewingVersion && (
@@ -720,11 +732,15 @@ function DocxEditor({
           {error && <div css={{ ...overlay, color: '#dc2626' }}>{error}</div>}
           {history && viewingVersion && (
             <VersionViewer
-              key={viewingVersion.id}
+              // Toggling highlights remounts the viewer so it re-opens with or
+              // without the change marks.
+              key={`${viewingVersion.id}:${highlightsOn}`}
               host={history}
               version={viewingVersion}
               serviceUrl={serviceUrl}
               headers={headers}
+              highlightsOn={highlightsOn}
+              onMeta={setVersionMeta}
             />
           )}
         </div>
@@ -746,9 +762,15 @@ function DocxEditor({
             currentUser={currentUser ?? DEFAULT_CURRENT_USER}
             // Selecting the current version just closes any open viewer (its
             // bytes are the live editor beneath); an older one opens read-only.
-            onSelectVersion={(version) =>
-              setViewingVersion(version.is_current ? null : version)
-            }
+            onSelectVersion={(version) => {
+              if (version.is_current) {
+                setViewingVersion(null);
+                return;
+              }
+              setViewingVersion(version);
+              setHighlightsOn(true);
+              setVersionMeta(null);
+            }}
             // Reload the list whenever a save lands so a new version and the
             // "Current" tag stay fresh while the panel is open.
             historyRefreshKey={historySession.savedAt?.getTime() ?? 0}
