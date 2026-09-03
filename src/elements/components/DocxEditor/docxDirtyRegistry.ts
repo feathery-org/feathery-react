@@ -1,60 +1,34 @@
-import { featheryWindow, runningInClient } from '../../../utils/browser';
+import {
+  clearUnsavedWork,
+  setUnsavedWork,
+  unsavedWorkSources,
+  _clearUnsavedWorkRegistry
+} from '../../../utils/unsavedWork';
 
-// Legacy fallback so editors rendered without a formId still get guarded.
-const DEFAULT_FORM_ID = '__legacy_document_form__';
+export const UNSAVED_DOCX_MESSAGE =
+  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
 
-// formId -> containerIds of mounted editors with unsaved changes
-const dirtyByForm = new Map<string, Set<string>>();
-let listenerAttached = false;
-
-const beforeUnloadHandler = (event: any) => {
-  event.preventDefault();
-  // Legacy method of doing this for Chrome/Edge < 119
-  event.returnValue = true;
-};
-
-// The browser unload warning is armed only while at least one editor is dirty
-const syncUnloadListener = () => {
-  if (!runningInClient()) return;
-  const anyDirty = [...dirtyByForm.values()].some((set) => set.size > 0);
-  if (anyDirty && !listenerAttached) {
-    featheryWindow().addEventListener('beforeunload', beforeUnloadHandler);
-    listenerAttached = true;
-  } else if (!anyDirty && listenerAttached) {
-    featheryWindow().removeEventListener('beforeunload', beforeUnloadHandler);
-    listenerAttached = false;
-  }
-};
-
-const formKey = (formId?: string) => formId || DEFAULT_FORM_ID;
+// The document editor's slice of the form-wide unsaved-work registry, which
+// owns the browser unload listener and the leave prompt.
+const sourceId = (containerId: string) => `docx:${containerId}`;
 
 export const setDocxEditorDirty = (
   formId: string | undefined,
   containerId: string,
   dirty: boolean
-) => {
-  const key = formKey(formId);
-  if (dirty) {
-    const set = dirtyByForm.get(key) ?? new Set<string>();
-    set.add(containerId);
-    dirtyByForm.set(key, set);
-  } else {
-    const set = dirtyByForm.get(key);
-    set?.delete(containerId);
-    if (set && set.size === 0) dirtyByForm.delete(key);
-  }
-  syncUnloadListener();
-};
+) =>
+  setUnsavedWork(
+    formId,
+    sourceId(containerId),
+    dirty ? UNSAVED_DOCX_MESSAGE : null
+  );
 
 export const clearDocxEditorDirty = (
   formId: string | undefined,
   containerId: string
-) => setDocxEditorDirty(formId, containerId, false);
+) => clearUnsavedWork(formId, sourceId(containerId));
 
 export const hasDirtyDocxEditors = (formId?: string): boolean =>
-  (dirtyByForm.get(formKey(formId))?.size ?? 0) > 0;
+  unsavedWorkSources(formId).some((id) => id.startsWith('docx:'));
 
-export const _clearDocxDirtyRegistry = () => {
-  dirtyByForm.clear();
-  syncUnloadListener();
-};
+export const _clearDocxDirtyRegistry = () => _clearUnsavedWorkRegistry();

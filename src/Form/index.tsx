@@ -272,10 +272,7 @@ import {
   getActiveDocxEditorEnvelopeTarget,
   getActiveDocxEditorTarget
 } from '../assistant/tools/docx/docxEditorRegistry';
-import { hasDirtyDocxEditors } from '../elements/components/DocxEditor/docxDirtyRegistry';
-
-const UNSAVED_DOCX_MESSAGE =
-  'You have unsaved changes in the document editor. If you leave now, your changes will be lost.';
+import { confirmLeavingUnsavedWork } from '../utils/unsavedWork';
 
 const DocumentViewer = React.lazy(
   () => import('../elements/components/DocumentViewer')
@@ -2685,11 +2682,10 @@ function Form({
 
     // Prompted at the Next/Back action itself so validation and submission
     // decide the step is really leaving first. Full-page exits use beforeunload.
-    let docxDiscardDeclined = false;
-    const confirmDocxDiscard = () => {
-      if (!hasDirtyDocxEditors(_internalId)) return true;
-      const proceed = featheryWindow().confirm(UNSAVED_DOCX_MESSAGE);
-      docxDiscardDeclined = !proceed;
+    let leaveDeclined = false;
+    const confirmLeavingStep = () => {
+      const proceed = confirmLeavingUnsavedWork(_internalId);
+      leaveDeclined = !proceed;
       return proceed;
     };
 
@@ -3088,7 +3084,7 @@ function Form({
       } else if (type === ACTION_LOGOUT) await Auth.inferAuthLogout();
       else if (type === ACTION_NEW_SUBMISSION) await updateUserId(uuidv4());
       else if (type === ACTION_NEXT) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToNewStep({
           redirectKey: action.next_step_key ?? getNextStepKey(metadata),
           elementType: metadata.elementType,
@@ -3098,7 +3094,7 @@ function Form({
             elementType === 'button' ? (element as ClickActionElement) : null
         });
       } else if (type === ACTION_BACK) {
-        if (!confirmDocxDiscard()) break;
+        if (!confirmLeavingStep()) break;
         await goToPreviousStep();
       } else if (type === ACTION_PURCHASE_PRODUCTS) {
         const actionSuccess = await purchaseProductsAction(element);
@@ -3593,9 +3589,9 @@ function Form({
       elementClicks[id] = false;
       clearButtonActionState();
 
-      // The user chose to keep their unsaved docx changes, so nothing is
-      // pending. Return falsy so the caller clears the button loader.
-      if (docxDiscardDeclined) return;
+      // The user chose to keep their unsaved work, so nothing is pending.
+      // Return falsy so the caller clears the button loader.
+      if (leaveDeclined) return;
 
       return true;
     }
@@ -3970,10 +3966,8 @@ export function JSForm({
   ...props
 }: Props & InternalProps) {
   const [remount, setRemount] = useState(false);
-  const confirmDocxPopNavigation = useCallback(
-    () =>
-      !hasDirtyDocxEditors(_internalId) ||
-      featheryWindow().confirm(UNSAVED_DOCX_MESSAGE),
+  const confirmPopNavigationGuard = useCallback(
+    () => confirmLeavingUnsavedWork(_internalId),
     [_internalId]
   );
 
@@ -3989,7 +3983,7 @@ export function JSForm({
   if (formId && runningInClient())
     return (
       <FeatheryCacheProvider>
-        <RouterProvider confirmPopNavigation={confirmDocxPopNavigation}>
+        <RouterProvider confirmPopNavigation={confirmPopNavigationGuard}>
           <Form
             {...props}
             formId={formId}

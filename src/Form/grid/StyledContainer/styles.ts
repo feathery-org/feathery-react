@@ -105,7 +105,12 @@ export const getContainerStyles = (
       // too small.
       // Tables scroll horizontally inside their own container, so their cell
       // must shrink to the configured width instead of the full table width.
-      if (elementType === 'table') s.minWidth = 0;
+      // The hosted form types the node 'table'; the designer canvas passes its
+      // own 'table_element', and both have to shrink or a wide grid pushes the
+      // step (and every fit-width ancestor) out past the available space.
+      const isTable =
+        elementType === 'table' || elementType === 'table_element';
+      if (isTable) s.minWidth = 0;
       else if (elementType !== 'dropdown_multi') s.minWidth = 'min-content';
       s.width = '100%';
 
@@ -161,7 +166,8 @@ export const getContainerStyles = (
       }
 
       if (isFit(width) || isFit(widthUnit)) {
-        s.minWidth = 'min-content';
+        // A fit-width table still must not grow to its full grid width.
+        s.minWidth = isTable ? 0 : 'min-content';
         s.maxWidth = 'fit-content';
 
         if (!hasChildren) {
@@ -250,7 +256,18 @@ export const getContainerStyles = (
         s.flex = '0 1 auto';
 
         if (isFill(heightUnit)) {
+          // `fill` has to GROW into the available space, not merely cap at it:
+          // capping alone leaves a scrolling element (a spreadsheet table) at
+          // its natural height with empty space below. gig's parent_axis
+          // naming is inverted vs CSS — 'row' means the parent stacks its
+          // children vertically, so height is the main axis there.
           s.maxHeight = '100%';
+          if (parentAxis === 'row') {
+            s.flex = '1 1 auto';
+            s.minHeight = 0;
+          } else {
+            s.height = '100%';
+          }
         }
 
         if (isFit(heightUnit)) {

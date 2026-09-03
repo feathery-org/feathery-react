@@ -101,6 +101,8 @@ type UseTableDataProps = {
     };
   };
   editMode?: boolean;
+  // How many sample rows the builder preview shows (edit mode only).
+  exampleRows?: number;
   dataVersion?: number;
   // When set (Data Hub-backed table), rows come from this map instead of the
   // global form `fieldValues`.
@@ -147,6 +149,7 @@ type UseTableDataReturn = {
 export function useTableData({
   element,
   editMode = false,
+  exampleRows,
   dataVersion = 0,
   externalFieldValues
 }: UseTableDataProps): UseTableDataReturn {
@@ -184,13 +187,13 @@ export function useTableData({
   // as a manual dirty flag to trigger re-snapshots
   const baseFieldValues = useMemo(() => {
     if (editMode) {
-      return generateExampleData(baseColumns);
+      return generateExampleData(baseColumns, exampleRows);
     }
     if (externalFieldValues) {
       return externalFieldValues;
     }
     return { ...fieldValues };
-  }, [editMode, baseColumns, dataVersion, externalFieldValues]);
+  }, [editMode, exampleRows, baseColumns, dataVersion, externalFieldValues]);
 
   const [searchQuery, setSearchQuery] = useState('');
 

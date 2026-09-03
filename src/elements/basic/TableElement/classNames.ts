@@ -29,5 +29,28 @@ export const TABLE_CLASS = {
   pagination: 'feathery-table-pagination',
   pageButton: 'feathery-table-page-button',
   pageSelect: 'feathery-table-page-select',
-  empty: 'feathery-table-empty'
+  empty: 'feathery-table-empty',
+
+  // Spreadsheet display mode. This mode renders an ARIA grid of divs rather
+  // than a <table>, so it has its own class names — CSS written against
+  // `.feathery-table` and its children does not apply here.
+  grid: 'feathery-table-grid',
+  gridHeader: 'feathery-table-grid-header',
+  gridHeaderCell: 'feathery-table-grid-header-cell',
+  gridCornerHeader: 'feathery-table-grid-corner',
+  gridRow: 'feathery-table-grid-row',
+  gridRowNumber: 'feathery-table-grid-row-number',
+  gridCell: 'feathery-table-grid-cell',
+  gridCellEditor: 'feathery-table-grid-cell-input',
+  gridCellSelect: 'feathery-table-grid-cell-select',
+  gridColumnResizer: 'feathery-table-grid-column-resizer',
+  gridFillHandle: 'feathery-table-grid-fill-handle',
+  gridRowMenu: 'feathery-table-grid-row-menu',
+  gridRowMenuItem: 'feathery-table-grid-row-menu-item',
+  gridAddRow: 'feathery-table-grid-add-row',
+  gridPendingBar: 'feathery-table-grid-pending-bar',
+  gridIssueStep: 'feathery-table-grid-issue-step',
+  gridSaveButton: 'feathery-table-grid-save-button',
+  gridDiscardButton: 'feathery-table-grid-discard-button',
+  gridCellTooltip: 'feathery-table-grid-cell-tooltip'
 } as const;
