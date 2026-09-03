@@ -8,6 +8,11 @@ import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import ErrorInput from '../components/ErrorInput';
 
+// Space left between a scaled-down loader and the button's edge, per side. Not
+// taken from the button's padding on purpose: that would tie the loader's size
+// back to the content box, which is what collapsed it on an empty label.
+const LOADER_BORDER_GAP = 2;
+
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
     'button',
@@ -239,10 +244,13 @@ function ButtonElement({
     justifyContent: 'center'
   } as const;
   // The button never grows for its loader. A loader larger than the button
-  // scales down to fit the box the button already has, keeping its ratio.
+  // scales down to fit the box the button already has, keeping its ratio, and
+  // stops short of the border so the corner radius has nothing to cut into.
+  // A loader that already fits is untouched - the inset only bites on the
+  // scaled-down ones.
   const loaderClampStyles = {
-    maxWidth: '100%',
-    maxHeight: '100%',
+    maxWidth: `calc(100% - ${LOADER_BORDER_GAP * 2}px)`,
+    maxHeight: `calc(100% - ${LOADER_BORDER_GAP * 2}px)`,
     '& img, & svg': {
       maxWidth: '100%',
       maxHeight: '100%',

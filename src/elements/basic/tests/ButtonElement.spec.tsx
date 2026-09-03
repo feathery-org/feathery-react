@@ -39,13 +39,22 @@ const renderButton = (element: any, loader: any, featheryContext?: any) =>
     />
   );
 
+// Rules emotion emitted, since jsdom's cssstyle drops calc() and aspect-ratio
+// from getComputedStyle and emotion inserts through insertRule
+const emittedCss = () =>
+  Array.from(document.styleSheets)
+    .flatMap((sheet) => Array.from(sheet.cssRules ?? []))
+    .map((rule) => rule.cssText)
+    .join('');
+
 // One path for every button: the loader is drawn over the content and clamped
 // to the box the button already has, so the button can never resize
 const expectOverlaidAndClamped = (loader: HTMLElement) => {
   const box = loader.parentElement as HTMLElement;
   const overlay = box.parentElement as HTMLElement;
-  expect(getComputedStyle(box).maxWidth).toBe('100%');
-  expect(getComputedStyle(box).maxHeight).toBe('100%');
+  expect(emittedCss()).toMatch(/max-width:\s*calc\(100% - 4px\)/);
+  expect(emittedCss()).toMatch(/max-height:\s*calc\(100% - 4px\)/);
+  expect(box.className).toBeTruthy();
   expect(getComputedStyle(overlay).position).toBe('absolute');
   expect(overlay.parentElement?.tagName).toBe('BUTTON');
 };
@@ -165,6 +174,23 @@ describe('ButtonElement loader', () => {
     expectOverlaidAndClamped(screen.getByTestId('loader'));
   });
 
+  it('leaves room between a scaled-down loader and the button border', () => {
+    // The clamp measures against the button's padding box now, so without a
+    // gap a loader that had to scale down sits flush against the corner radius
+    renderButton(labelled(), <span data-testid='loader' />);
+
+    const box = screen.getByTestId('loader').parentElement as HTMLElement;
+    // Scoped to the loader box's own rule, so the gap can't be satisfied by
+    // some other element's styles happening to carry the same declaration
+    const rule = emittedCss().match(
+      new RegExp(`\\.${box.className.split(' ')[0]}\\s*\\{[^}]*\\}`)
+    )?.[0];
+    expect(rule).toContain('max-width: calc(100% - 4px)');
+    expect(rule).toContain('max-height: calc(100% - 4px)');
+    // and it still carries the loader target's own size, halved from the button
+    expect(rule).toContain('width: 50px');
+  });
+
   it('sizes a percentage loader from its height so it stays square', () => {
     // width and height percentages resolve against different lengths, which
     // gave a wide flat box with the spinner drawn tiny inside it
@@ -178,12 +204,6 @@ describe('ButtonElement loader', () => {
     const box = screen.getByTestId('loader').parentElement as HTMLElement;
     expect(getComputedStyle(box).height).toBe('50%');
     expect(getComputedStyle(box).width).not.toBe('50%');
-    // jsdom's cssstyle drops aspect-ratio, and emotion inserts through
-    // insertRule, so read the rules off the sheets rather than the style tags
-    const emitted = Array.from(document.styleSheets)
-      .flatMap((sheet) => Array.from(sheet.cssRules ?? []))
-      .map((rule) => rule.cssText)
-      .join('');
-    expect(emitted).toMatch(/aspect-ratio:\s*1/);
+    expect(emittedCss()).toMatch(/aspect-ratio:\s*1/);
   });
 });
