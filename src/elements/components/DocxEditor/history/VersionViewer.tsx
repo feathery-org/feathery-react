@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { INK_3, PAPER } from '../TrackedChangeGroups/styles';
 import { loadStyles, waitForDocumentLoad, waitForEj } from '../ejLoader';
@@ -59,6 +59,24 @@ export default function VersionViewer({
     });
   }, [doc.loading, doc.editCount, doc.formatCount, doc.degraded]);
 
+  // Size the editor to the host element in PIXELS. A bare DocumentEditor does
+  // not reliably honour a '100%' height against an absolutely-positioned host,
+  // so measure and set an explicit height/width, then let it re-layout.
+  const fitToHost = useCallback(() => {
+    const el = hostElRef.current;
+    const viewer = editorRef.current;
+    if (!el || !viewer) return;
+    const h = el.clientHeight;
+    const w = el.clientWidth;
+    if (h > 0) viewer.height = `${h}px`;
+    if (w > 0) viewer.width = `${w}px`;
+    try {
+      viewer.resize();
+    } catch {
+      /* torn down mid-resize */
+    }
+  }, []);
+
   // Create the bare read-only editor once.
   useEffect(() => {
     let cancelled = false;
@@ -82,22 +100,16 @@ export default function VersionViewer({
       });
       if (headers) viewer.headers = headers;
       viewer.appendTo(hostElRef.current);
-      viewer.resize();
       editorRef.current = viewer;
+      fitToHost();
       setEditorReady(true);
 
       // Keep it full-height as the pane changes (window resize, panel toggle).
       try {
-        observer = new ResizeObserver(() => {
-          try {
-            editorRef.current?.resize();
-          } catch {
-            /* editor torn down mid-resize */
-          }
-        });
+        observer = new ResizeObserver(() => fitToHost());
         observer.observe(hostElRef.current);
       } catch {
-        /* ResizeObserver unavailable: the initial resize still fills it */
+        /* ResizeObserver unavailable: the initial fit still sizes it */
       }
     })();
     return () => {
@@ -153,9 +165,9 @@ export default function VersionViewer({
         await loaded;
         if (cancelled) return;
         stampMissingContentControlColors(viewer);
-        // Recompute against the now-laid-out pane before fitting the page, so
-        // the editor fills the full container height rather than a stale size.
-        viewer.resize();
+        // Size to the now-laid-out pane (in px) before fitting the page, so the
+        // editor fills the full container height rather than the ~200px default.
+        fitToHost();
         viewer.fitPage?.('FitPageWidth');
         const container = viewer.documentHelper?.viewerContainer as
           | HTMLElement
