@@ -9,6 +9,7 @@ import {
   INNER_PADDING_LEFT,
   INNER_PADDING_RIGHT,
   INPUT_BOX_FIELDS,
+  rendersPlaceholderStyles,
   MULTISELECT_FIELD,
   RESET_INLINE_PADDING_CSS
 } from '../styles';
@@ -516,7 +517,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyBoxShadow('sub-fc');
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyCorners('field');
-      if (field.properties.placeholder)
+      if (rendersPlaceholderStyles(type, field.properties))
         styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'pin_input':
@@ -603,7 +604,8 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('activeFont', 'selected_font_color', 'color');
       styles.applyColor('completedFont', 'completed_font_color', 'color');
 
-      styles.applyPlaceholderStyles(type, field.styles);
+      if (rendersPlaceholderStyles(type, field.properties))
+        styles.applyPlaceholderStyles(type, field.styles);
       break;
     case 'phone_number':
       styles.addTargets('fieldToggle', 'dropdown');
@@ -635,7 +637,8 @@ export function applyFieldStyles(field: any, styles: any) {
         l === undefined ? {} : { paddingInlineStart: RESET_INLINE_PADDING_CSS }
       );
       styles.applyPhoneFlagPlacement();
-      styles.applyPlaceholderStyles(type, field.styles);
+      if (rendersPlaceholderStyles(type, field.properties))
+        styles.applyPlaceholderStyles(type, field.styles);
 
       styles.apply('fieldToggle', 'font_size', (a: any) => ({
         fontSize: `${1.5 * a}px`,
@@ -673,7 +676,7 @@ export function applyFieldStyles(field: any, styles: any) {
       styles.applyColor('sub-fc', 'background_color', 'backgroundColor');
       styles.applyBoxShadow('field');
       styles.applyCorners('field');
-      if (field.properties.placeholder)
+      if (rendersPlaceholderStyles(type, field.properties))
         styles.applyPlaceholderStyles(type, field.styles);
       break;
   }
@@ -681,6 +684,9 @@ export function applyFieldStyles(field: any, styles: any) {
   // percentage height brings a floor of its own to merge with.
   if (INPUT_BOX_FIELDS.includes(type) || type === MULTISELECT_FIELD)
     styles.applyInputBoxMinHeight(type);
+  // Not the multiselect: applyMultiselectLayout already makes a column of its
+  // element, on its own terms.
+  if (INPUT_BOX_FIELDS.includes(type)) styles.applyInputBoxLabelFlow();
   return styles;
 }
 
