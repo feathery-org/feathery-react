@@ -16,6 +16,7 @@ import internalState, {
   GetConfigParams,
   GetDocusignEnvelopeParams,
   LoanProCustomerObject,
+  RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
   setFormInternalState
@@ -184,9 +185,12 @@ export const getFormContext = (formUuid: string) => {
       actionIds: IntegrationActionIds,
       options: IntegrationActionOptions
     ) => formState.client.customRolloutAction(actionIds, options),
-    runComputerAgent: async (agentId: string) => {
-      const res = await formState.client.runComputerAgent(agentId);
-      return res.ok ? (res.payload.run_url as string) : '';
+    runComputerAgent: async (
+      agentId: string,
+      options?: RunComputerAgentOptions
+    ) => {
+      const res = await formState.runComputerAgent(agentId, options);
+      return res.ok ? res.payload : { status: 'error', message: res.error };
     },
     runAIExtraction: async (
       extractionId: string,

@@ -539,6 +539,80 @@ jest.mock('../init', () => ({
 }));
 
 describe('FeatheryClient - using api helpers', () => {
+  describe('runComputerAgent', () => {
+    const userId = 'userId';
+    let featheryClient: FeatheryClient;
+
+    const okJson = (status: number, body: any) => ({
+      ok: status < 400,
+      status,
+      json: jest.fn().mockResolvedValue(body),
+      text: jest.fn().mockResolvedValue('')
+    });
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      global.fetch = jest.fn();
+      (initInfo as jest.Mock).mockReturnValue({ sdkKey: 'sdkKey', userId });
+      featheryClient = new FeatheryClient('formKey');
+      featheryClient.AI_CHECK_INTERVAL = 1;
+      featheryClient.COMPUTER_AGENT_MAX_TIME = 1000;
+    });
+
+    const triggered = { run_id: 'run_1', run_url: 'https://app/runs/run_1' };
+    const finished = {
+      status: 'complete',
+      run_status: 'succeeded',
+      result: { total: '12.00' },
+      error: '',
+      data: {},
+      file_values: { statements: ['s3/statement.pdf'] }
+    };
+
+    it('returns the trigger payload before the run finishes and reports completion', async () => {
+      const onComplete = jest.fn();
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce(okJson(201, triggered))
+        .mockResolvedValueOnce(
+          okJson(200, { status: 'incomplete', run_status: 'running' })
+        )
+        .mockResolvedValue(okJson(200, finished));
+
+      const res = await featheryClient.runComputerAgent('agent_1', {
+        onComplete
+      });
+
+      expect(res).toEqual({ ok: true, payload: triggered });
+      expect(onComplete).not.toHaveBeenCalled();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(onComplete).toHaveBeenCalledWith(finished);
+      expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
+        `${API_URL}computer-agent/run/completion/?fid=${userId}&rid=run_1`
+      );
+    });
+
+    it('awaits the terminal payload when waitForCompletion is set', async () => {
+      const onStatusUpdate = jest.fn();
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce(okJson(201, triggered))
+        .mockResolvedValueOnce(
+          okJson(200, { status: 'incomplete', run_status: 'running' })
+        )
+        .mockResolvedValue(okJson(200, finished));
+
+      const res = await featheryClient.runComputerAgent('agent_1', {
+        waitForCompletion: true,
+        onStatusUpdate
+      });
+
+      expect(res).toEqual({ ok: true, payload: { ...triggered, ...finished } });
+      expect(onStatusUpdate).toHaveBeenCalledTimes(2);
+      expect(onStatusUpdate).toHaveBeenLastCalledWith(finished);
+    });
+  });
+
   describe('runAIExtraction', () => {
     const formKey = 'formKey';
     const userId = 'userId';
