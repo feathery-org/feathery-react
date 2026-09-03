@@ -62,6 +62,7 @@ export default function VersionViewer({
   // Create the bare read-only editor once.
   useEffect(() => {
     let cancelled = false;
+    let observer: ResizeObserver | undefined;
     (async () => {
       const ej = await waitForEj();
       loadStyles();
@@ -72,16 +73,40 @@ export default function VersionViewer({
         enableSfdtExport: true,
         enableEditorHistory: false,
         enableAutoFocus: false,
+        // A bare DocumentEditor defaults to a fixed ~200px height; fill the
+        // host element (which is inset:0 in the pane) instead.
+        height: '100%',
+        width: '100%',
         serviceUrl: serviceUrl || '',
         documentEditorSettings: { optimizeSfdt: false }
       });
       if (headers) viewer.headers = headers;
       viewer.appendTo(hostElRef.current);
+      viewer.resize();
       editorRef.current = viewer;
       setEditorReady(true);
+
+      // Keep it full-height as the pane changes (window resize, panel toggle).
+      try {
+        observer = new ResizeObserver(() => {
+          try {
+            editorRef.current?.resize();
+          } catch {
+            /* editor torn down mid-resize */
+          }
+        });
+        observer.observe(hostElRef.current);
+      } catch {
+        /* ResizeObserver unavailable: the initial resize still fills it */
+      }
     })();
     return () => {
       cancelled = true;
+      try {
+        observer?.disconnect();
+      } catch {
+        /* no-op */
+      }
       try {
         editorRef.current?.destroy();
       } catch {
@@ -128,6 +153,9 @@ export default function VersionViewer({
         await loaded;
         if (cancelled) return;
         stampMissingContentControlColors(viewer);
+        // Recompute against the now-laid-out pane before fitting the page, so
+        // the editor fills the full container height rather than a stale size.
+        viewer.resize();
         viewer.fitPage?.('FitPageWidth');
         const container = viewer.documentHelper?.viewerContainer as
           | HTMLElement

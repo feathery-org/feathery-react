@@ -41,6 +41,10 @@ class FakeDocumentEditor {
     /* no-op */
   }
 
+  resize() {
+    /* no-op */
+  }
+
   destroy() {
     destroy();
   }
