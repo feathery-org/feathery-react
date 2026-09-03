@@ -183,25 +183,51 @@ const blockPaddingCss = (type: string, value: any) =>
 // field's font size.
 const SHRINK_LABEL_MAX_FONT_SIZE = 10;
 
-// The room a pinned floating label needs behind the value when the theme sets
-// no top padding of its own -- computed per render, in the height's own unit, so
-// a box whose height changes keeps a reserve that matches it.
-const shrinkLabelReservePx = (type: string, height: any, fontSize: any) =>
-  type === 'text_area'
-    ? Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5
-    : Number(height) / 3;
+// What a pinned label occupies: its own marginTop (half the shrunken font) plus
+// its line box, which inherits the field's font size. So a 16px field's label
+// ends 5 + 16 = 21px below the box top, and a 28px field's at 33px -- measured,
+// and exact at every size.
+export const shrinkLabelFootprint = (fontSize: any) =>
+  Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) / 2 + Number(fontSize);
+
+// The room a pinned floating label needs behind the value when the theme sets no
+// top padding of its own: exactly what the label occupies, so the value starts
+// just under it.
+//
+// This used to be height/3, which is not a property of the label at all. The
+// label's footprint does not change with the box, so a ratio drifts: at 50px it
+// reserved 17px for a label needing 21, and at 500px it reserved 167px and left
+// the value 80px below the box's centre. A field is free to be 500px tall; its
+// value should still sit under its label.
+//
+// Clamped so a short box still fits a line of text -- below about 45px the
+// label's own footprint is more room than the box has to give.
+const shrinkLabelReservePx = (
+  type: string,
+  height: any,
+  heightUnit: any,
+  fontSize: any,
+  lineHeight?: any
+): number => {
+  if (type === 'text_area')
+    return Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5;
+  const footprint = shrinkLabelFootprint(fontSize);
+  // A percentage or fit height has no pixel box to clamp against, so the
+  // footprint stands on its own.
+  if (heightUnit !== 'px' || !isNum(height)) return footprint;
+  const line = inputLineHeight(lineHeight, fontSize);
+  const room = Number(height) - line - RESET_INPUT_PADDING_Y;
+  return Math.max(0, Math.min(footprint, room));
+};
 
 const shrinkLabelReserve = (
   type: string,
   height: any,
   heightUnit: any,
-  fontSize: any
+  fontSize: any,
+  lineHeight?: any
 ) =>
-  type === 'text_area'
-    ? `${shrinkLabelReservePx(type, height, fontSize)}px`
-    : // In the height's own unit, so a percentage box keeps a percentage
-      // reserve rather than a pixel approximation of one.
-      `${height / 3}${heightUnit}`;
+  `${shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)}px`;
 
 // The neutral for a companion that rides the value line with a transform.
 // 'none' rather than a zero translation: any transform other than none creates
@@ -1008,9 +1034,15 @@ export default class ResponsiveStyles {
     if (!rendersPlaceholderStyles(type, this.element?.properties)) return 0;
     // Only a resolved pixel height has a reserve that can be compared.
     if (heightUnit !== 'px' || !isNum(height)) return 0;
-    // The same definition shrinkLabelReserve is built from, so the floor and
-    // the reserve it floors cannot describe different geometry.
-    return shrinkLabelReservePx(type, height, this.element?.styles?.font_size);
+    // The same definition the reserve itself is built from, so the floor and
+    // the padding it floors can never describe different geometry.
+    return shrinkLabelReservePx(
+      type,
+      height,
+      heightUnit,
+      this.element?.styles?.font_size,
+      this.element?.styles?.line_height
+    );
   }
 
   // Content alignment for the text inside an input box. Horizontal rides on
@@ -1689,13 +1721,10 @@ export default class ResponsiveStyles {
         return pinned;
       });
       // A pinned label is a fixed overlay taking no room in the content box, so
-      // the value needs a reserve behind it. Unset, that reserve is computed
-      // here exactly as production computed it -- height/3 in the height's own
-      // unit, or 2.5x the shrunken label's font size for a text area -- which
-      // is why it keeps tracking a height the builder changes instead of being
-      // frozen into the theme as a px number. Set, the theme's own padding is
-      // what the value renders behind, including a value low enough to run it
-      // under the label's ink.
+      // the value needs a reserve behind it. Unset, that reserve is what the
+      // label occupies, so the value starts just under it at any box height.
+      // Set, the theme's own padding is what the value renders behind,
+      // including a value low enough to run it under the label's ink.
       this.apply(
         'field',
         [
@@ -1718,7 +1747,8 @@ export default class ResponsiveStyles {
             type,
             height,
             heightUnit,
-            fontSize
+            fontSize,
+            lineHeight
           );
           if (!takesInnerPadding(type)) return { paddingTop: reserve };
           // An alignment the box can resolve has already placed the value, and
