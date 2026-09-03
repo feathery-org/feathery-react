@@ -15,7 +15,7 @@ import {
 } from '../../../../assistant/tools/docx/syncfusionDocumentOps';
 import { isOpeningDocument } from '../useDocxEditor';
 import { createAutosaveScheduler } from './autosaveScheduler';
-import { contentHash, normalizeForDiff } from './sfdtDiff/index';
+import { contentHash, diffSession, normalizeForDiff } from './sfdtDiff/index';
 import { createSessionTracker } from './sessionTracker';
 import { createSliceStore } from './sliceStore';
 import {
@@ -107,6 +107,9 @@ export function useDocxHistorySession(
   // The document as the session began, for the unchanged-session hash. (An
   // exact pre-first-edit S0 arrives with the diff PR; this is a close proxy.)
   const s0Ref = useRef<string | null>(null);
+  // The author of the final segment (last boundary → close): the F slice's
+  // author for the diff. Updated on every edit.
+  const currentAuthorRef = useRef<string>('you');
   const finalizeRef = useRef<Promise<void>>(Promise.resolve());
 
   // Build the engine exactly once; its inner functions read the refs above.
@@ -124,23 +127,60 @@ export function useDocxHistorySession(
       const h = hostRef.current;
       const ed = editorRef.current;
       if (!h || !ed) return;
+      const fStr = ed.serialize();
+      const fDoc = JSON.parse(fStr);
+      const finalSha256 = contentHash(normalizeForDiff(fDoc));
+      const startSha256 = s0Ref.current
+        ? contentHash(normalizeForDiff(JSON.parse(s0Ref.current)))
+        : finalSha256;
+
+      // Diff the session into per-author hunks. The stored slices are the
+      // author-boundary snapshots; F is the closing state. A tab-death session
+      // (no S0) or a diff failure degrades to docx-only (no highlights).
+      let changesJson: Blob | undefined;
+      let changeCount: number | null = null;
+      let formatChangeCount: number | null = null;
       try {
-        const F = ed.serialize();
-        const finalSha256 = contentHash(normalizeForDiff(JSON.parse(F)));
-        const startSha256 = s0Ref.current
-          ? contentHash(normalizeForDiff(JSON.parse(s0Ref.current)))
-          : finalSha256;
+        if (s0Ref.current) {
+          const diffSlices = [
+            ...slices.all().map((s) => ({
+              sfdt: JSON.parse(s.sfdt as string),
+              author: s.author,
+              endedAt: s.endedAt
+            })),
+            { sfdt: fDoc, author: currentAuthorRef.current }
+          ];
+          const changes = diffSession(
+            JSON.parse(s0Ref.current),
+            diffSlices,
+            sessionId,
+            { timeBudgetMs: 4000 }
+          );
+          changeCount = changes.changeCount;
+          formatChangeCount = changes.formatChangeCount;
+          changesJson = await gzip(JSON.stringify(changes));
+        }
+      } catch {
+        // Diff failed (unexpected SFDT shape, over budget): upload F alone so
+        // the version still opens, with the one-colour fallback at view time.
+        changesJson = undefined;
+        changeCount = null;
+        formatChangeCount = null;
+      }
+
+      try {
         await h.closeVersion(sessionId, {
-          finalSfdtGz: await gzip(F),
-          changeCount: null, // highlights land in a later PR
-          formatChangeCount: null,
+          finalSfdtGz: await gzip(fStr),
+          changesJson,
+          changeCount,
+          formatChangeCount,
           finalSha256,
           startSha256,
           authors
         });
       } catch {
-        // Backend close endpoint not shipped yet, or a network error: the row
-        // keeps its docx pair and views with the one-colour fallback.
+        // Backend close endpoint unreachable: the row keeps its docx pair and
+        // views with the one-colour fallback.
       }
     };
 
@@ -217,7 +257,9 @@ export function useDocxHistorySession(
       if (readOnly || !hostRef.current) return;
       const ed = editorRef.current;
       if (!tracker.isOpen() && ed) s0Ref.current = ed.serialize();
-      tracker.noteEdit(info.assistant ? ROBIN : currentUserRef.current);
+      const actor = info.assistant ? ROBIN : currentUserRef.current;
+      currentAuthorRef.current = actor.key;
+      tracker.noteEdit(actor);
       scheduler.touch();
     },
     [readOnly, scheduler, tracker]

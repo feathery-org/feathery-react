@@ -21,8 +21,10 @@ const makeHost = (): jest.Mocked<DocxHistoryHost> => ({
   renameVersion: jest.fn().mockResolvedValue({} as any)
 });
 
-const setup = (over: Partial<UseDocxHistorySessionOptions> = {}) => {
-  const editor: any = { serialize: () => SFDT };
+const setup = (
+  over: Partial<UseDocxHistorySessionOptions> = {},
+  editor: any = { serialize: () => SFDT }
+) => {
   const save = jest.fn().mockResolvedValue(undefined);
   const exportDoc = jest.fn().mockResolvedValue(new Blob(['docx']));
   const host = makeHost();
@@ -64,10 +66,35 @@ describe('useDocxHistorySession', () => {
     expect(meta.sessionId).toBeTruthy();
     expect(meta.closeSession).toBe(true);
     expect(meta.authors).toEqual([{ kind: 'user', label: 'You' }]);
-    // The close also uploads the final document (F only for now).
+    // The close uploads the final document and the diffed change list. S0 == F
+    // here (no real edits in the fake), so the diff finds zero changes.
     expect(host.closeVersion).toHaveBeenCalledTimes(1);
+    const closePayload = host.closeVersion.mock.calls[0][1];
     expect(host.closeVersion.mock.calls[0][0]).toBe(meta.sessionId);
-    expect(host.closeVersion.mock.calls[0][1].changeCount).toBeNull();
+    expect(closePayload.changeCount).toBe(0);
+    expect(closePayload.changesJson).toBeInstanceOf(Blob);
+    expect(closePayload.finalSfdtGz).toBeInstanceOf(Blob);
+  });
+
+  it('diffs the session and uploads real hunks when the document changed', async () => {
+    // The editor serializes S0 on the first edit, then a changed F at close.
+    let doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello' }] }] }]
+    });
+    const editor = { serialize: () => doc };
+    const { view, host } = setup({}, editor);
+
+    act(() => view.result.current.onEdit({ assistant: false })); // captures S0
+    doc = JSON.stringify({
+      sections: [{ blocks: [{ inlines: [{ text: 'hello world' }] }] }]
+    });
+    await act(async () => {
+      await view.result.current.save(); // close → diff S0 vs F
+    });
+
+    const closePayload = host.closeVersion.mock.calls[0][1];
+    expect(closePayload.changeCount).toBeGreaterThan(0);
+    expect(closePayload.changesJson).toBeInstanceOf(Blob);
   });
 
   it('autosaves with the session id (no close flag) after the idle window', async () => {
