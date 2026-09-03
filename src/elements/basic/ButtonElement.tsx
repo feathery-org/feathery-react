@@ -8,6 +8,11 @@ import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
 import ErrorInput from '../components/ErrorInput';
 
+// Space left between a scaled-down loader and the button's edge, per side. Not
+// taken from the button's padding on purpose: that would tie the loader's size
+// back to the content box, which is what collapsed it on an empty label.
+const LOADER_BORDER_GAP = 2;
+
 function applyButtonStyles(element: any, responsiveStyles: any) {
   responsiveStyles.addTargets(
     'button',
@@ -145,9 +150,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       // Fit-height buttons have no numeric height, so size the loader
       // relative to the button text instead
       if (isFit(b)) return { width: '1em', height: '1em' };
-      const halfHeight = Math.round(a / 2);
-      const dimension = `${halfHeight}${b}`;
-      return { width: dimension, height: dimension };
+      const dimension = `${Math.round(a / 2)}${b}`;
+      // A percentage resolves against a different length on each axis, so it
+      // would give a wide flat box and a spinner drawn tiny inside it. Take the
+      // size from the height and let the ratio supply the width.
+      return b === '%'
+        ? { height: dimension, aspectRatio: '1' }
+        : { width: dimension, height: dimension };
     }
   );
 
@@ -194,6 +203,60 @@ function ButtonElement({
           ...borderStyles.hover
         }
   );
+
+  const buttonContent = (
+    <>
+      {element.properties.image && (
+        <img
+          src={element.properties.image}
+          css={{
+            ...imgMaxSizeStyles,
+            ...responsiveStyles.getTargets('img')
+          }}
+        />
+      )}
+      {element.properties.text && (
+        <TextNodes
+          element={element}
+          responsiveStyles={responsiveStyles}
+          cssTarget='buttonLabel'
+          editMode={editMode}
+          disabled={disabled}
+          focused={focused}
+          textCallbacks={textCallbacks}
+          featheryContext={featheryContext}
+          expand={!element.properties.image}
+        />
+      )}
+    </>
+  );
+  const contentStyles = {
+    display: 'contents',
+    ...(loader ? ({ visibility: 'hidden' } as const) : {})
+  } as const;
+  // Draw the loader over the content instead of in place of it, centred in the
+  // button's own box
+  const loaderOverlayStyles = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  } as const;
+  // The button never grows for its loader. A loader larger than the button
+  // scales down to fit the box the button already has, keeping its ratio, and
+  // stops short of the border so the corner radius has nothing to cut into.
+  // A loader that already fits is untouched - the inset only bites on the
+  // scaled-down ones.
+  const loaderClampStyles = {
+    maxWidth: `calc(100% - ${LOADER_BORDER_GAP * 2}px)`,
+    maxHeight: `calc(100% - ${LOADER_BORDER_GAP * 2}px)`,
+    '& img, & svg': {
+      maxWidth: '100%',
+      maxHeight: '100%',
+      objectFit: 'contain'
+    }
+  } as const;
 
   const actions = element.properties.actions ?? [];
   const noActions = actions.length === 0 && !element.properties.submit;
@@ -255,33 +318,17 @@ function ButtonElement({
     >
       {customBorder}
       {children}
-      {loader ? (
-        <div css={styles.getTarget('loader')}>{loader}</div>
-      ) : (
-        <>
-          {element.properties.image && (
-            <img
-              src={element.properties.image}
-              css={{
-                ...imgMaxSizeStyles,
-                ...responsiveStyles.getTargets('img')
-              }}
-            />
-          )}
-          {element.properties.text && (
-            <TextNodes
-              element={element}
-              responsiveStyles={responsiveStyles}
-              cssTarget='buttonLabel'
-              editMode={editMode}
-              disabled={disabled}
-              focused={focused}
-              textCallbacks={textCallbacks}
-              featheryContext={featheryContext}
-              expand={!element.properties.image}
-            />
-          )}
-        </>
+      {/* Always rendered so toggling the loader hides the content rather than
+          unmounting it: a fit-sized button keeps its pre-loader dimensions,
+          and the img isn't torn down and reloaded mid-click. `display:
+          contents` generates no box, so the button's layout is unchanged. */}
+      <span css={contentStyles}>{buttonContent}</span>
+      {loader && (
+        <div css={loaderOverlayStyles}>
+          <div css={{ ...styles.getTarget('loader'), ...loaderClampStyles }}>
+            {loader}
+          </div>
+        </div>
       )}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
