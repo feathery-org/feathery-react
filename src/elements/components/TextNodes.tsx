@@ -44,27 +44,6 @@ export function replaceTextVariables(text: string, repeat?: any) {
   });
 }
 
-// Not using jsonpath because of issues with NextJS
-const extractProperty = (obj: any, path: string[]): any => {
-  if (path.length === 0) return obj;
-  const [key, ...rest] = path;
-  if (obj[key] === undefined) return null;
-  return extractProperty(obj[key], rest);
-};
-
-/**
- * The value a 'data' text mode element pulls out of featheryContext, or null
- * if the element isn't data bound or its source resolves to nothing.
- */
-export function resolveDataText(element: any, featheryContext: any = {}) {
-  if (element.properties.text_mode !== 'data') return null;
-  let textSource = element.properties.text_source ?? '';
-  // convert to path relative to featheryContext
-  if (textSource.startsWith('feathery.'))
-    textSource = textSource.replace('feathery.', '');
-  return extractProperty(featheryContext, textSource.split('.'));
-}
-
 const applyNewDelta = (
   delta: any,
   start?: number | undefined,
@@ -137,6 +116,14 @@ function TextNodes({
     ...responsiveStyles.getTarget(cssTarget)
   };
 
+  // Not using jsonpath because of issues with NextJS
+  const extractProperty = (obj: any, path: string[]): any => {
+    if (path.length === 0) return obj;
+    const [key, ...rest] = path;
+    if (obj[key] === undefined) return null;
+    return extractProperty(obj[key], rest);
+  };
+
   return useMemo(() => {
     const text = element.properties.text;
     let delta = new Delta(element.properties.text_formatted);
@@ -153,8 +140,17 @@ function TextNodes({
 
     // If text_mode property is set to 'data', then we don't want to render the text_formatted
     // property, instead we the text from the data element specified in the text_source property
-    const textFromData = resolveDataText(element, featheryContext);
-    const textIsFromData = textFromData !== null;
+    let textFromData = null;
+
+    if (element.properties.text_mode === 'data') {
+      let textSource = element.properties.text_source ?? '';
+      // convert to path relative to featheryContext
+      if (textSource.startsWith('feathery.'))
+        textSource = textSource.replace('feathery.', '');
+      textFromData = extractProperty(featheryContext, textSource.split('.'));
+    }
+    const textIsFromData =
+      element.properties.text_mode === 'data' && textFromData !== null;
 
     return (
       <span
