@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CloseIcon, MicrophoneIcon } from '../../components/icons';
+import { hasIconGlyph, IconGlyph } from '../../components/icons/iconGlyph';
 import ErrorInput from '../../components/ErrorInput';
 import { imgMaxSizeStyles } from '../../styles';
 import { featheryDoc, featheryWindow } from '../../../utils/browser';
@@ -448,7 +449,23 @@ function AudioRecordingField({
           ...themedAc
         }}
       >
-        {element.properties.icon ? (
+        {hasIconGlyph(element.properties.icon_glyph) ? (
+          <span
+            css={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              ...imgStyles,
+              maxWidth: '100%',
+              maxHeight: '100%',
+              flexShrink: stacked ? 1 : 0
+            }}
+          >
+            <IconGlyph
+              glyph={element.properties.icon_glyph}
+              size={iconWidth ? '100%' : 20}
+            />
+          </span>
+        ) : element.properties.icon ? (
           <img
             src={element.properties.icon}
             style={{

@@ -19,6 +19,8 @@ import {
   waitFor
 } from '@testing-library/react';
 import FileUploadField from '../index';
+import { applyFieldStyles } from '../../index';
+import ResponsiveStyles from '../../../styles';
 
 describe('FileUploadField - Base Functionality', () => {
   const getFileInput = () =>
@@ -39,6 +41,29 @@ describe('FileUploadField - Base Functionality', () => {
 
       expect(screen.getByLabelText('File upload field')).toBeTruthy();
       expect(getUploadArea()).toBeTruthy();
+    });
+
+    it('renders a stored glyph with the authored icon color', () => {
+      const element = createFileUploadElement('file_upload');
+      element.properties.icon_glyph = {
+        variant: 'outline',
+        nodes: [['path', { d: 'M12 5l0 14' }]]
+      };
+      element.styles.icon_color = 'F5A623';
+      const responsiveStyles = applyFieldStyles(
+        element,
+        new ResponsiveStyles(element, [], false)
+      );
+
+      const { container } = render(
+        <FileUploadField
+          {...createFileUploadProps(element, { responsiveStyles })}
+        />
+      );
+
+      const icon = container.querySelector('svg');
+      expect(icon).toHaveAttribute('stroke', 'currentColor');
+      expect(responsiveStyles.getTarget('img').color).toBe('#F5A623');
     });
   });
 
