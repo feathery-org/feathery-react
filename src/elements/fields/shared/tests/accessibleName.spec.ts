@@ -1,5 +1,10 @@
 import { fieldAriaLabel } from '../accessibleName';
-import { sensitiveFieldProps } from '../certification';
+import {
+  assetName,
+  certificationName,
+  certificationNameProps,
+  sensitiveFieldProps
+} from '../certification';
 
 const build = (servar: any = {}, properties: any = {}) => ({
   servar: { key: 'my_field', ...servar },
@@ -56,5 +61,34 @@ describe('sensitiveFieldProps', () => {
 
   it('does not throw on a malformed element', () => {
     expect(sensitiveFieldProps(undefined)).toEqual({});
+  });
+});
+
+describe('certificationName', () => {
+  it('takes the first non-empty candidate, collapsed and trimmed', () => {
+    expect(certificationName('', null, '  Plan   card  ', 'x')).toBe('Plan card');
+  });
+
+  it('caps the name so a paragraph does not become the label', () => {
+    expect(certificationName('a'.repeat(100))).toHaveLength(64);
+  });
+
+  it('returns undefined and no props when nothing usable is given', () => {
+    expect(certificationName(undefined, '   ')).toBeUndefined();
+    expect(certificationNameProps(undefined)).toEqual({});
+    expect(certificationNameProps('key')).toEqual({ name: 'key' });
+  });
+});
+
+describe('assetName', () => {
+  it('reduces a signed asset URL to its file name', () => {
+    expect(
+      assetName('https://cdn.x.com/org/hero%20shot.png?X-Amz-Signature=abc#v')
+    ).toBe('hero%20shot.png');
+  });
+
+  it('falls back to the raw value when there is no path', () => {
+    expect(assetName('https://cdn.x.com')).toBe('https://cdn.x.com');
+    expect(assetName('')).toBeUndefined();
   });
 });

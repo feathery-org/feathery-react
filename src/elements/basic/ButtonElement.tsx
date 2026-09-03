@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { certificationName } from '../fields/shared/certification';
 
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
@@ -154,15 +155,12 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   return responsiveStyles;
 }
 
-const MAX_BUTTON_NAME_LENGTH = 64;
-
 /** Readable, stable name attribute for a button. */
 function buttonName(element: any) {
   const properties = element.properties ?? {};
-  const label = (properties.text || properties.aria_label || '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return label ? label.slice(0, MAX_BUTTON_NAME_LENGTH) : element.id;
+  return (
+    certificationName(properties.text, properties.aria_label) ?? element.id
+  );
 }
 
 function ButtonElement({

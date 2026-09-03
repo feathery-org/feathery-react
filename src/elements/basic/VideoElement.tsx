@@ -1,4 +1,8 @@
 import React, { useMemo } from 'react';
+import {
+  assetName,
+  certificationNameProps
+} from '../fields/shared/certification';
 
 const PLACEHOLDER_VIDEO =
   'https://feathery.s3.us-west-1.amazonaws.com/video-preview.png';
@@ -53,6 +57,7 @@ function VideoElement({
           height='100%'
           src={getEmbedUrl(props.source_url)}
           css={{ border: 'none' }}
+          {...certificationNameProps(assetName(props.source_url))}
           {...elementProps}
         />
       );
@@ -66,6 +71,7 @@ function VideoElement({
           muted={props.muted}
           loop={props.loop}
           aria-label={props.aria_label}
+          {...certificationNameProps(assetName(props.source_url))}
         >
           <source src={props.source_url} type={props.video_extension} />
         </video>

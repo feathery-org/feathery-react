@@ -173,3 +173,26 @@ describe('TextElement', () => {
     expect(rule).not.toContain('box-sizing');
   });
 });
+
+describe('TextElement certification naming', () => {
+  const renderText = async (properties: any) => {
+    const TextElement = (await import('../TextElement')).default;
+    const element = { key: 'intro-copy', properties, styles: {}, mobile_styles: {} };
+    const responsiveStyles = new ResponsiveStyles(element, ['text'], true);
+    const { container } = render(
+      <TextElement element={element} responsiveStyles={responsiveStyles} />
+    );
+    return container.firstElementChild as HTMLElement;
+  };
+
+  it('names the block by its content so clicks on it are attributed', async () => {
+    const root = await renderText({ text: '  Welcome to\n  the plan picker ' });
+    expect(root.getAttribute('name')).toBe('Welcome to the plan picker');
+  });
+
+  it('falls back to the element key when the text is empty', async () => {
+    const root = await renderText({ text: '' });
+    expect(root.getAttribute('name')).toBe('intro-copy');
+  });
+});
+

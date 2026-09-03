@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  assetName,
+  certificationNameProps
+} from '../fields/shared/certification';
 import { fieldValues } from '../../utils/init';
 import { getRenderData } from '../../utils/image';
 import { getImageAltText } from '../../utils/accessibility';
@@ -101,6 +105,7 @@ function ImageElement({
           height='100%'
           aria-label={altText || undefined}
           src={documentUrl + '#view=FitH'}
+          {...certificationNameProps(assetName(documentUrl))}
           css={{
             border: 'none',
             objectFit: 'contain',
@@ -118,6 +123,7 @@ function ImageElement({
         <img
           src={documentUrl || undefined}
           alt={altText}
+          {...certificationNameProps(assetName(documentUrl))}
           css={{
             objectFit: 'contain',
             width: '100%',

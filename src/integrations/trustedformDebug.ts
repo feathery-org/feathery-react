@@ -24,13 +24,16 @@ import { featheryDoc, featheryWindow } from '../utils/browser';
 export const TF_DEBUG_FLAG = 'feathery_tf_debug';
 const LOG_PREFIX = '[TrustedForm debug]';
 const CONTROL_SELECTOR =
-  'input, select, textarea, button, a, [role="button"], [tabindex]';
+  'input, select, textarea, button, a, img, video, iframe, embed, [role="button"], [tabindex]';
+// Anything carrying a name is where a click inside it gets attributed
+const NAMED_SELECTOR = `${CONTROL_SELECTOR}, [name], [aria-label], [alt]`;
 const LOGGED_EVENTS = ['click', 'focusin', 'input', 'change', 'submit'];
 const MASK = '********';
 
 export type NameSource =
   | 'name'
   | 'id'
+  | 'alt'
   | 'label'
   | 'aria-label'
   | 'aria-labelledby'
@@ -96,6 +99,7 @@ function resolveName(el: Element): { name: string; source: NameSource } {
   const attempts: Array<[NameSource, string]> = [
     ['name', el.getAttribute('name') ?? ''],
     ['id', el.id],
+    ['alt', el.getAttribute('alt') ?? ''],
     ['label', labelText(el)],
     ['aria-label', el.getAttribute('aria-label') ?? ''],
     ['aria-labelledby', labelledByText(el)],
@@ -186,9 +190,12 @@ const eventTarget = (e: Event): Element | null => {
   const target = e.target as Element | null;
   if (!target || typeof target.closest !== 'function') return null;
   const control = target.closest(CONTROL_SELECTOR);
-  // A click that lands on nothing named is exactly what a certificate reports
-  // as "[unnamed div]", so keep the raw target for clicks only
-  return control ?? (e.type === 'click' ? target : null);
+  if (control) return control;
+  if (e.type !== 'click') return null;
+  // A click on a span inside a named text block or container is attributed to
+  // the nearest named ancestor; one that lands on nothing named is exactly
+  // what a certificate reports as "[unnamed div]", so keep the raw target
+  return target.closest(NAMED_SELECTOR) ?? target;
 };
 
 export function installTrustedFormDebug() {

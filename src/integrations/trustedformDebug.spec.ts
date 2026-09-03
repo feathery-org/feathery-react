@@ -109,6 +109,18 @@ describe('installTrustedFormDebug', () => {
     });
   });
 
+  it('attributes a click inside a named block to that block', () => {
+    const form = mount(
+      '<div name="Welcome copy"><span>Welcome</span></div><img name="hero.png" alt="" />'
+    );
+    (form.querySelector('span') as HTMLElement).click();
+    (form.querySelector('img') as HTMLElement).click();
+    expect(api.events.map((e) => [e.name, e.source])).toEqual([
+      ['Welcome copy', 'name'],
+      ['hero.png', 'name']
+    ]);
+  });
+
   it('attributes a click inside a button to the button', () => {
     const form = mount(
       '<button type="button" name="plan-a"><span>A</span></button>'

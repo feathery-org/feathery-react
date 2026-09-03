@@ -47,6 +47,19 @@ const form = {
   formSettings: { mobileBreakpoint: 480 }
 };
 
+describe('Container naming', () => {
+  it('names every container by its key, actionable or not', () => {
+    const { container } = render(
+      <Container
+        node={{ ...docxNode, properties: {} }}
+        viewport='desktop'
+        form={form}
+      />
+    );
+    expect(container.querySelector('[name="container-1"]')).toBeTruthy();
+  });
+});
+
 describe('Container with actions', () => {
   const renderActionable = () => {
     const runElementActions = jest.fn();

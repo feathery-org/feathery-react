@@ -531,4 +531,26 @@ describe('ImageElement', () => {
       });
     });
   });
+
+  it('names the image by its file so a click on it is attributed', async () => {
+    (getRenderData as jest.Mock).mockReturnValue({
+      documentUrl: 'https://cdn.feathery.io/assets/hero.png?sig=1',
+      displayPDF: false
+    });
+    const ImageElement = (await import('../ImageElement')).default;
+    render(
+      <ImageElement
+        element={{
+          properties: {
+            source_image: 'https://cdn.feathery.io/assets/hero.png?sig=1'
+          },
+          repeat: 0
+        }}
+        responsiveStyles={mockResponsiveStyles}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('img').getAttribute('name')).toBe('hero.png');
+    });
+  });
 });
