@@ -190,6 +190,44 @@ const SHRINK_LABEL_MAX_FONT_SIZE = 10;
 export const shrinkLabelFootprint = (fontSize: any) =>
   Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) / 2 + Number(fontSize);
 
+/**
+ * Everything the vertical-placement helpers below read about a field, as one
+ * value.
+ *
+ * These always come from the same `VERTICAL_PLACEMENT_KEYS` that `apply()`
+ * unpacks, so passing them positionally gave six signatures three different
+ * orders -- and two helpers took `(fontSize, lineHeight)` in opposite orders,
+ * both `any`, which no compiler could catch. `placementInputs` below is the one
+ * place that maps the keys onto the fields.
+ */
+type PlacementInputs = {
+  type: string;
+  align?: any;
+  height?: any;
+  heightUnit?: any;
+  padTop?: any;
+  padBottom?: any;
+  lineHeight?: any;
+  fontSize?: any;
+};
+
+// Builds the inputs from an apply() callback's own arguments, in
+// VERTICAL_PLACEMENT_KEYS order. Callbacks reading a subset of those keys build
+// theirs by hand; the field names are what the helpers read either way.
+const placementInputs = (
+  type: string,
+  [align, height, heightUnit, padTop, padBottom, lineHeight, fontSize]: any[]
+): PlacementInputs => ({
+  type,
+  align,
+  height,
+  heightUnit,
+  padTop,
+  padBottom,
+  lineHeight,
+  fontSize
+});
+
 // The room a pinned floating label needs behind the value when the theme sets no
 // top padding of its own: exactly what the label occupies, so the value starts
 // just under it.
@@ -202,13 +240,13 @@ export const shrinkLabelFootprint = (fontSize: any) =>
 //
 // Clamped so a short box still fits a line of text -- below about 45px the
 // label's own footprint is more room than the box has to give.
-const shrinkLabelReservePx = (
-  type: string,
-  height: any,
-  heightUnit: any,
-  fontSize: any,
-  lineHeight?: any
-): number => {
+const shrinkLabelReservePx = ({
+  type,
+  height,
+  heightUnit,
+  fontSize,
+  lineHeight
+}: PlacementInputs): number => {
   if (type === 'text_area')
     return Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5;
   const footprint = shrinkLabelFootprint(fontSize);
@@ -220,14 +258,8 @@ const shrinkLabelReservePx = (
   return Math.max(0, Math.min(footprint, room));
 };
 
-const shrinkLabelReserve = (
-  type: string,
-  height: any,
-  heightUnit: any,
-  fontSize: any,
-  lineHeight?: any
-) =>
-  `${shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight)}px`;
+const shrinkLabelReserve = (inputs: PlacementInputs) =>
+  `${shrinkLabelReservePx(inputs)}px`;
 
 // The neutral for a companion that rides the value line with a transform.
 // 'none' rather than a zero translation: any transform other than none creates
@@ -302,14 +334,16 @@ type VerticalPlacement = {
 // centered default. A shrink_top label is a fixed overlay the value ignores, so
 // the value aligns behind the raw padding whether one floats or not.
 const inputBoxVertical = (
-  type: string,
-  align: any,
-  height: any,
-  heightUnit: any,
-  padTop: any,
-  padBottom: any,
-  lineHeight: any,
-  fontSize: any,
+  {
+    type,
+    align,
+    height,
+    heightUnit,
+    padTop,
+    padBottom,
+    lineHeight,
+    fontSize
+  }: PlacementInputs,
   topFloor = 0
 ): VerticalPlacement | null => {
   // A text area's text already starts at its top padding.
@@ -345,13 +379,13 @@ const inputBoxVertical = (
 // out. Where it holds, the centred branch emits the block padding as its reset
 // so a mobile override can undo a synthesized offset; where it does not, an
 // alignment the box cannot resolve says nothing at all.
-const canSynthesizeVertical = (
-  type: string,
-  height: any,
-  heightUnit: any,
-  lineHeight: any,
-  fontSize: any
-) => {
+const canSynthesizeVertical = ({
+  type,
+  height,
+  heightUnit,
+  lineHeight,
+  fontSize
+}: PlacementInputs) => {
   if (type === 'text_area') return false;
   if (heightUnit !== 'px' || !isNum(height)) return false;
   return !!inputLineHeight(lineHeight, fontSize);
@@ -360,17 +394,8 @@ const canSynthesizeVertical = (
 // Where the value sits vertically, as a length against the box. The chevron
 // rides this so it stays with the content instead of floating at the box's
 // midline. Null means the box's own centre, which is the CSS default.
-const valueLineY = (
-  type: string,
-  align: any,
-  height: any,
-  heightUnit: any,
-  padTop: any,
-  padBottom: any,
-  lineHeight: any,
-  fontSize: any,
-  topFloor = 0
-): string | null => {
+const valueLineY = (inputs: PlacementInputs, topFloor = 0): string | null => {
+  const { type, align, padTop, padBottom, lineHeight, fontSize } = inputs;
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
   const legacy = legacyPaddingY(type);
@@ -386,17 +411,7 @@ const valueLineY = (
     // are the same distance apart as the paddings are uneven.
   }
 
-  const placement = inputBoxVertical(
-    type,
-    align,
-    height,
-    heightUnit,
-    padTop,
-    padBottom,
-    lineHeight,
-    fontSize,
-    topFloor
-  );
+  const placement = inputBoxVertical(inputs, topFloor);
   if (placement)
     return placement.align === 'flex-start'
       ? `${placement.top + placement.line / 2}px`
@@ -412,29 +427,13 @@ const valueLineY = (
 // The value's midline as a pixel offset from the box centre -- the numeric
 // twin of valueLineY, for companions that ride the line with a transform.
 const inputValueDelta = (
-  type: string,
-  align: any,
-  height: any,
-  heightUnit: any,
-  padTop: any,
-  padBottom: any,
-  lineHeight: any,
-  fontSize: any,
+  inputs: PlacementInputs,
   topFloor = 0
 ): number | null => {
+  const { type, padTop, padBottom, lineHeight, fontSize } = inputs;
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
-  const placement = inputBoxVertical(
-    type,
-    align,
-    height,
-    heightUnit,
-    padTop,
-    padBottom,
-    lineHeight,
-    fontSize,
-    topFloor
-  );
+  const placement = inputBoxVertical(inputs, topFloor);
   if (placement)
     return placement.align === 'flex-start'
       ? placement.top + placement.line / 2 - placement.height / 2
@@ -1008,14 +1007,14 @@ export default class ResponsiveStyles {
    * the panel can put it back. Zero wherever there is nothing to clear, so
    * every other field emits exactly what it emits today.
    */
-  private pinnedTopFloor(
-    type: string,
-    height: any,
-    heightUnit: any,
-    padTop: any,
-    align: any,
-    padBottom: any
-  ) {
+  private pinnedTopFloor({
+    type,
+    height,
+    heightUnit,
+    padTop,
+    align,
+    padBottom
+  }: PlacementInputs) {
     // Only a placement that was actually asked for can cancel the reserve, so
     // only that placement needs the floor. An untouched field is still placed
     // by applyPlaceholderStyles' own reserve and emits nothing here -- the
@@ -1036,13 +1035,13 @@ export default class ResponsiveStyles {
     if (heightUnit !== 'px' || !isNum(height)) return 0;
     // The same definition the reserve itself is built from, so the floor and
     // the padding it floors can never describe different geometry.
-    return shrinkLabelReservePx(
+    return shrinkLabelReservePx({
       type,
       height,
       heightUnit,
-      this.element?.styles?.font_size,
-      this.element?.styles?.line_height
-    );
+      fontSize: this.element?.styles?.font_size,
+      lineHeight: this.element?.styles?.line_height
+    });
   }
 
   // Content alignment for the text inside an input box. Horizontal rides on
@@ -1054,90 +1053,54 @@ export default class ResponsiveStyles {
       isSet(a) ? { textAlign: textAlignFor(a) } : {}
     );
 
-    this.apply(
-      'field',
-      VERTICAL_PLACEMENT_KEYS,
-      (
-        align: any,
-        height: any,
-        heightUnit: any,
-        padTop: any,
-        padBottom: any,
-        lineHeight: any,
-        fontSize: any
-      ) => {
-        // Nothing set: the field keeps resetStyles' own block padding, exactly
-        // as authored.
-        if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
+    this.apply('field', VERTICAL_PLACEMENT_KEYS, (...args: any[]) => {
+      const inputs = placementInputs(type, args);
+      const { align, padTop, padBottom } = inputs;
+      // Nothing set: the field keeps resetStyles' own block padding, exactly
+      // as authored.
+      if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
 
-        // Gated on the raw padTop above, so an untouched field still emits
-        // nothing at all; the floor only shapes the geometry once asked.
-        const topFloor = this.pinnedTopFloor(
-          type,
-          height,
-          heightUnit,
-          padTop,
-          align,
-          padBottom
-        );
-        const placement = inputBoxVertical(
-          type,
-          align,
-          height,
-          heightUnit,
-          padTop,
-          padBottom,
-          lineHeight,
-          fontSize,
-          topFloor
-        );
-        // The top padding, shared by the centred and top-aligned branches so
-        // they cannot drift apart. A floor only exists where nothing is stored,
-        // so this is the reserve against the padding the field renders with --
-        // in px, because the reserve is px and the two have to be comparable.
-        const paddingTopCss = topFloor
-          ? `${Math.max(topFloor, legacyPaddingY(type))}px`
-          : blockPaddingCss(type, padTop);
+      // Gated on the raw padTop above, so an untouched field still emits
+      // nothing at all; the floor only shapes the geometry once asked.
+      const topFloor = this.pinnedTopFloor(inputs);
+      const placement = inputBoxVertical(inputs, topFloor);
+      // The top padding, shared by the centred and top-aligned branches so
+      // they cannot drift apart. A floor only exists where nothing is stored,
+      // so this is the reserve against the padding the field renders with --
+      // in px, because the reserve is px and the two have to be comparable.
+      const paddingTopCss = topFloor
+        ? `${Math.max(topFloor, legacyPaddingY(type))}px`
+        : blockPaddingCss(type, padTop);
 
-        // Centred, or a top/bottom alignment this box cannot resolve an offset
-        // for. The padding the theme asked for stands on its own, and both
-        // sides are emitted so a mobile override can undo a synthesized one --
-        // but an unresolvable alignment with no padding behind it has nothing
-        // to say, and saying resetStyles' own value back would only add noise.
-        if (!placement) {
-          if (
-            !isSet(padTop, padBottom) &&
-            !canSynthesizeVertical(
-              type,
-              height,
-              heightUnit,
-              lineHeight,
-              fontSize
-            )
-          )
-            return {};
-          return {
+      // Centred, or a top/bottom alignment this box cannot resolve an offset
+      // for. The padding the theme asked for stands on its own, and both
+      // sides are emitted so a mobile override can undo a synthesized one --
+      // but an unresolvable alignment with no padding behind it has nothing
+      // to say, and saying resetStyles' own value back would only add noise.
+      if (!placement) {
+        if (!isSet(padTop, padBottom) && !canSynthesizeVertical(inputs))
+          return {};
+        return {
+          paddingTop: paddingTopCss,
+          paddingBottom: blockPaddingCss(type, padBottom)
+        };
+      }
+
+      const { top, bottom, line, height: box } = placement;
+      // A box shorter than one line of text leaves nothing to pad out, and a
+      // negative padding is not a value CSS will take. The side that is not
+      // padded out is emitted raw, so switching alignment across a breakpoint
+      // replaces both sides rather than leaving one behind.
+      return placement.align === 'flex-start'
+        ? {
             paddingTop: paddingTopCss,
+            paddingBottom: `${Math.max(0, box - top - line)}px`
+          }
+        : {
+            paddingTop: `${Math.max(0, box - bottom - line)}px`,
             paddingBottom: blockPaddingCss(type, padBottom)
           };
-        }
-
-        const { top, bottom, line, height: box } = placement;
-        // A box shorter than one line of text leaves nothing to pad out, and a
-        // negative padding is not a value CSS will take. The side that is not
-        // padded out is emitted raw, so switching alignment across a breakpoint
-        // replaces both sides rather than leaving one behind.
-        return placement.align === 'flex-start'
-          ? {
-              paddingTop: paddingTopCss,
-              paddingBottom: `${Math.max(0, box - top - line)}px`
-            }
-          : {
-              paddingTop: `${Math.max(0, box - bottom - line)}px`,
-              paddingBottom: blockPaddingCss(type, padBottom)
-            };
-      }
-    );
+    });
   }
 
   // dropdown_multi's element becomes a column -- so the box below the label
@@ -1279,43 +1242,16 @@ export default class ResponsiveStyles {
         : {}
     );
 
-    this.apply(
-      'field',
-      VERTICAL_PLACEMENT_KEYS,
-      (
-        align: any,
-        height: any,
-        heightUnit: any,
-        padTop: any,
-        padBottom: any,
-        lineHeight: any,
-        fontSize: any
-      ) => {
-        if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
-        const y = valueLineY(
-          type,
-          align,
-          height,
-          heightUnit,
-          padTop,
-          padBottom,
-          lineHeight,
-          fontSize,
-          this.pinnedTopFloor(
-            type,
-            height,
-            heightUnit,
-            padTop,
-            align,
-            padBottom
-          )
-        );
-        // 'center' is the neutral -- what both components declare inline before
-        // spreading this target -- so a mobile override can bring the glyph
-        // back to the box midline.
-        return { backgroundPositionY: y ?? 'center' };
-      }
-    );
+    this.apply('field', VERTICAL_PLACEMENT_KEYS, (...args: any[]) => {
+      const inputs = placementInputs(type, args);
+      const { align, padTop, padBottom } = inputs;
+      if (!verticalPlacementAsked(align, padTop, padBottom)) return {};
+      const y = valueLineY(inputs, this.pinnedTopFloor(inputs));
+      // 'center' is the neutral -- what both components declare inline before
+      // spreading this target -- so a mobile override can bring the glyph
+      // back to the box midline.
+      return { backgroundPositionY: y ?? 'center' };
+    });
   }
 
   // The eye toggle and tooltip icon sit on the input's inline end: they
@@ -1353,35 +1289,15 @@ export default class ResponsiveStyles {
     );
 
     ['endIcon', 'tooltipTrigger'].forEach((target) => {
-      this.apply(
-        target,
-        VERTICAL_PLACEMENT_KEYS,
-        (
-          align: any,
-          height: any,
-          heightUnit: any,
-          t: any,
-          b: any,
-          lineHeight: any,
-          fontSize: any
-        ) => {
-          if (!verticalPlacementAsked(align, t, b)) return {};
-          const delta = inputValueDelta(
-            type,
-            align,
-            height,
-            heightUnit,
-            t,
-            b,
-            lineHeight,
-            fontSize,
-            this.pinnedTopFloor(type, height, heightUnit, t, align, b)
-          );
-          // A zero translation is the neutral, so a mobile override can
-          // bring the icon back to the box midline.
-          return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
-        }
-      );
+      this.apply(target, VERTICAL_PLACEMENT_KEYS, (...args: any[]) => {
+        const inputs = placementInputs(type, args);
+        const { align, padTop: t, padBottom: b } = inputs;
+        if (!verticalPlacementAsked(align, t, b)) return {};
+        const delta = inputValueDelta(inputs, this.pinnedTopFloor(inputs));
+        // A zero translation is the neutral, so a mobile override can
+        // bring the icon back to the box midline.
+        return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
+      });
     });
   }
 
@@ -1395,33 +1311,12 @@ export default class ResponsiveStyles {
     this.apply('fieldToggle', INNER_PADDING_LEFT, (l: any) =>
       isSet(l) ? { marginInlineStart: `${isNum(l) ? Number(l) : 0}px` } : {}
     );
-    this.apply(
-      'fieldToggle',
-      VERTICAL_PLACEMENT_KEYS,
-      (
-        align: any,
-        height: any,
-        heightUnit: any,
-        t: any,
-        b: any,
-        lineHeight: any,
-        fontSize: any
-      ) => {
-        const delta = inputValueDelta(
-          'phone_number',
-          align,
-          height,
-          heightUnit,
-          t,
-          b,
-          lineHeight,
-          fontSize,
-          this.pinnedTopFloor('phone_number', height, heightUnit, t, align, b)
-        );
-        // Neutral zero translation, so a mobile override can re-centre the flag.
-        return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
-      }
-    );
+    this.apply('fieldToggle', VERTICAL_PLACEMENT_KEYS, (...args: any[]) => {
+      const inputs = placementInputs('phone_number', args);
+      const delta = inputValueDelta(inputs, this.pinnedTopFloor(inputs));
+      // Neutral zero translation, so a mobile override can re-centre the flag.
+      return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
+    });
   }
 
   /**
@@ -1466,15 +1361,17 @@ export default class ResponsiveStyles {
       // own apply is gated on it, so dropping it here would let a mobile
       // alignment override reach that floor and not this one.
       VERTICAL_PLACEMENT_KEYS,
-      (
-        align: any,
-        height: any,
-        heightUnit: any,
-        t: any,
-        b: any,
-        lineHeight: any,
-        fontSize: any
-      ) => {
+      (...args: any[]) => {
+        const inputs = placementInputs(type, args);
+        const {
+          align,
+          height,
+          heightUnit,
+          padTop: t,
+          padBottom: b,
+          lineHeight,
+          fontSize
+        } = inputs;
         if (!verticalPlacementAsked(align, t, b)) return {};
         const line = inputLineHeight(lineHeight, fontSize);
         if (!line) return {};
@@ -1594,16 +1491,14 @@ export default class ResponsiveStyles {
           (align: any, t: any, b: any, lineHeight: any, fontSize: any) => {
             if (!verticalPlacementAsked(align, t, b)) return {};
             // Same placement the chevron takes, so the two can't disagree.
-            const y = valueLineY(
-              MULTISELECT_FIELD,
+            const y = valueLineY({
+              type: MULTISELECT_FIELD,
               align,
-              null,
-              null,
-              t,
-              b,
+              padTop: t,
+              padBottom: b,
               lineHeight,
               fontSize
-            );
+            });
             // '50%' is the neutral Placeholder declares inline for an input.
             return { top: y ?? '50%' };
           }
@@ -1629,65 +1524,38 @@ export default class ResponsiveStyles {
         // top/bottom alignment moves it onto the aligned text's line. One apply
         // resolves both cases: two would fight over `top`, since the neutral
         // each needs for its own inactive case is the other's answer.
-        this.apply(
-          'placeholder',
-          VERTICAL_PLACEMENT_KEYS,
-          (
-            align: any,
-            height: any,
-            heightUnit: any,
-            t: any,
-            b: any,
-            lineHeight: any,
-            fontSize: any
-          ) => {
-            if (!verticalPlacementAsked(align, t, b)) return {};
-            // Computed from the same values as the input's own placement, so
-            // the two can never disagree: where the input cannot be aligned,
-            // this falls through and both stay centered.
-            const topFloor = this.pinnedTopFloor(
-              type,
-              height,
-              heightUnit,
-              t,
-              align,
-              b
-            );
-            const placement = inputBoxVertical(
-              type,
-              align,
-              height,
-              heightUnit,
-              t,
-              b,
-              lineHeight,
-              fontSize,
-              topFloor
-            );
-            if (placement) {
-              const { top, bottom, line, height: box } = placement;
-              return {
-                top:
-                  placement.align === 'flex-start'
-                    ? `${top + line / 2}px`
-                    : `${box - bottom - line / 2}px`
-              };
-            }
-
-            // '50%' is the neutral Placeholder declares inline, so a mobile
-            // override can re-centre the label -- and it is also what an
-            // untouched floating-label field renders, because the reserve
-            // moves the value and never the resting label. Centring has to
-            // reproduce that, so the floor is deliberately not applied here:
-            // only a stored padding moves this label.
-            if (!isNum(t) && !isNum(b)) return { top: '50%' };
-            const delta =
-              (paddingSide(t, RESET_INPUT_PADDING_Y) -
-                paddingSide(b, RESET_INPUT_PADDING_Y)) /
-              2;
-            return { top: offsetFromCenter(delta) };
+        this.apply('placeholder', VERTICAL_PLACEMENT_KEYS, (...args: any[]) => {
+          const inputs = placementInputs(type, args);
+          const { align, padTop: t, padBottom: b } = inputs;
+          if (!verticalPlacementAsked(align, t, b)) return {};
+          // Computed from the same values as the input's own placement, so
+          // the two can never disagree: where the input cannot be aligned,
+          // this falls through and both stay centered.
+          const topFloor = this.pinnedTopFloor(inputs);
+          const placement = inputBoxVertical(inputs, topFloor);
+          if (placement) {
+            const { top, bottom, line, height: box } = placement;
+            return {
+              top:
+                placement.align === 'flex-start'
+                  ? `${top + line / 2}px`
+                  : `${box - bottom - line / 2}px`
+            };
           }
-        );
+
+          // '50%' is the neutral Placeholder declares inline, so a mobile
+          // override can re-centre the label -- and it is also what an
+          // untouched floating-label field renders, because the reserve
+          // moves the value and never the resting label. Centring has to
+          // reproduce that, so the floor is deliberately not applied here:
+          // only a stored padding moves this label.
+          if (!isNum(t) && !isNum(b)) return { top: '50%' };
+          const delta =
+            (paddingSide(t, RESET_INPUT_PADDING_Y) -
+              paddingSide(b, RESET_INPUT_PADDING_Y)) /
+            2;
+          return { top: offsetFromCenter(delta) };
+        });
       }
     }
     if (styles.placeholder_transition === 'shrink_top') {
@@ -1737,13 +1605,18 @@ export default class ResponsiveStyles {
           align: any,
           lineHeight: any
         ) => {
-          const reserve = shrinkLabelReserve(
+          // A different key list from VERTICAL_PLACEMENT_KEYS, so these are
+          // named onto the fields here rather than by placementInputs.
+          const inputs: PlacementInputs = {
             type,
+            align,
             height,
             heightUnit,
-            fontSize,
-            lineHeight
-          );
+            padTop: t,
+            lineHeight,
+            fontSize
+          };
+          const reserve = shrinkLabelReserve(inputs);
           if (!takesInnerPadding(type)) return { paddingTop: reserve };
           // An alignment the box can resolve has already placed the value, and
           // the label takes no room in the content box, so the reserve would
@@ -1758,13 +1631,7 @@ export default class ResponsiveStyles {
             type !== MULTISELECT_FIELD &&
             !isSet(t) &&
             isSet(align) &&
-            canSynthesizeVertical(
-              type,
-              height,
-              heightUnit,
-              lineHeight,
-              fontSize
-            )
+            canSynthesizeVertical(inputs)
           )
             return {};
           if (!isSet(t)) return { paddingTop: reserve };
