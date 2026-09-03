@@ -21,13 +21,17 @@ describe('createSessionTracker', () => {
   ) => {
     const boundaries: VersionAuthor[] = [];
     const closes: CloseReason[] = [];
+    const closeMetas: Array<{ sessionId: string }> = [];
     const tracker = createSessionTracker({
       now,
       onSliceBoundary: (a) => boundaries.push(a),
-      onClose: (r) => closes.push(r),
+      onClose: (r, meta) => {
+        closes.push(r);
+        closeMetas.push(meta);
+      },
       ...over
     });
-    return { tracker, boundaries, closes };
+    return { tracker, boundaries, closes, closeMetas };
   };
 
   beforeEach(() => {
@@ -50,7 +54,7 @@ describe('createSessionTracker', () => {
   });
 
   it('closes an idle session and starts a new one on the next edit', () => {
-    const { tracker, closes } = make();
+    const { tracker, closes, closeMetas } = make();
     tracker.noteEdit(USER);
     const first = tracker.currentMeta()!.sessionId;
 
@@ -58,6 +62,8 @@ describe('createSessionTracker', () => {
     tracker.noteEdit(USER);
 
     expect(closes).toEqual(['idle']);
+    // onClose carries the closing session's meta (cleared internally first).
+    expect(closeMetas[0].sessionId).toBe(first);
     expect(tracker.currentMeta()!.sessionId).not.toBe(first);
   });
 

@@ -25,9 +25,10 @@ export interface SessionTrackerOptions {
   /** The author whose slice just ended (an actor switch, before close). The
    *  hook serializes the document here and stores it as that author's slice. */
   onSliceBoundary?: (author: VersionAuthor) => void;
-  /** A session ended; the hook flushes and closes it. Fires before the next
+  /** A session ended; the hook flushes and closes it. Carries the closing
+   *  session's meta (it is cleared internally first) and fires before the next
    *  session can start. */
-  onClose?: (reason: CloseReason) => void;
+  onClose?: (reason: CloseReason, meta: SessionMeta) => void;
 }
 
 export interface SessionTracker {
@@ -69,12 +70,22 @@ export function createSessionTracker(
     recordAuthor(actor);
   };
 
+  const buildMeta = (): SessionMeta | null => {
+    if (!sessionId) return null;
+    return {
+      sessionId,
+      sessionStartedAt: new Date(startedAt).toISOString(),
+      authors: [...authors]
+    };
+  };
+
   const close = (reason: CloseReason) => {
-    if (!sessionId) return;
+    const meta = buildMeta();
+    if (!meta) return;
     sessionId = null;
     currentAuthor = null;
     authors = [];
-    options.onClose?.(reason);
+    options.onClose?.(reason, meta);
   };
 
   return {
@@ -110,12 +121,7 @@ export function createSessionTracker(
       return sessionId !== null;
     },
     currentMeta() {
-      if (!sessionId) return null;
-      return {
-        sessionId,
-        sessionStartedAt: new Date(startedAt).toISOString(),
-        authors: [...authors]
-      };
+      return buildMeta();
     }
   };
 }
