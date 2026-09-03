@@ -24,6 +24,7 @@ import {
 } from '../../../assistant/tools/docx/docxEditorRegistry';
 import { rebindRevisionGroups } from '../../../utils/documentEditorPrimitives';
 import { clearDocxEditorDirty, setDocxEditorDirty } from './docxDirtyRegistry';
+import { DocxHistoryHost, DocxSaveMeta } from './history/types';
 
 // The container carries no document. Its document is owned by the Generate
 // Documents button that targets it: find the action whose editor_mode matches
@@ -311,12 +312,13 @@ export default function DocumentEditorContainer({
   const bindingValuesRef = useRef<Record<string, string>>({});
 
   const saveEnvelope = useCallback(
-    async (blob: Blob) => {
+    async (blob: Blob, meta?: DocxSaveMeta) => {
       if (!envelope) return;
       const updated = await client.saveEnvelopeFile(
         envelope.id,
         blob,
-        'document.docx'
+        'document.docx',
+        meta
       );
       const savedFileUrl = updated?.file ?? envelope.file;
       if (updated?.file) {
@@ -353,6 +355,30 @@ export default function DocumentEditorContainer({
     },
     [client, envelope, targetAction, savesToField]
   );
+
+  // The version-history I/O adapter DocxEditor injects into its session hook.
+  // Keeps index.tsx free of the Feathery API. Disabled in the designer preview.
+  const envelopeId = envelope?.id;
+  const historyHost = useMemo<DocxHistoryHost | undefined>(() => {
+    if (editMode || !envelopeId) return undefined;
+    return {
+      listVersions: () => client.listEnvelopeVersions(envelopeId),
+      closeVersion: (sessionId, payload) =>
+        client.closeEnvelopeVersion(envelopeId, sessionId, payload),
+      fetchVersionFile: async (url) => {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('Could not fetch version file');
+        return res.arrayBuffer();
+      },
+      // Restore and rename land with their UI in later PRs.
+      restoreVersion: async () => {
+        throw new Error('Restore is not available yet');
+      },
+      renameVersion: async () => {
+        throw new Error('Rename is not available yet');
+      }
+    };
+  }, [client, envelopeId, editMode]);
 
   // Only the signing actions run here; 'download' is handled inside DocxEditor,
   // which saves first and then serves the envelope's public (stripped) copy.
@@ -584,6 +610,7 @@ export default function DocumentEditorContainer({
         }
       }}
       onSave={saveEnvelope}
+      history={historyHost}
       // readOnly editors never dirty, so skip registering them entirely
       onChange={
         !readOnly && containerId

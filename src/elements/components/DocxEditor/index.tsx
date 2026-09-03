@@ -8,7 +8,15 @@ import DocumentPanel, { PanelTab } from './DocumentPanel';
 import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
 import { TableDeleteImpact } from './bindings/tableDeleteGuard';
+import { useDocxHistorySession } from './history/useDocxHistorySession';
+import { DocxHistoryHost, DocxSaveMeta, VersionAuthor } from './history/types';
 import { DocxSource } from './types';
+
+const DEFAULT_CURRENT_USER: VersionAuthor = {
+  kind: 'user',
+  key: 'you',
+  label: 'You'
+};
 
 // Re-exported for tests that import it from this module.
 export { RailErrorBoundary } from './RailErrorBoundary';
@@ -70,11 +78,18 @@ export interface DocxEditorProps {
   /** Fired with the current dirty state (true on edits, false after a save). */
   onChange?: (dirty: boolean) => void;
   onError?: (error: string) => void;
-  /** Persistence boundary: receives the exported .docx. The host decides where
-   *  it goes (the component never persists on its own). */
+  /** Persistence boundary: receives the exported .docx and, when version
+   *  history is active, the session metadata to group the save into a version
+   *  row. The host decides where it goes (the component never persists). */
   onSave?: (
-    blob: Blob
+    blob: Blob,
+    meta?: DocxSaveMeta
   ) => DocxSaveResult | void | Promise<DocxSaveResult | void>;
+  /** Opt-in version history: the I/O adapter the container injects. Absent →
+   *  no sessions, no autosave grouping (the editor behaves as before). */
+  history?: DocxHistoryHost;
+  /** The current viewer's identity for version attribution. */
+  currentUser?: VersionAuthor;
   /** Opt-in document bindings: [[...]] tokens become live fields and formulas
    *  that recalculate as the document is edited. Omitting it changes nothing. */
   bindings?: DocxBindingsConfig;
@@ -120,6 +135,8 @@ function DocxEditor({
   onChange,
   onError,
   onSave,
+  history,
+  currentUser,
   bindings
 }: DocxEditorProps) {
   const dirtyRef = useRef(false);
@@ -233,6 +250,13 @@ function DocxEditor({
     setSaveToast(null);
   }, []);
 
+  // The history hook is created below (it needs `editor`), but useDocxEditor's
+  // onEdit must exist now — bridge through a ref so the stable listener reaches
+  // the latest hook.
+  const historyOnEditRef = useRef<
+    ((info: { assistant: boolean }) => void) | undefined
+  >(undefined);
+
   const {
     containerRef,
     editor,
@@ -251,6 +275,7 @@ function DocxEditor({
     onReady,
     onEditorReady,
     onDirty: markDirty,
+    onEdit: (info) => historyOnEditRef.current?.(info),
     onError,
     bindings: bindings
       ? {
@@ -363,11 +388,11 @@ function DocxEditor({
   // Persist the given (already-exported) bytes to the host. Reuses the caller's
   // blob so download/terminal flows export exactly once and save the same bytes
   // they hand back to the user.
-  const saveCurrentDocument = async (blob: Blob) => {
+  const saveCurrentDocument = async (blob: Blob, meta?: DocxSaveMeta) => {
     if (!onSave) return;
     setSaving(true);
     try {
-      const result = (await onSave(blob)) as DocxSaveResult | undefined;
+      const result = (await onSave(blob, meta)) as DocxSaveResult | undefined;
       dirtyRef.current = false;
       setDirty(false);
       onChange?.(false);
@@ -376,6 +401,22 @@ function DocxEditor({
       setSaving(false);
     }
   };
+
+  // Version history: sessions + autosave. No-ops without a `history` host, so
+  // standalone hosts keep the manual Save/Download flow unchanged.
+  const historySession = useDocxHistorySession({
+    editor,
+    loading,
+    readOnly,
+    host: history ?? null,
+    currentUser: currentUser ?? DEFAULT_CURRENT_USER,
+    openNonce,
+    exportDoc,
+    save: async (blob, meta) => {
+      await saveCurrentDocument(blob, meta);
+    }
+  });
+  historyOnEditRef.current = historySession.onEdit;
 
   // Flash a save toast and auto-dismiss it. Re-showing while one is already up
   // resets the timer so a second save reads as fresh feedback. Errors linger a
@@ -403,7 +444,11 @@ function DocxEditor({
     if (force) bindingsState.commitForSave();
     else if (!gateSave(() => handleSave(true))) return;
     try {
-      await saveCurrentDocument(await exportDoc());
+      // With history active, an explicit Save closes the current session (which
+      // persists the document via the same onSave), so the edits become a
+      // finished version rather than a mid-session autosave.
+      if (history) await historySession.save();
+      else await saveCurrentDocument(await exportDoc());
       flashSaveToast('success', 'Document saved');
     } catch (err) {
       flashSaveToast('error', 'Could not save document');
