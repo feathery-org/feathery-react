@@ -32,7 +32,13 @@ import type {
 } from './types';
 
 export * from './types';
-export { normalizeForDiff, contentHash } from './ir';
+export {
+  normalizeForDiff,
+  contentHash,
+  hash32,
+  IMAGE_DIGEST_MIN_LENGTH,
+  IMAGE_DIGEST_PREFIX
+} from './ir';
 
 /** Author key prefix that marks a formatting-only revision in the viewer. */
 export const FMT_AUTHOR_PREFIX = 'fmt:';

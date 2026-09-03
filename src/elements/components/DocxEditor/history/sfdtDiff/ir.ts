@@ -237,7 +237,7 @@ function revisionIdsOfType(sfdt: any, type: string): Set<string> {
   return ids;
 }
 
-function hash32(input: string): string {
+export function hash32(input: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i);
@@ -245,6 +245,12 @@ function hash32(input: string): string {
   }
   return h.toString(16).padStart(8, '0');
 }
+
+// Image payloads longer than this are digested; short strings (already a
+// digest, or an icon reference) are left as-is. Kept in sync with the guard in
+// normalizeForDiff so a slice stripped here matches F digested at diff time.
+export const IMAGE_DIGEST_MIN_LENGTH = 64;
+export const IMAGE_DIGEST_PREFIX = 'sha:';
 
 export function normalizeForDiff(sfdt: any): any {
   const doc = JSON.parse(JSON.stringify(sfdt ?? {}));
@@ -264,9 +270,11 @@ export function normalizeForDiff(sfdt: any): any {
         delete next.revisionIds;
         if (
           typeof next.imageString === 'string' &&
-          next.imageString.length > 64
+          next.imageString.length > IMAGE_DIGEST_MIN_LENGTH
         ) {
-          next.imageString = `sha:${hash32(next.imageString)}`;
+          next.imageString = `${IMAGE_DIGEST_PREFIX}${hash32(
+            next.imageString
+          )}`;
         }
         if (Array.isArray(next.inlines))
           next.inlines = walkInlines(next.inlines);
