@@ -83,10 +83,13 @@ export async function installTrustedForm(
 export function installTrustedFormDebugIfRequested() {
   if (!isTrustedFormDebugEnabled()) return;
   import('./trustedformDebug')
-    .then(({ installTrustedFormDebug }) => {
+    .then(({ installTrustedFormDebug, whenDomSettles }) => {
       const debug = installTrustedFormDebug();
-      // Audit once the form exists so the unnamed list is the first thing seen
-      awaitFormElement().then(() => debug.audit());
+      // Audit once the form has rendered so the unnamed list is the first
+      // thing seen; the form element appears before its fields do
+      awaitFormElement()
+        .then(() => whenDomSettles())
+        .then(() => debug.audit());
     })
     .catch((err) =>
       console.warn('[feathery] TrustedForm debug failed to load', err)

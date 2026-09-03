@@ -155,6 +155,33 @@ export function auditControls(root: ParentNode = featheryDoc()) {
   return rows.sort((a, b) => Number(b.isUnnamed) - Number(a.isUnnamed));
 }
 
+/**
+ * Resolves once `root` has gone `quietMs` without DOM mutations. The form
+ * element appears before its fields render, so auditing on first sight lists
+ * a handful of controls; auditing after the render settles lists them all.
+ */
+export function whenDomSettles(
+  root: Node = featheryDoc(),
+  quietMs = 400,
+  maxWaitMs = 5000
+): Promise<void> {
+  return new Promise((resolve) => {
+    let timer = setTimeout(done, quietMs);
+    const deadline = setTimeout(done, maxWaitMs);
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(done, quietMs);
+    });
+    function done() {
+      observer.disconnect();
+      clearTimeout(timer);
+      clearTimeout(deadline);
+      resolve();
+    }
+    observer.observe(root, { childList: true, subtree: true });
+  });
+}
+
 const eventTarget = (e: Event): Element | null => {
   const target = e.target as Element | null;
   if (!target || typeof target.closest !== 'function') return null;

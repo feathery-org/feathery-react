@@ -4,7 +4,8 @@ import {
   describeControl,
   installTrustedFormDebug,
   isTrustedFormDebugEnabled,
-  TF_DEBUG_FLAG
+  TF_DEBUG_FLAG,
+  whenDomSettles
 } from './trustedformDebug';
 
 const mount = (html: string) => {
@@ -148,5 +149,23 @@ describe('isTrustedFormDebugEnabled', () => {
   it('turns on from localStorage', () => {
     featheryWindow().localStorage.setItem(TF_DEBUG_FLAG, '1');
     expect(isTrustedFormDebugEnabled()).toBe(true);
+  });
+});
+
+describe('whenDomSettles', () => {
+  it('waits for mutations to stop before resolving', async () => {
+    const root = featheryDoc().body;
+    root.innerHTML = '';
+    let settled = false;
+    const promise = whenDomSettles(root, 30, 1000).then(() => {
+      settled = true;
+    });
+    for (let i = 0; i < 3; i++) {
+      root.appendChild(featheryDoc().createElement('div'));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(settled).toBe(false);
+    await promise;
+    expect(root.children).toHaveLength(3);
   });
 });
