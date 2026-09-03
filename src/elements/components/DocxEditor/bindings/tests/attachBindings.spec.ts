@@ -198,6 +198,45 @@ describe('attaching bindings to a tokenized template', () => {
     if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
     else delete module.canEditContentControl;
   });
+
+  it('resolves the hint when the caret moves to an editable spot', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    const onLockedEditResolved = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit,
+      onLockedEditResolved
+    });
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+
+    // Refused edit on a locked cell shows the hint.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => false
+    });
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // Selection change while still on the locked cell keeps it up.
+    (editor as any).trigger('selectionChange');
+    expect(onLockedEditResolved).not.toHaveBeenCalled();
+
+    // Caret moves to an editable spot -> resolve once, and not again.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => true
+    });
+    (editor as any).trigger('selectionChange');
+    (editor as any).trigger('selectionChange');
+    expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
+  });
 });
 
 describe('save gating', () => {
