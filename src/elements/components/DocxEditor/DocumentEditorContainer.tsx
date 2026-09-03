@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState
 } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import DocxEditor from './index';
 import FeatheryClient, { API_URL } from '../../../utils/featheryClient';
 import { featheryWindow, openTab } from '../../../utils/browser';
@@ -370,13 +371,27 @@ export default function DocumentEditorContainer({
         if (!res.ok) throw new Error('Could not fetch version file');
         return res.arrayBuffer();
       },
-      // Restore and rename land with their UI in later PRs.
-      restoreVersion: async () => {
-        throw new Error('Restore is not available yet');
+      restoreVersion: async (versionId) => {
+        const updated = await client.restoreEnvelopeVersion(
+          envelopeId,
+          versionId,
+          uuidv4()
+        );
+        // Point the live editor at the restored bytes and force a reopen.
+        setEnvelope((current) =>
+          current?.id === envelopeId
+            ? {
+                ...current,
+                file: updated.file,
+                editor_file: updated.editor_file ?? null
+              }
+            : current
+        );
+        setSourceUrl(envelopeSourceUrl({ ...updated } as Envelope));
+        setReloadKey((k) => k + 1);
       },
-      renameVersion: async () => {
-        throw new Error('Rename is not available yet');
-      }
+      renameVersion: (versionId, name) =>
+        client.renameEnvelopeVersion(envelopeId, versionId, name)
     };
   }, [client, envelopeId, editMode]);
 

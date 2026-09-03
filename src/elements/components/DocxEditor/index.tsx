@@ -637,6 +637,37 @@ function DocxEditor({
           highlightsAvailable={!!versionMeta && !versionMeta.degraded}
           highlightsOn={highlightsOn}
           onToggleHighlights={setHighlightsOn}
+          onRestore={
+            history
+              ? () => {
+                  const target = viewingVersion;
+                  setGateWarning({
+                    message:
+                      'Restore this version? Your current document is saved ' +
+                      'as a version first, so you can undo this.',
+                    confirmLabel: 'Restore',
+                    confirmTitle: 'Restore this version',
+                    proceed: async () => {
+                      setGateWarning(null);
+                      try {
+                        await history.restoreVersion(target.id);
+                        setViewingVersion(null);
+                        flashSaveToast(
+                          'success',
+                          'Restored — saved as a new version'
+                        );
+                      } catch (err) {
+                        flashSaveToast(
+                          'error',
+                          'Could not restore this version'
+                        );
+                        onError?.((err as Error).message || String(err));
+                      }
+                    }
+                  });
+                }
+              : undefined
+          }
         />
       )}
       {editor && !viewingVersion && (

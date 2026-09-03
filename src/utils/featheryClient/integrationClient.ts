@@ -781,6 +781,46 @@ export default class IntegrationClient {
     });
   }
 
+  // Restore an older version: its docx becomes the live document, saved as a new
+  // version. Returns envelope_data + the new version row. `sessionId` is a fresh
+  // uuid the caller mints for the restore's own version.
+  restoreEnvelopeVersion(
+    envelopeId: string,
+    versionId: string,
+    sessionId: string
+  ) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    if (this.formKey) formData.append('form_key', this.formKey);
+    formData.append('session_id', sessionId);
+    const collaboratorId = (initState as any).collaboratorId;
+    if (collaboratorId) formData.append('collaborator_id', collaboratorId);
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/restore/`;
+    const options = { method: 'POST', body: formData, keepalive: false };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (!response) throw Error('Version restore failed');
+      if (response.ok) return response.json();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
+  // Rename (or clear the name of) a version. Returns the updated version row.
+  renameEnvelopeVersion(envelopeId: string, versionId: string, name: string) {
+    const { userId } = initInfo();
+    const formData = new FormData();
+    formData.append('fuser_key', userId ?? '');
+    if (this.formKey) formData.append('form_key', this.formKey);
+    formData.append('name', name);
+    const url = `${API_URL}document/envelope/${envelopeId}/versions/${versionId}/`;
+    const options = { method: 'PATCH', body: formData, keepalive: false };
+    return this._fetch(url, options, false).then(async (response) => {
+      if (!response) throw Error('Version rename failed');
+      if (response.ok) return response.json();
+      throw Error(parseAPIError(await response.json()));
+    });
+  }
+
   // Finalize an edited docx envelope for signing: the backend converts it to
   // PDF and injects signature fields (the same pipeline generation runs when
   // a signer is known up front). One-way — the envelope stops being editable.
