@@ -1,5 +1,6 @@
 import { featheryDoc } from '../utils/browser';
 import { fieldValues } from '../utils/init';
+import { isTrustedFormDebugEnabled } from './trustedformDebug';
 
 const configMap: Record<string, any> = {};
 
@@ -8,7 +9,7 @@ const configMap: Record<string, any> = {};
 // is before React has rendered anything, so wait for the form to exist first.
 const FORM_WAIT_TIMEOUT_MS = 10000;
 
-function awaitFormElement(): Promise<void> {
+export function awaitFormElement(): Promise<void> {
   return new Promise((resolve) => {
     const doc = featheryDoc();
     if (!doc.querySelector || doc.querySelector('form.feathery'))
@@ -71,6 +72,24 @@ export async function installTrustedForm(
     .then(() => injectTrustedFormScript(trustedformConfig))
     .catch((err) =>
       console.warn('[feathery] TrustedForm script failed to install', err)
+    );
+}
+
+/**
+ * Opt-in console logger for what a certificate would record per interaction.
+ * Independent of the integration config so a form without TrustedForm
+ * configured can still be audited; loaded lazily so nobody else pays for it.
+ */
+export function installTrustedFormDebugIfRequested() {
+  if (!isTrustedFormDebugEnabled()) return;
+  import('./trustedformDebug')
+    .then(({ installTrustedFormDebug }) => {
+      const debug = installTrustedFormDebug();
+      // Audit once the form exists so the unnamed list is the first thing seen
+      awaitFormElement().then(() => debug.audit());
+    })
+    .catch((err) =>
+      console.warn('[feathery] TrustedForm debug failed to load', err)
     );
 }
 
