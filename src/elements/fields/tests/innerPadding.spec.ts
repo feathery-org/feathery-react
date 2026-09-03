@@ -606,14 +606,14 @@ describe('input box inner padding', () => {
   });
 
   it('computes the reserve production drew when no top padding is set', () => {
-    // Pixel identity for untouched floating-label fields: the room behind the
-    // pinned label is the same height/3 (or 2.5x the shrunken font for a text
-    // area) production synthesized, computed here rather than stored anywhere.
+    // The room behind a pinned label is what the label occupies: its marginTop
+    // (half the shrunken font) plus its line box, which inherits the field's
+    // font size. At 16px that is 5 + 16 = 21, whatever the box height.
     (
       [
-        ['text_field', 60, '20px'], // 60/3
-        ['text_field', 90, '30px'], // 90/3
-        ['text_area', 60, '25px'] // minFontSize 10 * 2.5
+        ['text_field', 60, '21px'], // min(16,10)/2 + 16
+        ['text_field', 90, '21px'], // the label does not grow with the box
+        ['text_area', 60, '25px'] // minFontSize 10 * 2.5, its own geometry
       ] as [string, number, string][]
     ).forEach(([type, height, expected]) => {
       const styles = shrinkUntouched(height);
@@ -630,31 +630,38 @@ describe('input box inner padding', () => {
     });
   });
 
-  it('keeps the computed reserve tracking a height the builder changes', () => {
-    // The reserve is not data, so editing the height moves it -- which is
-    // exactly what a stored snapshot of height/3 could not do. Same theme, two
-    // heights, two reserves.
+  it('holds the reserve steady as the builder changes the height', () => {
+    // The label's footprint does not change with the box, so neither does the
+    // room behind it. This used to be height/3, which drifted: at 500px it
+    // reserved 167px and left the value 80px below the box's centre.
     const reserveAt = (height: number) =>
       fieldTarget('text_field', shrinkUntouched(height), {
         placeholder: 'Name'
       }).paddingTop;
 
-    expect([reserveAt(60), reserveAt(120)]).toEqual(['20px', '40px']);
-    // In the height's own unit, so a percentage box keeps the percentage
-    // reserve it has always rendered rather than a pixel approximation of it.
+    expect([reserveAt(60), reserveAt(120), reserveAt(500)]).toEqual([
+      '21px',
+      '21px',
+      '21px'
+    ]);
+
+    // Clamped where the box has less room to give than the label wants, so a
+    // short field still fits a line of text: 40 - 19.2 - 6.
+    expect(reserveAt(40)).toBe('14.8px');
+
+    // A percentage box has no pixel height to clamp against, so the footprint
+    // stands on its own -- and in px, because that is what the label is.
     expect(
-      fieldTarget(
-        'text_field',
-        shrinkUntouched(90, { height_unit: '%' }),
-        { placeholder: 'Name' }
-      ).paddingTop
-    ).toBe('30%');
+      fieldTarget('text_field', shrinkUntouched(90, { height_unit: '%' }), {
+        placeholder: 'Name'
+      }).paddingTop
+    ).toBe('21px');
   });
 
   it('keeps the multiselect control reserve production drew', () => {
     // A multiselect's themed padding lands on react-select's value container,
-    // so the control itself keeps the height/3 reserve master rendered under a
-    // floating label. Untouched, that reserve is all there is.
+    // so the control itself carries the label's reserve. Untouched, that
+    // reserve is all there is.
     const shrinkStyles = (overrides: any = {}) => ({
       ...shrinkUntouched(60),
       ...overrides
@@ -663,7 +670,7 @@ describe('input box inner padding', () => {
     expect(
       fieldTarget('dropdown_multi', shrinkStyles(), { placeholder: 'Pick' })
         .paddingTop
-    ).toBe('20px');
+    ).toBe('21px');
 
     // Once the container carries a padding, the larger of the two wins: a
     // container padding must not shrink the label's room.
@@ -671,7 +678,7 @@ describe('input box inner padding', () => {
       fieldTarget('dropdown_multi', shrinkStyles({ inner_padding_top: 8 }), {
         placeholder: 'Pick'
       }).paddingTop
-    ).toBe('max(8px, 20px)');
+    ).toBe('max(8px, 21px)');
   });
 
   it('keeps the plain reserve on a field whose input owns its padding', () => {
@@ -691,7 +698,7 @@ describe('input box inner padding', () => {
         },
         { placeholder: 'Card' }
       ).paddingTop
-    ).toBe('20px');
+    ).toBe('21px');
   });
 });
 
@@ -853,7 +860,8 @@ describe('input box content alignment', () => {
     // statement about padding, so it cannot cancel the room the label occupies.
     // Running the value under the label's ink stays available -- but only by
     // storing inner_padding_top explicitly, which the test above covers.
-    const reserve = 60 / 3;
+    // The label's own footprint: min(16, 10) / 2 + 16.
+    const reserve = 21;
     const topAligned = { ...styles, content_vertical_align: 'flex-start' };
     expect(placeholderTarget('text_field', topAligned).top).toBe(
       `${reserve + 19.2 / 2}px`
@@ -884,7 +892,7 @@ describe('input box content alignment', () => {
       { placeholder: 'Name' }
     );
     expect(centred.paddingTop).toBe(untouchedField.paddingTop);
-    expect(centred.paddingTop).toBe(`${60 / 3}px`);
+    expect(centred.paddingTop).toBe('21px');
 
     // ...and so does the resting label. The reserve moves the value, never the
     // label: untouched, nothing is emitted and Placeholder's own inline 50%
@@ -1997,7 +2005,7 @@ describe('which fields count as carrying a pinned label', () => {
       content_vertical_align: 'center'
     });
     expect(centredPhone.paddingTop).toBe(untouchedPhone.paddingTop);
-    expect(centredPhone.paddingTop).toBe(`${60 / 3}px`);
+    expect(centredPhone.paddingTop).toBe('21px');
   });
 
   // The reserve on a multiselect is not something an alignment can take over:
@@ -2017,7 +2025,7 @@ describe('which fields count as carrying a pinned label', () => {
       { ...styles, content_vertical_align: 'center' },
       { placeholder: 'Pick' }
     );
-    expect(untouched.paddingTop).toBe(`${60 / 3}px`);
+    expect(untouched.paddingTop).toBe('21px');
     expect(centred.paddingTop).toBe(untouched.paddingTop);
   });
 
