@@ -1,6 +1,7 @@
 import { fieldValues } from '../../../../utils/init';
 import { getFieldValue } from '../../../../utils/fieldHelperFunctions';
 import { justInsert } from '../../../../utils/array';
+import { resolveInlineErrorMessage } from '../../../../utils/inlineErrors';
 
 /**
  * Return inline error object
@@ -8,10 +9,10 @@ import { justInsert } from '../../../../utils/array';
  * @param inlineErrors
  */
 export function getInlineError(field: any, inlineErrors: any) {
-  const data = inlineErrors[field.servar ? field.servar.key : field.id];
-  if (!data) return;
-  if (Number.isInteger(data.index) && data.index !== field.repeat) return;
-  return data.message;
+  const baseKey = field.servar ? field.servar.key : field.id;
+  // Errors are keyed only by the real field key; per-row errors live in the
+  // entry's `byIndex` map, with a field-wide `message` as fallback.
+  return resolveInlineErrorMessage(inlineErrors[baseKey], field.repeat);
 }
 
 export function textFieldShouldSubmit(servar: any, value: any) {

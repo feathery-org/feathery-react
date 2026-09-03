@@ -1,6 +1,11 @@
 import { getWeightedBoolean } from './random';
 import { justRemove } from './array';
 import {
+  applyInlineError,
+  inlineEntryHasMessage,
+  InlineErrors
+} from './inlineErrors';
+import {
   fieldValues,
   filePathMap,
   fileDeduplicationCount,
@@ -175,6 +180,21 @@ export function updateSessionValues(session: any) {
 /**
  * Set an error on a particular form DOM node(s).
  */
+// The sole writer of the InlineErrors invariant (row-scoped `byIndex` entries
+// under real field keys), so keep at least the error-map-shaping inputs typed.
+interface SetFormElementErrorArgs {
+  formRef?: React.MutableRefObject<any>;
+  errorType?: string;
+  errorCallback?: (props: Record<string, unknown>) => unknown;
+  fieldKey?: string;
+  message?: string;
+  index?: number | null;
+  servarType?: string;
+  inlineErrors?: InlineErrors;
+  setInlineErrors?: (errors: InlineErrors) => void;
+  triggerErrors?: boolean;
+}
+
 export async function setFormElementError({
   formRef,
   errorType,
@@ -189,11 +209,12 @@ export async function setFormElementError({
   inlineErrors = {},
   setInlineErrors = () => {},
   triggerErrors = false
-}: any) {
+}: SetFormElementErrorArgs) {
   let invalid = false;
   let listIndex = index;
   if (errorType === 'html5') {
-    if (!formRef.current) return false;
+    const form = formRef?.current;
+    if (!form) return false;
 
     let errorTriggered = false;
     if (fieldKey) {
@@ -206,7 +227,7 @@ export async function setFormElementError({
         listIndex = null;
       }
       // form.elements has reserved props so must use namedItem to get by id
-      const singleOrList = formRef.current.elements.namedItem(fieldKey);
+      const singleOrList = form.elements.namedItem(fieldKey);
       let elements =
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
@@ -235,9 +256,7 @@ export async function setFormElementError({
       // Find the first visible invalid element to show the browser tooltip.
       // Calling reportValidity() on the entire form fails if the first
       // invalid control is hidden via CSS (display:none).
-      const formElements = Array.from(
-        formRef.current.elements
-      ) as HTMLElement[];
+      const formElements = Array.from(form.elements) as HTMLElement[];
       for (const el of formElements) {
         if (
           'checkValidity' in el &&
@@ -249,12 +268,19 @@ export async function setFormElementError({
         }
       }
     }
-    invalid = !formRef.current.checkValidity();
+    invalid = !form.checkValidity();
   } else if (errorType === 'inline') {
-    if (fieldKey) inlineErrors[fieldKey] = { message };
+    // Scope a repeated-field error to its row via a nested `byIndex` map under
+    // the real field key, so an error validated on one repeat row doesn't bleed
+    // onto other rows (including freshly added, untouched ones) and can never
+    // collide with a literal field key such as `foo-0`. An empty message clears
+    // (whole field for a non-indexed write, only that row for an indexed one).
+    applyInlineError(inlineErrors, fieldKey, message, index);
     if (triggerErrors)
       setInlineErrors(JSON.parse(JSON.stringify(inlineErrors)));
-    invalid = Object.values(inlineErrors).some((data) => (data as any).message);
+    invalid = Object.values(inlineErrors).some((data) =>
+      inlineEntryHasMessage(data as any)
+    );
   }
   if (message) {
     await errorCallback({

@@ -20,6 +20,36 @@ export function inRepeat(
   return elementKey.startsWith(parentKey);
 }
 /**
+ * Ids/keys of every element inside a repeat container that can own a per-row
+ * inline error: servar fields (by servar key) plus buttons and nested
+ * containers (by element id, how submit/action failures are keyed). Used to
+ * reindex errors when a row is removed.
+ *
+ * The repeat container's OWN id is deliberately included (it matches itself
+ * via inRepeat's comma-suffixed prefix check): the container is clickable once
+ * per row, so its action errors are per-row and must shift with the rows.
+ */
+export function getRepeatErrorOwnerIds(
+  step: { servar_fields?: any[]; buttons?: any[]; subgrids?: any[] },
+  repeatContainer: PositionedElement | undefined
+): string[] {
+  if (!repeatContainer) return [];
+  const repeatKey = getPositionKey(repeatContainer);
+  if (!repeatKey) return [];
+  const isInside = (el: any) => {
+    const key = getPositionKey(el);
+    return !!key && inRepeat(key, repeatKey, true);
+  };
+  return [
+    ...(step.servar_fields ?? [])
+      .filter(isInside)
+      .map((f: any) => f?.servar?.key),
+    ...(step.buttons ?? []).filter(isInside).map((b: any) => b?.id),
+    ...(step.subgrids ?? []).filter(isInside).map((s: any) => s?.id)
+  ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+/**
  * Gets the repeating container ancestor of an element
  * @param step
  * @param element
