@@ -53,14 +53,33 @@ function plannedControl(
   return result;
 }
 
-function tableSelectionPrefix(path: Array<string | number>): string | null {
-  const sectionKey = path.indexOf('sections');
-  const blocksKey = path.indexOf('blocks', sectionKey + 2);
-  const section = path[sectionKey + 1];
-  const block = path[blocksKey + 1];
-  return typeof section === 'number' && typeof block === 'number'
-    ? `${section};${block}`
-    : null;
+// A foreign block-level control ahead of the table shifts the live block
+// index away from the SFDT path, so the address is read off the marker
+function liveTablePrefix(
+  editor: SyncfusionEditorLike,
+  live: SfdtDocument,
+  tablePath: Array<string | number>
+): string | null {
+  const selection = editor.selection as any;
+  const controls = editor.documentHelper?.contentControlCollection;
+  const wrapper = getAt(live, tablePath.slice(0, -2)) as
+    | { contentControlProperties?: ContentControlProperties }
+    | undefined;
+  const markerTag = wrapper?.contentControlProperties?.tag;
+  const marker =
+    markerTag && Array.isArray(controls)
+      ? controls.find(
+          (control) =>
+            isContentControlAttached(control) &&
+            String(control.contentControlProperties?.tag || '') === markerTag
+        )
+      : undefined;
+  if (!marker || !selection?.selectContentControl) return null;
+  selection.selectContentControl(marker);
+  const start = selection.startOffset;
+  if (typeof start !== 'string') return null;
+  const [section, block] = start.split(';');
+  return section && block ? `${section};${block}` : null;
 }
 
 function applyRowAdoptions(
@@ -72,10 +91,21 @@ function applyRowAdoptions(
   if (!selection?.select || !module?.insertContentControl) return false;
   const live = JSON.parse(editor.serialize()) as SfdtDocument;
   const previousHistory = editor.enableEditorHistory;
+  const previousTracking = editor.enableTrackChanges;
+  // Adoption is not an edit in its own right. The row it fills was just
+  // inserted by the structural mutation, and under an authored batch that
+  // insertion already carries the revision the reviewer sees - so the controls
+  // inside it need neither their own history entries (the reason this function
+  // already suspended history) nor their own revisions. Leaving tracking on
+  // here also made the SDK's own serializer throw
+  // `Cannot set properties of undefined (setting 'revisionIds')` from
+  // writeInlineRevisions, because a content control inserted into an
+  // already-tracked row produces revision markers it cannot write back out.
   editor.enableEditorHistory = false;
+  editor.enableTrackChanges = false;
   try {
     for (const mutation of mutations) {
-      const prefix = tableSelectionPrefix(mutation.tablePath);
+      const prefix = liveTablePrefix(editor, live, mutation.tablePath);
       if (!prefix) return false;
       const cells = mutation.row.cells ?? [];
       for (let cellIndex = 0; cellIndex < cells.length; cellIndex++) {
@@ -111,9 +141,19 @@ function applyRowAdoptions(
     }
   } finally {
     editor.enableEditorHistory = previousHistory;
+    editor.enableTrackChanges = previousTracking;
   }
   return true;
 }
+
+const rowRevisionsOf = (control: any): number =>
+  control?.line?.paragraph?.associatedCell?.ownerRow?.rowFormat
+    ?.revisionLength ?? 0;
+
+// The SDK's delete commands return nothing and refuse silently on locked content
+const tookEffect = (control: any, rowRevisionsBefore: number): boolean =>
+  !isContentControlAttached(control) ||
+  rowRevisionsOf(control) > rowRevisionsBefore;
 
 function needsGroupedHistory(mutations: NativeStructuralMutation[]): boolean {
   return mutations.length > 1;
@@ -150,14 +190,45 @@ export function applyNativeStructuralMutations(
     for (const mutation of mutations) {
       if (mutation.kind === 'delete-table') {
         const control = controlForTag(mutation.tag);
-        if (!control || !module.delete) return false;
+        if (!control || !module.deleteTable || !selection.select) return false;
         selection.selectContentControl(control);
-        module.delete();
+        // deleteTable marks the rows deleted where delete() only strikes text,
+        // and it refuses a selection spanning a locked control
+        const start = selection.startOffset;
+        if (typeof start !== 'string') return false;
+        selection.select(start, start);
+        // The SDK misses a pasted wrapper as the enclosing control and reads the caret as locked
+        if (!selection.currentContentControl)
+          selection.currentContentControl = control;
+        const rowRevisionsBefore = rowRevisionsOf(control);
+        module.deleteTable();
+        if (!tookEffect(control, rowRevisionsBefore)) return false;
       } else if (mutation.kind === 'insert-table') {
         const control = controlForTag(mutation.afterTag);
-        if (!control || !selection.collapseToEnd || !module.paste) return false;
+        // `collapseToEnd` does not exist on this SDK - not on Selection, not
+        // anywhere in the shipped bundle - so this guard could never pass and
+        // the branch below had never once run. Every table the assistant has
+        // ever created reached the document through the reopen instead, which
+        // is why the reopen's cost went unnoticed for so long.
+        // Collapsing is expressed with documented API: an empty range at the
+        // control's own end offset.
+        if (!control || !selection.select || !module.paste) return false;
         selection.selectContentControl(control);
-        selection.collapseToEnd();
+        // Selecting a block-level control that WRAPS A TABLE leaves the end
+        // offset inside the table's last cell (`0;6;5;1;0;12`), not after the
+        // table. Pasting there nests the new table inside a cell of the old
+        // one - which still satisfies a naive "is the copy in the index?"
+        // check, because the binding scan walks nested tables. The anchor must
+        // therefore be the start of the FOLLOWING top-level block.
+        const end = selection.endOffset;
+        if (typeof end !== 'string') return false;
+        const [sectionIndex, blockIndex] = end.split(';');
+        const nextBlock = Number(blockIndex) + 1;
+        if (!sectionIndex || !Number.isFinite(nextBlock)) return false;
+        selection.select(
+          `${sectionIndex};${nextBlock};0`,
+          `${sectionIndex};${nextBlock};0`
+        );
         module.paste(
           JSON.stringify({
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]
@@ -167,9 +238,17 @@ export function applyNativeStructuralMutations(
         if (!applyRowAdoptions(editor, [mutation])) return false;
       } else if (mutation.kind === 'delete-row') {
         const control = controlForTag(mutation.tag);
-        if (!control || !module.deleteRow) return false;
+        if (!control || !module.deleteRow || !selection.select) return false;
         selection.selectContentControl(control);
+        // A selection spanning the control can read as every row of a pasted table
+        const start = selection.startOffset;
+        if (typeof start !== 'string') return false;
+        selection.select(start, start);
+        if (!selection.currentContentControl)
+          selection.currentContentControl = control;
+        const rowRevisionsBefore = rowRevisionsOf(control);
         module.deleteRow();
+        if (!tookEffect(control, rowRevisionsBefore)) return false;
       } else if (mutation.kind === 'insert-row') {
         const current = scanBindings(
           JSON.parse(editor.serialize()) as SfdtDocument

@@ -5,6 +5,7 @@ import {
   disableUserTrackChanges,
   findReplaceCounterpart,
   installRevisionGroupIsolation,
+  installTrackedContentControlDeletion,
   preserveDocumentViewDuring,
   registerWrappingDocumentEditorContainer
 } from '../../../utils/documentEditorPrimitives';
@@ -929,6 +930,7 @@ export function useDocxEditor({
           // Engine-level fixes to the editing surface itself, not review
           // customizations: every host gets them, gated or not.
           installTableRowResizeFix(ed);
+          installTrackedContentControlDeletion(ed);
           // Status bar (bottom right): hide the Web-layout toggle — it flips
           // the document into continuous view, which breaks the paginated
           // editing/print flows this editor is built around.

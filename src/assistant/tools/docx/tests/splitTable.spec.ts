@@ -407,11 +407,22 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
     }
   });
 
-  it('every surviving row keeps the appearance facts it had before the split', () => {
+  it('every surviving row keeps its identity and header-ness; only banding is re-derived', () => {
     const editor = makeEditor(scheduleFixture());
     try {
-      // The property, computed from the fixture: whatever each row looked like
-      // before, it looks like that afterwards - in whichever table it landed.
+      // This used to assert that a row looked EXACTLY as it did before, in
+      // whichever table it landed. That cannot hold alongside the requirement
+      // that the new table restarts its banding (the captain, 2026-08-27:
+      // split tables must not be "just attached to each other", and the new
+      // table must read as a table in its own right rather than continuing the
+      // parent's stripe parity). A row extracted from a shaded position becomes
+      // the copy's FIRST body row, and a first body row is unshaded.
+      //
+      // So the property is narrowed, not dropped: identity and header-ness are
+      // preserved for every row, per-cell highlights are preserved, and ROW
+      // BANDING is re-derived in the copy by design. Measured: exactly one row
+      // changes here - "Property|Acme", from #E6E6E6 to unshaded, because it
+      // leads the new table.
       const before = factsByRowText(editor);
       apply(
         editor,
@@ -429,10 +440,20 @@ describe('split_table: the selective split, rows anywhere in the table', () => {
       editor.revisions.acceptAll();
       const after = factsByRowText(editor);
       expect(after.size).toBe(before.size);
+      let rebanded = 0;
       for (const [text, facts] of before.entries()) {
         expect(after.has(text)).toBe(true);
-        expect(after.get(text)).toEqual(facts);
+        const now = after.get(text);
+        // Identity and header-ness are never touched by a split.
+        expect(now.isHeader).toBe(facts.isHeader);
+        // A deliberate per-cell highlight is not banding and must survive.
+        expect(now.cellShading).toEqual(facts.cellShading);
+        if (now.shading !== facts.shading) rebanded++;
       }
+      // Re-banding is surgical, not a repaint: exactly the row that now leads
+      // the new table changes. If this ever grows, the split has started
+      // rewriting appearance it has no business touching.
+      expect(rebanded).toBe(1);
     } finally {
       destroyEditor(editor);
     }
@@ -712,6 +733,13 @@ describe('split_table: a table sitting directly against another table', () => {
 
       // Turn two splits the source again. Its neighbour is the table turn one
       // produced, and it must survive with every row it had.
+      //
+      // The target is 0;5, not 0;4. Turn one now leaves an empty separator
+      // between the two tables (the captain, 2026-08-27: tables that are split
+      // "should not be just attached to each other"), so every block after the
+      // first split shifted by one and 0;4 is the table turn one created - not
+      // the heading. A table is not addressable as a relocation target at all,
+      // so the old index does not merely aim elsewhere, it aims at nothing.
       expect(
         apply(
           editor,
@@ -720,7 +748,7 @@ describe('split_table: a table sitting directly against another table', () => {
               op: 'split_table',
               anchor: '0;2;0;0;0',
               rows: [1],
-              targetAnchor: '0;4',
+              targetAnchor: '0;5',
               position: 'before'
             }
           ],
@@ -760,9 +788,15 @@ describe('split_table: a table sitting directly against another table', () => {
   //
   // Every destination is covered because the paste point is what the fused text
   // lands on, and each one fused a different pair.
+  // Destinations AFTER the first split's output shifted by one when the split
+  // began leaving an empty separator between the two tables (the captain,
+  // 2026-08-27: split tables "should not be just attached to each other"). The
+  // intro paragraph sits BEFORE the split and is unmoved, which is why only two
+  // of the three changed - a useful check that the shift is real and not a
+  // blanket renumbering.
   for (const [name, targetAnchor, position] of [
-    ['before the following heading', '0;4', 'before'],
-    ['after the trailing paragraph', '0;5', 'after'],
+    ['before the following heading', '0;5', 'before'],
+    ['after the trailing paragraph', '0;6', 'after'],
     ['before the intro paragraph', '0;1', 'before']
   ] as Array<[string, string, string]>) {
     it(`a second split while the first is still pending stays clean - target ${name}`, () => {
@@ -1244,8 +1278,22 @@ describe('split_table: no content field exists to carry content', () => {
 describe("split_table: the captain's acceptance criteria", () => {
   const ACME = [1, 3, 5];
 
-  // "Here it should NOT create a new subsection heading, just a new table."
-  it('adds a table and NOTHING else - no heading, no paragraph', () => {
+  // TWO captain instructions, and the later one narrows the earlier.
+  //
+  // 2026-08 (earlier): "Here it should NOT create a new subsection heading,
+  // just a new table." That is about a HEADING - no title, no new section - and
+  // this test originally extended it to forbid any paragraph at all.
+  //
+  // 2026-08-27 (later, and decisive): "if tables are split then there has to be
+  // like a space between them right they should not be just attached to each
+  // other."
+  //
+  // Word renders two flush tables as ONE table, so a split with nothing between
+  // them is undone at render time. The empty separator is not content and not a
+  // title; it is what makes the two tables be two tables. So the criterion is
+  // now: no new heading, and no CONTENT paragraph - and the one paragraph that
+  // does appear must be empty, which is asserted rather than assumed.
+  it('adds a table, one EMPTY separator, and nothing else - no heading, no content', () => {
     const editor = makeEditor(scheduleFixture());
     try {
       const bodyBefore = flattenSfdt(JSON.parse(editor.serialize()))
@@ -1268,9 +1316,18 @@ describe("split_table: the captain's acceptance criteria", () => {
       const bodyAfter = flattenSfdt(JSON.parse(editor.serialize()))
         .filter((block) => block.kind !== 'table_cell')
         .map((block) => `${block.isHeading ? 'H' : 'P'}:${block.text}`);
-      // Every body paragraph and heading is exactly as it was: the split composes
-      // no title for the table it produces, and adds no paragraph beside it.
-      expect(bodyAfter).toEqual(bodyBefore);
+      // Exactly one block appears, it is an EMPTY paragraph, and removing it
+      // gives back the document as it was - so nothing else was composed: no
+      // title, no heading, no text.
+      expect(bodyAfter).toHaveLength(bodyBefore.length + 1);
+      const separatorAt = bodyAfter.findIndex(
+        (entry, index) => entry !== bodyBefore[index]
+      );
+      expect(separatorAt).toBeGreaterThanOrEqual(0);
+      expect(bodyAfter[separatorAt]).toBe('P:');
+      const withoutSeparator = [...bodyAfter];
+      withoutSeparator.splice(separatorAt, 1);
+      expect(withoutSeparator).toEqual(bodyBefore);
       expect(tablesOf(editor)).toHaveLength(2);
     } finally {
       destroyEditor(editor);
@@ -1389,9 +1446,11 @@ describe("split_table: the captain's acceptance criteria", () => {
         [
           {
             op: 'split_table',
-            anchor: '0;4;0;0;0',
+            // Shifted by the first split's separator paragraph: this table was
+            // 0;4 before a split began leaving a gap behind it.
+            anchor: '0;5;0;0;0',
             rows: [2],
-            targetAnchor: '0;5',
+            targetAnchor: '0;6',
             position: 'before'
           }
         ],
@@ -1466,9 +1525,11 @@ describe('split_table: a title is separate content, not part of the split', () =
     try {
       splitOff(editor, 'title-later-split');
       editor.revisions.acceptAll();
-      // The new table sits at 0;3, between the source table and "Next Steps".
+      // The new table sits at 0;4 - the source table is 0;2, the empty separator
+      // the split now leaves is 0;3, and "Next Steps" follows. It was 0;3 before
+      // the separator existed.
       const [, newTable] = tablesOf(editor);
-      expect(newTable.anchor).toBe('0;3');
+      expect(newTable.anchor).toBe('0;4');
       // The ordinary follow-up: compose a heading before it. No redo of the
       // split, and no title field on the split op.
       const titled = apply(
