@@ -65,6 +65,12 @@ export interface BindingsOptions {
    * the refusal is not silent.
    */
   onLockedEdit?: () => void;
+  /**
+   * Fired when the caret leaves a refused/locked spot for an editable one, so
+   * the host can hide the locked-edit hint immediately instead of waiting out
+   * its timeout.
+   */
+  onLockedEditResolved?: () => void;
   persistence?: DocumentPersistence | null;
   setTimeoutFn?: (fn: () => void, ms: number) => TimerId;
   clearTimeoutFn?: (id: TimerId) => void;
@@ -116,6 +122,7 @@ export function attachBindings(
     onSuppressContentChange,
     confirmTableDelete,
     onLockedEdit,
+    onLockedEditResolved,
     persistence = null,
     setTimeoutFn,
     clearTimeoutFn
@@ -216,8 +223,6 @@ export function attachBindings(
     }
   };
   const onContentChange = () => runGuarded(() => triggers.onContentChange());
-  const onSelectionChange = () =>
-    runGuarded(() => triggers.onSelectionChange());
   const onKeyDown = (args: any) =>
     runGuarded(() => triggers.onKeyDown(args?.event?.key));
   const onBlur = () => runGuarded(() => triggers.onEditorBlur());
@@ -230,6 +235,7 @@ export function attachBindings(
   // key is one hint, and stay quiet while the delete guard is mid-operation -
   // those refusals are ours to resolve, not to complain about.
   let lockedHintTimer: TimerId | null = null;
+  let lockHintActive = false;
   const scheduleTimeout = setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
   const cancelTimeout = clearTimeoutFn ?? ((id) => clearTimeout(id as never));
   const editRefused = (): boolean => {
@@ -241,11 +247,23 @@ export function attachBindings(
   const onLockedControl = () =>
     runGuarded(() => {
       if (!onLockedEdit || isDeleteGuardBusy() || !editRefused()) return;
+      lockHintActive = true;
       if (lockedHintTimer !== null) return;
       onLockedEdit();
       lockedHintTimer = scheduleTimeout(() => {
         lockedHintTimer = null;
       }, 600);
+    });
+
+  // Dismiss the hint the instant the caret lands somewhere editable; keep it up
+  // while a locked cell stays selected (until the host's own short timeout).
+  const onSelectionChange = () =>
+    runGuarded(() => {
+      triggers.onSelectionChange();
+      if (lockHintActive && !editRefused()) {
+        lockHintActive = false;
+        onLockedEditResolved?.();
+      }
     });
 
   eventful.addEventListener?.('contentChange', onContentChange);

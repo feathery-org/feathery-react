@@ -146,6 +146,10 @@ function DocxEditor({
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
   );
+  // Mirror the toast into a ref so editor-event callbacks can read the current
+  // type without re-subscribing.
+  const saveToastRef = useRef(saveToast);
+  saveToastRef.current = saveToast;
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   // Debounces the DOCX download: a double-click must not race two exports
@@ -211,14 +215,23 @@ function DocxEditor({
   );
 
   // Brief, non-error hint when a lock refuses an edit; the bindings layer fires
-  // this (debounced) instead of the edit silently doing nothing.
+  // this (debounced) instead of the edit silently doing nothing. Kept short,
+  // and dismissed early once the caret moves somewhere editable.
   const handleLockedEdit = useCallback(() => {
     setSaveToast({
       type: 'info',
       message: "This content is locked and can't be edited here."
     });
     if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
-    saveToastTimer.current = setTimeout(() => setSaveToast(null), 2500);
+    saveToastTimer.current = setTimeout(() => setSaveToast(null), 1500);
+  }, []);
+
+  // The caret left the locked spot for an editable one: hide the hint now,
+  // but never clobber a save success/error toast that happens to be showing.
+  const handleLockedEditResolved = useCallback(() => {
+    if (saveToastRef.current?.type !== 'info') return;
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    setSaveToast(null);
   }, []);
 
   const {
@@ -241,7 +254,12 @@ function DocxEditor({
     onDirty: markDirty,
     onError,
     bindings: bindings
-      ? { ...bindings, confirmTableDelete, onLockedEdit: handleLockedEdit }
+      ? {
+          ...bindings,
+          confirmTableDelete,
+          onLockedEdit: handleLockedEdit,
+          onLockedEditResolved: handleLockedEditResolved
+        }
       : bindings
   });
 
