@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-import TextNodes, { getRenderedText } from '../components/TextNodes';
+import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
 import { adjustColor } from '../../utils/styles';
 import { isFit } from '../../utils/hydration';
@@ -145,9 +145,13 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
       // Fit-height buttons have no numeric height, so size the loader
       // relative to the button text instead
       if (isFit(b)) return { width: '1em', height: '1em' };
-      const halfHeight = Math.round(a / 2);
-      const dimension = `${halfHeight}${b}`;
-      return { width: dimension, height: dimension };
+      const dimension = `${Math.round(a / 2)}${b}`;
+      // A percentage resolves against a different length on each axis, so it
+      // would give a wide flat box and a spinner drawn tiny inside it. Take the
+      // size from the height and let the ratio supply the width.
+      return b === '%'
+        ? { height: dimension, aspectRatio: '1' }
+        : { width: dimension, height: dimension };
     }
   );
 
@@ -221,33 +225,21 @@ function ButtonElement({
       )}
     </>
   );
-  // A label that renders nothing has no size worth preserving, so it neither
-  // holds the button open nor takes space from a loader that then sizes the
-  // button. Blank text counts, and so does text that resolves to nothing - a
-  // label of only {{unfilled_field}} is set but renders empty.
-  const hasContent = Boolean(
-    element.properties.image ||
-      (element.properties.text &&
-        getRenderedText(element, featheryContext, editMode).trim())
-  );
-  const contentStyles = !loader
-    ? ({ display: 'contents' } as const)
-    : hasContent
-    ? ({ display: 'contents', visibility: 'hidden' } as const)
-    : ({ display: 'none' } as const);
-  // Draw the loader over the content instead of in place of it, matching how
-  // the button lays its own content out
+  const contentStyles = {
+    display: 'contents',
+    ...(loader ? ({ visibility: 'hidden' } as const) : {})
+  } as const;
+  // Draw the loader over the content instead of in place of it, centred in the
+  // button's own box
   const loaderOverlayStyles = {
     position: 'absolute',
     inset: 0,
     display: 'flex',
-    flexDirection: 'inherit',
-    alignItems: 'inherit',
-    justifyContent: 'inherit',
-    padding: 'inherit'
+    alignItems: 'center',
+    justifyContent: 'center'
   } as const;
-  // The button no longer grows for an overlaid loader, so keep that loader
-  // inside the space the content already claimed
+  // The button never grows for its loader. A loader larger than the button
+  // scales down to fit the box the button already has, keeping its ratio.
   const loaderClampStyles = {
     maxWidth: '100%',
     maxHeight: '100%',
@@ -323,19 +315,13 @@ function ButtonElement({
           and the img isn't torn down and reloaded mid-click. `display:
           contents` generates no box, so the button's layout is unchanged. */}
       <span css={contentStyles}>{buttonContent}</span>
-      {loader &&
-        (hasContent ? (
-          <div css={loaderOverlayStyles}>
-            <div css={{ ...loaderClampStyles, ...styles.getTarget('loader') }}>
-              {loader}
-            </div>
+      {loader && (
+        <div css={loaderOverlayStyles}>
+          <div css={{ ...styles.getTarget('loader'), ...loaderClampStyles }}>
+            {loader}
           </div>
-        ) : (
-          // Nothing is holding the button open, so the loader still sizes it.
-          // It stays a direct child: an intermediate wrapper would be sized by
-          // its own content, collapsing a percentage-sized loader to nothing.
-          <div css={styles.getTarget('loader')}>{loader}</div>
-        ))}
+        </div>
+      )}
       {/* Hidden input so we can set field errors */}
       {!element.properties.submit && (
         <ErrorInput

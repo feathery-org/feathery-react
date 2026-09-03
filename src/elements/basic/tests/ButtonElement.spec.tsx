@@ -39,12 +39,15 @@ const renderButton = (element: any, loader: any, featheryContext?: any) =>
     />
   );
 
-// The loader sizes the button only when nothing else is holding it open, so it
-// stays a direct child and is neither overlaid nor clamped
-const expectLoaderSizesButton = (loader: HTMLElement) => {
+// One path for every button: the loader is drawn over the content and clamped
+// to the box the button already has, so the button can never resize
+const expectOverlaidAndClamped = (loader: HTMLElement) => {
   const box = loader.parentElement as HTMLElement;
-  expect(box.parentElement?.tagName).toBe('BUTTON');
-  expect(getComputedStyle(box).maxWidth).not.toBe('100%');
+  const overlay = box.parentElement as HTMLElement;
+  expect(getComputedStyle(box).maxWidth).toBe('100%');
+  expect(getComputedStyle(box).maxHeight).toBe('100%');
+  expect(getComputedStyle(overlay).position).toBe('absolute');
+  expect(overlay.parentElement?.tagName).toBe('BUTTON');
 };
 
 beforeAll(() => {
@@ -102,109 +105,85 @@ describe('ButtonElement loader', () => {
     expect(getComputedStyle(wrapper).visibility).not.toBe('hidden');
   });
 
-  it('clamps the loader to the button when content holds the size open', () => {
+  it('overlays and clamps the loader', () => {
     renderButton(labelled(), <span data-testid='loader' />);
 
-    const box = screen.getByTestId('loader').parentElement as HTMLElement;
-    // The button no longer grows for the loader, so a loader bigger than the
-    // label has to scale down instead of spilling out
-    expect(getComputedStyle(box).maxWidth).toBe('100%');
-    expect(getComputedStyle(box.parentElement as HTMLElement).position).toBe(
-      'absolute'
-    );
+    expectOverlaidAndClamped(screen.getByTestId('loader'));
   });
 
-  it('treats a whitespace-only label as no content', () => {
-    // The loader sizes the button, and the blank label neither holds the
-    // button open nor takes space away from the loader
-    const element = makeElement({
-      text: ' ',
-      text_formatted: [{ insert: ' ' }]
-    });
-    renderButton(element, <span data-testid='loader' />);
+  it('centres the loader in the button', () => {
+    renderButton(labelled(), <span data-testid='loader' />);
 
-    expectLoaderSizesButton(screen.getByTestId('loader'));
-
-    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
-    expect(getComputedStyle(label.parentElement as HTMLElement).display).toBe(
-      'none'
-    );
+    // A loader that scaled down should still sit in the middle rather than
+    // wherever the hidden label happened to be aligned
+    const overlay = (screen.getByTestId('loader').parentElement as HTMLElement)
+      .parentElement as HTMLElement;
+    const overlayStyles = getComputedStyle(overlay);
+    expect(overlayStyles.alignItems).toBe('center');
+    expect(overlayStyles.justifyContent).toBe('center');
   });
 
-  it('treats a label of only an unfilled text variable as no content', () => {
-    // The label is set, but a known field the user hasn't filled resolves to
-    // nothing, so the label renders empty and cannot hold the button open
+  // Whatever the label renders, the button keeps its size and the loader
+  // scales to fit it. There is no second path that lets the loader size the
+  // button, so none of these can collapse it.
+  it.each([
+    ['a whitespace-only label', { text: ' ', text_formatted: [{ insert: ' ' }] }, undefined],
+    [
+      'a label of only an unfilled text variable',
+      { text: '{{unfilled}}', text_formatted: [{ insert: '{{unfilled}}' }] },
+      undefined
+    ],
+    [
+      'a data-bound label resolving to empty',
+      {
+        text: 'Placeholder label',
+        text_formatted: [{ insert: 'Placeholder label' }],
+        text_mode: 'data',
+        text_source: 'feathery.empty'
+      },
+      { empty: '' }
+    ],
+    [
+      'a data-bound label resolving to a boolean',
+      {
+        text: 'Placeholder label',
+        text_formatted: [{ insert: 'Placeholder label' }],
+        text_mode: 'data',
+        text_source: 'feathery.flag'
+      },
+      { flag: false }
+    ],
+    ['no text and no image', {}, undefined]
+  ])('overlays and clamps the loader for %s', (_label, properties, context) => {
     initState.knownFieldKeys.add('unfilled');
+    renderButton(
+      makeElement(properties as any),
+      <span data-testid='loader' />,
+      context
+    );
+
+    expectOverlaidAndClamped(screen.getByTestId('loader'));
+  });
+
+  it('sizes a percentage loader from its height so it stays square', () => {
+    // width and height percentages resolve against different lengths, which
+    // gave a wide flat box with the spinner drawn tiny inside it
     const element = makeElement({
-      text: '{{unfilled}}',
-      text_formatted: [{ insert: '{{unfilled}}' }]
+      text: 'Submit',
+      text_formatted: [{ insert: 'Submit' }]
     });
+    element.styles = { ...BASE_STYLES, height_unit: '%' } as any;
     renderButton(element, <span data-testid='loader' />);
 
-    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
-    expect(label.textContent).toBe('');
-    expectLoaderSizesButton(screen.getByTestId('loader'));
-  });
-
-  it('treats a data-bound label resolving to empty as no content', () => {
-    // A 'data' label ignores text_formatted, so a non-blank text property says
-    // nothing about whether anything renders
-    const element = makeElement({
-      text: 'Placeholder label',
-      text_formatted: [{ insert: 'Placeholder label' }],
-      text_mode: 'data',
-      text_source: 'feathery.empty'
-    });
-    renderButton(element, <span data-testid='loader' />, { empty: '' });
-
-    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
-    expect(label.textContent).toBe('');
-    expectLoaderSizesButton(screen.getByTestId('loader'));
-  });
-
-  it('treats a data-bound label resolving to a boolean as no content', () => {
-    // React draws nothing for a boolean child, so the label is empty however
-    // non-blank the raw value reads
-    const element = makeElement({
-      text: 'Placeholder label',
-      text_formatted: [{ insert: 'Placeholder label' }],
-      text_mode: 'data',
-      text_source: 'feathery.flag'
-    });
-    renderButton(element, <span data-testid='loader' />, { flag: false });
-
-    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
-    expect(label.textContent).toBe('');
-    expectLoaderSizesButton(screen.getByTestId('loader'));
-  });
-
-  it('keeps a data-bound label that resolves to real text as content', () => {
-    const element = makeElement({
-      text: 'Placeholder label',
-      text_formatted: [{ insert: 'Placeholder label' }],
-      text_mode: 'data',
-      text_source: 'feathery.email'
-    });
-    renderButton(element, <span data-testid='loader' />, {
-      email: 'a@b.com'
-    });
-
-    const label = document.getElementById(`span-${element.id}`) as HTMLElement;
-    expect(label.textContent).toBe('a@b.com');
     const box = screen.getByTestId('loader').parentElement as HTMLElement;
-    expect(getComputedStyle(box).maxWidth).toBe('100%');
-  });
-
-  it('does not clamp the loader when there is no content to preserve', () => {
-    // Nothing is holding the button's size open, so the loader still sizes it
-    renderButton(makeElement(), <span data-testid='loader' />);
-
-    const box = screen.getByTestId('loader').parentElement as HTMLElement;
-    const boxStyles = getComputedStyle(box);
-    expect(boxStyles.maxWidth).not.toBe('100%');
-    expect(boxStyles.position).not.toBe('absolute');
-    // No wrapper between the button and the loader: an intermediate box is
-    // sized by its own content, which collapses a percentage-sized loader
-    expect(box.parentElement?.tagName).toBe('BUTTON');
+    expect(getComputedStyle(box).height).toBe('50%');
+    expect(getComputedStyle(box).width).not.toBe('50%');
+    // jsdom's cssstyle drops aspect-ratio, and emotion inserts through
+    // insertRule, so read the rules off the sheets rather than the style tags
+    const emitted = Array.from(document.styleSheets)
+      .flatMap((sheet) => Array.from(sheet.cssRules ?? []))
+      .map((rule) => rule.cssText)
+      .join('');
+    expect(emitted).toMatch(/aspect-ratio:\s*1/);
   });
 });

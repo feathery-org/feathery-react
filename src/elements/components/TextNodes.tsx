@@ -65,35 +65,6 @@ export function resolveDataText(element: any, featheryContext: any = {}) {
   return extractProperty(featheryContext, textSource.split('.'));
 }
 
-// A data value goes to React as a child, and React draws nothing for a boolean
-// or a function. Stringifying those would report an empty label as content.
-const asRenderedByReact = (value: any) =>
-  typeof value === 'boolean' || typeof value === 'function'
-    ? ''
-    : stringifyWithNull(value);
-
-/**
- * The plain text this element actually renders, with data sources and text
- * variables resolved. A label of only {{unfilled_field}} renders nothing, so
- * it reads as empty here even though properties.text is set.
- */
-export function getRenderedText(
-  element: any,
-  featheryContext: any = {},
-  editMode?: any
-): string {
-  const textFromData = resolveDataText(element, featheryContext);
-  if (textFromData !== null) return asRenderedByReact(textFromData);
-  return new Delta(element.properties.text_formatted)
-    .filter((op: any) => !!op.insert)
-    .map((op: any) =>
-      editMode
-        ? (op.insert as string)
-        : replaceTextVariables(op.insert as string, element.repeat)
-    )
-    .join('');
-}
-
 const applyNewDelta = (
   delta: any,
   start?: number | undefined,

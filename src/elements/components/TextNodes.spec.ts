@@ -1,4 +1,4 @@
-import { getRenderedText, replaceTextVariables } from './TextNodes';
+import { replaceTextVariables } from './TextNodes';
 import { fieldValues, initState } from '../../utils/init';
 
 const setFieldValues = (values: Record<string, any>) => {
@@ -170,38 +170,5 @@ describe('replaceTextVariables', () => {
 
   it('returns empty for empty text', () => {
     expect(replaceTextVariables('')).toBe('');
-  });
-});
-
-describe('getRenderedText', () => {
-  const dataElement = (textSource: string) => ({
-    properties: {
-      text: 'Placeholder label',
-      text_formatted: [{ insert: 'Placeholder label' }],
-      text_mode: 'data',
-      text_source: textSource
-    },
-    repeat: null
-  });
-
-  // TextNodes passes the resolved value to React as a child, so this has to
-  // agree with what React actually draws - callers size elements off it
-  it.each([
-    ['a boolean false', false, ''],
-    ['a boolean true', true, ''],
-    ['a function', () => 'x', ''],
-    ['an empty string', '', ''],
-    ['zero', 0, '0'],
-    ['a string', 'hello', 'hello']
-  ])('reports %s as %p', (_label, value, expected) => {
-    expect(getRenderedText(dataElement('feathery.val'), { val: value })).toBe(
-      expected
-    );
-  });
-
-  it('falls back to text_formatted when the source resolves to nothing', () => {
-    expect(getRenderedText(dataElement('feathery.missing'), {})).toBe(
-      'Placeholder label'
-    );
   });
 });
