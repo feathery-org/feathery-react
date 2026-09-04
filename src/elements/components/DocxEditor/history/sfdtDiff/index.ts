@@ -301,53 +301,74 @@ interface DisplayChar {
   fmtKey: string;
   token?: unknown;
   revisionIds: string[];
+  /** The content control this char belongs to (its properties), so the wrapper
+   *  can be rebuilt; undefined for chars outside any content control. */
+  cc?: Record<string, unknown>;
+  /** Per-occurrence id so adjacent runs of the SAME content control regroup. */
+  ccId?: number;
 }
 
 function flattenForDisplay(para: any): DisplayChar[] {
   const out: DisplayChar[] = [];
-  const walk = (inlines: any[], inherited?: Record<string, unknown>) => {
+  let ccCounter = 0;
+  const walk = (
+    inlines: any[],
+    inherited: Record<string, unknown> | undefined,
+    cc: Record<string, unknown> | undefined,
+    ccId: number | undefined
+  ) => {
     for (const inline of inlines ?? []) {
       if (!inline || typeof inline !== 'object') continue;
       const fmt = inline.characterFormat ?? inherited ?? {};
       if (Array.isArray(inline.inlines)) {
-        walk(inline.inlines, fmt);
+        // A content control wraps nested inlines; tag its children so the
+        // wrapper survives the rebuild (bound fields must keep rendering).
+        const ccProps = inline.contentControlProperties ?? inline.ccp;
+        if (ccProps) walk(inline.inlines, fmt, ccProps, ++ccCounter);
+        else walk(inline.inlines, fmt, cc, ccId);
         continue;
       }
       const fmtKey = JSON.stringify(fmt);
       if (typeof inline.text === 'string') {
         for (const ch of inline.text)
-          out.push({ ch, fmt, fmtKey, revisionIds: [] });
+          out.push({ ch, fmt, fmtKey, revisionIds: [], cc, ccId });
       } else {
         out.push({
           ch: TOKEN_CHAR,
           fmt,
           fmtKey,
           token: inline,
-          revisionIds: []
+          revisionIds: [],
+          cc,
+          ccId
         });
       }
     }
   };
-  walk(para.inlines ?? []);
+  walk(para.inlines ?? [], undefined, undefined, undefined);
   return out;
 }
 
 function rebuildInlines(chars: DisplayChar[]): any[] {
-  const inlines: any[] = [];
+  // First coalesce chars into runs (carrying their content-control tag)...
+  const runs: any[] = [];
   for (const c of chars) {
     if (c.token) {
       const t = { ...(c.token as any) };
       if (c.revisionIds.length) t.revisionIds = [...c.revisionIds];
-      inlines.push(t);
+      t.__ccId = c.ccId;
+      t.__cc = c.cc;
+      runs.push(t);
       continue;
     }
     const revKey = c.revisionIds.join(',');
-    const last = inlines[inlines.length - 1];
+    const last = runs[runs.length - 1];
     if (
       last &&
       typeof last.text === 'string' &&
       last.__fmtKey === c.fmtKey &&
-      last.__revKey === revKey
+      last.__revKey === revKey &&
+      last.__ccId === c.ccId
     ) {
       last.text += c.ch;
     } else {
@@ -355,14 +376,38 @@ function rebuildInlines(chars: DisplayChar[]): any[] {
       if (c.revisionIds.length) inline.revisionIds = [...c.revisionIds];
       inline.__fmtKey = c.fmtKey;
       inline.__revKey = revKey;
-      inlines.push(inline);
+      inline.__ccId = c.ccId;
+      inline.__cc = c.cc;
+      runs.push(inline);
     }
   }
-  for (const inline of inlines) {
+  // ...then re-wrap consecutive runs of the same content control in it.
+  const out: any[] = [];
+  let i = 0;
+  while (i < runs.length) {
+    const ccId = runs[i].__ccId;
+    const cc = runs[i].__cc;
+    if (ccId == null) {
+      out.push(clean(runs[i]));
+      i++;
+      continue;
+    }
+    const group: any[] = [];
+    while (i < runs.length && runs[i].__ccId === ccId) {
+      group.push(clean(runs[i]));
+      i++;
+    }
+    out.push({ contentControlProperties: cc, inlines: group });
+  }
+  return out;
+
+  function clean(inline: any): any {
     delete inline.__fmtKey;
     delete inline.__revKey;
+    delete inline.__ccId;
+    delete inline.__cc;
+    return inline;
   }
-  return inlines;
 }
 
 /**
@@ -447,12 +492,17 @@ export function applyHunks(finalSfdt: unknown, changes: ChangeList): any {
       .sort((a, b) => b.at.offset - a.at.offset);
     for (const hunk of dels) {
       const mark = newRevision('Deletion', hunk.author, hunk.id);
-      const fmt = hunk.characterFormat ?? chars[hunk.at.offset]?.fmt ?? {};
+      // Inherit the surrounding char's content control so re-inserted deleted
+      // text stays inside its field rather than splitting the wrapper.
+      const neighbor = chars[hunk.at.offset] ?? chars[hunk.at.offset - 1];
+      const fmt = hunk.characterFormat ?? neighbor?.fmt ?? {};
       const inserted: DisplayChar[] = [...hunk.text].map((ch) => ({
         ch,
         fmt,
         fmtKey: JSON.stringify(fmt),
-        revisionIds: [mark.revisionId]
+        revisionIds: [mark.revisionId],
+        cc: neighbor?.cc,
+        ccId: neighbor?.ccId
       }));
       chars.splice(hunk.at.offset, 0, ...inserted);
     }
