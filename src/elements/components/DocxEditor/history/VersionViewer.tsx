@@ -66,13 +66,16 @@ export default function VersionViewer({
     const el = hostElRef.current;
     const viewer = editorRef.current;
     if (!el || !viewer) return;
-    const h = el.clientHeight;
-    const w = el.clientWidth;
+    // appendTo turns hostElRef INTO the editor element (Syncfusion pins it to a
+    // ~200px default), so measure its PARENT — the full-height overlay — not the
+    // host itself.
+    const box = el.parentElement ?? el;
+    const h = box.clientHeight;
+    const w = box.clientWidth;
     try {
-      // resize(w, h) is the DocumentEditor's explicit-size API; a bare instance
-      // otherwise keeps its ~200px default. Fall back to a bare resize() when
-      // the host has not been measured yet (0×0).
-      if (h > 0 && w > 0) viewer.resize(w, h);
+      // resize(w, h) is the DocumentEditor's explicit-size API and only sets the
+      // height when it exceeds 200; fall back to a bare resize() before layout.
+      if (h > 200 && w > 0) viewer.resize(w, h);
       else viewer.resize();
     } catch {
       /* torn down mid-resize */
@@ -107,9 +110,11 @@ export default function VersionViewer({
       setEditorReady(true);
 
       // Keep it full-height as the pane changes (window resize, panel toggle).
+      // Observe the PARENT — hostElRef is now the fixed-size editor element.
       try {
+        const box = hostElRef.current.parentElement ?? hostElRef.current;
         observer = new ResizeObserver(() => fitToHost());
-        observer.observe(hostElRef.current);
+        observer.observe(box);
       } catch {
         /* ResizeObserver unavailable: the initial fit still sizes it */
       }
