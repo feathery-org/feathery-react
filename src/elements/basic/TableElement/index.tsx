@@ -36,6 +36,8 @@ import {
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
 import { STATUS_HUB_FIELD_ID, UNVERIFY_ACTION_LABEL } from './hubStatus';
+import { use2dArrayTableSource } from './use2dArrayTableSource';
+import { exampleArrayColumns } from './exampleData';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
@@ -57,6 +59,8 @@ import {
   unverifyIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+
+const EMPTY_ERRORS: string[] = [];
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
@@ -144,10 +148,35 @@ function TableElement({
     blockRefetch: hasPendingEdits
   });
 
+  // 2d_array tables read every row from one hidden field holding an array of
+  // arrays, whose first row is the headers (live forms only; the builder
+  // renders placeholder columns because the value is not known until runtime).
+  const is2dArray = element.properties?.data_source === '2d_array' && !editMode;
+  const arraySource = use2dArrayTableSource({
+    element,
+    updateFieldValues,
+    submitCustom,
+    onMutate,
+    dataVersion,
+    enabled: is2dArray
+  });
+  const is2dArrayPreview =
+    element.properties?.data_source === '2d_array' && editMode;
+
   const elementForData = useMemo(() => {
+    // Both Hub and 2d_array derive their columns rather than using the
+    // designer-configured ones; the builder preview has no value to derive
+    // from, so it falls back to placeholders.
+    const sourceColumns = () => {
+      if (isHub) return hub.hubColumns;
+      if (is2dArray) return arraySource.arrayColumns;
+      if (is2dArrayPreview) return exampleArrayColumns();
+      return null;
+    };
+    const derivedColumns = sourceColumns();
     const properties = {
       ...element.properties,
-      ...(isHub ? { columns: hub.hubColumns } : {}),
+      ...(derivedColumns ? { columns: derivedColumns } : {}),
       // Features the spreadsheet has no place for. They are overridden here
       // rather than cleared off the element, so switching back to the classic
       // table restores whatever the builder had configured.
@@ -162,7 +191,15 @@ function TableElement({
         : {})
     };
     return { ...element, properties };
-  }, [isHub, element, hub.hubColumns, wantsSpreadsheet]);
+  }, [
+    isHub,
+    is2dArray,
+    is2dArrayPreview,
+    element,
+    hub.hubColumns,
+    arraySource.arrayColumns,
+    wantsSpreadsheet
+  ]);
 
   const {
     // search
@@ -211,7 +248,11 @@ function TableElement({
       ? sampleRowCount(element.styles?.height_unit, element.styles?.height)
       : undefined,
     dataVersion,
-    externalFieldValues: isHub ? hub.hubFieldValues : undefined
+    externalFieldValues: isHub
+      ? hub.hubFieldValues
+      : is2dArray
+      ? arraySource.arrayFieldValues
+      : undefined
   });
 
   const fieldMutations = useTableMutations({
@@ -228,22 +269,28 @@ function TableElement({
     onMutate
   });
 
-  // In Hub mode the writes go to the Data Hub instead of form field values.
+  // Hub writes go to the Data Hub, and 2d_array writes replace the whole array
+  // in its hidden field, instead of writing one field per column.
+  // Stable across renders, unlike the source objects themselves.
+  const hasExternalSource = isHub || is2dArray;
+  const activeSource = isHub ? hub : is2dArray ? arraySource : null;
   const {
     handleAddRow,
     handleInsertRow,
     handleDeleteRow,
     handleCellEdit,
     handleCellsEdit
-  } = isHub
+  } = activeSource
     ? {
-        handleAddRow: hub.handleAddRow,
-        handleInsertRow: hub.handleInsertRow,
-        handleDeleteRow: hub.handleDeleteRow,
-        handleCellEdit: hub.handleCellEdit,
-        handleCellsEdit: hub.handleCellsEdit
+        handleAddRow: activeSource.handleAddRow,
+        handleInsertRow: activeSource.handleInsertRow,
+        handleDeleteRow: activeSource.handleDeleteRow,
+        handleCellEdit: activeSource.handleCellEdit,
+        handleCellsEdit: activeSource.handleCellsEdit
       }
     : fieldMutations;
+
+  const sourceErrors = activeSource?.errors ?? EMPTY_ERRORS;
 
   /**
    * Adding a column only has a meaning for a data source that owns its own
@@ -257,7 +304,10 @@ function TableElement({
 
   const isSpreadsheet = wantsSpreadsheet;
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
-  const canAddRows = canEdit && enableAddDeleteRows;
+  // A 2d_array table has no columns to add a row to until its header row
+  // exists.
+  const canAddRows =
+    canEdit && enableAddDeleteRows && (!is2dArray || arraySource.canAddRow);
   // The spreadsheet has its own trailing "add row" strip and a row-header
   // context menu, so the toolbar button would be a second way to do the same
   // thing.
@@ -364,9 +414,9 @@ function TableElement({
     setDeleteRowIndex(null);
     bumpRowIdentity();
     handleAddRow();
-    // Hub mutations don't own search/pagination; mirror the field-mode UX so the
-    // new row is visible (field mode does this inside useTableMutations).
-    if (isHub) {
+    // Only useTableMutations owns search/pagination, so the other sources
+    // mirror the field-mode UX here to keep the new row visible.
+    if (hasExternalSource) {
       if (searchQuery) setSearchQuery('');
       if (enablePagination) setCurrentPage(0);
     }
@@ -379,7 +429,7 @@ function TableElement({
   }, [
     handleAddRow,
     bumpRowIdentity,
-    isHub,
+    hasExternalSource,
     searchQuery,
     setSearchQuery,
     enablePagination,
@@ -824,10 +874,10 @@ function TableElement({
           )}
         </div>
       )}
-      {isHub && hub.errors.length > 0 && (
+      {sourceErrors.length > 0 && (
         <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>
           <ul>
-            {hub.errors.map((error, index) => (
+            {sourceErrors.map((error: string, index: number) => (
               <li key={`${error}-${index}`}>{error}</li>
             ))}
           </ul>
