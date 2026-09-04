@@ -42,6 +42,11 @@ interface DragState {
 export interface RowDragOptions {
   /** Absolute repeat index of this row. */
   index: number;
+  /**
+   * Identifies the track this row belongs to, so a focus claim left by a move
+   * cannot be consumed by a different container's row of the same index.
+   */
+  trackId: string;
   onMove: (from: number, to: number) => boolean;
   /**
    * Renders an absolute repeat index as the position a person sees, e.g.
@@ -146,6 +151,7 @@ const clearDrag = (state: DragState) => {
 
 export function useRowDrag({
   index,
+  trackId,
   onMove,
   positionLabel,
   announce,
@@ -182,9 +188,9 @@ export function useRowDrag({
       if (!onMove(state.index, to)) return;
 
       announce(`Row moved to position ${positionLabel(to)}`);
-      requestRowFocus(to);
+      requestRowFocus(trackId, to);
     },
-    [onMove, positionLabel, announce]
+    [onMove, positionLabel, announce, trackId]
   );
 
   const onPointerDown = useCallback(
@@ -311,9 +317,9 @@ export function useRowDrag({
       if (to === null || !onMove(index, to)) return;
 
       announce(`Row moved to position ${positionLabel(to)}`);
-      requestRowFocus(to);
+      requestRowFocus(trackId, to);
     },
-    [index, onMove, positionLabel, announce]
+    [index, onMove, positionLabel, announce, trackId]
   );
 
   const onKeyDown = useCallback(
@@ -346,7 +352,7 @@ export function useRowDrag({
   // No dep array: the claim is checked on every render, which is exactly when
   // the destination row has just been re-rendered by the move.
   useEffect(() => {
-    if (consumeRowFocus(index)) handleRef.current?.focus();
+    if (consumeRowFocus(trackId, index)) handleRef.current?.focus();
   });
 
   // A row can unmount mid-drag when logic hides it. Its siblings are still on

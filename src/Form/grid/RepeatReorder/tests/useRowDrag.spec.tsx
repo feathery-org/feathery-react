@@ -46,16 +46,20 @@ const Row = ({
   rowCount,
   onMove,
   onRowClick,
-  announce
+  announce,
+  trackId = 'test-form:test-container'
 }: {
   index: number;
   rowCount: number;
   onMove: (from: number, to: number) => boolean;
   onRowClick?: () => void;
   announce?: (message: string) => void;
+  // One track per spec by default. A spec that renders two names them apart.
+  trackId?: string;
 }) => {
   const { dragging, handleRef, handleProps } = useRowDrag({
     index,
+    trackId,
     onMove,
     // The handle owns the wording in real use; here every row is on screen, so
     // absolute index and rendered position are the same thing.

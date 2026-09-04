@@ -79,6 +79,12 @@ export interface RepeatRowReorder {
   visible: boolean[];
   /** This form instance, so live region and handles agree on one channel. */
   formId: string;
+  /**
+   * This container within this form. Two reorderable containers on a step both
+   * have a row at any given index, so a focus handoff has to name the track as
+   * well as the row.
+   */
+  trackId: string;
   /** False on a lone row: there is nothing to reorder it against. */
   canReorder: boolean;
   /** False once the container has reached the author's row cap. */
@@ -150,6 +156,7 @@ export function useRepeatRowReorder(
     renderedCount,
     visible,
     formId: form.formInstanceId,
+    trackId: `${form.formInstanceId}:${container.id}`,
     canReorder,
     canInsert,
     onMove: (from: number, to: number) =>
@@ -164,6 +171,7 @@ export const RepeatRowHandle = ({
   renderedCount,
   visible,
   formId,
+  trackId,
   canReorder,
   canInsert,
   onMove,
@@ -236,6 +244,7 @@ export const RepeatRowHandle = ({
 
   const { dragging, handleRef, handleProps } = useRowDrag({
     index,
+    trackId,
     onMove,
     positionLabel,
     announce,
