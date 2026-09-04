@@ -21,10 +21,12 @@ import {
   HANDLE_ATTR,
   INSERT_CLASS,
   REORDER_CLASS,
+  STEP_CLASS,
   clusterStyles,
   gripStyles,
   insertStyles,
   insertStylesAbove,
+  stepStyles,
   visuallyHidden
 } from './styles';
 import { featheryWindow } from '../../../utils/browser';
@@ -56,6 +58,20 @@ const Plus = () => (
       stroke='currentColor'
       strokeWidth='1.6'
       strokeLinecap='round'
+    />
+  </svg>
+);
+
+/** Points at the seam the row would step to, so the two read as a pair. */
+const Chevron = ({ up }: { up: boolean }) => (
+  <svg width='10' height='10' viewBox='0 0 10 10' aria-hidden='true'>
+    <path
+      d={up ? 'M2 6.5L5 3.5l3 3' : 'M2 3.5L5 6.5l3-3'}
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='1.6'
+      strokeLinecap='round'
+      strokeLinejoin='round'
     />
   </svg>
 );
@@ -242,7 +258,7 @@ export const RepeatRowHandle = ({
     [formId]
   );
 
-  const { dragging, handleRef, handleProps } = useRowDrag({
+  const { dragging, handleRef, handleProps, move } = useRowDrag({
     index,
     trackId,
     onMove,
@@ -250,6 +266,33 @@ export const RepeatRowHandle = ({
     announce,
     disabled: !canReorder
   });
+
+  /**
+   * Dragging is not the only way to move a row: SC 2.5.7 wants a single-pointer
+   * path, and the arrow keys do not count because that criterion is about
+   * pointer input. These run the same step the keys do.
+   *
+   * Ends are disabled by ordinal rather than measured, which keeps them
+   * agreeing with the handle's own "Row N of M" label. On a track a customer's
+   * own CSS has reversed, that label is already counted in absolute order, so
+   * this shares the limitation instead of adding a second one.
+   */
+  const stepButton = (up: boolean) => (
+    <button
+      type='button'
+      className={STEP_CLASS}
+      css={stepStyles}
+      disabled={up ? ordinal === 1 : ordinal === renderedCount}
+      aria-label={up ? `Move row ${ordinal} up` : `Move row ${ordinal} down`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        move(up ? -1 : 1);
+      }}
+    >
+      <Chevron up={up} />
+    </button>
+  );
 
   return (
     <>
@@ -274,6 +317,7 @@ export const RepeatRowHandle = ({
       )}
       {canReorder && (
         <div ref={clusterRef} className={REORDER_CLASS} css={clusterStyles}>
+          {stepButton(true)}
           <button
             {...{ [HANDLE_ATTR]: '' }}
             ref={handleRef as any}
@@ -288,6 +332,7 @@ export const RepeatRowHandle = ({
           >
             <Grip />
           </button>
+          {stepButton(false)}
         </div>
       )}
     </>
@@ -308,8 +353,9 @@ export const ReorderLiveRegion = ({ formId }: { formId: string }) => {
   return (
     <>
       <span id={reorderInstructionsId(formId)} css={visuallyHidden}>
-        Drag the handle to move this row, or focus the handle and press the
-        arrow keys to move it.
+        Drag the handle to move this row, or press the arrow keys while it is
+        focused. The buttons above and below the handle move the row one place
+        without dragging.
       </span>
       <span
         role='status'

@@ -8,6 +8,7 @@
  */
 export const REORDER_CLASS = 'feathery-repeat-reorder';
 export const GRIP_CLASS = 'feathery-repeat-reorder-grip';
+export const STEP_CLASS = 'feathery-repeat-reorder-step';
 export const INSERT_CLASS = 'feathery-repeat-insert';
 
 export const ROW_ATTR = 'data-feathery-repeat-row';
@@ -25,12 +26,20 @@ export const GUTTER_WIDTH = 28;
 const ink = 'var(--feathery-repeat-handle-ink, currentColor)';
 const surface = 'var(--feathery-repeat-insert-surface, #fff)';
 
-/** Revealed by the row, so a resting form carries no extra furniture. */
+/**
+ * Revealed by the row, so a resting form carries no extra furniture.
+ *
+ * A column, because the grip is stacked between the two step buttons that are
+ * the drag's single-pointer alternative (WCAG 2.2 SC 2.5.7).
+ */
 export const clusterStyles = {
   position: 'absolute' as const,
   insetBlockStart: 0,
   insetInlineStart: `-${GUTTER_WIDTH}px`,
   width: `${GUTTER_WIDTH - 6}px`,
+  display: 'flex',
+  flexDirection: 'column' as const,
+  alignItems: 'center',
   color: ink,
   pointerEvents: 'none' as const,
   opacity: 0,
@@ -61,29 +70,44 @@ export const rowRevealStyles = {
   }
 };
 
-export const gripStyles = {
-  position: 'absolute' as const,
-  insetBlockStart: 0,
-  insetInlineStart: '50%',
-  transform: 'translateX(-50%)',
+const clusterButton = {
   pointerEvents: 'auto' as const,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: '20px',
-  height: '24px',
   padding: 0,
   border: 0,
   background: 'none',
   color: 'inherit',
   borderRadius: '4px',
-  cursor: 'grab',
   opacity: 0.5,
   transition: 'opacity 0.12s ease',
+  '&:hover, &:focus-visible': { opacity: 1 }
+};
+
+/**
+ * Moves the row one place without a drag, which is what SC 2.5.7 asks for.
+ * Kept in the same gutter as the grip so the three controls read as one
+ * cluster, and sized to the 20px the grip already occupies rather than to a
+ * touch target: on a coarse pointer the whole cluster is permanently visible,
+ * and widening it there would push the row's content further in.
+ */
+export const stepStyles = {
+  ...clusterButton,
+  width: '20px',
+  height: '14px',
+  cursor: 'pointer',
+  '&:disabled': { opacity: 0.2, cursor: 'default' }
+};
+
+export const gripStyles = {
+  ...clusterButton,
+  width: '20px',
+  height: '24px',
+  cursor: 'grab',
   // Required for a pointer drag to survive a touch gesture; scoped to the grip
   // so scrolling anywhere else in the form is unaffected.
   touchAction: 'none' as const,
-  '&:hover, &:focus-visible': { opacity: 1 },
   '&:active': { cursor: 'grabbing', opacity: 1 }
 };
 

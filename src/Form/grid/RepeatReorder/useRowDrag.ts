@@ -373,6 +373,9 @@ export function useRowDrag({
   return {
     dragging,
     handleRef,
+    // The drag's single-pointer alternative runs through the same step, so a
+    // button press, an arrow key and a one-row drag cannot diverge.
+    move,
     handleProps: {
       onPointerDown,
       onPointerMove,

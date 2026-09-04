@@ -355,6 +355,120 @@ describe('Container repeat row reorder handle', () => {
     expect(grip).toHaveFocus();
   });
 
+  /**
+   * Dragging must not be the only pointer path to a reorder: WCAG 2.2 SC 2.5.7
+   * asks for a single-pointer alternative, and the arrow keys do not satisfy it
+   * because that criterion is about pointer input.
+   */
+  describe('the step buttons, which are the alternative to dragging', () => {
+    // Only the rendered rows are mounted, which is what the SDK does: a hidden
+    // row leaves no node, so the absolute indices in the track have a gap.
+    const renderRows = (form: any = formProps(), rendered = [0, 1, 2]) =>
+      render(
+        <div>
+          {rendered.map((repeat) => (
+            <Container
+              key={repeat}
+              node={repeatNode({ repeat })}
+              viewport='desktop'
+              form={form}
+            />
+          ))}
+        </div>
+      );
+
+    it('moves a row down on a plain click, with no drag', () => {
+      const form = formProps();
+      const { getByLabelText } = renderRows(form);
+
+      fireEvent.click(getByLabelText('Move row 1 down'));
+
+      expect(form.moveRepeatedRow).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'repeat-1' }),
+        0,
+        1
+      );
+    });
+
+    it('moves a row up on a plain click', () => {
+      const form = formProps();
+      const { getByLabelText } = renderRows(form);
+
+      fireEvent.click(getByLabelText('Move row 3 up'));
+
+      expect(form.moveRepeatedRow).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'repeat-1' }),
+        2,
+        1
+      );
+    });
+
+    it('disables the direction that would run off the end', () => {
+      // A control that silently does nothing reads as broken, so the ends say
+      // so rather than accepting a press and dropping it.
+      const { getByLabelText } = renderRows();
+
+      expect(getByLabelText('Move row 1 up')).toBeDisabled();
+      expect(getByLabelText('Move row 1 down')).toBeEnabled();
+      expect(getByLabelText('Move row 3 up')).toBeEnabled();
+      expect(getByLabelText('Move row 3 down')).toBeDisabled();
+    });
+
+    it('steps over a hidden row, exactly as the arrow keys do', () => {
+      // Absolute row 1 is hidden, so row 0 stepping down lands on absolute 2.
+      const form = formProps({
+        visiblePositions: { '0': [true, false, true] }
+      });
+      const { getByLabelText } = renderRows(form, [0, 2]);
+
+      fireEvent.click(getByLabelText('Move row 1 down'));
+
+      expect(form.moveRepeatedRow).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'repeat-1' }),
+        0,
+        2
+      );
+    });
+
+    it('is absent on a lone row, which has nowhere to step', () => {
+      setFieldValues(['only']);
+      const form = formProps({ visiblePositions: { '0': [true] } });
+      const { queryByLabelText } = renderContainer(repeatNode(), form);
+
+      expect(queryByLabelText('Move row 1 up')).toBeNull();
+      expect(queryByLabelText('Move row 1 down')).toBeNull();
+    });
+
+    it('does not fire the container click action', () => {
+      const runElementActions = jest.fn();
+      const form = formProps();
+      const { getByLabelText } = render(
+        <div>
+          {[0, 1].map((repeat) => (
+            <Container
+              key={repeat}
+              node={repeatNode({
+                repeat,
+                properties: { reorderable: true, actions: [{ type: 'x' }] }
+              })}
+              viewport='desktop'
+              form={form}
+              runElementActions={runElementActions}
+            />
+          ))}
+        </div>
+      );
+
+      fireEvent.pointerDown(getByLabelText('Move row 1 down'), {
+        bubbles: true
+      });
+      fireEvent.click(getByLabelText('Move row 1 down'));
+
+      expect(form.moveRepeatedRow).toHaveBeenCalled();
+      expect(runElementActions).not.toHaveBeenCalled();
+    });
+  });
+
   it('ignores an arrow key that would run off the end', () => {
     const form = formProps();
     const { getByLabelText } = render(
