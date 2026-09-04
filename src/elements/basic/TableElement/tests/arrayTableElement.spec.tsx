@@ -174,6 +174,62 @@ describe('TableElement - 2d_array source', () => {
     });
   });
 
+  it('writes the padded array back when the stored array is ragged', () => {
+    (fieldValues as any)[FIELD_KEY] = [
+      ['Name', 'Age'],
+      ['Alice', 30, true],
+      ['Bob']
+    ];
+    const updateFieldValues = jest.fn();
+    const submitCustom = jest.fn();
+    renderTable({}, { updateFieldValues, submitCustom });
+
+    // Padding only: 30 stays a number and true stays a boolean.
+    const normalized = {
+      [FIELD_KEY]: [
+        ['Name', 'Age', ''],
+        ['Alice', 30, true],
+        ['Bob', '', '']
+      ]
+    };
+    expect(updateFieldValues).toHaveBeenCalledWith(normalized);
+    expect(submitCustom).toHaveBeenCalledWith(normalized);
+  });
+
+  it('does not write back when the array is already rectangular', () => {
+    (fieldValues as any)[FIELD_KEY] = [
+      ['Name', 'Age'],
+      ['Alice', 30]
+    ];
+    const updateFieldValues = jest.fn();
+    const submitCustom = jest.fn();
+    renderTable({}, { updateFieldValues, submitCustom });
+
+    expect(updateFieldValues).not.toHaveBeenCalled();
+    expect(submitCustom).not.toHaveBeenCalled();
+  });
+
+  it('does not write back a malformed value it cannot normalize', () => {
+    (fieldValues as any)[FIELD_KEY] = 'hello';
+    const updateFieldValues = jest.fn();
+    renderTable({}, { updateFieldValues });
+
+    expect(updateFieldValues).not.toHaveBeenCalled();
+  });
+
+  it('writes the padded array back as a string when read as one', () => {
+    (fieldValues as any)[FIELD_KEY] = '[["A","B"],["1","2","3"]]';
+    const updateFieldValues = jest.fn();
+    renderTable({}, { updateFieldValues });
+
+    expect(updateFieldValues).toHaveBeenCalledWith({
+      [FIELD_KEY]: JSON.stringify([
+        ['A', 'B', ''],
+        ['1', '2', '3']
+      ])
+    });
+  });
+
   it('renders placeholder columns in the builder, where the value is unknown', () => {
     renderTable({}, { editMode: true });
 

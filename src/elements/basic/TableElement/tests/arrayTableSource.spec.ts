@@ -2,6 +2,8 @@ import {
   castArrayCell,
   deriveArrayColumns,
   deriveArrayFieldValues,
+  isRaggedRows,
+  normalizeRows,
   parseArrayTableValue
 } from '../arrayTableSource';
 
@@ -108,5 +110,38 @@ describe('deriveArrayColumns / deriveArrayFieldValues', () => {
       __array_t1_0: [],
       __array_t1_1: []
     });
+  });
+});
+
+describe('isRaggedRows', () => {
+  it('is true only when a row differs from the widest row', () => {
+    expect(isRaggedRows([['A', 'B'], ['1', '2', '3']])).toBe(true);
+    expect(isRaggedRows([['A', 'B'], ['1']])).toBe(true);
+
+    expect(isRaggedRows([['A', 'B'], ['1', '2']])).toBe(false);
+    expect(isRaggedRows([['A']])).toBe(false);
+    expect(isRaggedRows([])).toBe(false);
+  });
+});
+
+describe('normalizeRows', () => {
+  it('pads every row out to the widest row, headers included', () => {
+    expect(normalizeRows([['A', 'B'], ['1', '2', '3'], ['4']])).toEqual([
+      ['A', 'B', ''],
+      ['1', '2', '3'],
+      ['4', '', '']
+    ]);
+  });
+
+  it('pads without casting, so cells keep their original types', () => {
+    expect(normalizeRows([['Name', 'Age'], ['Alice', 30, true]])).toEqual([
+      ['Name', 'Age', ''],
+      ['Alice', 30, true]
+    ]);
+  });
+
+  it('leaves an already-rectangular array untouched', () => {
+    const rows = [['A', 'B'], ['1', '2']];
+    expect(normalizeRows(rows)).toEqual(rows);
   });
 });
