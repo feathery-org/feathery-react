@@ -17,6 +17,8 @@ import { DeleteConfirm } from './DeleteConfirm';
 import { useTableData } from './useTableData';
 import { useTableMutations } from './useTableMutations';
 import { useHubTableSource } from './useHubTableSource';
+import { use2dArrayTableSource } from './use2dArrayTableSource';
+import { exampleArrayColumns } from './exampleData';
 import { TrashIcon } from '../../components/icons';
 import {
   containerStyle,
@@ -35,6 +37,8 @@ import {
   deleteIconStyle
 } from './styles';
 import { TABLE_CLASS } from './classNames';
+
+const EMPTY_ERRORS: string[] = [];
 
 function applyTableStyles(responsiveStyles: any) {
   responsiveStyles.addTargets('table', 'thead', 'tbody', 'th', 'td', 'tr');
@@ -68,16 +72,38 @@ function TableElement({
     !editMode;
   const hub = useHubTableSource({ element, client, enabled: isHub });
 
-  const elementForData = useMemo(
-    () =>
-      isHub
-        ? {
-            ...element,
-            properties: { ...element.properties, columns: hub.hubColumns }
-          }
-        : element,
-    [isHub, element, hub.hubColumns]
-  );
+  // 2d_array tables read every row from one hidden field holding an array of
+  // arrays, whose first row is the headers (live forms only; the builder
+  // renders placeholder columns because the value is not known until runtime).
+  const is2dArray = element.properties?.data_source === '2d_array' && !editMode;
+  const arraySource = use2dArrayTableSource({
+    element,
+    updateFieldValues,
+    submitCustom,
+    onMutate,
+    dataVersion,
+    enabled: is2dArray
+  });
+  const is2dArrayPreview =
+    element.properties?.data_source === '2d_array' && editMode;
+
+  const elementForData = useMemo(() => {
+    const withColumns = (columns: any) => ({
+      ...element,
+      properties: { ...element.properties, columns }
+    });
+    if (isHub) return withColumns(hub.hubColumns);
+    if (is2dArray) return withColumns(arraySource.arrayColumns);
+    if (is2dArrayPreview) return withColumns(exampleArrayColumns());
+    return element;
+  }, [
+    isHub,
+    is2dArray,
+    is2dArrayPreview,
+    element,
+    hub.hubColumns,
+    arraySource.arrayColumns
+  ]);
 
   const {
     // search
@@ -120,7 +146,11 @@ function TableElement({
     element: elementForData,
     editMode,
     dataVersion,
-    externalFieldValues: isHub ? hub.hubFieldValues : undefined
+    externalFieldValues: isHub
+      ? hub.hubFieldValues
+      : is2dArray
+      ? arraySource.arrayFieldValues
+      : undefined
   });
 
   const fieldMutations = useTableMutations({
@@ -136,19 +166,21 @@ function TableElement({
     onMutate
   });
 
-  // In Hub mode the writes go to the Data Hub instead of form field values.
-  const { handleAddRow, handleDeleteRow, handleCellEdit } = isHub
-    ? {
-        handleAddRow: hub.handleAddRow,
-        handleDeleteRow: hub.handleDeleteRow,
-        handleCellEdit: hub.handleCellEdit
-      }
-    : fieldMutations;
+  // Hub writes go to the Data Hub, and 2d_array writes replace the whole array
+  // in its hidden field, instead of writing one field per column.
+  // Stable across renders, unlike the source objects themselves.
+  const hasExternalSource = isHub || is2dArray;
+  const activeSource = isHub ? hub : is2dArray ? arraySource : null;
+  const { handleAddRow, handleDeleteRow, handleCellEdit } =
+    activeSource ?? fieldMutations;
+
+  const sourceErrors = activeSource?.errors ?? EMPTY_ERRORS;
 
   const tableId = element?.id;
 
   const canEdit = enableEditing && !isTransposed && !(isHub && hub.loading);
-  const showAddRow = canEdit && enableAddDeleteRows;
+  const showAddRow =
+    canEdit && enableAddDeleteRows && (!is2dArray || arraySource.canAddRow);
   const canDeleteRows = canEdit && enableAddDeleteRows;
   const hasOverflowMenu = actions.length > 1;
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
@@ -210,9 +242,9 @@ function TableElement({
   const wrappedHandleAddRow = useCallback(() => {
     setDeleteRowIndex(null);
     handleAddRow();
-    // Hub mutations don't own search/pagination; mirror the field-mode UX so the
-    // new row is visible (field mode does this inside useTableMutations).
-    if (isHub) {
+    // Only useTableMutations owns search/pagination, so the other sources
+    // mirror the field-mode UX here to keep the new row visible.
+    if (hasExternalSource) {
       if (searchQuery) setSearchQuery('');
       if (enablePagination) setCurrentPage(0);
     }
@@ -224,7 +256,7 @@ function TableElement({
     });
   }, [
     handleAddRow,
-    isHub,
+    hasExternalSource,
     searchQuery,
     setSearchQuery,
     enablePagination,
@@ -286,10 +318,10 @@ function TableElement({
           )}
         </div>
       )}
-      {isHub && hub.errors.length > 0 && (
+      {sourceErrors.length > 0 && (
         <div role='alert' className={TABLE_CLASS.error} css={errorBannerStyle}>
           <ul>
-            {hub.errors.map((error, index) => (
+            {sourceErrors.map((error: string, index: number) => (
               <li key={`${error}-${index}`}>{error}</li>
             ))}
           </ul>
