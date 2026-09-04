@@ -42,17 +42,22 @@ describe('a percentage-height input box', () => {
     expect(t.getTarget('fc', true)).toEqual(
       expect.objectContaining({ display: 'flex', flexDirection: 'column' })
     );
-    // ...and the box takes what the label leaves, with applyHeight's floor
-    // stopping it collapsing where there is no room to grow into.
+    // ...and the box shrinks out of the label's way, from a basis of
+    // applyHeight's own `height: 100%` rather than from zero. Not a basis of 0:
+    // this rule is keyed on the unit and cannot know whether the percentage
+    // resolved, and under a Fit container it does not -- a basis of 0 there
+    // made the box contribute nothing to its own cell, collapsing a 6-row text
+    // area from 123px to the floor. applyHeight's floor still catches a box
+    // with nothing left to take.
     const box = t.getTarget('sub-fc', true);
-    expect(box.flex).toBe('1 1 0');
+    expect(box.flex).toBe('1 1 auto');
     expect(box.minHeight).toBe('50px');
   });
 
   it('holds for every input-box type', () => {
     INPUT_BOX_FIELDS.forEach((type) => {
       const box = targets(type, PCT).getTarget('sub-fc', true);
-      expect([type, box.flex]).toEqual([type, '1 1 0']);
+      expect([type, box.flex]).toEqual([type, '1 1 auto']);
     });
   });
 });
@@ -105,7 +110,7 @@ describe('across the mobile breakpoint', () => {
   it('lets a mobile percentage override put it back on', () => {
     const t = targets('text_field', PX, { mobileStyles: PCT });
     const key = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
-    expect((t.getTarget('sub-fc') as any)[key].flex).toBe('1 1 0');
+    expect((t.getTarget('sub-fc') as any)[key].flex).toBe('1 1 auto');
     expect((t.getTarget('fc') as any)[key].flexDirection).toBe('column');
   });
 });
