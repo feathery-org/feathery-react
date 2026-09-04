@@ -202,6 +202,12 @@ export const shrinkLabelFootprint = (fontSize: any) =>
 //
 // Clamped so a short box still fits a line of text -- below about 45px the
 // label's own footprint is more room than the box has to give.
+//
+// A whole number, because the builder can store this: inner_padding_top is an
+// integer column (the backend's style serializers declare it as one), so a
+// fractional reserve is a value the builder would have to round to write down.
+// Rounding here instead means the number a field renders unseeded is the same
+// number the builder seeds, and the panel never describes geometry by 0.2px.
 const shrinkLabelReservePx = (
   type: string,
   height: any,
@@ -210,14 +216,14 @@ const shrinkLabelReservePx = (
   lineHeight?: any
 ): number => {
   if (type === 'text_area')
-    return Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5;
+    return Math.round(Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5);
   const footprint = shrinkLabelFootprint(fontSize);
   // A percentage or fit height has no pixel box to clamp against, so the
   // footprint stands on its own.
-  if (heightUnit !== 'px' || !isNum(height)) return footprint;
+  if (heightUnit !== 'px' || !isNum(height)) return Math.round(footprint);
   const line = inputLineHeight(lineHeight, fontSize);
   const room = Number(height) - line - RESET_INPUT_PADDING_Y;
-  return Math.max(0, Math.min(footprint, room));
+  return Math.round(Math.max(0, Math.min(footprint, room)));
 };
 
 const shrinkLabelReserve = (
@@ -1014,7 +1020,9 @@ export default class ResponsiveStyles {
     heightUnit: any,
     padTop: any,
     align: any,
-    padBottom: any
+    padBottom: any,
+    fontSize: any,
+    lineHeight: any
   ) {
     // Only a placement that was actually asked for can cancel the reserve, so
     // only that placement needs the floor. An untouched field is still placed
@@ -1030,19 +1038,21 @@ export default class ResponsiveStyles {
     // at its top padding rather than being centred against it, so there is no
     // midline for a floor to move.
     if (!INPUT_BOX_FIELDS.includes(type) || type === 'text_area') return 0;
+    // Read off the desktop styles deliberately, unlike the typography below.
+    // applyPlaceholderStyles decides whether to pin a label from this same
+    // desktop key, never through apply(), so a mobile override of it changes
+    // nothing about whether a label is pinned. Resolving it per breakpoint here
+    // would leave the floor disagreeing with the label it is reserving for.
     if (this.element?.styles?.placeholder_transition !== 'shrink_top') return 0;
     if (!rendersPlaceholderStyles(type, this.element?.properties)) return 0;
     // Only a resolved pixel height has a reserve that can be compared.
     if (heightUnit !== 'px' || !isNum(height)) return 0;
-    // The same definition the reserve itself is built from, so the floor and
-    // the padding it floors can never describe different geometry.
-    return shrinkLabelReservePx(
-      type,
-      height,
-      heightUnit,
-      this.element?.styles?.font_size,
-      this.element?.styles?.line_height
-    );
+    // The same definition the reserve itself is built from, off the same
+    // breakpoint-resolved values apply() hands the caller, so the floor and the
+    // padding it floors can never describe different geometry. Reading the
+    // element's own styles here instead would compute a mobile floor from the
+    // desktop font, and "middle" would move a value the label still sits over.
+    return shrinkLabelReservePx(type, height, heightUnit, fontSize, lineHeight);
   }
 
   // Content alignment for the text inside an input box. Horizontal rides on
@@ -1078,7 +1088,9 @@ export default class ResponsiveStyles {
           heightUnit,
           padTop,
           align,
-          padBottom
+          padBottom,
+          fontSize,
+          lineHeight
         );
         const placement = inputBoxVertical(
           type,
@@ -1095,8 +1107,13 @@ export default class ResponsiveStyles {
         // they cannot drift apart. A floor only exists where nothing is stored,
         // so this is the reserve against the padding the field renders with --
         // in px, because the reserve is px and the two have to be comparable.
+        // The floor as it stands, not floored again at the block reset. It is
+        // already clamped to what the box has to give, so raising it back to
+        // the reset would both overflow a short box (6 + a 30px line + 6 needs
+        // 42px of a 40px field) and put the centred value 2px below where the
+        // untouched field renders it.
         const paddingTopCss = topFloor
-          ? `${Math.max(topFloor, legacyPaddingY(type))}px`
+          ? `${topFloor}px`
           : blockPaddingCss(type, padTop);
 
         // Centred, or a top/bottom alignment this box cannot resolve an offset
@@ -1307,7 +1324,9 @@ export default class ResponsiveStyles {
             heightUnit,
             padTop,
             align,
-            padBottom
+            padBottom,
+            fontSize,
+            lineHeight
           )
         );
         // 'center' is the neutral -- what both components declare inline before
@@ -1375,7 +1394,16 @@ export default class ResponsiveStyles {
             b,
             lineHeight,
             fontSize,
-            this.pinnedTopFloor(type, height, heightUnit, t, align, b)
+            this.pinnedTopFloor(
+              type,
+              height,
+              heightUnit,
+              t,
+              align,
+              b,
+              fontSize,
+              lineHeight
+            )
           );
           // A zero translation is the neutral, so a mobile override can
           // bring the icon back to the box midline.
@@ -1416,7 +1444,16 @@ export default class ResponsiveStyles {
           b,
           lineHeight,
           fontSize,
-          this.pinnedTopFloor('phone_number', height, heightUnit, t, align, b)
+          this.pinnedTopFloor(
+            'phone_number',
+            height,
+            heightUnit,
+            t,
+            align,
+            b,
+            fontSize,
+            lineHeight
+          )
         );
         // Neutral zero translation, so a mobile override can re-centre the flag.
         return { transform: delta ? `translateY(${delta}px)` : NO_TRANSLATE };
@@ -1657,7 +1694,9 @@ export default class ResponsiveStyles {
               heightUnit,
               t,
               align,
-              b
+              b,
+              fontSize,
+              lineHeight
             );
             const placement = inputBoxVertical(
               type,

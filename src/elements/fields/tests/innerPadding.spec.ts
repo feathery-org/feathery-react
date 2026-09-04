@@ -646,8 +646,11 @@ describe('input box inner padding', () => {
     ]);
 
     // Clamped where the box has less room to give than the label wants, so a
-    // short field still fits a line of text: 40 - 19.2 - 6.
-    expect(reserveAt(40)).toBe('14.8px');
+    // short field still fits a line of text: 40 - 19.2 - 6 = 14.8, rounded.
+    // Whole pixels because the builder stores this in an integer column, so a
+    // fractional reserve would be a number it could only seed by rounding --
+    // see the case table in feathery-frontend's boxSpacingHelper.spec.ts.
+    expect(reserveAt(40)).toBe('15px');
 
     // A percentage box has no pixel height to clamp against, so the footprint
     // stands on its own -- and in px, because that is what the label is.
@@ -906,6 +909,34 @@ describe('input box content alignment', () => {
         content_vertical_align: 'center'
       }).top
     ).toBe('50%');
+  });
+
+  it('holds the no-op where the clamp drives the reserve under the reset', () => {
+    // A box short enough that the label wants more room than it has: at 40px
+    // with a 30px line the reserve clamps to 4px, below the 6px block reset.
+    // Flooring the aligned padding back up to the reset undid that clamp --
+    // 6 + 30 + 6 needs 42px of a 40px field -- and left the centred value 2px
+    // below where the untouched field renders it, so the reserve stands as the
+    // clamp left it.
+    const squeezed = {
+      placeholder_transition: 'shrink_top',
+      height: 40,
+      height_unit: 'px',
+      font_size: 16,
+      line_height: 30
+    };
+    const untouchedTop = fieldTarget('text_field', squeezed, {
+      placeholder: 'Name'
+    }).paddingTop;
+
+    expect(untouchedTop).toBe('4px');
+    expect(
+      fieldTarget(
+        'text_field',
+        { ...squeezed, content_vertical_align: 'center' },
+        { placeholder: 'Name' }
+      ).paddingTop
+    ).toBe(untouchedTop);
   });
 
   it('keeps the production label offsets outside a unit', () => {
@@ -2044,4 +2075,109 @@ describe('which fields count as carrying a pinned label', () => {
     ).getTarget('field', true);
     expect(centred.backgroundPositionY).toBe('center');
   });
+});
+
+describe('the reserve a mobile typography override asks for', () => {
+  const MOBILE_KEY = `@media (max-width: ${DEFAULT_MOBILE_BREAKPOINT}px)`;
+
+  // Tall enough that the clamp never bites, so the footprint is what is being
+  // measured rather than the room the box has left.
+  const TALL_PINNED = {
+    placeholder_transition: 'shrink_top',
+    height: 200,
+    height_unit: 'px',
+    font_size: 16
+  };
+
+  const mobilePaddingTop = (styles: any, mobileStyles: any) =>
+    targets(
+      'text_field',
+      styles,
+      { placeholder: 'Name' },
+      mobileStyles
+    ).getTarget('field')[MOBILE_KEY]?.paddingTop;
+
+  const desktopPaddingTop = (styles: any) =>
+    fieldTarget('text_field', styles, { placeholder: 'Name' }).paddingTop;
+
+  // The floor reads the values apply() resolved for the breakpoint it is
+  // emitting, not the element's own styles. Reading the element meant a mobile
+  // floor computed from the desktop typography: at a 28px mobile font the label
+  // ends 33px down, the floor claimed 21, and "middle" pulled the value 12px up
+  // into the label's ink -- the exact defect this floor exists to prevent,
+  // surviving at the one breakpoint nothing measured.
+  //
+  // Both overrides have to change the reserve to be worth asserting on, so the
+  // line-height case uses a box short enough for the clamp to bite: at 40px the
+  // reserve is the room left over, and a 30px mobile line leaves 4px where the
+  // desktop's 19.2px line leaves 15.
+  it.each([
+    ['font_size', TALL_PINNED, { font_size: 28 }],
+    ['line_height', { ...TALL_PINNED, height: 40 }, { line_height: 30 }]
+  ])(
+    'leaves a centred field where a mobile %s override finds it',
+    (_label, base, mobileStyles) => {
+      const untouchedTop = mobilePaddingTop(base, mobileStyles);
+      const centredTop = mobilePaddingTop(
+        { ...base, content_vertical_align: 'center' },
+        mobileStyles
+      );
+
+      // The invariant, not a number: 'middle' is a no-op on a field whose
+      // padding nobody touched, at every breakpoint.
+      expect(centredTop).toBe(untouchedTop);
+      // ...and the breakpoint really is being exercised, rather than both sides
+      // agreeing because neither emitted anything or because the override made
+      // no difference to begin with.
+      expect(untouchedTop).toBeDefined();
+      expect(centredTop).not.toBe(
+        desktopPaddingTop({ ...base, content_vertical_align: 'center' })
+      );
+    }
+  );
+
+  // The desktop half of the same override, so a fix that simply stopped
+  // emitting a mobile block would fail rather than pass by omission.
+  it('keeps the desktop reserve on the desktop font', () => {
+    expect(
+      targets(
+        'text_field',
+        { ...TALL_PINNED, content_vertical_align: 'center' },
+        { placeholder: 'Name' },
+        { font_size: 28 }
+      ).getTarget('field', true).paddingTop
+    ).toBe('21px');
+  });
+});
+
+// The builder carries its own copy of this arithmetic and cannot import ours,
+// so both repos pin the same table and a drift fails a test instead of
+// shipping. The other half is 'the reserve both repos compute' in
+// feathery-frontend's src/utils/__test__/boxSpacingHelper.spec.ts -- change one
+// and you have to change the other.
+describe('the reserve both repos compute', () => {
+  it.each([
+    // type, height, height_unit, font_size, line_height, reserve
+    ['text_field', 200, 'px', 16, undefined, 21], // the plain footprint
+    ['text_field', 40, 'px', 16, undefined, 15], // clamped: 40 - 19.2 - 6
+    ['text_field', 40, 'px', 16, 30, 4], // clamped against a stored line
+    ['text_field', 200, 'px', 9, undefined, 14], // sub-10px font: 4.5 + 9
+    ['text_field', 90, '%', 16, undefined, 21], // no pixel box to clamp against
+    ['text_area', 200, 'px', 16, undefined, 25], // its own 2.5x reserve
+    ['text_area', 200, 'px', 9, undefined, 23] // 9 * 2.5, rounded
+  ])(
+    '%s at %s%s, font %s, line height %s reserves %spx',
+    (type, height, heightUnit, fontSize, lineHeight, expected) => {
+      const styles: any = {
+        placeholder_transition: 'shrink_top',
+        height,
+        height_unit: heightUnit,
+        font_size: fontSize
+      };
+      if (lineHeight !== undefined) styles.line_height = lineHeight;
+      expect(
+        fieldTarget(type as string, styles, { placeholder: 'Name' }).paddingTop
+      ).toBe(`${expected}px`);
+    }
+  );
 });
