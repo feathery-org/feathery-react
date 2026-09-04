@@ -1010,7 +1010,7 @@ describe('staged Data Hub rows', () => {
     await waitFor(() => expect(screen.getByText('bad')).toBeInTheDocument());
     // A broken hub rule is red wherever it is; only the verified row's copy
     // holds the save back, so the two are counted apart.
-    expect(status()).toHaveTextContent('1 error on unverified rows');
+    expect(status()).toHaveTextContent('1 error on unvalidated rows');
     expect(status()).not.toHaveTextContent('warning');
     expect(cell('bad')).toHaveStyle({ backgroundColor: '#fef3f2' });
 
@@ -1133,14 +1133,14 @@ describe('Data Hub status column', () => {
     renderTable(hubProps, { client: hubClient(entries) });
     await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
     expect(headers()).toEqual(['Status', 'name']);
-    expect(screen.getByText('Verified')).toBeInTheDocument();
-    expect(screen.getByText('Unverified')).toBeInTheDocument();
+    expect(screen.getByText('Validated')).toBeInTheDocument();
+    expect(screen.getByText('Unvalidated')).toBeInTheDocument();
   });
 
   test('the status column is read-only', async () => {
     renderTable(hubProps, { client: hubClient(entries) });
     await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
-    fireEvent.doubleClick(cell('Verified'));
+    fireEvent.doubleClick(cell('Validated'));
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     // The neighbouring hub column still edits.
     fireEvent.doubleClick(cell('Alice'));
@@ -1315,7 +1315,7 @@ describe('assistant issues', () => {
     });
     // The hub's own field takes the flag; the synthetic status column stays clean.
     expect(cell('Pending')).toHaveAttribute('title', 'Stale');
-    expect(cell('Unverified')).not.toHaveAttribute('title');
+    expect(cell('Unvalidated')).not.toHaveAttribute('title');
   });
 
   test('row and range targets cover every cell they name', async () => {
@@ -1377,7 +1377,7 @@ describe('assistant issues', () => {
       ]);
     });
 
-    expect(status()).toHaveTextContent('1 error · 1 error on unverified rows · 1 warning');
+    expect(status()).toHaveTextContent('1 error · 1 error on unvalidated rows · 1 warning');
     expect(cell('bad')).toHaveAttribute('title', 'Invalid email');
     expect(cell('Alice')).toHaveAttribute('title', 'Nickname?');
   });

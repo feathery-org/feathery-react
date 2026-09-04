@@ -16,9 +16,9 @@ import {
 export type PendingChangesBarProps = {
   /** Buffered cell edits plus row deletions. */
   pendingCount: number;
-  /** Hub rule errors on verified rows: fixed before the table can save. */
+  /** Hub rule errors on validated rows: fixed before the table can save. */
   blockingCount: number;
-  /** Hub rule errors on unverified rows: shown in red, but the save still goes through. */
+  /** Hub rule errors on unvalidated rows: shown in red, but the save still goes through. */
   errorCount: number;
   /** Assistant findings: advisory, never block. */
   warningCount: number;
@@ -33,9 +33,9 @@ const plural = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 export const BLOCKING_TITLE =
-  'Errors on verified rows must be fixed before saving';
+  'Errors on validated rows must be fixed before saving';
 export const UNVERIFIED_ERROR_TITLE =
-  'Unverified rows save with errors so they can be corrected; fix them before the rows are verified';
+  'Unvalidated rows save with errors so they can be corrected; fix them before the rows are validated';
 export const WARNING_TITLE = 'Flagged by the assistant. Saving is not blocked';
 
 /**
@@ -76,7 +76,7 @@ export function PendingChangesBar({
     },
     errorCount > 0 && {
       key: 'unverified',
-      text: `${plural(errorCount, 'error')} on unverified rows`,
+      text: `${plural(errorCount, 'error')} on unvalidated rows`,
       title: UNVERIFIED_ERROR_TITLE,
       severity: 'error' as const
     },
