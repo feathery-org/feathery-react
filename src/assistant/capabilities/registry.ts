@@ -1,4 +1,5 @@
 // The capabilities registry: one entry per advertised document-edit op.
+import type { BindingWriteResolution } from '../tools/docx/bindingWriteContract';
 //
 // This is the declaration half of the S2 protocol (hilb-refactor-proposal S2):
 // the client tells ai-services what its document engine can actually do,
@@ -18,7 +19,7 @@
 /**
  * Param types use a small fixed language (m5 C3: no arbitrary schema
  * language): `string`, `string[][]`, `int>=0[]`, `number`, `int>0`, `int>=0`, `boolean`,
- * `duplicateRows`, `enum[a,b,...]` - each optionally suffixed `?` when the param may be
+ * `duplicateRows`, `bindingWriteResolution`, `enum[a,b,...]` - each optionally suffixed `?` when the param may be
  * omitted. Cross-op fields (`anchor`, `expect`, `start`, `end`,
  * `inheritFormatFrom`, `changeSetId`, `group`) are reserved keys with one
  * canonical meaning and are not repeated per entry; `requiresAnchor` declares
@@ -325,7 +326,8 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
       text: 'string',
       literal: 'boolean?',
       quotedFrom: 'string?',
-      quotedText: 'string?'
+      quotedText: 'string?',
+      bindingResolution: 'bindingWriteResolution?'
     },
     requiresAnchor: true
   },
@@ -608,7 +610,12 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
     params: {
       address: 'string',
       displayText: 'string?',
-      screenTip: 'string?'
+      screenTip: 'string?',
+      // Where in the anchored paragraph the link goes. Same convention as
+      // insert_text, because this is the same kind of act: an addition at a
+      // point. Adding a link never replaces what the paragraph already says.
+      position: 'enum[before,after,start,end]?',
+      offset: 'int>=0?'
     },
     requiresAnchor: true
   },
@@ -666,7 +673,13 @@ export const DOCUMENT_EDITOR_CAPABILITIES = [
   {
     // handler: applyAnchoredOp case 'insert_page_number'
     op: 'insert_page_number',
-    params: { numberFormat: 'string?' },
+    params: {
+      numberFormat: 'string?',
+      // As insert_text and insert_hyperlink: a page number is added at a point
+      // in the anchored paragraph, and never replaces its text.
+      position: 'enum[before,after,start,end]?',
+      offset: 'int>=0?'
+    },
     requiresAnchor: true
   },
   {
@@ -762,6 +775,8 @@ type EnumMembers<S extends string> = S extends `${infer Head},${infer Rest}`
 /** One non-optional param-language type to its TypeScript type. */
 type ParamBase<S extends string> = S extends 'string'
   ? string
+  : S extends 'bindingWriteResolution'
+  ? BindingWriteResolution
   : S extends 'sectionSpec'
   ? SectionComposerSpec
   : S extends 'duplicateRows'

@@ -88,22 +88,24 @@ describe('reading a bound document', () => {
     const quantity = inventory.inventory.find(
       (block: any) => block.anchor === '0;2;1;1;0'
     );
-    expect(quantity.binding).toEqual({
+    expect(quantity.bindings).toEqual([{
       field: 'quantity',
+      identity: { id: 'quantity', global: false },
       kind: 'input',
       table: 'costs',
       row: 'r-1'
-    });
+    }]);
     const formula = inventory.inventory.find(
       (block: any) => block.anchor === '0;2;1;3;0'
     );
-    expect(formula.binding).toEqual({
+    expect(formula.bindings).toEqual([{
       field: 'line_total',
+      identity: { id: 'line_total', global: false },
       kind: 'formula',
       expr: 'mul(quantity,unit_cost)',
       table: 'costs',
       row: 'r-1'
-    });
+    }]);
   });
 
   it('enriches structure and table_facts reads for bound tables', () => {
@@ -129,10 +131,36 @@ describe('reading a bound document', () => {
     expect(facts.table.rows[1].binding).toEqual({ rowId: 'r-1' });
     expect(facts.table.rows[1].cells[1].binding).toEqual({
       field: 'quantity',
+      identity: { id: 'quantity', global: false },
       kind: 'input',
       table: 'costs',
       row: 'r-1'
     });
+  });
+
+  it('marks only an explicit global tag as a global wire identity', () => {
+    const editor = {
+      serialize: () =>
+        JSON.stringify(buildCostsFixture({ globalTaxRate: true })),
+      documentHelper: {}
+    };
+    const inventory: any = getDocumentInventory(editor as any, {
+      scope: 'full'
+    });
+    const taxRates = inventory.inventory.filter(
+      (block: any) =>
+        (block.bindings ?? []).some((fact: any) => fact.field === 'tax_rate')
+    );
+    expect(taxRates).toHaveLength(2);
+    expect(
+      taxRates.map(
+        (block: any) =>
+          block.bindings.find((fact: any) => fact.field === 'tax_rate').identity
+      )
+    ).toEqual([
+      { id: 'tax_rate', global: true },
+      { id: 'tax_rate', global: true }
+    ]);
   });
 
   it('leaves documents without content controls byte-identical', () => {

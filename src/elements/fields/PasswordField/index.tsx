@@ -2,7 +2,7 @@ import React, { memo, useRef, useState } from 'react';
 
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { EYE_ICON_INSET, inputBoxAttrs, resetStyles } from '../../styles';
 import useBorder from '../../components/useBorder';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
@@ -32,7 +32,7 @@ function PasswordField({
   const [showPassword, setShowPassword] = useState(false);
   const containerRef = useRef(null);
   const servar = element.servar;
-  const spacing = element.properties.tooltipText ? 30 : 8;
+  const spacing = EYE_ICON_INSET(!!element.properties.tooltipText);
   return (
     <div
       ref={containerRef}
@@ -66,6 +66,7 @@ function PasswordField({
                 }
           )
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         <input
           id={servar.key}
@@ -109,7 +110,7 @@ function PasswordField({
           type={showPassword ? 'text' : 'password'}
           onFocus={iosScrollOnFocus}
         />
-        {rawValue && (
+        {(rawValue || editMode) && (
           <div
             css={{
               position: 'absolute',
@@ -117,7 +118,8 @@ function PasswordField({
               insetInlineEnd: `${spacing}px`,
               // We need to subtract half the height of the icon to center it
               top: 'calc(50% - 12px)',
-              zIndex: FORM_Z_INDEX
+              zIndex: FORM_Z_INDEX,
+              ...responsiveStyles.getTarget('endIcon')
             }}
             onClick={() => setShowPassword((prev) => !prev)}
             aria-label='Toggle password visibility'

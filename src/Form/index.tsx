@@ -69,6 +69,7 @@ import {
   getFieldsInRepeat,
   getRepeatContainerRowCount,
   getRepeatedContainer,
+  getRepeatErrorOwnerIds,
   getRepeatMaxRows,
   insertRepeatRowValue,
   moveRepeatRowValue
@@ -89,10 +90,12 @@ import {
   FieldValues,
   fieldValues,
   fileRetryStatus,
+  initInfo,
   initState,
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
+import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
 import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -156,6 +159,7 @@ import { getPrivateActions } from '../utils/sensitiveActions';
 import { v4 as uuidv4 } from 'uuid';
 import internalState, {
   GetDocusignEnvelopeParams,
+  RunComputerAgentOptions,
   SendDocusignParams,
   UpdateDocusignEnvelopeParams,
   setFormInternalState
@@ -483,9 +487,7 @@ function Form({
   const extractionFileFields = useRef<Record<string, Record<string, string[]>>>(
     {}
   );
-  const [inlineErrors, setInlineErrors] = useState<
-    Record<string, { message: string; index: number }>
-  >({});
+  const [inlineErrors, setInlineErrors] = useState<InlineErrors>({});
   const [, setRepeatChanged] = useState(false);
 
   const [integrations, setIntegrations] = useState<null | Record<string, any>>(
@@ -981,7 +983,20 @@ function Form({
     });
 
     setRepeatChanged((repeatChanged) => !repeatChanged);
-    updateFieldValues(updatedValues);
+    // Adding/removing a repeat row is a structural change, not user input on a
+    // field. Don't auto-validate here: a brand-new, untouched row must not show
+    // a required error (inline or browser-native) until the user actually
+    // submits. Submit still validates every row via its own validateElements
+    // call, so validation is not weakened.
+    // clearErrors stays false too: it would wipe custom validity from EVERY
+    // control, so an already-invalid surviving row would silently look valid
+    // until the next validation pass. On the add path no rows move, so
+    // existing validity stays correct; removal shifts rows across DOM nodes,
+    // which removeRepeatedRow handles itself (html5 clear + inline reindex).
+    updateFieldValues(updatedValues, {
+      triggerErrors: false,
+      clearErrors: false
+    });
   }
 
   function addRepeatedRow(
@@ -1045,6 +1060,41 @@ function Form({
     };
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
+
+    // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
+    // rows are keyed by array position, so removal shifts surviving rows into
+    // DOM nodes that keep the previous occupant's validity -- the message would
+    // render on the wrong row. DOM validity can't be reindexed, so clear it
+    // all; the next validation pass restores any real errors.
+    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+
+    // Inline errors for a repeated element live in its `byIndex` map. Drop the
+    // removed row's entry and shift higher-indexed rows down so each remaining
+    // row keeps its own error instead of inheriting a neighbor's. Operating on
+    // `byIndex` (not string keys) means a literal field like `foo-0` is never
+    // mistaken for a row of `foo`.
+    // Every element in the container can own a per-row error, not just servar
+    // fields: buttons (and containers) store submit/action failures under their
+    // element id, so they must be shifted too.
+    const applyShift = () =>
+      setInlineErrors((prev) =>
+        shiftInlineErrorRows(
+          prev,
+          [
+            ...Object.keys(removeServars),
+            ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
+          ],
+          curIndex
+        )
+      );
+    // A pending async button-error publish (see setButtonError) still carries
+    // the pre-removal row index. Shift only after it lands so its error gets
+    // reindexed with the surviving rows (or dropped with the removed one)
+    // instead of attaching to whichever row now occupies the stale index.
+    const pendingPublish =
+      internalState[_internalId]?.pendingInlineErrorPublish;
+    if (pendingPublish) pendingPublish.then(applyShift);
+    else applyShift();
   }
 
   /**
@@ -1686,12 +1736,14 @@ function Form({
             const { inlineErrors, setInlineErrors } =
               internalState[_internalId];
             let index = null;
-            let message = error;
+            let message: string;
             // If the user provided an object for an error then use the specified index and message
             // This allows users to specify an error on an element in a repeated row
             if (typeof error === 'object') {
               index = error.index;
               message = error.message;
+            } else {
+              message = error;
             }
             setFormElementError({
               formRef,
@@ -1816,6 +1868,24 @@ function Form({
             processFileValues(data.file_values);
           }
           return data;
+        },
+        runComputerAgent: async (
+          agentId: string,
+          options: RunComputerAgentOptions = {}
+        ) => {
+          const { userId } = initInfo();
+          return client.runComputerAgent(agentId, {
+            ...options,
+            onComplete: (data: any) => {
+              // A run that finishes after the submission changed must not
+              // write into the new session's fields
+              if (data.status === 'complete' && initInfo().userId === userId) {
+                updateFieldValues(data.data ?? {});
+                processFileValues(data.file_values);
+              }
+              options.onComplete?.(data);
+            }
+          });
         },
         forwardInboxEmail: async (options: ForwardInboxEmailOptions) => {
           return client.forwardInboxEmail({ options });
@@ -2180,7 +2250,9 @@ function Form({
 
   const submitStep = async (
     metadata: any,
-    repeat: number,
+    // Optional on purpose: undefined means the submitting element is NOT in a
+    // repeated container, which must stay distinguishable from row 0.
+    repeat: number | undefined,
     hasNext: boolean
   ): Promise<[Promise<any>] | undefined> => {
     const formattedFields = formatStepFields(
@@ -2193,8 +2265,8 @@ function Form({
       metadata.elementIDs[0],
       metadata.elementType
     );
-    trigger.repeatIndex = repeat;
-    const newInlineErrors: any = {};
+    // Legacy callback contract is numeric, so fall back to 0 here only.
+    trigger.repeatIndex = repeat ?? 0;
 
     if (
       activeStep.servar_fields.find(
@@ -2210,8 +2282,14 @@ function Form({
           fieldKey: errorField.servar.key,
           message: errorMessage,
           servarType: errorField.servar.type,
+          // Scope to the submitted row so a failure from one repeated row
+          // doesn't render on its siblings. Undefined for a non-repeated field,
+          // which stores a field-wide message the non-repeat renderer reads.
+          index: repeat,
           errorType: formSettings.errorType,
-          inlineErrors: newInlineErrors,
+          // Merge into the current error map rather than a fresh one, so
+          // surfacing a payment error doesn't wipe other fields' errors.
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
           triggerErrors: true
         });
@@ -2386,6 +2464,9 @@ function Form({
           fieldKey: errorField.servar ? errorField.servar.key : errorField.id,
           message: errorMessage,
           servarType: errorField.servar ? errorField.servar.type : '',
+          // Scope to the triggering element's row so a purchase failure in one
+          // repeated row doesn't render on its siblings.
+          index: triggerElement.repeat,
           errorType: formSettings.errorType,
           inlineErrors: newInlineErrors,
           setInlineErrors,
@@ -2608,19 +2689,48 @@ function Form({
       // Clear loaders before setting errors since buttons are disabled
       // when loaders are showing
       clearLoaders();
-      // Set asynchronously since loaders need to unrender first
-      setTimeout(
-        () =>
-          setFormElementError({
-            formRef,
-            fieldKey: button.id,
-            message,
-            errorType: formSettings.errorType,
-            setInlineErrors,
-            triggerErrors: true
-          }),
-        10
-      );
+      // Set asynchronously since loaders need to unrender first. Publish the
+      // pending write on internalState so programmatic callers (assistant
+      // tools) can await it instead of racing the timer.
+      const publication = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          // Promise.resolve tolerates a non-promise return (e.g. a mocked
+          // setFormElementError) so the publication always settles.
+          Promise.resolve(
+            setFormElementError({
+              formRef,
+              fieldKey: button.id,
+              message,
+              // Scope to the clicked button's repeat row, and merge into the
+              // current error map (read fresh from internalState, since this
+              // runs async) so a failure in one repeated row doesn't render on
+              // every row or wipe unrelated field errors.
+              index: button.repeat,
+              errorType: formSettings.errorType,
+              inlineErrors: internalState[_internalId]?.inlineErrors,
+              setInlineErrors,
+              triggerErrors: true
+            })
+          )
+            .catch((err) => {
+              // Still resolve so awaiters never hang, but leave a trail: a
+              // swallowed failure here means assistant tools snapshot inline
+              // errors believing the write landed.
+              console.warn('Failed to set button error', err);
+            })
+            .then(() => resolve());
+        }, 10);
+      });
+      const state = internalState[_internalId];
+      if (state) {
+        state.pendingInlineErrorPublish = publication;
+        // Stop awaiting a settled publication on later calls.
+        publication.then(() => {
+          if (state.pendingInlineErrorPublish === publication)
+            state.pendingInlineErrorPublish = undefined;
+        });
+      }
+      return publication;
     };
 
     try {
@@ -2779,16 +2889,20 @@ function Form({
         await client.resetPendingFileUploads(pendingFileKeys);
       }
 
-      // Clear any previous button error before re-validation
-      // This allows retry after file upload errors
+      // Clear any previous button error before re-validation (allows retry
+      // after e.g. file upload errors). Scope the clear to this button's repeat
+      // row and merge into the current map, and publish it (triggerErrors) so
+      // the cleared state actually reaches the UI.
       if (submit && elementType === 'button') {
         setFormElementError({
           formRef,
           fieldKey: element.id,
           message: '', // Empty message clears the error
+          index: element.repeat,
           errorType: formSettings.errorType,
+          inlineErrors: internalState[_internalId]?.inlineErrors,
           setInlineErrors,
-          triggerErrors: false
+          triggerErrors: true
         });
       }
 
@@ -2830,7 +2944,10 @@ function Form({
       try {
         submissionResult = await submitStep(
           metadata,
-          element.repeat || 0,
+          // Pass the optional repeat through: `|| 0` would make a non-repeated
+          // element look like row 0 and scope its errors to a row that the
+          // non-repeat renderer never reads.
+          element.repeat,
           !!hasNext
         );
       } catch (error) {
@@ -3868,6 +3985,16 @@ function Form({
               }}
               onComplete={reviewViewerPayload.onComplete}
               onFinalize={reviewViewerPayload.onFinalize}
+              // Persists PDFs whose fields the filler edited in the viewer.
+              // The generic envelope file endpoint validates the extension
+              // against the envelope type, so name the upload as a pdf.
+              onSaveEnvelopeFile={(envelopeId: string, file: Blob) =>
+                clientRef.current.saveEnvelopeFile(
+                  envelopeId,
+                  file,
+                  'document.pdf'
+                )
+              }
             />
           </React.Suspense>
         )}

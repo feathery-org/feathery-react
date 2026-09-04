@@ -100,6 +100,8 @@ export interface DocumentViewerPayload {
 
 interface DocumentViewerProps {
   payload: DocumentViewerPayload;
+  // The Generate Documents action: `editor_toolbar_actions` configures the
+  // toolbar, `editor_read_only` locks the PDFs' form fields.
   action: Record<string, any>;
   setShow: (show: boolean) => void;
   onComplete: () => void;
@@ -111,6 +113,11 @@ interface DocumentViewerProps {
     // DocuSign sign only: save the envelope as a draft instead of sending it.
     draft: boolean;
   }) => Promise<{ status?: string; message?: string } | void>;
+  // Persist a PDF the filler edited in the viewer back to its envelope.
+  // Called before finalize for every document with unsaved field edits, so
+  // whatever outcome finalize runs (download, sign, ...) acts on the edited
+  // file. Absent = fields still render but edits are never persisted.
+  onSaveEnvelopeFile?: (envelopeId: string, file: Blob) => Promise<any>;
 }
 
 export default function DocumentViewer({
@@ -118,7 +125,8 @@ export default function DocumentViewer({
   action,
   setShow,
   onComplete,
-  onFinalize
+  onFinalize,
+  onSaveEnvelopeFile
 }: DocumentViewerProps) {
   const loadedDocs = useRef<Record<string, any>>({});
   const pageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -138,6 +146,18 @@ export default function DocumentViewer({
   // Key of the toolbar action currently running (spinner + disable-all), or
   // null when idle. Keys: 'primary', 'draft', 'download'.
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Freeze the PDF widgets while an action runs. pdf.js only fires
+  // onSetModified when the modified flag flips false→true, and during a save
+  // it is already true — so an edit made mid-save never re-marks the doc
+  // dirty, then saveDocument()'s finally resets the flag and the doc looks
+  // clean. The edit would stay on screen but never be persisted.
+  const isInputLocked = busyKey !== null;
+  // A read-only editor shows the documents without the live form layer:
+  // nothing is editable, so nothing dirties and nothing is saved back.
+  const readOnly = !!action.editor_read_only;
+  // Read by the once-bound Escape handler, which must see the live value.
+  const busyKeyRef = useRef(busyKey);
+  busyKeyRef.current = busyKey;
   const [error, setError] = useState('');
   const [pageCounts, setPageCounts] = useState<Record<string, number>>({});
   const [pageWidth, setPageWidth] = useState(MAX_PAGE_WIDTH);
@@ -219,6 +239,13 @@ export default function DocumentViewer({
           (e.target as HTMLElement).blur();
           return;
         }
+        // Closing mid-action would hide the viewer while the action's side
+        // effect (save/sign/send) still completes in the background —
+        // invisibly, and after the surrounding flow was told the review was
+        // cancelled. It would also unmount the canvas, racing
+        // pdfProxy.destroy() against a saveDocument() still in flight. The
+        // toolbar's Back button applies the same gate.
+        if (busyKeyRef.current !== null) return;
         setShowRef.current(false);
       } else if (e.key === 'PageDown' || e.key === 'PageUp') {
         // Let focused inputs/textareas handle paging keys natively.
@@ -246,8 +273,9 @@ export default function DocumentViewer({
   }, []);
 
   // The envelopes finalize acts on: every reviewed form document, in order.
-  // Read straight off the payload rather than out of the rendered PDFs — the
-  // viewer is read-only, so there are no edited values to collect.
+  // Read straight off the payload rather than out of the rendered PDFs;
+  // edited field values are persisted separately (saveEditedDocuments) before
+  // finalize runs.
   const reviewedEnvelopes = useMemo(
     () =>
       payload.documents
@@ -262,10 +290,50 @@ export default function DocumentViewer({
     [payload.documents]
   );
 
+  // Documents with field edits not yet saved to their envelope. Tracked via
+  // pdf.js's annotationStorage modified flag: set on the first widget change,
+  // cleared by saveDocument()/resetModified() — so a doc saved once and then
+  // edited again goes dirty again.
+  const dirtyDocs = useRef<Set<string>>(new Set());
+
   const onDocLoad = useCallback((pdfUrl: string, pdfProxy: any) => {
     loadedDocs.current[pdfUrl] = pdfProxy;
+    const storage = pdfProxy.annotationStorage;
+    if (storage) {
+      storage.onSetModified = () => dirtyDocs.current.add(pdfUrl);
+      storage.onResetModified = () => dirtyDocs.current.delete(pdfUrl);
+    }
     setPageCounts((prev) => ({ ...prev, [pdfUrl]: pdfProxy.numPages }));
   }, []);
+
+  // Write each dirty document's edited field values into its PDF
+  // (pdf.js saveDocument serializes annotationStorage into the AcroForm) and
+  // persist it to the envelope, so every finalize outcome — download, sign,
+  // save — acts on what the filler sees. saveDocument resets the storage's
+  // modified flag, which clears the doc from dirtyDocs via onResetModified.
+  const saveEditedDocuments = async () => {
+    if (!onSaveEnvelopeFile || readOnly) return;
+    for (const doc of payload.documents) {
+      if (!doc.envelope_id || !dirtyDocs.current.has(doc.pdf_url)) continue;
+      const pdfProxy = loadedDocs.current[doc.pdf_url];
+      if (!pdfProxy) continue;
+      try {
+        const bytes = await pdfProxy.saveDocument();
+        await onSaveEnvelopeFile(
+          doc.envelope_id,
+          new Blob([bytes], { type: 'application/pdf' })
+        );
+      } catch (e) {
+        // pdf.js resets the modified flag in saveDocument()'s finally — even
+        // when the save itself rejects — so by now onResetModified has already
+        // dropped the doc from dirtyDocs. Put it back, whichever step failed,
+        // so retrying the toolbar action re-saves it instead of skipping it
+        // and finalizing the unedited file.
+        dirtyDocs.current.add(doc.pdf_url);
+        throw e;
+      }
+    }
+  };
 
   const registerPageRef = useCallback(
     (pdfUrl: string, pageIndex: number, el: HTMLDivElement | null) => {
@@ -305,10 +373,13 @@ export default function DocumentViewer({
     setBusyKey(busyActionKey);
     setError('');
     try {
-      // No required-field gate here: the editor is read-only for now, so a
-      // document whose required fields are empty could not be completed from
-      // this screen — blocking would leave the user with no way forward.
-      // Required values belong to the form step that feeds generation.
+      // Persist any edited field values first, so the outcome acts on them.
+      await saveEditedDocuments();
+      // No required-field gate here: filling fields in the editor is
+      // optional — the generated documents were already completable without
+      // it, so blocking on empty required fields would leave the user with no
+      // way forward. Required values belong to the form step that feeds
+      // generation.
       const result = await onFinalize?.({
         envelopes: reviewedEnvelopes,
         envelopeAction: TOOLBAR_ACTION_ENVELOPE_ACTION[toolbarAction],
@@ -395,6 +466,8 @@ export default function DocumentViewer({
             pageWidth={pageWidth}
             onDocLoad={onDocLoad}
             registerPageRef={registerPageRef}
+            inputLocked={isInputLocked}
+            readOnly={readOnly}
           />
         </div>
       </div>

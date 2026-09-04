@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
-import { resetStyles } from '../../styles';
+import { inputBoxAttrs, resetStyles } from '../../styles';
 import FeatheryClient from '../../../utils/featheryClient';
 import useMounted from '../../../hooks/useMounted';
 import debounce from 'lodash.debounce';
@@ -91,6 +91,7 @@ function AddressLine1({
               }
             : {}
         }}
+        {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
         <input

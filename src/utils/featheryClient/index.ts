@@ -46,7 +46,7 @@ import {
 import debounce from 'lodash.debounce';
 import type { DebouncedFunc } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import { GetConfigParams } from '../internalState';
+import { GetConfigParams, RunComputerAgentOptions } from '../internalState';
 import {
   dataHubAction as apiDataHubAction,
   extractAIDocument,
@@ -63,6 +63,7 @@ import {
   setTaskStatus as apiSetTaskStatus,
   PageSelectionInput,
   parseAPIError,
+  pollForCompletion,
   setEnvironment,
   URL_ENUM
 } from '@feathery/client-utils';
@@ -1102,6 +1103,7 @@ export default class FeatheryClient extends IntegrationClient {
 
   AI_CHECK_INTERVAL = 2000;
   AI_MAX_TIME = 10 * 60 * 1000;
+  COMPUTER_AGENT_MAX_TIME = 30 * 60 * 1000;
 
   // AI
   async runAIExtraction({
@@ -1134,8 +1136,11 @@ export default class FeatheryClient extends IntegrationClient {
     );
   }
 
-  async runComputerAgent(agentId: string) {
-    const { userId } = initInfo();
+  async runComputerAgent(
+    agentId: string,
+    options: RunComputerAgentOptions = {}
+  ) {
+    const { userId, sdkKey } = initInfo();
     await this.submitQueue;
     const url = `${API_URL}computer-agent/run/`;
     const reqOptions = {
@@ -1148,9 +1153,27 @@ export default class FeatheryClient extends IntegrationClient {
       })
     };
     const res = await this._fetch(url, reqOptions, false);
-    if (res && res.status === 201)
-      return { ok: true, payload: await res.json() };
-    else return { ok: false, error: (await res?.text()) ?? '' };
+    if (!res || res.status !== 201)
+      return { ok: false, error: (await res?.text()) ?? '' };
+
+    const payload = await res.json();
+    const pollUrl =
+      `${API_URL}computer-agent/run/completion/` +
+      `?fid=${userId}&rid=${payload.run_id}`;
+    const poll = pollForCompletion(
+      sdkKey,
+      pollUrl,
+      this.AI_CHECK_INTERVAL,
+      this.COMPUTER_AGENT_MAX_TIME,
+      'Computer agent',
+      options.onStatusUpdate
+    ).then((data) => {
+      options.onComplete?.(data);
+      return data;
+    });
+
+    if (!options.waitForCompletion) return { ok: true, payload };
+    return { ok: true, payload: { ...payload, ...(await poll) } };
   }
 
   async forwardInboxEmail({ options }: { options: ForwardInboxEmailOptions }) {

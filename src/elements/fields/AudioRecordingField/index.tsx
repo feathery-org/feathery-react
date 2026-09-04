@@ -392,6 +392,8 @@ function AudioRecordingField({
       <>
         {playbackUrl && (
           <AudioPlayer
+            // Playback state belongs to one recording; a new src is a new player
+            key={playbackUrl}
             src={playbackUrl}
             playLabel={t.play}
             pauseLabel={t.pause}

@@ -112,8 +112,16 @@ export default function useDropdownOptions({
     [normalizedFieldValues]
   );
 
-  const labels = servar.metadata.option_labels || [];
-  const tooltips = servar.metadata.option_tooltips || [];
+  // Option identity has to survive re-renders: react-select tracks the focused
+  // option by reference, so a fresh `[]` fallback would reset menu focus.
+  const labels = useMemo(
+    () => servar.metadata.option_labels || [],
+    [servar.metadata.option_labels]
+  );
+  const tooltips = useMemo(
+    () => servar.metadata.option_tooltips || [],
+    [servar.metadata.option_tooltips]
+  );
 
   // Determine which option source to use (Salesforce, repeat, or default)
   const optionsSource = useMemo<OptionsSourcePlan>(() => {
@@ -172,14 +180,17 @@ export default function useDropdownOptions({
     return { options, labelMap, tooltipMap };
   }, [fieldKey, entityLabel, optionsSource, warningState]);
 
-  // Convert selected string values into full OptionData objects
-  const selectVal: OptionData[] = normalizedFieldValues.length
-    ? normalizedFieldValues.map((val: string) => ({
+  // Convert selected string values into full OptionData objects. Memoized for
+  // the same reason as the option sources above: consumers key off identity.
+  const selectVal = useMemo<OptionData[]>(
+    () =>
+      normalizedFieldValues.map((val: string) => ({
         label: labelMap[val] ?? val,
         value: val,
         tooltip: tooltipMap[val]
-      }))
-    : [];
+      })),
+    [normalizedFieldValues, labelMap, tooltipMap]
+  );
 
   return {
     options,

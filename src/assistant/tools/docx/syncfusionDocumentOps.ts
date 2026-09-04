@@ -84,6 +84,12 @@ import {
   NoOpWriteReport,
   writeIsNoOp
 } from './writeNoOp';
+import type {
+  BindingInstanceChoice,
+  BindingWireIdentity,
+  BindingWriteAmbiguity,
+  BindingWriteResolution
+} from './bindingWriteContract';
 // Binding engine primitives. Imported rather than re-implemented so a content
 // control this engine did not author is never mistaken for a binding, and bound
 // values use the same parse/render/transaction path as direct editor input.
@@ -227,6 +233,8 @@ export interface DocFormat {
 export interface BindingFact {
   /** The binding's name, i.e. what a formula refers to it by. */
   field: string;
+  /** Explicit wire identity; equal field labels do not imply global scope. */
+  identity: BindingWireIdentity;
   /** `formula` is engine-owned and refuses every write; `input` is editable. */
   kind: 'input' | 'formula';
   /** The expression a formula binding computes, in the engine's vocabulary. */
@@ -264,8 +272,16 @@ export interface InventoryEntry {
   kind: string;
   text: string;
   format?: DocFormat;
-  /** Present only when this block's text is a document binding's value. */
-  binding?: BindingFact;
+  /**
+   * Every document binding this block carries, in document order.
+   *
+   * A list rather than a single fact because Word lets any number of inline
+   * content controls share one paragraph - "Effective [date], quoted at
+   * [tax_rate] tax." is two. Reporting only the first left every later bound
+   * value invisible to the model, and a bound value the model cannot see is a
+   * bound value it cannot change.
+   */
+  bindings?: BindingFact[];
 }
 
 export interface IndexBlock {
@@ -898,6 +914,8 @@ export interface EditResult {
   // Keep any mismatch evidence on the affected op so a caller can retry the
   // precise anchor without having to re-inventory the whole document.
   details?: string[];
+  /** Present when a non-global write needs an explicit user choice. */
+  ambiguity?: BindingWriteAmbiguity;
   // 'never' marks a failure no retry can fix (the op is not in the vocabulary),
   // so the assistant stops resending it instead of looping.
   retry?: 'never';
@@ -1142,6 +1160,319 @@ function getRows(block: any): any[] | undefined {
   // inventory, index, and cell-anchored edits. 'rw' kept as a defensive probe.
   const rows = pick(block, 'rows', 'r', 'rw');
   return Array.isArray(rows) ? rows : undefined;
+}
+
+/**
+ * Revision ids carried by the inlines of one anchored block.
+ *
+ * Anchors are `section;block` for body paragraphs and
+ * `section;block;row;cell;para` inside a table.
+ */
+function resolveAnchoredNode(sfdt: any, anchor: string): any {
+  const parts = String(anchor).split(';');
+  const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+  const section = sections[Number(parts[0])];
+  if (!section) return undefined;
+  // Anchors count EXPANDED blocks: a block-level content control holding N
+  // blocks contributes N entries. Raw indices diverge from anchors the moment
+  // such a control holds anything but exactly one block - which is precisely
+  // what a bound document has - so resolve the same way `tableContainerAt` does.
+  //
+  // UNWRAP. expandBlockContentControls yields `{ block, insideControl }` pairs,
+  // not raw blocks. The previous caller never unwrapped and got away with it
+  // only because it walked every value looking for revision ids, so it reached
+  // `.block` by accident. A TABLE anchor did not get away with it: getRows on
+  // the wrapper finds nothing, cell resolution collapses to undefined, and the
+  // foreign-revision guard silently found NOTHING for every table-cell anchor -
+  // set_cell_text was unguarded. Unwrapping here fixes that hole too.
+  const entry = expandBlockContentControls(getBlocks(section))[
+    Number(parts[1])
+  ];
+  if (!entry) return undefined;
+  let block: any = entry.block;
+  if (!block) return undefined;
+  if (parts.length >= 5) {
+    const rows =
+      getRows(block) ?? getRows(getBlocks(block).find((b: any) => getRows(b)));
+    const row = rows?.[Number(parts[2])];
+    const cells = pick(row, 'cells', 'c');
+    const cell = Array.isArray(cells) ? cells[Number(parts[3])] : undefined;
+    block = getBlocks(cell)[Number(parts[4])] ?? cell;
+  }
+  return block;
+}
+
+/** Every revision id anywhere in an anchored block, at any depth. */
+function revisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
+  const found = new Set<string>();
+  const block = resolveAnchoredNode(sfdt, anchor);
+  if (!block) return found;
+  const collect = (node: any): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(collect);
+    const ids = pick(node, 'revisionIds', 'rids');
+    if (Array.isArray(ids)) for (const id of ids) found.add(String(id));
+    for (const value of Object.values(node)) collect(value);
+  };
+  collect(block);
+  return found;
+}
+
+/**
+ * Where each revision sits, in the SAME offset space `find` resolves against.
+ *
+ * Deliberately the structural twin of `bindingRangesOf` below: same walk, same
+ * skip rule, same offset counter. The two must agree, because both map a
+ * character range onto the live text that `inlineText` projects - and an offset
+ * walk that drifts from the one the caller used is a guard that fires on the
+ * wrong text.
+ *
+ * ONE DELIBERATE DIFFERENCE. `bindingRangesOf` drops an inline whose revisions
+ * are all deletions, because deleted text is not part of the live projection.
+ * This must NOT drop it: a pending deletion is the single most dangerous thing
+ * in the paragraph, since SyncFusion re-authors it under the current user
+ * rather than leaving it alone. It occupies no live width, so it is recorded as
+ * a ZERO-WIDTH marker sitting at the current offset.
+ */
+function revisionRangesOf(
+  inlines: any[],
+  deletedIds: Set<string>
+): Array<{ id: string; start: number; end: number }> {
+  const ranges: Array<{ id: string; start: number; end: number }> = [];
+  let offset = 0;
+  const walk = (items: any[]): void => {
+    for (const inline of items) {
+      if (inline == null) continue;
+      // Two places, not one. A run carries its content revisions directly, and
+      // a TRACKED FORMATTING change is recorded on the run's own
+      // characterFormat. Reading only the first missed the second entirely, so
+      // a foreign tracked formatting change on a run was narrowed straight past
+      // - the same lost-protection shape as the paragraph mark.
+      const raw = pick(inline, 'revisionIds', 'rids');
+      const formatRaw = pick(
+        pick(inline, 'characterFormat', 'cf'),
+        'revisionIds',
+        'rids'
+      );
+      const ids = [
+        ...(Array.isArray(raw) ? raw.map(String) : []),
+        ...(Array.isArray(formatRaw) ? formatRaw.map(String) : [])
+      ];
+      const start = offset;
+      if (ids.length > 0 && ids.every((id) => deletedIds.has(id))) {
+        // CURRENTLY UNREACHABLE for a FOREIGN pending deletion: the guard
+        // detects that case earlier and abandons the narrowing altogether, so
+        // this branch never decides anything for one. It is kept, and kept
+        // correct, because it still runs for the assistant's OWN pending
+        // deletions (which are not in `preExisting` and so are filtered out
+        // downstream), and because it is what the branch must do the day the
+        // liveText projection is fixed and narrowing over deletions becomes
+        // safe again. Deleting it would quietly remove the offset arithmetic
+        // that restoration depends on.
+        for (const id of ids) ranges.push({ id, start, end: start });
+        continue;
+      }
+      const nested = getInlines(inline);
+      if (nested.length) {
+        walk(nested);
+        for (const id of ids) ranges.push({ id, start, end: offset });
+        continue;
+      }
+      const text = pick(inline, 'text', 'tlp');
+      if (typeof text === 'string') offset += text.length;
+      for (const id of ids) ranges.push({ id, start, end: offset });
+    }
+  };
+  walk(inlines);
+  return ranges;
+}
+
+/**
+ * Does a revision's span touch the half-open range [start, end) being written?
+ *
+ * A zero-width marker (a pending deletion) counts when it sits anywhere from
+ * the start boundary to the end boundary INCLUSIVE. That is deliberately
+ * generous: a deletion sitting exactly where the write begins or ends is inside
+ * the text SyncFusion's selected-range delete will walk over, and a guard whose
+ * job is to prevent an unrecoverable re-authoring should err toward refusing.
+ */
+function revisionTouchesRange(
+  revision: { start: number; end: number },
+  start: number,
+  end: number
+): boolean {
+  return revision.start === revision.end
+    ? revision.start >= start && revision.start <= end
+    : revision.start < end && revision.end > start;
+}
+
+/**
+ * Revision ids the character-range walk CANNOT address, at an anchor.
+ *
+ * Two of them, and both were invisible to the narrowing until review caught it:
+ *
+ *   PARAGRAPH MARK  `characterFormat.revisionIds` on the block itself. Deleting
+ *                   a paragraph mark is how a paragraph gets merged into the
+ *                   next one. It is not in any run, so walking inlines never
+ *                   sees it.
+ *   ROW FORMAT      `rowFormat.revisionIds` on a table row - a whole inserted or
+ *                   deleted row. Worse than the paragraph mark: it hangs off the
+ *                   ROW, above the cell's paragraph, so even the block-wide
+ *                   recursion from a cell anchor cannot reach it.
+ *
+ * Neither has a character range, so there is nothing to intersect a write
+ * against - which is exactly why the answer is to stop narrowing rather than to
+ * invent an offset for them.
+ */
+function structuralRevisionIdsAtAnchor(sfdt: any, anchor: string): Set<string> {
+  const found = new Set<string>();
+  const add = (ids: unknown): void => {
+    if (Array.isArray(ids)) for (const id of ids) found.add(String(id));
+  };
+  const node = resolveAnchoredNode(sfdt, anchor);
+  add(paragraphMarkRevisionIds(node));
+  // A run's own characterFormat revision ids - a tracked FORMATTING change.
+  // Included here as well as in the range walk: a formatting revision covers a
+  // run whose boundaries need not line up with the text being written, so the
+  // safe reading is to treat it as structural and stop narrowing.
+  for (const inline of getInlines(node))
+    add(pick(pick(inline, 'characterFormat', 'cf'), 'revisionIds', 'rids'));
+  const parts = String(anchor).split(';');
+  if (parts.length >= 5) {
+    const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
+    const section = sections[Number(parts[0])];
+    const entry = section
+      ? expandBlockContentControls(getBlocks(section))[Number(parts[1])]
+      : undefined;
+    const table = entry?.block;
+    const rows = table
+      ? getRows(table) ?? getRows(getBlocks(table).find((b: any) => getRows(b)))
+      : undefined;
+    add(rowRevisionIds(rows?.[Number(parts[2])]));
+  }
+  return found;
+}
+
+/** The revisions that already existed when this change set began. */
+const PRE_EXISTING_REVISIONS_KEY = '__fmPreExistingRevisionIds';
+
+/**
+ * Refuse to overwrite text that carries somebody else's pending tracked change.
+ *
+ * SyncFusion's tracked delete does not leave such a revision alone: for an
+ * element already carrying a pending Deletion it UNLINKS that revision, authors
+ * a replacement under the current user, and drops the original from the
+ * collection. The user's deletion silently becomes the assistant's - so a later
+ * reject of the assistant's work resurrects text the USER deleted, and a failed
+ * op's rollback does the same immediately. Neither is recoverable afterwards,
+ * because by then the user's revision no longer exists in any form.
+ *
+ * So this refuses before the write, the same stance every other op takes toward
+ * a range it cannot address safely.
+ */
+function assertNoForeignPendingRevisions(
+  editor: LiveEditor,
+  block: FlatBlock,
+  op: EditOp,
+  // The character range this op will actually overwrite, in the same offset
+  // space `find` was resolved in. Omit it when the op rewrites the WHOLE block
+  // (set_cell_text, change_case, a replace_text with no `find`) - then every
+  // revision in the block genuinely is in range and block granularity is not a
+  // widening, it is the truth.
+  range?: { start: number; end: number }
+): void {
+  const preExisting: Set<string> | undefined = (editor as any)[
+    PRE_EXISTING_REVISIONS_KEY
+  ];
+  if (!preExisting || !preExisting.size) return;
+  let touched: string[] = [];
+  try {
+    const sfdt = serializeSfdt(editor);
+    const deletedIds = deletedRevisionIds(sfdt);
+    const node = range ? resolveAnchoredNode(sfdt, block.anchor) : undefined;
+    const ranges = node ? revisionRangesOf(getInlines(node), deletedIds) : [];
+    // A foreign revision on the paragraph mark or on a table row has no
+    // character range, so the range filter below cannot see it and would let
+    // the write through - a protection the block-wide path used to give. When
+    // one is present the narrowing is abandoned, same as for a pending deletion.
+    const structuralIds = structuralRevisionIdsAtAnchor(sfdt, block.anchor);
+    const foreignStructural = [...structuralIds].filter((id) =>
+      preExisting.has(id)
+    );
+    // A foreign pending DELETION in this block makes the caller's offsets
+    // untrustworthy, so the range is discarded and the block-wide check runs.
+    //
+    // MEASURED, and it is an engine defect independent of this guard: with a
+    // pending deletion present, `liveText` comes back as the deletion-INCLUDED
+    // text truncated to the length of the deletion-EXCLUDED text. On
+    // "Alpha beta gamma delta." with "beta " pending-deleted, liveText reads
+    // "Alpha beta gamma d" - a hybrid of two projections that is neither. Any
+    // index resolved in it points at the wrong characters.
+    // Until that is fixed, narrowing here would mean trusting offsets that are
+    // known wrong, so this deliberately gives up the narrowing for these blocks
+    // and keeps the safe answer. The trade is pinned by the deletion cases in
+    // tests/foreignRevisionRange.spec.ts, including a control that fails if the
+    // narrowing is ever lost entirely.
+    const blockCarriesForeignDeletion = ranges.some(
+      (revision) => preExisting.has(revision.id) && deletedIds.has(revision.id)
+    );
+    if (range && !blockCarriesForeignDeletion && !foreignStructural.length) {
+      // Narrow to the range actually being written. Before this, a foreign
+      // revision ANYWHERE in the paragraph refused the op - so a paragraph
+      // carrying one pending change made every other word in it unwritable,
+      // which is a refusal the user cannot act on and cannot understand.
+      touched = [
+        ...new Set(
+          ranges
+            .filter(
+              (revision) =>
+                preExisting.has(revision.id) &&
+                revisionTouchesRange(revision, range.start, range.end)
+            )
+            .map((revision) => revision.id)
+        )
+      ];
+    } else {
+      // `revisionIdsAtAnchor` recurses the block, so it reaches the paragraph
+      // mark - but a row lives ABOVE the cell's paragraph, so rowFormat ids are
+      // unioned in explicitly. Without them a foreign row revision is invisible
+      // on every path.
+      const ids = revisionIdsAtAnchor(sfdt, block.anchor);
+      touched = [
+        ...new Set(
+          [...ids, ...structuralIds].filter((id) => preExisting.has(id))
+        )
+      ];
+    }
+  } catch (error) {
+    // FAIL CLOSED. This used to swallow the error and return, which let a write
+    // proceed unguarded precisely when the document could not be read - the one
+    // moment there is least reason to trust it. Refusing is the same stance the
+    // rest of this file takes toward a range it cannot address safely.
+    throw new OpError(
+      'pending_revision_check_failed',
+      `${op.op} could not verify whether "${block.anchor}" carries somebody else's pending tracked change, so nothing was written.`,
+      [
+        `anchor: ${block.anchor}`,
+        `reason: ${(error as Error)?.message ?? String(error)}`,
+        'Retry the operation; if it keeps failing, re-read the document with getDocumentInventory.'
+      ]
+    );
+  }
+  if (!touched.length) return;
+  throw new OpError(
+    'pending_revision_in_range',
+    `${op.op} would overwrite text at "${block.anchor}" that carries ${
+      touched.length
+    } pending tracked change${
+      touched.length === 1 ? '' : 's'
+    } made before this edit. Rewriting it re-authors that change as the assistant's, so accepting or rejecting it later would no longer do what its author intended. Nothing was written.`,
+    [
+      `anchor: ${block.anchor}`,
+      `pending revisions in range: ${touched.join(', ')}`,
+      'Accept or reject the existing tracked changes first, or target a range that does not overlap them.'
+    ]
+  );
 }
 
 // SyncFusion serializes a revision type as a number in optimized SFDT and as a
@@ -1922,11 +2253,11 @@ function toInventoryEntry(
   };
   if (b.format) entry.format = b.format;
   const tableAnchor = tableAnchorForBlock(b);
-  const binding = bindingFactFromTag(
-    b.boundTag,
+  const bindings = bindingFactsOf(
+    b,
     tableAnchor ? tables.get(tableAnchor)?.tableId : undefined
   );
-  if (binding) entry.binding = binding;
+  if (bindings.length) entry.bindings = bindings;
   return entry;
 }
 
@@ -2083,6 +2414,7 @@ function bindingFactFromTag(
     if (!def || def.kind === 'table') return undefined;
     return {
       field: def.name,
+      identity: { id: def.name, global: def.isGlobal },
       kind: def.kind === 'formula' ? 'formula' : 'input',
       ...(def.kind === 'formula' ? { expr: def.expression } : {}),
       ...(table ? { table } : {}),
@@ -2091,6 +2423,41 @@ function bindingFactFromTag(
   } catch {
     return undefined;
   }
+}
+
+/** The binding name a tag declares, or `''` when the tag is not a field. */
+function bindingNameOfTag(tag: string | undefined): string {
+  if (!tag) return '';
+  try {
+    const def = parseTag(tag);
+    return def && def.kind !== 'table' ? def.name : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Every binding a block carries, in document order and deduplicated by
+ * identity, so one global value appearing twice in a sentence reads as the one
+ * identity it is.
+ *
+ * `bindingRanges` is the complete truth the flatten already computes; the
+ * single `boundTag` is only its first entry, kept as the fallback for a block
+ * whose binding wraps it rather than sitting inside its runs.
+ */
+function bindingFactsOf(block: FlatBlock, table?: string): BindingFact[] {
+  const tags = block.bindingRanges?.length
+    ? block.bindingRanges.map((range) => range.tag)
+    : [block.boundTag];
+  const facts: BindingFact[] = [];
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    const fact = bindingFactFromTag(tag, table);
+    if (!fact || seen.has(fact.identity.id)) continue;
+    seen.add(fact.identity.id);
+    facts.push(fact);
+  }
+  return facts;
 }
 
 // `sfdt` is optional because the fixture-driven read path may not have it;
@@ -4170,11 +4537,13 @@ class OpError extends Error {
   code: string;
   details?: string[];
   retry?: 'never';
+  ambiguity?: BindingWriteAmbiguity;
   constructor(
     code: string,
     message?: string,
     details?: string[],
-    retry?: 'never'
+    retry?: 'never',
+    ambiguity?: BindingWriteAmbiguity
   ) {
     super(message ?? code);
     // The shipped ES5 emit runs `Error.call(this, message) || this`, and
@@ -4186,6 +4555,7 @@ class OpError extends Error {
     this.code = code;
     this.details = details;
     this.retry = retry;
+    this.ambiguity = ambiguity;
   }
 }
 
@@ -4436,7 +4806,14 @@ function revisionProjectionStream(sfdt: any, dropIds: Set<string>): string {
   };
   const sections: any[] = pick(sfdt, 'sections', 'sec') ?? [];
   for (const section of sections) {
-    for (const block of getBlocks(section)) {
+    // Block content controls are transparent to addressing (see
+    // `expandBlockContentControls`) and must be transparent here too: a table
+    // wrapped in one otherwise projects as a single untracked empty paragraph,
+    // which hides every tracked row inside it from both projections - so a
+    // fully tracked paste of a wrapped table read as irreversible, and a write
+    // into a wrapped table's cell was proven reversible vacuously.
+    for (const entry of expandBlockContentControls(getBlocks(section))) {
+      const block = entry.block;
       const rows = getRows(block);
       if (rows) {
         for (const row of rows) {
@@ -5306,6 +5683,21 @@ function normalizeParagraphBreaks(text: string): string {
 // the complete block span implied by the payload rather than re-reading only
 // the pre-write anchor. Reversibility remains the separate reject-projection
 // invariant in assertTrackedMutation.
+/**
+ * Write `replacement` over the current selection, deleting when it is empty.
+ *
+ * An empty replacement is a DELETION, and it cannot go through `insertText`:
+ * SyncFusion returns immediately for the empty string, so the selection is left
+ * untouched and the op silently writes nothing. `delete()` is the tracked
+ * deletion primitive, and it is safe here for the same reason it is safe on the
+ * live-story path - the selection is exactly the searched range, with no
+ * paragraph mark in it.
+ */
+function writeOverSelection(editor: LiveEditor, replacement: string): void {
+  if (replacement) replaceSelectedText(editor, replacement);
+  else editor.editor.delete();
+}
+
 function verifyTextWrite(
   editor: LiveEditor,
   target: {
@@ -5313,6 +5705,18 @@ function verifyTextWrite(
     endAnchor?: string;
     expected: string;
     exact?: boolean;
+    /**
+     * This write REMOVED text, so tolerate the format's spacing normalisation.
+     *
+     * Opt-in, and it has to be: the artefact only exists on removal. Measured in
+     * a real browser, inserts preserve leading, trailing, internal and doubled
+     * spaces EXACTLY, while deleting the first word leaves a lone leading space
+     * that the document drops. Applying the tolerance everywhere - which is what
+     * this did until review caught it - meant an INSERT that silently lost a
+     * space still verified as correct, which is the same class of defect the
+     * rest of this file exists to prevent.
+     */
+    removesText?: boolean;
   }
 ): any {
   const sfdt = serializeSfdt(editor);
@@ -5360,8 +5764,11 @@ function verifyTextWrite(
       .join('\r')
   );
   const matches = target.exact
-    ? span === normalizedExpected
-    : span.includes(normalizedExpected);
+    ? span === normalizedExpected ||
+      (!!target.removesText && spacingOnlyDifference(span, normalizedExpected))
+    : span.includes(normalizedExpected) ||
+      (!!target.removesText &&
+        collapseSpacing(span).includes(collapseSpacing(normalizedExpected)));
   if (!matches)
     throw new OpError(
       'text_verification_failed',
@@ -5376,6 +5783,56 @@ function verifyTextWrite(
       ]
     );
   return sfdt;
+}
+
+/**
+ * Collapse runs of spaces and tabs WITHIN each paragraph, leaving paragraph
+ * marks untouched, and tolerate the ONE leading-space artefact the SDK actually
+ * produces.
+ *
+ * `\s` is deliberately not used: it matches `\r`, and collapsing paragraph
+ * marks would let a change in paragraph COUNT pass verification, which is a
+ * structural change rather than a spacing one.
+ *
+ * MEASURED, in a real browser, because this used to `.trim()` both ends on the
+ * strength of a comment and that tolerated a defect:
+ *
+ *   inserts                              spacing preserved EXACTLY, both ends,
+ *                                        internal runs included
+ *   delete a middle word                 naive surgery and the document AGREE
+ *   delete the FIRST word, leaving a
+ *     lone leading space                 the document DROPS it - " beta gamma"
+ *                                        reads back as "beta gamma"
+ *   delete the LAST word                 naive surgery and the document AGREE
+ *
+ * So exactly one artefact exists and it is at the START. Trimming the END too
+ * meant a write that genuinely lost a trailing space reported SUCCESS and
+ * nothing caught it. Narrowed to the leading side, which is the only side the
+ * SDK was ever observed to touch.
+ */
+function collapseSpacing(value: string): string {
+  return value
+    .split('\r')
+    .map((paragraph) => paragraph.replace(/[^\S\r\n]+/g, ' ').replace(/^ /, ''))
+    .join('\r');
+}
+
+/**
+ * True when two projections carry identical content and differ only in how
+ * spacing is represented.
+ *
+ * Removing a run of text leaves a result that naive string surgery and the
+ * serialized document disagree about: the document format normalizes spacing on
+ * write - a lone leading space is dropped, an internal run collapses - while the
+ * expected value is built by slicing the pre-write string. Without this,
+ * `delete_text` and `replace_text` with an empty replacement can never verify,
+ * because their expected value always carries the spacing the write removed.
+ *
+ * This tolerates that difference and nothing else: every non-space character
+ * must still appear, in the same order, in the same paragraph.
+ */
+function spacingOnlyDifference(actual: string, expected: string): boolean {
+  return collapseSpacing(actual) === collapseSpacing(expected);
 }
 
 // SyncFusion's table structure methods default a missing/invalid count to 1.
@@ -5543,10 +6000,17 @@ type AnchorlessOpHandler<K extends AnchorlessDocumentOp> = (
   ctx: AnchorlessOpContext<K>
 ) => void;
 
-function insertionPoint(
-  op: TypedEditOp<'insert_text'>,
-  block: FlatBlock
-): number {
+/**
+ * Any op that inserts at a point rather than over a range. Only `position` and
+ * `offset` are read, so every additive op can share one convention instead of
+ * each inventing its own.
+ */
+interface PositionedInsert {
+  position?: unknown;
+  offset?: unknown;
+}
+
+function insertionPoint(op: PositionedInsert, block: FlatBlock): number {
   const position =
     typeof op.position === 'string' ? op.position.toLowerCase() : '';
   if (position === 'after' || position === 'end') return block.length;
@@ -5574,7 +6038,7 @@ function insertionText(op: TypedEditOp<'insert_text'>): string {
 // model; test doubles without those public methods retain the offset fallback.
 function selectInsertionPoint(
   editor: LiveEditor,
-  op: TypedEditOp<'insert_text'>,
+  op: PositionedInsert,
   block: FlatBlock
 ): void {
   const position =
@@ -6579,15 +7043,79 @@ function requestedTextRange(
   return { start: 0, end: block.length };
 }
 
+/** Whether a requested text range touches a binding's range. */
+function rangeTouchesBinding(
+  requested: { start: number; end: number },
+  range: { start: number; end: number }
+): boolean {
+  return requested.start === requested.end
+    ? requested.start > range.start && requested.start < range.end
+    : requested.start < range.end && requested.end > range.start;
+}
+
 function targetsBindingRange(op: EditOp, block: FlatBlock): boolean {
   const ranges = block.bindingRanges ?? [];
   if (!ranges.length) return !!block.boundTag;
   const requested = requestedTextRange(op, block);
   if (!requested) return true;
-  return ranges.some((range) =>
-    requested.start === requested.end
-      ? requested.start > range.start && requested.start < range.end
-      : requested.start < range.end && requested.end > range.start
+  return ranges.some((range) => rangeTouchesBinding(requested, range));
+}
+
+/**
+ * WHICH binding in this block the write means.
+ *
+ * A block may carry several, so "the block's binding" is not an answer. The op
+ * may name one with `field` - identity, which survives the text moving - and
+ * otherwise the range it asks to write picks one out. When neither settles it,
+ * refusing while naming the candidates is the only honest reply: silently
+ * writing the first one is how a request to change the tax rate rewrote the
+ * effective date.
+ */
+function bindingTagForOp(op: EditOp, block: FlatBlock): string | undefined {
+  const ranges = block.bindingRanges ?? [];
+  // Only a write has to choose. Formatting and every other op treats the block
+  // as a whole, so asking them to name a field would refuse work that is not
+  // ambiguous at all.
+  if (ranges.length < 2 || !BOUND_WRITE_OPS.has(op.op)) return block.boundTag;
+
+  const named = ranges.filter((range) => bindingNameOfTag(range.tag));
+  const choices = [
+    ...new Set(named.map((range) => bindingNameOfTag(range.tag)))
+  ];
+  const wanted = typeof (op as any).field === 'string' ? (op as any).field : '';
+  if (wanted) {
+    const hit = named.find((range) => bindingNameOfTag(range.tag) === wanted);
+    if (hit) return hit.tag;
+    throw new OpError(
+      'binding_write_unroutable',
+      `${op.op} names the field "${wanted}", which ${
+        block.anchor
+      } does not hold. It holds ${choices
+        .map((name) => `"${name}"`)
+        .join(' and ')}.`,
+      [`anchor: ${block.anchor}`, `fields: ${choices.join(', ')}`],
+      'never'
+    );
+  }
+
+  const requested = requestedTextRange(op, block);
+  const hits = requested
+    ? named.filter((range) => rangeTouchesBinding(requested, range))
+    : named;
+  const distinct = [
+    ...new Set(hits.map((range) => bindingNameOfTag(range.tag)))
+  ];
+  if (distinct.length === 1) return hits[0].tag;
+  throw new OpError(
+    'binding_ambiguous_field',
+    `${op.op} at ${
+      block.anchor
+    } does not say which bound value it means: this text holds ${choices
+      .map((name) => `"${name}"`)
+      .join(
+        ' and '
+      )}. Send the same op again with \`field\` set to the one you mean.`,
+    [`anchor: ${block.anchor}`, `fields: ${choices.join(', ')}`]
   );
 }
 
@@ -6985,14 +7513,45 @@ function pasteAtRangeStart(range: BlockRange): PasteTarget {
 }
 
 /** Every raw block a range covers, for the reads flattening cannot answer. */
+/**
+ * The RAW block index an EXPANDED address refers to.
+ *
+ * Anchors count blocks the way a reader sees them, so a block-level content
+ * control wrapping N blocks contributes N addresses while occupying ONE raw
+ * slot. Indexing raw blocks with an expanded number therefore drifts by one per
+ * extra child: in a section reading One / [wrapper: WrapA, WrapB] / Four /
+ * Five, the anchor "0;3" means Four but selects raw block 3, which is Five -
+ * and "0;4" runs off the end. A copy spanning such a wrapper took the wrong
+ * blocks, and the read-back compared against that same wrong clone, so nothing
+ * caught it.
+ */
+function rawIndexForExpanded(
+  raw: any[],
+  expandedIndex: number
+): number | undefined {
+  let seen = 0;
+  for (let index = 0; index < raw.length; index++) {
+    const contributed = expandBlockContentControls([raw[index]]).length || 1;
+    if (expandedIndex < seen + contributed) return index;
+    seen += contributed;
+  }
+  return undefined;
+}
+
 function rawBlocksInRange(sfdt: any, range: BlockRange): any[] {
   const first = topLevelAddress(range.blocks[0].anchor);
   const last = topLevelAddress(range.blocks[range.blocks.length - 1].anchor);
   const out: any[] = [];
   for (let section = first.section; section <= last.section; section++) {
     const blocks = rawSectionBlocks(sfdt, section);
-    const from = section === first.section ? first.block : 0;
-    const to = section === last.section ? last.block : blocks.length - 1;
+    const from =
+      section === first.section
+        ? rawIndexForExpanded(blocks, first.block) ?? first.block
+        : 0;
+    const to =
+      section === last.section
+        ? rawIndexForExpanded(blocks, last.block) ?? last.block
+        : blocks.length - 1;
     for (let index = from; index <= to; index++)
       if (blocks[index]) out.push(blocks[index]);
   }
@@ -7132,6 +7691,34 @@ const DOCUMENT_TAIL_TABLE_REASON =
  *
  * A copy never deletes its source, so this does not apply to one.
  */
+/**
+ * A relocation must move blocks that all live in ONE Word section.
+ *
+ * A section unit runs to the next heading of the same or shallower level, so in
+ * a document with no headings it runs to the END of the document - straight
+ * across any Word section break on the way. Relocating such a range cannot be
+ * authored as a rejectable revision, and the op discovers that only AFTER it has
+ * already moved blocks: the refusal then arrives with the first section's text
+ * destroyed and nothing restored. Refuse before anything is written.
+ */
+function assertRangeWithinOneSection(range: BlockRange): void {
+  const sections = new Set(
+    range.blocks.map((entry) => String(entry.anchor).split(';')[0])
+  );
+  if (sections.size <= 1) return;
+  throw new OpError(
+    'relocation_spans_section_break',
+    `Refusing to relocate the section at ${JSON.stringify(
+      range.anchor
+    )}: the range it resolves to crosses a section break, and a section break cannot be relocated as a tracked change. Nothing was written.`,
+    [
+      `anchor: ${range.anchor}`,
+      `sections covered: ${[...sections].join(', ')}`,
+      'Anchor a heading whose section unit ends before the break, or move the blocks in smaller pieces.'
+    ]
+  );
+}
+
 function assertRangeIsRemovable(blocks: FlatBlock[], range: BlockRange): void {
   const last = range.blocks[range.blocks.length - 1];
   const tail = documentTailTableLastRow(blocks);
@@ -7199,6 +7786,36 @@ function assertRowsAreRemovable(
  * the SyncFusion half of the reason from the shared constant so the three
  * explanations of one defect cannot drift apart.
  */
+/**
+ * The same document-tail rule, for the copy rather than the deletion.
+ *
+ * A duplicate is not a delete, which is why the family above excluded it - but
+ * it pastes a copy and then deletes rows out of that copy, so the tail-table
+ * rule bites it all the same. It just bit AFTERWARDS: the paste had already
+ * landed when `split_table_copy_lost` refused, and because that residue authors
+ * no revision there was nothing for the rollback to reject. The refusal said
+ * "nothing of this change set was kept" while the document disagreed.
+ *
+ * Asked before the paste instead, the same refusal is true. This is the whole
+ * of the prevent-versus-detect distinction in one case: the guard did not need
+ * to be smarter, it needed to run earlier.
+ */
+function assertTableIsDuplicable(
+  blocks: FlatBlock[],
+  tableAnchor: string
+): void {
+  const tail = documentTailTableLastRow(blocks);
+  if (!tail || tail.tableAnchor !== tableAnchor) return;
+  throw new OpError(
+    'document_tail_table_last_row',
+    `Refusing to duplicate the table at ${JSON.stringify(
+      tableAnchor
+    )}: it is the document's last block, so the copy has no following paragraph to be readable against and the engine would have to delete rows out of whatever it merged with. ${DOCUMENT_TAIL_TABLE_REASON}`,
+    [`table: ${tableAnchor}`, `document tail table last row: ${tail.row}`],
+    'never'
+  );
+}
+
 function assertTableIsRemovable(
   blocks: FlatBlock[],
   tableAnchor: string
@@ -7231,6 +7848,55 @@ function assertTableIsRemovable(
  * A copy leaves the source untouched, so it takes nothing away from anyone and
  * this does not apply to one either.
  */
+/**
+ * Refuse a selection-driven structural op over a table whose cells carry
+ * bindings.
+ *
+ * A selection write deletes the content control it lands in - tag and all - and
+ * that destruction authors no revision, so the reject-projection check cannot
+ * restore it and `rejectRevisions` has nothing to reject. The result measured on
+ * a bound costs table: a REFUSED split destroyed seven binding tags including
+ * the `sum(costs.line_total)` subtotal, leaving numbers that still render and
+ * never recompute again.
+ *
+ * The engine already has the sound path for bound tables - `insert_row`,
+ * `delete_row`, `delete_table` and `duplicate_table` route through the binding
+ * engine's mutation plan. `split_table` shares its physical row-delete with
+ * `delete_row` but never consults the runtime, so it runs that same destruction
+ * unguarded. Until it is composed from the engine primitives, refuse.
+ */
+function assertTableHasNoBindings(
+  sfdt: any,
+  tableAnchor: string,
+  opName: string
+): void {
+  // Ask the binding scan what is bound - it is the one owner of that answer.
+  // Reading raw SFDT for tag-shaped strings would be a second, weaker source of
+  // truth that drifts the moment the grammar changes.
+  const bound = flattenSfdt(sfdt).filter(
+    (candidate) =>
+      !!candidate.boundTag && candidate.anchor.startsWith(`${tableAnchor};`)
+  );
+  // A table can be bound by its own table-scope marker while no individual cell
+  // carries a field tag - a bound repeating table with no data rows yet. Ask the
+  // binding index about the table itself, not only its cells.
+  const boundTable = bindingTablesByAnchor(sfdt).has(tableAnchor);
+  if (!bound.length && !boundTable) return;
+  throw new OpError(
+    'structural_op_would_destroy_bindings',
+    `${opName} cannot restructure the table at ${JSON.stringify(
+      tableAnchor
+    )}: its cells carry ${bound.length} binding${
+      bound.length === 1 ? '' : 's'
+    }, and the selection this op uses would delete their content controls outright. That destroys the binding rather than moving it, and rejecting the change cannot bring it back. Nothing was written.`,
+    [
+      `table: ${tableAnchor}`,
+      `bound cells: ${bound.map((candidate) => candidate.anchor).join(', ')}`,
+      'Use insert_row, delete_row or duplicate_table, which the binding engine performs safely, or change values with set_cell_text.'
+    ]
+  );
+}
+
 function assertRangeHasNoForeignEdits(sfdt: any, range: BlockRange): void {
   const author = foreignPendingAuthor(sfdt, range);
   if (author)
@@ -7350,14 +8016,13 @@ function shiftedRange(
 }
 
 /**
- * The primitive behind all three relocation ops: put a copy of a resolved range
- * at a target caret, tracked, and optionally remove the original.
- *
- * `removeSource: false` IS the copy - a copy is this relocation without its
- * delete, which is why there is one routine and three entry points rather than a
- * second code path to keep correct. It also means a copy cannot be affected by
- * the post-paste source re-resolution at all: nothing is deleted, so there is
- * nothing to find again.
+ * The primitive behind the MOVING relocations - move_section, swap_sections
+ * and split_table: capture a resolved range through the live selection, paste
+ * it at a target caret, tracked, and optionally remove the original. The pure
+ * copies (copy_section, duplicate_table) do not capture at all: they build
+ * their payload from the document's own SFDT and paste it through
+ * `pasteBlocksAsTrackedSegments`, which is what lets them carry a
+ * block-wrapped table a multi-block selection paste silently loses.
  *
  * Returns the paste's measured effect on block positions, which is what a caller
  * relocating a SECOND range needs in order to find it again, and the document as
@@ -7531,6 +8196,210 @@ function resolveRelocationTarget(
   };
 }
 
+/** A clone of the range's raw blocks, resolved to what the user currently sees. */
+/**
+ * The block to clone when duplicating ONE table.
+ *
+ * A content control can wrap a table together with sibling paragraphs, and
+ * cloning the whole container duplicates those siblings as well - reported as a
+ * successful table duplicate, because the read-back afterwards verifies only
+ * the table's own blocks and never looks at what else came along. Keep the
+ * wrapper, because the table needs it, and carry only the addressed table
+ * inside it.
+ *
+ * Used by both duplication routes. A bound table duplicates through the binding
+ * engine and an unbound one through the editor, and a rule that only one of
+ * them obeys is how the two drift apart.
+ */
+function containerCarryingOnlyTable(container: any, table: any): any {
+  if (!container || !table || getRows(container)) return container;
+  const children = pick(container, 'blocks', 'b');
+  if (!Array.isArray(children) || children.length <= 1) return container;
+  return 'blocks' in container
+    ? { ...container, blocks: [table] }
+    : { ...container, b: [table] };
+}
+
+function clonedRangeBlocks(sfdt: any, range: BlockRange): any[] {
+  return clonedWithoutRevisions(sfdt, rawBlocksInRange(sfdt, range));
+}
+
+/** A table wrapped in a block-level content control - the one paste-hostile shape. */
+function isBlockWrappedTable(block: any): boolean {
+  return (
+    !!block &&
+    pick(block, 'contentControlProperties', 'ccp') !== undefined &&
+    !getRows(block) &&
+    !!firstTableBlockIn(block)
+  );
+}
+
+/**
+ * The cloned blocks partitioned into the pastes SyncFusion executes completely.
+ *
+ * A multi-block payload is truncated - blocks silently lost - whenever it holds
+ * a table wrapped in a block-level content control, while the SAME wrapped
+ * table pasted alone lands intact (it is the payload the table duplicate has
+ * always pasted). So each wrapped table becomes its own paste and the maximal
+ * runs between them paste as one payload each.
+ *
+ * Word renders two adjacent tables as ONE table, so an empty separator
+ * paragraph is added wherever a cloned table would land flush against another
+ * table - a neighbour inside the clone, or the document block on either side
+ * of the paste point - the same adjacency rule the table duplicate encodes.
+ */
+function copyPasteSegments(
+  cloned: any[],
+  sfdt: any,
+  target: PasteTarget
+): any[][] {
+  const sequence = topLevelSequence(sfdt);
+  const tableAt = (index: number): boolean => {
+    const address = sequence[index];
+    return address
+      ? !!firstTableBlockIn(
+          rawSectionBlocks(sfdt, address.section)[address.block]
+        )
+      : false;
+  };
+  const resolved = sequenceIndexOf(sequence, target.address);
+  // One past the last block of the document - the tail destination.
+  const at =
+    target.appendParagraphAt || resolved < 0 ? sequence.length : resolved;
+  const composed: any[] = [];
+  for (const block of cloned) {
+    if (firstTableBlockIn(block)) {
+      const previous = composed[composed.length - 1];
+      if (previous ? firstTableBlockIn(previous) : tableAt(at - 1))
+        composed.push(emptyParagraphBlock(sfdt));
+    }
+    composed.push(block);
+  }
+  if (
+    firstTableBlockIn(composed[composed.length - 1]) &&
+    !target.appendParagraphAt &&
+    tableAt(at)
+  )
+    composed.push(emptyParagraphBlock(sfdt));
+  const segments: any[][] = [];
+  let run: any[] = [];
+  for (const block of composed) {
+    if (isBlockWrappedTable(block)) {
+      if (run.length) segments.push(run);
+      run = [];
+      segments.push([block]);
+    } else run.push(block);
+  }
+  if (run.length) segments.push(run);
+  return segments;
+}
+
+/**
+ * Paste the segments at the target, sequentially, as parts of one tracked
+ * insertion run - the precedent for several pastes in one revision group is
+ * `swap_sections`.
+ *
+ * The measured paste physics this encodes: a payload's LAST paragraph merges
+ * into the block the caret sits in, so every paragraph-final segment is sent
+ * with a trailing empty merge-guard paragraph, which the merge absorbs. A
+ * table cannot merge, so a table-final segment needs no guard. With the guard
+ * in place each paste adds exactly its content blocks, all of them BEFORE the
+ * caret block - so the caret block's own measured position is where the next
+ * segment continues, and a normalized-away paragraph cannot skew the run.
+ *
+ * Returns the aggregate effect over the whole run plus the document as pasted,
+ * in the same shape `relocateBlockRange` reports a single paste.
+ */
+function pasteBlocksAsTrackedSegments(
+  editor: LiveEditor,
+  preSfdt: any,
+  segments: any[][],
+  target: PasteTarget
+): { paste: PasteEffect; pastedSfdt: any } {
+  // The destination past the document's last paragraph mark has no caret until
+  // one is made - a tracked insertion inside this same card, exactly as
+  // `relocateBlockRange` creates it. Measured AFTER the landing paragraph
+  // exists, so the aggregate covers pasted content only.
+  if (target.appendParagraphAt) {
+    editor.selection.select(target.appendParagraphAt, target.appendParagraphAt);
+    callEditor(editor, 'insertText', '\n');
+  }
+  let pastedSfdt = target.appendParagraphAt ? serializeSfdt(editor) : preSfdt;
+  const pasteAt = (() => {
+    const sequence = topLevelSequence(pastedSfdt);
+    const index = sequenceIndexOf(sequence, target.address);
+    // One past the last block of the document - the tail destination.
+    return index < 0 ? sequence.length : index;
+  })();
+  let caret = target.anchor;
+  let added = 0;
+  for (const segment of segments) {
+    const lengthBefore = topLevelSequence(pastedSfdt).length;
+    const guarded = firstTableBlockIn(segment[segment.length - 1])
+      ? segment
+      : [...segment, emptyParagraphBlock(pastedSfdt)];
+    editor.selection.select(caret, caret);
+    // The envelope must speak the document's own key convention: the paste
+    // parser reads a payload in one dialect only, and blocks in the other one
+    // are silently dropped rather than refused.
+    callEditor(
+      editor,
+      'paste',
+      JSON.stringify(
+        pastedSfdt?.sections !== undefined
+          ? { sections: [{ blocks: guarded, headersFooters: {} }] }
+          : { optimizeSfdt: true, sec: [{ b: guarded, hf: {} }] }
+      )
+    );
+    pastedSfdt = serializeSfdt(editor);
+    added += topLevelSequence(pastedSfdt).length - lengthBefore;
+    const next = topLevelSequence(pastedSfdt)[pasteAt + added];
+    if (next) caret = `${next.section};${next.block};0`;
+  }
+  return { paste: { at: pasteAt, blocks: added }, pastedSfdt };
+}
+
+/**
+ * The pasted run, read back from the document and compared against what was
+ * sent. `ok: true` from a paste only means the paste did not throw; this is
+ * the integrity backstop that turns a silently truncated copy into a refusal
+ * that rolls the whole group back - the same discipline `shiftedRange` applies
+ * to a relocation's source and `assertPastedTableMatches` to a table copy.
+ */
+function assertPastedRangeMatches(
+  pastedSfdt: any,
+  paste: PasteEffect,
+  source: BlockRange,
+  expectedBlocks: any[]
+): void {
+  const sequence = topLevelSequence(pastedSfdt);
+  const window = new Set<string>();
+  for (let index = paste.at; index < paste.at + paste.blocks; index++) {
+    const address = sequence[index];
+    if (address) window.add(`${address.section};${address.block}`);
+  }
+  const copied = flattenSfdt(pastedSfdt).filter((block) => {
+    const parts = block.anchor.split(';');
+    return window.has(`${parts[0]};${parts[1]}`);
+  });
+  const expected = rangeIdentity(
+    flattenSfdt({ sections: [{ blocks: expectedBlocks }] })
+  );
+  const actual = rangeIdentity(copied);
+  if (expected !== actual)
+    throw new OpError(
+      'relocation_copy_lost',
+      `The copy of the section at ${JSON.stringify(
+        source.anchor
+      )} is not readable at the position it was pasted into, so the engine refused to keep an incomplete copy. Nothing of this change set was kept.`,
+      [
+        `paste of ${paste.blocks} block(s) at sequence index ${paste.at}`,
+        `expected blocks reading ${JSON.stringify(expected.slice(0, 200))}`,
+        `found blocks reading ${JSON.stringify(actual.slice(0, 200))}`
+      ]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // split_table - one table becomes two, and the engine writes no content
 //
@@ -7543,9 +8412,9 @@ function resolveRelocationTarget(
 // selective one; both normalize to one row set on the way in, so there is one
 // code path rather than two.
 //
-// The mechanism is `copy_section`'s: capture the WHOLE TABLE, narrow the captured
-// payload to the header band plus the extracted rows, paste that at the target,
-// and delete the extracted rows from the source. Capturing the whole table is
+// The mechanism: capture the WHOLE TABLE through the live selection, narrow the
+// captured payload to the header band plus the extracted rows, paste that at the
+// target, and delete the extracted rows from the source. Capturing the whole table is
 // what makes the row indices trivially correspond - payload row i is source row i
 // - and narrowing before the paste rather than pruning the pasted copy afterwards
 // is forced by a SyncFusion defect: `deleteRow` on a row that is itself an
@@ -7624,6 +8493,41 @@ function resolveTableRange(
  * omitting it made every merge span invisible in production once already while
  * long-key fixtures kept the spec green.
  */
+/**
+ * A plain-language account of a table's merged cells, or null when it has none.
+ *
+ * `insert_row` next to a vertical merge refuses through a generic post-write
+ * formatting failure that never mentions merges, so a model reading it cannot
+ * tell what to change. `split_table` already names the exact span it would tear;
+ * this brings the row insert up to that standard. Message only - nothing about
+ * which inserts are allowed changes.
+ */
+function describeTableMerges(tableBlock: any): string | null {
+  const spans = verticalSpans(tableBlock);
+  const rows = getRows(tableBlock) ?? [];
+  let gridSpans = 0;
+  for (const row of rows) {
+    const cells = pick(row, 'cells', 'c');
+    if (!Array.isArray(cells)) continue;
+    for (const cell of cells) {
+      const format = pick(cell, 'cellFormat', 'tcpr', 'cf') ?? {};
+      const span = Number(pick(format, 'gridSpan', 'gs') ?? 1);
+      if (Number.isFinite(span) && span > 1) gridSpans++;
+    }
+  }
+  if (!spans.length && !gridSpans) return null;
+  const parts: string[] = [];
+  for (const { row, span } of spans)
+    parts.push(`rows ${row}..${row + span - 1} are vertically merged`);
+  if (gridSpans)
+    parts.push(
+      `${gridSpans} cell${
+        gridSpans === 1 ? ' spans' : 's span'
+      } more than one column`
+    );
+  return parts.join('; ');
+}
+
 function verticalSpans(tableBlock: any): Array<{ row: number; span: number }> {
   const out: Array<{ row: number; span: number }> = [];
   const rows = getRows(tableBlock);
@@ -7917,43 +8821,6 @@ function prunePayloadRows(payload: string, keep: number[]): string {
   return JSON.stringify(parsed);
 }
 
-/**
- * A live clipboard copy of a table, resolved to what the user currently sees.
- *
- * Pending deletions are omitted, pending insertions are kept, and the source's
- * revision ids are removed before paste: the paste authors one fresh tracked
- * insertion for the duplicate instead of making an older review card span both
- * tables. The leading empty paragraph keeps Word from coalescing the source and
- * copy into one table; the optional trailing one does the same when another
- * table immediately follows the source.
- */
-function duplicateTablePayload(
-  payload: string,
-  documentSfdt: any,
-  trailingSeparator: boolean
-): string {
-  const parsed = clonedWithoutRevisions(documentSfdt, JSON.parse(payload));
-  // Clipboard SFDT carries the selected revisions table as well as references
-  // from the selected content. Once the references are stripped, carrying the
-  // now-unreachable records into the paste would only duplicate metadata.
-  delete parsed.revisions;
-  delete parsed.r;
-  const sections = pick(parsed, 'sections', 'sec');
-  if (!Array.isArray(sections)) return payload;
-  const section = sections.find((candidate) =>
-    getBlocks(candidate).some((block) => !!getRows(block))
-  );
-  if (!section)
-    throw new OpError(
-      'duplicate_table_payload_not_a_table',
-      'SyncFusion returned no table for the range this duplicate captured, so nothing was written.'
-    );
-  const blocks = getBlocks(section);
-  blocks.unshift(emptyParagraphBlock(parsed));
-  if (trailingSeparator) blocks.push(emptyParagraphBlock(parsed));
-  return JSON.stringify(parsed);
-}
-
 /** The cell blocks of a range that belong to one of `rows`. */
 function rangeRowBlocks(range: BlockRange, rows: number[]): FlatBlock[] {
   const wanted = new Set(rows);
@@ -8005,6 +8872,33 @@ function assertPastedTableMatches(
 // Exported for the registry parity spec: the spec re-asserts at runtime what
 // the mapped types already guarantee at compile time, guarding the emitted JS
 // against an `as any` regression at the table itself.
+/**
+ * A break inside a table cell is not a change the user can reject.
+ *
+ * Measured: at an ordinary paragraph SyncFusion authors two Insertion
+ * revisions for a page break and rejecting them restores the document. At a
+ * table row it authors NONE, so the break survives its own rejection and
+ * leaves a stray empty element inside the table - the user rejects the card and
+ * the document does not come back, which is the one promise tracked changes
+ * make.
+ *
+ * This has to PREVENT rather than detect. Checking afterwards is what the row
+ * withdrawal already taught: the structural assertion refused after the write
+ * had landed, and the rollback rejects revisions, of which an untracked write
+ * has none - so the engine reported "nothing was written" over a document it
+ * had permanently changed. A refusal that lies is worse than the silent
+ * success it replaced.
+ */
+function refuseBreakInsideTable(op: string, block: FlatBlock): void {
+  if (block.kind !== 'table_cell') return;
+  throw new OpError(
+    'break_inside_table_not_rejectable',
+    `${op} cannot be inserted inside a table cell: this engine cannot make it a tracked change there, so it could not be rejected and the table would keep an empty element the user never asked for. Nothing was written. Insert the break at a body paragraph before or after the table instead.`,
+    [`anchor: ${block.anchor}`],
+    'never'
+  );
+}
+
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
 } = {
@@ -8015,6 +8909,9 @@ export const ANCHORED_OP_HANDLERS: {
       // No `find`: if a full replacement value was given, overwrite the whole
       // anchored block with it. Otherwise the op has no actionable content.
       if (replacement != null) {
+        // No `find`: this overwrites the WHOLE block, so every revision in it
+        // is genuinely in range - block granularity, no range argument.
+        assertNoForeignPendingRevisions(editor, block, op);
         selectBlock(editor, block);
         replaceSelectedText(editor, String(replacement));
         return {
@@ -8038,7 +8935,23 @@ export const ANCHORED_OP_HANDLERS: {
       ? block.text.indexOf(find)
       : liveText.indexOf(find);
     if (idx < 0)
-      throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+      throw new OpError('text_not_found', `"${find}" not found at anchor.`, [
+        `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
+        "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set."
+      ]);
+    // Only the matched substring is overwritten, so only revisions touching it
+    // matter. When offsets are untrusted the index came from a different
+    // projection than the one revisionRangesOf walks, so the range would be
+    // meaningless - fall back to the block-wide check rather than compare two
+    // offset spaces that do not correspond.
+    assertNoForeignPendingRevisions(
+      editor,
+      block,
+      op,
+      block.offsetsUntrusted
+        ? undefined
+        : { start: idx, end: idx + find.length }
+    );
     const hasLiveSearchRange = selectExactMatch(editor, block, find, idx, op);
     // A field paragraph has two valid projections: serialized SFDT includes
     // its field instructions while Selection exposes the rendered result.
@@ -8063,7 +8976,7 @@ export const ANCHORED_OP_HANDLERS: {
       // Test doubles and older integrations without SyncFusion Search retain
       // their legacy selected-range replacement primitive. Production search
       // is required and always takes the guarded delete/read/insert path.
-      editor.editor.insertText(String(replacement ?? ''));
+      writeOverSelection(editor, String(replacement ?? ''));
       return {
         postWriteSfdt: verifyTextWrite(editor, {
           startAnchor: block.anchor,
@@ -8072,12 +8985,15 @@ export const ANCHORED_OP_HANDLERS: {
         })
       };
     }
-    replaceSelectedText(editor, String(replacement ?? ''));
+    writeOverSelection(editor, String(replacement ?? ''));
     return {
       postWriteSfdt: verifyTextWrite(editor, {
         startAnchor: block.anchor,
         expected: next,
-        exact: true
+        exact: true,
+        // Only an EMPTY replacement is a deletion; a substitution writes text
+        // and must be measured exactly, like an insert.
+        removesText: String(replacement ?? '') === ''
       })
     };
   },
@@ -8110,7 +9026,21 @@ export const ANCHORED_OP_HANDLERS: {
     if (!find) throw new OpError('missing_find', 'delete_text needs `find`.');
     const idx = liveText.indexOf(find);
     if (idx < 0)
-      throw new OpError('text_not_found', `"${find}" not found at anchor.`);
+      throw new OpError('text_not_found', `"${find}" not found at anchor.`, [
+        `live text at ${block.anchor}: ${JSON.stringify(block.text)}`,
+        "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor has already been edited in this change set."
+      ]);
+    // Same narrowing as replace_text: only the matched substring is removed, so
+    // only revisions touching it matter. selectRange below uses exactly these
+    // offsets, so the guard and the write agree on what "the range" is.
+    assertNoForeignPendingRevisions(
+      editor,
+      block,
+      op,
+      block.offsetsUntrusted
+        ? undefined
+        : { start: idx, end: idx + find.length }
+    );
     const next = block.text.slice(0, idx) + block.text.slice(idx + find.length);
     selectRange(editor, block.anchor, idx, idx + find.length);
     editor.editor.delete();
@@ -8118,7 +9048,8 @@ export const ANCHORED_OP_HANDLERS: {
       postWriteSfdt: verifyTextWrite(editor, {
         startAnchor: block.anchor,
         expected: next,
-        exact: true
+        exact: true,
+        removesText: true
       })
     };
   },
@@ -8173,6 +9104,24 @@ export const ANCHORED_OP_HANDLERS: {
         `${block.anchor};0`,
         markInclusiveRangeEnd(next, block)
       );
+    else if (previous && previous.offsetsUntrusted)
+      // The preceding paragraph's live caret positions count content-control
+      // boundary markers that its serialized length does not, so
+      // `${previous.anchor};${previous.length}` is NOT the end of that
+      // paragraph in the live document - it lands earlier, and the selection
+      // runs from there to the end of the document. Deleting it wiped every
+      // block on four of eight real shapes while reporting success. There is no
+      // exact range to take here, so refuse, as every other op does when it
+      // cannot address a bound range precisely.
+      throw new OpError(
+        'paragraph_mark_unaddressable',
+        `The paragraph at "${block.anchor}" can only be removed by consuming the paragraph mark of "${previous.anchor}", and that block sits alongside a document binding whose live offsets this engine cannot address exactly. Deleting it could remove far more than the paragraph. Nothing was written.`,
+        [
+          `anchor: ${block.anchor}`,
+          `preceding block: ${previous.anchor}`,
+          'Clear the content with delete_text or replace_text if the paragraph should stay in place but read empty.'
+        ]
+      );
     else if (previous)
       editor.selection.select(
         `${previous.anchor};${previous.length}`,
@@ -8196,6 +9145,7 @@ export const ANCHORED_OP_HANDLERS: {
     // block sequence are both things flattening drops.
     const sfdt = serializeSfdt(editor);
     const source = resolveSectionRange(blocks, block.anchor, 'anchor');
+    assertRangeWithinOneSection(source);
     assertRangeIsRemovable(blocks, source);
     assertRangeHasNoForeignEdits(sfdt, source);
     relocateBlockRange(
@@ -8205,6 +9155,13 @@ export const ANCHORED_OP_HANDLERS: {
       resolveRelocationTarget(blocks, op, source)
     );
   },
+  /**
+   * A copy is not a move: the duplicate must not inherit the original's binding
+   * identities. The copy is built from the document's own SFDT - cloned,
+   * resolved to what the user sees, given identities of its own - and pasted
+   * through the native tracked paste in wrapper-safe segments, then read back
+   * and verified before the group is allowed to stand.
+   */
   copy_section: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
     const sfdt = serializeSfdt(editor);
@@ -8213,13 +9170,18 @@ export const ANCHORED_OP_HANDLERS: {
     // so there is no document-tail delete to crash `acceptAll` and no pending
     // edit of anyone else's that rejecting could take away. The target-side
     // refusals are the same ones a move gets, from the same resolver.
-    relocateBlockRange(
+    const target = resolveRelocationTarget(blocks, op, source);
+    const clone = clonedRangeBlocks(sfdt, source);
+    const sourceIndex = scanReadableBindings(sfdt);
+    if (sourceIndex) rewriteCloneIdentities(clone, sourceIndex);
+    const segments = copyPasteSegments(clone, sfdt, target);
+    const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
       sfdt,
-      source,
-      resolveRelocationTarget(blocks, op, source),
-      { removeSource: false }
+      segments,
+      target
     );
+    assertPastedRangeMatches(pastedSfdt, paste, source, segments.flat());
   },
   swap_sections: ({ editor, op, block, byAnchor }) => {
     const blocks = Array.from(byAnchor.values());
@@ -8307,6 +9269,7 @@ export const ANCHORED_OP_HANDLERS: {
     // the merge spans are all things flattening drops.
     const sfdt = serializeSfdt(editor);
     const tableBlock = tableBlockAt(sfdt, tableAnchor);
+    assertTableHasNoBindings(sfdt, tableAnchor, 'split_table');
     const appearance = collectTableAppearance(tableBlock);
     if (!appearance)
       throw new OpError(
@@ -8391,6 +9354,7 @@ export const ANCHORED_OP_HANDLERS: {
         'duplicate_table needs an anchor inside the table, or the table anchor from a structure read.'
       );
     assertDuplicateSourceHasNoForeignEdits(sfdt, tableAnchor);
+    assertTableIsDuplicable(blocks, tableAnchor);
     const source = resolveTableRange(blocks, tableAnchor);
     const container = tableContainerAt(sfdt, tableAnchor);
     if (!container)
@@ -8399,26 +9363,28 @@ export const ANCHORED_OP_HANDLERS: {
         `No table answers to "${tableAnchor}". Nothing was written.`
       );
     const sourceAddress = topLevelAddress(source.blocks[0].anchor);
-    const trailingSeparator = !!firstTableBlockIn(
-      container.blocks[container.blockIndex + 1]
+    // The paste point is the first caret after the table: the next body
+    // paragraph's start. Unlike a model-supplied relocation target, it is
+    // derived from the already-resolved source and cannot land inside its
+    // cells. The block preceding it is the source table itself, so the
+    // segment builder's adjacency rule supplies the separator paragraph that
+    // keeps Word from rendering source and copy as one table.
+    const target: PasteTarget = {
+      anchor: source.endAnchor,
+      address: { ...sourceAddress, block: sourceAddress.block + 1 }
+    };
+    const clone = clonedWithoutRevisions(
+      sfdt,
+      containerCarryingOnlyTable(
+        container.block,
+        tableBlockAt(sfdt, tableAnchor)
+      )
     );
-    const { paste, pastedSfdt } = relocateBlockRange(
+    const { paste, pastedSfdt } = pasteBlocksAsTrackedSegments(
       editor,
       sfdt,
-      source,
-      {
-        // The range end is the first caret after the table: the next body
-        // paragraph's start. Unlike a model-supplied relocation target,
-        // it is derived from the already-resolved source and cannot land inside
-        // its cells.
-        anchor: source.endAnchor,
-        address: { ...sourceAddress, block: sourceAddress.block + 1 }
-      },
-      {
-        removeSource: false,
-        transformPayload: (payload) =>
-          duplicateTablePayload(payload, sfdt, trailingSeparator)
-      }
+      copyPasteSegments([clone], sfdt, target),
+      target
     );
     const anchor = assertPastedTableMatches(
       pastedSfdt,
@@ -8443,6 +9409,10 @@ export const ANCHORED_OP_HANDLERS: {
         startAnchor: block.anchor,
         expected: next,
         exact: true
+        // No removesText: insert_text only ADDS. Measured in a real browser,
+        // inserts preserve leading, trailing, internal and doubled spaces
+        // exactly, so this path must be verified exactly - tolerating spacing
+        // here would let an insert that silently lost a space pass.
       })
     };
   },
@@ -8463,6 +9433,7 @@ export const ANCHORED_OP_HANDLERS: {
     );
   },
   set_cell_text: ({ editor, op, block }) => {
+    assertNoForeignPendingRevisions(editor, block, op);
     // Overwrite the (cell) block's content.
     selectBlock(editor, block);
     const replacement = String(op.text ?? '');
@@ -8480,6 +9451,7 @@ export const ANCHORED_OP_HANDLERS: {
   set_column_formula: ({ editor, op, block, byAnchor }) =>
     runColumnFormulaWrite(editor, op, block, byAnchor),
   change_case: ({ editor, op, block, liveText }) => {
+    assertNoForeignPendingRevisions(editor, block, op);
     const replacement = changeCase(liveText, String(op.caseType ?? ''));
     selectBlock(editor, block);
     editor.editor.insertText(replacement);
@@ -8554,8 +9526,14 @@ export const ANCHORED_OP_HANDLERS: {
     selectBlock(editor, block);
     callEditor(editor, 'insertBookmark', String(op.name ?? ''));
   },
+  // insertHyperlink REPLACES the current selection. Selecting the whole
+  // paragraph first therefore deleted the paragraph's text and reported
+  // success, and rejecting our revisions did not bring it back: verified in a
+  // real browser, where "Acme Insurance Proposal" became the link. Adding a
+  // link is an ADDITION, so it takes a caret, positioned by the same
+  // position/offset convention every other additive op uses.
   insert_hyperlink: ({ editor, op, block }) => {
-    selectBlock(editor, block);
+    selectInsertionPoint(editor, op, block);
     callEditor(
       editor,
       'insertHyperlink',
@@ -8569,15 +9547,20 @@ export const ANCHORED_OP_HANDLERS: {
     callEditor(editor, 'removeHyperlink');
   },
   insert_page_break: ({ editor, block }) => {
+    refuseBreakInsideTable('insert_page_break', block);
     selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertPageBreak');
   },
   insert_column_break: ({ editor, block }) => {
+    refuseBreakInsideTable('insert_column_break', block);
     selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertColumnBreak');
   },
+  // Same defect as insert_hyperlink, found by asking which OTHER additive ops
+  // pair a whole-paragraph selection with a consuming SDK call: insertPageNumber
+  // consumes too, verified in the same browser probe.
   insert_page_number: ({ editor, op, block }) => {
-    selectBlock(editor, block);
+    selectInsertionPoint(editor, op, block);
     callEditor(editor, 'insertPageNumber', op.numberFormat);
   },
   // Table structure. These once fell to a generic snake_case->camelCase
@@ -8847,7 +9830,15 @@ export const ANCHORED_OP_HANDLERS: {
       )
     };
   },
-  insert_section_break: ({ editor, op }) => {
+  // This one made no selection call at all, so it wrote over whatever the
+  // dispatcher happened to leave selected - the whole block. The probe says
+  // insertSectionBreak does not consume its selection today, so no text was
+  // lost, but that is the SDK's behaviour rather than this op's intent. Its
+  // siblings insert_page_break and insert_column_break both collapse
+  // explicitly; the asymmetry was the tell.
+  insert_section_break: ({ editor, op, block }) => {
+    refuseBreakInsideTable('insert_section_break', block);
+    selectRange(editor, block.anchor, 0, 0);
     callEditor(editor, 'insertSectionBreak', sectionBreakType(op));
   }
 };
@@ -9985,8 +10976,18 @@ function resolveLiveSourceTableAnchor(
     const blocks = getBlocks(sections[section]);
     for (let block = 0; block < blocks.length; block++) {
       const anchor = `${section};${block}`;
-      if (anchor === targetAnchor || !getRows(blocks[block])) continue;
-      const appearance = collectTableAppearance(blocks[block]);
+      if (anchor === targetAnchor) continue;
+      // A BOUND table is wrapped in a block-level content control, so its rows
+      // sit one level down and a raw `getRows` probe skips it entirely - the
+      // sibling being searched for is then invisible and the search fails on
+      // exactly the documents that have one. Resolve through the wrapper, the
+      // same way `tableBlockAt` does.
+      const candidate = blocks[block];
+      const tableBlock = getRows(candidate)
+        ? candidate
+        : getBlocks(candidate).find((inner: any) => getRows(inner));
+      if (!tableBlock) continue;
+      const appearance = collectTableAppearance(tableBlock);
       if (appearance && JSON.stringify(appearance) === JSON.stringify(source))
         return anchor;
     }
@@ -10681,8 +11682,15 @@ function applyCopiedTableAppearance(
       )
     );
     const wantedAt = (row: number, column: number) => wanted[row]?.[column];
+    // A single-cell table has no interior edges, so its whole border box is
+    // outer and SyncFusion keeps it at TABLE level with nothing on the cell.
+    // Reading such a target cell-first reports no borders at all and rejects a
+    // write that in fact landed correctly, so resolve it the same way a uniform
+    // border set is resolved.
+    const singleCellTarget =
+      after.rows.length === 1 && after.rows[0]?.cells.length === 1;
     const actualAt = (row: number, column: number) =>
-      uniformAllBorder
+      uniformAllBorder || singleCellTarget
         ? resolvedCellAppearanceAt(after, row, column)
         : cellAppearanceAt(after, row, column);
     after.rows.forEach((row, rowIndex) => {
@@ -10867,8 +11875,8 @@ export const TRACKED_TEXT_OPS = new Set([
   'move_section',
   'swap_sections',
   'copy_section',
-  // `split_table` is `copy_section`'s mechanism - capture, paste the narrowed
-  // payload, delete the extracted rows from the source - so it carries the same
+  // `split_table` moves content the same way - paste a copy, delete the
+  // extracted rows from the source - so it carries the same
   // requirement and was simply missed. Being in neither tracked set meant
   // `assertTrackedMutation` returned on its first branch and the op was never
   // checked at all. The docstring beside `resolveRelocationTarget` that tells
@@ -11619,6 +12627,11 @@ interface EngineMutationPlan {
    * all-or-nothing engine transaction runs.
    */
   literalNumbers?: Array<{ where: string; write: LiteralNumberWrite }>;
+  /** Lets the batch collapse repeated writes to one explicit global identity. */
+  bindingWrite?: {
+    identity: BindingWireIdentity;
+    canonical: string;
+  };
   execute(state: EngineMutationState): EngineMutationOutcome;
 }
 
@@ -11799,12 +12812,15 @@ function requireBindingRuntime(
 
 function occurrenceForBlock(
   runtime: BindingRuntime,
-  block: FlatBlock
+  block: FlatBlock,
+  op: EditOp
 ): Occurrence | undefined {
-  if (!block.boundTag) return undefined;
-  const occurrences = runtime.occurrencesByTag.get(block.boundTag) ?? [];
+  // WHICH binding, before which occurrence of it: a block may hold several.
+  const tag = bindingTagForOp(op, block);
+  if (!tag) return undefined;
+  const occurrences = runtime.occurrencesByTag.get(tag) ?? [];
   if (occurrences.length <= 1) return occurrences[0];
-  const def = parseTag(block.boundTag);
+  const def = parseTag(tag);
   if (!def || def.kind === 'table') return occurrences[0];
   const tableAnchor = tableAnchorForBlock(block);
   const tableId = tableAnchor
@@ -12053,27 +13069,61 @@ function containingBindingTable(
  * to `tax_rate` can see the independent `expenses_copy_tax_rate` instance the
  * duplicate created without conflating unrelated fields elsewhere.
  */
+/**
+ * The family a document field belongs to, with the marks a COPY adds stripped
+ * off - so a copy and its source are recognised as instances of one thing.
+ *
+ * Copies are marked two different ways, and only one of them was handled here.
+ * A table duplicate namespaces its fields with the new table's id
+ * (`costs_copy_tax`), and a section copy appends a numeric suffix instead
+ * (`project.name_2`, from `uniqueBindingName`). Recognising only the prefix
+ * meant a section copy and its source read as unrelated fields, so the
+ * ambiguity flow - the thing that asks the user WHICH instance they meant -
+ * never fired for exactly the case that produces two instances.
+ *
+ * The suffix is the allocator's own spelling, matched as it is written, so this
+ * cannot drift from it silently.
+ */
 function documentFieldIdentity(
   index: BindingIndex,
   occurrence: Occurrence
 ): string {
   const owner = containingBindingTable(index, occurrence);
   const prefix = owner ? `${owner.tableId}_` : '';
-  return prefix && occurrence.name.startsWith(prefix)
-    ? occurrence.name.slice(prefix.length)
-    : occurrence.name;
+  const withoutPrefix =
+    prefix && occurrence.name.startsWith(prefix)
+      ? occurrence.name.slice(prefix.length)
+      : occurrence.name;
+  // The family this binding belongs to, as recorded when it was copied. A
+  // trailing number is not proof of being a copy: `revenue_2024` and `q_1` are
+  // names an author chooses, and stripping their digits made them claim
+  // membership in `revenue`'s and `q`'s families - so a write to one offered
+  // the other as an instance of itself, and confirming "all" would have fanned
+  // that write onto a field the user never named.
+  return occurrence.def.options?.copyOf ?? withoutPrefix;
 }
 
 function independentDocumentFields(
   index: BindingIndex,
   target: Occurrence
 ): IndependentDocumentField[] {
-  if (target.tableId || target.rowId || target.def.kind !== 'field') return [];
+  if (
+    target.tableId ||
+    target.rowId ||
+    target.def.kind !== 'field' ||
+    target.def.isGlobal
+  )
+    return [];
   const identity = documentFieldIdentity(index, target);
   const fields: IndependentDocumentField[] = [];
   for (const [name, occurrences] of index.fields) {
     const first = occurrences[0];
-    if (!first || documentFieldIdentity(index, first) !== identity) continue;
+    if (
+      !first ||
+      first.def.isGlobal ||
+      documentFieldIdentity(index, first) !== identity
+    )
+      continue;
     const locations = [
       ...new Set(
         occurrences.map((occurrence) => {
@@ -12096,6 +13146,78 @@ function independentFieldDetails(fields: IndependentDocumentField[]): string[] {
   );
 }
 
+function bindingInstanceChoice(
+  index: BindingIndex,
+  field: IndependentDocumentField
+): BindingInstanceChoice {
+  return {
+    instanceId: field.name,
+    identity: { id: field.name, global: false },
+    occurrences: field.occurrences.map((occurrence) => {
+      const table = containingBindingTable(index, occurrence);
+      const location = table
+        ? `table "${table.tableId}"`
+        : `document path ${occurrence.path.join('/')}`;
+      return {
+        occurrenceId: `${field.name}@${occurrence.path.join('/')}`,
+        bindingId: field.name,
+        value: occurrence.text,
+        location,
+        ...(table ? { tableId: table.tableId } : {}),
+        documentPath: occurrence.path.join('/')
+      };
+    })
+  };
+}
+
+function bindingWriteAmbiguity(
+  runtime: BindingRuntime,
+  target: Occurrence,
+  fields: IndependentDocumentField[]
+): BindingWriteAmbiguity {
+  const instances = fields
+    .map((field) => bindingInstanceChoice(runtime.index, field))
+    .sort((a, b) => a.instanceId.localeCompare(b.instanceId));
+  const signature = instances.map((instance) => ({
+    id: instance.instanceId,
+    occurrences: instance.occurrences.map((occurrence) => ({
+      id: occurrence.occurrenceId,
+      value: occurrence.value
+    }))
+  }));
+  return {
+    kind: 'binding_write',
+    ambiguityId: JSON.stringify({
+      field: documentFieldIdentity(runtime.index, target),
+      instances: signature
+    }),
+    field: documentFieldIdentity(runtime.index, target),
+    instanceCount: instances.length,
+    occurrenceCount: instances.reduce(
+      (count, instance) => count + instance.occurrences.length,
+      0
+    ),
+    instances
+  };
+}
+
+function bindingResolutionFrom(op: EditOp): BindingWriteResolution | undefined {
+  const value = op.bindingResolution;
+  if (value === undefined) return undefined;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    typeof value.ambiguityId !== 'string' ||
+    (value.choice !== 'all' && value.choice !== 'one') ||
+    (value.choice === 'one' && typeof value.instanceId !== 'string')
+  )
+    throw new OpError(
+      'binding_resolution_invalid',
+      'bindingResolution must copy the returned ambiguityId and choose either all instances or one returned instanceId. Nothing was written.'
+    );
+  return value as BindingWriteResolution;
+}
+
 function leaveEngineAtAddressableBodySelection(
   editor: LiveEditor,
   blocks: FlatBlock[]
@@ -12115,7 +13237,8 @@ function ambiguousIndependentFieldWrite(
   index: BindingIndex,
   target: Occurrence,
   fields: IndependentDocumentField[],
-  reason: string
+  reason: string,
+  ambiguity: BindingWriteAmbiguity
 ): OpError {
   return new OpError(
     'independent_binding_instances_ambiguous',
@@ -12124,8 +13247,12 @@ function ambiguousIndependentFieldWrite(
       target
     )}", but it resolves to ${
       fields.length
-    } independent binding instances. ${reason} Nothing was written.`,
-    independentFieldDetails(fields)
+    } independent binding instances across ${
+      ambiguity.occurrenceCount
+    } places. ${reason} Ask the user whether to update all instances or one listed instance. Nothing was written.`,
+    independentFieldDetails(fields),
+    undefined,
+    ambiguity
   );
 }
 
@@ -12137,18 +13264,80 @@ function boundInputTextPlan(
   runtime: BindingRuntime
 ): EngineMutationPlan {
   const desired = desiredBoundDisplayText(op, block, occurrence);
+  const sameId = runtime.index.fields.get(occurrence.name) ?? [];
+  if (
+    sameId.some(
+      (candidate) => candidate.def.isGlobal !== occurrence.def.isGlobal
+    )
+  )
+    throw new OpError(
+      'global_binding_identity_conflict',
+      `Binding "${occurrence.name}" mixes global and non-global occurrences. Nothing was written; make every occurrence of one binding id agree on global scope.`,
+      sameId.map(
+        (candidate) =>
+          `${
+            candidate.def.isGlobal ? 'global' : 'non-global'
+          } at document path ${candidate.path.join('/')}`
+      )
+    );
   const independent = independentDocumentFields(runtime.index, occurrence);
-  if (independent.length > 1 && op.op !== 'set_cell_text')
+  const ambiguity =
+    independent.length > 1
+      ? bindingWriteAmbiguity(runtime, occurrence, independent)
+      : undefined;
+  if (ambiguity && op.op !== 'set_cell_text')
     throw ambiguousIndependentFieldWrite(
       op,
       runtime.index,
       occurrence,
       independent,
-      'Only set_cell_text supplies one complete replacement value that can be applied to every instance deterministically.'
+      'Only set_cell_text can carry the explicit user resolution and one complete replacement value.',
+      ambiguity
+    );
+  const resolution = bindingResolutionFrom(op);
+  if (!ambiguity && resolution)
+    throw new OpError(
+      'binding_resolution_stale',
+      'The supplied binding ambiguity no longer exists in the live document. Re-read before writing; nothing was written.'
+    );
+  if (ambiguity && !resolution)
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'No global identity joins them.',
+      ambiguity
+    );
+  if (ambiguity && resolution?.ambiguityId !== ambiguity.ambiguityId)
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      'The supplied confirmation is stale and does not match these live instances.',
+      ambiguity
+    );
+  const selectedFields = !ambiguity
+    ? independent
+    : resolution?.choice === 'all'
+    ? independent
+    : independent.filter((field) => field.name === resolution?.instanceId);
+  if (ambiguity && resolution?.choice === 'one' && !selectedFields.length)
+    throw ambiguousIndependentFieldWrite(
+      op,
+      runtime.index,
+      occurrence,
+      independent,
+      `The chosen instance id ${JSON.stringify(
+        resolution.instanceId
+      )} is not one of the live choices.`,
+      ambiguity
     );
   if (
-    independent.length > 1 &&
-    independent.some(
+    ambiguity &&
+    resolution?.choice === 'all' &&
+    selectedFields.some(
       (field) =>
         field.occurrences[0]?.def.kind !== 'field' ||
         !field.occurrences[0]?.def.isEditable ||
@@ -12161,15 +13350,29 @@ function boundInputTextPlan(
       runtime.index,
       occurrence,
       independent,
-      'Their types or editability differ, so one value cannot be written safely to all of them.'
+      'The user chose all, but their types or editability differ, so one value cannot be written safely to all of them.',
+      ambiguity
     );
-  const literalNumber = guardBoundNumericReplacement(op, occurrence, desired);
+  const selectedOccurrence = selectedFields[0]?.occurrences[0] ?? occurrence;
+  if (
+    selectedOccurrence.def.kind !== 'field' ||
+    !selectedOccurrence.def.isEditable
+  )
+    throw new OpError(
+      'binding_instance_not_editable',
+      `The selected binding instance "${selectedOccurrence.name}" is not editable. Nothing was written.`
+    );
+  const literalNumber = guardBoundNumericReplacement(
+    op,
+    selectedOccurrence,
+    desired
+  );
   let canonical: string;
   try {
-    canonical = parseDisplay(occurrence.def.fieldType, desired);
+    canonical = parseDisplay(selectedOccurrence.def.fieldType, desired);
   } catch (err) {
     if (isValueError(err))
-      throw bindingValueParseError(op, occurrence, desired, err);
+      throw bindingValueParseError(op, selectedOccurrence, desired, err);
     throw err;
   }
   return {
@@ -12180,6 +13383,10 @@ function boundInputTextPlan(
     ...(literalNumber
       ? { literalNumbers: [{ where: block.anchor, write: literalNumber }] }
       : {}),
+    bindingWrite: {
+      identity: { id: occurrence.name, global: occurrence.def.isGlobal },
+      canonical
+    },
     execute(state) {
       const liveOccurrence =
         state.index.occurrences.find(
@@ -12201,35 +13408,44 @@ function boundInputTextPlan(
           `The binding "${occurrence.name}" could not be found when applying ${op.op}. Nothing was written.`,
           [`binding: ${occurrence.tag}`]
         );
-      let next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
-      if (independent.length > 1) {
-        for (const field of independent) {
-          if (field.name === liveOccurrence.name) continue;
+      let next = state;
+      if (selectedFields.length) {
+        for (const field of selectedFields)
           next = {
             sfdt: setTaggedValue(next.sfdt, field.name, canonical, state.index),
             index: state.index
           };
-        }
+      } else {
+        next = setBoundOccurrenceCanonical(state, liveOccurrence, canonical);
       }
       const details = [
-        ...(independent.length > 1
+        ...(occurrence.def.isGlobal
           ? [
-              `updated ${
-                independent.length
+              `updated global identity "${occurrence.name}" across ${sameId.length} occurrences`
+            ]
+          : []),
+        ...(ambiguity && resolution?.choice === 'all'
+          ? [
+              `user confirmed all ${
+                selectedFields.length
               } independent instances of field "${documentFieldIdentity(
                 state.index,
                 liveOccurrence
               )}"`,
-              ...independentFieldDetails(independent)
+              ...independentFieldDetails(selectedFields)
             ]
           : []),
-        ...(desired === renderDisplay(liveOccurrence.def.fieldType, canonical)
+        ...(ambiguity && resolution?.choice === 'one'
+          ? [`user confirmed only binding instance "${selectedFields[0].name}"`]
+          : []),
+        ...(desired ===
+        renderDisplay(selectedOccurrence.def.fieldType, canonical)
           ? []
           : [
               `display normalized from ${JSON.stringify(
                 desired
               )} to ${JSON.stringify(
-                renderDisplay(liveOccurrence.def.fieldType, canonical)
+                renderDisplay(selectedOccurrence.def.fieldType, canonical)
               )}`
             ])
       ];
@@ -12483,31 +13699,58 @@ function uniqueBindingName(base: string, used: Set<string>): string {
   return candidate;
 }
 
-function uniqueTableId(base: string, index: BindingIndex): string {
+/**
+ * `taken` carries the ids allocated EARLIER IN THE SAME COPY, which the index
+ * cannot know about yet.
+ *
+ * Sanitizing collapses distinct ids onto one candidate - `costs-us` and
+ * `costs_us` both want `costs_us_copy` - so a range holding both tables gave
+ * their copies the same id and merged two tables into one identity. Checking
+ * only the existing index cannot see that, because neither copy is in it yet.
+ * The binding-NAME allocator beside this one already reserves as it goes; this
+ * one did not, and that was the whole difference.
+ */
+function uniqueTableId(
+  base: string,
+  index: BindingIndex,
+  taken: Set<string> = new Set()
+): string {
   const cleanBase = `${base}_copy`.replace(/[^A-Za-z0-9_]/g, '_');
   let candidate = cleanBase;
   let suffix = 2;
-  while (index.tables.has(candidate)) {
+  while (index.tables.has(candidate) || taken.has(candidate)) {
     candidate = `${cleanBase}_${suffix}`;
     suffix++;
   }
+  taken.add(candidate);
   return candidate;
 }
 
+/**
+ * `tableIds` maps each table id in the cloned range to the id its copy takes.
+ * A range can hold several bound tables, and a table absent from the map is not
+ * part of this clone, so its references are left alone.
+ */
 function rewriteBindingExpression(
   expression: string,
-  oldTableId: string,
-  newTableId: string,
-  renamedDocBindings: Map<string, string>
+  tableIds: Map<string, string>,
+  renamedDocBindings: Map<string, string>,
+  preservedDocBindings: Set<string>
 ): string {
   return String(expression).replace(
     /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
     (token, offset, source) => {
       const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
       if (after === '(') return token;
-      if (token.startsWith(`${oldTableId}.`))
-        return `${newTableId}.${token.slice(oldTableId.length + 1)}`;
-      return renamedDocBindings.get(token) ?? token;
+      const renamed = renamedDocBindings.get(token);
+      if (renamed) return renamed;
+      if (preservedDocBindings.has(token)) return token;
+      const dot = token.indexOf('.');
+      if (dot > 0) {
+        const mapped = tableIds.get(token.slice(0, dot));
+        if (mapped) return `${mapped}${token.slice(dot)}`;
+      }
+      return token;
     }
   );
 }
@@ -12564,10 +13807,11 @@ function freshRowIdsFor(
 function rewriteBindingsInClone(
   node: any,
   options: {
-    oldTableId: string;
-    newTableId: string;
+    /** OLD table id -> new table id, for every bound table in this clone. */
+    tableIds: Map<string, string>;
     rowIds: Map<string, string>;
     renameDocBindings: Map<string, string>;
+    preservedDocBindings: Set<string>;
     copyRows: boolean;
   }
 ): void {
@@ -12584,8 +13828,10 @@ function rewriteBindingsInClone(
     } catch {
       def = null;
     }
-    if (def?.kind === 'table' && def.tableId === options.oldTableId) {
-      def.tableId = options.newTableId;
+    const mappedTableId =
+      def?.kind === 'table' ? options.tableIds.get(def.tableId) : undefined;
+    if (def?.kind === 'table' && mappedTableId) {
+      def.tableId = mappedTableId;
       node.contentControlProperties = { ...props, tag: formatTag(def) };
     } else if (def && (def.kind === 'field' || def.kind === 'formula')) {
       let changed = false;
@@ -12604,17 +13850,27 @@ function rewriteBindingsInClone(
           ];
         }
       }
-      const renamed = options.renameDocBindings.get(def.name);
+      const renamed = def.isGlobal
+        ? undefined
+        : options.renameDocBindings.get(def.name);
       if (renamed) {
+        // Provenance is a fact known HERE, at the moment the copy is made.
+        // Recording it is what lets a copy and its source be recognised as one
+        // family later without guessing from the shape of the name. A copy of a
+        // copy keeps pointing at the original, so a family has a single root.
+        def.options = {
+          ...def.options,
+          copyOf: def.options?.copyOf ?? def.name
+        };
         def.name = renamed;
         changed = true;
       }
-      if (def.kind === 'formula') {
+      if (def.kind === 'formula' && !def.isGlobal) {
         const nextExpression = rewriteBindingExpression(
           def.expression,
-          options.oldTableId,
-          options.newTableId,
-          options.renameDocBindings
+          options.tableIds,
+          options.renameDocBindings,
+          options.preservedDocBindings
         );
         if (nextExpression !== def.expression) {
           def.expression = nextExpression;
@@ -12746,6 +14002,145 @@ function duplicateRowLiteralNumbers(
   return out;
 }
 
+/**
+ * The identity rule for a CLONE of any block range, in one place.
+ *
+ * A global binding keeps its name, so the copy joins the same document-wide
+ * identity and shows its live value. Every other document-scoped binding inside
+ * the range gets a fresh unique name, so the copy is an independent field.
+ * Table-SCOPED bindings are skipped here: `rewriteBindingsInClone` re-scopes
+ * those through the table id, and renaming them twice would break their
+ * formulas.
+ *
+ * `containsPath` decides what "inside the range" means - a single table marker
+ * for a table duplicate, any block in the range for a section copy - and
+ * `freshName` decides how a copy is named, so a table duplicate can namespace
+ * against its new table id while a section copy simply uniquifies the original.
+ */
+function cloneIdentityRewrite(
+  index: BindingIndex,
+  /**
+   * The bindings being cloned. A table duplicate filters the document index by
+   * path; a section copy reads them out of its cloned blocks, which carry no
+   * document paths at all.
+   */
+  cloned: Iterable<{ name: string; tableId: string | null; isGlobal: boolean }>,
+  freshName: (name: string, used: Set<string>) => string
+): {
+  renameDocBindings: Map<string, string>;
+  preservedDocBindings: Set<string>;
+} {
+  const usedNames = new Set(
+    index.occurrences.map((occurrence) => occurrence.name)
+  );
+  const renameDocBindings = new Map<string, string>();
+  for (const binding of cloned) {
+    if (binding.tableId) continue;
+    if (binding.isGlobal) continue;
+    if (!renameDocBindings.has(binding.name))
+      renameDocBindings.set(binding.name, freshName(binding.name, usedNames));
+  }
+  const preservedDocBindings = new Set(
+    [...index.fields.keys(), ...index.formulas.keys()].filter(
+      (name) => !renameDocBindings.has(name)
+    )
+  );
+  return { renameDocBindings, preservedDocBindings };
+}
+
+/**
+ * Give a clone of document blocks its own binding identities before it is
+ * pasted, using the same rule a bound table duplicate uses: a global binding
+ * keeps its name so the copy joins that document-wide identity, every other
+ * binding gets a fresh one, each bound table gets a fresh table id and fresh row
+ * ids, and formulas are rewritten to follow.
+ *
+ * `copyRows: true` keeps the values the user can see: a copy of a line reading
+ * 5% reads 5%, not the tag's `default`.
+ */
+function rewriteCloneIdentities(
+  cloned: any[],
+  sourceIndex: BindingIndex
+): void {
+  const { bindings, tableIds: clonedTableIds } = clonedBindingTags(cloned);
+  if (!bindings.length && !clonedTableIds.size) return;
+  const tableIds = new Map<string, string>();
+  const rowIds = new Map<string, string>();
+  const allocatedTableIds = new Set<string>();
+  for (const oldTableId of clonedTableIds) {
+    const newTableId = uniqueTableId(
+      oldTableId,
+      sourceIndex,
+      allocatedTableIds
+    );
+    tableIds.set(oldTableId, newTableId);
+    const entry = sourceIndex.tables.get(oldTableId);
+    if (entry)
+      for (const [oldRowId, newRowId] of freshRowIdsFor(entry, newTableId))
+        rowIds.set(oldRowId, newRowId);
+  }
+  const { renameDocBindings, preservedDocBindings } = cloneIdentityRewrite(
+    sourceIndex,
+    bindings,
+    (name, used) => uniqueBindingName(name, used)
+  );
+  rewriteBindingsInClone(cloned, {
+    tableIds,
+    rowIds,
+    renameDocBindings,
+    preservedDocBindings,
+    copyRows: true
+  });
+}
+
+/**
+ * Every binding tag inside a cloned block tree, flattened to what the
+ * identity rule needs. `tableId` is non-null only for a table-SCOPED binding,
+ * which `rewriteBindingsInClone` re-scopes through the table map instead of
+ * renaming - matching the document-index rule exactly.
+ */
+function clonedBindingTags(
+  node: any,
+  out: Array<{ name: string; tableId: string | null; isGlobal: boolean }> = [],
+  tableIdsSeen: Set<string> = new Set(),
+  insideTable: string | null = null
+): {
+  bindings: Array<{ name: string; tableId: string | null; isGlobal: boolean }>;
+  tableIds: Set<string>;
+} {
+  if (Array.isArray(node)) {
+    node.forEach((entry) =>
+      clonedBindingTags(entry, out, tableIdsSeen, insideTable)
+    );
+    return { bindings: out, tableIds: tableIdsSeen };
+  }
+  if (!node || typeof node !== 'object')
+    return { bindings: out, tableIds: tableIdsSeen };
+  let scope = insideTable;
+  const raw = node.contentControlProperties?.tag;
+  if (typeof raw === 'string' && raw) {
+    let def: Definition | null = null;
+    try {
+      def = parseTag(raw);
+    } catch {
+      def = null;
+    }
+    if (def?.kind === 'table') {
+      tableIdsSeen.add(def.tableId);
+      scope = def.tableId;
+    } else if (def && (def.kind === 'field' || def.kind === 'formula')) {
+      out.push({
+        name: def.name,
+        tableId: def.options.row ? scope : null,
+        isGlobal: !!def.isGlobal
+      });
+    }
+  }
+  for (const value of Object.values(node))
+    clonedBindingTags(value, out, tableIdsSeen, scope);
+  return { bindings: out, tableIds: tableIdsSeen };
+}
+
 function boundDuplicateTablePlan(
   index: number,
   op: EditOp,
@@ -12778,28 +14173,34 @@ function boundDuplicateTablePlan(
           'duplicate_table_unroutable',
           `duplicate_table could not locate the table block for "${tableRoute.tableId}". Nothing was written.`
         );
+      const markerBlock = getAt(state.sfdt, markerPath);
       const clone = clonedWithoutRevisions(
         state.sfdt,
-        getAt(state.sfdt, markerPath)
+        containerCarryingOnlyTable(
+          markerBlock,
+          getBlocks(markerBlock).find((candidate: any) => getRows(candidate))
+        )
       );
       const newTableId = uniqueTableId(tableRoute.tableId, state.index);
-      const usedNames = new Set(
-        state.index.occurrences.map((occurrence) => occurrence.name)
-      );
-      const renameDocBindings = new Map<string, string>();
-      for (const occurrence of state.index.occurrences) {
-        if (occurrence.tableId) continue;
-        if (!pathHasPrefix(markerPath, occurrence.path)) continue;
-        if (!renameDocBindings.has(occurrence.name)) {
-          const suffix = occurrence.name.startsWith(`${tableRoute.tableId}_`)
-            ? occurrence.name.slice(tableRoute.tableId.length + 1)
-            : occurrence.name;
-          renameDocBindings.set(
-            occurrence.name,
-            uniqueBindingName(`${newTableId}_${suffix}`, usedNames)
-          );
+      // One bound table in this clone, so a single-entry map. A section copy
+      // builds the same map with one entry per bound table in its range.
+      const tableIds = new Map([[tableRoute.tableId, newTableId]]);
+      const { renameDocBindings, preservedDocBindings } = cloneIdentityRewrite(
+        state.index,
+        state.index.occurrences
+          .filter((occurrence) => pathHasPrefix(markerPath, occurrence.path))
+          .map((occurrence) => ({
+            name: occurrence.name,
+            tableId: occurrence.tableId,
+            isGlobal: !!occurrence.def.isGlobal
+          })),
+        (name, used) => {
+          const suffix = name.startsWith(`${tableRoute.tableId}_`)
+            ? name.slice(tableRoute.tableId.length + 1)
+            : name;
+          return uniqueBindingName(`${newTableId}_${suffix}`, used);
         }
-      }
+      );
       const rowIds = freshRowIdsFor(liveTable, newTableId);
       if (replacementRows) {
         const rawTable = firstTableBlockIn(clone);
@@ -12835,10 +14236,10 @@ function boundDuplicateTablePlan(
         const dataRows = suppliedRowIds.map((newRowId) => {
           const rowClone = clonedWithoutRevisions(state.sfdt, prototype);
           rewriteBindingsInClone(rowClone, {
-            oldTableId: tableRoute.tableId,
-            newTableId,
+            tableIds,
             rowIds: new Map([[prototypeEntry.rowId as string, newRowId]]),
             renameDocBindings,
+            preservedDocBindings,
             copyRows: false
           });
           return rowClone;
@@ -12850,10 +14251,10 @@ function boundDuplicateTablePlan(
         ];
       }
       rewriteBindingsInClone(clone, {
-        oldTableId: tableRoute.tableId,
-        newTableId,
+        tableIds,
         rowIds,
         renameDocBindings,
+        preservedDocBindings,
         copyRows
       });
       let next = setAt(
@@ -13110,7 +14511,7 @@ function planBindingRoutedOp(
   if (!target.boundTag) return null;
   const runtime =
     maybeRuntime ?? requireBindingRuntime(editor, sfdt, op, target);
-  const occurrence = occurrenceForBlock(runtime, target);
+  const occurrence = occurrenceForBlock(runtime, target, op);
   if (!occurrence) return null;
   if (occurrence.def.kind === 'formula' && BOUND_WRITE_OPS.has(op.op))
     throw formulaRedirect(op, occurrence);
@@ -13250,13 +14651,16 @@ function findReusedUserStatedFigureInPlans(
   }
   for (const plan of enginePlans) {
     for (const { where, write } of plan.literalNumbers ?? []) {
-      const collided = remember(where, write);
+      const logicalWhere = plan.bindingWrite?.identity.global
+        ? `global binding ${plan.bindingWrite.identity.id}`
+        : where;
+      const collided = remember(logicalWhere, write);
       if (!collided) continue;
       return {
         plan,
         error: reusedUserStatedFigureRefusal(
           firstUse.get(collided) as { where: string; text: string },
-          where
+          logicalWhere
         )
       };
     }
@@ -15091,12 +16495,31 @@ function applyInsertInheritance(
         // loudly when the real editor's split did not land where computed.
         if (!(editor as any).element && !(editor as any).documentHelper)
           continue;
+        // A merged table is the known cause: the insert lands inside a span, the
+        // grid the formatting pass expects does not exist, and the generic
+        // message left the caller with nowhere to go.
+        const mergeNote = (() => {
+          try {
+            const tableAnchor = String(paragraph.anchor)
+              .split(';')
+              .slice(0, 2)
+              .join(';');
+            return describeTableMerges(
+              tableBlockAt(serializeSfdt(editor), tableAnchor)
+            );
+          } catch {
+            return null;
+          }
+        })();
         throw new OpError(
           'inherited_paragraph_not_found',
-          `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting.`,
+          mergeNote
+            ? `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting, because this table has merged cells: ${mergeNote}. A row cannot be inserted inside a merged span. Anchor a row outside the merged band, or use set_cell_text to write into the rows that already exist.`
+            : `The paragraph the insert created at "${paragraph.anchor}" did not resolve for formatting. Re-read the table with table_facts and anchor a current data row.`,
           [
             `expected: ${JSON.stringify(paragraph.expectedText)}`,
-            `actual: ${JSON.stringify(target?.text)}`
+            `actual: ${JSON.stringify(target?.text)}`,
+            ...(mergeNote ? [`merged cells: ${mergeNote}`] : [])
           ]
         );
       }
@@ -15583,6 +17006,43 @@ function detectBatchedDuplicateTables(edits: EditOp[]): BatchRefusal | null {
       'Duplicate the table, re-read structure/table_facts, then send follow-up edits against the fresh anchors.'
     ],
     indices: [firstDuplicate, ...laterAnchored]
+  };
+}
+
+/**
+ * `split_table` and `copy_section` both INSERT blocks, so every anchor after them
+ * has moved. `duplicate_table` already refuses a change set that keeps writing
+ * after it; these two did not, and a write aimed at a shifted anchor gets far
+ * enough to change the document before the set fails - leaving the copied
+ * section behind, or silently stripping a binding tag off a cell so its value
+ * stops recomputing. Neither survives the rollback. Refuse in preflight, before
+ * any anchor is resolved, exactly as the duplicate guard does.
+ */
+function detectAnchorShiftingNotLast(edits: EditOp[]): BatchRefusal | null {
+  const shifting = new Set(['split_table', 'copy_section']);
+  const firstShift = edits.findIndex((op) => !!op?.op && shifting.has(op.op));
+  if (firstShift < 0) return null;
+  const laterAnchored = edits
+    .map((op, index) => ({ op, index }))
+    .filter(
+      ({ op, index }) =>
+        index > firstShift &&
+        op?.op &&
+        !ANCHORLESS_OPS.has(op.op) &&
+        op.op !== 'replace_all'
+    )
+    .map(({ index }) => index);
+  if (!laterAnchored.length) return null;
+  const name = edits[firstShift]?.op ?? 'This op';
+  return {
+    code: 'anchor_shifting_op_must_end_change_set',
+    message: `${name} must be the last anchored edit in its change set. It inserts blocks, so every later anchor may have shifted and a write against a moved anchor can alter the document before the set fails. Nothing was written.`,
+    details: [
+      `${name} at edit ${firstShift}`,
+      `later anchored edits: ${laterAnchored.join(', ')}`,
+      'Send this edit alone, re-read structure, then send follow-up edits against the fresh anchors.'
+    ],
+    indices: [firstShift, ...laterAnchored]
   };
 }
 
@@ -17671,6 +19131,30 @@ function applyDocumentEditsMeasured(
   // computed - it is a fact of the batch, not a claim by the model.
   const columnTouches = collectColumnTouches(edits);
   const announcement = describeChangeSet(edits, columnTouches);
+  // Rollback undoes a write by REJECTING the revisions it created, and ownership
+  // is recorded as an object-identity diff. That is not durable: when a tracked
+  // write lands inside a range that already carries a pending revision,
+  // SyncFusion re-authors that revision, and the diff then counts somebody
+  // else's edit as ours. Measured: a refused change_case rejected the user's own
+  // pending Deletion, resurrecting deleted text as ordinary content.
+  //
+  // A revision that existed BEFORE this change set is not ours to reject, however
+  // the bucket came to contain it. Persisted ids are the stable identity here -
+  // the same reason `groupNewRevisions` diffs by `revisionID` after a reload.
+  const preExistingRevisionIds = new Set(
+    snapshotRevisions(editor)
+      // Only somebody ELSE's pending work is off limits. The assistant's own
+      // revisions from an earlier change set are ordinary iterative editing -
+      // "now also tweak that paragraph" before the last card is accepted - and
+      // re-authoring our own revision loses nothing the user decided.
+      .filter(
+        (revision) =>
+          !!revision.author && revision.author !== ASSISTANT_DOCUMENT_AUTHOR
+      )
+      .map((revision) => revision.revisionID)
+      .filter((id): id is string => typeof id === 'string' && !!id)
+  );
+  (editor as any)[PRE_EXISTING_REVISIONS_KEY] = preExistingRevisionIds;
   const priorCurrentUser = editor.currentUser;
   // enableTrackChanges flips to true only inside the protected try below
   // (which forces it off in `finally` so later user typing is never tracked).
@@ -17815,7 +19299,8 @@ function applyDocumentEditsMeasured(
           ? { details: err.details }
           : {}
         : { details: [describeUnexpectedError(err)] }),
-      ...(isOpError(err) && err.retry ? { retry: err.retry } : {})
+      ...(isOpError(err) && err.retry ? { retry: err.retry } : {}),
+      ...(isOpError(err) && err.ambiguity ? { ambiguity: err.ambiguity } : {})
     };
   };
   const rememberGroupRevisions = (op: EditOp, before: LiveRevision[]) => {
@@ -17885,7 +19370,15 @@ function applyDocumentEditsMeasured(
     }
     const live = new Set(snapshotRevisions(editor));
     const revisions = [...(revisionsByAppliedGroup.get(groupId) ?? [])].filter(
-      (revision) => live.has(revision)
+      // `currentUser` is pinned to the assistant for the whole batch, so a
+      // revision authored by anyone else can never be ours to reject - however
+      // it reached this bucket. An edit landing inside a user's pending
+      // Insertion splits it into a fresh-id replacement that KEEPS their
+      // author, and rejecting that would delete text the user wrote.
+      // Explicitly ours, or not ours to reject. An author-less revision is
+      // KEPT: guessing wrong in that direction deletes somebody's text.
+      (revision) =>
+        live.has(revision) && revision.author === ASSISTANT_DOCUMENT_AUTHOR
     );
     if (revisions.length) attempt(() => rejectRevisions(revisions));
     revisionsByAppliedGroup.delete(groupId);
@@ -17951,6 +19444,7 @@ function applyDocumentEditsMeasured(
     detectInconsistentAggregateRanges(edits) ??
     detectBatchedSplits(edits) ??
     detectBatchedDuplicateTables(edits) ??
+    detectAnchorShiftingNotLast(edits) ??
     detectEmptyInsertedTables(edits) ??
     detectMultilineAuthoredCells(edits) ??
     detectUnsourcedAuthoredFigures(edits) ??
@@ -18257,11 +19751,25 @@ function applyDocumentEditsMeasured(
       op.find != null &&
       !(simulatedTargetText ?? target.text).includes(String(op.find))
     ) {
+      // This preflight short-circuits before the handler, so it has to carry the
+      // handler's guidance itself - otherwise the caller gets a bare code with
+      // no message and no route forward.
       results[index] = {
         ok: false,
         op: name,
         anchor: op.anchor,
-        error: 'text_not_found'
+        error: 'text_not_found',
+        message: `${JSON.stringify(String(op.find))} is not present at "${
+          op.anchor
+        }", so there is nothing to ${
+          name === 'delete_text' ? 'delete' : 'replace'
+        }. Nothing was written.`,
+        details: [
+          `live text at ${op.anchor}: ${JSON.stringify(
+            simulatedTargetText ?? target.text
+          )}`,
+          "Copy `find` from the block's CURRENT text - re-read it with getDocumentInventory if this anchor was already edited in this change set."
+        ]
       };
       return;
     }
@@ -18276,6 +19784,25 @@ function applyDocumentEditsMeasured(
       );
       if (routed) {
         setRoute(index, routed.route);
+        const globalWrite = routed.bindingWrite?.identity.global
+          ? routed.bindingWrite
+          : undefined;
+        const priorGlobalWrite = globalWrite
+          ? enginePlans.find(
+              (plan) =>
+                plan.bindingWrite?.identity.global &&
+                plan.bindingWrite.identity.id === globalWrite.identity.id
+            )?.bindingWrite
+          : undefined;
+        if (
+          globalWrite &&
+          priorGlobalWrite &&
+          priorGlobalWrite.canonical !== globalWrite.canonical
+        )
+          throw new OpError(
+            'global_binding_conflicting_writes',
+            `This change set writes global binding "${globalWrite.identity.id}" to two different values. Nothing was written; send one value for that identity.`
+          );
         enginePlans.push(routed);
         observeMutationGuardBoundary(
           op,
@@ -19050,14 +20577,29 @@ function applyDocumentEditsMeasured(
               sfdt: beforeCommands,
               index: scanBindings(beforeCommands)
             };
+            const appliedGlobalBindings = new Set<string>();
             for (const plan of enginePlans) {
               applyingPlan = plan;
+              const globalId = plan.bindingWrite?.identity.global
+                ? plan.bindingWrite.identity.id
+                : undefined;
+              if (globalId && appliedGlobalBindings.has(globalId)) {
+                outcomes.set(plan.index, {
+                  sfdt: state.sfdt,
+                  anchor: plan.anchor,
+                  details: [
+                    `global identity "${globalId}" was resolved once for this change set`
+                  ]
+                });
+                continue;
+              }
               const outcome = plan.execute(state);
               outcomes.set(plan.index, outcome);
               state = {
                 sfdt: outcome.sfdt,
                 index: scanBindings(outcome.sfdt)
               };
+              if (globalId) appliedGlobalBindings.add(globalId);
             }
             applyingPlan = undefined;
             const engineResult = surface.runCommands(

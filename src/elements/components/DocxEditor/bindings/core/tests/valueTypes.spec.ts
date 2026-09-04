@@ -28,6 +28,7 @@ const field = (fieldType: FieldType, def?: string): BoundDefinition => ({
   fieldType,
   isEditable: true,
   isDeletable: true,
+  isGlobal: false,
   options: def === undefined ? {} : { default: def }
 });
 

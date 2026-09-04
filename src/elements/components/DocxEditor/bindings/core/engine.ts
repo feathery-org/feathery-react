@@ -312,49 +312,57 @@ export function applyRules(
       (occurrence) => !errors.has(occurrence.key)
     );
     if (!parsed.length) continue;
+    // The edits this snapshot actually contains. Fanning one out is how a
+    // field stays consistent; which value to fan is a question only an edit
+    // can answer.
+    const edited = prevValues
+      ? [
+          ...new Set(
+            parsed
+              .filter(
+                (occurrence) =>
+                  prevValues.has(occurrence.key) &&
+                  prevValues.get(occurrence.key) !== values.get(occurrence.key)
+              )
+              .map((occurrence) => values.get(occurrence.key))
+          )
+        ]
+      : [];
+
     let txValue: string | undefined;
-    if (prevValues) {
-      const changedOccurrences = parsed.filter(
-        (occurrence) =>
-          prevValues.has(occurrence.key) &&
-          prevValues.get(occurrence.key) !== values.get(occurrence.key)
+    if (edited.length > 1) {
+      diag(
+        diagnostics,
+        'error',
+        'ambiguous-edit',
+        `"${name}" was changed to ${edited.length} different values in one snapshot; resolve manually`,
+        parsed[0].path
       );
-      const distinct = [
-        ...new Set(
-          changedOccurrences.map((occurrence) => values.get(occurrence.key))
-        )
-      ];
-      if (distinct.length === 0) {
-        // Nothing edited; still repair any drift between occurrences below.
-        txValue = values.get(parsed[0].key);
-      } else if (distinct.length === 1) {
-        txValue = distinct[0];
-        changed.push({ type: 'field', name, value: txValue as string });
-      } else {
-        diag(
-          diagnostics,
-          'error',
-          'ambiguous-edit',
-          `"${name}" was changed to ${distinct.length} different values in one snapshot; resolve manually`,
-          parsed[0].path
-        );
-        continue;
-      }
+      continue;
+    } else if (edited.length === 1) {
+      txValue = edited[0];
+      changed.push({ type: 'field', name, value: txValue as string });
     } else {
-      const distinct = [
+      // No edit to arbitrate, so the occurrences must ALREADY agree. A binding
+      // name is a claim that every occurrence carrying it shows one value; when
+      // they disagree the claim is false, and the engine has no way to know
+      // which one the author meant. Picking the first - which is what
+      // "repairing drift" amounted to - deletes the others with no revision to
+      // reject and no way back. Say so instead.
+      const held = [
         ...new Set(parsed.map((occurrence) => values.get(occurrence.key)))
       ];
-      if (distinct.length > 1) {
+      if (held.length > 1) {
         diag(
           diagnostics,
           'error',
           'ambiguous-edit',
-          `occurrences of "${name}" disagree (${distinct.length} values) and there is no previous snapshot to arbitrate`,
+          `occurrences of "${name}" disagree (${held.length} values) and no edit in this snapshot arbitrates between them`,
           parsed[0].path
         );
         continue;
       }
-      txValue = distinct[0];
+      txValue = held[0];
     }
     if (txValue === undefined) continue;
 

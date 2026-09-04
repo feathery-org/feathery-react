@@ -1,4 +1,36 @@
-import { getServarRepeatNum } from '../repeat';
+import { getRepeatErrorOwnerIds, getServarRepeatNum } from '../repeat';
+
+describe('getRepeatErrorOwnerIds', () => {
+  const container = { position: [0], repeated: true, id: 'sg' };
+  const step = {
+    servar_fields: [
+      { servar: { key: 'inside' }, position: [0, 0] },
+      { servar: { key: 'outside' }, position: [1, 0] }
+    ],
+    buttons: [
+      { id: 'btnInside', position: [0, 1] },
+      { id: 'btnOutside', position: [2] }
+    ],
+    subgrids: [container, { id: 'nested', position: [0, 2] }]
+  };
+
+  it('includes buttons and nested containers, not just servar fields', () => {
+    const ids = getRepeatErrorOwnerIds(step, container);
+    // Every error-owning element inside the repeat container. The repeated
+    // container itself is included too: it is clickable once per row, so its
+    // own action errors are per-row and must shift with the rows.
+    expect(ids).toEqual(
+      expect.arrayContaining(['inside', 'btnInside', 'nested', 'sg'])
+    );
+    // Elements outside the container are excluded.
+    expect(ids).not.toContain('outside');
+    expect(ids).not.toContain('btnOutside');
+  });
+
+  it('returns nothing without a container', () => {
+    expect(getRepeatErrorOwnerIds(step, undefined)).toEqual([]);
+  });
+});
 
 const makeField = (type: string, repeatTrigger = 'set_value') => ({
   servar: {

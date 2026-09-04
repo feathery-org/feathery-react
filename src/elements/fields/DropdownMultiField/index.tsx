@@ -1,9 +1,11 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import type { ActionMeta, OnChangeValue } from 'react-select';
 import useBorder from '../../components/useBorder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { inputBoxAttrs } from '../../styles';
 
 import {
   Control as DropdownControl,
@@ -17,12 +19,13 @@ import {
   DropdownSelect
 } from './createDropdownSelect';
 import { createSelectStyles } from './selectStyles';
+import useMobileViewport from './useMobileViewport';
 import useCollapsedSelectionManager from './useCollapsedSelectionManager';
 import useDropdownOptions from './useDropdownOptions';
 import useWindowedOptions from './useWindowedOptions';
 import useSelectProps from './useSelectProps';
 import useDropdownInteractions from './useDropdownInteractions';
-import type { CreatableValidator } from './types';
+import type { CreatableValidator, OptionData } from './types';
 
 export default function DropdownMultiField({
   element,
@@ -62,9 +65,37 @@ export default function DropdownMultiField({
   // Controlled inputValue needed to filter full dataset before passing to react-select
   const [inputValue, setInputValue] = useState('');
 
+  // A single max selectable option behaves like a searchable native dropdown.
+  // servar is untyped, so coerce - a stored "1" must not fall back to chips.
+  const isSingleSelectMode = Number(servar.max_length) === 1;
+
+  // Single mode hands react-select one option (or null on clear), but the
+  // stored field value is always a string array, so re-wrap on the way out.
+  const handleValueChange = useCallback(
+    (
+      selected: OnChangeValue<OptionData, boolean>,
+      actionMeta: ActionMeta<OptionData>
+    ) => {
+      if (!isSingleSelectMode || Array.isArray(selected))
+        return onChange(selected, actionMeta);
+      onChange(selected ? [selected] : [], actionMeta);
+    },
+    [isSingleSelectMode, onChange]
+  );
+
+  // Clamp what single mode displays, but leave the stored array alone: writing
+  // it back on mount would fire this field's change logic rules on load.
+  const displayFieldVal = useMemo(
+    () =>
+      isSingleSelectMode && Array.isArray(fieldVal)
+        ? fieldVal.slice(0, 1)
+        : fieldVal,
+    [fieldVal, isSingleSelectMode]
+  );
+
   // Build all dropdown options and selections
   const { options: allOptions, selectVal } = useDropdownOptions({
-    fieldVal,
+    fieldVal: displayFieldVal,
     fieldKey,
     servar,
     dynamicOptions,
@@ -95,7 +126,8 @@ export default function DropdownMultiField({
   } = useCollapsedSelectionManager({
     containerRef,
     disabled,
-    values: selectVal
+    values: selectVal,
+    isSingleSelectMode
   });
 
   const {
@@ -120,7 +152,9 @@ export default function DropdownMultiField({
   );
 
   const disableAllOptions =
-    (!!servar.max_length && selectVal.length >= servar.max_length) ||
+    (!isSingleSelectMode &&
+      !!servar.max_length &&
+      selectVal.length >= servar.max_length) ||
     loadingDynamicOptions;
   const create = servar.metadata.creatable_options;
   let formatCreateLabel: ((inputValue: string) => string) | undefined;
@@ -184,27 +218,38 @@ export default function DropdownMultiField({
     isCreatableInputValid: create ? isCreatableInputValid : undefined,
     create,
     disableAllOptions,
-    onChange
+    isSingleSelectMode,
+    onChange: handleValueChange
   });
 
-  const hasTooltip = !!properties.tooltipText;
-  const chevronPosition = hasTooltip ? 30 : 10;
   const SelectComponent = create ? DropdownCreatableSelect : DropdownSelect;
 
   responsiveStyles.applyFontStyles('field');
 
   const shouldHideInput = collapseSelected && !isMeasuring && !focused;
 
+  // The caret handling below is resolved in JS, so it reads the alignment the
+  // way a media query would: the mobile override under the breakpoint, the
+  // desktop value above it.
+  const isMobileViewport = useMobileViewport(
+    responsiveStyles.getMobileBreakpoint()
+  );
+  const align = isMobileViewport
+    ? element.mobile_styles?.horizontal_align ??
+      element.styles?.horizontal_align
+    : element.styles?.horizontal_align;
+  const aligned = align === 'center' || align === 'flex-end';
+
   const selectStyles = useMemo(
     () =>
       createSelectStyles({
-        chevronPosition,
+        aligned,
         fontColor: element.styles.font_color,
         menuZIndex: DROPDOWN_Z_INDEX,
         responsiveStyles,
         rightToLeft
       }),
-    [chevronPosition, element.styles.font_color, responsiveStyles, rightToLeft]
+    [aligned, element.styles.font_color, responsiveStyles, rightToLeft]
   );
 
   // Organize all SelectComponent props
@@ -218,6 +263,7 @@ export default function DropdownMultiField({
     disabled,
     isMenuOpen,
     loadingDynamicOptions,
+    isSingleSelectMode,
     selectStyles,
     selectComponentsOverride,
     collapseSelected,
@@ -251,6 +297,8 @@ export default function DropdownMultiField({
         height: '100%',
         position: 'relative',
         pointerEvents: editMode ? 'none' : 'auto',
+        // A moved padding or alignment turns the element into a column here
+        // (applyMultiselectLayout); untouched forms keep this block layout.
         ...responsiveStyles.getTarget('fc')
       }}
       {...elementProps}
@@ -280,6 +328,7 @@ export default function DropdownMultiField({
         onMouseDown={handleWrapperMouseDown}
         onTouchStart={handleWrapperTouchStart}
         onKeyDownCapture={handleKeyDownCapture}
+        {...inputBoxAttrs(servar.type)}
       >
         {customBorder}
         <SelectComponent {...selectProps} inputValue={inputValue} />

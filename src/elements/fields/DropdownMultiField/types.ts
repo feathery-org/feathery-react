@@ -59,22 +59,23 @@ export type DropdownSelectExtraProps = {
   onMultiValueRemovePointer?: () => void;
 };
 
+// isMulti is boolean, not `true`: max_length 1 renders a real single-select
 export type DropdownSelectProps = MultiValueProps<
   OptionData,
-  true
+  boolean
 >['selectProps'] &
   DropdownSelectExtraProps;
 
 export type DropdownSelectComponentProps = SelectProps<
   OptionData,
-  true,
+  boolean,
   GroupBase<OptionData>
 > &
   DropdownSelectExtraProps;
 
 export type DropdownCreatableSelectComponentProps = CreatableProps<
   OptionData,
-  true,
+  boolean,
   GroupBase<OptionData>
 > &
   DropdownSelectExtraProps;

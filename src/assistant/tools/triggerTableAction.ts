@@ -1,8 +1,11 @@
 import {
+  awaitPendingInlineErrors,
   buildRowData,
+  diffInlineErrorSnapshots,
   findTableOnCurrentStep,
   getLiveStepKey,
   getTableCapabilities,
+  type InlineErrorReport,
   snapshotInlineErrors,
   type TableLookupErrorType
 } from './utils';
@@ -19,7 +22,7 @@ type TableActionResult =
   | {
       ok: true;
       navigated: { fromStepKey: string; toStepKey: string } | null;
-      fieldErrors?: Record<string, string>;
+      fieldErrors?: InlineErrorReport[];
     }
   | {
       ok: false;
@@ -101,16 +104,14 @@ export async function dispatchTriggerTableAction(
   }
 
   const toStepKey = getLiveStepKey(state) ?? fromStepKey;
+  // Errors published on a timer must land before we snapshot.
+  await awaitPendingInlineErrors(state);
   const errorsAfter = snapshotInlineErrors(state);
-  const fieldErrors: Record<string, string> = {};
-  for (const key of Object.keys(errorsAfter)) {
-    if (errorsAfter[key] !== errorsBefore[key])
-      fieldErrors[key] = errorsAfter[key];
-  }
+  const fieldErrors = diffInlineErrorSnapshots(errorsBefore, errorsAfter);
 
   return {
     ok: true,
     navigated: toStepKey !== fromStepKey ? { fromStepKey, toStepKey } : null,
-    ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {})
+    ...(fieldErrors.length > 0 ? { fieldErrors } : {})
   };
 }

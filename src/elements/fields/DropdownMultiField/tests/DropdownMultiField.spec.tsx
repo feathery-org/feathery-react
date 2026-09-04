@@ -5,6 +5,7 @@ import {
   createOptionsMetadata,
   createMaxLengthElement,
   createCreatableElement,
+  createSingleSelectCreatableElement,
   getMockFieldValue,
   resetMockFieldValue,
   setMockFieldValue,
@@ -12,12 +13,20 @@ import {
   getReactSelectContainer,
   getOptionByText,
   getOptionElements,
+  getSelectedValues,
+  getSingleValue,
+  getSingleValues,
+  getValueContainer,
+  getListbox,
+  getFocusedOptionText,
   expectSelectedValueCount,
   expectValueToBeSelected,
   openDropdownMenu,
+  openDropdownMenuByClick,
   selectOptionByText,
   removeSelectedValue,
-  getRemoveButton
+  getRemoveButton,
+  mockTouchDevice
 } from './test-utils';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -33,6 +42,8 @@ describe('DropdownMultiField - Base Functionality', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     resetMockFieldValue();
+    // clearAllMocks leaves return values in place, so pin the desktop default
+    mockTouchDevice(false);
     mockUseSalesforceSync.mockReturnValue({
       dynamicOptions: [],
       loadingDynamicOptions: false,
@@ -285,6 +296,37 @@ describe('DropdownMultiField - Base Functionality', () => {
       expect(getMockFieldValue()).toEqual(['Option 1', 'Option 2']);
     });
 
+    it('stays a chip multi-select at a max length above 1', async () => {
+      const user = userEvent.setup();
+      const element = createMaxLengthElement(2, [
+        'Option 1',
+        'Option 2',
+        'Option 3'
+      ]);
+
+      const MultiHarness = () => {
+        const [fieldVal, setFieldVal] = React.useState<string[]>([]);
+        const props = createDropdownMultiProps(element, {
+          fieldVal,
+          onChange: (next: any[]) => setFieldVal(next.map((opt) => opt.value))
+        });
+        return <DropdownMultiField {...props} />;
+      };
+
+      render(<MultiHarness />);
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 1');
+
+      // Pins the three behaviors single-select mode drops: the picked option
+      // leaves the menu, the menu stays open, and the chip keeps its remove.
+      await waitFor(() => expect(getSelectedValues()).toHaveLength(1));
+      expect(getOptionElements().length).toBeGreaterThan(0);
+      expect(getOptionByText('Option 1')).toBeUndefined();
+      expect(getRemoveButton('Option 1')).not.toBeNull();
+      expect(getSingleValues()).toHaveLength(0);
+    });
+
     it('handles max length of 0 (no selections allowed)', () => {
       const element = createMaxLengthElement(0, ['Option 1', 'Option 2']);
       const props = createDropdownMultiProps(element);
@@ -293,6 +335,405 @@ describe('DropdownMultiField - Base Functionality', () => {
 
       // When max_length is 0, it's falsy so options are enabled
       expect(getReactSelectContainer()).toBeTruthy();
+    });
+  });
+
+  describe('Single Select Mode (max length of 1)', () => {
+    const renderSingleSelect = ({
+      options = ['Option 1', 'Option 2', 'Option 3'],
+      initialValue = [] as string[],
+      element = createMaxLengthElement(1, options),
+      editMode = false
+    } = {}) => {
+      const onChange = jest.fn();
+
+      const SingleSelectHarness = () => {
+        const [fieldVal, setFieldVal] = React.useState<string[]>(initialValue);
+        const props = createDropdownMultiProps(element, {
+          fieldVal,
+          editMode,
+          onChange: (next: any[]) => {
+            onChange(next);
+            setFieldVal(next.map((opt) => opt.value));
+          }
+        });
+
+        return <DropdownMultiField {...props} />;
+      };
+
+      return { onChange, ...render(<SingleSelectHarness />) };
+    };
+
+    const expectOnChangeWithOnly = (onChange: jest.Mock, value: string) => {
+      const last = onChange.mock.calls[onChange.mock.calls.length - 1];
+      expect(last[0]).toHaveLength(1);
+      expect(last[0][0]).toEqual(expect.objectContaining({ value }));
+    };
+
+    it('closes the menu immediately after selecting an option', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect();
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 2');
+
+      await waitFor(() => expect(getOptionElements()).toHaveLength(0));
+      expect(getSingleValue()?.textContent).toBe('Option 2');
+    });
+
+    it('blurs the input after selecting on a touch device', async () => {
+      mockTouchDevice(true);
+      const user = userEvent.setup();
+      renderSingleSelect();
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 2');
+
+      // jsdom has no soft keyboard; dropping focus is what dismisses it
+      await waitFor(() =>
+        expect(document.activeElement).not.toBe(getSelectInput())
+      );
+    });
+
+    it('keeps focus on the input after selecting without touch', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect();
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 2');
+
+      await waitFor(() =>
+        expect(document.activeElement).toBe(getSelectInput())
+      );
+    });
+
+    it('renders the selected value as plain text with no chip or remove button', () => {
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      // Expectation moved: isMulti:false renders a SingleValue, so there is no
+      // longer a chip to strip a remove button out of.
+      expect(getSelectedValues()).toHaveLength(0);
+      expect(getSingleValues()).toHaveLength(1);
+
+      const value = getSingleValue() as HTMLElement;
+      expect(value.textContent).toBe('Option 1');
+      const styles = window.getComputedStyle(value);
+      expect(styles.marginLeft).toBe('0px');
+      expect(styles.marginRight).toBe('0px');
+    });
+
+    it('keeps every option visible and enabled while a value is selected', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      await openDropdownMenu(user);
+
+      const options = getOptionElements();
+      expect(options).toHaveLength(3);
+      options.forEach((option) => {
+        expect(option.getAttribute('aria-disabled')).not.toBe('true');
+      });
+      expect(getOptionByText('Option 1')).toBeTruthy();
+    });
+
+    it('replaces the selection when a different option is picked', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({ initialValue: ['Option 1'] });
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 3');
+
+      expectOnChangeWithOnly(onChange, 'Option 3');
+      await waitFor(() =>
+        expect(getSingleValue()?.textContent).toBe('Option 3')
+      );
+      expect(getSingleValues()).toHaveLength(1);
+    });
+
+    it('keeps the value and closes the menu when the selected option is re-picked', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({ initialValue: ['Option 2'] });
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 2');
+
+      await waitFor(() => expect(getOptionElements()).toHaveLength(0));
+      // Expectation moved: v1 swallowed the re-pick as `deselect-option` and
+      // fired nothing. Under isMulti:false it is another `select-option`, so
+      // onChange fires again, matching the native DropdownField.
+      expectOnChangeWithOnly(onChange, 'Option 2');
+      expect(getSingleValue()?.textContent).toBe('Option 2');
+    });
+
+    it('does not mark the listbox as multiselectable', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      await openDropdownMenu(user);
+
+      expect(getListbox()?.getAttribute('aria-multiselectable')).toBe('false');
+    });
+
+    it('opens the menu focused on the current value', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 3'] });
+
+      await openDropdownMenuByClick(user);
+
+      expect(getFocusedOptionText()).toBe('Option 3');
+    });
+
+    it('opens the menu on touch start', async () => {
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      fireEvent.touchStart(getReactSelectContainer());
+
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+    });
+
+    it('opens the menu focused on the current value from the keyboard', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 2'] });
+
+      getSelectInput().focus();
+      await user.keyboard('[ArrowDown]');
+      await waitFor(() =>
+        expect(getOptionElements().length).toBeGreaterThan(0)
+      );
+
+      expect(getFocusedOptionText()).toBe('Option 2');
+    });
+
+    it('filters options while typing and hides the value text', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      await openDropdownMenu(user);
+      await user.type(getSelectInput(), 'Option 3');
+
+      await waitFor(() => expect(getOptionElements()).toHaveLength(1));
+      expect(getOptionByText('Option 3')).toBeTruthy();
+      // Expectation moved: react-select skips SingleValue entirely while an
+      // input value is present, so the element is absent rather than hidden.
+      expect(getSingleValue()).toBeNull();
+    });
+
+    it('restores the value text when the typed filter is cleared', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      await openDropdownMenu(user);
+      const input = getSelectInput();
+      await user.type(input, 'Option 3');
+      await waitFor(() => expect(getSingleValue()).toBeNull());
+
+      await user.clear(input);
+
+      await waitFor(() =>
+        expect(getSingleValue()?.textContent).toBe('Option 1')
+      );
+    });
+
+    it('clears the search text and restores the value when Enter re-picks the filtered value', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({ initialValue: ['Option 2'] });
+
+      await openDropdownMenu(user);
+      const input = getSelectInput();
+      await user.type(input, 'Option 2');
+      await waitFor(() => expect(getOptionElements()).toHaveLength(1));
+      expect(getSingleValue()).toBeNull();
+
+      await user.keyboard('{Enter}');
+
+      // The v1 Enter guard blocked react-select's setValue, the only thing that
+      // resets the controlled inputValue, so the menu closed on stale text.
+      await waitFor(() => expect(getOptionElements()).toHaveLength(0));
+      expect(getSelectInput().value).toBe('');
+      const value = getSingleValue() as HTMLElement;
+      expect(value).not.toBeNull();
+      expect(value.textContent).toBe('Option 2');
+      expect(window.getComputedStyle(value).display).not.toBe('none');
+      expectOnChangeWithOnly(onChange, 'Option 2');
+    });
+
+    it('clears the value on Backspace with an empty input', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({ initialValue: ['Option 2'] });
+
+      getSelectInput().focus();
+      await user.keyboard('{Backspace}');
+
+      expect(onChange).toHaveBeenLastCalledWith([]);
+      await waitFor(() => expect(getSingleValue()).toBeNull());
+    });
+
+    it('clears the value on Delete with an empty input', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({ initialValue: ['Option 2'] });
+
+      getSelectInput().focus();
+      await user.keyboard('{Delete}');
+
+      expect(onChange).toHaveBeenLastCalledWith([]);
+      await waitFor(() => expect(getSingleValue()).toBeNull());
+    });
+
+    it('renders only the first entry of a legacy multi-value array', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({
+        initialValue: ['Option 1', 'Option 3']
+      });
+
+      // Clamped for display only - nothing is written back on mount
+      expect(getSingleValues()).toHaveLength(1);
+      expect(getSingleValue()?.textContent).toBe('Option 1');
+
+      await openDropdownMenu(user);
+      const options = getOptionElements();
+      expect(options).toHaveLength(3);
+      options.forEach((option) => {
+        expect(option.getAttribute('aria-disabled')).not.toBe('true');
+      });
+
+      await selectOptionByText(user, 'Option 2');
+
+      // Any pick heals the whole stored array down to a single entry
+      expectOnChangeWithOnly(onChange, 'Option 2');
+      await waitFor(() =>
+        expect(getSingleValue()?.textContent).toBe('Option 2')
+      );
+    });
+
+    it('keeps the dropped entries of a legacy array out of the options', async () => {
+      const user = userEvent.setup();
+      // 'Ghost' is not a configured option. Unclamped, the backwards-compat
+      // pass that keeps stored values selectable would add it to the menu.
+      renderSingleSelect({ initialValue: ['Option 1', 'Ghost'] });
+
+      expect(getSingleValue()?.textContent).toBe('Option 1');
+
+      await openDropdownMenu(user);
+
+      expect(getOptionElements()).toHaveLength(3);
+      expect(getOptionByText('Ghost')).toBeFalsy();
+    });
+
+    it('clears a legacy multi-value array entirely on Backspace', async () => {
+      const user = userEvent.setup();
+      const { onChange } = renderSingleSelect({
+        initialValue: ['Option 1', 'Option 3']
+      });
+
+      getSelectInput().focus();
+      await user.keyboard('{Backspace}');
+
+      expect(onChange).toHaveBeenLastCalledWith([]);
+      await waitFor(() => expect(getSingleValue()).toBeNull());
+    });
+
+    it('keeps the value container layout stable across open and typing', async () => {
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      const layout = () => {
+        const styles = window.getComputedStyle(getValueContainer());
+        return {
+          padding: styles.padding,
+          display: styles.display,
+          alignItems: styles.alignItems
+        };
+      };
+
+      const closed = layout();
+      expect(closed).toEqual({
+        padding: '2px 8px',
+        display: 'grid',
+        alignItems: 'center'
+      });
+
+      await openDropdownMenu(user);
+      expect(layout()).toEqual(closed);
+
+      await user.type(getSelectInput(), 'Option');
+      expect(layout()).toEqual(closed);
+    });
+
+    it('lists the selected option once in windowed results', async () => {
+      const user = userEvent.setup();
+      const options = Array.from({ length: 500 }, (_, i) => `Option ${i + 1}`);
+      renderSingleSelect({ options, initialValue: ['Option 400'] });
+
+      await openDropdownMenu(user);
+
+      // Windowing hoists selected options, which must not double up in the menu
+      const matches = getOptionElements().filter(
+        (option) => option.textContent === 'Option 400'
+      );
+      expect(matches).toHaveLength(1);
+    });
+
+    it('selects from windowed results and closes the menu', async () => {
+      const user = userEvent.setup();
+      const options = Array.from({ length: 500 }, (_, i) => `Option ${i + 1}`);
+      const { onChange } = renderSingleSelect({ options });
+
+      await openDropdownMenu(user);
+      await selectOptionByText(user, 'Option 5');
+
+      expectOnChangeWithOnly(onChange, 'Option 5');
+      await waitFor(() => expect(getOptionElements()).toHaveLength(0));
+    });
+
+    it('selects and closes when creating an option', async () => {
+      const user = userEvent.setup();
+      const element = createSingleSelectCreatableElement(['Alpha']);
+      const { onChange } = renderSingleSelect({ element });
+
+      await openDropdownMenu(user);
+      await user.type(getSelectInput(), 'New Option');
+      await user.keyboard('{Enter}');
+
+      await waitFor(() =>
+        expect(getSingleValue()?.textContent).toBe('New Option')
+      );
+      expect(getOptionElements()).toHaveLength(0);
+      expectOnChangeWithOnly(onChange, 'New Option');
+    });
+
+    it('disables options while Salesforce options are loading', async () => {
+      mockUseSalesforceSync.mockReturnValue({
+        dynamicOptions: [],
+        loadingDynamicOptions: true,
+        shouldSalesforceSync: true
+      });
+      const user = userEvent.setup();
+      renderSingleSelect({ initialValue: ['Option 1'] });
+
+      await openDropdownMenu(user);
+
+      const options = getOptionElements();
+      expect(options.length).toBeGreaterThan(0);
+      options.forEach((option) => {
+        expect(option.getAttribute('aria-disabled')).toBe('true');
+      });
+    });
+
+    it('renders the selection but stays inert on the builder canvas', () => {
+      const { container } = renderSingleSelect({
+        initialValue: ['Option 1'],
+        editMode: true
+      });
+
+      // Expectation moved: the old version rendered no value, so it passed
+      // either way. A value is what puts editMode's pointerEvents under test.
+      expect(getSingleValue()?.textContent).toBe('Option 1');
+      expect(
+        window.getComputedStyle(container.firstChild as HTMLElement)
+          .pointerEvents
+      ).toBe('none');
     });
   });
 
@@ -532,9 +973,11 @@ describe('DropdownMultiField - Base Functionality', () => {
 
     it('blocks form submission when no options are available', async () => {
       const user = userEvent.setup();
-      const element = createMaxLengthElement(1, ['Alpha']);
+      // Moved from max_length 1 to 2: a max of 1 is now single-select mode,
+      // which keeps every option listed and enabled.
+      const element = createMaxLengthElement(2, ['Alpha', 'Beta']);
       const props = createDropdownMultiProps(element, {
-        fieldVal: ['Alpha']
+        fieldVal: ['Alpha', 'Beta']
       });
       const submitSpy = jest.fn();
 

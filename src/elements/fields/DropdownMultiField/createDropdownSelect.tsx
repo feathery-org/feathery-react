@@ -10,16 +10,18 @@ import type {
 } from './types';
 
 const DropdownSelect = forwardRef<
-  SelectInstance<OptionData, true>,
+  SelectInstance<OptionData, boolean>,
   DropdownSelectComponentProps
->((props, ref) => <Select<OptionData, true> ref={ref} {...props} />);
+>((props, ref) => <Select<OptionData, boolean> ref={ref} {...props} />);
 
 DropdownSelect.displayName = 'DropdownSelect';
 
 const DropdownCreatableSelect = forwardRef<
-  SelectInstance<OptionData, true>,
+  SelectInstance<OptionData, boolean>,
   DropdownCreatableSelectComponentProps
->((props, ref) => <CreatableSelect<OptionData, true> ref={ref} {...props} />);
+>((props, ref) => (
+  <CreatableSelect<OptionData, boolean> ref={ref} {...props} />
+));
 
 DropdownCreatableSelect.displayName = 'DropdownCreatableSelect';
 
