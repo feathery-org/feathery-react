@@ -230,6 +230,41 @@ describe('TableElement - 2d_array source', () => {
     });
   });
 
+  it('picks up an in-place mutation of the array, matching the field source', () => {
+    // A logic rule doing `table_data.value.forEach((row) => row.push('x'))`
+    // mutates behind the same reference. The form-field source shows that
+    // because it shares the row arrays, so this source must too.
+    const rows: any[][] = [
+      ['Name', 'Age'],
+      ['Alice', 30]
+    ];
+    (fieldValues as any)[FIELD_KEY] = rows;
+    const { rerender } = renderTable();
+    expect(screen.getByText('Alice')).toBeInTheDocument();
+
+    rows.forEach((row) => row.push('added'));
+    rerender(
+      <TableElement
+        element={makeElement()}
+        responsiveStyles={responsiveStyles}
+        updateFieldValues={jest.fn()}
+        submitCustom={jest.fn()}
+        editMode={false}
+      />
+    );
+
+    expect(
+      [...document.querySelectorAll('.feathery-table-header-cell')].map(
+        (e) => e.textContent
+      )
+    ).toEqual(['Name', 'Age', 'added']);
+    expect(
+      [...document.querySelectorAll('.feathery-table-cell')].map(
+        (e) => e.textContent
+      )
+    ).toEqual(['Alice', '30', 'added']);
+  });
+
   it('renders placeholder columns in the builder, where the value is unknown', () => {
     renderTable({}, { editMode: true });
 

@@ -55,9 +55,14 @@ export function use2dArrayTableSource({
   // fieldValues is mutated outside React state, so dataVersion is the manual
   // dirty flag that re-reads it after a write (same contract as useTableData).
   const raw = active ? fieldValues[fieldKey] : undefined;
+  // A logic rule can mutate the array in place (`value.forEach(r => r.push())`),
+  // which leaves the reference untouched. The form-field source picks that up
+  // because it only shallow-copies fieldValues and so shares the row arrays;
+  // this source derives new arrays, so it needs the content to be the dep.
+  const rawSignature = active ? JSON.stringify(raw ?? null) : '';
   const parsed = useMemo(
     () => (active ? parseArrayTableValue(raw, fieldKey) : NO_ROWS),
-    [active, raw, fieldKey, dataVersion]
+    [active, raw, rawSignature, fieldKey, dataVersion]
   );
 
   const rowsRef = useRef(parsed.rows);
