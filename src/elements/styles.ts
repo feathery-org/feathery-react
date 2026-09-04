@@ -1418,9 +1418,15 @@ export default class ResponsiveStyles {
     });
     this.apply('sub-fc', 'height_unit', (unit: any) => {
       if (!isSet(unit)) return {};
-      // flex-basis 0 with applyHeight's own min-height floor keeps the box from
-      // collapsing where there is no room to grow into.
-      return { flex: unit === '%' ? '1 1 0' : '0 1 auto' };
+      // flex-basis auto, so the basis is applyHeight's own `height: 100%` and
+      // the box shrinks out of the label's way rather than growing into what
+      // is left. The two are identical wherever the percentage resolves, but
+      // this rule is keyed on the unit, not on whether it resolved: under a Fit
+      // container `height: 100%` falls back to auto, and a basis of 0 there
+      // makes the box contribute nothing to its own cell's intrinsic height --
+      // a 6-row text area collapsed from 123px to the 50px floor, and a 20-row
+      // one from 392px. With auto it keeps the content height it always had.
+      return { flex: unit === '%' ? '1 1 auto' : '0 1 auto' };
     });
   }
 
