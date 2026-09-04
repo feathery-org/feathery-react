@@ -154,11 +154,118 @@ describe('attaching bindings to a tokenized template', () => {
     attached.dispose();
     const removed = remove.mock.calls.map((call) => call[0]);
     expect(removed).toEqual(
-      expect.arrayContaining(['contentChange', 'selectionChange', 'keyDown'])
+      expect.arrayContaining([
+        'contentChange',
+        'selectionChange',
+        'keyDown',
+        'contentControl'
+      ])
     );
     remove.mockRestore();
     // Reattach so afterEach's dispose stays valid.
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
+  });
+
+  it('fires the locked-edit hint only when the edit was actually refused', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+    // Syncfusion fires 'contentControl' even for an editable control (all our
+    // controls are lockContentControl), so the event alone must NOT toast.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => true
+    });
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // A genuinely refused edit (gate closed) shows the hint, debounced.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => false
+    });
+    (editor as any).trigger('contentControl');
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
+  });
+
+  it('resolves the hint when the caret moves to an editable spot', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    const onLockedEditResolved = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit,
+      onLockedEditResolved
+    });
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+
+    // Refused edit on a locked cell shows the hint.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => false
+    });
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // Selection change while still on the locked cell keeps it up.
+    (editor as any).trigger('selectionChange');
+    expect(onLockedEditResolved).not.toHaveBeenCalled();
+
+    // Caret moves to an editable spot -> resolve once, and not again.
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => true
+    });
+    (editor as any).trigger('selectionChange');
+    (editor as any).trigger('selectionChange');
+    expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
+  });
+
+  it('resolves the hint when focus leaves the editor', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    const onLockedEditResolved = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit,
+      onLockedEditResolved
+    });
+    const module = (editor as any).editorModule;
+    const restore = Object.getOwnPropertyDescriptor(
+      module,
+      'canEditContentControl'
+    );
+    Object.defineProperty(module, 'canEditContentControl', {
+      configurable: true,
+      get: () => false
+    });
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // Blurring the editable div drops the hint even while still on the cell.
+    (editor as any).documentHelper.editableDiv.dispatchEvent(
+      new Event('blur')
+    );
+    expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
+
+    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
+    else delete module.canEditContentControl;
   });
 });
 
