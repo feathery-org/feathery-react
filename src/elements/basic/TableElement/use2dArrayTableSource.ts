@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { fieldValues } from '../../../utils/init';
 import { Column } from './types';
 import {
   arrayColumnCount,
   deriveArrayColumns,
   deriveArrayFieldValues,
+  isRaggedRows,
+  normalizeRows,
   ParsedArrayValue,
   parseArrayTableValue
 } from './arrayTableSource';
@@ -101,6 +103,18 @@ export function use2dArrayTableSource({
     },
     [fieldKey, updateFieldValues, submitCustom, onMutate]
   );
+
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
+
+  // A ragged array is padded for display, so persist that same shape. The
+  // write is queued behind the SDK's interaction gate, so a page view alone
+  // never writes -- it lands with the visitor's first interaction.
+  const needsNormalizing = active && !parsed.error && isRaggedRows(parsed.rows);
+  useEffect(() => {
+    if (!needsNormalizing) return;
+    commitRef.current(normalizeRows(rowsRef.current), true);
+  }, [needsNormalizing]);
 
   const handleCellEdit = useCallback(
     (key: string, rowIndex: number, newValue: any) => {

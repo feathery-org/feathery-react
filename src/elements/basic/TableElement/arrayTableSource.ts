@@ -56,6 +56,22 @@ export const arrayColumnKey = (tableId: string, columnIndex: number) =>
 export const arrayColumnCount = (rows: any[][]) =>
   rows.reduce((max, row) => Math.max(max, row.length), 0);
 
+// Short rows are padded out to the widest row for display. Storage is
+// normalized to that same shape so the stored array matches what is rendered.
+export const isRaggedRows = (rows: any[][]) => {
+  const width = arrayColumnCount(rows);
+  return rows.some((row) => row.length !== width);
+};
+
+// Pads only -- cell values keep their original types, the same way editing one
+// cell leaves the others untouched.
+export const normalizeRows = (rows: any[][]) => {
+  const width = arrayColumnCount(rows);
+  return rows.map((row) =>
+    row.length === width ? row : [...row, ...Array(width - row.length).fill('')]
+  );
+};
+
 export function deriveArrayColumns(tableId: string, rows: any[][]): Column[] {
   const [headerRow = []] = rows;
   return Array.from({ length: arrayColumnCount(rows) }, (_, index) => ({
