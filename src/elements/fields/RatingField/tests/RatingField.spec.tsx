@@ -9,7 +9,7 @@ import {
   expectRatingIconCount
 } from './test-utils';
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import RatingField from '../index';
 
 describe('RatingField - Base Functionality', () => {
@@ -200,5 +200,59 @@ describe('RatingField - Base Functionality', () => {
 
       expectRatingIconCount(5);
     });
+  });
+});
+
+describe('RatingField - Certification naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('exposes each rating as a named, labelled button', () => {
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField {...createRatingProps(element, { fieldVal: 3 })} />
+    );
+
+    const buttons = Array.from(container.querySelectorAll('button'));
+    expect(buttons.length).toBeGreaterThan(0);
+    buttons.forEach((button, i) => {
+      expect(button.name).toBe(`${element.servar.key}-${i + 1}`);
+      expect(button.value).toBe(String(i + 1));
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+    });
+  });
+
+  it.each([
+    ['disabled', { disabled: true }],
+    ['edit mode', { editMode: true }]
+  ])('ignores button activation when %s', (_label, props) => {
+    // Real buttons stay keyboard reachable under pointer-events: none, so the
+    // guard has to live on the click handler
+    const onChange = jest.fn();
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField
+        {...createRatingProps(element, { fieldVal: 2, onChange, ...props })}
+      />
+    );
+
+    const buttons = container.querySelectorAll('button');
+    fireEvent.click(buttons[3]);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('mirrors the selected rating into a named hidden input', () => {
+    const element = createRatingElement('rating');
+    const { container } = render(
+      <RatingField {...createRatingProps(element, { fieldVal: 3 })} />
+    );
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('3');
   });
 });

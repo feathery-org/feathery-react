@@ -1,16 +1,48 @@
 import { featheryDoc } from '../utils/browser';
 import { fieldValues } from '../utils/init';
+import { isTrustedFormDebugEnabled } from './trustedformDebug';
 
 const configMap: Record<string, any> = {};
 
-export async function installTrustedForm(
-  trustedformConfig: any,
-  formKey: string
-) {
-  if (!trustedformConfig) return;
+// TrustedForm scans the page when it starts and will not see a form that is
+// rendered afterwards. Integrations initialize during the session fetch, which
+// is before React has rendered anything, so wait for the form to exist first.
+const FORM_WAIT_TIMEOUT_MS = 10000;
 
-  configMap[formKey] = trustedformConfig;
+export function awaitFormElement(): Promise<void> {
+  return new Promise((resolve) => {
+    const doc = featheryDoc();
+    if (!doc.querySelector || doc.querySelector('form.feathery'))
+      return resolve();
 
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const observer = new MutationObserver(() => {
+      if (doc.querySelector('form.feathery')) finish();
+    });
+    observer.observe(doc.body ?? doc.documentElement, {
+      childList: true,
+      subtree: true
+    });
+
+    // Never block certification indefinitely if the form never renders
+    const timer = setTimeout(() => {
+      console.warn(
+        '[feathery] TrustedForm: form did not render within the wait window, injecting anyway'
+      );
+      finish();
+    }, FORM_WAIT_TIMEOUT_MS);
+  });
+}
+
+function injectTrustedFormScript(trustedformConfig: any) {
   const tf = featheryDoc().createElement('script');
   tf.type = 'text/javascript';
   tf.async = true;
@@ -24,6 +56,44 @@ export async function installTrustedForm(
 
   const s = featheryDoc().getElementsByTagName('script')[0];
   s.parentNode.insertBefore(tf, s);
+}
+
+export async function installTrustedForm(
+  trustedformConfig: any,
+  formKey: string
+) {
+  if (!trustedformConfig) return;
+
+  configMap[formKey] = trustedformConfig;
+
+  // Deliberately not awaited: integration setup blocks the session fetch, and
+  // the form we are waiting for cannot render until that fetch resolves.
+  awaitFormElement()
+    .then(() => injectTrustedFormScript(trustedformConfig))
+    .catch((err) =>
+      console.warn('[feathery] TrustedForm script failed to install', err)
+    );
+}
+
+/**
+ * Opt-in console logger for what a certificate would record per interaction.
+ * Independent of the integration config so a form without TrustedForm
+ * configured can still be audited; loaded lazily so nobody else pays for it.
+ */
+export function installTrustedFormDebugIfRequested() {
+  if (!isTrustedFormDebugEnabled()) return;
+  import('./trustedformDebug')
+    .then(({ installTrustedFormDebug, whenDomSettles }) => {
+      const debug = installTrustedFormDebug();
+      // Audit once the form has rendered so the unnamed list is the first
+      // thing seen; the form element appears before its fields do
+      awaitFormElement()
+        .then(() => whenDomSettles())
+        .then(() => debug.audit());
+    })
+    .catch((err) =>
+      console.warn('[feathery] TrustedForm debug failed to load', err)
+    );
 }
 
 export function gatherTrustedFormFields(existingFields: any, formKey: string) {

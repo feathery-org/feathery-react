@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import TextNodes from '../components/TextNodes';
+import { certificationNameProps } from '../fields/shared/certification';
 import { isNum } from '../../utils/primitives';
 import useBorder from '../components/useBorder';
 import { hoverStylesGuard } from '../../utils/browser';
@@ -106,6 +107,7 @@ function TextElement({
               }
         )
       }}
+      {...certificationNameProps(element.properties?.text, element.key)}
       {...elementProps}
     >
       {customBorder}

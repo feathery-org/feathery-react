@@ -232,7 +232,10 @@ export async function setFormElementError({
         singleOrList instanceof RadioNodeList
           ? Array.from(singleOrList)
           : [singleOrList];
-      elements = elements.filter((e) => e);
+      // Hidden inputs are value mirrors for certification scanners (see
+      // HiddenValueInput) and are barred from constraint validation, so they
+      // must never be targeted for -- or shift the indexing of -- error display.
+      elements = elements.filter((e) => e && (e as any).type !== 'hidden');
 
       if (listIndex !== null && elements.length)
         elements = [elements[listIndex]];
@@ -243,6 +246,9 @@ export async function setFormElementError({
         // If we are targeting a non-submit button, we instead target its hidden input child
         if (element.tagName === 'BUTTON' && element.type !== 'submit') {
           element = element.querySelector(`#error_${element.id}`);
+          // Only ButtonElement renders that child; any other button that
+          // resolves under a field key has nothing to carry the error
+          if (!element) return;
         }
         element.setCustomValidity(message);
         if (triggerErrors) {

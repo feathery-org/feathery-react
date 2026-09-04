@@ -61,6 +61,8 @@ function ProgressBarElement({
       ...(vertical && { height: '100%' }),
       ...styles.getTarget('barContainer')
     },
+    // Named for certification scanners; there is no content to derive it from
+    name: 'progress bar',
     ...elementProps
   };
 

@@ -94,3 +94,19 @@ describe('TextArea - Base Functionality', () => {
     });
   });
 });
+
+describe('TextArea - Certification naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('names the textarea with the field key', () => {
+    const element = createTextAreaElement('text_area');
+    render(<TextArea {...createTextAreaProps(element)} />);
+
+    const field = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(field.name).toBe(element.servar.key);
+    expect(field.id).toBe(element.servar.key);
+  });
+});

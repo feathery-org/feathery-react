@@ -17,7 +17,8 @@ import {
   expectButtonToHaveNoImage,
   expectButtonToHaveTooltip,
   expectButtonGroupToBeDisabled,
-  expectErrorInputToHaveAttributes
+  expectErrorInputToHaveAttributes,
+  getButtonElement
 } from './test-utils';
 import React from 'react';
 import { render, fireEvent } from '@testing-library/react';
@@ -230,6 +231,17 @@ describe('ButtonGroupField', () => {
 
       expectButtonToHaveImage(0, 'image1.jpg');
       expectButtonToHaveImage(1, 'image2.jpg');
+    });
+
+    it('names option images by file so a click on the icon is attributed', () => {
+      const element = createImageButtonGroupElement(
+        ['A', 'B'],
+        ['https://cdn.x.com/icons/a.svg?v=2', 'b.png']
+      );
+      render(<ButtonGroupField {...createButtonGroupProps(element)} />);
+      const image = getButtonElement(0)?.querySelector('img') as HTMLElement;
+      expect(image.getAttribute('name')).toBe('a.svg');
+      expect(image.getAttribute('alt')).toBe('');
     });
 
     it('renders buttons without images when no option_images provided', () => {

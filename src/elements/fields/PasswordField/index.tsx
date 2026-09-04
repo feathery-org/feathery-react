@@ -7,6 +7,8 @@ import useBorder from '../../components/useBorder';
 import { FORM_Z_INDEX } from '../../../utils/styles';
 import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { HideEyeIcon, ShowEyeIcon } from '../../components/icons';
+import { fieldAriaLabel } from '../shared/accessibleName';
+import { sensitiveFieldProps } from '../shared/certification';
 
 function PasswordField({
   element,
@@ -90,7 +92,8 @@ function PasswordField({
                   : { color: 'transparent !important' }
             }
           }}
-          aria-label={element.properties.aria_label}
+          aria-label={fieldAriaLabel(element)}
+          {...sensitiveFieldProps(element)}
           maxLength={servar.max_length}
           minLength={servar.min_length}
           required={required}

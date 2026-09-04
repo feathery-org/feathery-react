@@ -6,6 +6,7 @@ import {
 } from '../CheckboxField';
 import { iosScrollOnFocus } from '../../../utils/browser';
 import { replaceTextVariables } from '../../components/TextNodes';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 function MatrixField({
   element,
@@ -107,6 +108,10 @@ function MatrixField({
             </TextHoverTooltip>
             {options.map((opt: any, j: number) => {
               const questionVal = fieldVal[q.id];
+              const questionName =
+                repeatIndex !== null
+                  ? `${servar.key}-${i}-${repeatIndex}`
+                  : `${servar.key}-${i}`;
               const isChecked =
                 Array.isArray(questionVal) && questionVal.includes(opt);
 
@@ -122,12 +127,13 @@ function MatrixField({
                 >
                   <input
                     type={inputType}
-                    name={
-                      repeatIndex !== null
-                        ? `${servar.key}-${i}-${repeatIndex}`
-                        : `${servar.key}-${i}`
-                    }
-                    aria-label={element.properties.aria_label}
+                    name={questionName}
+                    // TrustedForm requires an id on every radio input to name
+                    // it on the certificate
+                    id={`${questionName}-${j}`}
+                    aria-label={`${
+                      fieldAriaLabel(element) ?? servar.key
+                    } - ${replaceTextVariables(q.label, repeatIndex)} - ${opt}`}
                     data-question-id={q.id}
                     value={opt}
                     disabled={disabled || q.read_only}

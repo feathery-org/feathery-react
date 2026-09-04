@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { assetName, certificationNameProps } from '../shared/certification';
 import { CloseIcon, MicrophoneIcon } from '../../components/icons';
 import ErrorInput from '../../components/ErrorInput';
 import { imgMaxSizeStyles } from '../../styles';
@@ -7,6 +8,7 @@ import { AudioRecordingTranslations, defaultTranslations } from './translation';
 import AudioPlayer from './AudioPlayer';
 import LevelMeter from './LevelMeter';
 import { formatDuration } from './format';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 // AAC (.m4a) plays everywhere so it leads; bare audio/mp4 trails the webm
 // entries because Chrome may fill it with Opus, which .m4a players can't decode
@@ -459,6 +461,7 @@ function AudioRecordingField({
               flexShrink: stacked ? 1 : 0
             }}
             alt=''
+            {...certificationNameProps(assetName(element.properties.icon))}
           />
         ) : (
           <MicrophoneIcon
@@ -526,7 +529,8 @@ function AudioRecordingField({
         {/* This input must always be rendered so we can set field errors */}
         <ErrorInput
           id={servar.key}
-          aria-label={element.properties.aria_label}
+          name={servar.key}
+          aria-label={fieldAriaLabel(element)}
         />
       </div>
     </div>

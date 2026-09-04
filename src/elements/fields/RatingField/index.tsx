@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import RatingStar from '../../components/icons/RatingStar';
 import Heart from '../../components/icons/Heart';
 import ErrorInput from '../../components/ErrorInput';
+import HiddenValueInput from '../../components/HiddenValueInput';
+import { unstyledButton } from '../../styles';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 export default function RatingField({
   element,
@@ -47,29 +50,51 @@ export default function RatingField({
                 activeStyles = responsiveStyles.getTarget('selectedRating');
             } else if (index <= hoverIndex)
               activeStyles = responsiveStyles.getTarget('hoverRating');
+            const rating = index + 1;
             return (
-              <Icon
+              // A real button rather than a bare svg so each rating is keyboard
+              // operable and carries a name on TrustedForm certificates
+              <button
                 key={index}
-                onClick={() => onChange(index + 1)}
+                type='button'
+                name={`${servar.key}-${rating}`}
+                value={rating}
+                aria-label={`${
+                  fieldAriaLabel(element) ?? servar.key
+                } - ${rating}`}
+                aria-pressed={fieldVal === rating}
+                aria-disabled={editMode || disabled}
+                onClick={() => {
+                  if (!editMode && !disabled) onChange(rating);
+                }}
                 onMouseEnter={() => setHoverIndex(index)}
                 onMouseLeave={() => setHoverIndex(null)}
                 css={{
+                  ...unstyledButton,
+                  display: 'flex',
                   pointerEvents: editMode || disabled ? 'none' : 'auto',
                   cursor: editMode || disabled ? 'default' : 'pointer',
                   width: `${100 / numRatings}%`,
-                  paddingRight: '5px',
-                  ...responsiveStyles.getTarget('field'),
-                  ...activeStyles
+                  paddingRight: '5px'
                 }}
-              />
+              >
+                <Icon
+                  css={{
+                    width: '100%',
+                    ...responsiveStyles.getTarget('field'),
+                    ...activeStyles
+                  }}
+                />
+              </button>
             );
           })}
         {/* This input must always be rendered so we can set field errors */}
         <ErrorInput
           id={servar.key}
           name={servar.key}
-          aria-label={element.properties.aria_label}
+          aria-label={fieldAriaLabel(element)}
         />
+        <HiddenValueInput name={servar.key} value={fieldVal} />
       </div>
     </div>
   );

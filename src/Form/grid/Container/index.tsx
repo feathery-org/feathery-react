@@ -1,4 +1,8 @@
 import React, { PropsWithChildren, useRef, useState } from 'react';
+import {
+  certificationName,
+  certificationNameProps
+} from '../../../elements/fields/shared/certification';
 import { StyledContainer, getCellStyle } from '../StyledContainer';
 import { ACTION_STORE_FIELD } from '../../../utils/elementActions';
 import HoverTooltip from '../../../elements/components/HoverTooltip';
@@ -18,6 +22,13 @@ type ContainerProps = PropsWithChildren & {
 };
 
 /**
+ * Best readable name for a clickable container. The key is author-defined and
+ * meaningful ("plan-card-premium"); the id is an opaque uuid fallback.
+ */
+const containerLabel = (node: any) =>
+  certificationName(node.properties?.aria_label, node.key, node.id);
+
+/**
  * Container
  * This component adds additional logic to the StyledContainer that is unique
  * to rendering containers on hosted forms (not the editor).
@@ -34,6 +45,15 @@ export const Container = ({
   const [showTooltip, setShowTooltip] = useState(false);
   const additionalCss: any = {};
   let handleClick: any;
+  // Containers that carry actions are operable controls, but they render as
+  // bare divs. Without a name, TrustedForm records every click on one as
+  // "[unnamed div]". Deliberately no role="button": that role makes every
+  // descendant presentational, hiding the text and fields inside the card.
+  // Every container is named by its key so a click anywhere inside one is
+  // attributed to it on a certificate rather than to "[unnamed div]"
+  let interactiveProps: Record<string, any> = node.isElement
+    ? {}
+    : certificationNameProps(node.key);
 
   // Container-level hover tooltips apply only to actual containers. Field
   // elements share the same `tooltipText` property but render their own
@@ -95,6 +115,20 @@ export const Container = ({
     };
 
     Object.assign(additionalCss, selectableStyles);
+
+    if (actions.length > 0) {
+      interactiveProps = {
+        ...interactiveProps,
+        tabIndex: 0,
+        'aria-label': containerLabel(node),
+        onKeyDown: (e: any) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          handleClick(e);
+        }
+      };
+    }
   }
 
   return (
@@ -104,6 +138,7 @@ export const Container = ({
         node={node}
         css={additionalCss}
         onClick={handleClick}
+        {...interactiveProps}
         viewport={viewport}
         breakpoint={form.formSettings.mobileBreakpoint}
         formId={form.formInstanceId}

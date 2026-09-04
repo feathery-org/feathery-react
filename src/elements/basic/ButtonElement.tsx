@@ -1,4 +1,9 @@
 import React, { useMemo } from 'react';
+import {
+  assetName,
+  certificationName,
+  certificationNameProps
+} from '../fields/shared/certification';
 
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
@@ -154,6 +159,14 @@ function applyButtonStyles(element: any, responsiveStyles: any) {
   return responsiveStyles;
 }
 
+/** Readable, stable name attribute for a button. */
+function buttonName(element: any) {
+  const properties = element.properties ?? {};
+  return (
+    certificationName(properties.text, properties.aria_label) ?? element.id
+  );
+}
+
 function ButtonElement({
   element,
   responsiveStyles,
@@ -213,6 +226,9 @@ function ButtonElement({
     <button
       id={element.id}
       key={element.id}
+      // TrustedForm names buttons on its certificate from this attribute, and
+      // our id is an opaque uuid. Fall back to the id when there is no label.
+      name={buttonName(element)}
       type={element.properties.submit ? 'submit' : 'button'}
       className={active ? 'active' : undefined}
       style={{
@@ -262,6 +278,9 @@ function ButtonElement({
           {element.properties.image && (
             <img
               src={element.properties.image}
+              // Decorative: the button itself carries the name
+              alt=''
+              {...certificationNameProps(assetName(element.properties.image))}
               css={{
                 ...imgMaxSizeStyles,
                 ...responsiveStyles.getTargets('img')

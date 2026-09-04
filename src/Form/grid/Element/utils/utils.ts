@@ -134,7 +134,9 @@ export function handleCheckboxGroupChange(
   updateFieldValues: any
 ) {
   const target = e.target;
-  const opt = target.name;
+  // The option lives on `value`; `name` identifies the field itself so that
+  // the group certifies under its field key rather than the option label
+  const opt = target.value;
   const servar = field.servar;
 
   const fieldValue = getFieldValue(field);

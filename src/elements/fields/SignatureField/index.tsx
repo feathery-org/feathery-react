@@ -5,6 +5,7 @@ import { FORM_Z_INDEX } from '../../../utils/styles';
 import { defaultTranslations, SignatureTranslations } from './translation';
 import ErrorInput from '../../components/ErrorInput';
 import { loadGoogleFonts } from '../../../utils/fonts';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 function SignatureField({
   element,
@@ -121,7 +122,8 @@ function SignatureField({
           {/* This input must always be rendered so we can set field errors */}
           <ErrorInput
             id={servar.key}
-            aria-label={element.properties.aria_label}
+            name={servar.key}
+            aria-label={fieldAriaLabel(element)}
           />
         </div>
       </div>

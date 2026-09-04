@@ -1,10 +1,17 @@
 import React, { useMemo, useRef } from 'react';
-import { imgMaxSizeStyles, noTextSelectStyles } from '../../styles';
+import { assetName, certificationNameProps } from '../shared/certification';
+import {
+  imgMaxSizeStyles,
+  noTextSelectStyles,
+  unstyledButton
+} from '../../styles';
 import useBorder from '../../components/useBorder';
 import { hoverStylesGuard } from '../../../utils/browser';
 import InlineTooltip from '../../components/InlineTooltip';
 import ErrorInput from '../../components/ErrorInput';
+import HiddenValueInput from '../../components/HiddenValueInput';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 function ButtonGroupField({
   element,
@@ -94,17 +101,33 @@ function ButtonGroupField({
             : servar.metadata.option_images[index];
           const tooltip = option.tooltip ?? '';
 
+          const inactive = editMode || disabled || loadingDynamicOptions;
+
           return (
-            <div
-              role='button'
+            <button
+              // A real button rather than a div so the option is keyboard
+              // operable and carries a name on TrustedForm certificates.
+              // The name is per-option so that it never collides with the
+              // ErrorInput below, which owns the field key.
+              type='button'
+              name={`${servar.key}-${index}`}
+              value={value}
+              aria-pressed={!!selectedOptMap[value]}
+              aria-disabled={inactive}
+              // Visible option text is the accessible name (WCAG 2.5.3), so
+              // only name image-only options explicitly
+              aria-label={
+                label
+                  ? undefined
+                  : `${fieldAriaLabel(element) ?? servar.key} - ${value}`
+              }
               onClick={() => {
-                if (!editMode && !disabled && !loadingDynamicOptions) {
-                  onClick(value);
-                }
+                if (!inactive) onClick(value);
               }}
               key={`${servar.key}-${index}`}
               id={`${servar.key}-${index}`}
               css={{
+                ...unstyledButton,
                 position: 'relative',
                 display: 'flex',
                 justifyContent: 'center',
@@ -113,7 +136,7 @@ function ButtonGroupField({
                 cursor: 'pointer',
                 ...responsiveStyles.getTarget('field'),
                 '&:hover': hoverStylesGuard(
-                  editMode || disabled || loadingDynamicOptions
+                  inactive
                     ? {}
                     : {
                         ...responsiveStyles.getTarget('hover'),
@@ -132,6 +155,9 @@ function ButtonGroupField({
               {imageUrl && (
                 <img
                   src={imageUrl}
+                  // Decorative: the option button carries the name
+                  alt=''
+                  {...certificationNameProps(assetName(imageUrl))}
                   css={{
                     ...imgMaxSizeStyles,
                     ...responsiveStyles.getTargets('img'),
@@ -163,14 +189,18 @@ function ButtonGroupField({
                   repeat={element.repeat}
                 />
               )}
-            </div>
+            </button>
           );
         })}
         {/* This input must always be rendered so we can set field errors */}
         <ErrorInput
           id={servar.key}
           name={servar.key}
-          aria-label={element.properties.aria_label}
+          aria-label={fieldAriaLabel(element)}
+        />
+        <HiddenValueInput
+          name={servar.key}
+          value={(Array.isArray(fieldVal) ? fieldVal : []).join(', ')}
         />
       </div>
     </div>

@@ -50,7 +50,9 @@ export const createStatefulOnChange = () => {
 
 export const getColorDisplay = async () => {
   return await waitFor(() => {
-    const displays = Array.from(document.querySelectorAll('div')).filter(
+    const displays = Array.from(
+      document.querySelectorAll<HTMLElement>('button')
+    ).filter(
       (div) => {
         const computedStyle = window.getComputedStyle(div);
         const inlineBackground =

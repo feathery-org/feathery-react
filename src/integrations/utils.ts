@@ -26,7 +26,10 @@ import {
 import { fieldValues, initInfo } from '../utils/init';
 import { installPersona } from './persona';
 import { authState } from '../auth/LoginForm';
-import { installTrustedForm } from './trustedform';
+import {
+  installTrustedForm,
+  installTrustedFormDebugIfRequested
+} from './trustedform';
 import { installAlloy } from './alloy';
 
 const IMPORTED_URLS = new Set();
@@ -80,6 +83,7 @@ export async function initializeIntegrations(
   integs: Record<string, any>,
   featheryClient: FeatheryClient
 ) {
+  installTrustedFormDebugIfRequested();
   await Promise.all([
     installArgyle(!!integs.argyle),
     installPlaid(!!integs.plaid),

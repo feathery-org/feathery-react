@@ -20,6 +20,8 @@ import {
   maxFieldLength,
   roundToDecimalPlaces
 } from './mask';
+import { fieldAriaLabel } from '../shared/accessibleName';
+import { sensitiveFieldProps } from '../shared/certification';
 
 function getMaskProps(
   servar: any,
@@ -297,7 +299,8 @@ function TextField({
             disabled={disabled}
             placeholder=''
             value={rawValue}
-            aria-label={element.properties.aria_label}
+            aria-label={fieldAriaLabel(element)}
+            {...sensitiveFieldProps(element)}
             // Not on focus because if error is showing, it will
             // keep triggering dropdown after blur
             onKeyDown={(e: any) => {

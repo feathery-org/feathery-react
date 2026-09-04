@@ -9,6 +9,7 @@ import {
 import InlineTooltip from '../../components/InlineTooltip';
 import { iosScrollOnFocus } from '../../../utils/browser';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 const applyCheckboxGroupStyles = (element: any, responsiveStyles: any) => {
   responsiveStyles.addTargets('checkboxGroup');
@@ -138,6 +139,7 @@ function CheckboxGroupField({
                 ref={selectAllRef}
                 type='checkbox'
                 id={`${servar.key}-select-all`}
+                name={`${servar.key}-select-all`}
                 checked={allSelected}
                 onChange={() => onSelectAllChange(optionValues, !allSelected)}
                 onFocus={iosScrollOnFocus}
@@ -190,7 +192,8 @@ function CheckboxGroupField({
                 <input
                   type='checkbox'
                   id={`${servar.key}-${i}`}
-                  name={value}
+                  name={servar.key}
+                  value={value}
                   checked={checked}
                   onChange={onChange}
                   onFocus={iosScrollOnFocus}
@@ -204,7 +207,7 @@ function CheckboxGroupField({
                     '&:focus-visible': { border: '1px solid rgb(74, 144, 226)' }
                   }}
                   disabled={optionDisabled}
-                  aria-label={element.properties.aria_label}
+                  aria-label={fieldAriaLabel(element)}
                 />
                 <span
                   css={{
@@ -233,7 +236,8 @@ function CheckboxGroupField({
               type='checkbox'
               id={`${servar.key}-`}
               key={`${servar.key}-`}
-              name={otherVal}
+              name={servar.key}
+              value={otherVal}
               checked={otherChecked}
               disabled={otherDisabled}
               onChange={onChange}

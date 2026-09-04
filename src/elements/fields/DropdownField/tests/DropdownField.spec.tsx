@@ -414,3 +414,23 @@ describe('DropdownField - Base Functionality', () => {
     });
   });
 });
+
+describe('DropdownField - Certification naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('names the select with the field key', () => {
+    const element = createDropdownElement(
+      'dropdown',
+      createOptionsMetadata(['a', 'b'])
+    );
+    const { container } = render(
+      <DropdownField {...createDropdownProps(element)} />
+    );
+
+    const select = container.querySelector('select') as HTMLSelectElement;
+    expect(select.name).toBe(element.servar.key);
+    expect(select.id).toBe(element.servar.key);
+  });
+});

@@ -75,7 +75,7 @@ export const createCheckboxGroupProps = (element: any, customProps: any = {}) =>
 export const createStatefulOnChange = () => {
   return jest.fn((e: React.ChangeEvent<HTMLInputElement>) => {
     const currentValue = getMockFieldValue() || [];
-    const optionValue = e.target.name;
+    const optionValue = e.target.value;
     const isChecked = e.target.checked;
 
     let newValue;
@@ -151,7 +151,8 @@ export const getCheckboxInput = (index: number) => {
 };
 
 export const getCheckboxInputByValue = (value: string) => {
-  return document.querySelector(`input[name="${value}"]`) as HTMLInputElement;
+  // name identifies the field; the option lives on value
+  return document.querySelector(`input[value="${value}"]`) as HTMLInputElement;
 };
 
 export const getOtherCheckbox = () => {

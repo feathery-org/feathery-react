@@ -15,6 +15,7 @@ import SliderStyles from '../SliderField/styles';
 import throttle from 'lodash.throttle';
 import ErrorInput from '../../components/ErrorInput';
 import { loadQRScanner, qrPromise } from './qrLoader';
+import { fieldAriaLabel } from '../shared/accessibleName';
 
 async function createScanner(cameraElementId: string) {
   await qrPromise;
@@ -319,7 +320,8 @@ function QRScanner({
           {/* This input must always be rendered so we can set field errors */}
           <ErrorInput
             id={servar.key}
-            aria-label={element.properties.aria_label}
+            name={servar.key}
+            aria-label={fieldAriaLabel(element)}
           />
         </div>
       </div>
