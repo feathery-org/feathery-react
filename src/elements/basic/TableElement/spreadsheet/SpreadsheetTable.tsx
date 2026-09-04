@@ -7,7 +7,8 @@ import { CellValue } from './model';
 import { editorKindFor, parseCellInput, seedActionFor } from './fieldEditors';
 import { PendingChangesBar } from './PendingChangesBar';
 import { SpreadsheetGrid, SpreadsheetGridHandle } from './SpreadsheetGrid';
-import { CellErrors, cellErrorKey, CellRules } from './validation';
+import { cellErrorKey, CellRules } from './validation';
+import { CellIssues, countIssues, issueRank } from './issues';
 import {
   DEFAULT_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
@@ -65,11 +66,15 @@ export type SpreadsheetTableProps = {
     onDiscard: () => void;
   };
   /**
-   * Failing cells keyed `${rowIndex}:${fieldKey}`, split by whether they stop
-   * a save. Both are walked by the bar's stepper, blocking cells first.
+   * Failing cells keyed `${rowIndex}:${fieldKey}`, each with its severity and
+   * whether it stops a save. The bar's stepper walks them blocking-first.
    */
-  blockingErrors?: CellErrors;
-  warningErrors?: CellErrors;
+  cellIssues?: CellIssues;
+  /**
+   * Columns the user cannot write to, on top of what the column's own rule
+   * says (a file column is never typed into). Paste, fill and clear skip them.
+   */
+  readOnlyFieldKeys?: Set<string>;
 };
 
 export function SpreadsheetTable({
@@ -86,8 +91,8 @@ export function SpreadsheetTable({
   cellRules,
   rowIdentityVersion = 0,
   pending,
-  blockingErrors,
-  warningErrors
+  cellIssues,
+  readOnlyFieldKeys
 }: SpreadsheetTableProps) {
   const getValue = useCallback(
     (rowIndex: number, fieldKey: string): CellValue => {
@@ -186,8 +191,10 @@ export function SpreadsheetTable({
     [cellRules]
   );
   const isReadOnly = useCallback(
-    (fieldKey: string) => editorKindFor(cellRules?.[fieldKey]) === 'readonly',
-    [cellRules]
+    (fieldKey: string) =>
+      Boolean(readOnlyFieldKeys?.has(fieldKey)) ||
+      editorKindFor(cellRules?.[fieldKey]) === 'readonly',
+    [cellRules, readOnlyFieldKeys]
   );
   const parseValue = useCallback(
     (fieldKey: string, text: string, before: CellValue) =>
@@ -195,23 +202,30 @@ export function SpreadsheetTable({
     [cellRules]
   );
 
-  // Failing cells in reading order — down the rows, left to right — with the
-  // blocking ones first, so stepping through issues fixes what is holding the
-  // save back before it visits the advisory ones.
+  // Failing cells in reading order — down the rows, left to right — grouped
+  // by how much they matter: what holds the save back first, then the other
+  // rule breaks, then the advisory findings.
   const issues = useMemo(() => {
-    if (!blockingErrors && !warningErrors) return [];
-    const inOrder = (errors: CellErrors | undefined) =>
-      errors && Object.keys(errors).length
-        ? rows.flatMap((row) =>
-            columns
-              .filter((column) =>
-                Boolean(errors[cellErrorKey(row.rowIndex, column.field_key)])
-              )
-              .map((column) => ({ rowId: row.id, columnId: column.field_key }))
-          )
-        : [];
-    return [...inOrder(blockingErrors), ...inOrder(warningErrors)];
-  }, [blockingErrors, warningErrors, rows, columns]);
+    if (!cellIssues || !Object.keys(cellIssues).length) return [];
+    const ordered: { rank: number; rowId: string; columnId: string }[] = [];
+    rows.forEach((row) =>
+      columns.forEach((column) => {
+        const issue = cellIssues[cellErrorKey(row.rowIndex, column.field_key)];
+        if (issue) {
+          ordered.push({
+            rank: issueRank(issue),
+            rowId: row.id,
+            columnId: column.field_key
+          });
+        }
+      })
+    );
+    // Stable sort keeps reading order inside each rank.
+    return ordered
+      .map((issue, index) => ({ ...issue, index }))
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map(({ rowId, columnId }) => ({ rowId, columnId }));
+  }, [cellIssues, rows, columns]);
 
   // Where the stepper is in `issues`. Reset whenever the set changes, so
   // fixing a cell restarts the walk rather than skipping the next one.
@@ -260,13 +274,12 @@ export function SpreadsheetTable({
     [interactions, issues]
   );
 
-  const blockingCount = Object.keys(blockingErrors ?? {}).length;
-  const warningCount = Object.keys(warningErrors ?? {}).length;
+  const counts = useMemo(() => countIssues(cellIssues ?? {}), [cellIssues]);
+  const issueCount = counts.blocking + counts.errors + counts.warnings;
   // The bar also stays up while a save is in flight, so the write has somewhere
   // to report from after the buffer it came from is already empty.
   const showBar = Boolean(
-    pending &&
-      (pending.count > 0 || pending.saving || blockingCount + warningCount > 0)
+    pending && (pending.count > 0 || pending.saving || issueCount > 0)
   );
 
   // The status bar sits inside the element's own height box, so an auto-sized
@@ -290,8 +303,9 @@ export function SpreadsheetTable({
       {showBar && pending ? (
         <PendingChangesBar
           pendingCount={pending.count}
-          blockingCount={blockingCount}
-          warningCount={warningCount}
+          blockingCount={counts.blocking}
+          errorCount={counts.errors}
+          warningCount={counts.warnings}
           saving={pending.saving}
           onSave={pending.onSave}
           onDiscard={pending.onDiscard}

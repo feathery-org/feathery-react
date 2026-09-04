@@ -1,6 +1,7 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import TableElement from '../index';
+import AssistantClient from '../../../../assistant/AssistantClient';
 import { fieldValues } from '../../../../utils/init';
 import { featheryWindow } from '../../../../utils/browser';
 import {
@@ -1000,15 +1001,18 @@ describe('staged Data Hub rows', () => {
     expect(saveButton()).toBeDisabled();
   });
 
-  test('the same value on a staged row is a warning that still saves', async () => {
+  test('the same value on a staged row is still an error, but one that saves', async () => {
     const client = hubClient([
       { id: 'e1', verified: false, data: { name: 'Alice', email: 'bad' } }
     ]);
     renderTable(hubProps, { client });
 
     await waitFor(() => expect(screen.getByText('bad')).toBeInTheDocument());
-    expect(status()).toHaveTextContent('1 warning');
-    expect(status()).not.toHaveTextContent('error');
+    // A broken hub rule is red wherever it is; only the verified row's copy
+    // holds the save back, so the two are counted apart.
+    expect(status()).toHaveTextContent('1 error on unverified rows');
+    expect(status()).not.toHaveTextContent('warning');
+    expect(cell('bad')).toHaveStyle({ backgroundColor: '#fef3f2' });
 
     // A staged row is not held to the hub's field rules until it is verified,
     // so the user can still write a correction that is not finished yet.
@@ -1095,5 +1099,245 @@ describe('rows inserted before a save', () => {
         email_key: ['alice@test.com', 'bob@test.com']
       })
     );
+  });
+});
+
+describe('Data Hub status column', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' }
+  ];
+  const hubClient = (entries: any[], schemaExtra: Record<string, any> = {}) => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({
+        hubs: [{ id: 'hub1', key: 'h', fields: [HUB_FIELDS[0]], ...schemaExtra }]
+      })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve(entries) : Promise.resolve({})
+    )
+  });
+  const entries = [
+    { id: 'e1', verified: true, data: { name: 'Alice' } },
+    { id: 'e2', verified: false, data: { name: 'Bob' } }
+  ];
+  const hubProps = {
+    columns: HUB_COLUMNS,
+    data_source: 'hub',
+    hub_id: 'hub1',
+    hub_verification: 'all'
+  };
+  const headers = () =>
+    screen.getAllByRole('columnheader').map((h) => h.textContent);
+
+  test('a hub that stages rows shows each row\'s status as the first column', async () => {
+    renderTable(hubProps, { client: hubClient(entries) });
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    expect(headers()).toEqual(['Status', 'name']);
+    expect(screen.getByText('Verified')).toBeInTheDocument();
+    expect(screen.getByText('Unverified')).toBeInTheDocument();
+  });
+
+  test('the status column is read-only', async () => {
+    renderTable(hubProps, { client: hubClient(entries) });
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    fireEvent.doubleClick(cell('Verified'));
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    // The neighbouring hub column still edits.
+    fireEvent.doubleClick(cell('Alice'));
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
+  });
+
+  test('the normal hide control hides it', async () => {
+    renderTable(
+      { ...hubProps, hidden_hub_fields: ['__status__'] },
+      { client: hubClient(entries) }
+    );
+    await waitFor(() => expect(screen.getByText('Bob')).toBeInTheDocument());
+    expect(headers()).toEqual(['name']);
+  });
+
+  test('the hub schema decides whether the column exists at all', async () => {
+    // A verified-only table on a hub that stages rows still explains itself…
+    const { unmount } = renderTable(
+      { ...hubProps, hub_verification: 'verified' },
+      { client: hubClient([entries[0]], { unverified_enabled: true }) }
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(headers()).toEqual(['Status', 'name']);
+    unmount();
+
+    // …and a hub with staging off has nothing to say, whatever the filter.
+    renderTable(hubProps, {
+      client: hubClient([entries[0]], { unverified_enabled: false })
+    });
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+    expect(headers()).toEqual(['name']);
+  });
+});
+
+describe('read-only Data Hub columns', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
+    { name: 'Email', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf2', hub_field_key: 'email' }
+  ];
+  const client = () => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: HUB_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get'
+        ? Promise.resolve([{ id: 'e1', data: { name: 'Alice', email: 'a@b.co' } }])
+        : Promise.resolve({})
+    )
+  });
+
+  test('a column the builder marked read-only cannot be edited, typed into or pasted over', async () => {
+    renderTable(
+      {
+        columns: HUB_COLUMNS,
+        data_source: 'hub',
+        hub_id: 'hub1',
+        readonly_hub_fields: ['hf2']
+      },
+      { client: client() }
+    );
+    await waitFor(() => expect(screen.getByText('a@b.co')).toBeInTheDocument());
+
+    fireEvent.doubleClick(cell('a@b.co'));
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+
+    // Paste over both columns: only the writable one takes the value.
+    fireEvent.mouseDown(cell('Alice'), { button: 0 });
+    fireEvent.paste(grid(), {
+      clipboardData: { getData: () => 'Zed\tz@z.co' }
+    });
+    await waitFor(() => expect(screen.getByText('Zed')).toBeInTheDocument());
+    expect(screen.getByText('a@b.co')).toBeInTheDocument();
+    expect(screen.queryByText('z@z.co')).not.toBeInTheDocument();
+  });
+});
+
+describe('assistant issues', () => {
+  const HUB_COLUMNS = [
+    { name: 'Name', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf1', hub_field_key: 'name' },
+    { name: 'Email', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf2', hub_field_key: 'email' }
+  ];
+  const client = (entries: any[]) => ({
+    getHubSchemas: jest.fn(() =>
+      Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: HUB_FIELDS }] })
+    ),
+    dataHubAction: jest.fn(({ operation }: any) =>
+      operation === 'get' ? Promise.resolve(entries) : Promise.resolve({})
+    )
+  });
+  const assistant = () =>
+    new AssistantClient({
+      buttonOnClick: jest.fn(),
+      runElementActions: jest.fn(),
+      tableOnClick: jest.fn(),
+      changeValue: jest.fn()
+    });
+
+  test('the assistant can flag a cell by entry id and hub field key; it is an orange warning that never blocks', async () => {
+    const assistantClient = assistant();
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1', hub_verification: 'verified' },
+      {
+        client: client([
+          { id: 'e1', verified: true, data: { name: 'Alice', email: 'alice@x.co' } }
+        ]),
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Alice')).toBeInTheDocument());
+
+    act(() => {
+      expect(
+        assistantClient.setTableIssues('table1', [
+          {
+            target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' },
+            message: 'Bounced last week'
+          }
+        ])
+      ).toBe(true);
+    });
+
+    expect(status()).toHaveTextContent('1 warning');
+    expect(cell('alice@x.co')).toHaveStyle({ backgroundColor: '#fffaeb' });
+    expect(cell('alice@x.co')).toHaveAttribute('title', 'Bounced last week');
+    expect(cell('Alice')).not.toHaveAttribute('title');
+
+    // A warning never holds a save back.
+    editCell('Alice', 'Alicia');
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+
+    act(() => {
+      assistantClient.clearTableIssues('table1');
+    });
+    expect(status()).not.toHaveTextContent('warning');
+  });
+
+  test('row and range targets cover every cell they name', async () => {
+    const assistantClient = assistant();
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1' },
+      {
+        client: client([
+          { id: 'e1', data: { name: 'Alice', email: 'a@x.co' } },
+          { id: 'e2', data: { name: 'Bob', email: 'b@x.co' } },
+          { id: 'e3', data: { name: 'Cy', email: 'c@x.co' } }
+        ]),
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Cy')).toBeInTheDocument());
+
+    act(() => {
+      assistantClient.setTableIssues('table1', [
+        { target: { kind: 'row', row: { rowIndex: 0 } }, message: 'Duplicate of row 4' },
+        {
+          target: {
+            kind: 'range',
+            from: { row: { entryId: 'e2' }, field: 'name' },
+            to: { row: { entryId: 'e3' }, field: 'email' }
+          },
+          message: 'Imported from the wrong sheet'
+        }
+      ]);
+    });
+
+    expect(status()).toHaveTextContent('6 warnings');
+    ['Alice', 'a@x.co'].forEach((text) =>
+      expect(cell(text)).toHaveAttribute('title', 'Duplicate of row 4')
+    );
+    ['Bob', 'b@x.co', 'Cy', 'c@x.co'].forEach((text) =>
+      expect(cell(text)).toHaveAttribute('title', 'Imported from the wrong sheet')
+    );
+  });
+
+  test('a hub rule error on the same cell wins, and the bar counts the categories apart', async () => {
+    const assistantClient = assistant();
+    renderTable(
+      { columns: HUB_COLUMNS, data_source: 'hub', hub_id: 'hub1', hub_verification: 'all' },
+      {
+        client: client([
+          { id: 'e1', verified: true, data: { name: 'Alice', email: 'bad' } },
+          { id: 'e2', verified: false, data: { name: 'Bob', email: 'worse' } }
+        ]),
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('worse')).toBeInTheDocument());
+
+    act(() => {
+      assistantClient.setTableIssues('table1', [
+        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'email' }, message: 'Bounced' },
+        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'name' }, message: 'Nickname?' }
+      ]);
+    });
+
+    expect(status()).toHaveTextContent('1 error · 1 error on unverified rows · 1 warning');
+    expect(cell('bad')).toHaveAttribute('title', 'Invalid email');
+    expect(cell('Alice')).toHaveAttribute('title', 'Nickname?');
   });
 });

@@ -21,6 +21,12 @@ import { useHubTableSource } from './useHubTableSource';
 import { SpreadsheetTable } from './spreadsheet/SpreadsheetTable';
 import { usePendingEdits } from './spreadsheet/usePendingEdits';
 import {
+  buildCellIssues,
+  CellIssues,
+  resolveTableIssues,
+  TableIssue
+} from './spreadsheet/issues';
+import {
   CellErrors,
   cellErrorKey,
   fieldCellRules,
@@ -235,6 +241,8 @@ function TableElement({
   const showStandaloneDeleteColumn = canDeleteRows && !hasOverflowMenu;
 
   const [pendingAddRows, setPendingAddRows] = useState<Set<number>>(new Set());
+  // Findings the assistant has placed on this table (see `setIssues` below).
+  const [assistantIssues, setAssistantIssues] = useState<TableIssue[]>([]);
   const pendingAddRowsRef = useRef(pendingAddRows);
   pendingAddRowsRef.current = pendingAddRows;
 
@@ -480,57 +488,82 @@ function TableElement({
   ]);
 
   /**
-   * A staged Data Hub row is not held to the hub's field rules until it is
-   * verified — correcting extracted data is the whole point of editing one —
-   * so a bad value there is a warning the user can still save. Everywhere else
-   * an error blocks the save, because the backend would reject it anyway.
+   * The assistant names rows and fields the way the form's author does (a hub
+   * entry id or row number, a hub field key or column name); the grid stores
+   * cells under its own keys. Expanded here, against the rows and columns
+   * actually rendered, so a finding on a hidden column or a deleted row simply
+   * does not show.
    */
-  const { blockingErrors, warningErrors } = useMemo(() => {
-    const blocking: CellErrors = {};
-    const warning: CellErrors = {};
-    Object.entries(cellErrors).forEach(([key, message]) => {
-      const rowIndex = Number(key.slice(0, key.indexOf(':')));
-      const staged = isHub && hub.rowVerified[rowIndex] === false;
-      (staged ? warning : blocking)[key] = message;
+  const assistantMessages = useMemo(() => {
+    if (!isSpreadsheet || !assistantIssues.length) return {};
+    const byName = new Map<string, string>();
+    columns.forEach((column: any) => {
+      [column.hub_field_key, column.name, column.field_key].forEach(
+        (name: string | undefined) => {
+          if (name && !byName.has(name)) byName.set(name, column.field_key);
+        }
+      );
     });
-    return { blockingErrors: blocking, warningErrors: warning };
-  }, [cellErrors, isHub, hub.rowVerified]);
+    return resolveTableIssues(assistantIssues, {
+      rowIndices: spreadsheetRowIndices,
+      fieldKeys: columns.map((column: any) => column.field_key),
+      resolveField: (name) => byName.get(name),
+      resolveRow: (ref) => {
+        if ('rowIndex' in ref) return ref.rowIndex;
+        if (!isHub) return undefined;
+        const rowIndex = hub.entryIds.indexOf(ref.entryId);
+        return rowIndex === -1 ? undefined : rowIndex;
+      }
+    }).cells;
+  }, [
+    isSpreadsheet,
+    assistantIssues,
+    columns,
+    spreadsheetRowIndices,
+    isHub,
+    hub.entryIds
+  ]);
 
   /**
-   * Feathery-controlled cell shading: what is wrong with a cell, and what is
-   * waiting to be written. Errors win over warnings, so the most urgent state
-   * is the one that shows. An unsaved edit itself is not tinted: the bar's
-   * count says what is pending, and a tint per cell read as a third kind of
-   * problem.
+   * Every cell with something wrong, each with its severity and whether it
+   * holds the save back. A hub rule broken on a verified row blocks, because
+   * the backend would reject the write anyway; on an unverified row it is
+   * still an error but saves — correcting staged data is the point of editing
+   * it. Assistant findings are warnings throughout. See `spreadsheet/issues`.
+   */
+  const cellIssues = useMemo<CellIssues>(
+    () =>
+      buildCellIssues({
+        ruleErrors: cellErrors,
+        assistantMessages,
+        isRowVerified: (rowIndex) =>
+          !isHub || hub.rowVerified[rowIndex] !== false
+      }),
+    [cellErrors, assistantMessages, isHub, hub.rowVerified]
+  );
+
+  /**
+   * Feathery-controlled cell shading: what is wrong with a cell. An unsaved
+   * edit itself is not tinted: the bar's count says what is pending, and a
+   * tint per cell read as a third kind of problem.
    */
   const getCellShading = useMemo<GetCellShading | undefined>(() => {
-    const hasIssues =
-      Object.keys(blockingErrors).length > 0 ||
-      Object.keys(warningErrors).length > 0;
-    if (!hasIssues) return undefined;
+    if (!Object.keys(cellIssues).length) return undefined;
     return ({ rowIndex, fieldKey }) => {
-      const key = cellErrorKey(rowIndex, fieldKey);
-      const blocking = blockingErrors[key];
+      const issue = cellIssues[cellErrorKey(rowIndex, fieldKey)];
+      if (!issue) return null;
       // Background only: an outline here competes with the selection border,
       // which is the one ring in the grid that means "you are here".
-      if (blocking) {
-        return {
-          backgroundColor: validationColors.errorSurface,
-          message: blocking,
-          severity: 'error'
-        };
-      }
-      const warning = warningErrors[key];
-      if (warning) {
-        return {
-          backgroundColor: validationColors.warningSurface,
-          message: warning,
-          severity: 'warning'
-        };
-      }
-      return null;
+      return {
+        backgroundColor:
+          issue.severity === 'error'
+            ? validationColors.errorSurface
+            : validationColors.warningSurface,
+        message: issue.message,
+        severity: issue.severity
+      };
     };
-  }, [blockingErrors, warningErrors]);
+  }, [cellIssues]);
 
   const savingEdits = isHub && hub.saving;
 
@@ -605,7 +638,9 @@ function TableElement({
     assistantClient.registerTable(tableId, {
       handleCellEdit: wrappedHandleCellEdit,
       handleAddRow: wrappedHandleAddRow,
-      handleDeleteRow: wrappedHandleDeleteRow
+      handleDeleteRow: wrappedHandleDeleteRow,
+      setIssues: setAssistantIssues,
+      clearIssues: () => setAssistantIssues([])
     });
     return () => assistantClient.unregisterTable(tableId);
   }, [
@@ -694,8 +729,8 @@ function TableElement({
                 }
               : undefined
           }
-          blockingErrors={blockingErrors}
-          warningErrors={warningErrors}
+          cellIssues={cellIssues}
+          readOnlyFieldKeys={isHub ? hub.readOnlyKeys : undefined}
         />
       ) : (
         <div css={{ overflowX: 'auto' }}>
@@ -891,7 +926,10 @@ function TableElement({
                                 />
                               </span>
                             </div>
-                          ) : canEdit ? (
+                          ) : canEdit &&
+                            !(
+                              isHub && hub.readOnlyKeys.has(column.field_key)
+                            ) ? (
                             <EditableCell
                               value={cellValue}
                               fieldKey={column.field_key}

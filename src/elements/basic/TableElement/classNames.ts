@@ -49,6 +49,7 @@ export const TABLE_CLASS = {
   gridRowMenuItem: 'feathery-table-grid-row-menu-item',
   gridAddRow: 'feathery-table-grid-add-row',
   gridPendingBar: 'feathery-table-grid-pending-bar',
+  gridIssueCount: 'feathery-table-grid-issue-count',
   gridIssueStep: 'feathery-table-grid-issue-step',
   gridSaveButton: 'feathery-table-grid-save-button',
   gridDiscardButton: 'feathery-table-grid-discard-button',

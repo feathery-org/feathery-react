@@ -600,6 +600,12 @@ export const issueCountStyle = (blocking: boolean) =>
     color: blocking ? validationColors.errorText : validationColors.warningText
   } as const);
 
+// Sits between issue categories so they read as one sentence, not a list.
+export const issueSeparatorStyle = {
+  color: colors.gray500,
+  whiteSpace: 'pre'
+} as const;
+
 export const issueStepperStyle = (blocking: boolean) =>
   ({
     display: 'inline-flex',

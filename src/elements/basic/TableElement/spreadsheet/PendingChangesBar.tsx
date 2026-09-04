@@ -5,6 +5,7 @@ import {
   discardButtonStyle,
   issueCountStyle,
   issueGroupStyle,
+  issueSeparatorStyle,
   issueStepperStyle,
   pendingActionsStyle,
   pendingBarStyle,
@@ -15,9 +16,11 @@ import {
 export type PendingChangesBarProps = {
   /** Buffered cell edits plus row deletions. */
   pendingCount: number;
-  /** Errors that must be fixed before the table can save. */
+  /** Hub rule errors on verified rows: fixed before the table can save. */
   blockingCount: number;
-  /** Errors on staged rows, which the hub accepts until they are verified. */
+  /** Hub rule errors on unverified rows: shown in red, but the save still goes through. */
+  errorCount: number;
+  /** Assistant findings: advisory, never block. */
   warningCount: number;
   saving: boolean;
   onSave: () => void;
@@ -29,9 +32,19 @@ export type PendingChangesBarProps = {
 const plural = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? '' : 's'}`;
 
+export const BLOCKING_TITLE =
+  'Errors on verified rows must be fixed before saving';
+export const UNVERIFIED_ERROR_TITLE =
+  'Unverified rows save with errors so they can be corrected; fix them before the rows are verified';
+export const WARNING_TITLE = 'Flagged by the assistant. Saving is not blocked';
+
 /**
  * The status strip above a spreadsheet: what is waiting to be saved, what is
  * wrong with it, and the two actions that resolve it.
+ *
+ * Issues are counted per category rather than as one number, because the
+ * categories mean different things for the Save button: only the first holds
+ * it back.
  *
  * It renders only when there is something to say, so a spreadsheet with no
  * outstanding work is exactly as tall as it was before.
@@ -39,16 +52,46 @@ const plural = (count: number, noun: string) =>
 export function PendingChangesBar({
   pendingCount,
   blockingCount,
+  errorCount,
   warningCount,
   saving,
   onSave,
   onDiscard,
   onStepIssue
 }: PendingChangesBarProps) {
-  const issueCount = blockingCount + warningCount;
+  const issueCount = blockingCount + errorCount + warningCount;
   if (!pendingCount && !issueCount && !saving) return null;
 
   const blocked = blockingCount > 0;
+  // The stepper is tinted to the most serious category it will visit first.
+  const stepperSeverity: 'error' | 'warning' =
+    blocked || errorCount > 0 ? 'error' : 'warning';
+
+  const segments = [
+    blockingCount > 0 && {
+      key: 'blocking',
+      text: plural(blockingCount, 'error'),
+      title: BLOCKING_TITLE,
+      severity: 'error' as const
+    },
+    errorCount > 0 && {
+      key: 'unverified',
+      text: `${plural(errorCount, 'error')} on unverified rows`,
+      title: UNVERIFIED_ERROR_TITLE,
+      severity: 'error' as const
+    },
+    warningCount > 0 && {
+      key: 'warning',
+      text: plural(warningCount, 'warning'),
+      title: WARNING_TITLE,
+      severity: 'warning' as const
+    }
+  ].filter(Boolean) as {
+    key: string;
+    text: string;
+    title: string;
+    severity: 'error' | 'warning';
+  }[];
 
   // Discarding cannot be undone — the buffer is the only copy of these edits.
   const confirmDiscard = () => {
@@ -68,16 +111,24 @@ export function PendingChangesBar({
     >
       {issueCount > 0 && (
         <span css={issueGroupStyle}>
-          <span css={issueCountStyle(blocked)}>
-            {blockingCount > 0 && plural(blockingCount, 'error')}
-            {blockingCount > 0 && warningCount > 0 && ', '}
-            {warningCount > 0 && plural(warningCount, 'warning')}
-          </span>
+          {segments.map((segment, index) => (
+            <React.Fragment key={segment.key}>
+              {index > 0 && <span css={issueSeparatorStyle}>{' · '}</span>}
+              <span
+                className={TABLE_CLASS.gridIssueCount}
+                data-issue-category={segment.key}
+                title={segment.title}
+                css={issueCountStyle(segment.severity === 'error')}
+              >
+                {segment.text}
+              </span>
+            </React.Fragment>
+          ))}
           <button
             type='button'
             aria-label='Go to previous issue'
             className={TABLE_CLASS.gridIssueStep}
-            css={issueStepperStyle(blocked)}
+            css={issueStepperStyle(stepperSeverity === 'error')}
             onClick={() => onStepIssue(-1)}
           >
             ↑
@@ -86,7 +137,7 @@ export function PendingChangesBar({
             type='button'
             aria-label='Go to next issue'
             className={TABLE_CLASS.gridIssueStep}
-            css={issueStepperStyle(blocked)}
+            css={issueStepperStyle(stepperSeverity === 'error')}
             onClick={() => onStepIssue(1)}
           >
             ↓
@@ -118,7 +169,7 @@ export function PendingChangesBar({
           disabled={saving || !pendingCount || blocked}
           // A disabled button has no tooltip of its own, so the reason it is
           // disabled has to come from the accessible name.
-          title={blocked ? 'Fix the errors below before saving' : undefined}
+          title={blocked ? BLOCKING_TITLE : undefined}
           onClick={onSave}
         >
           {saving ? 'Saving…' : 'Save'}

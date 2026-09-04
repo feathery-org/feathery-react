@@ -3,6 +3,12 @@ import { featheryWindow } from '../../../utils/browser';
 import { HubFieldSchema, HubSchema } from '../../components/dataMapping/types';
 import { CellRules, hubCellRules } from './spreadsheet/validation';
 import { CellWrite, Column } from './types';
+import {
+  STATUS_COLUMN_NAME,
+  STATUS_HUB_FIELD_ID,
+  STATUS_HUB_FIELD_KEY,
+  statusLabel
+} from './hubStatus';
 
 export type HubVerification = 'verified' | 'unverified' | 'all';
 
@@ -40,6 +46,7 @@ type UseHubTableSourceProps = {
       columns: Column[];
       hub_id?: string;
       hidden_hub_fields?: string[];
+      readonly_hub_fields?: string[];
       hub_verification?: HubVerification;
     };
   };
@@ -81,6 +88,9 @@ type UseHubTableSourceReturn = {
   handleDeleteRow: (rowIndex: number) => void;
   // Drops rows added since the last save that were never written to the Hub.
   discardNewRows: () => void;
+  // Storage keys of columns the form user cannot write: the status column and
+  // any hub field the builder marked read-only.
+  readOnlyKeys: Set<string>;
 };
 
 const syntheticKey = (tableId: string, hubFieldKey: string) =>
@@ -116,6 +126,8 @@ export function useHubTableSource({
   const hubId = element.properties?.hub_id;
   const userColumns: Column[] = element.properties?.columns || [];
   const hiddenHubFields = element.properties?.hidden_hub_fields;
+  const readonlyHubFields: string[] | undefined =
+    element.properties?.readonly_hub_fields;
   // Omitted means verified-only, which is what the Hub API already defaults to.
   const verification: HubVerification =
     element.properties?.hub_verification ?? 'verified';
@@ -123,30 +135,62 @@ export function useHubTableSource({
   const [schemaFields, setSchemaFields] = useState<HubFieldSchema[] | null>(
     null
   );
+  // Whether the Hub stages unverified rows, per its schema. Null until the
+  // schema has loaded (or on a backend that predates the flag).
+  const [unverifiedEnabled, setUnverifiedEnabled] = useState<boolean | null>(
+    null
+  );
+
+  // A Hub that stages rows gets a status column, so a table mixing verified
+  // and unverified rows says which is which. Until the schema answers, the
+  // table's own row filter is the best guess: a verified-only table has
+  // nothing to distinguish.
+  const showStatusColumn = unverifiedEnabled ?? verification !== 'verified';
 
   // Columns derive from the live Hub schema minus the hidden (blacklisted)
   // fields, so fields added to the Hub later show up without republishing the
   // form. The columns stored on the element are only a fallback until the
   // schema loads.
   const resolvedColumns: Column[] = useMemo(() => {
-    if (!schemaFields) return userColumns;
     const hidden = new Set(hiddenHubFields ?? []);
-    return schemaFields
-      .filter((field) => !hidden.has(field.id))
-      .map((field) => ({
-        name: field.key,
+    const fieldColumns: Column[] = schemaFields
+      ? schemaFields
+          .filter((field) => !hidden.has(field.id))
+          .map((field) => ({
+            name: field.key,
+            field_id: '',
+            field_type: '',
+            field_key: '',
+            hub_field_id: field.id,
+            hub_field_key: field.key
+          }))
+      : userColumns.filter((col) => col.hub_field_id !== STATUS_HUB_FIELD_ID);
+    if (!showStatusColumn || hidden.has(STATUS_HUB_FIELD_ID)) {
+      return fieldColumns;
+    }
+    return [
+      {
+        name: STATUS_COLUMN_NAME,
         field_id: '',
         field_type: '',
         field_key: '',
-        hub_field_id: field.id,
-        hub_field_key: field.key
-      }));
-  }, [schemaFields, userColumns, hiddenHubFields]);
+        hub_field_id: STATUS_HUB_FIELD_ID,
+        hub_field_key: STATUS_HUB_FIELD_KEY
+      },
+      ...fieldColumns
+    ];
+  }, [schemaFields, userColumns, hiddenHubFields, showStatusColumn]);
 
   // Columns whose runtime storage key points into the Hub-derived value map.
+  // The status column has a storage key like the rest, so the grid can render
+  // it, but no entry in the write map: nothing typed there can reach the Hub.
+  const statusKey = syntheticKey(tableId, STATUS_HUB_FIELD_KEY);
   const { hubColumns, syntheticToHubKey } = useMemo(() => {
     const map: Record<string, string> = {};
     const cols = resolvedColumns.map((col) => {
+      if (col.hub_field_id === STATUS_HUB_FIELD_ID) {
+        return { ...col, field_key: statusKey };
+      }
       const hubFieldKey = col.hub_field_key || '';
       const key = hubFieldKey
         ? syntheticKey(tableId, hubFieldKey)
@@ -155,7 +199,22 @@ export function useHubTableSource({
       return { ...col, field_key: key };
     });
     return { hubColumns: cols, syntheticToHubKey: map };
-  }, [resolvedColumns, tableId]);
+  }, [resolvedColumns, tableId, statusKey]);
+
+  // Read-only columns are a builder setting (the Hub has no such flag), plus
+  // the status column, which reports a state rather than storing a value.
+  const readOnlyKeys = useMemo(() => {
+    const readonly = new Set(readonlyHubFields ?? []);
+    return new Set(
+      hubColumns
+        .filter(
+          (col) =>
+            col.hub_field_id === STATUS_HUB_FIELD_ID ||
+            (col.hub_field_id ? readonly.has(col.hub_field_id) : false)
+        )
+        .map((col) => col.field_key)
+    );
+  }, [hubColumns, readonlyHubFields]);
 
   const [rows, setRows] = useState<HubRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -211,8 +270,11 @@ export function useHubTableSource({
           : Promise.resolve(null),
         client.dataHubAction({ hubId, operation: 'get', verification })
       ]);
-      const fields = schemas?.hubs?.find((h) => h.id === hubId)?.fields;
-      if (Array.isArray(fields)) setSchemaFields(fields);
+      const hubSchema = schemas?.hubs?.find((h) => h.id === hubId);
+      if (Array.isArray(hubSchema?.fields)) setSchemaFields(hubSchema.fields);
+      if (typeof hubSchema?.unverified_enabled === 'boolean') {
+        setUnverifiedEnabled(hubSchema.unverified_enabled);
+      }
       const list: HubEntry[] = Array.isArray(entries) ? [...entries] : [];
       list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       commitRows(
@@ -254,12 +316,16 @@ export function useHubTableSource({
   const hubFieldValues = useMemo(() => {
     const values: Record<string, any[]> = {};
     hubColumns.forEach((column) => {
+      if (column.field_key === statusKey) {
+        values[statusKey] = rows.map((row) => statusLabel(row.verified));
+        return;
+      }
       const hubFieldKey = syntheticToHubKey[column.field_key];
       if (!hubFieldKey) return;
       values[column.field_key] = rows.map((row) => row.data[hubFieldKey] ?? '');
     });
     return values;
-  }, [hubColumns, rows, syntheticToHubKey]);
+  }, [hubColumns, rows, syntheticToHubKey, statusKey]);
 
   const entryIds = useMemo(() => rows.map((row) => row.entryId), [rows]);
 
@@ -517,7 +583,8 @@ export function useHubTableSource({
     handleAddRow,
     handleInsertRow,
     handleDeleteRow,
-    discardNewRows
+    discardNewRows,
+    readOnlyKeys
   };
 }
 

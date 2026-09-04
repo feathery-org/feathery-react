@@ -26,6 +26,8 @@ export interface HubSchema {
   id: string;
   key: string;
   fields: HubFieldSchema[];
+  // Whether the hub stages unverified rows. Older backends omit it.
+  unverified_enabled?: boolean;
 }
 
 // Minimal client surface the modal needs (FeatheryClient satisfies this).
