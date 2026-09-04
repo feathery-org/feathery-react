@@ -95,7 +95,12 @@ import {
   updateUserId
 } from '../utils/init';
 import { isEmptyArray, justInsert, justRemove, toList } from '../utils/array';
-import { InlineErrors, shiftInlineErrorRows } from '../utils/inlineErrors';
+import {
+  InlineErrors,
+  insertInlineErrorRows,
+  moveInlineErrorRows,
+  shiftInlineErrorRows
+} from '../utils/inlineErrors';
 import FeatheryClient, { API_URL } from '../utils/featheryClient';
 import { useFirebaseRecaptcha } from '../integrations/firebase';
 import { openPlaidLink } from '../integrations/plaid';
@@ -1023,6 +1028,48 @@ function Form({
     updateRepeatValues(repeatContainer, getNewVal);
   }
 
+  /**
+   * Renumbers a repeat container's per-row errors after its rows have been
+   * permuted, so an error stays on the row it was raised against.
+   *
+   * Shared by add, remove, move and insert, so the next structural change
+   * cannot quietly skip one of the three things that have to happen: the
+   * browser's own validity, the per-row inline errors, and waiting for a
+   * pending async publish before renumbering either.
+   */
+  function reindexRepeatRowErrors(
+    repeatContainer: Subgrid | undefined,
+    remap: (errors: InlineErrors, owners: string[]) => InlineErrors,
+    // Owners the caller already knows about. getRepeatErrorOwnerIds resolves
+    // them from the step, which needs the container to carry a position key.
+    extraOwners: string[] = []
+  ) {
+    // HTML5-mode errors live in the DOM as setCustomValidity state and repeat
+    // rows are keyed by array position, so shifting rows leaves each DOM node
+    // holding the previous occupant's validity - the message would render on
+    // the wrong row. DOM validity cannot be reindexed, so clear it all; the
+    // next validation pass restores any real errors.
+    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
+
+    // Every element in the container can own a per-row error, not just servar
+    // fields: buttons and containers store submit/action failures under their
+    // element id, so they are renumbered too.
+    const owners = [
+      ...extraOwners,
+      ...getRepeatErrorOwnerIds(activeStep, repeatContainer)
+    ];
+    const applyRemap = () => setInlineErrors((prev) => remap(prev, owners));
+
+    // A pending async button-error publish (see setButtonError) still carries
+    // the row index from before this change, so renumber only once it has
+    // landed. Otherwise its error attaches to whichever row now occupies the
+    // stale index.
+    const pendingPublish =
+      internalState[_internalId]?.pendingInlineErrorPublish;
+    if (pendingPublish) pendingPublish.then(applyRemap);
+    else applyRemap();
+  }
+
   function removeRepeatedRow(
     element: any,
     repeatContainer: Subgrid | undefined
@@ -1061,40 +1108,15 @@ function Form({
     updateRepeatValues(curRepeatContainer, getNewVal);
     internalState[_internalId].updateFieldOptions(removeServars, curIndex);
 
-    // HTML5-mode errors live in the DOM as setCustomValidity state, and repeat
-    // rows are keyed by array position, so removal shifts surviving rows into
-    // DOM nodes that keep the previous occupant's validity -- the message would
-    // render on the wrong row. DOM validity can't be reindexed, so clear it
-    // all; the next validation pass restores any real errors.
-    if (formSettings.errorType === 'html5') clearBrowserErrors(formRef);
-
-    // Inline errors for a repeated element live in its `byIndex` map. Drop the
-    // removed row's entry and shift higher-indexed rows down so each remaining
-    // row keeps its own error instead of inheriting a neighbor's. Operating on
-    // `byIndex` (not string keys) means a literal field like `foo-0` is never
-    // mistaken for a row of `foo`.
-    // Every element in the container can own a per-row error, not just servar
-    // fields: buttons (and containers) store submit/action failures under their
-    // element id, so they must be shifted too.
-    const applyShift = () =>
-      setInlineErrors((prev) =>
-        shiftInlineErrorRows(
-          prev,
-          [
-            ...Object.keys(removeServars),
-            ...getRepeatErrorOwnerIds(activeStep, curRepeatContainer)
-          ],
-          curIndex
-        )
-      );
-    // A pending async button-error publish (see setButtonError) still carries
-    // the pre-removal row index. Shift only after it lands so its error gets
-    // reindexed with the surviving rows (or dropped with the removed one)
-    // instead of attaching to whichever row now occupies the stale index.
-    const pendingPublish =
-      internalState[_internalId]?.pendingInlineErrorPublish;
-    if (pendingPublish) pendingPublish.then(applyShift);
-    else applyShift();
+    // Drop the removed row's own entry and shift higher-indexed rows down, so
+    // each remaining row keeps its own error instead of inheriting a
+    // neighbour's. Operating on `byIndex` rather than on string keys means a
+    // literal field named `foo-0` is never mistaken for row 0 of `foo`.
+    reindexRepeatRowErrors(
+      curRepeatContainer,
+      (errors, owners) => shiftInlineErrorRows(errors, owners, curIndex),
+      Object.keys(removeServars)
+    );
   }
 
   /**
@@ -1123,13 +1145,6 @@ function Form({
     const to = Math.min(Math.max(toIndex, 0), rows - 1);
     if (from === to) return false;
 
-    // Inline errors are re-derived rather than permuted: the inline branch of
-    // setFormElementError stores no index, so there is nothing per-row to move,
-    // and updateFieldValues revalidates for us.
-    const remainingErrors = { ...inlineErrors };
-    fields.forEach((field: any) => delete remainingErrors[field.servar.key]);
-    setInlineErrors(remainingErrors);
-
     const getNewVal = (field: any) => {
       const key = field.servar.key;
       const vals = fieldValues[key];
@@ -1146,6 +1161,11 @@ function Form({
       new Set(fields.map((field: any) => field.servar.key)),
       from,
       to
+    );
+    reindexRepeatRowErrors(
+      repeatContainer,
+      (errors, owners) => moveInlineErrorRows(errors, owners, from, to),
+      fields.map((field: any) => field.servar.key)
     );
     return true;
   }
@@ -1172,10 +1192,6 @@ function Form({
     // A boundary, not a row, so the count itself is a valid position.
     const at = Math.min(Math.max(index, 0), rows);
 
-    const remainingErrors = { ...inlineErrors };
-    fields.forEach((field: any) => delete remainingErrors[field.servar.key]);
-    setInlineErrors(remainingErrors);
-
     const getNewVal = (field: any) => {
       const key = field.servar.key;
       const vals = fieldValues[key];
@@ -1191,6 +1207,11 @@ function Form({
     internalState[_internalId].insertFieldOptions(
       new Set(fields.map((field: any) => field.servar.key)),
       at
+    );
+    reindexRepeatRowErrors(
+      repeatContainer,
+      (errors, owners) => insertInlineErrorRows(errors, owners, at),
+      fields.map((field: any) => field.servar.key)
     );
     return true;
   }

@@ -7,8 +7,8 @@
  * caller learns they drifted is a submission with one row's answers wearing
  * another row's file. These tests assert they move together.
  */
-import { GridMod, RepeatMod } from './testMocks';
-import { render, screen, waitFor } from '@testing-library/react';
+import { FormHelperMod, GridMod, RepeatMod } from './testMocks';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { JSForm } from '..';
 import { fieldValues, filePathMap } from '../../utils/init';
 import internalState from '../../utils/internalState';
@@ -59,6 +59,8 @@ beforeEach(() => {
   RepeatMod.getFieldsInRepeat = () => [];
   RepeatMod.getRepeatContainerRowCount = () => 0;
   RepeatMod.getRepeatMaxRows = () => null;
+  RepeatMod.getRepeatErrorOwnerIds = () => [];
+  FormHelperMod.clearBrowserErrors = jest.fn();
 });
 
 describe('moveRepeatedRow', () => {
@@ -283,5 +285,114 @@ describe('addRepeatedRow at the row cap', () => {
       expect((fieldValues as any).name).toEqual(['a', 'b', '']);
     });
     expect((fieldValues as any).doc).toEqual(['f0', '']);
+  });
+});
+
+/**
+ * Per-row errors are the fourth thing that has to take the same permutation as
+ * the values, alongside filePathMap and repeat_options. They live in each
+ * owner's `byIndex` map, and the owners are not just the servar fields: a
+ * button or nested container inside the container is clickable once per row, so
+ * its action failures are per-row too.
+ */
+describe('per-row errors follow their rows', () => {
+  const OWNERS = ['name', 'doc', 'pick', 'btn-in-row'];
+
+  const seedErrors = async (errors: any) => {
+    await act(async () => GridMod._spies.form.setInlineErrors(errors));
+  };
+
+  it('renumbers a moved row errors, buttons as well as fields', async () => {
+    (fieldValues as any).name = ['a', 'b', 'c'];
+    (fieldValues as any).doc = ['x', 'y', 'z'];
+    (fieldValues as any).pick = ['p', 'q', 'r'];
+    setUp(3);
+    RepeatMod.getRepeatErrorOwnerIds = () => OWNERS;
+
+    const id = 'iid-reorder-errors-move';
+    await mountForm(id);
+    await seedErrors({
+      name: { byIndex: { 0: { message: 'row 0 required' } } },
+      'btn-in-row': { byIndex: { 2: { message: 'row 2 submit failed' } } }
+    });
+
+    await act(async () => {
+      GridMod._spies.form.moveRepeatedRow(container, 0, 2);
+    });
+
+    await waitFor(() => {
+      // Row 0 went to the end and took its error with it. Row 2 came up one.
+      expect(GridMod._spies.form.inlineErrors).toEqual({
+        name: { byIndex: { 2: { message: 'row 0 required' } } },
+        'btn-in-row': { byIndex: { 1: { message: 'row 2 submit failed' } } }
+      });
+    });
+  });
+
+  it('shifts the displaced rows errors up when a row is inserted', async () => {
+    (fieldValues as any).name = ['a', 'b'];
+    (fieldValues as any).doc = ['x', 'y'];
+    (fieldValues as any).pick = ['p', 'q'];
+    setUp(2);
+    RepeatMod.getRepeatErrorOwnerIds = () => OWNERS;
+
+    const id = 'iid-reorder-errors-insert';
+    await mountForm(id);
+    await seedErrors({
+      name: { byIndex: { 1: { message: 'row 1 required' } } }
+    });
+
+    await act(async () => {
+      GridMod._spies.form.insertRepeatedRow(container, 1);
+    });
+
+    await waitFor(() => {
+      // The old row 1 is now row 2. The brand new row 1 starts clean, so a row
+      // nobody has filled in yet does not inherit its neighbour's error.
+      expect(GridMod._spies.form.inlineErrors).toEqual({
+        name: { byIndex: { 2: { message: 'row 1 required' } } }
+      });
+    });
+  });
+
+  it('clears browser validity on a move, which cannot be reindexed', async () => {
+    // html5 errors live on the DOM node as setCustomValidity state and repeat
+    // rows are keyed by array position, so after a move each node holds the
+    // previous occupant's validity. Same reason removeRepeatedRow clears.
+    (fieldValues as any).name = ['a', 'b'];
+    (fieldValues as any).doc = ['x', 'y'];
+    (fieldValues as any).pick = ['p', 'q'];
+    setUp(2);
+
+    const id = 'iid-reorder-errors-html5';
+    await mountForm(id);
+    expect(FormHelperMod.clearBrowserErrors).not.toHaveBeenCalled();
+
+    await act(async () => {
+      GridMod._spies.form.moveRepeatedRow(container, 0, 1);
+    });
+
+    expect(FormHelperMod.clearBrowserErrors).toHaveBeenCalled();
+  });
+
+  it('leaves errors alone on a move it refuses', async () => {
+    (fieldValues as any).name = ['only'];
+    setUp(1);
+    RepeatMod.getRepeatErrorOwnerIds = () => OWNERS;
+
+    const id = 'iid-reorder-errors-refused';
+    await mountForm(id);
+    await seedErrors({
+      name: { byIndex: { 0: { message: 'row 0 required' } } }
+    });
+
+    await act(async () => {
+      expect(GridMod._spies.form.moveRepeatedRow(container, 0, 0)).toBe(false);
+    });
+
+    expect(GridMod._spies.form.inlineErrors).toEqual({
+      name: { byIndex: { 0: { message: 'row 0 required' } } }
+    });
+    expect(FormHelperMod.clearBrowserErrors).not.toHaveBeenCalled();
   });
 });

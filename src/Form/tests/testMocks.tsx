@@ -70,6 +70,9 @@ jest.mock('../../utils/repeat', () => {
     getFieldsInRepeat: () => [],
     getRepeatedContainer: () => undefined,
     getRepeatContainerRowCount: () => 0,
+    // Which elements in the container can own a per-row error. Inert by
+    // default; a spec that asserts error renumbering names its own owners.
+    getRepeatErrorOwnerIds: () => [],
     // Uncapped by default, so a spec only opts in to a row cap when it is
     // testing one.
     getRepeatMaxRows: () => null,
