@@ -223,6 +223,95 @@ describe('Container repeat row reorder handle', () => {
     win.getComputedStyle.mockRestore();
   });
 
+  /**
+   * The gutter hangs off the outside of the row, so on a full-bleed row - a
+   * phone, or any form flush to the viewport edge - it hangs off the page.
+   * jsdom measures every box as zero, so these stub the rect rather than
+   * pretend to lay anything out.
+   */
+  describe('a row with no room outside it', () => {
+    const withRowRect = (rect: Partial<DOMRect>, run: () => void) => {
+      const real = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function () {
+        if (!(this as Element).hasAttribute?.('data-feathery-repeat-row'))
+          return real.call(this);
+        return {
+          width: 390,
+          height: 216,
+          top: 0,
+          bottom: 216,
+          ...rect
+        } as DOMRect;
+      };
+      try {
+        run();
+      } finally {
+        Element.prototype.getBoundingClientRect = real;
+      }
+    };
+
+    it('keeps the gutter when the row has room beside it', () => {
+      withRowRect({ left: 100, right: 490 }, () => {
+        const { container } = renderContainer(repeatNode());
+        const cluster = container.querySelector(
+          '.feathery-repeat-reorder'
+        ) as HTMLElement;
+        expect(cluster.style.insetInlineStart).toBe('-28px');
+      });
+    });
+
+    it('falls inside rather than off the page when it does not', () => {
+      // Off-screen is worse than inside: on touch the chrome is always visible
+      // and the grip cannot be dragged, so a cluster past the viewport edge
+      // leaves the row with no way to be reordered at all. Inside, it rides
+      // the row's top edge, which is why the measured gutter offset has to
+      // come off - it would pin the cluster back to the leading edge.
+      withRowRect({ left: 0, right: 390 }, () => {
+        const { container } = renderContainer(repeatNode());
+        const cluster = container.querySelector(
+          '.feathery-repeat-reorder'
+        ) as HTMLElement;
+        expect(cluster.style.insetInlineStart).toBe('');
+        expect(getComputedStyle(cluster).flexDirection).toBe('row');
+      });
+    });
+
+    it('measures from the other edge when the row runs right to left', () => {
+      const win: any = globalThis;
+      const real = win.getComputedStyle;
+      jest
+        .spyOn(win, 'getComputedStyle')
+        .mockImplementation((el: any, pseudo?: any) => {
+          const style = real.call(win, el, pseudo);
+          if (!el?.hasAttribute?.('data-feathery-repeat-row')) return style;
+          return { ...style, direction: 'rtl' } as any;
+        });
+      // Flush to the right edge of a 1024px window, so the leading side in RTL
+      // has nothing outside it even though `left` is nowhere near zero.
+      (win as any).innerWidth = 1024;
+      withRowRect({ left: 634, right: 1024 }, () => {
+        const { container } = renderContainer(repeatNode());
+        const cluster = container.querySelector(
+          '.feathery-repeat-reorder'
+        ) as HTMLElement;
+        expect(cluster.style.insetInlineStart).toBe('');
+      });
+      win.getComputedStyle.mockRestore();
+    });
+
+    it('keeps the gutter on a row it cannot measure yet', () => {
+      // A zero rect is an unlaid-out row, not a row with no room. Going inside
+      // on that reading would move every cluster before first layout.
+      withRowRect({ width: 0, height: 0, left: 0, right: 0 }, () => {
+        const { container } = renderContainer(repeatNode());
+        const cluster = container.querySelector(
+          '.feathery-repeat-reorder'
+        ) as HTMLElement;
+        expect(cluster.style.insetInlineStart).toBe('-28px');
+      });
+    });
+  });
+
   it('offers an insert seam below every row', () => {
     const { getByLabelText } = renderContainer(repeatNode({ repeat: 1 }));
     expect(getByLabelText('Add a row below row 2')).toBeTruthy();

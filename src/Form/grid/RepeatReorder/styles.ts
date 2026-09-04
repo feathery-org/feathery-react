@@ -49,6 +49,31 @@ export const clusterStyles = {
   '@media (hover: none)': { opacity: 1 }
 };
 
+/**
+ * Where the cluster goes when the row is full bleed and the gutter has nothing
+ * to hang in. It rides the row's top corner, laid out along the edge rather
+ * than down it, so it covers the border instead of the first words of the
+ * row's own label.
+ *
+ * The trailing corner, not the centre: the seam of the row above lands on this
+ * same boundary, and centred it sat underneath the `+`. Labels are read from
+ * the leading edge, so the trailing corner is the emptiest part of the row.
+ */
+export const clusterInsideStyles = {
+  ...clusterStyles,
+  insetInlineStart: 'auto',
+  insetInlineEnd: '8px',
+  width: 'auto',
+  flexDirection: 'row' as const,
+  gap: '2px',
+  padding: '0 4px',
+  border: '1px solid',
+  borderColor: 'currentColor',
+  borderRadius: '5px',
+  background: surface,
+  transform: 'translateY(-50%)'
+};
+
 /** Applied to the row so its own hover drives the chrome. */
 export const rowRevealStyles = {
   // The grip is safe to show for a row being typed in: it sits in that row's

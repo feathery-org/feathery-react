@@ -22,6 +22,7 @@ import {
   INSERT_CLASS,
   REORDER_CLASS,
   STEP_CLASS,
+  clusterInsideStyles,
   clusterStyles,
   gripStyles,
   insertStyles,
@@ -200,6 +201,9 @@ export const RepeatRowHandle = ({
   // hover, so a coarse pointer never gets a chance to pick a side.
   const [seamAbove, setSeamAbove] = useState(false);
 
+  // Whether the gutter had room to hang in. See the offset effect below.
+  const [inside, setInside] = useState(false);
+
   // An absolutely positioned child is offset from its ancestor's padding box,
   // which sits inside the border. So a static offset is eaten by a thick
   // outline and the chrome ends up drawn over it. Measuring the border keeps
@@ -210,21 +214,52 @@ export const RepeatRowHandle = ({
     if (!cluster || !row) return;
 
     const apply = () => {
+      const win = featheryWindow();
       const style = getComputedStyle(row);
       const border =
         parseFloat(style.borderInlineStartWidth || style.borderLeftWidth) || 0;
-      cluster.style.insetInlineStart = `-${GUTTER_WIDTH + border}px`;
+      const gutter = GUTTER_WIDTH + border;
+
+      // The gutter hangs off the outside of the row, so it needs somewhere to
+      // hang. A full-bleed row - a phone, or any form sitting flush to the
+      // viewport edge - leaves none, and the whole cluster lands off-screen
+      // with no horizontal scroll to reach it. That is worse on touch than on
+      // a pointer: the chrome is permanently visible there and the grip cannot
+      // be dragged, so an off-screen cluster means the row cannot be reordered
+      // at all. Falling inside the row overlaps its leading edge, which is a
+      // smaller price than a control nobody can reach.
+      const rect = row.getBoundingClientRect();
+      // An unmeasured row - before first layout, or anywhere without a layout
+      // engine - reads as a zero rect, which is not the same as no room. Keep
+      // the designed position and let the observer correct it once the row has
+      // a real box.
+      const measured = rect.width > 0 || rect.height > 0;
+      const space =
+        style.direction === 'rtl' ? win.innerWidth - rect.right : rect.left;
+
+      const fits = !measured || space >= gutter;
+      setInside(!fits);
+      // Only the gutter position depends on the border. The inside variant
+      // centres itself on the row's top edge, so it must be left to the
+      // stylesheet rather than pinned by a measured offset.
+      if (fits) cluster.style.insetInlineStart = `-${gutter}px`;
+      else cluster.style.removeProperty('inset-inline-start');
     };
     apply();
 
-    const Observer = (featheryWindow() as any).ResizeObserver;
-    if (!Observer) return;
-    const observer = new Observer(apply);
-    observer.observe(row);
-    return () => observer.disconnect();
-    // The offset depends on the row's border width, and the observer is what
-    // watches that. Re-running per render rebuilt an observer and forced a
-    // style resolution for every row on every keystroke. `canReorder` is a dep
+    const win = featheryWindow();
+    win.addEventListener('resize', apply);
+    const Observer = (win as any).ResizeObserver;
+    const observer = Observer ? new Observer(apply) : null;
+    observer?.observe(row);
+    return () => {
+      win.removeEventListener('resize', apply);
+      observer?.disconnect();
+    };
+    // The offset depends on the row's border width and on how much room sits
+    // outside it, and the observer plus the resize listener are what watch
+    // those. Re-running per render rebuilt an observer and forced a style
+    // resolution for every row on every keystroke. `canReorder` is a dep
     // because the cluster only exists once there is a grip to put in it.
   }, [rowRef, canReorder]);
 
@@ -316,7 +351,11 @@ export const RepeatRowHandle = ({
         </button>
       )}
       {canReorder && (
-        <div ref={clusterRef} className={REORDER_CLASS} css={clusterStyles}>
+        <div
+          ref={clusterRef}
+          className={REORDER_CLASS}
+          css={inside ? clusterInsideStyles : clusterStyles}
+        >
           {stepButton(true)}
           <button
             {...{ [HANDLE_ATTR]: '' }}
