@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { assetName, certificationNameProps } from '../shared/certification';
 import { useThumbnailData } from '../../../utils/image';
 import { isEmptyArray, justRemove, toList } from '../../../utils/array';
 import {
@@ -199,6 +200,7 @@ function FileUploadField({
       src={element.properties.icon}
       style={{ ...imgStyles, maxWidth: '100%', height: 'auto' }}
       alt=''
+      {...certificationNameProps(assetName(element.properties.icon))}
     />
   ) : (
     <FileUploadIcon
@@ -286,6 +288,7 @@ function FileUploadField({
                     objectFit: 'contain'
                   }}
                   alt={filename || ''}
+                  {...certificationNameProps(filename, assetName(thumbnail))}
                 />
               ) : (
                 <span

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { assetName, certificationNameProps } from '../shared/certification';
 import { CloseIcon, MicrophoneIcon } from '../../components/icons';
 import ErrorInput from '../../components/ErrorInput';
 import { imgMaxSizeStyles } from '../../styles';
@@ -458,6 +459,7 @@ function AudioRecordingField({
               flexShrink: stacked ? 1 : 0
             }}
             alt=''
+            {...certificationNameProps(assetName(element.properties.icon))}
           />
         ) : (
           <MicrophoneIcon

@@ -1,5 +1,9 @@
 import React, { useMemo } from 'react';
-import { certificationName } from '../fields/shared/certification';
+import {
+  assetName,
+  certificationName,
+  certificationNameProps
+} from '../fields/shared/certification';
 
 import TextNodes from '../components/TextNodes';
 import { imgMaxSizeStyles } from '../styles';
@@ -274,6 +278,9 @@ function ButtonElement({
           {element.properties.image && (
             <img
               src={element.properties.image}
+              // Decorative: the button itself carries the name
+              alt=''
+              {...certificationNameProps(assetName(element.properties.image))}
               css={{
                 ...imgMaxSizeStyles,
                 ...responsiveStyles.getTargets('img')

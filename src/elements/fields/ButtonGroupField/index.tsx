@@ -1,4 +1,5 @@
 import React, { useMemo, useRef } from 'react';
+import { assetName, certificationNameProps } from '../shared/certification';
 import {
   imgMaxSizeStyles,
   noTextSelectStyles,
@@ -154,6 +155,9 @@ function ButtonGroupField({
               {imageUrl && (
                 <img
                   src={imageUrl}
+                  // Decorative: the option button carries the name
+                  alt=''
+                  {...certificationNameProps(assetName(imageUrl))}
                   css={{
                     ...imgMaxSizeStyles,
                     ...responsiveStyles.getTargets('img'),
