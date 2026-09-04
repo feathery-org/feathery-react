@@ -34,6 +34,7 @@ import {
 } from './spreadsheet/validation';
 import { sampleRowCount, validationColors } from './spreadsheet/styles';
 import { AddColumnHandler, CellWrite, GetCellShading } from './types';
+import { STATUS_HUB_FIELD_ID } from './hubStatus';
 import { TrashIcon } from '../../components/icons';
 import { clearUnsavedWork, setUnsavedWork } from '../../../utils/unsavedWork';
 import {
@@ -496,13 +497,22 @@ function TableElement({
    */
   const assistantMessages = useMemo(() => {
     if (!isSpreadsheet || !assistantIssues.length) return {};
+    // Keys first, display names second, so a hub field whose key is "Status"
+    // is never shadowed by a column merely named that (the status column,
+    // say — which is not the assistant's to flag at all).
     const byName = new Map<string, string>();
-    columns.forEach((column: any) => {
-      [column.hub_field_key, column.name, column.field_key].forEach(
-        (name: string | undefined) => {
-          if (name && !byName.has(name)) byName.set(name, column.field_key);
-        }
-      );
+    const targetable = columns.filter(
+      (column: any) => column.hub_field_id !== STATUS_HUB_FIELD_ID
+    );
+    targetable.forEach((column: any) => {
+      [column.hub_field_key, column.field_key].forEach((key?: string) => {
+        if (key && !byName.has(key)) byName.set(key, column.field_key);
+      });
+    });
+    targetable.forEach((column: any) => {
+      if (column.name && !byName.has(column.name)) {
+        byName.set(column.name, column.field_key);
+      }
     });
     return resolveTableIssues(assistantIssues, {
       rowIndices: spreadsheetRowIndices,

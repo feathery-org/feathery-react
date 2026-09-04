@@ -1277,6 +1277,47 @@ describe('assistant issues', () => {
     expect(status()).not.toHaveTextContent('warning');
   });
 
+  test('a hub field named like the status column is still reachable by that name', async () => {
+    const assistantClient = assistant();
+    const STATUS_FIELD = { id: 'hf9', key: 'Status', type: 'text', required: false, unique: false };
+    renderTable(
+      {
+        columns: [
+          { name: 'Status', field_id: '', field_type: '', field_key: '', hub_field_id: 'hf9', hub_field_key: 'Status' }
+        ],
+        data_source: 'hub',
+        hub_id: 'hub1',
+        hub_verification: 'all'
+      },
+      {
+        client: {
+          getHubSchemas: jest.fn(() =>
+            Promise.resolve({ hubs: [{ id: 'hub1', key: 'h', fields: [STATUS_FIELD] }] })
+          ),
+          dataHubAction: jest.fn(({ operation }: any) =>
+            operation === 'get'
+              ? Promise.resolve([{ id: 'e1', verified: false, data: { Status: 'Pending' } }])
+              : Promise.resolve({})
+          )
+        },
+        assistantClient
+      }
+    );
+    await waitFor(() => expect(screen.getByText('Pending')).toBeInTheDocument());
+    expect(
+      screen.getAllByRole('columnheader').map((h) => h.textContent)
+    ).toEqual(['Status', 'Status']);
+
+    act(() => {
+      assistantClient.setTableIssues('table1', [
+        { target: { kind: 'cell', row: { entryId: 'e1' }, field: 'Status' }, message: 'Stale' }
+      ]);
+    });
+    // The hub's own field takes the flag; the synthetic status column stays clean.
+    expect(cell('Pending')).toHaveAttribute('title', 'Stale');
+    expect(cell('Unverified')).not.toHaveAttribute('title');
+  });
+
   test('row and range targets cover every cell they name', async () => {
     const assistantClient = assistant();
     renderTable(
