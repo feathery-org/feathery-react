@@ -687,8 +687,8 @@ describe('input box inner padding', () => {
   it('keeps the plain reserve on a field whose input owns its padding', () => {
     // payment_method's inner padding belongs to Stripe's card element, so it
     // is not an input-box type and never takes these keys. The reserve stays
-    // the plain height/3 it always rendered with, whatever a theme happens to
-    // store under the key.
+    // the label's own footprint, whatever a theme happens to store under the
+    // key.
     expect(
       fieldTarget(
         'payment_method',
@@ -2039,6 +2039,20 @@ describe('which fields count as carrying a pinned label', () => {
     expect(centredPhone.paddingTop).toBe('21px');
   });
 
+  // Every other type only pins a label when there is placeholder text to pin,
+  // so without it there is no label, no reserve and no floor: the field keeps
+  // the block reset whether or not an alignment is set. The builder mirrors
+  // this gate in boxSpacingHelper.tsx (rendersPlaceholder) and must agree.
+  it('draws no reserve for a text field with no placeholder text', () => {
+    const base = { ...SIZED, placeholder_transition: 'shrink_top' };
+    expect(fieldTarget('text_field', base)).not.toHaveProperty('paddingTop');
+    // ...and the same padding an unpinned field renders with once centred.
+    const centred = { content_vertical_align: 'center' };
+    expect(
+      fieldTarget('text_field', { ...base, ...centred }).paddingTop
+    ).toBe(fieldTarget('text_field', { ...SIZED, ...centred }).paddingTop);
+  });
+
   // The reserve on a multiselect is not something an alignment can take over:
   // applyInputBoxAlignment places an input's value by padding this target, but
   // a multiselect's chips are laid out by flexbox on its value container. If
@@ -2151,10 +2165,10 @@ describe('the reserve a mobile typography override asks for', () => {
 });
 
 // The builder carries its own copy of this arithmetic and cannot import ours,
-// so both repos pin the same table and a drift fails a test instead of
-// shipping. The other half is 'the reserve both repos compute' in
-// feathery-frontend's src/utils/__test__/boxSpacingHelper.spec.ts -- change one
-// and you have to change the other.
+// so both repos pin an identical table. Nothing enforces the two stay identical
+// -- each suite only checks its own repo -- so a change to one row here must be
+// made by hand to 'the reserve both repos compute' in feathery-frontend's
+// src/utils/__test__/boxSpacingHelper.spec.ts as well.
 describe('the reserve both repos compute', () => {
   it.each([
     // type, height, height_unit, font_size, line_height, reserve
@@ -2163,8 +2177,11 @@ describe('the reserve both repos compute', () => {
     ['text_field', 40, 'px', 16, 30, 4], // clamped against a stored line
     ['text_field', 200, 'px', 9, undefined, 14], // sub-10px font: 4.5 + 9
     ['text_field', 90, '%', 16, undefined, 21], // no pixel box to clamp against
+    ['text_field', 200, 'px', undefined, undefined, 21], // no font: the 16px default
+    ['text_field', 200, 'px', '16px', undefined, 21], // a unit is not a number
     ['text_area', 200, 'px', 16, undefined, 25], // its own 2.5x reserve
-    ['text_area', 200, 'px', 9, undefined, 23] // 9 * 2.5, rounded
+    ['text_area', 200, 'px', 9, undefined, 23], // 9 * 2.5, rounded
+    ['text_area', 200, 'px', undefined, undefined, 25] // no font: the default
   ])(
     '%s at %s%s, font %s, line height %s reserves %spx',
     (type, height, heightUnit, fontSize, lineHeight, expected) => {
