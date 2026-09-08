@@ -18,6 +18,7 @@ import {
   TimerId
 } from './controller';
 import {
+  ContentControlLike,
   configureEditorForBindings,
   createEditorAdapter,
   SyncfusionEditorLike
@@ -236,25 +237,33 @@ export function attachBindings(
     });
 
   // Syncfusion fires 'contentControl' whenever the caret sits in ANY control
-  // marked lockContentControl - which is every control we create, editable or
-  // not - so the event alone does NOT mean an edit was refused. Show the hint
-  // only when the edit really could not proceed: canEditContentControl is
-  // false (a locked value, or a selection crossing a lock). Debounce so a held
-  // key is one hint, and stay quiet while the delete guard is mid-operation -
-  // those refusals are ours to resolve, not to complain about.
+  // marked lockContentControl - which is every control we create - and it fires
+  // it even for the enclosing wrapper while the caret is in an editable inner
+  // field. So the event alone does NOT mean an edit was refused; suppress the
+  // hint when the caret is genuinely inside an editable control.
+  //
+  // Read currentContentControl DIRECTLY - never canEditContentControl. Its
+  // getter calls checkContentControlLocked, which re-fires 'contentControl',
+  // which re-enters this handler: an infinite loop (thanks @lanthony42).
   let lockedHintTimer: TimerId | null = null;
   let lockHintActive = false;
   const scheduleTimeout = setTimeoutFn ?? ((fn, ms) => setTimeout(fn, ms));
   const cancelTimeout = clearTimeoutFn ?? ((id) => clearTimeout(id as never));
-  const editRefused = (): boolean => {
-    const module = editor.editorModule as
-      | { canEditContentControl?: boolean }
+  const isLockedControl = (control: ContentControlLike | null): boolean => {
+    const props = control?.contentControlProperties as
+      | { lockContents?: boolean; type?: string }
       | undefined;
-    return module ? module.canEditContentControl === false : false;
+    return !!props && (!!props.lockContents || props.type === 'DropDownList');
   };
+  const caretControl = (): ContentControlLike | null =>
+    editor.selection?.currentContentControl ?? null;
   const onLockedControl = () =>
     runGuarded(() => {
-      if (!onLockedEdit || isDeleteGuardBusy() || !editRefused()) return;
+      if (!onLockedEdit || isDeleteGuardBusy()) return;
+      // The event means a lock was hit; the only false positive is the caret
+      // being in an editable inner field (its wrapper is what tripped it).
+      const control = caretControl();
+      if (control && !isLockedControl(control)) return;
       lockHintActive = true;
       if (lockedHintTimer !== null) return;
       onLockedEdit();
@@ -263,12 +272,12 @@ export function attachBindings(
       }, 600);
     });
 
-  // Dismiss the hint the instant the caret lands somewhere editable; keep it up
-  // while a locked cell stays selected (until the host's own short timeout).
+  // Dismiss the hint once the caret is no longer on a locked control; keep it
+  // up while a locked cell stays selected.
   const onSelectionChange = () =>
     runGuarded(() => {
       triggers.onSelectionChange();
-      if (lockHintActive && !editRefused()) {
+      if (lockHintActive && !isLockedControl(caretControl())) {
         lockHintActive = false;
         onLockedEditResolved?.();
       }

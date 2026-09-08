@@ -166,37 +166,65 @@ describe('attaching bindings to a tokenized template', () => {
     attached = attachBindings(editor as unknown as SyncfusionEditorLike);
   });
 
-  it('fires the locked-edit hint only when the edit was actually refused', () => {
+  // The hint reads selection.currentContentControl directly - never
+  // canEditContentControl, whose getter re-fires 'contentControl' and would
+  // recurse forever (regression guard for that loop).
+  const setCaretControl = (locked: boolean | null) => {
+    (editor as any).selection.currentContentControl =
+      locked === null
+        ? null
+        : { contentControlProperties: { lockContents: locked } };
+  };
+
+  it('fires the locked-edit hint only when the caret is on a locked control', () => {
     attached.dispose();
     const onLockedEdit = jest.fn();
     attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
       onLockedEdit
     });
+
+    // Editable inner field: Syncfusion still fires 'contentControl' (the
+    // wrapper is locked), but the hint must stay silent.
+    setCaretControl(false);
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // On a locked control: shows the hint, debounced.
+    setCaretControl(true);
+    (editor as any).trigger('contentControl');
+    (editor as any).trigger('contentControl');
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    setCaretControl(null);
+  });
+
+  it('does not recurse when reading whether the edit was refused', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+    // Wire a canEditContentControl getter that RE-FIRES contentControl, the
+    // exact shape of the reported infinite loop. If the handler read it, this
+    // would blow the stack; it must read currentContentControl instead.
     const module = (editor as any).editorModule;
     const restore = Object.getOwnPropertyDescriptor(
       module,
       'canEditContentControl'
     );
-    // Syncfusion fires 'contentControl' even for an editable control (all our
-    // controls are lockContentControl), so the event alone must NOT toast.
     Object.defineProperty(module, 'canEditContentControl', {
       configurable: true,
-      get: () => true
+      get: () => {
+        (editor as any).trigger('contentControl');
+        return false;
+      }
     });
-    (editor as any).trigger('contentControl');
-    expect(onLockedEdit).not.toHaveBeenCalled();
-
-    // A genuinely refused edit (gate closed) shows the hint, debounced.
-    Object.defineProperty(module, 'canEditContentControl', {
-      configurable: true,
-      get: () => false
-    });
-    (editor as any).trigger('contentControl');
-    (editor as any).trigger('contentControl');
-    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+    setCaretControl(true);
+    expect(() => (editor as any).trigger('contentControl')).not.toThrow();
 
     if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
     else delete module.canEditContentControl;
+    setCaretControl(null);
   });
 
   it('resolves the hint when the caret moves to an editable spot', () => {
@@ -207,17 +235,8 @@ describe('attaching bindings to a tokenized template', () => {
       onLockedEdit,
       onLockedEditResolved
     });
-    const module = (editor as any).editorModule;
-    const restore = Object.getOwnPropertyDescriptor(
-      module,
-      'canEditContentControl'
-    );
 
-    // Refused edit on a locked cell shows the hint.
-    Object.defineProperty(module, 'canEditContentControl', {
-      configurable: true,
-      get: () => false
-    });
+    setCaretControl(true);
     (editor as any).trigger('contentControl');
     expect(onLockedEdit).toHaveBeenCalledTimes(1);
 
@@ -226,16 +245,12 @@ describe('attaching bindings to a tokenized template', () => {
     expect(onLockedEditResolved).not.toHaveBeenCalled();
 
     // Caret moves to an editable spot -> resolve once, and not again.
-    Object.defineProperty(module, 'canEditContentControl', {
-      configurable: true,
-      get: () => true
-    });
+    setCaretControl(false);
     (editor as any).trigger('selectionChange');
     (editor as any).trigger('selectionChange');
     expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
 
-    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
-    else delete module.canEditContentControl;
+    setCaretControl(null);
   });
 
   it('resolves the hint when focus leaves the editor', () => {
@@ -246,15 +261,7 @@ describe('attaching bindings to a tokenized template', () => {
       onLockedEdit,
       onLockedEditResolved
     });
-    const module = (editor as any).editorModule;
-    const restore = Object.getOwnPropertyDescriptor(
-      module,
-      'canEditContentControl'
-    );
-    Object.defineProperty(module, 'canEditContentControl', {
-      configurable: true,
-      get: () => false
-    });
+    setCaretControl(true);
     (editor as any).trigger('contentControl');
     expect(onLockedEdit).toHaveBeenCalledTimes(1);
 
@@ -264,8 +271,7 @@ describe('attaching bindings to a tokenized template', () => {
     );
     expect(onLockedEditResolved).toHaveBeenCalledTimes(1);
 
-    if (restore) Object.defineProperty(module, 'canEditContentControl', restore);
-    else delete module.canEditContentControl;
+    setCaretControl(null);
   });
 });
 
