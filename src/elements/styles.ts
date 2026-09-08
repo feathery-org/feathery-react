@@ -183,12 +183,25 @@ const blockPaddingCss = (type: string, value: any) =>
 // field's font size.
 const SHRINK_LABEL_MAX_FONT_SIZE = 10;
 
+// The font size a field renders with when the theme stores none -- the backend
+// serializer's own default. The reserve needs a number even then: every sibling
+// helper falls back through isNum, and an unguarded NaN here became
+// `padding-top: NaNpx`, which the browser drops and the label overlaps the value.
+const DEFAULT_INPUT_FONT_SIZE = 16;
+
+const fontSizePx = (fontSize: any) => {
+  const n = Number(fontSize);
+  return isNum(fontSize) && Number.isFinite(n) ? n : DEFAULT_INPUT_FONT_SIZE;
+};
+
 // What a pinned label occupies: its own marginTop (half the shrunken font) plus
 // its line box, which inherits the field's font size. So a 16px field's label
 // ends 5 + 16 = 21px below the box top, and a 28px field's at 33px -- measured,
 // and exact at every size.
-export const shrinkLabelFootprint = (fontSize: any) =>
-  Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) / 2 + Number(fontSize);
+export const shrinkLabelFootprint = (fontSize: any) => {
+  const size = fontSizePx(fontSize);
+  return Math.min(size, SHRINK_LABEL_MAX_FONT_SIZE) / 2 + size;
+};
 
 // The room a pinned floating label needs behind the value when the theme sets no
 // top padding of its own: exactly what the label occupies, so the value starts
@@ -215,13 +228,14 @@ const shrinkLabelReservePx = (
   fontSize: any,
   lineHeight?: any
 ): number => {
+  const size = fontSizePx(fontSize);
   if (type === 'text_area')
-    return Math.round(Math.min(fontSize, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5);
-  const footprint = shrinkLabelFootprint(fontSize);
+    return Math.round(Math.min(size, SHRINK_LABEL_MAX_FONT_SIZE) * 2.5);
+  const footprint = shrinkLabelFootprint(size);
   // A percentage or fit height has no pixel box to clamp against, so the
   // footprint stands on its own.
   if (heightUnit !== 'px' || !isNum(height)) return Math.round(footprint);
-  const line = inputLineHeight(lineHeight, fontSize);
+  const line = inputLineHeight(lineHeight, size);
   const room = Number(height) - line - RESET_INPUT_PADDING_Y;
   return Math.round(Math.max(0, Math.min(footprint, room)));
 };
@@ -276,10 +290,10 @@ const MULTISELECT_LEGACY_PADDING = {
 };
 
 // A shrink_top label is a fixed overlay pinned to the box top: it takes no room
-// in the content box, so the value renders behind the theme's raw padding and
-// nothing about the label enters the geometry below. An unset inner_padding_top
-// falls back to the reserve production drew, computed below, and a padding low
-// enough to run the value under the label's ink is allowed by design.
+// in the content box. A stored inner_padding_top is what the value renders
+// behind, including one low enough to run it under the label's ink. Unset, the
+// label's reserve stands in for it, and pinnedTopFloor keeps an alignment from
+// cancelling that reserve.
 const offsetFromCenter = (d: number) =>
   d ? `calc(50% ${d > 0 ? '+' : '-'} ${Math.abs(d)}px)` : '50%';
 
@@ -1007,8 +1021,8 @@ export default class ResponsiveStyles {
    *
    * A shrunken label is a fixed overlay at the box top. It takes no room in the
    * content box, so the value has to be held clear of it -- which is what the
-   * height/3 reserve has always done, and what makes the value sit a little
-   * below the box's midline on a floating-label field. An alignment is not a
+   * reserve has always done, and what makes the value sit a little below the
+   * box's midline on a floating-label field. An alignment is not a
    * statement about padding, so it must not cancel that reserve: without this
    * floor, "middle" re-centres the value into the label's ink and no option in
    * the panel can put it back. Zero wherever there is nothing to clear, so
