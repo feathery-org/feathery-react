@@ -19,6 +19,7 @@ import {
   isStepperStepVisible
 } from '../../utils/stepper';
 import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
+import { hubSyntheticFieldKey } from '../../elements/basic/TableElement/useHubTableSource';
 import { sanitizeTransportValue } from '../../utils/transportValue';
 import { getImageAltText } from '../../utils/accessibility';
 
@@ -107,8 +108,9 @@ export type PanelRuntimeNavigationSurface = {
 
 export type PanelRuntimeTableEntry = {
   id: string;
+  hubId?: string;
   columns: Array<{ name: string; fieldKey: string }>;
-  rows: unknown[][];
+  rows?: unknown[][];
   actions?: Array<{ label: string }>;
   canAddRows?: boolean;
   canDeleteRows?: boolean;
@@ -650,8 +652,16 @@ export const getPanelRuntimeSnapshot = (
     const cols = (el?.properties?.columns ?? []) as Array<{
       name?: string;
       field_key?: string;
+      hub_field_key?: string;
     }>;
     if (cols.length === 0) return;
+    // Hub rows live in the Data Hub, not in form fields, so the entry names the hub instead
+    const hubId =
+      el?.properties?.data_source === 'hub' ? el.properties.hub_id : undefined;
+    const fieldKeyFor = (col: { field_key?: string; hub_field_key?: string }) =>
+      hubId && col.hub_field_key
+        ? hubSyntheticFieldKey(el.id ?? '', col.hub_field_key)
+        : col.field_key ?? '';
     const numRows = cols.reduce((max, col) => {
       const v = col.field_key ? fieldsMap[col.field_key]?.value : undefined;
       return Array.isArray(v) ? Math.max(max, v.length) : max;
@@ -680,11 +690,12 @@ export const getPanelRuntimeSnapshot = (
     );
     currentStepTables.push({
       id: el.id ?? '',
+      ...(hubId ? { hubId } : {}),
       columns: cols.map((c) => ({
         name: c.name ?? c.field_key ?? '',
-        fieldKey: c.field_key ?? ''
+        fieldKey: fieldKeyFor(c)
       })),
-      rows,
+      ...(hubId ? {} : { rows }),
       ...(actions.length > 0 ? { actions } : {}),
       ...(canAddRows ? { canAddRows: true } : {}),
       ...(canDeleteRows ? { canDeleteRows: true } : {}),

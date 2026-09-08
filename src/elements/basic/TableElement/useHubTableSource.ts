@@ -93,7 +93,7 @@ type UseHubTableSourceReturn = {
   readOnlyKeys: Set<string>;
 };
 
-const syntheticKey = (tableId: string, hubFieldKey: string) =>
+export const hubSyntheticFieldKey = (tableId: string, hubFieldKey: string) =>
   `__hub_${tableId}_${hubFieldKey}`;
 
 const ROW_GONE_MESSAGE =
@@ -193,7 +193,7 @@ export function useHubTableSource({
       }
       const hubFieldKey = col.hub_field_key || '';
       const key = hubFieldKey
-        ? syntheticKey(tableId, hubFieldKey)
+        ? hubSyntheticFieldKey(tableId, hubFieldKey)
         : col.field_key;
       if (hubFieldKey) map[key] = hubFieldKey;
       return { ...col, field_key: key };
