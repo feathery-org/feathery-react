@@ -64,3 +64,15 @@ captured `headers-footers` shape lives under `browser-only/` in the local corpus
 and the reason no shape in this directory has a header story. A test that needs
 one either builds a single-page document inline - see relocationCharacterization
 - or runs in a browser.
+
+## flagship-v3, the browser document's bound skeleton
+
+`flagship-v3.sfdt.json` is the browser corpus document `flagship-v3.headers`
+(robin-harness) with its narrative prose blocks and headers/footers removed and
+every bound block kept: three schedules, all their rows, and the Premium
+Summary. The reduction is not cosmetic - `DocumentEditor.open()` on the full
+document does not return inside jsdom within nine minutes, while the skeleton
+opens in about half a second - and it removes nothing any binding law reads, so
+the browser's own figures ($11,008.00 / $11,046.40 fragments, $75,667.35 /
+$6,431.72 / $82,099.07 summary) are the oracle in
+`splitConservesDocumentTotals.spec.ts`.

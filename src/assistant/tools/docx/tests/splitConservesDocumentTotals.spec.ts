@@ -27,12 +27,25 @@
  * never steal references that pointed at its source") and it is the whole
  * defect for a SPLIT. A copy leaves the source whole; a split does not.
  *
- * WHAT THE FIX OWES, as the skipped rows below state it: every formula outside
- * the split table that references one of its aggregates is rewritten, in the
- * SAME tracked change set, to the sum of the corresponding aggregates of ALL
- * fragments. Per-fragment subtotals rescope to their own items. Accept leaves
- * the summary showing the original figures; reject unwinds the rewrite with the
- * rest of the card.
+ * WHAT THE FIX OWES, and now does: every formula outside the split table that
+ * references one of its aggregates is rewritten, in the SAME tracked change
+ * set, to the sum of the corresponding aggregates of ALL fragments.
+ * Per-fragment subtotals rescope to their own items. Accept leaves the summary
+ * showing the original figures; reject unwinds the rewrite with the card.
+ *
+ * AND THE GENERAL LAW IT BECAME, after the first version refused the captain's
+ * own document. A split moves rows and destroys nothing, so it never refuses:
+ * REFERENCES FOLLOW THE BINDINGS THEY NAME. An aggregate has two successors
+ * (both fragments) and is followed by a sum; a moved document-level ITEM
+ * binding has one (the copy's minted name) and is followed by a rename. The
+ * refusal this file used to pin - `split_moves_referenced_item` - is retired
+ * with the rows that pinned it, because a single successor is not a guess.
+ *
+ * Its measured failure is worth keeping: on flagship-v3 the refusal fired for
+ * "line_total outside the table reads units", where both names are ROW-scoped
+ * columns that travel with their row and resolve inside it. Row scope is not a
+ * document reference, so successors are keyed only on document-level bindings,
+ * and the last row of the flagship block below pins that.
  *
  * HOW IT IS EXPRESSED, since the transport the split already used could not
  * carry it. `diffBindingCommands` emitted `set-value` only for FIELD bindings
@@ -53,6 +66,8 @@
  * change set alike.
  */
 import 'jest-canvas-mock';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   DocumentEditor,
   Editor,
@@ -223,6 +238,16 @@ const cardGroups = (editor: DocumentEditor) =>
 const outcomes = (result: any): string[] =>
   result.results.map((entry: any) => (entry.ok ? 'ok' : entry.error));
 
+/** Outcomes with the engine's own message, so a failure names itself. */
+const outcomesSaid = (result: any): string[] =>
+  result.results.map((entry: any) =>
+    entry.ok
+      ? 'ok'
+      : `${entry.error}: ${entry.message ?? ''} ${(entry.details ?? []).join(
+          ' | '
+        )}`
+  );
+
 /**
  * Split after the fourth item, so both fragments are non-trivial and the
  * arithmetic is checkable by hand: rows 2-4 keep items 0-2, rows 5-7 move items
@@ -239,6 +264,68 @@ const WHOLE = {
 };
 const FIRST_FRAGMENT = BANDED_PROPOSAL_EXPECTED.subtotalWithout(MOVED_ITEMS);
 const SECOND_FRAGMENT = BANDED_PROPOSAL_EXPECTED.subtotalWithout(KEPT_ITEMS);
+
+/** The name the clone minted for `origin`, read off the copy's provenance. */
+function successorOf(editor: DocumentEditor, origin: string): string | null {
+  for (const occurrence of indexOf(editor).occurrences)
+    if ((occurrence.def as any)?.options?.copyOf === origin)
+      return occurrence.name;
+  return null;
+}
+
+/**
+ * The fixture with the last item row carrying a DOCUMENT-level figure the
+ * summary reads directly - a prose mirror in table clothing. Nothing else
+ * references `flagship_item`, so every oracle above still holds.
+ */
+function movedItemMirrorFixture(): any {
+  const fixture = JSON.parse(JSON.stringify(buildBandedProposalFixture()));
+  const itemControls: any[] = [];
+  const visit = (node: any): void => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== 'object') return;
+    const tag = node.contentControlProperties?.tag;
+    if (typeof tag === 'string' && tag.includes('name=item|'))
+      itemControls.push(node);
+    for (const key of Object.keys(node)) visit(node[key]);
+  };
+  visit(fixture);
+  if (itemControls.length <= MOVED_ITEMS[0])
+    throw new Error('fixture has too few item rows - the harness is wrong');
+  const moved = itemControls[itemControls.length - 1];
+  moved.contentControlProperties = {
+    ...moved.contentControlProperties,
+    tag: '[[name=flagship_item|type=currency|default=500]]'
+  };
+  // The cell held a text label; a currency binding must hold a currency, or the
+  // engine fails to evaluate the reference for a reason that is the fixture's
+  // fault rather than the law's. The old refusal hid this: it threw before
+  // anything was evaluated.
+  moved.inlines = [
+    {
+      text: '$500.00',
+      ...(moved.inlines?.[0]?.characterFormat
+        ? { characterFormat: moved.inlines[0].characterFormat }
+        : {})
+    }
+  ];
+  const retarget = (node: any): void => {
+    if (Array.isArray(node)) return node.forEach(retarget);
+    if (!node || typeof node !== 'object') return;
+    const tag = node.contentControlProperties?.tag;
+    if (typeof tag === 'string' && tag.includes('name=summary_property|'))
+      node.contentControlProperties = {
+        ...node.contentControlProperties,
+        tag: tag.replace(
+          /expr=[^|\]]*/,
+          'expr=sum(schedule_subtotal,flagship_item)'
+        )
+      };
+    for (const key of Object.keys(node)) retarget(node[key]);
+  };
+  retarget(fixture);
+  return fixture;
+}
 
 describe('a table split conserves the document totals', () => {
   let editor: DocumentEditor;
@@ -257,6 +344,21 @@ describe('a table split conserves the document totals', () => {
     editor.destroy();
     element?.remove();
   });
+
+  /** Swap the fixture under this row's editor, bindings attached the same way. */
+  function reopenWithMovedItemMirror(): DocumentEditor {
+    attached.dispose();
+    editor.destroy();
+    editor.element?.remove();
+    const next = makeEditor(movedItemMirrorFixture());
+    attached = attachBindings(next as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+    expect(documentFormulas(next).get('summary_property')).toBe(
+      'sum(schedule_subtotal,flagship_item)'
+    );
+    return next;
+  }
 
   // ------------------------------------------------------------------ control
   // The harness's own negative control. If this fails, nothing below is
@@ -464,78 +566,50 @@ describe('a table split conserves the document totals', () => {
   });
 
   /**
-   * The one case the law cannot answer, and so refuses rather than guesses.
+   * The general law, on the case that used to be refused.
    *
-   * Rewriting an outside reference to the sum of the fragments is only correct
-   * when the thing referenced is a TOTAL. Here the summary reads one item's own
-   * figure - a document-level binding sitting in an item row - and the split
-   * moves that row into the copy, where it is renamed. There is no total to add
-   * up in its place and no honest guess about what the author meant, so the
-   * whole change set is refused and the document is left exactly as it was.
+   * The summary reads one item's own figure - a document-level binding sitting
+   * in an item row, the everyday shape of a prose mirror - and the split moves
+   * that row into the copy, where it is renamed. There is nothing to add up
+   * here, and nothing to refuse either: the binding has exactly ONE successor,
+   * the name the clone minted for it, and the reference follows it. The oracle
+   * is the document's own provenance rather than a literal name, so this row
+   * cannot pass by agreeing with a hard-coded minting rule.
    */
-  it('LAW: a split that moves an item an outside total reads is refused, not guessed', () => {
-    attached.dispose();
-    editor.destroy();
-    editor.element?.remove();
+  it('LAW: a reference to a moved item follows it to its single successor', () => {
+    editor = reopenWithMovedItemMirror();
 
-    const fixture = JSON.parse(JSON.stringify(buildBandedProposalFixture()));
-    // The last item row's own label control becomes a document-level figure the
-    // summary reads directly. Nothing else references `item`, so every oracle
-    // above still holds.
-    const itemControls: any[] = [];
-    const visit = (node: any): void => {
-      if (Array.isArray(node)) return node.forEach(visit);
-      if (!node || typeof node !== 'object') return;
-      const tag = node.contentControlProperties?.tag;
-      if (typeof tag === 'string' && tag.includes('name=item|'))
-        itemControls.push(node);
-      for (const key of Object.keys(node)) visit(node[key]);
-    };
-    visit(fixture);
-    expect(itemControls.length).toBeGreaterThan(MOVED_ITEMS[0]);
-    const moved = itemControls[itemControls.length - 1];
-    moved.contentControlProperties = {
-      ...moved.contentControlProperties,
-      tag: '[[name=flagship_item|type=currency|default=500]]'
-    };
-    const retarget = (node: any): void => {
-      if (Array.isArray(node)) return node.forEach(retarget);
-      if (!node || typeof node !== 'object') return;
-      const tag = node.contentControlProperties?.tag;
-      if (typeof tag === 'string' && tag.includes('name=summary_property|'))
-        node.contentControlProperties = {
-          ...node.contentControlProperties,
-          tag: tag.replace(
-            /expr=[^|\]]*/,
-            'expr=sum(schedule_subtotal,flagship_item)'
-          )
-        };
-      for (const key of Object.keys(node)) retarget(node[key]);
-    };
-    retarget(fixture);
+    const before = formulaValues(editor);
+    expect(outcomesSaid(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
 
-    editor = makeEditor(fixture);
-    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
-      convertTokensOnOpen: false
-    });
+    const successor = successorOf(editor, 'flagship_item');
+    expect(successor).toBeTruthy();
+    expect(successor).not.toBe('flagship_item');
+    // The item's original name is gone with its row, so a sum would be wrong:
+    // following is a RENAME here, and the aggregate beside it is still a sum.
     expect(documentFormulas(editor).get('summary_property')).toBe(
-      'sum(schedule_subtotal,flagship_item)'
+      `sum(sum(schedule_subtotal,schedule_copy_subtotal),${successor})`
     );
+    // And the figure the captain reads is unmoved, which is the whole point.
+    expect(formulaValues(editor).summary_property).toBe(before.summary_property);
+  });
 
+  it('LAW: rejecting the split puts a followed item reference back', () => {
+    editor = reopenWithMovedItemMirror();
     const before = editor.serialize();
-    const results = splitSchedule(editor, SPLIT_AT);
-    expect(outcomes(results)[0]).toBe('split_moves_referenced_item');
-    // A refusal is plain language about the captain's document, and it names
-    // both the total that would break and the item that moved.
-    const message = String(results.results[0].message ?? '');
-    expect(message).toContain('summary_property');
-    expect(message).toContain('flagship_item');
-    expect(message).not.toMatch(/undefined|\[object|scanBindings/);
-    // And the document is exactly as it was: no fragment, no rewrite.
-    expect(editor.serialize()).toBe(before);
+
+    expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
+    expect(documentFormulas(editor).get('summary_property')).not.toBe(
+      'sum(schedule_subtotal,flagship_item)'
+    );
+
+    resolveLiveRevisionGroupsAsOneUndo(editor as any, cardGroups(editor), false);
+
+    expect(editor.revisions.length).toBe(0);
     expect(documentFormulas(editor).get('summary_property')).toBe(
       'sum(schedule_subtotal,flagship_item)'
     );
+    expect(editor.serialize()).toBe(before);
   });
 
   it('LAW: reject restores the document byte for byte, expressions included', () => {
@@ -546,5 +620,186 @@ describe('a table split conserves the document totals', () => {
 
     expect(editor.revisions.length).toBe(0);
     expect(editor.serialize()).toBe(before);
+  });
+});
+
+
+/**
+ * THE CAPTAIN'S OWN DOCUMENT, at full scale, on the split that used to refuse.
+ *
+ * flagship-v3 is the browser corpus: three schedules whose row formulas all
+ * read the same column names (`mul(units,rate)`), and a Premium Summary outside
+ * every table. That shape is what turned the old refusal into a false positive
+ * on a healthy document - the split table's row-scoped column names looked
+ * "moved away" while another schedule's row formula still named them - so this
+ * row is both the arithmetic proof and the regression pin for row scope.
+ *
+ * MEASURED, twice. `open()` on flagship-v3 WITH its headers and footers does
+ * not return inside jsdom within nine minutes at 100% CPU - a header-layout
+ * cost in the SDK, not an engine one - so the fixture is the document with
+ * `headersFooters` dropped and every one of its 53 blocks kept. That opens in
+ * about half a second and changes nothing any binding law reads.
+ *
+ * The absolute pin here is the PROPERTY arithmetic, which is the browser's own:
+ * $22,054.40 splits into $11,008.00 and $11,046.40. The summary totals are
+ * pinned as an INVARIANT (identical before and after) rather than as literals,
+ * because this corpus file's Motor Fleet schedule carries more rows than the
+ * served document's ($171,009.05 against $33,607.55), so a literal $75,667.35
+ * here would be pinning the harness rather than the law. The browser rows own
+ * the served document's figures.
+ */
+const CURRENCY = (text: string): number => Number(text.replace(/[$,\s]/g, ''));
+
+const FLAGSHIP_V3 = path.join(__dirname, 'corpus', 'flagship-v3.sfdt.json');
+
+/** Expanded block index: the unit a 5-part anchor counts. */
+function expandedBlockIndex(editor: DocumentEditor, needle: string): number {
+  const expand = (blocks: any[]): any[] => {
+    const out: any[] = [];
+    for (const block of blocks) {
+      const wrapper =
+        block?.contentControlProperties !== undefined &&
+        Array.isArray(block?.blocks) &&
+        !block?.rows &&
+        !block?.inlines;
+      if (wrapper) out.push(...expand(block.blocks));
+      else out.push(block);
+    }
+    return out;
+  };
+  const found = expand(parsed(editor).sections[0].blocks).findIndex(
+    (block: any) =>
+      Array.isArray(block?.rows) && JSON.stringify(block).includes(needle)
+  );
+  if (found < 0)
+    throw new Error(`no expanded table block for ${needle} - harness is wrong`);
+  return found;
+}
+
+describe('the flagship proposal splits after Contents', () => {
+  let editor: DocumentEditor;
+  let attached: AttachedBindings;
+
+  beforeEach(() => {
+    editor = makeEditor(JSON.parse(fs.readFileSync(FLAGSHIP_V3, 'utf8')));
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+  });
+
+  afterEach(() => {
+    attached.dispose();
+    const element = editor.element;
+    editor.destroy();
+    element?.remove();
+  });
+
+  it('LAW: both subtotals stand and every summary figure is unmoved', () => {
+    const table = indexOf(editor).tables.get('property_premium')?.tablePath;
+    if (!table) throw new Error('no property_premium table - harness is wrong');
+    let block: any = parsed(editor);
+    for (const segment of table) block = block?.[segment as any];
+    const structure = deriveTableStructure({
+      tableBlock: block,
+      headerRows: 1,
+      tableId: 'property_premium',
+      documentFormulas: documentFormulas(editor)
+    });
+    // Buildings, Contents | Stock, Business interruption, Machinery breakdown.
+    const moving = structure.rows
+      .filter((row) => row.role === 'item' && row.index >= 3)
+      .map((row) => row.index);
+    expect(moving).toEqual([3, 4, 5]);
+
+    const before = formulaValues(editor);
+    // The property schedule's own arithmetic is the browser's: $22,054.40 is
+    // what splits into $11,008.00 and $11,046.40 there.
+    expect(CURRENCY(before.property_premium_subtotal)).toBeCloseTo(22054.4, 2);
+
+    const anchorBlock = expandedBlockIndex(editor, 'property-r1');
+    const result = applyDocumentEdits(editor as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'duplicate_table',
+          anchor: `0;${anchorBlock};0;0;0`,
+          rows: 'copy',
+          keepRows: moving
+        } as any,
+        {
+          op: 'delete_row',
+          anchor: `0;${anchorBlock};${moving[0]};0;0`,
+          rows: moving
+        } as any
+      ]
+    });
+    expect(outcomes(result)).toEqual(['ok', 'ok']);
+
+    // Read the law on the ACCEPTED document. In the pending state the moved
+    // rows are still physically present as deletions, and this document's
+    // per-row `line_total` formulas keep contributing to the surviving
+    // fragment's `sum(property_premium.line_total)` until the card resolves -
+    // which is why the pending card in the browser shows $11,008.00 beside a
+    // struck-through $22,054.40. Accept is where the arithmetic is final.
+    resolveLiveRevisionGroupsAsOneUndo(editor as any, cardGroups(editor), true);
+    expect(editor.revisions.length).toBe(0);
+
+    // Two property schedules, each scoped to its own rows. The recomputed
+    // FIGURES are pinned by the banded rows above and by the browser run, not
+    // here: this document's aggregates do not re-evaluate under jsdom once the
+    // card resolves, and inventing a value oracle the harness cannot produce
+    // would pin the harness rather than the law.
+    const after = formulaValues(editor);
+    const copy = successorOf(editor, 'property_premium_subtotal') as string;
+    expect(copy).toBeTruthy();
+    expect(documentFormulas(editor).get('property_premium_subtotal')).toBe(
+      'sum(property_premium.line_total)'
+    );
+    expect(documentFormulas(editor).get(copy)).toBe(
+      'sum(property_premium_copy.line_total)'
+    );
+
+    // The summary follows both fragments, so nothing the captain reads moved.
+    expect(documentFormulas(editor).get('summary_property')).toBe(
+      `sum(property_premium_subtotal,${copy})`
+    );
+    for (const figure of [
+      'summary_property',
+      'summary_liability',
+      'summary_motor',
+      'summary_subtotal',
+      'summary_tax',
+      'grand_total'
+    ])
+      expect([figure, after[figure]]).toEqual([figure, before[figure]]);
+
+    // ROW SCOPE: the other two schedules' row formulas are untouched, and every
+    // reference in the document still resolves.
+    const settled = applyRules(parsed(editor));
+    expect(
+      settled.diagnostics
+        .filter((entry: any) => entry.severity === 'error')
+        .map((entry: any) => entry.code)
+    ).toEqual([]);
+    // Exactly the formulas that named the property subtotal follow it - the
+    // summary line and the subtotal-of-subtotals - and nothing else moves.
+    const followers = [...documentFormulas(editor)]
+      .filter(([, expression]) => expression.includes(copy))
+      .map(([name]) => name)
+      .sort();
+    expect(followers).toEqual(['summary_property', 'summary_subtotal']);
+    expect(documentFormulas(editor).get('summary_subtotal')).toBe(
+      `sum(sum(property_premium_subtotal,${copy}),liability_premium_subtotal,motor_premium_subtotal)`
+    );
+    expect(documentFormulas(editor).get('liability_premium_subtotal')).toBe(
+      'sum(liability_premium.line_total)'
+    );
+    expect(documentFormulas(editor).get('motor_premium_subtotal')).toBe(
+      'sum(motor_premium.line_total)'
+    );
+    // ROW SCOPE, stated as the pin the old refusal failed: every row formula
+    // in the document still reads its own row's columns, untouched.
+    for (const occurrence of indexOf(editor).occurrences)
+      if (occurrence.rowId && occurrence.def.kind === 'formula')
+        expect(occurrence.def.expression).toBe('mul(units,rate)');
   });
 });

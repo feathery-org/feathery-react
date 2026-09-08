@@ -14546,30 +14546,55 @@ function rewriteBindingsInClone(
 }
 
 /**
- * THE LAW: splitting a table changes presentation, never document totals.
+ * THE LAW: references follow the bindings they name.
  *
- * An aggregate is a document-level formula physically inside a table, reaching
- * its rows by a dotted ref. A split is composed as `duplicate_table` with
- * `keepRows` plus `delete_row` of the complement, and `duplicate_table` mints
- * FRESH names for what it copies while rewriting only the CLONE's expressions.
- * That asymmetry is deliberate for a COPY - a copy must never steal references
- * that pointed at its source, because the source is still whole - and it is the
- * whole defect for a SPLIT, where the source is not: fragment one keeps the
- * original aggregate and correctly recomputes to its own rows, and every
- * formula outside the table still names it, so every outside figure silently
- * understates the document by the whole second fragment.
+ * A split moves rows; it destroys nothing. So a split never refuses, and every
+ * binding it moves has a SUCCESSOR: the name that carries that binding after
+ * the change set. Successors are computed, not guessed, and the two cases are
+ * one mechanism rather than two rules:
  *
- * The discriminator between the two is not the op list and not the name: it is
- * whether the source table LOST ROWS in the same change set. A copy leaves it
- * whole and nothing outside is touched; a split shrinks it, and every outside
- * formula that named one of its aggregates is rewritten to the sum of that
- * aggregate across all fragments. Per-fragment aggregates are left alone - they
+ *   an AGGREGATE of the split table has TWO successors - its own name, kept by
+ *   the surviving fragment and correctly rescoped to that fragment's rows, and
+ *   the copy's minted name - so a reference to it becomes the SUM of both;
+ *
+ *   a moved ITEM binding has ONE successor - the copy's minted name, the
+ *   original having left with its row - so a reference to it becomes that
+ *   single name. A prose mirror (`expr=buildings_premium`) is the everyday
+ *   shape of this case, and following it is a rename, not a total.
+ *
+ * Both are the same rewrite (retag the referencing formula) with the same
+ * group-bound inverse, so reject, undo and a rolled-back change set restore the
+ * original expression the moment the successor leaves the document.
+ *
+ * A split is composed as `duplicate_table` with `keepRows` plus `delete_row` of
+ * the complement, and `duplicate_table` mints FRESH names for the
+ * document-level bindings it copies while rewriting only the CLONE's
+ * expressions. That asymmetry is deliberate for a COPY - a copy must never
+ * steal references that pointed at its source, because the source is still
+ * whole - and it is the whole defect for a SPLIT, where the source is not:
+ * fragment one keeps the original aggregate and recomputes to its own rows, the
+ * moved item's original is deleted outright, and every formula outside the
+ * table still names what shrank or left.
+ *
+ * The discriminator between copy and split is not the op list and not the name:
+ * it is whether the fragments PARTITION the source's rows. A copy leaves the
+ * source whole and nothing outside is touched; a split shrinks it, and every
+ * outside reference follows. Per-fragment aggregates are left alone - they
  * already rescope to their own items, which is the half of the law the split
  * gets right and this must not disturb.
  *
  * Provenance is what makes the pairing exact rather than inferred: the clone
- * records `copyOf` on every binding it renames, so the copied aggregate names
- * its own original.
+ * records `copyOf` on every binding it renames, so the copied binding names its
+ * own original.
+ *
+ * ROW SCOPE IS NOT A DOCUMENT REFERENCE, and this is the second half of the
+ * defect measured on the captain's own proposal. A row-scoped binding (`units`,
+ * `rate`, `line_total`) is one row's own column, shared by name across every
+ * row of every table, and a row formula's `mul(units,rate)` resolves inside its
+ * own row. Successors are therefore keyed only on DOCUMENT-level bindings -
+ * the ones `scanBindings` files under `fields`/`formulas` rather than under a
+ * table's rows - which is why splitting one schedule of a three-schedule
+ * proposal leaves the other two schedules' row formulas alone.
  */
 interface SplitConservation {
   sfdt: any;
@@ -14598,18 +14623,35 @@ function expressionReferences(expression: string): string[] {
   return found;
 }
 
-/** `expression` with every bare `name` replaced by `sum(name, replacement)`. */
-function sumAcrossFragments(
+/**
+ * The names that carry `name` after the split: the original when the surviving
+ * fragment kept it, plus the name the clone minted for it. Empty when the split
+ * did not touch that binding at all.
+ */
+function splitSuccessors(
+  name: string,
+  minted: Map<string, string>,
+  kept: Set<string>
+): string[] {
+  const copy = minted.get(name);
+  if (!copy) return [];
+  return kept.has(name) ? [name, copy] : [copy];
+}
+
+/** `expression` with every reference replaced by the successors that carry it. */
+function followSuccessors(
   expression: string,
-  fragments: Map<string, string>
+  minted: Map<string, string>,
+  kept: Set<string>
 ): string {
   return String(expression).replace(
     /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
     (token, offset: number, source: string) => {
       const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
       if (after === '(') return token;
-      const copy = fragments.get(token);
-      return copy ? `sum(${token},${copy})` : token;
+      const heirs = splitSuccessors(token, minted, kept);
+      if (!heirs.length) return token;
+      return heirs.length === 1 ? heirs[0] : `sum(${heirs.join(',')})`;
     }
   );
 }
@@ -14618,12 +14660,15 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
   const beforeIndex = scanBindings(before);
   const afterIndex = scanBindings(after);
   const empty: SplitConservation = { sfdt: after, restores: [], receipts: [] };
-  /** Aggregate name -> the copied fragment's aggregate, per split table. */
-  const fragments = new Map<string, string>();
+  /** Origin name -> the name the clone minted for it, per split table. */
+  const minted = new Map<string, string>();
+  /** Origins the surviving fragment still carries under their own name. */
+  const kept = new Set<string>();
   /** Every table a split of this change set produced or shrank. */
   const splitPaths: Array<ReadonlyArray<string | number>> = [];
-  /** Bindings the split moved out of the source table and renamed away. */
-  const movedAway = new Set<string>();
+
+  const documentBinding = (index: BindingIndex, name: string) =>
+    index.formulas.get(name)?.[0] ?? index.fields.get(name)?.[0];
 
   for (const [copyId, copyTable] of afterIndex.tables) {
     if (beforeIndex.tables.has(copyId) || !copyTable.tablePath) continue;
@@ -14631,11 +14676,10 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
       if (!pathContains(copyTable.tablePath, occurrence.path)) continue;
       const origin = (occurrence.def as any)?.options?.copyOf;
       if (typeof origin !== 'string' || !origin) continue;
-      const source = beforeIndex.formulas.get(origin)?.[0];
-      // Only an AGGREGATE conserves anything: a row-scoped binding is one
-      // item's own figure, and a field is not a formula at all.
-      if (!source || source.def.kind !== 'formula') continue;
-      if ((source.def as any).options?.row) continue;
+      // Only a DOCUMENT binding is a reference anything outside could name; a
+      // row-scoped one is that row's own column and is filed under its table.
+      const source = documentBinding(beforeIndex, origin);
+      if (!source) continue;
       const sourceTable = [...beforeIndex.tables].find(
         ([, table]) =>
           !!table.tablePath && pathContains(table.tablePath, source.path)
@@ -14660,21 +14704,14 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
         survivor.rows.length + copyTable.rows.length !== sourceEntry.rows.length
       )
         continue;
-      if (!afterIndex.formulas.has(origin)) continue;
-      fragments.set(origin, occurrence.name);
+      minted.set(origin, occurrence.name);
+      // An AGGREGATE survives in fragment one; a MOVED ITEM does not, and the
+      // difference is read off the document rather than assumed from the kind.
+      if (documentBinding(afterIndex, origin)) kept.add(origin);
       splitPaths.push(survivor.tablePath, copyTable.tablePath);
-      for (const prior of beforeIndex.occurrences) {
-        if (!sourceEntry.tablePath) continue;
-        if (!pathContains(sourceEntry.tablePath, prior.path)) continue;
-        if (
-          !afterIndex.formulas.has(prior.name) &&
-          !afterIndex.fields.has(prior.name)
-        )
-          movedAway.add(prior.name);
-      }
     }
   }
-  if (!fragments.size) return empty;
+  if (!minted.size) return empty;
 
   let sfdt = after;
   const restores: ExpressionRestore[] = [];
@@ -14685,13 +14722,7 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
     if (splitPaths.some((path) => pathContains(path, occurrence.path)))
       continue;
     const references = expressionReferences(occurrence.def.expression);
-    const orphan = references.find((reference) => movedAway.has(reference));
-    if (orphan)
-      throw new OpError(
-        'split_moves_referenced_item',
-        `This split cannot be applied. "${occurrence.name}" outside the table reads "${orphan}", which is one item's own figure rather than a total, and the split moves that item into the second table. Splitting would leave "${occurrence.name}" pointing at nothing, and there is no total to add up in its place. Choose a split point that keeps that item, or change "${occurrence.name}" to read a subtotal first.`
-      );
-    const next = sumAcrossFragments(occurrence.def.expression, fragments);
+    const next = followSuccessors(occurrence.def.expression, minted, kept);
     if (next === occurrence.def.expression) continue;
     if (seen.has(occurrence.tag)) continue;
     seen.add(occurrence.tag);
@@ -14699,8 +14730,10 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
     if (!def || def.kind !== 'formula') continue;
     def.expression = next;
     const toTag = formatTag(def);
+    // The inverse asks the DOCUMENT, so it is bound to the minted successor:
+    // the rewrite is true exactly while that name is there to be read.
     const requires = references
-      .map((reference) => fragments.get(reference))
+      .map((reference) => minted.get(reference))
       .find((copy): copy is string => !!copy) as string;
     const node = getAt(sfdt, occurrence.path) as any;
     sfdt = setAt(sfdt, occurrence.path, {
@@ -14716,8 +14749,10 @@ function conserveSplitAggregates(before: any, after: any): SplitConservation {
       toTag,
       requires
     });
+    const followed = references.filter((reference) => minted.has(reference));
     receipts.push(
-      `${occurrence.name} now totals both fragments (${next}) so the split moves no money`
+      `${occurrence.name} follows the split (${next}) so the money it reads is unchanged` +
+        (followed.length ? `: ${[...new Set(followed)].join(', ')}` : '')
     );
   }
   return { sfdt, restores, receipts };
