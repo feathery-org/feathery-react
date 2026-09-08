@@ -112,6 +112,7 @@ function ImageElement({
             ...(applyWidth ? styles.getTarget('dimension') : {})
           }}
           onLoad={() => setApplyWidth(false)}
+          name='image'
           {...elementProps}
         />
       ) : (
@@ -128,6 +129,7 @@ function ImageElement({
             ...(applyWidth ? styles.getTarget('dimension') : {})
           }}
           onLoad={() => setApplyWidth(false)}
+          name='image'
           {...elementProps}
         />
       )}

@@ -75,11 +75,7 @@ describe('TextElement', () => {
         border_left_width: 0
       }
     };
-    const responsiveStyles = new ResponsiveStyles(
-      element,
-      ['border'],
-      true
-    );
+    const responsiveStyles = new ResponsiveStyles(element, ['border'], true);
 
     expect(responsiveStyles.applyBorders({ target: 'border' })).toBe(true);
     expect(responsiveStyles.getTarget('border')).toEqual({
@@ -171,5 +167,32 @@ describe('TextElement', () => {
     expect(rule).not.toBe('');
     expect(rule).not.toContain('padding-top');
     expect(rule).not.toContain('box-sizing');
+  });
+});
+
+describe('TextElement DOM naming', () => {
+  const renderText = async (properties: any) => {
+    const TextElement = (await import('../TextElement')).default;
+    const element = {
+      key: 'intro-copy',
+      properties,
+      styles: {},
+      mobile_styles: {}
+    };
+    const responsiveStyles = new ResponsiveStyles(element, ['text'], true);
+    const { container } = render(
+      <TextElement element={element} responsiveStyles={responsiveStyles} />
+    );
+    return container.firstElementChild as HTMLElement;
+  };
+
+  it('names the block by its content so clicks on it are attributed', async () => {
+    const root = await renderText({ text: '  Welcome to\n  the plan picker ' });
+    expect(root.getAttribute('name')).toBe('Welcome to the plan picker');
+  });
+
+  it('falls back to the element key when the text is empty', async () => {
+    const root = await renderText({ text: '' });
+    expect(root.getAttribute('name')).toBe('intro-copy');
   });
 });

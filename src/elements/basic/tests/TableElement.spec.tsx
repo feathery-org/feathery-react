@@ -175,3 +175,15 @@ describe('TableElement targetable class names', () => {
     });
   });
 });
+
+describe('TableElement DOM naming', () => {
+  it('names the table container', async () => {
+    const { container } = await renderTable({
+      columns: baseColumns,
+      actions: []
+    });
+    expect(
+      container.querySelector(`.${TABLE_CLASS.container}`)?.getAttribute('name')
+    ).toBe('table');
+  });
+});

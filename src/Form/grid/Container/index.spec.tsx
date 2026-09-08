@@ -55,3 +55,20 @@ describe('Container document editor wiring', () => {
     expect(editor).toHaveAttribute('data-container-id', 'container-1');
   });
 });
+
+describe('Container DOM naming', () => {
+  it('names every container by its key', () => {
+    const { container } = render(
+      <Container
+        node={{ ...docxNode, properties: {} }}
+        viewport='desktop'
+        form={{
+          formInstanceId: 'internal-form-id',
+          activeStep: { id: 'step-1' },
+          formSettings: { mobileBreakpoint: 480 }
+        }}
+      />
+    );
+    expect(container.querySelector('[name="container-1"]')).toBeTruthy();
+  });
+});
