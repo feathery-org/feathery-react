@@ -225,7 +225,21 @@ export function attachBindings(
   };
   const onContentChange = () => runGuarded(() => triggers.onContentChange());
   const onKeyDown = (args: any) =>
-    runGuarded(() => triggers.onKeyDown(args?.event?.key));
+    runGuarded(() => {
+      const key = args?.event?.key;
+      triggers.onKeyDown(key);
+      // Backspace/Delete inside a locked control is refused by Syncfusion
+      // WITHOUT firing 'contentControl' - canEditContentControl short-circuits
+      // on lockContents before it reaches checkContentControlLocked (the only
+      // thing that fires the event). So surface the hint from here. A
+      // multi-cell/structural selection has no currentContentControl, so this
+      // never fires on a real row/table delete.
+      if (
+        (key === 'Backspace' || key === 'Delete') &&
+        isLockedControl(caretControl())
+      )
+        showLockedHint();
+    });
   const onBlur = () =>
     runGuarded(() => {
       triggers.onEditorBlur();
@@ -257,19 +271,22 @@ export function attachBindings(
   };
   const caretControl = (): ContentControlLike | null =>
     editor.selection?.currentContentControl ?? null;
+  const showLockedHint = (): void => {
+    if (!onLockedEdit || isDeleteGuardBusy()) return;
+    lockHintActive = true;
+    if (lockedHintTimer !== null) return; // debounced: one hint per burst
+    onLockedEdit();
+    lockedHintTimer = scheduleTimeout(() => {
+      lockedHintTimer = null;
+    }, 600);
+  };
   const onLockedControl = () =>
     runGuarded(() => {
-      if (!onLockedEdit || isDeleteGuardBusy()) return;
       // The event means a lock was hit; the only false positive is the caret
       // being in an editable inner field (its wrapper is what tripped it).
       const control = caretControl();
       if (control && !isLockedControl(control)) return;
-      lockHintActive = true;
-      if (lockedHintTimer !== null) return;
-      onLockedEdit();
-      lockedHintTimer = scheduleTimeout(() => {
-        lockedHintTimer = null;
-      }, 600);
+      showLockedHint();
     });
 
   // Dismiss the hint once the caret is no longer on a locked control; keep it

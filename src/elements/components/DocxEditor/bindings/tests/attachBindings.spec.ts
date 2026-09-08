@@ -198,6 +198,31 @@ describe('attaching bindings to a tokenized template', () => {
     setCaretControl(null);
   });
 
+  it('shows the hint on Backspace/Delete inside a locked control (no contentControl event fires)', () => {
+    attached.dispose();
+    const onLockedEdit = jest.fn();
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      onLockedEdit
+    });
+
+    // Syncfusion refuses Backspace/Delete inside a locked control WITHOUT
+    // firing 'contentControl', so the keyDown handler must surface the hint.
+    setCaretControl(true);
+    (editor as any).trigger('keyDown', { event: { key: 'Backspace' } });
+    expect(onLockedEdit).toHaveBeenCalledTimes(1);
+
+    // An editable control: Backspace edits, no hint.
+    onLockedEdit.mockClear();
+    setCaretControl(false);
+    (editor as any).trigger('keyDown', { event: { key: 'Delete' } });
+    expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // Not on a control (e.g. a structural/multi-cell selection): no hint.
+    setCaretControl(null);
+    (editor as any).trigger('keyDown', { event: { key: 'Backspace' } });
+    expect(onLockedEdit).not.toHaveBeenCalled();
+  });
+
   it('does not recurse when reading whether the edit was refused', () => {
     attached.dispose();
     const onLockedEdit = jest.fn();
