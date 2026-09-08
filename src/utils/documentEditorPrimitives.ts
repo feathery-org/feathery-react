@@ -1704,6 +1704,63 @@ export const revisionIsUnresolvable = (revision: LiveRevision): boolean =>
   revisionRangeLength(revision) === 0;
 
 /**
+ * Deregister every revision the document is holding over an EMPTY RANGE.
+ *
+ * THE LAW: a revision is a claim about a span of the document.
+ * A registered revision with no span claims nothing, so there is no edit for a
+ * reviewer to keep or discard - and SyncFusion's `handleAcceptReject` walks
+ * `while (getRange().length > 0)` and deregisters only from inside that walk,
+ * so the engine itself can never retire one. It is not a pending change; it is
+ * a bookkeeping leak that reads to the user as an edit they can never resolve.
+ *
+ * Document-wide on purpose, and that is the half a group-scoped sweep cannot
+ * cover. A range does not have to be empty when the revision is authored: a
+ * row removal that takes the elements of a revision it is not itself resolving
+ * empties that revision's range IN PLACE, mid-resolve. So the leak can reach
+ * the end of a resolve in two shapes - a member of the resolving group whose
+ * range a neighbour emptied, or a revision the engine minted during the
+ * resolve, which carries no change-set tag and is therefore invisible to the
+ * group filter that drives the loop: never matched, never attempted, never
+ * reported. Reading membership instead of the document is what let one survive
+ * an accept that reported success. Whatever authored it, the repair is the same
+ * and it is safe: an empty range means nothing in the document points at the
+ * revision any more.
+ *
+ * Returns what it retired, so a caller can say so.
+ */
+export function purgeUnresolvableRevisions(editor: LiveEditor): LiveRevision[] {
+  const collection: any = (editor as any).revisions;
+  const registry: any = (editor as any).documentHelper?.revisionsInternal;
+  const purged: LiveRevision[] = [];
+  for (const revision of snapshotRevisions(editor)) {
+    if (!revisionIsUnresolvable(revision)) continue;
+    // The SDK's own removal first: it also tears down the change-pane view.
+    try {
+      collection?.remove?.(revision);
+    } catch {
+      // The two arrays below are the registration that actually matters.
+    }
+    // `RevisionCollection.remove` splices only `changes` when the change pane
+    // never rendered this revision, while `length` reads `revisions` - so a
+    // host without that pane keeps counting a revision the SDK just removed.
+    for (const key of ['revisions', 'changes']) {
+      const list = collection?.[key];
+      if (!Array.isArray(list)) continue;
+      const at = list.indexOf(revision);
+      if (at >= 0) list.splice(at, 1);
+    }
+    try {
+      const id = revision.revisionID;
+      if (id && registry?.containsKey?.(id)) registry.remove(id);
+    } catch {
+      // The id map is a lookup cache; the collection is the registration.
+    }
+    purged.push(revision);
+  }
+  return purged;
+}
+
+/**
  * What one resolve settled, and what it could not.
  *
  * An ARRAY of the members that actually left the document - so every caller
@@ -1769,6 +1826,10 @@ export function resolveRevisionsAsOneUndo(
       }
     }
   }
+  // Before the document state is read back: an empty-range revision is not a
+  // member this pass failed to move, it is a leak to retire (see the law on
+  // `purgeUnresolvableRevisions`).
+  const purged = new Set(purgeUnresolvableRevisions(editor));
   if (revisions.length > 1) invalidateDocumentLayout(editor);
   // Same law as the group path, read the same way: what is still registered
   // after the pass did not move, whether it threw or refused in silence. This
@@ -1776,7 +1837,7 @@ export function resolveRevisionsAsOneUndo(
   // instead of leaving the rail redrawing the same chip after every click.
   const live = new Set(liveRevisionsRaw(editor));
   return resolveOutcome(
-    resolved,
+    resolved.filter((revision) => !purged.has(revision)),
     attempted.filter((revision) => live.has(revision))
   );
 }
@@ -1872,6 +1933,11 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       }
     }
   }
+  // Empty-range revisions can reach here untagged, or belonging to a group this
+  // pass never matched, so `matchesGroup` above cannot be the reading that
+  // retires them. Retire them from the DOCUMENT, before the state is read back,
+  // so an accept that finished cannot leave an edit nobody can ever resolve.
+  const purged = new Set(purgeUnresolvableRevisions(editor));
   if (initial.length) invalidateDocumentLayout(editor);
   // Read the document, not the bookkeeping. What is STILL a member of this
   // group is what did not resolve - whether it threw, refused in silence, or
@@ -1880,8 +1946,12 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   // carried it out. Counting resolve CALLS instead of document state is what
   // let the old loop report a spin as 348 successes.
   const live = new Set(members());
+  // A retired leak belongs in NEITHER list: it did not resolve, because it was
+  // never an edit, and it is not outstanding, because it is gone.
   return resolveOutcome(
-    [...attempted].filter((revision) => !live.has(revision)),
+    [...attempted].filter(
+      (revision) => !live.has(revision) && !purged.has(revision)
+    ),
     [...live]
   );
 }

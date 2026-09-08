@@ -349,24 +349,23 @@ describe('a composed split accepts as a whole, or says which member it could not
     // conserves the document totals.
     expect(total).toBe(9);
 
-    // The poison still cannot move - nothing here pretends to resolve it - but
-    // it no longer takes the five members after it down with it. ONE left, not
-    // `total - poisonAt`.
-    const left = liveRevisions(editor);
-    expect(left.length).toBe(1);
-    expect(left[0] === orphan).toBe(true);
+    // The poison still cannot MOVE - nothing here pretends to resolve it - and
+    // it no longer takes the five members after it down with it. It is also no
+    // longer LEFT: an empty range is no edit at all, so the card finishes and
+    // the leak is retired with it. See `purgeUnresolvableRevisions`.
+    expect(liveRevisions(editor).length).toBe(0);
+    expect(liveRevisions(editor).includes(orphan)).toBe(false);
 
     // The loop no longer SPINS. Counted at the poison itself, which is the only
     // place the spin was ever visible: it is tried ONCE, recognized as
     // non-progressing, and stepped over - against 341 tries out of 348 before.
     expect(touches()).toBe(1);
 
-    // And it is reported rather than swallowed, so the rail can say the card
-    // stalled on one edit. Identity and numbers only: a live Revision is
-    // circular and jest cannot walk one.
+    // And it is in NEITHER list: it did not resolve, because it was never an
+    // edit, and it is not outstanding, because it is gone. Identity and numbers
+    // only: a live Revision is circular and jest cannot walk one.
     expect(attempts.includes(orphan)).toBe(false);
-    expect(attempts.unresolved.length).toBe(1);
-    expect(attempts.unresolved[0] === orphan).toBe(true);
+    expect(attempts.unresolved.length).toBe(0);
   });
 
   // ------------------------------------------------------- never author one
@@ -438,12 +437,10 @@ describe('a composed split accepts as a whole, or says which member it could not
 
     resolveLiveRevisionGroupsAsOneUndo(editor as any, cardGroups(editor), true);
 
-    // One member cannot resolve, so exactly one is left - not the whole tail.
-    // Identity, not deep equality: a live Revision is circular and jest cannot
-    // walk it, so a `toEqual` here fails for the wrong reason.
-    const left = liveRevisions(editor);
-    expect(left.length).toBe(1);
-    expect(left[0] === orphan).toBe(true);
+    // Every member the loop CAN resolve is resolved, and the one it cannot is
+    // retired rather than left pending, so the card is finished either way.
+    expect(liveRevisions(editor).length).toBe(0);
+    expect(liveRevisions(editor).includes(orphan)).toBe(false);
   });
 
   it('WEDGE-REPRO: reject mirrors it, instead of abandoning the head of the card', () => {
@@ -457,26 +454,75 @@ describe('a composed split accepts as a whole, or says which member it could not
       false
     );
 
-    const left = liveRevisions(editor);
-    expect(left.length).toBe(1);
-    expect(left[0] === orphan).toBe(true);
+    expect(liveRevisions(editor).length).toBe(0);
+    expect(liveRevisions(editor).includes(orphan)).toBe(false);
   });
 
+  /**
+   * The reporting contract, measured on the only member shape that can still
+   * survive a resolve: one that REFUSES with a live range.
+   *
+   * An empty-range member no longer reaches the rail at all - it is retired as
+   * the leak it is - so a test that poisons the range measures the purge, not
+   * the notice. A member whose resolve is inert while its range stays intact is
+   * a genuine "this edit is still showing", and that is what the rail owes the
+   * captain a notice for.
+   */
   it('WEDGE-REPRO: a member the loop could not resolve is REPORTED, not swallowed', () => {
     expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const total = editor.revisions.length;
-    orphanOneMember(editor, Math.floor(total / 2));
+    const refuser: any = liveRevisions(editor)[Math.floor(total / 2)];
+    for (const key of ['robinResolveSelf', 'handleAcceptReject', 'accept'])
+      if (typeof refuser[key] === 'function') refuser[key] = () => undefined;
 
-    // The caller has no way to learn the card did not finish. Whatever shape the
-    // fix takes - a thrown error, a returned unresolved list, a diagnostic - the
-    // rail must be able to tell the captain the card stalled instead of showing
-    // a silent partial application.
-    const unresolved = (
-      resolveLiveRevisionGroupsAsOneUndo as unknown as (
-        ...args: unknown[]
-      ) => { unresolved?: unknown[] }
-    )(editor as any, cardGroups(editor), true);
-    expect(unresolved.unresolved).toHaveLength(1);
+    const outcome = resolveLiveRevisionGroupsAsOneUndo(
+      editor as any,
+      cardGroups(editor),
+      true
+    );
+
+    // Still registered, still spanning something: an edit the captain can see.
+    expect(revisionIsUnresolvable(refuser)).toBe(false);
+    expect(outcome.unresolved).toHaveLength(1);
+    expect(outcome.unresolved[0] === refuser).toBe(true);
+  });
+
+  /**
+   * THE BROWSER DEFECT, at the layer jsdom can reach.
+   *
+   * Measured 2026-09-08 on the client document: accepting the composed split
+   * left exactly one `Deletion` revision with `range.length === 0` that was
+   * NOT one of the card's own revisions - the engine minted it during the
+   * accept, so it carried no change-set tag and the resolve loop's group
+   * filter could not see it, attempt it, or report it. The card read as
+   * finished with one edit still pending forever, and no rail notice.
+   *
+   * jsdom cannot mint one (the accept-side row deletion walks laid-out widgets
+   * and jsdom does not paginate), so the mint is staged here exactly as the
+   * browser produced it: an empty range and no tag. What this pins is the law
+   * that makes the browser state impossible - a resolve retires every
+   * empty-range revision in the DOCUMENT, not only the ones its group matched.
+   */
+  it('retires an empty-range revision the engine minted mid-accept, tag or no tag', () => {
+    expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
+    const total = editor.revisions.length;
+    const stray: any = orphanOneMember(editor, Math.floor(total / 2));
+    // The browser's survivor was untagged, so nothing about the card matched it.
+    stray.customData = undefined;
+    stray.author = 'Robin';
+    const groups = cardGroups(editor).filter((group: any) => !group.untagged);
+    expect(groups).toHaveLength(1);
+
+    const outcome = resolveLiveRevisionGroupsAsOneUndo(
+      editor as any,
+      groups,
+      true
+    );
+
+    expect(liveRevisions(editor).length).toBe(0);
+    expect(liveRevisions(editor).includes(stray)).toBe(false);
+    // And the rail says nothing, because there is no surviving edit to explain.
+    expect(outcome.unresolved).toHaveLength(0);
   });
 });
 
