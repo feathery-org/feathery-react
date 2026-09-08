@@ -4,6 +4,7 @@ import useBorder from '../../components/useBorder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { DROPDOWN_Z_INDEX } from '../index';
 import Placeholder from '../../components/Placeholder';
+import HiddenValueInput from '../../components/HiddenValueInput';
 import useSalesforceSync from '../../../hooks/useSalesforceSync';
 import { inputBoxAttrs } from '../../styles';
 
@@ -332,6 +333,10 @@ export default function DropdownMultiField({
       >
         {customBorder}
         <SelectComponent {...selectProps} inputValue={inputValue} />
+        <HiddenValueInput
+          name={fieldKey}
+          value={selectVal.map((opt: any) => opt.value).join(', ')}
+        />
         <Placeholder
           value={selectVal.length || focused}
           element={element}

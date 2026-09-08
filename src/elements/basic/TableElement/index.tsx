@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState
 } from 'react';
+import { nameProps } from '../../../utils/domName';
 import { stringifyWithNull } from '../../../utils/primitives';
 import { Search } from './Search';
 import { SortHeader, SortIcon } from './Sort';
@@ -262,6 +263,7 @@ function TableElement({
   return (
     <div
       className={TABLE_CLASS.container}
+      {...nameProps('table')}
       css={{
         ...containerStyle,
         ...styles.getTarget('container')

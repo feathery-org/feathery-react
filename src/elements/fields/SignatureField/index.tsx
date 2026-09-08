@@ -121,6 +121,7 @@ function SignatureField({
           {/* This input must always be rendered so we can set field errors */}
           <ErrorInput
             id={servar.key}
+            name={servar.key}
             aria-label={element.properties.aria_label}
           />
         </div>

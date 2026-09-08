@@ -141,3 +141,29 @@ describe('ColorPickerField', () => {
     });
   });
 });
+
+describe('ColorPickerField - DOM naming', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetMockFieldValue();
+  });
+
+  it('identifies the swatch and mirrors the hex under the field key', () => {
+    const element = createColorPickerElement('hex_color');
+    const { container } = render(
+      <ColorPickerField
+        {...createColorPickerProps(element, { fieldVal: 'AABBCCFF' })}
+      />
+    );
+
+    expect(
+      container.querySelector(`#${element.servar.key}-swatch`)
+    ).toBeTruthy();
+
+    const mirror = container.querySelector(
+      'input[type="hidden"]'
+    ) as HTMLInputElement;
+    expect(mirror.name).toBe(element.servar.key);
+    expect(mirror.value).toBe('AABBCCFF');
+  });
+});

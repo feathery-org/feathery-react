@@ -280,6 +280,7 @@ function DateSelectorField({
         <DateSelectorStyles />
         <DatePicker
           id={element.servar.key}
+          name={element.servar.key}
           selected={internalDate}
           // Many modern browsers do not support autocomplete="off".
           // In order to avoid the autoComplete, use autocomplete="new-password"
