@@ -188,11 +188,21 @@ describe('TextElement DOM naming', () => {
 
   it('names the block by its content so clicks on it are attributed', async () => {
     const root = await renderText({ text: '  Welcome to\n  the plan picker ' });
-    expect(root.getAttribute('name')).toBe('Welcome to the plan picker');
+    expect(root.getAttribute('name')).toBe('Welcome_to_the_plan_picker');
   });
 
   it('falls back to the element key when the text is empty', async () => {
     const root = await renderText({ text: '' });
+    expect(root.getAttribute('name')).toBe('intro-copy');
+  });
+
+  it('sanitizes punctuation and emojis from the text', async () => {
+    const root = await renderText({ text: 'Welcome @ home #1! 🎉' });
+    expect(root.getAttribute('name')).toBe('Welcome_home_1');
+  });
+
+  it('falls back to the element key when the text has no usable characters', async () => {
+    const root = await renderText({ text: '🎉 @#%' });
     expect(root.getAttribute('name')).toBe('intro-copy');
   });
 });

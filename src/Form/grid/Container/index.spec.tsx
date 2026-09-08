@@ -57,10 +57,13 @@ describe('Container document editor wiring', () => {
 });
 
 describe('Container DOM naming', () => {
-  it('names every container by its key', () => {
+  it.each([
+    ['container-1', 'container-1'],
+    ['Contact @ details #1 🎉', 'Contact_details_1']
+  ])('names a container with key %p as %p', (key, name) => {
     const { container } = render(
       <Container
-        node={{ ...docxNode, properties: {} }}
+        node={{ ...docxNode, key, properties: {} }}
         viewport='desktop'
         form={{
           formInstanceId: 'internal-form-id',
@@ -69,6 +72,6 @@ describe('Container DOM naming', () => {
         }}
       />
     );
-    expect(container.querySelector('[name="container-1"]')).toBeTruthy();
+    expect(container.querySelector(`[name="${name}"]`)).toBeTruthy();
   });
 });
