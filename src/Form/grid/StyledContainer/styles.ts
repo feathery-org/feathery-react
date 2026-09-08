@@ -1,6 +1,6 @@
 import ResponsiveStyles from '../../../elements/styles';
 import { isFill, isFit, isPx } from '../../../utils/hydration';
-import { getElementType } from './utils';
+import { getElementType, isTableElement } from './utils';
 import { isNum } from '../../../utils/primitives';
 
 export const DEFAULT_MIN_SIZE = 50;
@@ -104,12 +104,10 @@ export const getContainerStyles = (
       // to wrap. Other elements should have min-width: min-content to prevent them from overflowing and becoming
       // too small.
       // Tables scroll horizontally inside their own container, so their cell
-      // must shrink to the configured width instead of the full table width.
-      // The hosted form types the node 'table'; the designer canvas passes its
-      // own 'table_element', and both have to shrink or a wide grid pushes the
-      // step (and every fit-width ancestor) out past the available space.
-      const isTable =
-        elementType === 'table' || elementType === 'table_element';
+      // must shrink to the configured width instead of the full table width,
+      // or a wide grid pushes the step (and every fit-width ancestor) out past
+      // the available space.
+      const isTable = isTableElement(node);
       if (isTable) s.minWidth = 0;
       else if (elementType !== 'dropdown_multi') s.minWidth = 'min-content';
       s.width = '100%';
@@ -256,17 +254,21 @@ export const getContainerStyles = (
         s.flex = '0 1 auto';
 
         if (isFill(heightUnit)) {
-          // `fill` has to GROW into the available space, not merely cap at it:
-          // capping alone leaves a scrolling element (a spreadsheet table) at
-          // its natural height with empty space below. gig's parent_axis
-          // naming is inverted vs CSS — 'row' means the parent stacks its
-          // children vertically, so height is the main axis there.
           s.maxHeight = '100%';
-          if (parentAxis === 'row') {
-            s.flex = '1 1 auto';
-            s.minHeight = 0;
-          } else {
-            s.height = '100%';
+          // A scrolling table has to GROW into the available space, not
+          // merely cap at it: capping alone leaves the grid at its natural
+          // height with empty space below. Only a table, though — every
+          // other fill-height element (an image, a text block) has always
+          // capped, and existing forms are laid out around that. gig's
+          // parent_axis naming is inverted vs CSS — 'row' means the parent
+          // stacks its children vertically, so height is the main axis there.
+          if (isTableElement(node)) {
+            if (parentAxis === 'row') {
+              s.flex = '1 1 auto';
+              s.minHeight = 0;
+            } else {
+              s.height = '100%';
+            }
           }
         }
 

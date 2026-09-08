@@ -275,10 +275,9 @@ export function useHubTableSource({
       if (typeof hubSchema?.unverified_enabled === 'boolean') {
         setUnverifiedEnabled(hubSchema.unverified_enabled);
       }
-      const list: HubEntry[] = Array.isArray(entries) ? [...entries] : [];
-      list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const list: HubEntry[] = Array.isArray(entries) ? entries : [];
       commitRows(
-        list.map((entry) => ({
+        orderLikeGrid(list, rowsRef.current).map((entry) => ({
           localId: `entry:${entry.id}`,
           entryId: entry.id,
           data: { ...entry.data },
@@ -586,6 +585,29 @@ export function useHubTableSource({
     discardNewRows,
     readOnlyKeys
   };
+}
+
+/**
+ * The Hub hands entries back in no particular order (the SDK `get` has no
+ * sort), so a resync — after a save, or when the window regains focus — used
+ * to re-sort every row by id, and the order the user had built (new rows at
+ * the top, manual inserts) visibly jumped. Rows already on the grid keep
+ * their places. Only entries the grid has not seen fall back to id order,
+ * and they land at the top, where the grid puts its own new rows.
+ */
+export function orderLikeGrid(
+  entries: HubEntry[],
+  current: HubRow[]
+): HubEntry[] {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const kept = current
+    .map((row) => (row.entryId ? byId.get(row.entryId) : undefined))
+    .filter((entry): entry is HubEntry => entry !== undefined);
+  const seen = new Set(kept.map((entry) => entry.id));
+  const fresh = entries
+    .filter((entry) => !seen.has(entry.id))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return [...fresh, ...kept];
 }
 
 function omitKeys(

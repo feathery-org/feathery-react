@@ -14,13 +14,14 @@ import { CellValue, getFillPreview } from './model';
 import { CellEditor } from './CellEditor';
 import { CellErrorTooltip } from './CellErrorTooltip';
 import { RowMenu, RowMenuTarget } from './RowMenu';
-import { formatCellDisplay } from './fieldEditors';
+import { choicesFor, formatCellDisplay } from './fieldEditors';
 import { CellRules } from './validation';
 import type { FillPreview, GridBounds, GridCoordinate } from './model';
 import {
   addRowStripLabelStyle,
   addRowStripStyle,
   canvasStyle,
+  cellDropdownIndicatorStyle,
   cellFillPreviewStyle,
   cellZIndex,
   cellSelectedStyle,
@@ -43,6 +44,10 @@ import {
   rowStyle,
   CELL_HORIZONTAL_PADDING,
   DEFAULT_COLUMN_WIDTH,
+  FONT_SIZE,
+  GRID_FONT_FAMILY,
+  HEADER_FONT_SIZE,
+  HEADER_FONT_WEIGHT,
   HEADER_HEIGHT,
   ROW_HEADER_WIDTH,
   ROW_HEIGHT,
@@ -948,6 +953,11 @@ function SpreadsheetCell({
     columnIndex === activeBound.maxColumnIndex;
 
   const value = cell.getValue();
+  const rule = cellRules?.[cell.column.id];
+  // A dropdown cell opens on ONE click, the way a spreadsheet's validation
+  // list does — double-click-to-open reads as a text editor on a cell that
+  // has nothing to type into.
+  const opensOnClick = canEdit && choicesFor(rule) !== null;
   const shading = getCellShading?.({
     rowIndex: sourceRowIndex,
     fieldKey: cell.column.id,
@@ -994,13 +1004,25 @@ function SpreadsheetCell({
         cell.getSelectionStartHandler(featheryDoc())(event);
       }}
       onMouseEnter={cell.getSelectionExtendHandler()}
-      onDoubleClick={() =>
-        interactions.startEditing(cell.row.id, cell.column.id)
-      }
+      onClick={(event) => {
+        if (!opensOnClick || isEditing || event.button !== 0) return;
+        // A modified click is extending the selection, not picking. A click
+        // that ended on another cell (a range drag) never reaches here, and
+        // one on the fill handle is the start of a fill, not a pick.
+        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+          return;
+        }
+        const target = event.target as HTMLElement;
+        if (target.closest(`.${TABLE_CLASS.gridFillHandle}`)) return;
+        interactions.startEditing(cell.row.id, cell.column.id);
+      }}
+      onDoubleClick={() => {
+        if (!isEditing) interactions.startEditing(cell.row.id, cell.column.id);
+      }}
     >
       {isEditing ? (
         <CellEditor
-          rule={cellRules?.[cell.column.id]}
+          rule={rule}
           draft={interactions.editing?.draft ?? ''}
           seeded={Boolean(interactions.editing?.seeded)}
           label={`Edit ${cell.column.columnDef.meta?.name ?? ''} row ${
@@ -1012,9 +1034,14 @@ function SpreadsheetCell({
           onBlur={() => interactions.commitEditing()}
         />
       ) : (
-        <span css={cellValueStyle}>
-          {formatCellDisplay(value as CellValue, cellRules?.[cell.column.id])}
-        </span>
+        <>
+          <span css={cellValueStyle}>
+            {formatCellDisplay(value as CellValue, rule)}
+          </span>
+          {opensOnClick ? (
+            <span aria-hidden css={cellDropdownIndicatorStyle} />
+          ) : null}
+        </>
       )}
       {showTooltip && shading?.message ? (
         <CellErrorTooltip
@@ -1134,16 +1161,27 @@ function formatRenderedValue(value: unknown): string {
 
 let textMeasurementContext: CanvasRenderingContext2D | null = null;
 
-function measureTextWidth(value: string, bold = false): number {
+type MeasuredFont = { size: number; weight: number };
+const CELL_FONT: MeasuredFont = { size: FONT_SIZE, weight: 400 };
+const HEADER_FONT: MeasuredFont = {
+  size: HEADER_FONT_SIZE,
+  weight: HEADER_FONT_WEIGHT
+};
+
+/**
+ * The rendered width of `value` in the font the grid actually draws it in —
+ * measuring in any other font fits the column to text it does not hold.
+ */
+export function measureTextWidth(value: string, font: MeasuredFont): number {
   if (!textMeasurementContext) {
     textMeasurementContext = featheryDoc()
       .createElement('canvas')
       .getContext('2d');
   }
   // jsdom has no 2d context; fall back to a rough per-character estimate.
-  if (!textMeasurementContext) return value.length * 6;
+  if (!textMeasurementContext) return value.length * font.size * 0.55;
 
-  textMeasurementContext.font = `${bold ? '600 ' : ''}11px Arial, sans-serif`;
+  textMeasurementContext.font = `${font.weight} ${font.size}px ${GRID_FONT_FAMILY}`;
   return textMeasurementContext.measureText(value).width;
 }
 
@@ -1154,11 +1192,11 @@ function getAutoFitColumnWidth(
   const fieldKey = column.columnDef.meta?.fieldKey;
   if (!fieldKey) return column.getSize();
 
-  let widest = measureTextWidth(column.columnDef.meta?.name ?? '', true);
+  let widest = measureTextWidth(column.columnDef.meta?.name ?? '', HEADER_FONT);
   for (const row of table.options.data) {
     widest = Math.max(
       widest,
-      measureTextWidth(formatRenderedValue(row.cells[fieldKey]))
+      measureTextWidth(formatRenderedValue(row.cells[fieldKey]), CELL_FONT)
     );
   }
 

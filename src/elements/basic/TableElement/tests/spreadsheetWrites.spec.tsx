@@ -140,6 +140,62 @@ describe('Data Hub batched writes', () => {
   // the hook does rather than hard-coding the format.
   const key = (hubFieldKey: string) => `__hub_table1_${hubFieldKey}`;
 
+  test('a resync keeps the order the user built instead of re-sorting by id', async () => {
+    // The Hub returns entries unordered, so the grid used to sort by id on
+    // every load — and a row added at the top jumped to wherever its new id
+    // sorted after Save.
+    let served = twoEntries;
+    const dataHubAction = jest.fn(({ operation }) => {
+      if (operation === 'get') return Promise.resolve(served);
+      if (operation === 'create') {
+        return Promise.resolve({ id: 'entry9', data: { name: 'Zed' } });
+      }
+      return Promise.resolve({ updated: 1 });
+    });
+    const { result } = setup(dataHubAction);
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    act(() => result.current.handleInsertRow(0));
+    act(() =>
+      result.current.handleCellsEdit([
+        { fieldKey: key('name'), rowIndex: 0, value: 'Zed' }
+      ])
+    );
+    await waitFor(() =>
+      expect(result.current.entryIds).toEqual(['entry9', 'entry1', 'entry2'])
+    );
+
+    // 'entry9' sorts LAST by id; the resync must leave it where the user put
+    // it. The synced name proves the refetch actually landed.
+    served = [
+      ...twoEntries,
+      { id: 'entry9', data: { name: 'Zed (synced)', email: '' } }
+    ];
+    act(() => result.current.refetch());
+    await waitFor(() =>
+      expect(result.current.hubFieldValues[key('name')][0]).toBe('Zed (synced)')
+    );
+    expect(result.current.entryIds).toEqual(['entry9', 'entry1', 'entry2']);
+  });
+
+  test('entries the grid has not seen land at the top on a resync', async () => {
+    let served: any[] = twoEntries;
+    const dataHubAction = jest.fn(() => Promise.resolve(served));
+    const { result } = setup(dataHubAction);
+    await waitFor(() => expect(result.current.entryIds).toHaveLength(2));
+
+    served = [
+      twoEntries[0],
+      { id: 'entry3', data: { name: 'Cara', email: 'cara@test.com' } },
+      twoEntries[1]
+    ];
+    act(() => result.current.refetch());
+
+    await waitFor(() =>
+      expect(result.current.entryIds).toEqual(['entry3', 'entry1', 'entry2'])
+    );
+  });
+
   test('a block edit costs one request per ROW, not per cell', async () => {
     const dataHubAction = jest.fn(({ operation }) =>
       operation === 'get'

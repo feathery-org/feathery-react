@@ -34,6 +34,17 @@ describe('validateCellValue', () => {
     expect(validateCellValue(1.25, rule)).toBe('Up to 1 decimal place');
   });
 
+  test('decimal places are counted through exponent notation', () => {
+    // `String(1e-7)` is '1e-7' — no '.' to count from — and the hub would
+    // reject the seven places it actually has.
+    const rule = { label: 'Rate', type: 'number' as const, decimalDigits: 2 };
+    expect(validateCellValue(1e-7, rule)).toBe('Up to 2 decimal places');
+    expect(validateCellValue(1.5e-7, rule)).toBe('Up to 2 decimal places');
+    expect(validateCellValue(0.25, rule)).toBeNull();
+    // A huge integer is also written with an exponent, and has no places.
+    expect(validateCellValue(1.5e21, rule)).toBeNull();
+  });
+
   test('text columns enforce their option list and lengths', () => {
     const rule = {
       label: 'Tier',
@@ -144,6 +155,34 @@ describe('validateGrid', () => {
     });
     expect(errors[cellErrorKey(0, 'email')]).toBeUndefined();
     expect(errors[cellErrorKey(2, 'email')]).toBe('Must be unique');
+  });
+
+  test('a duplicate is blamed on the row that was changed, wherever it sits', () => {
+    // New rows are inserted at the TOP, so a pasted copy has the LOWER index.
+    // Row 0 was just changed and row 2 is the pre-existing original: the
+    // original must stay clean.
+    const rules = { email: { label: 'Email', type: 'email' as const, unique: true } };
+    const errors = validateGrid({
+      rowIndices: [0, 1, 2],
+      fieldKeys: ['email'],
+      getValue,
+      rules,
+      isCellChanged: (rowIndex) => rowIndex === 0
+    });
+    expect(errors[cellErrorKey(0, 'email')]).toBe('Must be unique');
+    expect(errors[cellErrorKey(2, 'email')]).toBeUndefined();
+
+    // When every holder was changed (two pasted copies) the first by index
+    // keeps the value, as before.
+    const bothChanged = validateGrid({
+      rowIndices: [0, 1, 2],
+      fieldKeys: ['email'],
+      getValue,
+      rules,
+      isCellChanged: () => true
+    });
+    expect(bothChanged[cellErrorKey(0, 'email')]).toBeUndefined();
+    expect(bothChanged[cellErrorKey(2, 'email')]).toBe('Must be unique');
   });
 
   test('staged rows neither claim a unique value nor get flagged for one', () => {

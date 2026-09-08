@@ -448,6 +448,38 @@ describe('cell editors follow the column', () => {
     expect(screen.getByText('Sent')).toBeInTheDocument();
   });
 
+  test('a dropdown cell opens on a single click, a text cell does not', async () => {
+    // Double-click-to-open reads as a text editor on a cell that has nothing
+    // to type into; a spreadsheet's validation list opens on one click.
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.click(cell('Alice'));
+    expect(screen.queryByRole('textbox')).toBeNull();
+
+    fireEvent.click(cell('Ready'));
+    expect(await screen.findByRole('combobox')).toHaveValue('Ready');
+  });
+
+  test('a modified click on a dropdown cell extends the selection instead', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    fireEvent.click(cell('Ready'), { shiftKey: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    fireEvent.click(cell('Ready'), { metaKey: true });
+    expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  test('a dropdown cell is marked as one, a text cell is not', async () => {
+    renderTable(hubProps, { client: client() });
+    await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());
+
+    // The chevron is decorative and sits beside the value, not inside it.
+    expect(cell('Ready').querySelector('[aria-hidden]')).not.toBeNull();
+    expect(cell('Alice').querySelector('[aria-hidden]')).toBeNull();
+  });
+
   test('typing a letter on a dropdown cell jumps to that option', async () => {
     renderTable(hubProps, { client: client() });
     await waitFor(() => expect(screen.getByText('Ready')).toBeInTheDocument());

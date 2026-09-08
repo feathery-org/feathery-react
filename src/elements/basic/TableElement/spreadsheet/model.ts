@@ -95,10 +95,25 @@ export function serializeTsv(ranges: CellValue[][][]): string {
     .join('\n\n');
 }
 
+/**
+ * Undo `escapeTsvValue`'s formula guard on the way back in. Our own copy of
+ * `-5` reads `'-5`, so without this an internal copy → paste would store the
+ * apostrophe as data. Excel and Sheets read a leading apostrophe the same
+ * way — as a text marker, never as part of the value — so their exports
+ * unescape identically.
+ */
+export function unescapeTsvValue(text: string): string {
+  return /^'[\t\r ]*[=+@-]/.test(text) ? text.slice(1) : text;
+}
+
 export function parseTsv(text: string): string[][] {
   const rows: string[][] = [[]];
   let value = '';
   let quoted = false;
+  const endCell = () => {
+    rows[rows.length - 1].push(unescapeTsvValue(value));
+    value = '';
+  };
 
   for (let index = 0; index < text.length; index++) {
     const character = text[index];
@@ -118,18 +133,16 @@ export function parseTsv(text: string): string[][] {
     if (character === '"' && value.length === 0) {
       quoted = true;
     } else if (character === '\t') {
-      rows[rows.length - 1].push(value);
-      value = '';
+      endCell();
     } else if (character === '\n') {
-      rows[rows.length - 1].push(value);
+      endCell();
       rows.push([]);
-      value = '';
     } else if (character !== '\r') {
       value += character;
     }
   }
 
-  rows[rows.length - 1].push(value);
+  endCell();
 
   const lastRow = rows[rows.length - 1];
   // A trailing newline leaves one empty cell behind, which is not a row.

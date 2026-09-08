@@ -114,19 +114,32 @@ function parseStoredDatetime(text: string): Date | null {
 }
 
 const pad2 = (value: number) => (value < 10 ? `0${value}` : String(value));
+const pad3 = (value: number) =>
+  value < 100 ? `0${pad2(value)}` : String(value);
 
-/** `yyyy-MM-ddTHH:mm` in the browser's zone — what `datetime-local` shows. */
+/**
+ * `yyyy-MM-ddTHH:mm[:ss[.SSS]]` in the browser's zone — what `datetime-local`
+ * shows. Seconds and milliseconds are written only when the instant has them:
+ * the picker offers a seconds field exactly when its value carries one, so a
+ * value handed over as `12:00` would have the user turn `12:00:30` into
+ * `12:00:00` by merely changing the date.
+ */
 function toLocalPickerValue(instant: Date): string {
+  const seconds = instant.getSeconds();
+  const millis = instant.getMilliseconds();
+  const time =
+    `${pad2(instant.getHours())}:${pad2(instant.getMinutes())}` +
+    (seconds || millis ? `:${pad2(seconds)}` : '') +
+    (millis ? `.${pad3(millis)}` : '');
   return (
     `${instant.getFullYear()}-${pad2(instant.getMonth() + 1)}-` +
-    `${pad2(instant.getDate())}T${pad2(instant.getHours())}:` +
-    `${pad2(instant.getMinutes())}`
+    `${pad2(instant.getDate())}T${time}`
   );
 }
 
 /**
  * The stored value in the shape the native picker wants: `yyyy-MM-dd` for a
- * date, `yyyy-MM-ddTHH:mm` in LOCAL time for a datetime — a `datetime-local`
+ * date, `yyyy-MM-ddTHH:mm[:ss]` in LOCAL time for a datetime — a `datetime-local`
  * input is wall-clock time in the viewer's zone, so the UTC instant the hub
  * stores has to be converted or the picker shows the wrong hour. Anything
  * unparseable comes back empty rather than wedging the picker with a value it

@@ -6,7 +6,8 @@ import {
   getFillPreview,
   parseInputValue,
   parseTsv,
-  serializeTsv
+  serializeTsv,
+  unescapeTsvValue
 } from '../spreadsheet/model';
 import type { CellValue, GridBounds } from '../spreadsheet/model';
 import {
@@ -102,6 +103,21 @@ describe('clipboard serialization', () => {
 
   test('a trailing newline does not produce a phantom row', () => {
     expect(parseTsv('a\tb\n')).toEqual([['a', 'b']]);
+  });
+
+  test('paste undoes the formula guard, so an internal copy round-trips', () => {
+    // Copying `-5` writes `'-5` to the clipboard; pasting it back must not
+    // store the apostrophe. A quoted cell is unescaped after unquoting.
+    const grid: CellValue[] = ['-5', '=SUM(A1)', '+1\tx'];
+    expect(parseTsv(serializeTsv([[grid]]))).toEqual([
+      ['-5', '=SUM(A1)', '+1\tx']
+    ]);
+  });
+
+  test('an apostrophe that guards nothing is data', () => {
+    expect(unescapeTsvValue("'-5")).toBe('-5');
+    expect(unescapeTsvValue("'tis")).toBe("'tis");
+    expect(unescapeTsvValue("O'Brien")).toBe("O'Brien");
   });
 });
 

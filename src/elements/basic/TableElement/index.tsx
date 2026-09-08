@@ -474,7 +474,13 @@ function TableElement({
       rules: cellRules,
       isRowStaged: isHub
         ? (rowIndex) => hub.rowVerified[rowIndex] === false
-        : undefined
+        : undefined,
+      // A duplicate is blamed on the row the user changed or added, not on
+      // whichever sits lower — new rows go in at the top. A hub row without
+      // an entry yet is one this session added.
+      isCellChanged: (rowIndex, fieldKey) =>
+        pendingEdits.peek(rowIndex, fieldKey) !== undefined ||
+        (isHub ? hub.entryIds[rowIndex] == null : pendingAddRows.has(rowIndex))
     });
     return isHub ? { ...hub.cellErrors, ...validated } : validated;
   }, [
@@ -482,6 +488,9 @@ function TableElement({
     isHub,
     hub.cellErrors,
     hub.rowVerified,
+    hub.entryIds,
+    pendingEdits.peek,
+    pendingAddRows,
     spreadsheetRowIndices,
     spreadsheetFieldValues,
     columns,

@@ -77,15 +77,32 @@ describe('toEditorValue', () => {
     // The hub stores instants in UTC; a datetime-local input is wall-clock
     // time in the viewer's zone, so the hour has to be converted or an
     // 18:00Z value reads as 18:00 for someone in New York.
-    const stored = '2024-03-05T11:30:45.000Z';
+    const stored = '2024-03-05T11:30:00.000Z';
     expect(toEditorValue(stored, 'datetime')).toBe(
       localPicker(new Date(stored))
     );
   });
 
+  test('seconds and milliseconds survive the trip into the picker', () => {
+    // The picker only offers a seconds field when its value carries one, so
+    // handing it `12:00` would have a date change silently drop 12:00:30 to
+    // 12:00:00. A whole minute keeps the short form.
+    const withSeconds = '2024-03-05T11:30:45.000Z';
+    expect(toEditorValue(withSeconds, 'datetime')).toBe(
+      `${localPicker(new Date(withSeconds))}:45`
+    );
+    const withMillis = '2024-03-05T11:30:45.250Z';
+    expect(toEditorValue(withMillis, 'datetime')).toBe(
+      `${localPicker(new Date(withMillis))}:45.250`
+    );
+    expect(
+      fromEditorValue(toEditorValue(withSeconds, 'datetime'), 'datetime')
+    ).toBe(withSeconds);
+  });
+
   test('a datetime with no zone is read as UTC, the way the hub reads it', () => {
-    expect(toEditorValue('2024-03-05T11:30:45', 'datetime')).toBe(
-      localPicker(new Date('2024-03-05T11:30:45Z'))
+    expect(toEditorValue('2024-03-05T11:30:00', 'datetime')).toBe(
+      localPicker(new Date('2024-03-05T11:30:00Z'))
     );
     // A date-only value still opens the picker rather than wedging it.
     expect(toEditorValue('2024-03-05', 'datetime')).toBe(

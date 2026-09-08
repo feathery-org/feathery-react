@@ -6,6 +6,10 @@ export const ROW_HEADER_WIDTH = 46;
 // Cell text size. Rows and the header are sized off this, so bumping one
 // without the other would clip descenders.
 export const FONT_SIZE = 16;
+// Column header labels are set smaller and heavier than cell text. Named so
+// auto-fit can measure a header in the font it is actually drawn in.
+export const HEADER_FONT_SIZE = FONT_SIZE - 2;
+export const HEADER_FONT_WEIGHT = 600;
 
 // The grid pins its own typography rather than inheriting the form's theme:
 // a display font, letter-spacing or an inherited line-height would break the
@@ -251,8 +255,8 @@ export const columnHeaderLabelStyle = {
   width: '100%',
   overflow: 'hidden',
   color: colors.gray900,
-  fontSize: `${FONT_SIZE - 2}px`,
-  fontWeight: 600,
+  fontSize: `${HEADER_FONT_SIZE}px`,
+  fontWeight: HEADER_FONT_WEIGHT,
   textAlign: 'center',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
@@ -339,6 +343,23 @@ export const cellValueStyle = {
   overflow: 'hidden',
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap'
+} as const;
+
+// The mark on a dropdown cell: a small chevron at the right edge, the way a
+// spreadsheet marks a cell with a validation list, telling the user one click
+// opens it. A flex sibling of the value span rather than part of it, so the
+// text truncates before the chevron instead of underneath it.
+export const cellDropdownIndicatorStyle = {
+  flex: '0 0 auto',
+  width: '6px',
+  height: '6px',
+  marginLeft: '6px',
+  // Rotated into a chevron; nudged up so its visual centre, not its box,
+  // sits on the text's centre line.
+  transform: 'translateY(-2px) rotate(45deg)',
+  borderRight: `1.5px solid ${colors.gray500}`,
+  borderBottom: `1.5px solid ${colors.gray500}`,
+  pointerEvents: 'none'
 } as const;
 
 export const cellSelectedStyle = {

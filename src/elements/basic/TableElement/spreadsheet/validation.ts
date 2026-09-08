@@ -65,11 +65,18 @@ function isEmpty(value: CellValue): boolean {
   return value === null || value === undefined || value === '';
 }
 
+/**
+ * Decimal places in a number, read off its shortest round-trip text. That
+ * text turns exponential below 1e-6 and from 1e21 up — `String(1e-7)` has no
+ * `.` at all — so the exponent is folded back in rather than read as 0 places
+ * and waved through to a hub that then rejects it.
+ */
 function decimalPlaces(value: number): number {
-  const text = String(value);
-  const decimal = text.indexOf('.');
-  if (decimal === -1) return 0;
-  return text.length - decimal - 1;
+  if (!Number.isFinite(value)) return 0;
+  const [mantissa, exponent = '0'] = String(value).toLowerCase().split('e');
+  const decimal = mantissa.indexOf('.');
+  const mantissaPlaces = decimal === -1 ? 0 : mantissa.length - decimal - 1;
+  return Math.max(0, mantissaPlaces - Number(exponent));
 }
 
 function parseDate(value: string): number | null {
@@ -204,6 +211,14 @@ type ValidateGridOptions = {
    * neither claims a value nor is flagged for sharing one.
    */
   isRowStaged?: (rowIndex: number) => boolean;
+  /**
+   * Whether the user changed this cell (or added its row) in this session.
+   * Decides which of two rows sharing a unique value is the copy: the one
+   * that was just touched, not the one with the higher index — new rows are
+   * inserted at the TOP, so by index alone a pasted duplicate would read as
+   * the original and the pre-existing row would be blamed.
+   */
+  isCellChanged?: (rowIndex: number, fieldKey: string) => boolean;
 };
 
 /**
@@ -215,13 +230,14 @@ export function validateGrid({
   fieldKeys,
   getValue,
   rules,
-  isRowStaged
+  isRowStaged,
+  isCellChanged
 }: ValidateGridOptions): CellErrors {
   const errors: CellErrors = {};
   const uniqueKeys = fieldKeys.filter((key) => rules[key]?.unique);
-  // Field key -> normalized value -> first row index that used it.
-  const seen = new Map<string, Map<string, number>>(
-    uniqueKeys.map((key) => [key, new Map<string, number>()])
+  // Field key -> normalized value -> every row holding it, in display order.
+  const holders = new Map<string, Map<string, number[]>>(
+    uniqueKeys.map((key) => [key, new Map<string, number[]>()])
   );
 
   rowIndices.forEach((rowIndex) => {
@@ -236,15 +252,27 @@ export function validateGrid({
         return;
       }
       if (!rule.unique || isEmpty(value) || staged) return;
-      // A duplicate flags the LATER row, so the first occurrence stays clean
-      // and the user fixes the copy rather than the original.
-      const values = seen.get(fieldKey) as Map<string, number>;
+      const values = holders.get(fieldKey) as Map<string, number[]>;
       const normalized = String(value);
-      if (values.has(normalized)) {
-        errors[cellErrorKey(rowIndex, fieldKey)] = 'Must be unique';
-      } else {
-        values.set(normalized, rowIndex);
-      }
+      values.set(normalized, [...(values.get(normalized) ?? []), rowIndex]);
+    });
+  });
+
+  // A shared value flags every row but its original, so the user fixes the
+  // copy. The original is the first row the user did NOT touch; only when
+  // every holder was touched (two pasted duplicates) does the first by index
+  // get to keep the value.
+  holders.forEach((values, fieldKey) => {
+    values.forEach((rows) => {
+      if (rows.length < 2) return;
+      const original =
+        rows.find((rowIndex) => !isCellChanged?.(rowIndex, fieldKey)) ??
+        rows[0];
+      rows.forEach((rowIndex) => {
+        if (rowIndex !== original) {
+          errors[cellErrorKey(rowIndex, fieldKey)] = 'Must be unique';
+        }
+      });
     });
   });
 
