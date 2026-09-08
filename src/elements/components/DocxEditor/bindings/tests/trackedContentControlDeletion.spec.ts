@@ -208,6 +208,42 @@ describe('with the override, a tracked row delete keeps binding identity', () =>
         destroyRealDocumentEditor(editor);
       }
     });
+
+    // The redo replay goes through handleDeleteTracking again, under the
+    // history's RemoveRowTrack action rather than a live command - the
+    // isRedoingRowTrack special case is what keeps the override's tracked
+    // branch on for it. Without it, redo strips the controls undo restored.
+    it('redo after undo re-applies the tracked delete with every tag intact', () => {
+      const editor = openBoundEditor({ patched: true });
+      try {
+        const tagsBefore = tagsOf(editor);
+        const rowsBefore = costsRowTextsOf(editor);
+        deleteBoundRowTracked(editor, path);
+        const pendingTags = tagsOf(editor);
+        const pendingRows = costsRowTextsOf(editor);
+        expect(pendingTags).toEqual(tagsBefore);
+
+        editor.editorHistory.undo();
+        expect(editor.revisions.length).toBe(0);
+        editor.editorHistory.redo();
+
+        // Redo lands back on the pending tracked deletion: revision restored,
+        // nothing physically removed, binding identity untouched.
+        expect(editor.revisions.length).toBeGreaterThan(0);
+        expect(tagsOf(editor)).toEqual(pendingTags);
+        expect(costsRowTextsOf(editor)).toEqual(pendingRows);
+
+        // And the redone revision still resolves both ways: reject restores
+        // the untouched document.
+        rejectAll(editor);
+        expect(editor.revisions.length).toBe(0);
+        expect(tagsOf(editor)).toEqual(tagsBefore);
+        expect(costsRowTextsOf(editor)).toEqual(rowsBefore);
+        expect(acceptedRowIdsOf(editor)).toEqual(['r-1', 'r-2']);
+      } finally {
+        destroyRealDocumentEditor(editor);
+      }
+    });
   });
 
   it('installs once per editor', () => {
