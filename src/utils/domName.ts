@@ -1,12 +1,19 @@
 export const MAX_DOM_NAME_LENGTH = 64;
 
 /**
- * First non-empty candidate, whitespace-collapsed and capped, for use as a
- * readable `name` attribute.
+ * First candidate with usable content, restricted to ASCII letters, digits,
+ * underscores and hyphens for DOM scanners. Other runs become underscores;
+ * leading/trailing disallowed characters are dropped, then the name is capped.
+ * Only for descriptive names: field control names/ids must retain their original
+ * keys because value and validation lookups depend on an exact match.
  */
 export function readableName(...candidates: any[]): string | undefined {
   for (const candidate of candidates) {
-    const name = (candidate ?? '').toString().replace(/\s+/g, ' ').trim();
+    const name = (candidate ?? '')
+      .toString()
+      .replace(/[^a-zA-Z0-9_-]+/g, ' ')
+      .trim()
+      .replace(/ /g, '_');
     if (name) return name.slice(0, MAX_DOM_NAME_LENGTH);
   }
   return undefined;
