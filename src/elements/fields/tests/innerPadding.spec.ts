@@ -939,6 +939,56 @@ describe('input box content alignment', () => {
     ).toBe(untouchedTop);
   });
 
+  it('holds the no-op where the clamp drives the reserve to nothing', () => {
+    // The same rule one step further: a 30px box with a 30px line has no room
+    // at all, so the reserve clamps to 0. Zero is a floor -- the box cannot
+    // hold the label's footprint -- and reading it as the absence of one put
+    // the 6px block reset back under a label with nowhere to put it, leaving
+    // centring 6px away from where the untouched field renders.
+    const airless = {
+      placeholder_transition: 'shrink_top',
+      height: 30,
+      height_unit: 'px',
+      font_size: 16,
+      line_height: 30
+    };
+    const untouchedTop = fieldTarget('text_field', airless, {
+      placeholder: 'Name'
+    }).paddingTop;
+
+    expect(untouchedTop).toBe('0px');
+    expect(
+      fieldTarget(
+        'text_field',
+        { ...airless, content_vertical_align: 'center' },
+        { placeholder: 'Name' }
+      ).paddingTop
+    ).toBe(untouchedTop);
+  });
+
+  it('aligns a clamped reserve against the padding it emits', () => {
+    // Top-aligned, the line sits at the top padding, so the two paddings and
+    // the line have to add up to the box. Measuring the placement against the
+    // block reset while emitting the clamped reserve left them summing to 38
+    // of a 40px field, and put the resting label 2px below the value.
+    const squeezed = {
+      placeholder_transition: 'shrink_top',
+      height: 40,
+      height_unit: 'px',
+      font_size: 16,
+      line_height: 30,
+      content_vertical_align: 'flex-start'
+    };
+    const field = fieldTarget('text_field', squeezed, { placeholder: 'Name' });
+
+    expect(field.paddingTop).toBe('4px');
+    expect(field.paddingBottom).toBe('6px');
+    expect(
+      parseFloat(field.paddingTop) + 30 + parseFloat(field.paddingBottom)
+    ).toBe(40);
+    expect(placeholderTarget('text_field', squeezed).top).toBe('19px');
+  });
+
   it('keeps the production label offsets outside a unit', () => {
     const focus = targets(
       'text_field',

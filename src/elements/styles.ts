@@ -279,6 +279,17 @@ const legacyPaddingY = (type: string) => {
   return RESET_INPUT_PADDING_Y;
 };
 
+// The top padding a placement measures against. A pinned label's floor stands
+// as the clamp left it -- already limited to what the box has to give -- and a
+// floor only exists where nothing is stored, so it replaces the block reset
+// rather than being raised back to it. null is the absence of a floor; a floor
+// of 0 is a real one, from a box too short to hold the label's footprint.
+const flooredTopPadding = (
+  type: string,
+  padTop: any,
+  topFloor: number | null
+) => (topFloor === null ? paddingSide(padTop, legacyPaddingY(type)) : topFloor);
+
 // What a multiselect's value container already insets its chips by: react-
 // select's own 8px inline start, the 10px that composes to the chips' 28px
 // chevron strip, and the block padding it uses once the chips wrap.
@@ -330,7 +341,7 @@ const inputBoxVertical = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor = 0
+  topFloor: number | null = null
 ): VerticalPlacement | null => {
   // A text area's text already starts at its top padding.
   if (type === 'text_area') return null;
@@ -344,7 +355,7 @@ const inputBoxVertical = (
   const legacy = legacyPaddingY(type);
   // The floor is the room a pinned label needs; it applies only where the
   // theme set no top padding of its own, so a stored value still stands as set.
-  const top = Math.max(paddingSide(padTop, legacy), topFloor);
+  const top = flooredTopPadding(type, padTop, topFloor);
   const bottom = paddingSide(padBottom, legacy);
   return {
     align,
@@ -389,12 +400,12 @@ const valueLineY = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor = 0
+  topFloor: number | null = null
 ): string | null => {
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
   const legacy = legacyPaddingY(type);
-  const top = Math.max(paddingSide(padTop, legacy), topFloor);
+  const top = flooredTopPadding(type, padTop, topFloor);
   const bottom = paddingSide(padBottom, legacy);
 
   if (type === MULTISELECT_FIELD) {
@@ -440,7 +451,7 @@ const inputValueDelta = (
   padBottom: any,
   lineHeight: any,
   fontSize: any,
-  topFloor = 0
+  topFloor: number | null = null
 ): number | null => {
   const line = inputLineHeight(lineHeight, fontSize);
   if (!line) return null;
@@ -460,7 +471,7 @@ const inputValueDelta = (
       ? placement.top + placement.line / 2 - placement.height / 2
       : placement.height / 2 - placement.bottom - placement.line / 2;
   const delta =
-    (Math.max(paddingSide(padTop, legacyPaddingY(type)), topFloor) -
+    (flooredTopPadding(type, padTop, topFloor) -
       paddingSide(padBottom, legacyPaddingY(type))) /
     2;
   return delta || null;
@@ -1025,8 +1036,13 @@ export default class ResponsiveStyles {
    * box's midline on a floating-label field. An alignment is not a
    * statement about padding, so it must not cancel that reserve: without this
    * floor, "middle" re-centres the value into the label's ink and no option in
-   * the panel can put it back. Zero wherever there is nothing to clear, so
-   * every other field emits exactly what it emits today.
+   * the panel can put it back.
+   *
+   * null wherever there is nothing to clear, so every other field emits exactly
+   * what it emits today. Not zero: a box too short to hold the label's
+   * footprint clamps to a floor of 0, which is a floor, and reading it as the
+   * absence of one would put the block reset back under a label with no room
+   * for it.
    */
   private pinnedTopFloor(
     type: string,
@@ -1037,30 +1053,31 @@ export default class ResponsiveStyles {
     padBottom: any,
     fontSize: any,
     lineHeight: any
-  ) {
+  ): number | null {
     // Only a placement that was actually asked for can cancel the reserve, so
     // only that placement needs the floor. An untouched field is still placed
     // by applyPlaceholderStyles' own reserve and emits nothing here -- the
     // phone flag's anchor is emitted unconditionally, so a floor leaking into
     // it would move every untouched floating-label phone field.
-    if (!verticalPlacementAsked(align, padTop, padBottom)) return 0;
-    if (isSet(padTop)) return 0; // a stored padding stands as set
+    if (!verticalPlacementAsked(align, padTop, padBottom)) return null;
+    if (isSet(padTop)) return null; // a stored padding stands as set
     // Two exclusions. A multiselect's chips are placed by flexbox through
     // applyMultiselectLayout, which knows nothing of this floor, so feeding it
     // to the chevron alone would set the two against each other -- it is absent
     // from INPUT_BOX_FIELDS here for that reason. And a text area's text starts
     // at its top padding rather than being centred against it, so there is no
     // midline for a floor to move.
-    if (!INPUT_BOX_FIELDS.includes(type) || type === 'text_area') return 0;
+    if (!INPUT_BOX_FIELDS.includes(type) || type === 'text_area') return null;
     // Read off the desktop styles deliberately, unlike the typography below.
     // applyPlaceholderStyles decides whether to pin a label from this same
     // desktop key, never through apply(), so a mobile override of it changes
     // nothing about whether a label is pinned. Resolving it per breakpoint here
     // would leave the floor disagreeing with the label it is reserving for.
-    if (this.element?.styles?.placeholder_transition !== 'shrink_top') return 0;
-    if (!rendersPlaceholderStyles(type, this.element?.properties)) return 0;
+    if (this.element?.styles?.placeholder_transition !== 'shrink_top')
+      return null;
+    if (!rendersPlaceholderStyles(type, this.element?.properties)) return null;
     // Only a resolved pixel height has a reserve that can be compared.
-    if (heightUnit !== 'px' || !isNum(height)) return 0;
+    if (heightUnit !== 'px' || !isNum(height)) return null;
     // The same definition the reserve itself is built from, off the same
     // breakpoint-resolved values apply() hands the caller, so the floor and the
     // padding it floors can never describe different geometry. Reading the
@@ -1117,18 +1134,10 @@ export default class ResponsiveStyles {
           fontSize,
           topFloor
         );
-        // The top padding, shared by the centred and top-aligned branches so
-        // they cannot drift apart. A floor only exists where nothing is stored,
-        // so this is the reserve against the padding the field renders with --
-        // in px, because the reserve is px and the two have to be comparable.
-        // The floor as it stands, not floored again at the block reset. It is
-        // already clamped to what the box has to give, so raising it back to
-        // the reset would both overflow a short box (6 + a 30px line + 6 needs
-        // 42px of a 40px field) and put the centred value 2px below where the
-        // untouched field renders it.
-        const paddingTopCss = topFloor
-          ? `${topFloor}px`
-          : blockPaddingCss(type, padTop);
+        // flooredTopPadding as a length, so the padding emitted and the
+        // placement measured against it cannot describe different geometry.
+        const paddingTopCss =
+          topFloor === null ? blockPaddingCss(type, padTop) : `${topFloor}px`;
 
         // Centred, or a top/bottom alignment this box cannot resolve an offset
         // for. The padding the theme asked for stands on its own, and both
