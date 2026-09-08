@@ -179,6 +179,7 @@ import {
 import type {
   AppearanceRestore,
   AppearanceWrite,
+  BookmarkClampIntent,
   ParagraphStyleRestore,
   BorderWrite,
   CellPropertyFacts,
@@ -6095,6 +6096,14 @@ interface OpSuccessExtras {
   /** Fresh post-write snapshot reused by the executor's integrity checks. */
   postWriteSfdt?: any;
   /**
+   * Deferred bookmark clamps this op's row removal promised. Engine-internal,
+   * exactly like `appearanceWrite.restores`: the executor binds them to the
+   * op's revision group, where they execute at ACCEPT of the card - never at
+   * pending time - so every failure or reject path leaves bookmarks untouched.
+   * The op's `details` already carry the same promises as receipts.
+   */
+  bookmarkClamps?: BookmarkClampIntent[];
+  /**
    * The tables this op touched, for the change-set finalizer.
    *
    * Engine-internal, exactly like `appearanceWrite`'s `restores` half: the
@@ -9139,14 +9148,21 @@ function refuseBreakInsideTable(op: string, block: FlatBlock): void {
   );
 }
 
-// Bookmark clamp law: a torn end moves onto the nearest surviving row before
-// the rows go, and each clamp comes back as a receipt for the op's details
-function clampBookmarksAroundRemovedRows(
+// Bookmark clamp law: a torn end moves onto the nearest surviving row - but
+// only once the removal is REAL. This function is the pure COLLECT half: it
+// reads which bookmarks the removal would tear and what the clamp will say,
+// and returns intents (data, no widget mutation). The move itself is deferred
+// to the accept of the deleting group's review card - see
+// planBookmarkClampMoves/applyBookmarkClampMoves in documentEditorPrimitives
+// and the group binding in
+// groupRevisionsAtomic. A change set that dies on any path (a late refusal, an
+// engine apply failure, a group rollback, a reject, an undo) therefore leaves
+// every bookmark exactly where it was.
+function collectBookmarkClampIntents(
   editor: LiveEditor,
   tableBlock: any,
-  tableAnchor: string,
   removed: number[]
-): string[] {
+): BookmarkClampIntent[] {
   const rows = getRows(tableBlock);
   const bookmarks = (editor as any).documentHelper?.bookmarks;
   if (!rows || !bookmarks?.get) return [];
@@ -9168,7 +9184,7 @@ function clampBookmarksAroundRemovedRows(
     walk(row);
   });
   const gone = new Set(removed);
-  const receipts: string[] = [];
+  const intents: BookmarkClampIntent[] = [];
   for (const [name, span] of spans) {
     if (span.start === undefined || span.end === undefined) continue;
     const startGone = gone.has(span.start);
@@ -9180,33 +9196,17 @@ function clampBookmarksAroundRemovedRows(
     const opening = bookmarks.get(name);
     const torn = startGone ? opening : opening?.reference;
     if (!torn?.line) continue;
-    // Moved in the widget tree, insertBookmark throws on a cross-cell selection
-    const lastCell = (pick(rows[end], 'cells', 'c') ?? []).length - 1;
-    const landing = startGone
-      ? `${tableAnchor};${start};0;0;0`
-      : `${tableAnchor};${end};${lastCell};0;0`;
-    editor.selection.select(landing, landing);
-    const paragraph = (editor.selection as any).start?.paragraph;
-    const lines = paragraph?.childWidgets;
-    if (!Array.isArray(lines) || !lines.length) continue;
-    const from = torn.line;
-    from.children.splice(from.children.indexOf(torn), 1);
-    const target = startGone ? lines[0] : lines[lines.length - 1];
-    if (startGone) target.children.unshift(torn);
-    else target.children.push(torn);
-    torn.line = target;
-    // A relayout under the batch's suspended layout is a no-op
-    const live = editor as any;
-    const layoutWasOn = editor.enableLayout === true;
-    if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
-    const layout = live.documentHelper?.layout;
-    layout?.reLayoutParagraph?.(from.paragraph, 0, 0);
-    layout?.reLayoutParagraph?.(paragraph, 0, 0);
-    if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
-    receipts.push(`bookmark "${name}" clamped to rows ${start}-${end}`);
+    intents.push({
+      name: String(name),
+      receipt: `bookmark "${name}" clamped to rows ${start}-${end}`
+    });
   }
-  return receipts;
+  return intents;
 }
+
+/** The receipts a set of clamp intents promises, for the op's details. */
+const bookmarkClampReceipts = (intents: BookmarkClampIntent[]): string[] =>
+  intents.map((intent) => intent.receipt);
 
 export const ANCHORED_OP_HANDLERS: {
   [K in AnchoredDocumentOp]: AnchoredOpHandler<K>;
@@ -9609,13 +9609,15 @@ export const ANCHORED_OP_HANDLERS: {
     // row of a document-tail table.
     assertRangeHasNoForeignEdits(sfdt, source);
     assertRowsAreRemovable(blocks, tableAnchor, plan.extract);
-    const clamped = clampBookmarksAroundRemovedRows(
+    // AFTER every refusal this handler can raise, target resolution included:
+    // even a pure intent must not be collected for a split that is about to
+    // say "nothing was written".
+    const target = resolveRelocationTarget(blocks, op, source);
+    const bookmarkClamps = collectBookmarkClampIntents(
       editor,
       tableBlock,
-      tableAnchor,
       plan.extract
     );
-    const target = resolveRelocationTarget(blocks, op, source);
     const sourceIndex = sequenceIndexOf(
       topLevelSequence(sfdt),
       topLevelAddress(source.blocks[0].anchor)
@@ -9688,7 +9690,9 @@ export const ANCHORED_OP_HANDLERS: {
     ].filter((footprint): footprint is TableFootprint => !!footprint);
     return {
       ...(tableFootprints.length ? { tableFootprints } : {}),
-      ...(clamped.length ? { details: clamped } : {}),
+      ...(bookmarkClamps.length
+        ? { details: bookmarkClampReceipts(bookmarkClamps), bookmarkClamps }
+        : {}),
       pasteEffect: paste
     };
   },
@@ -10043,10 +10047,9 @@ export const ANCHORED_OP_HANDLERS: {
     // remove rather than only the anchored one - it was written for a row set
     // and was simply being handed one row at a time.
     assertRowsAreRemovable(blocks, tableAnchor, requested);
-    const clamped = clampBookmarksAroundRemovedRows(
+    const bookmarkClamps = collectBookmarkClampIntents(
       editor,
       tableBlockAt(serializeSfdt(editor), tableAnchor),
-      tableAnchor,
       requested
     );
     // DESCENDING, so that a run whose rows are withdrawn - physically removed,
@@ -10072,7 +10075,9 @@ export const ANCHORED_OP_HANDLERS: {
       tableRowColumns(flattenSfdt(postWriteSfdt), tableAnchor).size;
     return {
       postWriteSfdt,
-      ...(clamped.length ? { details: clamped } : {}),
+      ...(bookmarkClamps.length
+        ? { details: bookmarkClampReceipts(bookmarkClamps), bookmarkClamps }
+        : {}),
       ...(withdrew > 0 ? { withdrewPendingInsertion: withdrew } : {})
     };
   },
@@ -12725,7 +12730,8 @@ function groupNewRevisions(
   changeSetId: string,
   restoresByGroup?: Map<string, AppearanceRestore[]>,
   stylesByGroup?: Map<string, ParagraphStyleRestore[]>,
-  revisionsWereReloaded = false
+  revisionsWereReloaded = false,
+  clampsByGroup?: Map<string, BookmarkClampIntent[]>
 ): RevisionGroupingReport {
   const created = revisionsWereReloaded
     ? (() => {
@@ -12759,11 +12765,13 @@ function groupNewRevisions(
   partitions.forEach((partition, group) => {
     const restores = restoresByGroup?.get(group);
     const styles = stylesByGroup?.get(group);
-    if (restores?.length || styles?.length) {
+    const clamps = clampsByGroup?.get(group);
+    if (restores?.length || styles?.length || clamps?.length) {
       // The live closures below disappear on reload; the same customData that
-      // carries group identity therefore carries the exact appearance inverse.
-      // SyncFusion removes the revision metadata when the group resolves and
-      // revives it with the revision on undo.
+      // carries group identity therefore carries the exact appearance inverse
+      // and the deferred bookmark clamps. SyncFusion removes the revision
+      // metadata when the group resolves and revives it with the revision on
+      // undo.
       for (const revision of partition) {
         const tag = parseRevisionGroupTag(revision.customData);
         if (tag?.changeSetId === changeSetId && tag.group === group)
@@ -12771,20 +12779,23 @@ function groupNewRevisions(
             changeSetId,
             group,
             restores,
-            styles
+            styles,
+            clamps
           );
       }
     }
     if (restores?.length) appearanceGroups.add(group);
-    // Both inverses belong to the group primitive: it is the only place that
-    // knows when a card is finished and whether anything in it was kept.
+    // Every inverse and every deferred consequence belongs to the group
+    // primitive: it is the only place that knows when a card is finished and
+    // whether anything in it was kept.
     groupRevisionsAtomic(
       editor,
       partition,
       changeSetId,
       group,
       restores,
-      styles
+      styles,
+      clamps
     );
     revisionsByGroup.set(group, partition.length);
   });
@@ -13227,8 +13238,12 @@ interface EngineMutationPlan {
     identity: BindingWireIdentity;
     canonical: string;
   };
-  /** Moves torn bookmarks off the rows this plan removes, run only once every plan in the set has passed */
-  clampBookmarks?(): string[];
+  /**
+   * The deferred bookmark clamps for the rows this plan removes: pure intent
+   * data, collected once every plan in the set has executed and bound to the
+   * transaction's revision group, where they run at ACCEPT of the card.
+   */
+  collectBookmarkClamps?(): BookmarkClampIntent[];
   execute(state: EngineMutationState): EngineMutationOutcome;
 }
 
@@ -14193,11 +14208,10 @@ function boundDeleteRowsPlan(
     index,
     op,
     anchor: block.anchor,
-    clampBookmarks: () =>
-      clampBookmarksAroundRemovedRows(
+    collectBookmarkClamps: () =>
+      collectBookmarkClampIntents(
         editor,
         tableBlockAt(sfdt, tableRoute.anchor),
-        tableRoute.anchor,
         requested
       ),
     execute(state) {
@@ -15388,11 +15402,16 @@ function planBindingRoutedOp(
 function collectOpExtras(
   extras: OpSuccessExtras | void,
   record: (restores: AppearanceRestore[]) => void,
-  recordFootprints?: (footprints: TableFootprint[], shift?: PasteEffect) => void
+  recordFootprints?: (
+    footprints: TableFootprint[],
+    shift?: PasteEffect
+  ) => void,
+  recordBookmarkClamps?: (clamps: BookmarkClampIntent[]) => void
 ): Partial<EditResult> {
   if (!extras) return {};
   const appearanceWrite = extras.appearanceWrite;
   const footprints = extras.tableFootprints;
+  const bookmarkClamps = extras.bookmarkClamps;
   const rest = { ...extras };
   // Every engine-internal key is deleted here, and the deletions are the ONLY
   // thing standing between an internal receipt and the model's result: `rest`
@@ -15403,7 +15422,9 @@ function collectOpExtras(
   delete rest.postWriteSfdt;
   delete rest.tableFootprints;
   delete rest.pasteEffect;
+  delete rest.bookmarkClamps;
   if (appearanceWrite) record(appearanceWrite.restores);
+  if (bookmarkClamps?.length) recordBookmarkClamps?.(bookmarkClamps);
   // Order matters: the paste this op performed shifted the footprints recorded
   // by EARLIER ops, but not the ones this op is recording now - those were
   // captured after its own paste. So maintain first, then add.
@@ -20180,6 +20201,21 @@ function applyDocumentEditsMeasured(
     }
     tableFootprints.push(...footprints);
   };
+  /**
+   * Deferred bookmark clamps, bucketed by revision group exactly like the
+   * appearance restores beside them. They attach to the group at grouping time
+   * (groupNewRevisions), which is what makes every failure path free: a group
+   * whose revisions were rolled back has no partition to attach to, so its
+   * clamps simply evaporate.
+   */
+  const bookmarkClampsByGroup = new Map<string, BookmarkClampIntent[]>();
+  const recordBookmarkClamps = (op: EditOp, clamps: BookmarkClampIntent[]) => {
+    if (!clamps.length) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = bookmarkClampsByGroup.get(id);
+    if (bucket) bucket.push(...clamps);
+    else bookmarkClampsByGroup.set(id, [...clamps]);
+  };
   const recordAppearanceRestores = (
     op: EditOp,
     restores: AppearanceRestore[]
@@ -21225,7 +21261,8 @@ function applyDocumentEditsMeasured(
             ...collectOpExtras(
               opExtras,
               (restores) => recordAppearanceRestores(op, restores),
-              recordTableFootprints
+              recordTableFootprints,
+              (clamps) => recordBookmarkClamps(op, clamps)
             ),
             ...(inheritanceAppearance
               ? { appearance: inheritanceAppearance.report }
@@ -21450,7 +21487,8 @@ function applyDocumentEditsMeasured(
             ...collectOpExtras(
               extras,
               (restores) => recordAppearanceRestores(op, restores),
-              recordTableFootprints
+              recordTableFootprints,
+              (clamps) => recordBookmarkClamps(op, clamps)
             ),
             ...(composedDisagreements.has(index)
               ? {
@@ -21566,11 +21604,21 @@ function applyDocumentEditsMeasured(
               if (globalId) appliedGlobalBindings.add(globalId);
             }
             applyingPlan = undefined;
+            // Pure collection only: the clamps are recorded against the
+            // transaction's revision group (the provenance below tags every
+            // revision with the FIRST plan's group) and execute at accept.
+            // Nothing moves before runCommands has succeeded, so an
+            // engine_apply_failed rollback has no clamp to regret.
             for (const plan of enginePlans) {
-              const clamped = plan.clampBookmarks?.() ?? [];
+              const clamps = plan.collectBookmarkClamps?.() ?? [];
+              if (!clamps.length) continue;
+              recordBookmarkClamps(enginePlans[0].op, clamps);
               const outcome = outcomes.get(plan.index);
-              if (clamped.length && outcome)
-                outcome.details = [...(outcome.details ?? []), ...clamped];
+              if (outcome)
+                outcome.details = [
+                  ...(outcome.details ?? []),
+                  ...bookmarkClampReceipts(clamps)
+                ];
             }
             const engineResult = surface.runCommands(
               diffBindingCommands(beforeCommands, state.sfdt),
@@ -21729,7 +21777,8 @@ function applyDocumentEditsMeasured(
     changeSetId,
     appearanceRestoresByGroup,
     paragraphStylesByGroup,
-    enginePlans.length > 0
+    enginePlans.length > 0,
+    bookmarkClampsByGroup
   );
   const revisionCount = grouping.revisionCount;
   const materializedResults = Array.from(

@@ -287,18 +287,26 @@ const PERSISTED_BORDER_TYPES = new Set([
   'NoBorder'
 ]);
 
+/** The serialized shape of a deferred bookmark clamp; see BookmarkClampIntent. */
+interface PersistedBookmarkClamp {
+  name: string;
+  receipt: string;
+}
+
 interface RevisionGroupTag {
   changeSetId: string;
   group: string;
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
+  bookmarkClamps?: PersistedBookmarkClamp[];
 }
 
 export function revisionGroupTag(
   changeSetId: string,
   group: string,
   appearanceRestores?: AppearanceRestore[],
-  paragraphStyles?: ParagraphStyleRestore[]
+  paragraphStyles?: ParagraphStyleRestore[],
+  bookmarkClamps?: PersistedBookmarkClamp[]
 ): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
@@ -306,8 +314,24 @@ export function revisionGroupTag(
     changeSetId,
     group,
     ...(appearanceRestores?.length ? { appearanceRestores } : {}),
-    ...(paragraphStyles?.length ? { paragraphStyles } : {})
+    ...(paragraphStyles?.length ? { paragraphStyles } : {}),
+    ...(bookmarkClamps?.length ? { bookmarkClamps } : {})
   });
+}
+
+function parsePersistedBookmarkClamps(
+  value: unknown
+): PersistedBookmarkClamp[] | null {
+  if (!Array.isArray(value)) return null;
+  const clamps: PersistedBookmarkClamp[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const clamp = item as Record<string, unknown>;
+    if (typeof clamp.name !== 'string' || !clamp.name) return null;
+    if (typeof clamp.receipt !== 'string') return null;
+    clamps.push({ name: clamp.name, receipt: clamp.receipt });
+  }
+  return clamps.length ? clamps : null;
 }
 
 function parsePersistedBorderWrites(value: unknown): BorderWrite[] | null {
@@ -607,11 +631,15 @@ export function parseRevisionGroupTag(
       const paragraphStyles = parsePersistedParagraphStyles(
         parsed.paragraphStyles
       );
+      const bookmarkClamps = parsePersistedBookmarkClamps(
+        parsed.bookmarkClamps
+      );
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
         ...(appearanceRestores ? { appearanceRestores } : {}),
-        ...(paragraphStyles ? { paragraphStyles } : {})
+        ...(paragraphStyles ? { paragraphStyles } : {}),
+        ...(bookmarkClamps ? { bookmarkClamps } : {})
       };
     }
   } catch {
@@ -826,6 +854,255 @@ const resolveSingleRevision = (
   else (isAccept ? resolvers.accept : resolvers.reject)?.();
 };
 
+/**
+ * A promised bookmark clamp, collected while a change set tracked-deletes rows
+ * and executed only when that deletion becomes REAL - at accept of its review
+ * card. Pure data on purpose: the widget move is irreversible, so nothing may
+ * move until the group is resolved as kept. `receipt` is the model-facing line
+ * the op's result already reported ("bookmark "x" clamped to rows 2-3").
+ */
+export interface BookmarkClampIntent {
+  name: string;
+  receipt: string;
+}
+
+const revisionTypeOf = (revision: unknown): string =>
+  String((revision as { revisionType?: unknown })?.revisionType ?? '');
+
+/** Does this row widget carry a pending Deletion revision on its rowFormat? */
+const rowIsPendingDeleted = (row: any): boolean => {
+  const format = row?.rowFormat;
+  if (!format) return false;
+  const count =
+    typeof format.revisionLength === 'number'
+      ? format.revisionLength
+      : Array.isArray(format.revisions)
+      ? format.revisions.length
+      : 0;
+  for (let index = 0; index < count; index++) {
+    const revision = format.revisions?.[index] ?? format.getRevision?.(index);
+    if (revisionTypeOf(revision) === 'Deletion') return true;
+  }
+  return false;
+};
+
+const bookmarkRowOf = (element: any): any =>
+  element?.line?.paragraph?.associatedCell?.ownerRow;
+
+/** Is this widget still parented into the live document tree? */
+const widgetTreeAttached = (widget: any): boolean => {
+  if (!widget) return false;
+  const seen = new Set<any>();
+  let current = widget;
+  while (current) {
+    if (seen.has(current)) return false;
+    seen.add(current);
+    if (current.indexInOwner === -1) return false;
+    current = current.containerWidget;
+  }
+  return true;
+};
+
+const firstParagraphIn = (cell: any, fromEnd: boolean): any => {
+  const blocks: any[] = Array.isArray(cell?.childWidgets)
+    ? cell.childWidgets
+    : [];
+  const ordered = fromEnd ? [...blocks].reverse() : blocks;
+  return ordered.find((widget) => widget && widget.paragraphFormat);
+};
+
+/**
+ * A resolved clamp move: the torn end element and the surviving line it lands
+ * on, captured BEFORE the deleting group resolves (while the doomed rows and
+ * the ends inside them are still physically present) and applied AFTER it has
+ * finished. The two-phase split is load-bearing: moving a bookmark element
+ * into another cell mid-resolution makes SyncFusion mint a stray empty-range
+ * Deletion revision during the row removal, and the SDK's acceptAll loop then
+ * spins on it forever. Planning early and attaching late touches the widget
+ * tree only when the engine is done with it - the same post-resolution slot
+ * where the appearance inverses already replay.
+ */
+interface PlannedBookmarkClampMove {
+  name: string;
+  receipt: string;
+  element: any;
+  isStart: boolean;
+  targetLine: any;
+  targetParagraph: any;
+  /**
+   * The SURVIVING end, captured with its home so it can be put back: when the
+   * accept removes the row holding the torn end, the engine's half-bookmark
+   * cleanup also strips the other end's element from its untouched row.
+   */
+  keeper: { element: any; line: any; index: number };
+}
+
+/**
+ * Resolve deferred bookmark clamps against the LIVE document, self-resolving
+ * everything at this moment rather than trusting collect-time positions: the
+ * torn end is found through the bookmark dictionary, the doomed rows are read
+ * off their pending Deletion revisions, and the landing is the nearest
+ * surviving row of the SAME table.
+ *
+ * Idempotent by construction: once an end sits on a surviving row, neither of
+ * the bookmark's ends is doomed and the intent plans nothing - which is what
+ * makes re-arming on undo/redo revival safe.
+ */
+export function planBookmarkClampMoves(
+  editor: LiveEditor,
+  intents: BookmarkClampIntent[]
+): PlannedBookmarkClampMove[] {
+  const moves: PlannedBookmarkClampMove[] = [];
+  const bookmarks = (editor as any).documentHelper?.bookmarks;
+  if (!bookmarks?.get) return moves;
+  for (const intent of intents) {
+    const opening = bookmarks.get(intent.name);
+    const closing = opening?.reference;
+    if (!opening?.line || !closing?.line) continue;
+    const ends = [
+      { element: opening, isStart: true },
+      { element: closing, isStart: false }
+    ];
+    const doomed = ends.filter((end) => {
+      const row = bookmarkRowOf(end.element);
+      return !!row && rowIsPendingDeleted(row);
+    });
+    // Both ends going means the whole bookmark goes with its rows; neither
+    // going means there is nothing to clamp. Only a TORN bookmark moves.
+    if (doomed.length !== 1) continue;
+    const torn = doomed[0];
+    const row = bookmarkRowOf(torn.element);
+    const table = row?.ownerTable;
+    const rows: any[] = Array.isArray(table?.childWidgets)
+      ? table.childWidgets
+      : [];
+    const at = rows.indexOf(row);
+    if (at < 0) continue;
+    // Walk toward the surviving end: a torn start moves DOWN onto the first
+    // surviving row, a torn end moves UP.
+    const step = torn.isStart ? 1 : -1;
+    let landingRow: any;
+    for (
+      let index = at + step;
+      index >= 0 && index < rows.length;
+      index += step
+    )
+      if (!rowIsPendingDeleted(rows[index])) {
+        landingRow = rows[index];
+        break;
+      }
+    if (!landingRow) continue;
+    const cells: any[] = Array.isArray(landingRow.childWidgets)
+      ? landingRow.childWidgets
+      : [];
+    const cell = torn.isStart ? cells[0] : cells[cells.length - 1];
+    const paragraph = firstParagraphIn(cell, !torn.isStart);
+    const lines: any[] = Array.isArray(paragraph?.childWidgets)
+      ? paragraph.childWidgets
+      : [];
+    if (!lines.length) continue;
+    const target = torn.isStart ? lines[0] : lines[lines.length - 1];
+    if (!Array.isArray(target?.children)) continue;
+    const keeperEnd = ends.find((end) => end !== torn);
+    const keeperLine = keeperEnd?.element?.line;
+    if (!keeperEnd || !Array.isArray(keeperLine?.children)) continue;
+    moves.push({
+      name: intent.name,
+      receipt: intent.receipt,
+      element: torn.element,
+      isStart: torn.isStart,
+      targetLine: target,
+      targetParagraph: paragraph,
+      keeper: {
+        element: keeperEnd.element,
+        line: keeperLine,
+        index: keeperLine.children.indexOf(keeperEnd.element)
+      }
+    });
+  }
+  return moves;
+}
+
+/**
+ * Attach the rescued ends, after the deleting group has fully resolved. The
+ * accept has already taken the doomed rows out - and usually the end element
+ * with them, leaving it detached but alive in the planned move - so this is
+ * pure reinsertion into a line the resolution left standing, plus the
+ * dictionary repair for a bookmark the engine dropped when it saw one end go.
+ */
+export function applyBookmarkClampMoves(
+  editor: LiveEditor,
+  moves: PlannedBookmarkClampMove[]
+): string[] {
+  const executed: string[] = [];
+  const bookmarks = (editor as any).documentHelper?.bookmarks;
+  for (const move of moves) {
+    const { element, targetLine, targetParagraph } = move;
+    if (!element || !Array.isArray(targetLine?.children)) continue;
+    // The move is owed only when the deletion actually took the end's row: a
+    // rejected (or partially rejected) group leaves the row - and the end -
+    // standing, and a bookmark that survived in place must not be narrowed.
+    if (widgetTreeAttached(element.line?.paragraph)) continue;
+    // Detach from wherever the resolution left it (often already detached
+    // because its row went), then land on the survivor.
+    const from = element.line;
+    if (from && Array.isArray(from.children)) {
+      const index = from.children.indexOf(element);
+      if (index >= 0) from.children.splice(index, 1);
+    }
+    if (targetLine.children.indexOf(element) < 0) {
+      if (move.isStart) targetLine.children.unshift(element);
+      else targetLine.children.push(element);
+    }
+    element.line = targetLine;
+    // Put the surviving end back where it lived if the engine's half-bookmark
+    // cleanup stripped it alongside the deleted row.
+    const keeper = move.keeper;
+    if (
+      keeper?.element &&
+      Array.isArray(keeper.line?.children) &&
+      keeper.line.children.indexOf(keeper.element) < 0
+    ) {
+      const at = Math.min(
+        Math.max(keeper.index, 0),
+        keeper.line.children.length
+      );
+      keeper.line.children.splice(at, 0, keeper.element);
+      keeper.element.line = keeper.line;
+    }
+    // Resolving a deletion that held one end can drop the bookmark from the
+    // engine's dictionary; both elements exist again, so put the entry back.
+    try {
+      const opening = move.isStart ? element : element.reference;
+      if (
+        opening &&
+        bookmarks?.add &&
+        bookmarks?.containsKey &&
+        !bookmarks.containsKey(move.name)
+      )
+        bookmarks.add(move.name, opening);
+    } catch {
+      // The marks are in the document either way; the dictionary is a cache.
+    }
+    // A relayout under a suspended layout is a no-op, so lift it for the move.
+    const live = editor as any;
+    const layoutWasOn = editor.enableLayout === true;
+    if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
+    try {
+      const layout = live.documentHelper?.layout;
+      if (from?.paragraph && from.paragraph !== targetParagraph)
+        layout?.reLayoutParagraph?.(from.paragraph, 0, 0);
+      layout?.reLayoutParagraph?.(targetParagraph, 0, 0);
+    } catch {
+      // Layout is cosmetic here; the serialized document already holds the move.
+    } finally {
+      if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
+    }
+    executed.push(move.receipt);
+  }
+  return executed;
+}
+
 export const invalidateDocumentLayout = (editor: LiveEditor): void => {
   preserveDocumentViewDuring(
     editor,
@@ -928,11 +1205,48 @@ export function groupRevisionsAtomic(
   changeSetId?: string,
   groupId?: string,
   appearanceRestores?: AppearanceRestore[],
-  paragraphStyles?: ParagraphStyleRestore[]
+  paragraphStyles?: ParagraphStyleRestore[],
+  bookmarkClamps?: BookmarkClampIntent[]
 ): void {
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
   const state = { resolved: false, restored: false, settled: false };
+  /**
+   * The deferred bookmark clamps this group promised, executed exactly when
+   * the deletion becomes real - in two phases around the accept. PLAN on the
+   * FIRST accept-resolution of the group, before any member resolves, while
+   * the doomed rows (and the torn ends inside them) are still present to read.
+   * APPLY at settlement, after every member has resolved, because moving a
+   * bookmark element mid-resolution makes the engine mint a stray empty-range
+   * revision that acceptAll then spins on. A reject never plans, and the apply
+   * itself skips any end whose row survived, so rejecting the card restores
+   * rows and bookmark alike; an undo revival re-arms the plan, which is safe
+   * because planning self-resolves and a bookmark already sitting on surviving
+   * rows plans nothing.
+   */
+  const clampState = {
+    planned: false,
+    moves: [] as ReturnType<typeof planBookmarkClampMoves>
+  };
+  const planBookmarkClamps = () => {
+    if (clampState.planned || !bookmarkClamps?.length) return;
+    clampState.planned = true;
+    try {
+      clampState.moves = planBookmarkClampMoves(editor, bookmarkClamps);
+    } catch {
+      // The accept must still resolve; a failed clamp loses only the narrowing.
+    }
+  };
+  const applyBookmarkClamps = () => {
+    if (!clampState.moves.length) return;
+    const moves = clampState.moves;
+    clampState.moves = [];
+    try {
+      applyBookmarkClampMoves(editor, moves);
+    } catch {
+      // The accept already resolved; a failed clamp loses only the narrowing.
+    }
+  };
   const resolvedAlone = new Set<number>();
   const acceptedAlone = new Set<number>();
   // This binding's identity. A group is finished when the document holds none
@@ -1045,10 +1359,12 @@ export function groupRevisionsAtomic(
     if (groupHasLiveMembers()) return;
     settleAppearance(acceptedAlone.size > 0);
     restoreParagraphStyles();
+    if (acceptedAlone.size > 0) applyBookmarkClamps();
   };
   const resolveAll = (isAccept: boolean) => {
     if (state.resolved) return;
     state.resolved = true;
+    if (isAccept) planBookmarkClamps();
     for (let index = 0; index < members.length; index++) {
       if (resolvedAlone.has(index)) continue;
       if (isAccept) acceptedAlone.add(index);
@@ -1071,13 +1387,18 @@ export function groupRevisionsAtomic(
       // The non-cascading path the review rail resolves every card through:
       // per-chip, per-card and rail-wide all arrive here, member by member.
       resolvedAlone.add(index);
-      if (isAccept) acceptedAlone.add(index);
+      if (isAccept) {
+        acceptedAlone.add(index);
+        planBookmarkClamps();
+      }
       resolveSingleRevision(members[index], isAccept);
       settleIfFinished();
     };
     (revision as any).robinReviveSelf = () => {
       state.resolved = false;
       state.settled = false;
+      clampState.planned = false;
+      clampState.moves = [];
       resolvedAlone.delete(index);
       acceptedAlone.delete(index);
     };
@@ -1769,6 +2090,7 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       revisions: LiveRevision[];
       restoreCandidates: AppearanceRestore[][];
       styleCandidates: ParagraphStyleRestore[][];
+      clampCandidates: BookmarkClampIntent[][];
     }
   >();
   for (const revision of snapshotRevisions(editor)) {
@@ -1783,6 +2105,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
         partition.restoreCandidates.push(tag.appearanceRestores);
       if (tag.paragraphStyles)
         partition.styleCandidates.push(tag.paragraphStyles);
+      if (tag.bookmarkClamps)
+        partition.clampCandidates.push(tag.bookmarkClamps);
     } else {
       partitions.set(key, {
         changeSetId: tag.changeSetId,
@@ -1791,7 +2115,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
         restoreCandidates: tag.appearanceRestores
           ? [tag.appearanceRestores]
           : [],
-        styleCandidates: tag.paragraphStyles ? [tag.paragraphStyles] : []
+        styleCandidates: tag.paragraphStyles ? [tag.paragraphStyles] : [],
+        clampCandidates: tag.bookmarkClamps ? [tag.bookmarkClamps] : []
       });
     }
   }
@@ -1816,13 +2141,25 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     );
     const styles =
       stylePayloads.size === 1 ? [...stylePayloads.values()][0] : undefined;
+    // Same agreement rule again: every member of a group carries the same
+    // clamp payload, so disagreement means a stale or mixed tag and the safe
+    // reading is to clamp nothing.
+    const clampPayloads = new Map(
+      partition.clampCandidates.map((clamps) => [
+        JSON.stringify(clamps),
+        clamps
+      ])
+    );
+    const clamps =
+      clampPayloads.size === 1 ? [...clampPayloads.values()][0] : undefined;
     groupRevisionsAtomic(
       editor,
       partition.revisions,
       partition.changeSetId,
       partition.group,
       restores,
-      styles
+      styles,
+      clamps
     );
     bound += partition.revisions.length;
   });
