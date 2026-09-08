@@ -221,6 +221,18 @@ describe('attaching bindings to a tokenized template', () => {
     setCaretControl(null);
     (editor as any).trigger('keyDown', { event: { key: 'Backspace' } });
     expect(onLockedEdit).not.toHaveBeenCalled();
+
+    // A row/table delete can resolve currentContentControl to a locked cell;
+    // the delete guard owns that gesture, so the hint must stay silent.
+    onLockedEdit.mockClear();
+    setCaretControl(true);
+    const sel = (editor as any).selection;
+    const origIsRowSelected = sel.isRowSelected;
+    sel.isRowSelected = () => true;
+    (editor as any).trigger('keyDown', { event: { key: 'Delete' } });
+    expect(onLockedEdit).not.toHaveBeenCalled();
+    sel.isRowSelected = origIsRowSelected;
+    setCaretControl(null);
   });
 
   it('does not recurse when reading whether the edit was refused', () => {

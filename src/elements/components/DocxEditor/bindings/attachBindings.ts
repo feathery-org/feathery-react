@@ -231,11 +231,24 @@ export function attachBindings(
       // Backspace/Delete inside a locked control is refused by Syncfusion
       // WITHOUT firing 'contentControl' - canEditContentControl short-circuits
       // on lockContents before it reaches checkContentControlLocked (the only
-      // thing that fires the event). So surface the hint from here. A
-      // multi-cell/structural selection has no currentContentControl, so this
-      // never fires on a real row/table delete.
+      // thing that fires the event). So surface the hint from here.
+      //
+      // A real row/table delete DOES report a control - the [[table=...]]
+      // wrapper - so currentContentControl is NOT null here. It stays quiet
+      // only because that wrapper is lockContentControl-only (lockContents is
+      // false), so isLockedControl() rejects it. Don't lean on that: a row
+      // selection whose caret sits in a formula cell can resolve to the LOCKED
+      // cell instead, flashing a false "locked" hint on a legitimate structural
+      // delete (the delete guard owns that gesture). Exclude row/table
+      // selections explicitly so the hint fires only for an in-cell edit.
+      const selection = editor.selection as {
+        isTableSelected?: () => boolean;
+        isRowSelected?: () => boolean;
+      } | null;
       if (
         (key === 'Backspace' || key === 'Delete') &&
+        !selection?.isTableSelected?.() &&
+        !selection?.isRowSelected?.() &&
         isLockedControl(caretControl())
       )
         showLockedHint();
