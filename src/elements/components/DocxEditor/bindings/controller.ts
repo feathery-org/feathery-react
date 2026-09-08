@@ -481,7 +481,12 @@ export class ReconciliationController {
       event: 'command',
       provenance: options.provenance
     });
-    return result;
+    // The AUTHORITATIVE diagnostics are the controller's own after commit:
+    // when the native mutation fails, commit records `native-mutation-failed`
+    // on `this.diagnostics`, and returning the pre-commit `result.diagnostics`
+    // here silently hid that failure from the caller - the assistant reported
+    // "ok" over a document the engine had refused to change.
+    return { ...result, diagnostics: this.diagnostics };
   }
 
   /* ---- persistence ---- */
