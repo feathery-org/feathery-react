@@ -378,6 +378,29 @@ describe('installTableDeleteGuard', () => {
     expect(costsRowCount(editor)).toBe(5);
   });
 
+  it('does NOT delete the row when a single cell content control is selected (backspace-to-edit)', async () => {
+    editor = makeEditor(buildCostsFixture());
+    const confirm = jest.fn(() => Promise.resolve(true));
+    uninstall = installTableDeleteGuard(
+      editor as unknown as SyncfusionEditorLike,
+      { confirm }
+    );
+
+    // A global tag filling its cell: selecting its content makes Syncfusion
+    // report isRowSelected true even though it is ONE cell. Backspace here is
+    // an edit, not a row delete.
+    caretIntoControl(editor, 'tax_rate');
+    expect((editor.selection as any).isRowSelected()).toBe(true); // the trap
+    const before = costsRowCount(editor);
+    const args = { event: { key: 'Backspace' }, isHandled: false };
+    (editor as any).trigger('keyDown', args);
+    await flush();
+
+    expect(args.isHandled).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(costsRowCount(editor)).toBe(before);
+  });
+
   it('routes whole-table Delete/Backspace on a bound table through the guard', async () => {
     editor = makeEditor(buildCostsFixture());
     const confirm = jest.fn(() => Promise.resolve(true));

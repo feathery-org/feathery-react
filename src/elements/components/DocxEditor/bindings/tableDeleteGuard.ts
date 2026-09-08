@@ -485,20 +485,33 @@ export function installTableDeleteGuard(
       if (key !== 'Delete' && key !== 'Backspace') return;
       if (passthrough()) return;
       const selection = anyEditor.selection as any;
-      if (selection?.isTableSelected?.()) {
+      // isTableSelected/isRowSelected also report true when a SINGLE cell's
+      // whole content is selected - which is what clicking a content control
+      // that fills its cell does. Structural deletion is only meant for a
+      // selection that genuinely spans multiple cells; otherwise this hijacked
+      // an ordinary backspace-to-edit and deleted the row. Require a real
+      // multi-cell span before routing to a structural delete.
+      const startCell = selection?.start?.paragraph?.associatedCell;
+      const endCell = selection?.end?.paragraph?.associatedCell;
+      const spansMultipleCells =
+        !!startCell && !!endCell && startCell !== endCell;
+      if (spansMultipleCells && selection?.isTableSelected?.()) {
         const impact = analyzeTable();
         if (!impact?.tableId) return;
         args.isHandled = true;
         module.deleteTable();
         return;
       }
-      if (selection?.isRowSelected?.()) {
+      if (spansMultipleCells && selection?.isRowSelected?.()) {
         const impact = analyzeRows();
         if (!impact?.tableId) return;
         args.isHandled = true;
         module.deleteRow();
         return;
       }
+      // Editing inside a table cell (caret or single-cell selection) is always
+      // native - never a structural or range delete.
+      if (startCell) return;
       // Prose range that covers content control(s): the lock would refuse it
       // silently. Delete it ourselves (bypassed), unwrapping any formula the
       // removal strands. 'blocked' (partial overlap) and null (no control)
