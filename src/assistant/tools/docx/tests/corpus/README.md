@@ -76,3 +76,36 @@ opens in about half a second - and it removes nothing any binding law reads, so
 the browser's own figures ($11,008.00 / $11,046.40 fragments, $75,667.35 /
 $6,431.72 / $82,099.07 summary) are the oracle in
 `splitConservesDocumentTotals.spec.ts`.
+
+## flagship-v3, and why it is vendored despite being browser-only
+
+`browser-only/flagship-v3.sfdt.json` is the BROWSER document: the full client-shaped proposal
+WITH header and footer stories, 163 content controls, three bound schedules
+(property, liability, motor) whose subtotals feed a Premium Summary through a
+three-level formula chain. It is the shape a real client sends.
+
+It is deliberately the one shape here that the DEFAULT jest run must never open,
+which is why it lives under `browser-only/` rather than beside the others:
+`corpusShapes()` sweeps every `*.sfdt.json` sitting directly in this directory,
+and per the section above, a repeating header over a body long enough to
+paginate never terminates in jsdom - so vendoring it as a direct child would
+HANG `yarn test` rather than fail it. Measured here 2026-09-08.
+It is vendored for the headless real-engine lane instead - `yarn test:headless`,
+`src/assistant/tools/docx/tests/headless/` - which lays it out in a real headless
+Chrome in about a second and measures what layout registers.
+
+Source: `robin-harness/corpus/flagship-v3.headers.sfdt.json`, authored by
+`build-flagship-v3.mjs`. Regenerate it with that builder, not by re-importing a
+.docx.
+
+## browser-only/flagship-v3.browser.sfdt.json, the pristine browser capture
+
+Captured 2026-09-08 straight out of the captain's live editor tab through the
+debug port, before any assistant op ran: 79 content controls, zero revisions,
+`headersFooters` present. It is NOT the same document as
+`browser-only/flagship-v3.sfdt.json` above, which the harness authored with 163
+controls - this one is what the captain actually has open, and it is the primary
+fixture of the headless lane from now on. It carries header stories, so like its
+neighbours it stays under `browser-only/`: `corpusShapes()` sweeps only direct
+children of this directory, and a header-bearing document hangs `open()` in
+jsdom for minutes rather than failing.

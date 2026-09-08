@@ -39,6 +39,7 @@
     "prepublishOnly": "yarn build",
     "test": "jest",
     "test:ci": "jest --silent --maxWorkers=50% --ci",
+    "test:headless": "jest -c jest.headless.config.js",
     "test:debug": "npm-run-all -p test:watch jest-preview",
     "test:watch": "jest --watchAll",
     "jest-preview": "jest-preview",
@@ -99,6 +100,7 @@
     "jest-preview": "^0.3.1",
     "npm-run-all": "^4.1.5",
     "prettier": "^2.0.4",
+    "puppeteer-core": "^23.11.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "rollup": "^4.53.2",
@@ -178,6 +180,10 @@
     ],
     "setupFilesAfterEnv": [
       "<rootDir>/src/setupTests.ts"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.headless\\.spec\\."
     ]
   },
   "babel": {
