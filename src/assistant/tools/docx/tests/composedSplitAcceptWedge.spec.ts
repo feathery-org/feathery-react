@@ -4,7 +4,7 @@
  *
  * MEASURED IN A REAL BROWSER, on a real client document, 2026-09-08. One review
  * card: a composed split (duplicate_table with keepRows, plus delete_row of the
- * complement, plus the summary formulas it recomputes), 49 pending edits over 13
+ * complement, and the summary formulas it re-expresses), 48 pending edits over 13
  * revisions, tracked. Clicking Accept applied 14 of the 49 and stopped at 35
  * pending. Every later accept path was INERT - the card's Accept again, accept
  * all with fresh element refs, per-edit "Accept this edit" - with no spinner and
@@ -290,8 +290,11 @@ describe('a composed split accepts as a whole, or says which member it could not
     const result: any = splitCosts(editor, SPLIT_AT);
     expect(result.results.map((entry: any) => (entry.ok ? 'ok' : entry.error)))
       .toEqual(['ok', 'ok']);
-    // The card the captain clicked: 49 edits over one group.
-    expect(chipCount(editor)).toBe(49);
+    // The card the captain clicked: 48 edits over one group. It was 49 until
+    // the split stopped changing the summary - conserving the document totals
+    // leaves those lines reading exactly what they read before, and a line that
+    // does not change is not an edit for the captain to review.
+    expect(chipCount(editor)).toBe(48);
     expect(cardGroups(editor)).toHaveLength(1);
     expect(editor.revisions.length).toBeGreaterThan(1);
 
@@ -341,8 +344,10 @@ describe('a composed split accepts as a whole, or says which member it could not
       true
     );
 
-    // Same fixture, same poison position: the shape the measurement was taken on.
-    expect(total).toBe(11);
+    // Same fixture, same poison position: the shape the measurement was taken
+    // on, less the two summary writes the split no longer makes now that it
+    // conserves the document totals.
+    expect(total).toBe(9);
 
     // The poison still cannot move - nothing here pretends to resolve it - but
     // it no longer takes the five members after it down with it. ONE left, not

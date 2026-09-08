@@ -34,19 +34,23 @@
  * the summary showing the original figures; reject unwinds the rewrite with the
  * rest of the card.
  *
- * WHY THOSE ROWS ARE SKIPPED RATHER THAN RED, and it is not squeamishness - it
- * is the finding this file exists to record. The rewrite cannot be expressed
- * through the transport the split already uses. `diffBindingCommands` emits
- * `set-value` only for FIELD bindings and carries a whole SFDT block only for a
- * table being added or removed, so an expression change to a formula in an
- * EXISTING table (the summary) produces no command at all and is dropped
- * silently between the in-memory projection and the live document - leaving the
- * controller's SFDT and the live editor disagreeing about what the document
- * says. Landing it needs a `set-expression` command, a control-retag structural
- * mutation finalized post-rules, and - mandatorily, per the TRIGGER row below -
- * an expression-restore inverse bound to the revision group, because an
- * unresolved reference is not a soft failure: it renders the cell as an
- * ellipsis and blocks save outright. Half of that is worse than none of it.
+ * HOW IT IS EXPRESSED, since the transport the split already used could not
+ * carry it. `diffBindingCommands` emitted `set-value` only for FIELD bindings
+ * and carried a whole SFDT block only for a table being added or removed, so an
+ * expression change to a formula in an EXISTING control produced no command at
+ * all and was dropped between the in-memory projection and the live document.
+ * It now emits `set-expression`, diffed by NAME because the tag is what
+ * changed, and the controller applies it as a `retag-control` structural
+ * mutation - the one mutation that moves no content, because an expression
+ * lives in a tag and SyncFusion revisions content rather than tags.
+ *
+ * That is also why the rewrite owes an inverse, and why the inverse asks the
+ * DOCUMENT rather than the outcome: per the TRIGGER row an unresolved reference
+ * is not a soft failure, it renders the cell as an ellipsis and blocks save
+ * outright. `ExpressionRestore` carries the binding the rewrite was made to
+ * reach, and one idempotent sweep - bound to the revision group, re-run after
+ * every history step - serves reject, multi-press undo, redo and a rolled-back
+ * change set alike.
  */
 import 'jest-canvas-mock';
 import {
@@ -289,13 +293,16 @@ describe('a table split conserves the document totals', () => {
   it('TRIGGER, pinned at the engine: the copy is a new binding, and a dangling reference is fatal', () => {
     expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
 
-    // The copy's aggregate exists under a FRESH name, and the outside formula
-    // still names the original. Both halves of the defect, in one reading.
+    // The copy's aggregate exists under a FRESH name that nothing outside the
+    // table would have named on its own - the mechanism the law has to work
+    // around - and the outside formula now names both fragments.
     const expressions = documentFormulas(editor);
     expect(expressions.get('schedule_copy_subtotal')).toBe(
       'sum(schedule_copy.line_total)'
     );
-    expect(expressions.get('summary_property')).toBe('schedule_subtotal');
+    expect(expressions.get('summary_property')).toBe(
+      'sum(schedule_subtotal,schedule_copy_subtotal)'
+    );
 
     // And rewriting it is not a free move: a reference the document cannot
     // resolve is a BLOCKING evaluation error that renders the cell as an
@@ -324,22 +331,23 @@ describe('a table split conserves the document totals', () => {
     ).toContain('error/evaluation-failed');
   });
 
-  // ------------------------------------------------------- the defect, measured
+  // ----------------------------------------------- the arithmetic, measured
   /**
-   * Green today, RED the day the law below holds - the repo's convention for a
-   * pinned defect (see splitTableContract.spec.ts S2(d)); this jest has no
-   * `test.failing`. The property rows it stands in for are the skipped LAW rows.
+   * The defect this file was opened for, now stated as the law it became. It
+   * replaces the pinned `DEFECT` row rather than joining it: that row asserted
+   * the summary drops to the first fragment, which is the thing being fixed,
+   * and the repo's convention retires a defect pin with its fix.
    *
-   * This is the captain's document at the fixture's scale: the two fragments
-   * still add up to the whole, so nothing was lost - and every figure outside
-   * the table reads only the first fragment.
+   * This is the captain's document at the fixture's scale. The two fragments
+   * still add up to the whole, because nothing left the document - and every
+   * figure outside the table still reads the whole, because the money only
+   * moved.
    */
-  it('DEFECT: the split leaves every outside total reading the first fragment only', () => {
+  it('LAW: the money only moved - the fragments add up and the summary is unmoved', () => {
     const before = formulaValues(editor);
     expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const after = formulaValues(editor);
 
-    // Nothing left the document: the fragments still sum to the whole.
     expect(after.schedule_subtotal).toBe(FIRST_FRAGMENT);
     expect(after.schedule_copy_subtotal).toBe(SECOND_FRAGMENT);
     expect(
@@ -347,20 +355,14 @@ describe('a table split conserves the document totals', () => {
         Number(SECOND_FRAGMENT.replace(/[$,]/g, ''))
     ).toBeCloseTo(Number(WHOLE.subtotal.replace(/[$,]/g, '')), 2);
 
-    // And every figure outside the table now understates the premium by the
-    // whole second fragment. THE DEFECT.
     expect(before.summary_property).toBe(WHOLE.subtotal);
-    expect(after.summary_property).toBe(FIRST_FRAGMENT);
-    expect(after.summary_tax).not.toBe(WHOLE.tax);
-    expect(after.summary_total).not.toBe(WHOLE.total);
+    expect(after.summary_property).toBe(WHOLE.subtotal);
+    expect(after.summary_tax).toBe(WHOLE.tax);
+    expect(after.summary_total).toBe(WHOLE.total);
   });
 
   // ---------------------------------------------------------------- the law
-  // The two rows the fix owes, skipped rather than red so the suite keeps
-  // meaning "everything asserted here is true"; un-skip them to watch the
-  // defect, and delete the skip with the fix. The header says why they cannot
-  // be made green without the `set-expression` transport.
-  it.skip('LAW: the pending change set leaves every outside total at its pre-split figure', () => {
+  it('LAW: the pending change set leaves every outside total at its pre-split figure', () => {
     const before = formulaValues(editor);
     expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const after = formulaValues(editor);
@@ -380,7 +382,7 @@ describe('a table split conserves the document totals', () => {
     expect(after.schedule_copy_subtotal).toBe(SECOND_FRAGMENT);
   });
 
-  it.skip('LAW: the rewrite is part of the card - accept leaves the original figures standing', () => {
+  it('LAW: the rewrite is part of the card - accept leaves the original figures standing', () => {
     const before = formulaValues(editor);
     expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
 
@@ -409,6 +411,133 @@ describe('a table split conserves the document totals', () => {
    * cosmetic residue: per the TRIGGER row it renders the summary as an ellipsis
    * and blocks save on a client's document.
    */
+  /**
+   * The other way a pending card goes away, and the one no revision resolution
+   * ever sees: nothing is accepted or rejected, the history simply walks the
+   * copy back out of the document. A rewrite left standing after the copy is
+   * gone is the fatal case - per the TRIGGER row an unresolved reference blocks
+   * save - so the inverse cannot be hung off accept and reject alone.
+   *
+   * Asserted as an INVARIANT at every press rather than only at the end, which
+   * is both stronger and the only reading this SDK permits here. Multi-press is
+   * the real shape (a split is deliberately not one grouped undo entry; see the
+   * note at `applyDocumentEdits`), and measured on 34.1.31 under jsdom the
+   * SDK's own `revert` of the inserted fragment throws inside `reLayout`
+   * (`getSplitWidgets` of undefined) after 13 presses, with the fragment still
+   * in the document - an SDK limitation that predates and is untouched by the
+   * expression rewrite, which authors no history entry of its own. So the walk
+   * is pinned step by step, and the terminal state - copy gone, expression
+   * back, byte for byte - is pinned by the reject row below, which reaches it.
+   */
+  it('LAW: the expression names the copy at every undo press, and only while the copy is there', () => {
+    expect(documentFormulas(editor).get('summary_property')).toBe(
+      'schedule_subtotal'
+    );
+    expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
+
+    const agrees = () => {
+      const formulas = documentFormulas(editor);
+      const summary = formulas.get('summary_property') ?? '';
+      // The fatal state stated positively: an expression may name the copied
+      // fragment only while the copied fragment is there to be named.
+      return (
+        summary.includes('schedule_copy_subtotal') ===
+        formulas.has('schedule_copy_subtotal')
+      );
+    };
+    expect(agrees()).toBe(true);
+
+    let presses = 0;
+    for (; presses < 40 && editor.revisions.length; presses++) {
+      try {
+        editor.editorHistory.undo();
+      } catch {
+        // The SDK gave out mid-revert; the state it left must still agree.
+        break;
+      }
+      expect(agrees()).toBe(true);
+    }
+    // Non-vacuous: the walk really did press, and really did unwind revisions.
+    expect(presses).toBeGreaterThan(1);
+    expect(editor.revisions.length).toBeLessThan(9);
+    expect(agrees()).toBe(true);
+  });
+
+  /**
+   * The one case the law cannot answer, and so refuses rather than guesses.
+   *
+   * Rewriting an outside reference to the sum of the fragments is only correct
+   * when the thing referenced is a TOTAL. Here the summary reads one item's own
+   * figure - a document-level binding sitting in an item row - and the split
+   * moves that row into the copy, where it is renamed. There is no total to add
+   * up in its place and no honest guess about what the author meant, so the
+   * whole change set is refused and the document is left exactly as it was.
+   */
+  it('LAW: a split that moves an item an outside total reads is refused, not guessed', () => {
+    attached.dispose();
+    editor.destroy();
+    editor.element?.remove();
+
+    const fixture = JSON.parse(JSON.stringify(buildBandedProposalFixture()));
+    // The last item row's own label control becomes a document-level figure the
+    // summary reads directly. Nothing else references `item`, so every oracle
+    // above still holds.
+    const itemControls: any[] = [];
+    const visit = (node: any): void => {
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (!node || typeof node !== 'object') return;
+      const tag = node.contentControlProperties?.tag;
+      if (typeof tag === 'string' && tag.includes('name=item|'))
+        itemControls.push(node);
+      for (const key of Object.keys(node)) visit(node[key]);
+    };
+    visit(fixture);
+    expect(itemControls.length).toBeGreaterThan(MOVED_ITEMS[0]);
+    const moved = itemControls[itemControls.length - 1];
+    moved.contentControlProperties = {
+      ...moved.contentControlProperties,
+      tag: '[[name=flagship_item|type=currency|default=500]]'
+    };
+    const retarget = (node: any): void => {
+      if (Array.isArray(node)) return node.forEach(retarget);
+      if (!node || typeof node !== 'object') return;
+      const tag = node.contentControlProperties?.tag;
+      if (typeof tag === 'string' && tag.includes('name=summary_property|'))
+        node.contentControlProperties = {
+          ...node.contentControlProperties,
+          tag: tag.replace(
+            /expr=[^|\]]*/,
+            'expr=sum(schedule_subtotal,flagship_item)'
+          )
+        };
+      for (const key of Object.keys(node)) retarget(node[key]);
+    };
+    retarget(fixture);
+
+    editor = makeEditor(fixture);
+    attached = attachBindings(editor as unknown as SyncfusionEditorLike, {
+      convertTokensOnOpen: false
+    });
+    expect(documentFormulas(editor).get('summary_property')).toBe(
+      'sum(schedule_subtotal,flagship_item)'
+    );
+
+    const before = editor.serialize();
+    const results = splitSchedule(editor, SPLIT_AT);
+    expect(outcomes(results)[0]).toBe('split_moves_referenced_item');
+    // A refusal is plain language about the captain's document, and it names
+    // both the total that would break and the item that moved.
+    const message = String(results.results[0].message ?? '');
+    expect(message).toContain('summary_property');
+    expect(message).toContain('flagship_item');
+    expect(message).not.toMatch(/undefined|\[object|scanBindings/);
+    // And the document is exactly as it was: no fragment, no rewrite.
+    expect(editor.serialize()).toBe(before);
+    expect(documentFormulas(editor).get('summary_property')).toBe(
+      'sum(schedule_subtotal,flagship_item)'
+    );
+  });
+
   it('LAW: reject restores the document byte for byte, expressions included', () => {
     const before = editor.serialize();
     expect(outcomes(splitSchedule(editor, SPLIT_AT))).toEqual(['ok', 'ok']);

@@ -181,6 +181,7 @@ import type {
   AppearanceRestore,
   AppearanceWrite,
   BookmarkClampIntent,
+  ExpressionRestore,
   ParagraphStyleRestore,
   BorderWrite,
   CellPropertyFacts,
@@ -12744,7 +12745,8 @@ function groupNewRevisions(
   restoresByGroup?: Map<string, AppearanceRestore[]>,
   stylesByGroup?: Map<string, ParagraphStyleRestore[]>,
   revisionsWereReloaded = false,
-  clampsByGroup?: Map<string, BookmarkClampIntent[]>
+  clampsByGroup?: Map<string, BookmarkClampIntent[]>,
+  expressionsByGroup?: Map<string, ExpressionRestore[]>
 ): RevisionGroupingReport {
   const created = revisionsWereReloaded
     ? (() => {
@@ -12790,7 +12792,13 @@ function groupNewRevisions(
     const restores = restoresByGroup?.get(group);
     const styles = stylesByGroup?.get(group);
     const clamps = clampsByGroup?.get(group);
-    if (restores?.length || styles?.length || clamps?.length) {
+    const expressions = expressionsByGroup?.get(group);
+    if (
+      restores?.length ||
+      styles?.length ||
+      clamps?.length ||
+      expressions?.length
+    ) {
       // The live closures below disappear on reload; the same customData that
       // carries group identity therefore carries the exact appearance inverse
       // and the deferred bookmark clamps. SyncFusion removes the revision
@@ -12804,7 +12812,8 @@ function groupNewRevisions(
             group,
             restores,
             styles,
-            clamps
+            clamps,
+            expressions
           );
       }
     }
@@ -12819,7 +12828,8 @@ function groupNewRevisions(
       group,
       restores,
       styles,
-      clamps
+      clamps,
+      expressions
     );
     revisionsByGroup.set(group, partition.length);
   });
@@ -14533,6 +14543,184 @@ function rewriteBindingsInClone(
   }
   for (const value of Object.values(node))
     rewriteBindingsInClone(value, options);
+}
+
+/**
+ * THE LAW: splitting a table changes presentation, never document totals.
+ *
+ * An aggregate is a document-level formula physically inside a table, reaching
+ * its rows by a dotted ref. A split is composed as `duplicate_table` with
+ * `keepRows` plus `delete_row` of the complement, and `duplicate_table` mints
+ * FRESH names for what it copies while rewriting only the CLONE's expressions.
+ * That asymmetry is deliberate for a COPY - a copy must never steal references
+ * that pointed at its source, because the source is still whole - and it is the
+ * whole defect for a SPLIT, where the source is not: fragment one keeps the
+ * original aggregate and correctly recomputes to its own rows, and every
+ * formula outside the table still names it, so every outside figure silently
+ * understates the document by the whole second fragment.
+ *
+ * The discriminator between the two is not the op list and not the name: it is
+ * whether the source table LOST ROWS in the same change set. A copy leaves it
+ * whole and nothing outside is touched; a split shrinks it, and every outside
+ * formula that named one of its aggregates is rewritten to the sum of that
+ * aggregate across all fragments. Per-fragment aggregates are left alone - they
+ * already rescope to their own items, which is the half of the law the split
+ * gets right and this must not disturb.
+ *
+ * Provenance is what makes the pairing exact rather than inferred: the clone
+ * records `copyOf` on every binding it renames, so the copied aggregate names
+ * its own original.
+ */
+interface SplitConservation {
+  sfdt: any;
+  restores: ExpressionRestore[];
+  receipts: string[];
+}
+
+const pathContains = (
+  outer: ReadonlyArray<string | number>,
+  inner: ReadonlyArray<string | number>
+): boolean =>
+  outer.length <= inner.length &&
+  outer.every((segment, index) => String(inner[index]) === String(segment));
+
+/** Every bare reference in an expression, function names excluded. */
+function expressionReferences(expression: string): string[] {
+  const found: string[] = [];
+  String(expression).replace(
+    /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
+    (token, offset: number, source: string) => {
+      const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
+      if (after !== '(') found.push(token);
+      return token;
+    }
+  );
+  return found;
+}
+
+/** `expression` with every bare `name` replaced by `sum(name, replacement)`. */
+function sumAcrossFragments(
+  expression: string,
+  fragments: Map<string, string>
+): string {
+  return String(expression).replace(
+    /\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\b/g,
+    (token, offset: number, source: string) => {
+      const after = source.slice(offset + token.length).match(/^\s*(.)/)?.[1];
+      if (after === '(') return token;
+      const copy = fragments.get(token);
+      return copy ? `sum(${token},${copy})` : token;
+    }
+  );
+}
+
+function conserveSplitAggregates(before: any, after: any): SplitConservation {
+  const beforeIndex = scanBindings(before);
+  const afterIndex = scanBindings(after);
+  const empty: SplitConservation = { sfdt: after, restores: [], receipts: [] };
+  /** Aggregate name -> the copied fragment's aggregate, per split table. */
+  const fragments = new Map<string, string>();
+  /** Every table a split of this change set produced or shrank. */
+  const splitPaths: Array<ReadonlyArray<string | number>> = [];
+  /** Bindings the split moved out of the source table and renamed away. */
+  const movedAway = new Set<string>();
+
+  for (const [copyId, copyTable] of afterIndex.tables) {
+    if (beforeIndex.tables.has(copyId) || !copyTable.tablePath) continue;
+    for (const occurrence of afterIndex.occurrences) {
+      if (!pathContains(copyTable.tablePath, occurrence.path)) continue;
+      const origin = (occurrence.def as any)?.options?.copyOf;
+      if (typeof origin !== 'string' || !origin) continue;
+      const source = beforeIndex.formulas.get(origin)?.[0];
+      // Only an AGGREGATE conserves anything: a row-scoped binding is one
+      // item's own figure, and a field is not a formula at all.
+      if (!source || source.def.kind !== 'formula') continue;
+      if ((source.def as any).options?.row) continue;
+      const sourceTable = [...beforeIndex.tables].find(
+        ([, table]) =>
+          !!table.tablePath && pathContains(table.tablePath, source.path)
+      );
+      if (!sourceTable) continue;
+      const [sourceId, sourceEntry] = sourceTable;
+      const survivor = afterIndex.tables.get(sourceId);
+      // THE DISCRIMINATOR, and it is arithmetic rather than a guess at intent:
+      // the fragments must PARTITION the original's rows. A split moves rows,
+      // so the two fragments add up to what the source had; a copy duplicates
+      // them, so they add up to more, and adding a copy's aggregate to its
+      // source's would double-count every row they share. Measured on the
+      // composed-probe fixture, which copies a whole table and then deletes one
+      // row from the source: the source did lose rows, and it is still not a
+      // split. Anything that is not a partition is left entirely alone, which
+      // is copyFidelity's law - a copy must never steal references that
+      // pointed at its source.
+      if (
+        !survivor ||
+        !survivor.tablePath ||
+        survivor.rows.length >= sourceEntry.rows.length ||
+        survivor.rows.length + copyTable.rows.length !== sourceEntry.rows.length
+      )
+        continue;
+      if (!afterIndex.formulas.has(origin)) continue;
+      fragments.set(origin, occurrence.name);
+      splitPaths.push(survivor.tablePath, copyTable.tablePath);
+      for (const prior of beforeIndex.occurrences) {
+        if (!sourceEntry.tablePath) continue;
+        if (!pathContains(sourceEntry.tablePath, prior.path)) continue;
+        if (
+          !afterIndex.formulas.has(prior.name) &&
+          !afterIndex.fields.has(prior.name)
+        )
+          movedAway.add(prior.name);
+      }
+    }
+  }
+  if (!fragments.size) return empty;
+
+  let sfdt = after;
+  const restores: ExpressionRestore[] = [];
+  const receipts: string[] = [];
+  const seen = new Set<string>();
+  for (const occurrence of afterIndex.occurrences) {
+    if (occurrence.def.kind !== 'formula') continue;
+    if (splitPaths.some((path) => pathContains(path, occurrence.path)))
+      continue;
+    const references = expressionReferences(occurrence.def.expression);
+    const orphan = references.find((reference) => movedAway.has(reference));
+    if (orphan)
+      throw new OpError(
+        'split_moves_referenced_item',
+        `This split cannot be applied. "${occurrence.name}" outside the table reads "${orphan}", which is one item's own figure rather than a total, and the split moves that item into the second table. Splitting would leave "${occurrence.name}" pointing at nothing, and there is no total to add up in its place. Choose a split point that keeps that item, or change "${occurrence.name}" to read a subtotal first.`
+      );
+    const next = sumAcrossFragments(occurrence.def.expression, fragments);
+    if (next === occurrence.def.expression) continue;
+    if (seen.has(occurrence.tag)) continue;
+    seen.add(occurrence.tag);
+    const def = parseTag(occurrence.tag);
+    if (!def || def.kind !== 'formula') continue;
+    def.expression = next;
+    const toTag = formatTag(def);
+    const requires = references
+      .map((reference) => fragments.get(reference))
+      .find((copy): copy is string => !!copy) as string;
+    const node = getAt(sfdt, occurrence.path) as any;
+    sfdt = setAt(sfdt, occurrence.path, {
+      ...node,
+      contentControlProperties: {
+        ...node.contentControlProperties,
+        tag: toTag
+      }
+    });
+    restores.push({
+      name: occurrence.name,
+      fromTag: occurrence.tag,
+      toTag,
+      requires
+    });
+    receipts.push(
+      `${occurrence.name} now totals both fragments (${next}) so the split moves no money`
+    );
+  }
+  return { sfdt, restores, receipts };
 }
 
 function materializeBoundRows(
@@ -20245,6 +20433,24 @@ function applyDocumentEditsMeasured(
     if (bucket) bucket.push(...clamps);
     else bookmarkClampsByGroup.set(id, [...clamps]);
   };
+  /**
+   * Expression rewrites this change set made outside the tables it split,
+   * bucketed by revision group exactly like the clamps above. Same freedom on
+   * every failure path, for the same reason: a group whose revisions were
+   * rolled back has no partition to attach to, so its inverses evaporate - and
+   * the rewrite itself is rolled back with the rest of the change set.
+   */
+  const expressionRestoresByGroup = new Map<string, ExpressionRestore[]>();
+  const recordExpressionRestores = (
+    op: EditOp,
+    restores: ExpressionRestore[]
+  ) => {
+    if (!restores.length) return;
+    const id = opGroupId(op, changeSetId);
+    const bucket = expressionRestoresByGroup.get(id);
+    if (bucket) bucket.push(...restores);
+    else expressionRestoresByGroup.set(id, [...restores]);
+  };
   const recordAppearanceRestores = (
     op: EditOp,
     restores: AppearanceRestore[]
@@ -21649,6 +21855,29 @@ function applyDocumentEditsMeasured(
                   ...bookmarkClampReceipts(clamps)
                 ];
             }
+            // THE LAW, applied where it is checkable: at the end of the whole
+            // change set, over the projection, from the copy's own provenance.
+            // A refusal here throws before anything reaches the live document.
+            const conservation = conserveSplitAggregates(
+              beforeCommands,
+              state.sfdt
+            );
+            if (conservation.restores.length) {
+              state = {
+                sfdt: conservation.sfdt,
+                index: scanBindings(conservation.sfdt)
+              };
+              recordExpressionRestores(
+                enginePlans[0].op,
+                conservation.restores
+              );
+              const outcome = outcomes.get(enginePlans[0].index);
+              if (outcome)
+                outcome.details = [
+                  ...(outcome.details ?? []),
+                  ...conservation.receipts
+                ];
+            }
             const engineResult = surface.runCommands(
               diffBindingCommands(beforeCommands, state.sfdt),
               {
@@ -21807,7 +22036,8 @@ function applyDocumentEditsMeasured(
     appearanceRestoresByGroup,
     paragraphStylesByGroup,
     enginePlans.length > 0,
-    bookmarkClampsByGroup
+    bookmarkClampsByGroup,
+    expressionRestoresByGroup
   );
   const revisionCount = grouping.revisionCount;
   // THE ASSERTION, and it fails the change set rather than warning past it: a
