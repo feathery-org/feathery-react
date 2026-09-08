@@ -809,15 +809,43 @@ export function installTrackedContentControlDeletion(editor: LiveEditor): void {
       module.canHandleDeletion() || !module.skipTracking() || isRedoingRowTrack
     );
   };
+  /**
+   * Is this marker's removal already governed by its ROW's own revision?
+   *
+   * `skipTableElements` is the SDK's own name for exactly this instinct: on the
+   * `trackRowDeletion` walk it marks "the row is the unit, do not author a
+   * second revision per element inside it". The instinct is right and the flag
+   * is too narrow - the selection-delete path reaches the same marker in the
+   * same doomed row with the flag clear - so read the row itself as well.
+   *
+   * Widening it is not a nicety. A Deletion revision on a marker whose row is
+   * going away CANNOT SURVIVE ITS OWN RESOLUTION: accepting the row takes the
+   * marker's range with it while the marker's revision stays registered, and
+   * SyncFusion's `handleAcceptReject` walks `while (getRange().length > 0)`, so
+   * an empty-range revision runs no iterations, deregisters nothing, throws
+   * nothing, and refuses accept and reject alike forever. Authoring one is
+   * authoring a revision the user can never get rid of. The row's revision
+   * already restores this control on reject and removes it on accept; the
+   * control only has to stay in place.
+   */
+  const rowGovernsThisDeletion = (elementBox: any): boolean => {
+    const row = elementBox?.line?.paragraph?.associatedCell?.ownerRow;
+    if (!row) return false;
+    if (rowIsPendingDeleted(row)) return true;
+    // The row's Deletion may not be on its rowFormat yet: `trackRowDeletion`
+    // stamps this action on the history entry as it starts.
+    return (
+      module.editorHistory?.currentBaseHistoryInfo?.action === 'RemoveRowTrack'
+    );
+  };
   module.handleDeleteTracking = (elementBox: any, ...rest: any[]): any => {
     const isContentControl =
       typeof elementBox?.contentControlWidgetType === 'string' &&
       !!elementBox.contentControlProperties;
     if (!isContentControl || !isTrackedDeletion(elementBox))
       return original(elementBox, ...rest);
-    // Inside a tracked row deletion the row's own revision already governs
-    // accept and reject, the control only has to stay in place
-    if (module.skipTableElements) return undefined;
+    if (module.skipTableElements || rowGovernsThisDeletion(elementBox))
+      return undefined;
     if (!module.checkToCombineRevisionsInSides(elementBox, 'Deletion'))
       module.insertRevision(elementBox, 'Deletion');
     module.updateLastDeletedRevision(elementBox);
@@ -1481,11 +1509,54 @@ const lookupRevision = (
   );
 };
 
+/**
+ * How many document items a revision still spans, or -1 when the read throws.
+ *
+ * The number that decides whether a revision can be resolved at all: SyncFusion's
+ * `Revision.handleAcceptReject` walks `while (this.getRange().length > 0)` and
+ * deregisters the revision only from inside that walk, so a revision whose range
+ * is already empty runs no iterations, throws nothing, and stays registered
+ * forever - refusing accept and reject alike.
+ */
+export const revisionRangeLength = (revision: LiveRevision): number => {
+  try {
+    const range =
+      typeof revision.getRange === 'function' ? revision.getRange() : [];
+    return Array.isArray(range) ? range.length : 0;
+  } catch {
+    return -1;
+  }
+};
+
+/** A revision that can be neither accepted nor rejected: its range is empty. */
+export const revisionIsUnresolvable = (revision: LiveRevision): boolean =>
+  revisionRangeLength(revision) === 0;
+
+/**
+ * What one resolve settled, and what it could not.
+ *
+ * An ARRAY of the members that actually left the document - so every caller
+ * that only ever asked "did anything resolve" keeps reading it unchanged -
+ * carrying the members that refused to move as `unresolved`. A resolve that
+ * cannot finish must SAY which edits it left behind: a silently partial
+ * application redraws a smaller pending count and reads to the user as if the
+ * card had been applied.
+ */
+export interface RevisionResolveOutcome extends Array<LiveRevision> {
+  unresolved: LiveRevision[];
+}
+
+const resolveOutcome = (
+  resolved: LiveRevision[],
+  unresolved: LiveRevision[]
+): RevisionResolveOutcome =>
+  Object.assign(resolved as RevisionResolveOutcome, { unresolved });
+
 export function resolveRevisionsAsOneUndo(
   editor: LiveEditor,
   revisions: LiveRevision[],
   isAccept: boolean
-): void {
+): RevisionResolveOutcome {
   const identities = revisions.map(revisionMemberIdentity);
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
@@ -1503,13 +1574,17 @@ export function resolveRevisionsAsOneUndo(
     }
   }
   const index = buildRevisionIndex(editor);
+  const resolved: LiveRevision[] = [];
+  const attempted: LiveRevision[] = [];
   try {
     for (const identity of [...identities].reverse()) {
       const revision = lookupRevision(index, identity);
       if (!revision) continue;
+      attempted.push(revision);
       (revision as any).robinReviveSelf?.();
       try {
         resolveRevisionIndividually(revision, isAccept);
+        resolved.push(revision);
       } catch {
         // A stale member does not stop the remaining unit.
       }
@@ -1524,6 +1599,15 @@ export function resolveRevisionsAsOneUndo(
     }
   }
   if (revisions.length > 1) invalidateDocumentLayout(editor);
+  // Same law as the group path, read the same way: what is still registered
+  // after the pass did not move, whether it threw or refused in silence. This
+  // list is one edit's worth here, so a chip that cannot resolve says so
+  // instead of leaving the rail redrawing the same chip after every click.
+  const live = new Set(liveRevisionsRaw(editor));
+  return resolveOutcome(
+    resolved,
+    attempted.filter((revision) => live.has(revision))
+  );
 }
 
 export interface RevisionGroupIdentity {
@@ -1536,7 +1620,7 @@ export function resolveLiveRevisionGroupsAsOneUndo(
   editor: LiveEditor,
   groups: RevisionGroupIdentity[],
   isAccept: boolean
-): LiveRevision[] {
+): RevisionResolveOutcome {
   const tagged = new Set(
     groups
       .filter((group) => !group.untagged)
@@ -1554,7 +1638,6 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       : authors.has(String(revision.author ?? '').trim() || 'Unknown author');
   };
   const initial = liveRevisionsRaw(editor).filter(matchesGroup);
-  const resolved: LiveRevision[] = [];
   const editorModule: any = (editor as any).editorModule ?? editor.editor;
   const history: any =
     (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
@@ -1570,25 +1653,44 @@ export function resolveLiveRevisionGroupsAsOneUndo(
       complex = false;
     }
   }
+  const failed = new Set<LiveRevision>();
+  const attempted = new Set<LiveRevision>();
+  const members = () => liveRevisionsRaw(editor).filter(matchesGroup);
   try {
     let budget = Math.max(20, initial.length * 4);
-    // Without this, a revision that throws stays at current[0]/current[last]
-    // and is retried until the budget is gone, starving the rest of the group.
-    const failed = new Set<LiveRevision>();
+    // THE LAW: the loop advances on NON-PROGRESS, not only on a throw.
+    //
+    // Resolution is not selection by index, it is selection by "whatever of my
+    // group is still in the document", so a member the engine will not move
+    // stays at current[0] (accept) / current[last] (reject) and is re-picked
+    // every iteration. A throw was never the only way to fail to move: an
+    // empty-range revision resolves SILENTLY - no throw, still registered - so
+    // the old loop spent its whole budget on that one object and abandoned
+    // every remaining member of the card, reporting success. Progress is the
+    // only thing worth measuring, and there are exactly two shapes of it: the
+    // target left the document, or the group got smaller (a cascade took a
+    // neighbour). Neither means one bad member costs more than one edit.
     while (budget-- > 0) {
-      const current = liveRevisionsRaw(editor).filter(
-        (revision) => matchesGroup(revision) && !failed.has(revision)
-      );
+      const before = members();
+      const current = before.filter((revision) => !failed.has(revision));
       if (!current.length) break;
       const revision = isAccept ? current[0] : current[current.length - 1];
       (revision as any).robinReviveSelf?.();
-      resolved.push(revision);
+      attempted.add(revision);
+      let threw = false;
       try {
         resolveRevisionIndividually(revision, isAccept);
       } catch {
-        failed.add(revision);
+        threw = true;
         // The bounded loop can continue with the next current member.
       }
+      const after = members();
+      // A member that is gone moved; a group that shrank moved even if this
+      // member is still here, and the next iteration will pick it up again.
+      // Anything else is a member the engine refuses, whether it said so or not.
+      const progressed =
+        !threw && (!after.includes(revision) || after.length < before.length);
+      if (!progressed) failed.add(revision);
     }
   } finally {
     if (complex) {
@@ -1600,7 +1702,17 @@ export function resolveLiveRevisionGroupsAsOneUndo(
     }
   }
   if (initial.length) invalidateDocumentLayout(editor);
-  return resolved;
+  // Read the document, not the bookkeeping. What is STILL a member of this
+  // group is what did not resolve - whether it threw, refused in silence, or
+  // was simply never reached because the budget died - and an attempted member
+  // that is gone resolved, even if its own call threw and a neighbour's cascade
+  // carried it out. Counting resolve CALLS instead of document state is what
+  // let the old loop report a spin as 348 successes.
+  const live = new Set(members());
+  return resolveOutcome(
+    [...attempted].filter((revision) => !live.has(revision)),
+    [...live]
+  );
 }
 
 export interface RevisionGroupItem {

@@ -58,7 +58,8 @@ import { SyncfusionEditorLike } from '../../../../elements/components/DocxEditor
 import { scanBindings } from '../../../../elements/components/DocxEditor/bindings/core/sfdtAdapter';
 import {
   listRevisionGroups,
-  resolveLiveRevisionGroupsAsOneUndo
+  resolveLiveRevisionGroupsAsOneUndo,
+  revisionIsUnresolvable
 } from '../../../../utils/documentEditorPrimitives';
 
 DocumentEditor.Inject(
@@ -317,16 +318,22 @@ describe('a composed split accepts as a whole, or says which member it could not
     expect(liveRevisions(editor)).toContain(orphan);
   });
 
-  // -------------------------------------------------------- the defect, measured
-  // Green today, RED the day the wedge is fixed - the repo's convention for a
-  // pinned defect (see splitTableContract.spec.ts S2(d)); this jest has no
-  // `test.failing`. The property rows this one stands in for are the skipped
-  // WEDGE-REPRO rows below.
-  it('DEFECT: one unresolvable member costs the whole tail of the card, with no error', () => {
+  // ----------------------------------------------------- the defect, now fixed
+  // Was the pinned defect, measured 2026-09-08 and green while the wedge was
+  // real: with the poison sixth of eleven in document order, accepting the card
+  // left SIX pending (the poison and every member after it) and spent 341 of
+  // its 348 resolve attempts on the one object that could not move - the
+  // captain's "14 applied, then three minutes of nothing", at this scale.
+  //
+  // Flipped to assert the FIXED behavior, over the same fixture and the same
+  // poison, so the numbers that were the defect are the numbers that would come
+  // back if the non-progress law were ever removed.
+  it('DEFECT, fixed: one unresolvable member costs one edit, not the tail of the card', () => {
     expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const total = editor.revisions.length;
     const poisonAt = Math.floor(total / 2);
     const orphan = orphanOneMember(editor, poisonAt);
+    const touches = countResolveAttempts(orphan);
 
     const attempts = resolveLiveRevisionGroupsAsOneUndo(
       editor as any,
@@ -334,32 +341,92 @@ describe('a composed split accepts as a whole, or says which member it could not
       true
     );
 
-    // THE WEDGE. Everything BEFORE the poison applied; the poison and every
-    // member after it are still pending, and the caller was told nothing.
-    const left = liveRevisions(editor);
-    expect(left.includes(orphan)).toBe(true);
-
-    // MEASURED, 2026-09-08. The group holds 11 revisions and the poison sits
-    // sixth in document order, so accepting the card leaves SIX pending: the
-    // poison and every member after it. One unresolvable edit cost five good
-    // ones - the captain's 14-then-nothing, at this fixture's scale.
+    // Same fixture, same poison position: the shape the measurement was taken on.
     expect(total).toBe(11);
-    expect(left.length).toBe(total - poisonAt);
 
-    // And the loop did not stop, it SPUN: 341 of its 348 resolve attempts went
-    // to that one object, because nothing ever removes it from `current[0]`.
-    // That is the whole of "no spinner, no console error, three minutes of
-    // polling" - the click did work, all of it on the member that cannot move.
-    const spun = attempts.filter((entry) => entry === orphan).length;
-    expect(spun).toBeGreaterThan(300);
-    expect(spun / attempts.length).toBeGreaterThan(0.9);
+    // The poison still cannot move - nothing here pretends to resolve it - but
+    // it no longer takes the five members after it down with it. ONE left, not
+    // `total - poisonAt`.
+    const left = liveRevisions(editor);
+    expect(left.length).toBe(1);
+    expect(left[0] === orphan).toBe(true);
+
+    // The loop no longer SPINS. Counted at the poison itself, which is the only
+    // place the spin was ever visible: it is tried ONCE, recognized as
+    // non-progressing, and stepped over - against 341 tries out of 348 before.
+    expect(touches()).toBe(1);
+
+    // And it is reported rather than swallowed, so the rail can say the card
+    // stalled on one edit. Identity and numbers only: a live Revision is
+    // circular and jest cannot walk one.
+    expect(attempts.includes(orphan)).toBe(false);
+    expect(attempts.unresolved.length).toBe(1);
+    expect(attempts.unresolved[0] === orphan).toBe(true);
+  });
+
+  // ------------------------------------------------------- never author one
+  /**
+   * The upstream half of the law, and the one that matters most: the resolve
+   * loop surviving an unresolvable revision is a floor, not a fix. A revision
+   * the user can never accept and never reject must not be authored in the
+   * first place.
+   *
+   * The composed split is exactly the shape that authored one in the browser -
+   * it tracked-deletes rows whose cells carry content-control markers, and the
+   * marker's own Deletion revision cannot survive its row's resolution. This
+   * row measures the change set as delivered: every revision it created spans
+   * something, so every one of them can be resolved.
+   *
+   * STATED PRECISELY, because the honest reading matters: jsdom does not reach
+   * the poisoning itself (this file's header says why - the accept-side row
+   * deletion walks laid-out widgets and jsdom does not paginate), so this row
+   * is green both before and after the marker rule was widened. What it does
+   * hold, and what a widened rule most needed proving, is that the widening
+   * does not OVER-refuse: the split still authors its full set of resolvable
+   * revisions, and none of them is empty-range. The browser is where the
+   * narrow rule was measured authoring one; the resolve loop's non-progress law
+   * above is what makes that path survivable either way.
+   */
+  it('a composed split authors no revision that could refuse to resolve', () => {
+    const result: any = splitCosts(editor, SPLIT_AT);
+    expect(result0(result)).toEqual(['ok', 'ok']);
+
+    // Numbers only. Naming the offenders would print live Revision objects.
+    const empty = liveRevisions(editor).filter(revisionIsUnresolvable);
+    expect(empty.length).toBe(0);
+    expect(liveRevisions(editor).length).toBeGreaterThan(1);
+
+    // And the change set says so itself: the integrity assertion in the commit
+    // path found nothing, so the set is reviewable and reports `applied`.
+    expect(result.changeSet.status).toBe('applied');
+    expect(
+      result.warnings.filter((line: string) =>
+        line.startsWith('change_set_unresolvable_revision')
+      )
+    ).toEqual([]);
+  });
+
+  /**
+   * The assertion's own predicate, proven both ways over real SDK objects.
+   *
+   * The commit-path guard counts `created.filter(revisionIsUnresolvable)` and
+   * fails the change set on any hit. It is pinned here at the predicate rather
+   * than by making an op author a bad revision, because after the fix above no
+   * op can: the guard exists to catch a FUTURE op that regresses, and a test
+   * that had to break the engine to trigger it would be testing the break.
+   */
+  it('the integrity predicate is exact: an orphan is unresolvable, a healthy member is not', () => {
+    expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
+    const healthy = liveRevisions(editor)[1];
+    expect(revisionIsUnresolvable(healthy)).toBe(false);
+
+    const orphan = orphanOneMember(editor, 0);
+    expect(revisionIsUnresolvable(orphan)).toBe(true);
   });
 
   // ------------------------------------------------------------- WEDGE-REPRO
-  // The properties the resolve loop owes. Skipped rather than red so the suite
-  // keeps meaning "everything asserted here is true"; un-skip them to watch the
-  // wedge, and delete the skip with the fix.
-  it.skip('WEDGE-REPRO: accept resolves every member it CAN, and leaves only the one it cannot', () => {
+  // The properties the resolve loop owes, now held.
+  it('WEDGE-REPRO: accept resolves every member it CAN, and leaves only the one it cannot', () => {
     expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const total = editor.revisions.length;
     const orphan = orphanOneMember(editor, Math.floor(total / 2));
@@ -374,7 +441,7 @@ describe('a composed split accepts as a whole, or says which member it could not
     expect(left[0] === orphan).toBe(true);
   });
 
-  it.skip('WEDGE-REPRO: reject mirrors it, instead of abandoning the head of the card', () => {
+  it('WEDGE-REPRO: reject mirrors it, instead of abandoning the head of the card', () => {
     expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const total = editor.revisions.length;
     const orphan = orphanOneMember(editor, Math.floor(total / 2));
@@ -390,7 +457,7 @@ describe('a composed split accepts as a whole, or says which member it could not
     expect(left[0] === orphan).toBe(true);
   });
 
-  it.skip('WEDGE-REPRO: a member the loop could not resolve is REPORTED, not swallowed', () => {
+  it('WEDGE-REPRO: a member the loop could not resolve is REPORTED, not swallowed', () => {
     expect(result0(splitCosts(editor, SPLIT_AT))).toEqual(['ok', 'ok']);
     const total = editor.revisions.length;
     orphanOneMember(editor, Math.floor(total / 2));
@@ -407,6 +474,27 @@ describe('a composed split accepts as a whole, or says which member it could not
     expect(unresolved.unresolved).toHaveLength(1);
   });
 });
+
+/**
+ * How many times the resolve loop asks THIS revision to move.
+ *
+ * The spin was only ever measurable here. `resolveRevisionIndividually` prefers
+ * the group primitive's `robinResolveSelf` and falls back to the SDK's
+ * `handleAcceptReject`, so both are counted. Returns a reader, not the revision,
+ * so nothing in this file ever holds a live Revision in an assertion.
+ */
+function countResolveAttempts(revision: any): () => number {
+  let count = 0;
+  for (const key of ['robinResolveSelf', 'handleAcceptReject']) {
+    const original = revision[key];
+    if (typeof original !== 'function') continue;
+    revision[key] = (...args: unknown[]) => {
+      count++;
+      return original.apply(revision, args);
+    };
+  }
+  return () => count;
+}
 
 /** Each op's outcome, by code, so a harness failure names itself. */
 function result0(result: any): string[] {

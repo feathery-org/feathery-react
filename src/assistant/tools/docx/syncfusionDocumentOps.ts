@@ -171,6 +171,7 @@ import {
   rebindRevisionGroups,
   resolveRevisionIndividually,
   revisionGroupTag,
+  revisionIsUnresolvable,
   snapshotRevisions,
   wrappingDocumentEditorContainer,
   writeTableLayout,
@@ -12713,6 +12714,18 @@ interface RevisionGroupingReport {
    * untracked and already applied, which is what `formatTracking` reports.
    */
   appearanceGroups: Set<string>;
+  /**
+   * Revisions this change set created that can be neither accepted nor
+   * rejected, because their range is already empty.
+   *
+   * The post-change-set integrity assertion. SyncFusion deregisters a revision
+   * only from inside `handleAcceptReject`'s `while (getRange().length > 0)`
+   * walk, so a revision authored over a range that does not survive the write
+   * refuses accept and reject alike, forever, and wedges the card it sits in.
+   * A change set that authored one is not reviewable, and must say so loudly
+   * rather than hand the user a card with a permanent edit in it.
+   */
+  unresolvable: number;
 }
 
 // Diff the revisions created by this change set (against a pre-batch snapshot),
@@ -12752,7 +12765,18 @@ function groupNewRevisions(
   const revisionsByGroup = new Map<string, number>();
   const appearanceGroups = new Set<string>();
   if (!created.length)
-    return { revisionCount: 0, revisionsByGroup, appearanceGroups };
+    return {
+      revisionCount: 0,
+      revisionsByGroup,
+      appearanceGroups,
+      unresolvable: 0
+    };
+  // Measured on the revisions as authored, before they are bound to cards:
+  // this is the last moment the change set can tell the truth about what it
+  // produced. Counted, not filtered out - the revision is already in the
+  // document, and quietly leaving it out of a card would hide it from the only
+  // UI that could report it.
+  const unresolvable = created.filter(revisionIsUnresolvable).length;
   const partitions = new Map<string, LiveRevision[]>();
   for (const rev of created) {
     const tag = parseRevisionGroupTag(rev.customData);
@@ -12799,7 +12823,12 @@ function groupNewRevisions(
     );
     revisionsByGroup.set(group, partition.length);
   });
-  return { revisionCount: created.length, revisionsByGroup, appearanceGroups };
+  return {
+    revisionCount: created.length,
+    revisionsByGroup,
+    appearanceGroups,
+    unresolvable
+  };
 }
 
 // changeSet.groups: ops declare the units, the post-write partition supplies
@@ -21781,6 +21810,14 @@ function applyDocumentEditsMeasured(
     bookmarkClampsByGroup
   );
   const revisionCount = grouping.revisionCount;
+  // THE ASSERTION, and it fails the change set rather than warning past it: a
+  // set that authored a revision with an empty range has put an edit in the
+  // document that the reviewer can never accept and can never reject. There is
+  // no partial version of that outcome worth reporting as `applied`.
+  if (grouping.unresolvable)
+    warnings.push(
+      `change_set_unresolvable_revision: ${changeSetId}; ${grouping.unresolvable} revision(s) were authored over an empty range and can be neither accepted nor rejected`
+    );
   const materializedResults = Array.from(
     { length: edits.length },
     (_, index) => {
@@ -21797,7 +21834,9 @@ function applyDocumentEditsMeasured(
       };
     }
   );
-  const hasFailure = materializedResults.some((result) => !result.ok);
+  const hasFailure =
+    materializedResults.some((result) => !result.ok) ||
+    grouping.unresolvable > 0;
 
   // Computed AFTER the finalizer, not before it. The finalizer may be the only
   // appearance writer in a change set - a re-band with no explicit formatting op
