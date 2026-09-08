@@ -197,6 +197,33 @@ export interface ParagraphStyleRestore {
   text: string;
 }
 
+/**
+ * The inverse of a formula-expression rewrite this change set made.
+ *
+ * A tracked change records CONTENT. An expression lives in a content control's
+ * tag, which SyncFusion never revisions, so rewriting `summary_property` from
+ * `schedule_subtotal` to `sum(schedule_subtotal, schedule_copy_subtotal)` is an
+ * untracked edit riding inside a tracked card - and a left-behind rewrite after
+ * the copy is gone is not a cosmetic residue: the reference cannot resolve, the
+ * cell renders as an ellipsis and `hasBlockingErrors` blocks save outright.
+ *
+ * `requires` is what makes the inverse idempotent instead of outcome-driven.
+ * The question "is this rewrite still true?" has one honest answer - whether the
+ * binding it was rewritten to reach is still in the document - and asking THAT
+ * rather than "was the card accepted?" is what makes one sweep serve reject,
+ * multi-press undo, redo and a rolled-back change set alike.
+ */
+export interface ExpressionRestore {
+  /** The binding whose expression was rewritten. */
+  name: string;
+  /** The tag the control wore before the rewrite, put back verbatim. */
+  fromTag: string;
+  /** The tag the rewrite installed. */
+  toTag: string;
+  /** The binding whose presence keeps the rewrite true. */
+  requires: string;
+}
+
 /** How much paragraph text identifies a restore. Long enough to be unique. */
 const PARAGRAPH_IDENTITY_LIMIT = 200;
 
@@ -299,6 +326,7 @@ interface RevisionGroupTag {
   appearanceRestores?: AppearanceRestore[];
   paragraphStyles?: ParagraphStyleRestore[];
   bookmarkClamps?: PersistedBookmarkClamp[];
+  expressionRestores?: ExpressionRestore[];
 }
 
 export function revisionGroupTag(
@@ -306,7 +334,8 @@ export function revisionGroupTag(
   group: string,
   appearanceRestores?: AppearanceRestore[],
   paragraphStyles?: ParagraphStyleRestore[],
-  bookmarkClamps?: PersistedBookmarkClamp[]
+  bookmarkClamps?: PersistedBookmarkClamp[],
+  expressionRestores?: ExpressionRestore[]
 ): string {
   return JSON.stringify({
     v: REVISION_GROUP_TAG_VERSION,
@@ -315,8 +344,30 @@ export function revisionGroupTag(
     group,
     ...(appearanceRestores?.length ? { appearanceRestores } : {}),
     ...(paragraphStyles?.length ? { paragraphStyles } : {}),
-    ...(bookmarkClamps?.length ? { bookmarkClamps } : {})
+    ...(bookmarkClamps?.length ? { bookmarkClamps } : {}),
+    ...(expressionRestores?.length ? { expressionRestores } : {})
   });
+}
+
+function parsePersistedExpressionRestores(
+  value: unknown
+): ExpressionRestore[] | null {
+  if (!Array.isArray(value)) return null;
+  const restores: ExpressionRestore[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const raw = item as Record<string, unknown>;
+    const fields = ['name', 'fromTag', 'toTag', 'requires'] as const;
+    if (fields.some((field) => typeof raw[field] !== 'string' || !raw[field]))
+      return null;
+    restores.push({
+      name: String(raw.name),
+      fromTag: String(raw.fromTag),
+      toTag: String(raw.toTag),
+      requires: String(raw.requires)
+    });
+  }
+  return restores.length ? restores : null;
 }
 
 function parsePersistedBookmarkClamps(
@@ -634,12 +685,16 @@ export function parseRevisionGroupTag(
       const bookmarkClamps = parsePersistedBookmarkClamps(
         parsed.bookmarkClamps
       );
+      const expressionRestores = parsePersistedExpressionRestores(
+        parsed.expressionRestores
+      );
       return {
         changeSetId: parsed.changeSetId,
         group: parsed.group,
         ...(appearanceRestores ? { appearanceRestores } : {}),
         ...(paragraphStyles ? { paragraphStyles } : {}),
-        ...(bookmarkClamps ? { bookmarkClamps } : {})
+        ...(bookmarkClamps ? { bookmarkClamps } : {}),
+        ...(expressionRestores ? { expressionRestores } : {})
       };
     }
   } catch {
@@ -1220,6 +1275,104 @@ const nextLedgerBatch = (editor: LiveEditor): number =>
   ((editor as any)[APPEARANCE_LEDGER_BATCH] =
     ((editor as any)[APPEARANCE_LEDGER_BATCH] ?? 0) + 1);
 
+const EXPRESSION_LEDGER = '__robinExpressionLedger';
+const EXPRESSION_SWEEP_INSTALLED = '__robinExpressionSweepInstalled';
+
+interface ExpressionLedgerEntry {
+  groupKey: string;
+  restore: ExpressionRestore;
+}
+
+/**
+ * Every expression rewrite still capable of going wrong, for this document.
+ *
+ * Editor-scoped rather than revision-scoped on purpose: the revision metadata
+ * that carries the payload is exactly what disappears when a card resolves or an
+ * undo unwinds it, which is the one moment the inverse is needed.
+ */
+const expressionLedger = (editor: LiveEditor): ExpressionLedgerEntry[] =>
+  ((editor as any)[EXPRESSION_LEDGER] ??= []);
+
+const liveContentControls = (editor: LiveEditor): any[] => {
+  const collection = (editor as any).documentHelper?.contentControlCollection;
+  return Array.isArray(collection) ? collection : [];
+};
+
+/**
+ * Whether `name` still names a binding in the document.
+ *
+ * Read off the serialized document rather than the live content-control
+ * collection, which keeps DETACHED controls after a row or table is removed and
+ * would answer "present" for a binding the reader can no longer see. The cost is
+ * paid only while a rewrite is outstanding, and only on a settlement or a
+ * history step - never on a keystroke.
+ */
+const bindingIsInDocument = (editor: LiveEditor, name: string): boolean => {
+  const serialized = editor.serialize();
+  return (
+    serialized.includes(`name=${name}|`) ||
+    serialized.includes(`name=${name}]]`)
+  );
+};
+
+/**
+ * Bring every outstanding expression rewrite back into agreement with the
+ * document, in whichever direction the document now calls for.
+ *
+ * Idempotent, and safe to run at any time: accepting the card leaves the copied
+ * fragment standing so the rewrite stays, while a reject, an undo or a rolled
+ * back change set takes the fragment away and the original expression goes back
+ * verbatim. A redo puts the fragment back and the rewrite with it.
+ */
+export function settleExpressionRewrites(editor: LiveEditor): void {
+  const ledger = expressionLedger(editor);
+  if (!ledger.length) return;
+  const controls = liveContentControls(editor);
+  if (!controls.length) return;
+  const presence = new Map<string, boolean>();
+  for (const { restore } of ledger) {
+    let present = presence.get(restore.requires);
+    if (present === undefined) {
+      present = bindingIsInDocument(editor, restore.requires);
+      presence.set(restore.requires, present);
+    }
+    const wanted = present ? restore.toTag : restore.fromTag;
+    const stale = present ? restore.fromTag : restore.toTag;
+    for (const control of controls) {
+      const properties = control?.contentControlProperties;
+      if (!properties || String(properties.tag ?? '') !== stale) continue;
+      properties.tag = wanted;
+    }
+  }
+}
+
+/**
+ * Undo and redo move the copied fragment in and out of the document without
+ * resolving a revision, so the group's own settlement never fires for them. The
+ * sweep asks the document rather than the outcome, so re-running it after every
+ * history step is the whole mechanism: multi-press undo walks the expression
+ * back exactly when it walks the fragment out.
+ */
+function installExpressionRewriteSweep(editor: LiveEditor): void {
+  const history: any =
+    (editor as any).editorHistoryModule ?? (editor as any).editorHistory;
+  if (!history || history[EXPRESSION_SWEEP_INSTALLED]) return;
+  history[EXPRESSION_SWEEP_INSTALLED] = true;
+  for (const step of ['undo', 'redo']) {
+    const original = history[step];
+    if (typeof original !== 'function') continue;
+    history[step] = (...args: any[]) => {
+      const result = original.apply(history, args);
+      try {
+        settleExpressionRewrites(editor);
+      } catch {
+        // A failed sweep leaves the expression alone; it never fails the undo.
+      }
+      return result;
+    };
+  }
+}
+
 /** Write order across the whole document: the batch first, then the seq. */
 const inWriteOrder = (left: LedgerEntry, right: LedgerEntry): number =>
   left.batch - right.batch || left.seq - right.seq;
@@ -1234,7 +1387,8 @@ export function groupRevisionsAtomic(
   groupId?: string,
   appearanceRestores?: AppearanceRestore[],
   paragraphStyles?: ParagraphStyleRestore[],
-  bookmarkClamps?: BookmarkClampIntent[]
+  bookmarkClamps?: BookmarkClampIntent[],
+  expressionRestores?: ExpressionRestore[]
 ): void {
   if (!group.length) return;
   const members = group.map(captureNativeResolvers);
@@ -1283,6 +1437,17 @@ export function groupRevisionsAtomic(
   // resolve calls does not.
   const token = {};
   const groupKey = `${changeSetId ?? ''}\u0000${groupId ?? ''}`;
+  if (expressionRestores?.length) {
+    // Re-binding the same card (a reload, an undo revival) replaces its entries
+    // rather than stacking a second copy of the same rewrite.
+    const outstanding = expressionLedger(editor);
+    for (let index = outstanding.length - 1; index >= 0; index--)
+      if (outstanding[index].groupKey === groupKey)
+        outstanding.splice(index, 1);
+    for (const restore of expressionRestores)
+      outstanding.push({ groupKey, restore });
+    installExpressionRewriteSweep(editor);
+  }
   const ledger = changeSetId ? appearanceLedger(editor) : undefined;
   if (ledger && appearanceRestores?.length) {
     // Re-binding the same card (a reload, an undo) replaces its entries rather
@@ -1387,6 +1552,12 @@ export function groupRevisionsAtomic(
     if (groupHasLiveMembers()) return;
     settleAppearance(acceptedAlone.size > 0);
     restoreParagraphStyles();
+    try {
+      // Asks the document, not the outcome: see settleExpressionRewrites.
+      settleExpressionRewrites(editor);
+    } catch {
+      // Content still resolves consistently if an expression restore fails.
+    }
     if (acceptedAlone.size > 0) applyBookmarkClamps();
   };
   const resolveAll = (isAccept: boolean) => {
@@ -2203,6 +2374,7 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       restoreCandidates: AppearanceRestore[][];
       styleCandidates: ParagraphStyleRestore[][];
       clampCandidates: BookmarkClampIntent[][];
+      expressionCandidates: ExpressionRestore[][];
     }
   >();
   for (const revision of snapshotRevisions(editor)) {
@@ -2219,6 +2391,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
         partition.styleCandidates.push(tag.paragraphStyles);
       if (tag.bookmarkClamps)
         partition.clampCandidates.push(tag.bookmarkClamps);
+      if (tag.expressionRestores)
+        partition.expressionCandidates.push(tag.expressionRestores);
     } else {
       partitions.set(key, {
         changeSetId: tag.changeSetId,
@@ -2228,7 +2402,10 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
           ? [tag.appearanceRestores]
           : [],
         styleCandidates: tag.paragraphStyles ? [tag.paragraphStyles] : [],
-        clampCandidates: tag.bookmarkClamps ? [tag.bookmarkClamps] : []
+        clampCandidates: tag.bookmarkClamps ? [tag.bookmarkClamps] : [],
+        expressionCandidates: tag.expressionRestores
+          ? [tag.expressionRestores]
+          : []
       });
     }
   }
@@ -2264,6 +2441,17 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
     );
     const clamps =
       clampPayloads.size === 1 ? [...clampPayloads.values()][0] : undefined;
+    // Same agreement rule once more, for the expression inverse.
+    const expressionPayloads = new Map(
+      partition.expressionCandidates.map((entries) => [
+        JSON.stringify(entries),
+        entries
+      ])
+    );
+    const expressions =
+      expressionPayloads.size === 1
+        ? [...expressionPayloads.values()][0]
+        : undefined;
     groupRevisionsAtomic(
       editor,
       partition.revisions,
@@ -2271,7 +2459,8 @@ export function rebindRevisionGroups(editor: LiveEditor): number {
       partition.group,
       restores,
       styles,
-      clamps
+      clamps,
+      expressions
     );
     bound += partition.revisions.length;
   });

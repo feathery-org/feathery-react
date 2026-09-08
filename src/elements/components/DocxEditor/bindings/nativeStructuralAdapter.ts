@@ -214,7 +214,23 @@ export function applyNativeStructuralMutations(
       complex = true;
     }
     for (const mutation of mutations) {
-      if (mutation.kind === 'delete-table') {
+      if (mutation.kind === 'retag-control') {
+        // There is no SDK call for this: `contentControlProperties` IS the live
+        // model, and what it holds is what `serialize` reads back. Every
+        // ATTACHED control wearing the old tag is retagged, so a formula with
+        // several occurrences moves as one; a detached leftover is skipped
+        // because it is no longer part of the document.
+        const matches = controls.filter(
+          (control) =>
+            isContentControlAttached(control) &&
+            String(control.contentControlProperties?.tag || '') ===
+              String(mutation.fromTag)
+        );
+        if (!matches.length) return false;
+        for (const control of matches)
+          (control.contentControlProperties as { tag?: string }).tag =
+            mutation.toTag;
+      } else if (mutation.kind === 'delete-table') {
         const control = controlForTag(mutation.tag);
         if (!control || !module.deleteTable || !selection.select) return false;
         selection.selectContentControl(control);

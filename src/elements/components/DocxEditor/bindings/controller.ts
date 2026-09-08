@@ -296,6 +296,11 @@ export class ReconciliationController {
     let index = this.index ?? scanBindings(mutated);
     const beforeCommands = index;
     const structuralMutations: NativeStructuralMutation[] = [];
+    // New tag -> the tag that control wore before this batch. A retagged
+    // control looks brand new to the write diff below, and a brand new control
+    // is deliberately not written (it arrives with its text already set), so
+    // without this map the recomputed figure never reached the live document.
+    const retagged = new Map<string, string>();
     // Where each insert-table's blocks sit in the document being built, so the
     // mutation can carry POST-rules content. See `finalizedMutations`.
     const insertedTableSpans = new Map<
@@ -321,6 +326,33 @@ export class ReconciliationController {
         } else {
           mutated = setTaggedValue(mutated, command.name, command.value, index);
         }
+      } else if (command.type === 'set-expression') {
+        const targets = (index.formulas.get(command.name) ?? []).filter(
+          (occurrence) => occurrence.tag === command.previousTag
+        );
+        if (!targets.length)
+          throw new Error(
+            `no formula ${command.name} tagged ${command.previousTag}`
+          );
+        for (const occurrence of targets) {
+          const node = getAt(mutated, occurrence.path) as Record<
+            string,
+            unknown
+          >;
+          mutated = setAt(mutated, occurrence.path, {
+            ...node,
+            contentControlProperties: {
+              ...(node.contentControlProperties as Record<string, unknown>),
+              tag: command.tag
+            }
+          });
+        }
+        structuralMutations.push({
+          kind: 'retag-control',
+          fromTag: command.previousTag,
+          toTag: command.tag
+        });
+        retagged.set(command.tag, command.previousTag);
       } else if (command.type === 'add-row') {
         const added = addLineItem(
           mutated,
@@ -447,8 +479,9 @@ export class ReconciliationController {
     ];
     const authoredWrites: EngineWrite[] = [];
     for (const occurrence of result.index.occurrences) {
+      const priorTag = retagged.get(occurrence.tag) ?? occurrence.tag;
       const previous = beforeCommands.occurrences.find(
-        (candidate) => candidate.tag === occurrence.tag
+        (candidate) => candidate.tag === priorTag
       );
       // New controls are created by the structural mutation with their display
       // text already set. Recording them as field writes would add extra native
