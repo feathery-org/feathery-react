@@ -82,6 +82,22 @@ export default function VersionViewer({
     }
   }, []);
 
+  // The pane often reaches its full height a few frames AFTER the document
+  // loads; a single fit runs too early (parent still ~200px) and the
+  // ResizeObserver alone misses the settle, so re-fit across several ticks.
+  const scheduleFits = useCallback(() => {
+    const raf =
+      typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (fn: FrameRequestCallback) => setTimeout(fn, 16);
+    fitToHost();
+    raf(() => {
+      fitToHost();
+      raf(() => fitToHost());
+    });
+    [80, 250, 600].forEach((ms) => setTimeout(fitToHost, ms));
+  }, [fitToHost]);
+
   // Create the bare read-only editor once.
   useEffect(() => {
     let cancelled = false;
@@ -106,7 +122,7 @@ export default function VersionViewer({
       if (headers) viewer.headers = headers;
       viewer.appendTo(hostElRef.current);
       editorRef.current = viewer;
-      fitToHost();
+      scheduleFits();
       setEditorReady(true);
 
       // Keep it full-height as the pane changes (window resize, panel toggle).
@@ -172,9 +188,9 @@ export default function VersionViewer({
         await loaded;
         if (cancelled) return;
         stampMissingContentControlColors(viewer);
-        // Size to the now-laid-out pane (in px) before fitting the page, so the
-        // editor fills the full container height rather than the ~200px default.
-        fitToHost();
+        // Size to the pane before fitting the page. The pane can still be
+        // growing to full height, so re-fit across the next few frames.
+        scheduleFits();
         viewer.fitPage?.('FitPageWidth');
         const container = viewer.documentHelper?.viewerContainer as
           | HTMLElement
