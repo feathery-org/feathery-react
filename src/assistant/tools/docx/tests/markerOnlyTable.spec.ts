@@ -219,6 +219,126 @@ describe('row ops on a marker-only bound table', () => {
     expect(tableBlock(editor).rows).toHaveLength(5);
   });
 
+  it('split_table on a marker-bound table with ZERO cell controls splits sanely', () => {
+    // The refusal above is for the CELL controls a raw split would destroy.
+    // With no cell controls at all there is nothing a selection can strip, so
+    // the split is allowed - and this spec is the proof the wrapper survives
+    // it sanely: the marker is never duplicated onto the copy, the source
+    // keeps its identity, and reject restores the table whole.
+    const zeroControls = convertTemplateTokens({
+      sections: [
+        {
+          sectionFormat: { pageWidth: 612, pageHeight: 792 },
+          blocks: [
+            para('Before'),
+            para('[[table=schedule]]'),
+            {
+              tableFormat: {},
+              columnCount: 2,
+              rows: [
+                row('Coverage', 'Premium'),
+                row('A', '1'),
+                row('B', '2'),
+                row('C', '3'),
+                row('D', '4')
+              ]
+            } as SfdtBlock,
+            para('After')
+          ]
+        }
+      ]
+    } as SfdtDocument);
+    expect(
+      zeroControls.diagnostics.filter((d) => d.severity === 'error')
+    ).toEqual([]);
+    const zeroEditor = open(zeroControls.sfdt);
+    const zeroAttached = attachBindings(
+      zeroEditor as unknown as SyncfusionEditorLike,
+      { convertTokensOnOpen: false }
+    );
+    try {
+      zeroAttached.controller.flush({ mode: 'self-heal' });
+      const markerBlock = parsed(zeroEditor).sections[0].blocks.findIndex(
+        (b: any) => b.contentControlProperties?.tag === '[[table=schedule]]'
+      );
+      const markerCount = (editorInstance: DocumentEditor) =>
+        (
+          JSON.stringify(parsed(editorInstance)).match(
+            /\[\[table=schedule\]\]/g
+          ) ?? []
+        ).length;
+      expect(markerCount(zeroEditor)).toBe(1);
+
+      const result = applyDocumentEdits(zeroEditor as unknown as LiveEditor, {
+        changeSetId: 'marker-zero-split',
+        edits: [
+          {
+            op: 'split_table',
+            anchor: `0;${markerBlock};2;0;0`,
+            splitAtRow: 3,
+            targetAnchor: '0;0',
+            position: 'before',
+            group: 'g'
+          } as any
+        ]
+      }) as any;
+      expect(result.results.map((r: any) => (r.ok ? 'ok' : r.error))).toEqual([
+        'ok'
+      ]);
+      // The marker wrapper is NEVER duplicated: the copy travels unwrapped, so
+      // the binding identity "schedule" still names exactly one table.
+      expect(markerCount(zeroEditor)).toBe(1);
+
+      // Reject restores the source whole: five rows, marker intact, copy gone.
+      zeroEditor.revisions.rejectAll();
+      expect(markerCount(zeroEditor)).toBe(1);
+      const restoredWrapper = parsed(zeroEditor).sections[0].blocks.find(
+        (b: any) => b.contentControlProperties?.tag === '[[table=schedule]]'
+      );
+      const restoredTable = restoredWrapper.rows
+        ? restoredWrapper
+        : restoredWrapper.blocks.find((b: any) => b.rows);
+      expect(restoredTable.rows).toHaveLength(5);
+
+      // Split again and accept: the source keeps the marker with the rows it
+      // kept, and the copy is a plain unbound table holding the extracted rows.
+      const again = applyDocumentEdits(zeroEditor as unknown as LiveEditor, {
+        changeSetId: 'marker-zero-split-accept',
+        edits: [
+          {
+            op: 'split_table',
+            anchor: `0;${markerBlock};2;0;0`,
+            splitAtRow: 3,
+            targetAnchor: '0;0',
+            position: 'before',
+            group: 'g'
+          } as any
+        ]
+      }) as any;
+      expect(again.results.map((r: any) => (r.ok ? 'ok' : r.error))).toEqual([
+        'ok'
+      ]);
+      zeroEditor.revisions.acceptAll();
+      expect(markerCount(zeroEditor)).toBe(1);
+      const blocks = parsed(zeroEditor).sections[0].blocks;
+      const wrapper = blocks.find(
+        (b: any) => b.contentControlProperties?.tag === '[[table=schedule]]'
+      );
+      const sourceTable = wrapper.rows
+        ? wrapper
+        : wrapper.blocks.find((b: any) => b.rows);
+      expect(sourceTable.rows).toHaveLength(3);
+      const bareTables = blocks.filter(
+        (b: any) => b.rows && !b.contentControlProperties
+      );
+      expect(bareTables).toHaveLength(1);
+      expect(bareTables[0].rows).toHaveLength(2);
+    } finally {
+      zeroAttached.dispose();
+      zeroEditor.destroy();
+    }
+  });
+
   it('duplicate_table keepRows is refused, roles are not provable without row bindings', () => {
     const result = applyDocumentEdits(editor as unknown as LiveEditor, {
       changeSetId: 'marker-only-keep-rows',
