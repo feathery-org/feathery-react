@@ -146,6 +146,32 @@ function applyRowAdoptions(
   return true;
 }
 
+/**
+ * Make a just-pasted table's content controls addressable by tag.
+ *
+ * The SDK registers a ContentControl in `documentHelper.contentControlCollection`
+ * only while LAYING OUT the line that holds it (layout.js, layoutLine). An
+ * assistant batch runs with layout suspended, so a natively pasted copy's
+ * controls stayed unregistered until the batch's closing relayout - and the
+ * value writes that follow the paste in the same transaction (the copy's
+ * recomputed formulas) found no control for their tags. The controller then
+ * recorded native-mutation-failed and never committed its model, a failure the
+ * old runCommands return silently discarded. A whole-document layout here is
+ * idempotent (the SDK guards the push with indexOf) and registers everything.
+ */
+function registerPastedContentControls(editor: SyncfusionEditorLike): void {
+  const live = editor as any;
+  const layout = live.documentHelper?.layout;
+  if (typeof layout?.layoutWholeDocument !== 'function') return;
+  const layoutWasOn = live.enableLayout === true;
+  if (!layoutWasOn) live.setProperties?.({ enableLayout: true }, true);
+  try {
+    layout.layoutWholeDocument();
+  } finally {
+    if (!layoutWasOn) live.setProperties?.({ enableLayout: false }, true);
+  }
+}
+
 const rowRevisionsOf = (control: any): number =>
   control?.line?.paragraph?.associatedCell?.ownerRow?.rowFormat
     ?.revisionLength ?? 0;
@@ -234,6 +260,7 @@ export function applyNativeStructuralMutations(
             sections: [{ blocks: mutation.blocks, headersFooters: {} }]
           })
         );
+        registerPastedContentControls(editor);
       } else if (mutation.kind === 'adopt-row') {
         if (!applyRowAdoptions(editor, [mutation])) return false;
       } else if (mutation.kind === 'delete-row') {
