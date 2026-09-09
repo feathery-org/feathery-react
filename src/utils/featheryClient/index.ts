@@ -24,7 +24,7 @@ import {
   getDefaultFormFieldValue,
   isRepeatedFileField
 } from '../fieldHelperFunctions';
-import { loadPhoneValidator } from '../validation';
+import { loadPhoneValidator, phoneLibPromise } from '../validation';
 import {
   isFontDeclaredByHost,
   loadGoogleFonts,
@@ -610,6 +610,8 @@ export default class FeatheryClient extends IntegrationClient {
 
   async fetchForm(initVals: any, language?: string) {
     const res = await this.fetchCacheForm(language);
+    // Initial logic rules can assign phone values as soon as the form loads.
+    await phoneLibPromise;
     // If form is disabled, data will equal `null`
     if (!res.steps) return { steps: [], formOff: true };
 
@@ -753,7 +755,7 @@ export default class FeatheryClient extends IntegrationClient {
 
         let toReturn;
         if (data?.no_merge) {
-          setFieldValues(data.field_values);
+          setFieldValues(data.field_values, true, false, true);
         } else {
           data.completed_forms.forEach((formKey: string) => {
             if (!initState.formSessions[formKey])

@@ -535,7 +535,7 @@ export const runServerSideLogic = async (
   }
   const response = await client.runServerSideLogicRule(logicRule.id);
   if (response?.field_data) {
-    setFieldValues(response.field_data, true, true);
+    setFieldValues(response.field_data, true, true, true);
   }
   if (response?.file_values) {
     processFileValues(response.file_values);

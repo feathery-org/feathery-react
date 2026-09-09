@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
 
-import timeZoneCountries from './timeZoneCountries';
+import { getDefaultPhoneCountry } from '../../../utils/phoneNumber';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { inputBoxAttrs, resetStyles } from '../../styles';
@@ -15,8 +15,6 @@ import { hoverStylesGuard, iosScrollOnFocus } from '../../../utils/browser';
 import { isValidPhoneLength } from './validation';
 import Overlay from '../../components/Overlay';
 import useElementSize from '../../../hooks/useElementSize';
-
-const DEFAULT_COUNTRY = 'US';
 
 const countryMap = countryData.reduce(
   (countryMap, { flag, countryCode, phoneCode }) => {
@@ -55,19 +53,10 @@ function PhoneField({
   // The number parsed from the fullNumber prop, updated via triggerOnChange to rawNumber
   const [curFullNumber, setCurFullNumber] = useState('');
   const servar = element.servar;
-  const defaultCountry = useMemo(() => {
-    if (servar.metadata.default_country === 'auto') {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (!timezone) return DEFAULT_COUNTRY;
-      const timeZoneCountry = timeZoneCountries[timezone];
-      if (!timeZoneCountry) return DEFAULT_COUNTRY;
-
-      const countryCode = timeZoneCountry.c[0];
-      return countryCode in countryMap ? countryCode : DEFAULT_COUNTRY;
-    } else {
-      return servar.metadata.default_country || DEFAULT_COUNTRY;
-    }
-  }, [servar.metadata.default_country]);
+  const defaultCountry = useMemo(
+    () => getDefaultPhoneCountry(servar.metadata.default_country),
+    [servar.metadata.default_country]
+  );
   const [curCountryCode, setCurCountryCode] = useState<string>(defaultCountry);
 
   useEffect(() => setCurCountryCode(defaultCountry), [defaultCountry]);

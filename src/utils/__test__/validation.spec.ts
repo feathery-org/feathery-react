@@ -343,6 +343,20 @@ describe('validation', () => {
         await phoneLibPromise;
       });
 
+      it.each([
+        ['1 (202) 555-0123', 'US', '12025550123'],
+        ['(202) 555-0123', 'US', '12025550123'],
+        ['020 7946 0018', 'GB', '442079460018']
+      ])('normalizes %s before submission', (value, country, expected) => {
+        Object.assign(fieldValues, { [phoneKey]: value });
+        const servar = {
+          ...phoneServar(),
+          metadata: { default_country: country }
+        };
+        expect(getStandardFieldError(value, servar, null)).toBe('');
+        expect(fieldValues[phoneKey]).toBe(expected);
+      });
+
       it('allows a valid number', () => {
         // Arrange
         const val = '12025550123';
