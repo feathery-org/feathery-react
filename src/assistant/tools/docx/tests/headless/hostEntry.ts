@@ -384,7 +384,12 @@ const api = {
   nativeSplitTable(
     tableId: string,
     splitAtRow: number
-  ): { outcomes: string[]; messages: string[]; ops: string[] } {
+  ): {
+    outcomes: string[];
+    messages: string[];
+    ops: string[];
+    warnings: string[];
+  } {
     const blockIndex = tableBlockIndex(tableId);
     const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
       edits: [
@@ -400,7 +405,11 @@ const api = {
         entry.ok ? 'ok' : String(entry.error)
       ),
       messages: result.results.map((entry: any) => String(entry.message ?? '')),
-      ops: result.results.map((entry: any) => String(entry.op ?? ''))
+      ops: result.results.map((entry: any) => String(entry.op ?? '')),
+      // What the change set said about itself. The assistant paraphrased one of
+      // these to the captain as "a background template-row warning", and a
+      // paraphrase is not a code anybody can act on.
+      warnings: (result.warnings ?? []).map((entry: any) => String(entry))
     };
   },
 

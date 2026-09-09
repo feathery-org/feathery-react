@@ -319,6 +319,32 @@ describe('a composed split of the browser document accepts whole and conserves t
       // collapse is part of the contract: a split is one decision.
       expect(applied.outcomes).toEqual(['ok']);
       expect(applied.ops).toEqual(['split_table']);
+
+      // THE WARNING THE CAPTAIN WAS TOLD ABOUT, pinned so it stays benign.
+      //
+      // The assistant reported "a background template-row warning" on this
+      // split, which sounds like the split did something questionable. It did
+      // not. The change set emits `binding_engine_diagnostics` with five
+      // `row-not-adopted` notes, and row 0 of each schedule is its HEADER row
+      // - the adoption pass declining to overwrite "Line total" with a formula
+      // row, which is the correct refusal. Three of the five name tables this
+      // split never touches (liability, motor, summary), which is what proves
+      // the pass is document-wide and not the split's doing.
+      //
+      // Asserted rather than logged so a warning that stops being benign, or a
+      // new one, fails here instead of reaching the captain as prose.
+      const diagnostics = applied.warnings.filter(
+        (warning) => !/^document_serialization:/.test(warning)
+      );
+      expect(diagnostics).toHaveLength(1);
+      expect(diagnostics[0]).toMatch(/^binding_engine_diagnostics:/);
+      expect(
+        diagnostics[0].match(/warning:row-not-adopted/g) ?? []
+      ).toHaveLength(5);
+      // Every note is about row 0 - a header - and none reports a write.
+      expect(diagnostics[0]).not.toMatch(/error|failed|destroyed|lost/i);
+      for (const note of diagnostics[0].split('; ').slice(0, 5))
+        expect(note).toContain('unbound row at index 0 not adopted');
       expect(await session.call<any[]>('groups')).toHaveLength(1);
 
       const fragments = await session.call<Record<string, string>>(
