@@ -13,19 +13,13 @@ afterAll(() => {
 
 afterEach(cleanup);
 
+// getFilenameFromUrl covers the decoding cases; these pin the toast's own
+// wiring: source URLs get decoded, direct upload labels stay literal.
 describe('processing toast filenames', () => {
   it.each([
     ['003_%E7%99%BB%E9%8C%B2%E6%9B%B8.pdf', '003_登録書.pdf'],
-    ['caf%C3%A9%20%26%20%E6%9B%B8%E9%A1%9E.pdf', 'café & 書類.pdf'],
-    ['%F0%9F%93%84.pdf', '📄.pdf'],
-    ['登録書.pdf', '登録書.pdf'],
-    ['100%25%20complete.pdf', '100% complete.pdf'],
-    ['literal%2520name.pdf', 'literal%20name.pdf'],
-    ['bad%ZZ.pdf', 'bad%ZZ.pdf'],
-    ['bad%E7.pdf', 'bad%E7.pdf'],
-    ['a+b.pdf', 'a+b.pdf'],
-    ['report.pdf?signature=a/b#page=1', 'report.pdf'],
-    ['a%3Fb%23c.pdf?signature=x', 'a?b#c.pdf']
+    ['a%3Fb%23c.pdf?signature=x', 'a?b#c.pdf'],
+    ['bad%E7.pdf', 'bad%E7.pdf']
   ])('displays %s as %s', (path, filename) => {
     render(
       <ToastItem
