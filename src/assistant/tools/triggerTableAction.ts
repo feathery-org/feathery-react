@@ -4,10 +4,10 @@ import {
   diffInlineErrorSnapshots,
   findTableOnCurrentStep,
   getLiveStepKey,
-  getTableCapabilities,
   type InlineErrorReport,
   snapshotInlineErrors,
-  type TableLookupErrorType
+  type TableLookupErrorType,
+  validateRowTarget
 } from './utils';
 
 type TableActionErrorType =
@@ -15,6 +15,7 @@ type TableActionErrorType =
   | 'unknown_action'
   | 'not_allowed'
   | 'row_out_of_range'
+  | 'row_deleted'
   | 'not_mounted'
   | 'dispatch_failed';
 
@@ -38,7 +39,7 @@ export async function dispatchTriggerTableAction(
 ): Promise<TableActionResult> {
   const lookup = findTableOnCurrentStep(formUuid, tableId);
   if (!lookup.ok) return lookup;
-  const { state, table, rowCount } = lookup.found;
+  const { state, table, capabilities } = lookup.found;
 
   const hasLabel = typeof actionLabel === 'string' && actionLabel.length > 0;
   if (actionLabel !== undefined && !hasLabel) {
@@ -48,13 +49,8 @@ export async function dispatchTriggerTableAction(
       error: 'actionLabel must be a non-empty string when provided.'
     };
   }
-  if (!Number.isInteger(rowIndex) || rowIndex < 0) {
-    return {
-      ok: false,
-      errorType: 'shape_mismatch',
-      error: 'rowIndex must be a non-negative integer.'
-    };
-  }
+  const rowErr = validateRowTarget({ rowIndex }, lookup.found);
+  if (rowErr) return rowErr;
   if (hasLabel) {
     const actions = Array.isArray(table?.properties?.actions)
       ? table.properties.actions
@@ -66,21 +62,12 @@ export async function dispatchTriggerTableAction(
         error: `Table '${tableId}' has no action labeled '${actionLabel}'.`
       };
     }
-  } else if (getTableCapabilities(table, rowCount).canEditCells) {
+  } else if (capabilities.canEditCells) {
     // Editable tables suppress the bare row click, so the user can't fire it either
     return {
       ok: false,
       errorType: 'not_allowed',
       error: `Table '${tableId}' is editable, so bare row clicks are not wired; use a named action.`
-    };
-  }
-  if (rowIndex >= rowCount) {
-    return {
-      ok: false,
-      errorType: 'row_out_of_range',
-      error: `Row ${rowIndex} is out of range (table has ${rowCount} row${
-        rowCount === 1 ? '' : 's'
-      }).`
     };
   }
 

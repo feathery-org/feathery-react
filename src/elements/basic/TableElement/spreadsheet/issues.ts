@@ -66,11 +66,17 @@ export type ResolveIssuesContext = {
   resolveRow: (ref: TableRowRef) => number | undefined;
 };
 
+/** Position in the issues given, and why that one could not be placed */
+export type UnresolvedIssue = {
+  index: number;
+  reason: 'row_not_shown' | 'unknown_field';
+};
+
 export type ResolvedIssues = {
   /** `${rowIndex}:${fieldKey}` -> message, for every cell an issue covers. */
   cells: CellErrors;
   /** Issues that named a row or field the table does not have. */
-  unresolved: TableIssue[];
+  unresolved: UnresolvedIssue[];
 };
 
 /**
@@ -83,7 +89,7 @@ export function resolveTableIssues(
   context: ResolveIssuesContext
 ): ResolvedIssues {
   const cells: CellErrors = {};
-  const unresolved: TableIssue[] = [];
+  const unresolved: UnresolvedIssue[] = [];
   const shownRows = new Set(context.rowIndices);
   const columnIndex = new Map(
     context.fieldKeys.map((key, index) => [key, index])
@@ -104,13 +110,16 @@ export function resolveTableIssues(
     if (!(key in cells)) cells[key] = message;
   };
 
-  issues.forEach((issue) => {
-    const { target, message } = issue;
+  issues.forEach(({ target, message }, index) => {
     if (target.kind === 'cell') {
       const rowIndex = rowOf(target.row);
+      if (rowIndex === undefined) {
+        unresolved.push({ index, reason: 'row_not_shown' });
+        return;
+      }
       const fieldKey = context.resolveField(target.field);
-      if (rowIndex === undefined || !fieldKey || !columnIndex.has(fieldKey)) {
-        unresolved.push(issue);
+      if (!fieldKey || !columnIndex.has(fieldKey)) {
+        unresolved.push({ index, reason: 'unknown_field' });
         return;
       }
       mark(rowIndex, fieldKey, message);
@@ -119,7 +128,7 @@ export function resolveTableIssues(
     if (target.kind === 'row') {
       const rowIndex = rowOf(target.row);
       if (rowIndex === undefined) {
-        unresolved.push(issue);
+        unresolved.push({ index, reason: 'row_not_shown' });
         return;
       }
       context.fieldKeys.forEach((fieldKey) =>
@@ -131,13 +140,12 @@ export function resolveTableIssues(
     const toRow = rowOf(target.to.row);
     const fromColumn = columnOf(target.from.field);
     const toColumn = columnOf(target.to.field);
-    if (
-      fromRow === undefined ||
-      toRow === undefined ||
-      fromColumn === undefined ||
-      toColumn === undefined
-    ) {
-      unresolved.push(issue);
+    if (fromRow === undefined || toRow === undefined) {
+      unresolved.push({ index, reason: 'row_not_shown' });
+      return;
+    }
+    if (fromColumn === undefined || toColumn === undefined) {
+      unresolved.push({ index, reason: 'unknown_field' });
       return;
     }
     // A range covers the rows between its corners in DISPLAY order, so a
