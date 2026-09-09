@@ -756,7 +756,7 @@ describe('banding detection', () => {
       BAND_FILL
     ]);
     expect(headerRows).toBe(1);
-    expect(banding).toEqual({
+    expect(banding).toMatchObject({
       headerRows: 1,
       period: 2,
       cycle: [null, BAND_FILL]
@@ -772,7 +772,7 @@ describe('banding detection', () => {
       BAND_FILL
     ]);
     expect(headerRows).toBe(0);
-    expect(banding).toEqual({
+    expect(banding).toMatchObject({
       headerRows: 0,
       period: 2,
       cycle: [BAND_FILL, null]
@@ -791,7 +791,7 @@ describe('banding detection', () => {
       null,
       BAND_FILL
     ]);
-    expect(banding).toEqual({
+    expect(banding).toMatchObject({
       headerRows: 1,
       period: 2,
       cycle: [null, BAND_FILL]
@@ -1711,7 +1711,7 @@ describe('structural inserts inherit resolved table formatting by default', () =
 
       expect(result.results).toHaveLength(16);
       expect(result.results.filter((entry) => !entry.ok)).toEqual([]);
-      expect(result.results[0].appearance?.banding).toEqual({
+      expect(result.results[0].appearance?.banding).toMatchObject({
         headerRows: 1,
         period: 2,
         cycle: [null, BAND_FILL]

@@ -148,6 +148,16 @@ export interface TableBanding {
   period: number;
   /** The repeating fills, from the first banded row. `null` is "no fill". */
   cycle: Array<string | null>;
+  /**
+   * Whether the table's LAST body row sits in the stripe, i.e. carries the fill
+   * the cycle predicts for its position. In a schedule that row is the totals
+   * row: a template that shades it as the next band wants the band to run
+   * through the total (captain, 2026-09-09), one that leaves it plain wants the
+   * totals row styled by role. Read off the source, it travels with the banding
+   * to every fragment a split produces, so a copy whose totals row was cloned
+   * from a longer table is restriped for its own length.
+   */
+  tailInBand?: boolean;
 }
 
 /** The model-facing account of what an appearance op did. */
@@ -803,13 +813,25 @@ export function detectTableBanding(
     if (cycle.every((value) => value === cycle[0])) continue;
     const twoColourStripe = period === 2 && distinct.size === 2;
     if ((!twoColourStripe || options.strict) && !corroborated(cycle)) continue;
+    const tailInBand =
+      body[body.length - 1] === cycle[(body.length - 1) % period];
     if (twoColourStripe)
-      return { headerRows, period, cycle: cycle as Array<string | null> };
+      return {
+        headerRows,
+        period,
+        cycle: cycle as Array<string | null>,
+        tailInBand
+      };
     let matches = 0;
     for (let index = 0; index < body.length; index++)
       if (body[index] === cycle[index % period]) matches++;
     if (matches / body.length >= BAND_FIT_THRESHOLD)
-      return { headerRows, period, cycle: cycle as Array<string | null> };
+      return {
+        headerRows,
+        period,
+        cycle: cycle as Array<string | null>,
+        tailInBand
+      };
   }
   return null;
 }

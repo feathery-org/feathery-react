@@ -751,7 +751,7 @@ const CONTRACTS: Record<string, ContractCase> = {
         null,
         '#D9E2F3'
       ]);
-      expect(result.results[0].appearance?.banding).toEqual({
+      expect(result.results[0].appearance?.banding).toMatchObject({
         headerRows: 1,
         period: 2,
         cycle: [null, '#D9E2F3']
