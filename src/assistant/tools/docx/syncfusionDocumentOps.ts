@@ -20178,65 +20178,79 @@ function compileTableSplit(
 }
 
 /**
- * The one thing a composed split cannot honour: a destination that is not
- * where the copy goes.
+ * WHETHER A SUPPLIED `targetAnchor` IS THE SPLIT WE ARE ALREADY DOING.
  *
- * `duplicate_table` places the copy immediately after its source and takes no
- * target, so a `targetAnchor` naming anywhere else would be silently ignored -
- * and a silently ignored placement is worse than a refusal, because the model
- * is told the table went somewhere it did not.
+ * `targetAnchor` is NOT a placement on a split, and the engine never treated it
+ * as one for a bound table: `duplicate_table` puts the copy immediately after
+ * its source and takes no destination. But the model always sends one, because
+ * the tool schema asks for `{anchor, splitAtRow, targetAnchor, position}` - so
+ * the only question this can answer is whether what it named IS that same
+ * place, described differently.
+ *
+ * It usually is, in one of three spellings, and all three mean the same split:
+ * the source table's own anchor, a cell inside it, or the block right after it.
+ * Which one the model picks varies run to run, and an earlier version of this
+ * demanded exact equality with "the block after the source" - so the same
+ * prompt on the same document refused about one time in four with
+ * `split_table_target_not_after_source`, and the assistant told the captain
+ * "the editor wouldn't accept the Property Premium Detail table as the target".
+ * That refusal is retired: a spelling of the right answer is the right answer.
+ *
+ * What still fails is a target that names somewhere ELSE - another table, or a
+ * block away from this one - because then the model meant a placement the
+ * composed path cannot honour, and silently ignoring it would report success
+ * about a document that does not exist. The message names what the anchor
+ * actually resolved to, so the model can see it aimed at the wrong thing.
  */
 function splitPlacementRefusal(
   blocks: FlatBlock[],
   op: EditOp,
   source: BlockRange
 ): { code: string; message: string; details?: string[] } | undefined {
-  if (!String(op.targetAnchor ?? '').trim()) return undefined;
-  const afterSource = topLevelAddress(source.blocks[0].anchor);
-  const expected = { ...afterSource, block: afterSource.block + 1 };
+  const named = String(op.targetAnchor ?? '').trim();
+  if (!named) return undefined;
+  const first = topLevelAddress(source.blocks[0].anchor);
+  const last = topLevelAddress(source.blocks[source.blocks.length - 1].anchor);
+  const target = topLevelAddress(named);
   const describe = (address: { section: number; block: number }) =>
     `${address.section};${address.block}`;
-  let wanted: PasteTarget;
-  try {
-    wanted = resolveRelocationTarget(blocks, op, source);
-  } catch (error) {
-    // ONE headline code for every way a supplied target is not the engine's
-    // placement, with the underlying reason kept as a detail. Propagating the
-    // relocation code instead told the model its anchor landed in a table cell,
-    // which is true and useless: the actionable fact is that a split does not
-    // take a destination at all.
-    return {
-      code: 'split_table_target_not_after_source',
-      message: `split_table puts the new table immediately after the one it splits, and ${JSON.stringify(
-        op.targetAnchor
-      )} does not name ${describe(expected)}. Nothing was written.`,
-      details: [
-        `source table: ${source.anchor}`,
-        `engine placement: ${describe(expected)}`,
-        `targetAnchor could not be resolved as that position: ${
-          isOpError(error) ? `${error.code}: ${error.message}` : String(error)
-        }`,
-        'Omit targetAnchor - placement is engine-owned for a split. To put the new table somewhere else, split it first and then move_section the result, which is its own reviewable change.'
-      ]
-    };
-  }
+  // The source's own blocks, and the one immediately after them. A cell anchor
+  // inside the table reduces to the table's own (section, block), so "inside
+  // it" needs no separate case.
   if (
-    wanted.address.section === expected.section &&
-    wanted.address.block === expected.block
+    target.section === first.section &&
+    target.block >= first.block &&
+    target.block <= last.block + 1
   )
     return undefined;
+  // A table's flat blocks are its CELLS, with five-part anchors, so a
+  // two-part table anchor matches none of them directly - look for a cell
+  // under that address and ask it which table it belongs to. Without this the
+  // message called a table "the block at 0;10", which is exactly the kind of
+  // unactionable detail the refusal exists to avoid.
+  const landed =
+    blocks.find((block) => block.anchor === named) ??
+    blocks.find((block) => block.anchor.startsWith(`${describe(target)};`));
+  const otherTable = landed ? tableAnchorForBlock(landed) : undefined;
   return {
-    code: 'split_table_target_not_after_source',
-    message: `split_table puts the new table immediately after the one it splits, and ${JSON.stringify(
-      op.targetAnchor
-    )} names ${describe(wanted.address)} instead of ${describe(
-      expected
+    code: 'split_table_target_elsewhere',
+    message: `split_table puts the new table immediately after the one it splits, so it takes no destination - and ${JSON.stringify(
+      named
+    )} does not name that table or the block after it. It resolves to ${
+      otherTable
+        ? `a different table at ${JSON.stringify(otherTable)}`
+        : `the block at ${describe(target)}`
+    }, while the table being split is at ${JSON.stringify(
+      source.anchor
     )}. Nothing was written.`,
     details: [
-      `source table: ${source.anchor}`,
-      `engine placement: ${describe(expected)}`,
-      `targetAnchor resolved to: ${describe(wanted.address)}`,
-      'Omit targetAnchor - placement is engine-owned for a split. To put the new table somewhere else, split it first and then move_section the result, which is its own reviewable change.'
+      `source table: ${source.anchor} (blocks ${describe(first)}..${describe(
+        last
+      )})`,
+      `targetAnchor: ${named} -> ${
+        otherTable ? `table ${otherTable}` : describe(target)
+      }`,
+      'Omit targetAnchor: the new table always lands immediately after the one it splits. To put it somewhere else, split it first and then move_section the result, which is its own reviewable change.'
     ]
   };
 }

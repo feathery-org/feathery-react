@@ -162,13 +162,94 @@ describe('graded cases - what the engine reaches today', () => {
     ).toEqual([]);
   });
 
-  it('case 1b (PLACEMENT): a split will not send the new table anywhere but after its source', () => {
-    // `duplicate_table` places a copy immediately after its source and takes no
-    // destination, so a targetAnchor naming anywhere else cannot be honoured.
-    // Refusing beats ignoring it: a silently relocated table would report
-    // success about a document that does not exist.
+  // THE WIRE SHAPE, and the nondeterminism it caused.
+  //
+  // ai-services' tool schema asks the model for
+  // `{anchor, splitAtRow, targetAnchor, position}` (documentTools.ts
+  // OP_DESCRIPTIONS.split_table), so a real split ALWAYS arrives carrying a
+  // targetAnchor. Which block it names varies run to run - the table itself, a
+  // cell in it, or the block after it - and all three describe the one place a
+  // composed split can put the copy. Demanding exact equality with "the block
+  // after the source" refused about one prompt in four on the captain's own
+  // document, reported to him as "the editor wouldn't accept the Property
+  // Premium Detail table as the target".
+  //
+  // Each spelling gets its own row rather than a loop: when one regresses, the
+  // name of the failing test says which spelling broke.
+  const splitWith = (extra: Record<string, unknown>, id: string) => {
     const live = open();
     const anchor = cellAnchorContaining('Gala apples');
+    expect(anchor).not.toBeNull();
+    const tableAnchor = String(anchor).split(';').slice(0, 2).join(';');
+    const after = `0;${Number(tableAnchor.split(';')[1]) + 1}`;
+    const result = apply(
+      live,
+      [{ op: 'split_table', anchor, splitAtRow: 8, group: 'g', ...extra }],
+      id
+    );
+    return { result, anchor: String(anchor), tableAnchor, after };
+  };
+
+  it('case 1b (TARGET, the table itself): the split proceeds', () => {
+    const live = open();
+    const anchor = cellAnchorContaining('Gala apples');
+    const tableAnchor = String(anchor).split(';').slice(0, 2).join(';');
+    const result = apply(
+      live,
+      [
+        {
+          op: 'split_table',
+          anchor,
+          splitAtRow: 8,
+          targetAnchor: tableAnchor,
+          position: 'after',
+          group: 'g'
+        }
+      ],
+      'graded-case-1b'
+    );
+    expect([result.results[0].ok, result.results[0].error]).toEqual([
+      true,
+      undefined
+    ]);
+  });
+
+  it('case 1c (TARGET, a cell inside the table): the split proceeds', () => {
+    const { result } = splitWith(
+      { targetAnchor: cellAnchorContaining('Gala apples'), position: 'after' },
+      'graded-case-1c'
+    );
+    expect(result.results[0].ok).toBe(true);
+  });
+
+  it('case 1d (TARGET, the block after the table): the split proceeds', () => {
+    const live = open();
+    const anchor = cellAnchorContaining('Gala apples');
+    const block = Number(String(anchor).split(';')[1]);
+    const result = apply(
+      live,
+      [
+        {
+          op: 'split_table',
+          anchor,
+          splitAtRow: 8,
+          targetAnchor: `0;${block + 1}`,
+          position: 'after',
+          group: 'g'
+        }
+      ],
+      'graded-case-1d'
+    );
+    expect(result.results[0].ok).toBe(true);
+  });
+
+  it('case 1e (TARGET, a DIFFERENT table): refused, naming what it resolved to', () => {
+    // The case that must still fail: the model meant a placement, and the
+    // composed split cannot honour one. Aimed at the unbound regional table.
+    const live = open();
+    const anchor = cellAnchorContaining('Gala apples');
+    const elsewhere = cellAnchorContaining('North');
+    expect(elsewhere).not.toBeNull();
     const before = editor.serialize();
     const result = apply(
       live,
@@ -177,17 +258,17 @@ describe('graded cases - what the engine reaches today', () => {
           op: 'split_table',
           anchor,
           splitAtRow: 8,
-          targetAnchor: '0;0',
+          targetAnchor: String(elsewhere).split(';').slice(0, 2).join(';'),
           position: 'after',
           group: 'g'
         }
       ],
-      'graded-case-1b'
+      'graded-case-1e'
     );
     expect(result.results[0].ok).toBe(false);
-    expect(result.results[0].error).toBe(
-      'split_table_target_not_after_source'
-    );
+    expect(result.results[0].error).toBe('split_table_target_elsewhere');
+    // It has to say what the anchor actually hit, or the model cannot correct.
+    expect(result.results[0].message).toContain('a different table at');
     expect(editor.serialize()).toBe(before);
   });
 
