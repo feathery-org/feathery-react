@@ -125,6 +125,38 @@ export function isContentControlAttached(control: ContentControlLike): boolean {
   return true;
 }
 
+/**
+ * Run with Syncfusion's canEditContentControl gate forced open. The gate makes
+ * every command touching a locked control return silently; callers assert the
+ * operation is a deliberate whole-control one (table delete, history replay).
+ */
+export function withContentControlLocksBypassed<T>(
+  module: object,
+  run: () => T
+): T {
+  const hadOwn = Object.prototype.hasOwnProperty.call(
+    module,
+    'canEditContentControl'
+  );
+  const previous = hadOwn
+    ? Object.getOwnPropertyDescriptor(module, 'canEditContentControl')
+    : undefined;
+  Object.defineProperty(module, 'canEditContentControl', {
+    configurable: true,
+    enumerable: true,
+    get: () => true
+  });
+  try {
+    return run();
+  } finally {
+    if (hadOwn && previous)
+      Object.defineProperty(module, 'canEditContentControl', previous);
+    else
+      delete (module as { canEditContentControl?: unknown })
+        .canEditContentControl;
+  }
+}
+
 /** Drop content controls whose widgets were removed by a table-clone command. */
 export function pruneDetachedContentControls(
   editor: SyncfusionEditorLike
@@ -134,6 +166,48 @@ export function pruneDetachedContentControls(
   for (let i = collection.length - 1; i >= 0; i--) {
     if (!isContentControlAttached(collection[i])) collection.splice(i, 1);
   }
+}
+
+/**
+ * Prune detached entries, then restore DOCUMENT ORDER in the content control
+ * collection. Undo re-registers restored controls at the END of the
+ * collection, but Syncfusion's lookups assume document order — the
+ * getContentControls scan early-breaks at the first control past the caret,
+ * so an out-of-order entry is never found: selection.currentContentControl
+ * returns undefined and the control loses its chrome, its lock, and the
+ * engine's writes. Verified live: re-sorting alone restores all three.
+ */
+export function normalizeContentControlCollection(
+  editor: SyncfusionEditorLike
+): void {
+  pruneDetachedContentControls(editor);
+  const collection = editor.documentHelper?.contentControlCollection;
+  const selection = editor.selection as any;
+  if (
+    !Array.isArray(collection) ||
+    typeof selection?.getPosition !== 'function'
+  )
+    return;
+  const positioned = collection.map((control) => {
+    try {
+      return {
+        control,
+        position: selection.getPosition(control, true)?.startPosition ?? null
+      };
+    } catch {
+      return { control, position: null };
+    }
+  });
+  positioned.sort((a, b) => {
+    if (!a.position || !b.position) return 0;
+    try {
+      if (a.position.isAtSamePosition(b.position)) return 0;
+      return a.position.isExistBefore(b.position) ? -1 : 1;
+    } catch {
+      return 0;
+    }
+  });
+  collection.splice(0, collection.length, ...positioned.map((e) => e.control));
 }
 
 /**

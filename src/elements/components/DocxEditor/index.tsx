@@ -7,6 +7,7 @@ import { FEATHERY_RED, TOOLBAR_HEIGHT } from './DocxToolbar/styles';
 import DocumentPanel, { PanelTab } from './DocumentPanel';
 import PanelRail from './PanelRail';
 import { DocxBindingsConfig, useDocxEditor } from './useDocxEditor';
+import { TableDeleteImpact } from './bindings/tableDeleteGuard';
 import { DocxSource } from './types';
 
 // Re-exported for tests that import it from this module.
@@ -128,20 +129,27 @@ function DocxEditor({
   // no sign of whether the document actually persisted.
   // Binding-error modal shown when an action hits the export gate. Save and
   // download offer a consented escape hatch ("Save Anyway" / "Download
-  // Anyway"); sign/send show it without one — informational, Close only.
+  // Anyway"); sign/send show it without one — informational, Close only. The
+  // table-delete confirmation reuses it with its own title and a cancel hook.
   const [gateWarning, setGateWarning] = useState<{
     message: string;
+    title?: string;
     confirmLabel?: string;
     confirmTitle?: string;
     proceed?: () => void;
+    cancel?: () => void;
   } | null>(null);
   const [saveToast, setSaveToast] = useState<{
-    type: 'success' | 'error';
+    type: 'success' | 'error' | 'info';
     message: string;
   } | null>(null);
   const saveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined
   );
+  // Mirror the toast into a ref so editor-event callbacks can read the current
+  // type without re-subscribing.
+  const saveToastRef = useRef(saveToast);
+  saveToastRef.current = saveToast;
   const [terminalRunning, setTerminalRunning] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   // Debounces the DOCX download: a double-click must not race two exports
@@ -165,6 +173,66 @@ function DocxEditor({
     }
   }, [onChange]);
 
+  /**
+   * Deleting a table or row that feeds calculated values elsewhere would
+   * strand them (stale number, save blocked, the control itself
+   * non-deletable). The guard asks here first; confirming deletes and converts
+   * the dependent values to plain text in one undoable step.
+   */
+  const confirmTableDelete = useCallback(
+    (impact: TableDeleteImpact) =>
+      new Promise<boolean>((resolve) => {
+        const names = impact.orphans
+          .map((orphan) => `"${orphan.name}"`)
+          .join(', ');
+        const plural = impact.orphans.length > 1;
+        const noun =
+          impact.scope === 'row'
+            ? 'row'
+            : impact.scope === 'range'
+            ? 'selection'
+            : 'table';
+        const label = impact.scope === 'range' ? 'Delete' : `Delete ${noun}`;
+        setGateWarning({
+          title: `Delete ${noun}?`,
+          message: `The calculated value${
+            plural ? 's' : ''
+          } ${names} elsewhere in this document ${
+            plural ? 'use' : 'uses'
+          } numbers from this ${noun}. Deleting it keeps the current value${
+            plural ? 's' : ''
+          } as plain text.`,
+          confirmLabel: label,
+          confirmTitle: `Deletes the ${noun}; dependent calculated values become plain text`,
+          proceed: () => {
+            setGateWarning(null);
+            resolve(true);
+          },
+          cancel: () => resolve(false)
+        });
+      }),
+    []
+  );
+
+  // Non-error hint shown while the caret is on a locked control that refused an
+  // edit. No timeout - it stays as long as the cursor sits on the locked cell;
+  // the bindings layer resolves it when the caret moves somewhere editable or
+  // leaves the editor.
+  const handleLockedEdit = useCallback(() => {
+    if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
+    setSaveToast({
+      type: 'info',
+      message: "This content is locked and can't be edited here."
+    });
+  }, []);
+
+  // The caret left the locked spot: hide the hint now, but never clobber a save
+  // success/error toast that happens to be showing.
+  const handleLockedEditResolved = useCallback(() => {
+    if (saveToastRef.current?.type !== 'info') return;
+    setSaveToast(null);
+  }, []);
+
   const {
     containerRef,
     editor,
@@ -184,7 +252,14 @@ function DocxEditor({
     onEditorReady,
     onDirty: markDirty,
     onError,
-    bindings
+    bindings: bindings
+      ? {
+          ...bindings,
+          confirmTableDelete,
+          onLockedEdit: handleLockedEdit,
+          onLockedEditResolved: handleLockedEditResolved
+        }
+      : bindings
   });
 
   // The Changes button is only offered while changes are pending; if they all
@@ -305,7 +380,10 @@ function DocxEditor({
   // Flash a save toast and auto-dismiss it. Re-showing while one is already up
   // resets the timer so a second save reads as fresh feedback. Errors linger a
   // little longer than the success confirmation.
-  const flashSaveToast = (type: 'success' | 'error', message: string) => {
+  const flashSaveToast = (
+    type: 'success' | 'error' | 'info',
+    message: string
+  ) => {
     setSaveToast({ type, message });
     if (saveToastTimer.current) clearTimeout(saveToastTimer.current);
     saveToastTimer.current = setTimeout(
@@ -614,11 +692,14 @@ function DocxEditor({
             <div
               role='alertdialog'
               aria-modal='true'
-              aria-label='Document has binding errors'
+              aria-label={gateWarning.title ?? 'Document has binding errors'}
               tabIndex={-1}
               ref={(node) => node?.focus()}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') setGateWarning(null);
+                if (e.key === 'Escape') {
+                  gateWarning.cancel?.();
+                  setGateWarning(null);
+                }
               }}
               css={{
                 width: 440,
@@ -664,7 +745,7 @@ function DocxEditor({
                 >
                   !
                 </span>
-                Document has binding errors
+                {gateWarning.title ?? 'Document has binding errors'}
               </div>
               <div
                 css={{
@@ -684,7 +765,10 @@ function DocxEditor({
               >
                 <button
                   type='button'
-                  onClick={() => setGateWarning(null)}
+                  onClick={() => {
+                    gateWarning.cancel?.();
+                    setGateWarning(null);
+                  }}
                   css={{
                     padding: '8px 14px',
                     borderRadius: 6,
@@ -755,7 +839,7 @@ function DocxEditor({
             pointerEvents: 'none'
           }}
         >
-          {saveToast.type === 'success' ? (
+          {saveToast.type === 'success' && (
             <CheckIcon
               width={16}
               height={16}
@@ -766,7 +850,8 @@ function DocxEditor({
                 transform: 'translateY(-50%)'
               }}
             />
-          ) : (
+          )}
+          {saveToast.type === 'error' && (
             <CloseIcon
               width={16}
               height={16}
