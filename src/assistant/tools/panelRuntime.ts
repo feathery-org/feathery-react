@@ -18,7 +18,12 @@ import {
   isStepperStepReachable,
   isStepperStepVisible
 } from '../../utils/stepper';
-import { findClickableAncestorSubgrids, getTableCapabilities } from './utils';
+import {
+  findClickableAncestorSubgrids,
+  getTableCapabilities,
+  tableColumnFieldKey
+} from './utils';
+import type { TableLiveState } from '../AssistantClient';
 import { sanitizeTransportValue } from '../../utils/transportValue';
 import { getImageAltText } from '../../utils/accessibility';
 
@@ -116,7 +121,7 @@ export type PanelRuntimeTableEntry = {
   canEditCells?: boolean;
   hasLogicRules?: boolean;
   visible: boolean;
-};
+} & Partial<TableLiveState>;
 
 export type PanelRuntimeSnapshot = {
   currentStep: { id: string; key: string };
@@ -129,7 +134,11 @@ export type PanelRuntimeSnapshot = {
   values: Record<string, unknown>;
   hiddenFieldValues: Record<string, unknown>;
   hiddenFieldsEmpty: string[];
+  hiddenFieldsEmptyTotal?: number;
 };
+
+// Hundreds of empty hidden keys would otherwise ride along every turn
+const HIDDEN_FIELDS_EMPTY_CAP = 50;
 
 const extractRawText = (props: Record<string, unknown>): string => {
   const plain = props.text;
@@ -662,8 +671,6 @@ export const getPanelRuntimeSnapshot = (
       hub_field_key?: string;
     }>;
     if (cols.length === 0) return;
-    const fieldKeyFor = (col: { field_key?: string; hub_field_key?: string }) =>
-      (hubId ? col.hub_field_key : col.field_key) ?? '';
     const numRows = cols.reduce((max, col) => {
       const v = col.field_key ? fieldsMap[col.field_key]?.value : undefined;
       return Array.isArray(v) ? Math.max(max, v.length) : max;
@@ -680,9 +687,15 @@ export const getPanelRuntimeSnapshot = (
     const actions = rawActions
       .map((a: any) => ({ label: typeof a?.label === 'string' ? a.label : '' }))
       .filter((a: { label: string }) => a.label.trim().length > 0);
+    // Selection, viewport and counts come from the mounted table
+    const liveState = state.assistantClient?.getTableLiveState(el.id ?? '');
+    const live = liveState
+      ? (sanitizeRuntimeValue(liveState) as TableLiveState)
+      : undefined;
     const { canEditCells, canAddRows, canDeleteRows } = getTableCapabilities(
       el,
-      numRows
+      live?.rowCount ?? numRows,
+      live
     );
     const hasLogicRules = elementHasLogicRules(
       logicRules,
@@ -695,9 +708,10 @@ export const getPanelRuntimeSnapshot = (
       ...(hubId ? { hubId } : {}),
       columns: cols.map((c) => ({
         name: c.name ?? c.field_key ?? '',
-        fieldKey: fieldKeyFor(c)
+        fieldKey: tableColumnFieldKey(el, c)
       })),
       ...(hubId ? {} : { rows }),
+      ...live,
       ...(actions.length > 0 ? { actions } : {}),
       ...(canAddRows ? { canAddRows: true } : {}),
       ...(canDeleteRows ? { canDeleteRows: true } : {}),
@@ -717,6 +731,9 @@ export const getPanelRuntimeSnapshot = (
     currentStepTables,
     values,
     hiddenFieldValues,
-    hiddenFieldsEmpty
+    hiddenFieldsEmpty: hiddenFieldsEmpty.slice(0, HIDDEN_FIELDS_EMPTY_CAP),
+    ...(hiddenFieldsEmpty.length > HIDDEN_FIELDS_EMPTY_CAP
+      ? { hiddenFieldsEmptyTotal: hiddenFieldsEmpty.length }
+      : {})
   };
 };

@@ -46,6 +46,7 @@ afterEach(() => {
 describe('hub table column parity', () => {
   it('describes the columns the mounted grid renders, not the ones stored on the element', () => {
     buildState({
+      getTableLiveState: () => undefined,
       getTableColumns: () => [
         { name: 'Status', hub_field_key: 'status' },
         { name: 'Email', hub_field_key: 'email' },
@@ -63,7 +64,10 @@ describe('hub table column parity', () => {
   });
 
   it('falls back to the stored columns while the table is not mounted', () => {
-    buildState({ getTableColumns: () => null });
+    buildState({
+      getTableLiveState: () => undefined,
+      getTableColumns: () => null
+    });
 
     const table = getPanelRuntimeSnapshot(FORM)!.currentStepTables![0];
 

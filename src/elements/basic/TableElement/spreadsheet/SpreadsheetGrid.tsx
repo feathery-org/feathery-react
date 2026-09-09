@@ -6,7 +6,7 @@ import type {
   CellSelectionRangeOperation,
   CellSelectionState
 } from '@tanstack/react-table';
-import type { VirtualItem } from '@tanstack/react-virtual';
+import type { ScrollToOptions, VirtualItem } from '@tanstack/react-virtual';
 import { featheryDoc } from '../../../../utils/browser';
 import { TABLE_CLASS } from '../classNames';
 import { AddColumnHandler, CellShading, GetCellShading } from '../types';
@@ -71,7 +71,11 @@ import type { GridInteractions } from './useGridInteractions';
 import { useMeasured } from './useMeasured';
 
 export type SpreadsheetGridHandle = {
-  scrollToCell: (rowId: string, columnId: string) => void;
+  scrollToCell: (
+    rowId: string,
+    columnId?: string,
+    scroll?: ScrollToOptions
+  ) => void;
   /** Returns keyboard focus to the grid, e.g. after a control above it acts. */
   focus: () => void;
   /**
@@ -83,6 +87,7 @@ export type SpreadsheetGridHandle = {
    * straight back off the button the user just pressed.
    */
   restoreFocus: () => void;
+  getVisibleRowIndexes: () => number[];
 };
 
 type SpreadsheetGridProps = {
@@ -283,14 +288,33 @@ export const SpreadsheetGrid = React.forwardRef<
           }
         }, 0);
       },
-      scrollToCell(rowId, columnId) {
+      scrollToCell(rowId, columnId, scroll) {
         const rowIndex = rows.findIndex((row) => row.id === rowId);
-        if (rowIndex >= 0) rowVirtualizer.scrollToIndex(rowIndex);
-
         const columnIndex = columns.findIndex(
           (column) => column.id === columnId
         );
-        if (columnIndex >= 0) columnVirtualizer.scrollToIndex(columnIndex);
+        const [top] =
+          (rowIndex >= 0 &&
+            rowVirtualizer.getOffsetForIndex(rowIndex, scroll?.align)) ||
+          [];
+        const [left] =
+          (columnIndex >= 0 &&
+            columnVirtualizer.getOffsetForIndex(columnIndex)) ||
+          [];
+        // Both axes in one call since a second scrollTo cancels a smooth one, optional as jsdom lacks it
+        scrollRef.current?.scrollTo?.({
+          top,
+          left,
+          behavior: scroll?.behavior
+        });
+      },
+      getVisibleRowIndexes() {
+        const range = rowVirtualizer.range;
+        return range
+          ? rows
+              .slice(range.startIndex, range.endIndex + 1)
+              .map((row) => row.original.rowIndex)
+          : [];
       }
     }),
     [columns, columnVirtualizer, rows, rowVirtualizer]

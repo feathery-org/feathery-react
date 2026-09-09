@@ -38,6 +38,12 @@ function harness(
     setTableCellValue: jest
       .fn()
       .mockResolvedValue({ ok: true, via: 'setTableCellValue' }),
+    setCellValidation: jest
+      .fn()
+      .mockResolvedValue({ ok: true, via: 'setCellValidation' }),
+    focusTableCell: jest
+      .fn()
+      .mockResolvedValue({ ok: true, via: 'focusTableCell' }),
     ...overrides.native
   } as unknown as NativeToolHandlers;
 
@@ -100,7 +106,9 @@ describe('every streamed tool call produces exactly one output', () => {
     ['triggerTableAction', { tableId: 't', rowIndex: 0, actionLabel: 'Edit' }],
     ['addTableRow', { tableId: 't' }],
     ['deleteTableRow', { tableId: 't', rowIndex: 1 }],
-    ['setTableCellValue', { tableId: 't', cells: [] }]
+    ['setTableCellValue', { tableId: 't', cells: [] }],
+    ['setCellValidation', { tableId: 't', findings: [] }],
+    ['focusTableCell', { tableId: 't', rowIndex: 0, fieldKey: 'a' }]
   ])('%s is routed to its native handler and emits its output', async (toolName, input) => {
     const h = harness();
 
@@ -145,6 +153,8 @@ describe('every streamed tool call produces exactly one output', () => {
       'addTableRow',
       'deleteTableRow',
       'setTableCellValue',
+      'setCellValidation',
+      'focusTableCell',
       'futureServerTool',
       'getDocumentInventory',
       'getSectionPattern',

@@ -16,7 +16,7 @@ import type {
 
 /**
  * One rendered spreadsheet row. `rowIndex` is the table element's own row
- * coordinate, which every mutation handler (`handleCellEdit`, `handleDeleteRow`,
+ * coordinate, which every mutation handler (`handleCellsEdit`, `handleDeleteRow`,
  * Data Hub writes) is keyed on, so it stays attached to the row rather than
  * being recomputed from display position.
  */

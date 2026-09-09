@@ -1574,7 +1574,7 @@ describe('assistant issues', () => {
             message: 'Bounced last week'
           }
         ])
-      ).toBe(true);
+      ).toEqual([]);
     });
 
     expect(status()).toHaveTextContent('1 warning');
