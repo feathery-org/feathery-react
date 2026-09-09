@@ -22,7 +22,11 @@ import {
   Selection,
   SfdtExport
 } from '@syncfusion/ej2-documenteditor';
-import { applyDocumentEdits, LiveEditor } from '../../syncfusionDocumentOps';
+import {
+  applyDocumentEdits,
+  getDocumentInventory,
+  LiveEditor
+} from '../../syncfusionDocumentOps';
 import { deriveTableStructure } from '../../tableStructure';
 import {
   attachBindings,
@@ -212,6 +216,72 @@ const api = {
   },
 
   trackChanges: (): boolean => live().enableTrackChanges,
+
+  setTrackChanges(on: boolean): boolean {
+    live().enableTrackChanges = on;
+    return live().enableTrackChanges;
+  },
+
+  /**
+   * The full inventory the assistant reads before editing, as
+   * `{anchor, kind, text}` - the exact projection the tool schema makes the
+   * model confirm an anchor with, laid out by the real engine.
+   */
+  inventory: (): { anchor: string; kind: string; text: string }[] => {
+    const result: any = getDocumentInventory(live() as unknown as LiveEditor, {
+      scope: 'full'
+    });
+    return (result.inventory ?? []).map((entry: any) => ({
+      anchor: String(entry.anchor),
+      kind: String(entry.kind),
+      text: String(entry.text)
+    }));
+  },
+
+  /**
+   * One tracked `replace_text` aimed at whatever the INVENTORY says holds the
+   * text - never at a hand-written anchor and never at a live search result.
+   * That is the assistant's real route, and the only thing that makes a
+   * text-box edit indistinguishable from a body edit at this layer.
+   */
+  replaceIndexed(
+    find: string,
+    replace: string,
+    changeSetId: string
+  ): {
+    anchor: string;
+    kind: string;
+    outcomes: string[];
+    messages: string[];
+    status: string;
+  } {
+    const entry = api
+      .inventory()
+      .find((candidate) => candidate.text.includes(find));
+    if (!entry)
+      throw new Error(`no inventory entry holds ${JSON.stringify(find)}`);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      changeSetId,
+      edits: [
+        {
+          op: 'replace_text',
+          anchor: entry.anchor,
+          find,
+          replace,
+          expect: entry.text
+        } as any
+      ]
+    });
+    return {
+      anchor: entry.anchor,
+      kind: entry.kind,
+      outcomes: result.results.map((one: any) =>
+        one.ok ? 'ok' : String(one.error)
+      ),
+      messages: result.results.map((one: any) => String(one.message ?? '')),
+      status: String(result.changeSet?.status ?? '')
+    };
+  },
 
   serialize: (): string => live().serialize(),
 
