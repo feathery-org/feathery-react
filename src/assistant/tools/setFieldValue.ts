@@ -1,3 +1,8 @@
+import {
+  getDefaultPhoneCountry,
+  isCanonicalPhoneNumber,
+  normalizePhoneNumber
+} from '../../utils/phoneNumber';
 import internalState from '../../utils/internalState';
 import { initState } from '../../utils/init';
 import {
@@ -162,9 +167,10 @@ function validateSetFieldValue(
   if (
     type === 'phone_number' &&
     typeof value === 'number' &&
-    Number.isFinite(value)
+    Number.isSafeInteger(value) &&
+    value >= 0
   ) {
-    value = String(Math.trunc(value));
+    value = String(value);
   }
 
   // Type and bound checks
@@ -315,47 +321,34 @@ async function normalizePhone(
   value: unknown,
   servar: any,
   state: any,
-  fieldKey: string
+  fieldKey: string,
+  repeatIndex?: number
 ): Promise<unknown> {
-  // Coerce to string; let libphonenumber-js handle formatting and a leading '+'.
-  const incoming =
-    typeof value === 'number'
-      ? String(Math.trunc(value))
-      : typeof value === 'string'
-      ? value
-      : '';
-  if (!incoming.replace(/\D/g, '')) return value;
-
-  // Load the phone library lazily
   if (!phoneLib) loadPhoneValidator();
   await phoneLibPromise;
-  if (!phoneLib) return value;
-
-  // Parse against the resolved country
-  const country = resolveCountry(state, fieldKey, servar);
-  const parsed = (() => {
-    try {
-      return phoneLib.parsePhoneNumber(incoming, country as any);
-    } catch {
-      return undefined;
-    }
-  })();
-  if (parsed?.isValid()) return parsed.number.replace(/^\+/, '');
-  return value;
+  return normalizePhoneNumber(
+    value,
+    {
+      ...servar.metadata,
+      default_country: resolveCountry(state, fieldKey, servar, repeatIndex)
+    },
+    phoneLib
+  );
 }
 
-function resolveCountry(state: any, fieldKey: string, servar: any): string {
-  const existing = state.fields?.[fieldKey]?.value;
-  if (existing && typeof existing === 'string' && phoneLib) {
-    try {
-      const parsed = phoneLib.parsePhoneNumber(`+${existing}`);
-      if (parsed?.country) return parsed.country;
-    } catch {
-      // Ignore
-    }
+function resolveCountry(
+  state: any,
+  fieldKey: string,
+  servar: any,
+  repeatIndex?: number
+): string {
+  const current = state.fields?.[fieldKey]?.value;
+  const existing = Array.isArray(current) ? current[repeatIndex ?? 0] : current;
+  if (isCanonicalPhoneNumber(existing, phoneLib)) {
+    const parsed = phoneLib.parsePhoneNumberFromString(`+${existing}`);
+    if (parsed?.country) return parsed.country;
   }
-  const dc = servar.metadata?.default_country;
-  return dc && dc !== 'auto' ? dc : 'US';
+  return getDefaultPhoneCountry(servar.metadata?.default_country);
 }
 
 export async function dispatchSetFieldValue(
@@ -455,7 +448,13 @@ export async function dispatchSetFieldValue(
       if (servar.type === 'gmap_state') {
         normalized = normalizeGmapState(normalized, servar);
       } else if (servar.type === 'phone_number') {
-        normalized = await normalizePhone(normalized, servar, state, fieldKey);
+        normalized = await normalizePhone(
+          normalized,
+          servar,
+          state,
+          fieldKey,
+          repeatIndex
+        );
       }
       return { fieldKey, repeatIndex, field, normalized };
     })

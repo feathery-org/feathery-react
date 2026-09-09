@@ -1,4 +1,4 @@
-import { normalizePhoneNumber } from './phoneNumber';
+import { isCanonicalPhoneNumber, normalizePhoneNumber } from './phoneNumber';
 import { evalComparisonRule, ResolvedComparisonRule } from './logic';
 import { setFormElementError } from './formHelperFunctions';
 import { InlineErrors } from './inlineErrors';
@@ -209,14 +209,7 @@ const validators = {
 
     return emailPattern.test(a);
   },
-  phone: (a: string) => {
-    try {
-      return phoneLib.isValidPhoneNumber(`+${a}`);
-    } catch (e) {
-      // Invalid phone number
-      return false;
-    }
-  },
+  phone: (a: string) => isCanonicalPhoneNumber(a, phoneLib),
   url: (a: string) => {
     if (!isUrl(a)) return false;
     try {

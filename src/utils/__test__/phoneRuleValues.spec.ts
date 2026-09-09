@@ -107,6 +107,7 @@ describe('phone values assigned by custom logic', () => {
     setFieldValues({ us_phone: '6612345678' }, true, true, true);
     expect(fieldValues.us_phone).toBe('6612345678');
     const field = new Field('us_phone', formId);
+    field.value = '';
     field.value = '6612345678';
     expect(field.value).toBe('16612345678');
   });

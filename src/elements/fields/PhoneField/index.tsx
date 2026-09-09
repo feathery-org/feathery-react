@@ -1,7 +1,12 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
 
-import { getDefaultPhoneCountry } from '../../../utils/phoneNumber';
+import {
+  cleanPhoneNumberInput,
+  getDefaultPhoneCountry,
+  isCanonicalPhoneNumber,
+  normalizePhoneNumber
+} from '../../../utils/phoneNumber';
 import Placeholder from '../../components/Placeholder';
 import InlineTooltip from '../../components/InlineTooltip';
 import { inputBoxAttrs, resetStyles } from '../../styles';
@@ -47,6 +52,9 @@ function PhoneField({
   const fieldWrapperRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
+  const replacingNumber = useRef(false);
+  const replacementCountry = useRef<string | null>(null);
+  const [replacementDraft, setReplacementDraft] = useState<string | null>(null);
   const [cursor, setCursor] = useState<number | null>(null);
   const [cursorTick, setCursorTick] = useState(0);
   const [show, setShow] = useState(false);
@@ -107,6 +115,10 @@ function PhoneField({
 
   const clampCursorAfterPhoneCode = (input: HTMLInputElement | null) => {
     if (!input) return;
+    if (replacingNumber.current) {
+      setCursor(input.selectionStart);
+      return;
+    }
     const minCursor = minCursorForPhoneCode(phoneCode);
     const start = input.selectionStart ?? minCursor;
     if (start >= minCursor) {
@@ -125,32 +137,57 @@ function PhoneField({
   }, [cursorTick]);
 
   useEffect(() => {
-    if (fullNumber === curFullNumber || editMode) return;
+    // Keep an untouched empty field available for the focus prefix, but reparse
+    // saved values when the default country changes so their flag stays correct.
+    if (
+      ((!fullNumber || replacingNumber.current) &&
+        fullNumber === curFullNumber) ||
+      editMode
+    )
+      return;
 
+    let cancelled = false;
     validation.phoneLibPromise.then((LPN: any) => {
-      if (!LPN) return;
+      if (!LPN || cancelled) return;
 
+      const normalized = normalizePhoneNumber(
+        fullNumber,
+        servar.metadata,
+        LPN,
+        true
+      );
+      const value = normalized == null ? '' : String(normalized);
       const ayt = new LPN.AsYouType();
-      ayt.input(`+${fullNumber}`);
+      ayt.input(`+${value}`);
       const numberObj = ayt.getNumber() ?? '';
       setCurFullNumber(fullNumber);
-      setRawNumber(fullNumber);
+      setRawNumber(value);
+      replacingNumber.current = false;
+      setReplacementDraft(null);
       if (numberObj) {
-        setCurCountryCode(numberObj.country ?? curCountryCode);
+        setCurCountryCode(
+          countryMap[numberObj.country] ? numberObj.country : defaultCountry
+        );
       }
     });
-  }, [fullNumber]);
+    return () => {
+      cancelled = true;
+    };
+  }, [fullNumber, defaultCountry, editMode]);
 
   const formattedNumber = useMemo(() => {
+    if (replacementDraft !== null) return replacementDraft;
     // handle blurred and empty input
     if (rawNumber === '') return '';
+    // Unrecognized external values must remain visible for correction.
+    if (!/^\d+$/.test(rawNumber)) return rawNumber;
     const LPN = validation.phoneLib;
     if (!LPN) return `+${rawNumber}`;
 
     const asYouType = new LPN.AsYouType(curCountryCode);
     const onlyDigits = LPN.parseDigits(rawNumber, curCountryCode);
     return asYouType.input(`+${onlyDigits}`);
-  }, [curCountryCode, rawNumber]);
+  }, [curCountryCode, rawNumber, replacementDraft]);
 
   useEffect(() => {
     const elPlaceholder = element.properties.placeholder ?? '';
@@ -261,6 +298,8 @@ function PhoneField({
         >
           <CountryDropdown
             itemOnClick={(countryCode: string, phoneCode: string) => {
+              replacingNumber.current = false;
+              setReplacementDraft(null);
               setCurCountryCode(countryCode);
               setRawNumber(phoneCode);
               resetToPhoneCode(phoneCode);
@@ -332,6 +371,8 @@ function PhoneField({
               clampCursorAfterPhoneCode(e.currentTarget);
             }}
             onBlur={() => {
+              replacingNumber.current = false;
+              setReplacementDraft(null);
               let newRawNumber = rawNumber;
               if (phoneCode.startsWith(rawNumber)) {
                 setCursor(null);
@@ -342,10 +383,32 @@ function PhoneField({
               setFocused(false);
             }}
             onKeyDown={(e) => {
+              const input = e.currentTarget;
+              if (
+                (e.key.length === 1 ||
+                  e.key === 'Backspace' ||
+                  e.key === 'Delete') &&
+                !e.ctrlKey &&
+                !e.metaKey &&
+                input.selectionStart === 0 &&
+                input.selectionEnd === input.value.length
+              ) {
+                replacingNumber.current = true;
+                replacementCountry.current = curCountryCode;
+              }
               if (e.key === 'Enter') {
+                replacingNumber.current = false;
+                setReplacementDraft(null);
                 handleOnComplete(rawNumber);
                 onEnter(e);
-              } else if (e.key === '+') setShow(true);
+              } else if (
+                e.key === '+' &&
+                countriesEnabled &&
+                !disabled &&
+                !replacingNumber.current
+              ) {
+                setShow(true);
+              }
             }}
             onChange={(e) => {
               let start = e.target.selectionStart;
@@ -361,41 +424,92 @@ function PhoneField({
                   newNum = newNum.slice(lastPlusIndex);
                 }
 
-                // Phone codes with >3 characters will have a whitespace
-                newNum = newNum.replace(/\s/g, '');
-
-                // if there are no plus symbols, add one as well as the country code if it's missing
-                if (!newNum.includes('+')) {
-                  // Number is being pasted in (iphone autofill)...
-                  // if the number is valid but missing the country code, add it
-                  if (
-                    !LPN.validatePhoneNumberLength(newNum, curCountryCode) // undefined = valid
-                  ) {
-                    newNum = `+${phoneCode}${newNum}`;
-                  } else if (newNum.startsWith(phoneCode)) {
-                    newNum = `+${newNum}`;
-                  } else {
-                    newNum = `+${phoneCode}${newNum}`;
+                // Complete replacements (paste, autocomplete and autofill) can
+                // contain national trunk prefixes or a different country code.
+                let normalized = normalizePhoneNumber(
+                  newNum,
+                  {
+                    ...servar.metadata,
+                    default_country: replacingNumber.current
+                      ? replacementCountry.current
+                      : curCountryCode
+                  },
+                  LPN
+                );
+                // A full number may be typed after the focus prefix. Keep
+                // both interpretations until a duplicated prefix is provable.
+                const inputDigits = LPN.parseDigits(newNum);
+                const duplicatePrefix =
+                  !replacingNumber.current &&
+                  inputDigits.startsWith(`${phoneCode}${phoneCode}`)
+                    ? `+${inputDigits.slice(phoneCode.length)}`
+                    : null;
+                if (duplicatePrefix && !isCanonicalPhoneNumber(normalized, LPN))
+                  normalized = normalizePhoneNumber(
+                    duplicatePrefix,
+                    servar.metadata,
+                    LPN
+                  );
+                const complete = isCanonicalPhoneNumber(normalized, LPN);
+                if (replacingNumber.current) {
+                  const cleaned = cleanPhoneNumberInput(newNum, LPN);
+                  // A lone + is a meaningful intermediate international input.
+                  if (cleaned === null && newNum !== '+') return;
+                  const draft = cleaned ?? '+';
+                  setReplacementDraft(draft);
+                  setRawNumber(complete ? normalized : draft);
+                  if (complete) {
+                    const parsed = LPN.parsePhoneNumberFromString(
+                      `+${normalized}`
+                    );
+                    if (countryMap[parsed?.country])
+                      setCurCountryCode(parsed.country);
+                    handleOnComplete(normalized);
                   }
+                  moveCursor(start ?? draft.length);
+                  return;
                 }
-
-                // Don't let user delete the country code
-                if (!newNum.startsWith(`+${phoneCode}`)) return;
-                // Prevent US phone numbers from starting with a 1
-                if (newNum.startsWith('+11')) return;
-
-                const onlyDigits = LPN.parseDigits(newNum, curCountryCode);
-
-                // check google validation for phone length and our country overrides
+                replacingNumber.current = false;
+                setReplacementDraft(null);
+                let nextCountry = curCountryCode;
+                if (complete) {
+                  newNum = `+${normalized}`;
+                  const parsed = LPN.parsePhoneNumberFromString(newNum);
+                  if (countryMap[parsed?.country]) nextCountry = parsed.country;
+                } else {
+                  // Keep partial typing, but never extract a plausible phone
+                  // number from prose, extensions or otherwise invalid input.
+                  const cleaned = cleanPhoneNumberInput(newNum, LPN);
+                  if (cleaned === null) return;
+                  newNum = cleaned.replace(/\s/g, '');
+                  if (!newNum.includes('+')) {
+                    newNum = newNum.startsWith(phoneCode)
+                      ? `+${newNum}`
+                      : `+${phoneCode}${newNum}`;
+                  }
+                  // Protect the selected prefix while editing a partial number.
+                  if (!newNum.startsWith(`+${phoneCode}`)) return;
+                  if (newNum.startsWith('+11')) return;
+                }
+                const onlyDigits = LPN.parseDigits(newNum);
                 if (
-                  LPN.validatePhoneNumberLength(onlyDigits, curCountryCode) ===
-                    'TOO_LONG' ||
-                  !isValidPhoneLength(onlyDigits, curCountryCode)
+                  LPN.validatePhoneNumberLength(
+                    duplicatePrefix && !complete
+                      ? duplicatePrefix
+                      : `+${onlyDigits}`
+                  ) === 'TOO_LONG' ||
+                  !isValidPhoneLength(
+                    duplicatePrefix && !complete
+                      ? duplicatePrefix.slice(1)
+                      : onlyDigits,
+                    nextCountry
+                  )
                 )
                   return;
 
-                const asYouType = new LPN.AsYouType(curCountryCode);
+                const asYouType = new LPN.AsYouType(nextCountry);
                 const newFormatted = asYouType.input(`+${onlyDigits}`);
+                setCurCountryCode(nextCountry);
                 const prevNumDigits = LPN.parseDigits(
                   formattedNumber.slice(0, cursor ?? 0)
                 ).length;
@@ -404,7 +518,7 @@ function PhoneField({
                 // Commit valid numbers immediately (same check as the form
                 // validator) so a stale "invalid phone" error clears while
                 // typing instead of waiting for blur
-                if (LPN.isValidPhoneNumber(`+${onlyDigits}`))
+                if (isCanonicalPhoneNumber(onlyDigits, LPN))
                   handleOnComplete(onlyDigits);
                 const diff =
                   LPN.parseDigits(newFormatted, curCountryCode).length -
@@ -420,7 +534,12 @@ function PhoneField({
                   )
                     start++;
                 }
+              } else if (replacingNumber.current) {
+                setReplacementDraft('');
+                setRawNumber('');
+                start = 0;
               } else {
+                setReplacementDraft(null);
                 setRawNumber(phoneCode);
                 start = minCursorForPhoneCode(phoneCode);
               }

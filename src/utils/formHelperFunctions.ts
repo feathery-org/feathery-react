@@ -538,7 +538,7 @@ export function httpHelpers(client: any, connectorFields: string[] = []) {
     (fieldValues) => {
       // skip server submit when setting field values here
       // because these values were just created on the server
-      setFieldValues(fieldValues, true, true, true);
+      setFieldValues(fieldValues, true, true);
     },
     client.offlineRequestHandler.runOrSaveRequest.bind(
       client.offlineRequestHandler

@@ -458,14 +458,18 @@ export function parseUserVal(
       .flatMap((step: any) => step.servar_fields ?? [])
       .find((field: any) => field.servar.key === key)?.servar;
   if (servar?.type === 'phone_number') {
-    // Server responses already use international digits, which can also look
-    // like national numbers in a different default country.
-    const canonical =
-      preserveCanonicalPhones &&
-      typeof val === 'string' &&
-      /^\d+$/.test(val) &&
-      phoneLib?.isValidPhoneNumber(`+${val}`);
-    if (!canonical) val = normalizePhoneNumber(val, servar.metadata, phoneLib);
+    const previous = fieldValues[key];
+    // Reassigning or reordering existing values must not reinterpret their
+    // country. New raw values still infer a missing country from field settings.
+    const unchanged = Array.isArray(previous)
+      ? (previous as any[]).includes(val)
+      : previous === val;
+    val = normalizePhoneNumber(
+      val,
+      servar.metadata,
+      phoneLib,
+      preserveCanonicalPhones || unchanged
+    );
   }
   if (isBase64Image(val)) val = dataURLToFile(val, `${key}.png`);
   // If the value is a file type, convert the file or files (if repeated) to Promises

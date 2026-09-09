@@ -286,7 +286,6 @@ describe('formHelperFunctions', () => {
       expect(setFieldValues).toHaveBeenCalledWith(
         { field3: 'newValue', field4: 'anotherValue' },
         true,
-        true,
         true
       );
     });

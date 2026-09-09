@@ -343,6 +343,7 @@ jest.mock('../../hooks/usePollFuserData', () => ({
 
 // FeatheryClient mock with a REAL step so activeStep renders and Grid appears
 jest.mock('../../utils/featheryClient', () => {
+  const schemaState = { servarFields: [] as any[] };
   const inviteCollaboratorSpy = jest
     .fn()
     .mockResolvedValue({ ok: true, payload: { collaborators: [] } });
@@ -354,7 +355,7 @@ jest.mock('../../utils/featheryClient', () => {
         {
           key: 'step-1',
           id: 's1',
-          servar_fields: [],
+          servar_fields: schemaState.servarFields,
           buttons: [],
           next_conditions: []
         }
@@ -395,7 +396,7 @@ jest.mock('../../utils/featheryClient', () => {
   return {
     __esModule: true,
     default: MockClient,
-    _spies: { inviteCollaborator: inviteCollaboratorSpy }
+    _spies: { inviteCollaborator: inviteCollaboratorSpy, schemaState }
   };
 });
 
