@@ -441,6 +441,77 @@ const api = {
     };
   },
 
+  /** The table's own anchor ("section;block"), the way the model names a whole table. */
+  tableAnchor(tableId: string): string {
+    return `0;${tableBlockIndex(tableId)}`;
+  },
+
+  /** Any raw edits array, exactly as the model would send it; outcomes plus group count. */
+  applyEdits(
+    edits: any[],
+    changeSetId?: string
+  ): { outcomes: string[]; messages: string[]; groups: number; revisions: number } {
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      edits,
+      ...(changeSetId ? { changeSetId } : {})
+    });
+    return {
+      outcomes: result.results.map((entry: any) =>
+        entry.ok ? 'ok' : String(entry.error)
+      ),
+      messages: result.results.map((entry: any) => String(entry.message ?? '')),
+      groups: listRevisionGroups(live() as unknown as LiveEditor).length,
+      revisions: (live() as any).revisions?.length ?? 0
+    };
+  },
+
+  /** The model's native split_table naming specific rows (they need not be adjacent). */
+  nativeSplitRows(
+    tableId: string,
+    rows: number[]
+  ): { outcomes: string[]; messages: string[]; ops: string[]; warnings: string[] } {
+    const blockIndex = tableBlockIndex(tableId);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      edits: [
+        { op: 'split_table', anchor: `0;${blockIndex};${rows[0]};0;0`, rows } as any
+      ]
+    });
+    return {
+      outcomes: result.results.map((entry: any) =>
+        entry.ok ? 'ok' : String(entry.error)
+      ),
+      messages: result.results.map((entry: any) => String(entry.message ?? '')),
+      ops: result.results.map((entry: any) => String(entry.op ?? '')),
+      warnings: (result.warnings ?? []).map((entry: any) => String(entry))
+    };
+  },
+
+  /** The hand-composed split of specific rows: duplicate with keepRows, then delete them. */
+  composedSplitRows(
+    tableId: string,
+    rows: number[]
+  ): { outcomes: string[]; messages: string[]; warnings: string[] } {
+    const blockIndex = tableBlockIndex(tableId);
+    const result: any = applyDocumentEdits(live() as unknown as LiveEditor, {
+      edits: [
+        {
+          op: 'duplicate_table',
+          anchor: `0;${blockIndex};0;0;0`,
+          rows: 'copy',
+          keepRows: rows
+        } as any,
+        { op: 'delete_row', anchor: `0;${blockIndex};${rows[0]};0;0`, rows } as any
+      ]
+    });
+    return {
+      outcomes: result.results.map((entry: any) =>
+        entry.ok ? 'ok' : String(entry.error)
+      ),
+      messages: result.results.map((entry: any) => String(entry.message ?? '')),
+      warnings: (result.warnings ?? []).map((entry: any) => String(entry))
+    };
+  },
+
   /** A standalone tracked delete_row of the given item rows, one change set. */
   deleteRows(tableId: string, rows: number[]): { outcomes: string[]; messages: string[]; warnings: string[] } {
     const blockIndex = tableBlockIndex(tableId);

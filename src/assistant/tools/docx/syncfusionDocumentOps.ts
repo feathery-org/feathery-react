@@ -12295,7 +12295,13 @@ function finalizeTableAppearance(
     let skippedKeyless = 0;
     rows.forEach((row: any, index: number) => {
       if (allRevisionIdsIn(rowRevisionIds(row), deleted)) return;
-      if (roles[index]?.role === 'item') {
+      // The stripe covers the rows the TEMPLATE striped: every item row, and the
+      // totals row too when the source shaded it as the next band.
+      const role = roles[index]?.role;
+      const inBand =
+        role === 'item' ||
+        (role === 'aggregate' && banding.tailInBand === true);
+      if (inBand) {
         const wanted = bandedShadingForRow(banding, survivorIndex);
         if (wanted !== undefined) {
           // ONLY RECOLOUR A CELL THAT ALREADY CARRIES A SHADING KEY.
@@ -20684,6 +20690,97 @@ function splitPlacementRefusal(
   };
 }
 
+/** Ops that address a whole table, and so may arrive naming it rather than a cell. */
+const TABLE_ADDRESSED_OPS = new Set([
+  'split_table',
+  'duplicate_table',
+  'delete_row',
+  'delete_table'
+]);
+
+/**
+ * ONE way to name a table, resolved once, before anything plans against it.
+ *
+ * The tool schema lets the model address a table-scoped op three ways: a cell
+ * anchor of the table ("1;10;0;0;0"), the table's own anchor ("1;10"), or, for
+ * a bound table, its id (`table: "property_premium"`). Every planner below -
+ * the split compiler, the bound duplicate, the bound and native row deletes -
+ * was written against the cell form and read the other two as "no such block".
+ * Measured on the captain's document, one request, four engine calls: the
+ * model's first and correct `split_table {anchor:"1;10", rows:[1,3]}` fell
+ * through to the native path and was refused for carrying bindings; its
+ * recommended `duplicate_table {table} + delete_row {anchor:"1;10"}` failed
+ * with missing_anchor / anchor_not_found; only two separate calls landed, as
+ * two cards. The schema promised those forms; the engine honours them here so
+ * that no planner has to know more than one.
+ *
+ * The row a cell anchor names is the op's first row when it has one (`rows`,
+ * `splitAtRow`), else the first row - which is what every downstream planner
+ * reads it for.
+ */
+function canonicalizeTableOpAnchors(
+  editor: LiveEditor,
+  edits: EditOp[]
+): EditOp[] {
+  if (!Array.isArray(edits)) return edits;
+  const needsWork = edits.some((op) => {
+    if (!op || !TABLE_ADDRESSED_OPS.has(String(op.op))) return false;
+    const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
+    if (!anchor) return typeof (op as any).table === 'string';
+    return anchor.split(';').length === 2;
+  });
+  if (!needsWork) return edits;
+  const sfdt = serializeSfdt(editor);
+  const blocks = flattenSfdt(sfdt);
+  const byAnchor = new Map(blocks.map((block) => [block.anchor, block]));
+  let runtime: BindingRuntime | null | undefined;
+  const routeForTableId = (tableId: string): BindingTableRoute | undefined => {
+    if (runtime === undefined) runtime = bindingRuntime(editor, sfdt);
+    if (!runtime) return undefined;
+    for (const route of runtime.tablesByAnchor.values())
+      if (route.tableId === tableId) return route;
+    return undefined;
+  };
+  const firstRowOf = (op: EditOp): number => {
+    const rows = (op as any).rows;
+    if (Array.isArray(rows) && rows.length) {
+      const first = Number(rows[0]);
+      if (Number.isInteger(first) && first >= 0) return first;
+    }
+    const splitAt = (op as any).splitAtRow;
+    if (
+      typeof splitAt === 'number' &&
+      Number.isInteger(splitAt) &&
+      splitAt >= 0
+    )
+      return splitAt;
+    return 0;
+  };
+  return edits.map((op) => {
+    if (!op || !TABLE_ADDRESSED_OPS.has(String(op.op))) return op;
+    let tableAnchor: string | null = null;
+    const anchor = typeof op.anchor === 'string' ? op.anchor.trim() : '';
+    if (!anchor && typeof (op as any).table === 'string') {
+      tableAnchor = routeForTableId((op as any).table)?.anchor ?? null;
+    } else if (anchor && anchor.split(';').length === 2) {
+      tableAnchor = normalizeTableAnchor(anchor);
+    }
+    if (!tableAnchor) return op;
+    // duplicate_table copies the table whatever row is named; the others read
+    // the row off the anchor when the op carries no `rows`.
+    const row = op.op === 'duplicate_table' ? 0 : firstRowOf(op);
+    // Cell anchors are `section;block;row;column;paragraph`.
+    const cell = `${tableAnchor};${row};0;0`;
+    const fallback = `${tableAnchor};0;0;0`;
+    const resolved = byAnchor.has(cell)
+      ? cell
+      : byAnchor.has(fallback)
+      ? fallback
+      : null;
+    return resolved ? ({ ...op, anchor: resolved } as EditOp) : op;
+  });
+}
+
 function expandComposedEdits(
   editor: LiveEditor,
   input: { edits: EditOp[]; changeSetId?: string; plan?: string }
@@ -21013,7 +21110,11 @@ export function applyDocumentEdits(
     // cannot establish it, because jsdom has no layout to throw from.
     return withSilentEditSelections(editor, () =>
       withSerializationTiming(editor, serializationTiming, () => {
-        const expansion = expandComposedEdits(editor, input);
+        const canonical = canonicalizeTableOpAnchors(editor, input.edits);
+        const expansion = expandComposedEdits(editor, {
+          ...input,
+          edits: canonical
+        });
         const result = applyDocumentEditsMeasured(
           editor,
           { ...input, edits: expansion.edits },
