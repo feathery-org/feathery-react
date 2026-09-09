@@ -390,6 +390,46 @@ describe('a composed split of the browser document accepts whole and conserves t
       for (const name of SUMMARY_LINES)
         expect([name, accepted[name]]).toEqual([name, baseline.formulas[name]]);
 
+      // STALE ROW IDS IN `title`, PINNED RATHER THAN FIXED.
+      //
+      // The copy's controls carry the SOURCE row's id in
+      // `contentControlProperties.title` while `tag` is correctly rewritten to
+      // the copy's own row id. Nine of them: three moved rows times the three
+      // fields whose tag is short enough that the id survives the editor's
+      // title cap, plus the copy table marker's title still reading
+      // `[[table=property_premium]]`.
+      //
+      // NOT the identity rule being violated, and this is why. `title` is a
+      // display label, not identity: the binding scanner reads
+      // `contentControlProperties.tag` and only that (sfdtAdapter), no reader
+      // falls back to title, and the editor TRUNCATES title - 23 of this
+      // document's 79 controls have a title that is a clipped copy of their own
+      // tag in the PRISTINE capture, before any op runs. A field that cannot
+      // hold the full tag for a third of the document cannot be kept in sync
+      // with it, so keeping it in sync is the wrong rule.
+      //
+      // Pinned because it is a trap: anything that ever reads title as a tag
+      // fallback would read the source row's id off the copy. This count is the
+      // alarm if the shape changes.
+      const controls = await session.call<
+        Array<{ tag: string; title: string }>
+      >('serializedControls');
+      const staleRowIds = controls.filter(
+        (control) =>
+          /row=property-r[345]\]\]$/.test(control.title) &&
+          /row=property_premium_copy_r[345]\]\]$/.test(control.tag)
+      );
+      expect(staleRowIds).toHaveLength(9);
+      const staleMarker = controls.filter(
+        (control) =>
+          control.tag === `[[table=${TABLE}_copy]]` &&
+          control.title === `[[table=${TABLE}]]`
+      );
+      expect(staleMarker).toHaveLength(1);
+      // Every stale title is on the COPY, never on a row that stayed behind.
+      for (const control of staleRowIds)
+        expect(control.tag).toContain(`${TABLE}_copy`);
+
       // eslint-disable-next-line no-console
       console.log(
         '[headless] evidence:',

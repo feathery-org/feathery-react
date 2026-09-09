@@ -177,15 +177,28 @@ const api = {
   contentControlCount: (): number =>
     ((live().documentHelper as any).contentControlCollection ?? []).length,
 
+  // TAG ONLY, never `title`. The scanner reads `tag` and nothing else
+  // (sfdtAdapter), and `title` is a display label the editor TRUNCATES - 23 of
+  // this document's 79 controls have a title that is a clipped copy of their
+  // tag before any op runs. Falling back to it here was a way to read a stale
+  // or clipped identity and call the result a tag.
   contentControlTags: (): string[] =>
-    Array.from((live().documentHelper as any).contentControlCollection ?? []).map(
-      (control: any) =>
-        String(
-          control?.contentControlProperties?.tag ??
-            control?.contentControlProperties?.title ??
-            ''
-        )
+    Array.from(
+      (live().documentHelper as any).contentControlCollection ?? []
+    ).map((control: any) =>
+      String(control?.contentControlProperties?.tag ?? '')
     ),
+
+  /** Every serialized control as the pair (tag, title), for identity checks. */
+  serializedControls: (): Array<{ tag: string; title: string }> => {
+    const out: Array<{ tag: string; title: string }> = [];
+    JSON.stringify(parsed(), (key, value) => {
+      if (key === 'contentControlProperties' && value?.tag)
+        out.push({ tag: String(value.tag), title: String(value.title ?? '') });
+      return value;
+    });
+    return out;
+  },
 
   /** Tags as the SERIALIZED document carries them, for teardown comparison. */
   serializedTags: (): string[] => {
